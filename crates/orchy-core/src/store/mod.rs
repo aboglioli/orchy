@@ -10,6 +10,8 @@ pub use memory_store::MemoryStore;
 pub use message_store::MessageStore;
 pub use task_store::TaskStore;
 
+use std::future::Future;
+
 use crate::entities::{
     Agent, ContextSnapshot, CreateMessage, CreateSnapshot, CreateTask, MemoryEntry, MemoryFilter,
     Message, RegisterAgent, Task, TaskFilter, WriteMemory,
@@ -17,151 +19,60 @@ use crate::entities::{
 use crate::error::Result;
 use crate::value_objects::{AgentId, AgentStatus, MessageId, Namespace, TaskId, TaskStatus};
 
-/// Enum dispatch for storage backends. Resolved once at startup.
-/// Variants and delegation methods added as backends are implemented.
-pub enum Store {
-    // Memory(orchy_store_memory::MemoryBackend),
-    // Sqlite(orchy_store_sqlite::SqliteBackend),
-    // Postgres(orchy_store_pg::PgBackend),
-}
-
-impl Store {
+/// Combined storage interface used by services.
+/// Concrete backends implement this via a dispatch enum in the server crate.
+pub trait Store: Send + Sync {
     // --- TaskStore ---
-
-    pub async fn create_task(&self, task: CreateTask) -> Result<Task> {
-        match *self {}
-    }
-
-    pub async fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
-        match *self {}
-    }
-
-    pub async fn list_tasks(&self, filter: TaskFilter) -> Result<Vec<Task>> {
-        match *self {}
-    }
-
-    pub async fn claim_task(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
-        match *self {}
-    }
-
-    pub async fn complete_task(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
-        match *self {}
-    }
-
-    pub async fn fail_task(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
-        match *self {}
-    }
-
-    pub async fn release_task(&self, id: &TaskId) -> Result<Task> {
-        match *self {}
-    }
-
-    pub async fn update_task_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
-        match *self {}
-    }
+    fn create_task(&self, task: CreateTask) -> impl Future<Output = Result<Task>> + Send;
+    fn get_task(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
+    fn list_tasks(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
+    fn claim_task(&self, id: &TaskId, agent: &AgentId) -> impl Future<Output = Result<Task>> + Send;
+    fn complete_task(&self, id: &TaskId, summary: Option<String>) -> impl Future<Output = Result<Task>> + Send;
+    fn fail_task(&self, id: &TaskId, reason: Option<String>) -> impl Future<Output = Result<Task>> + Send;
+    fn release_task(&self, id: &TaskId) -> impl Future<Output = Result<Task>> + Send;
+    fn update_task_status(&self, id: &TaskId, status: TaskStatus) -> impl Future<Output = Result<()>> + Send;
 
     // --- MemoryStore ---
-
-    pub async fn write_memory(&self, entry: WriteMemory) -> Result<MemoryEntry> {
-        match *self {}
-    }
-
-    pub async fn read_memory(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
-        match *self {}
-    }
-
-    pub async fn list_memory(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-        match *self {}
-    }
-
-    pub async fn search_memory(
+    fn write_memory(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
+    fn read_memory(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
+    fn list_memory(&self, filter: MemoryFilter) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
+    fn search_memory(
         &self,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<MemoryEntry>> {
-        match *self {}
-    }
-
-    pub async fn delete_memory(&self, namespace: &Namespace, key: &str) -> Result<()> {
-        match *self {}
-    }
+    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
+    fn delete_memory(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<()>> + Send;
 
     // --- AgentStore ---
-
-    pub async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
-        match *self {}
-    }
-
-    pub async fn get_agent(&self, id: &AgentId) -> Result<Option<Agent>> {
-        match *self {}
-    }
-
-    pub async fn list_agents(&self) -> Result<Vec<Agent>> {
-        match *self {}
-    }
-
-    pub async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        match *self {}
-    }
-
-    pub async fn update_agent_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        match *self {}
-    }
-
-    pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
-        match *self {}
-    }
-
-    pub async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
-        match *self {}
-    }
+    fn register(&self, registration: RegisterAgent) -> impl Future<Output = Result<Agent>> + Send;
+    fn get_agent(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
+    fn list_agents(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+    fn heartbeat(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
+    fn update_agent_status(&self, id: &AgentId, status: AgentStatus) -> impl Future<Output = Result<()>> + Send;
+    fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
+    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 
     // --- MessageStore ---
-
-    pub async fn send_message(&self, message: CreateMessage) -> Result<Message> {
-        match *self {}
-    }
-
-    pub async fn check_messages(
-        &self,
-        agent: &AgentId,
-        namespace: Option<&Namespace>,
-    ) -> Result<Vec<Message>> {
-        match *self {}
-    }
-
-    pub async fn mark_messages_read(&self, ids: &[MessageId]) -> Result<()> {
-        match *self {}
-    }
+    fn send_message(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
+    fn check_messages(&self, agent: &AgentId, namespace: Option<&Namespace>) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn mark_messages_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
 
     // --- ContextStore ---
-
-    pub async fn save_context(&self, snapshot: CreateSnapshot) -> Result<ContextSnapshot> {
-        match *self {}
-    }
-
-    pub async fn load_context(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
-        match *self {}
-    }
-
-    pub async fn list_contexts(
+    fn save_context(&self, snapshot: CreateSnapshot) -> impl Future<Output = Result<ContextSnapshot>> + Send;
+    fn load_context(&self, agent: &AgentId) -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
+    fn list_contexts(
         &self,
         agent: Option<&AgentId>,
         namespace: Option<&Namespace>,
-    ) -> Result<Vec<ContextSnapshot>> {
-        match *self {}
-    }
-
-    pub async fn search_contexts(
+    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
+    fn search_contexts(
         &self,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         agent_id: Option<&AgentId>,
         limit: usize,
-    ) -> Result<Vec<ContextSnapshot>> {
-        match *self {}
-    }
+    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
 }
