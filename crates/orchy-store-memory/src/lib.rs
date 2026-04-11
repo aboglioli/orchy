@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod memory;
 mod message;
+mod store_impl;
 mod task;
 
 use std::collections::HashMap;

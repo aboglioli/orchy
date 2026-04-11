@@ -5,12 +5,12 @@ use crate::error::Result;
 use crate::store::Store;
 use crate::value_objects::{AgentId, MessageId, MessageTarget, Namespace};
 
-pub struct MessageService {
-    store: Arc<Store>,
+pub struct MessageService<S: Store> {
+    store: Arc<S>,
 }
 
-impl MessageService {
-    pub fn new(store: Arc<Store>) -> Self {
+impl<S: Store> MessageService<S> {
+    pub fn new(store: Arc<S>) -> Self {
         Self { store }
     }
 

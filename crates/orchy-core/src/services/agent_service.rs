@@ -5,12 +5,12 @@ use crate::error::{Error, Result};
 use crate::store::Store;
 use crate::value_objects::AgentId;
 
-pub struct AgentService {
-    store: Arc<Store>,
+pub struct AgentService<S: Store> {
+    store: Arc<S>,
 }
 
-impl AgentService {
-    pub fn new(store: Arc<Store>) -> Self {
+impl<S: Store> AgentService<S> {
+    pub fn new(store: Arc<S>) -> Self {
         Self { store }
     }
 

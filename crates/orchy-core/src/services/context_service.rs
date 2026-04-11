@@ -6,13 +6,13 @@ use crate::error::Result;
 use crate::store::Store;
 use crate::value_objects::{AgentId, Namespace};
 
-pub struct ContextService {
-    store: Arc<Store>,
+pub struct ContextService<S: Store> {
+    store: Arc<S>,
     embeddings: Option<Arc<EmbeddingsBackend>>,
 }
 
-impl ContextService {
-    pub fn new(store: Arc<Store>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
+impl<S: Store> ContextService<S> {
+    pub fn new(store: Arc<S>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
         Self { store, embeddings }
     }
 

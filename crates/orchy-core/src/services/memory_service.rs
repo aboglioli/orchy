@@ -6,13 +6,13 @@ use crate::error::Result;
 use crate::store::Store;
 use crate::value_objects::Namespace;
 
-pub struct MemoryService {
-    store: Arc<Store>,
+pub struct MemoryService<S: Store> {
+    store: Arc<S>,
     embeddings: Option<Arc<EmbeddingsBackend>>,
 }
 
-impl MemoryService {
-    pub fn new(store: Arc<Store>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
+impl<S: Store> MemoryService<S> {
+    pub fn new(store: Arc<S>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
         Self { store, embeddings }
     }
 
