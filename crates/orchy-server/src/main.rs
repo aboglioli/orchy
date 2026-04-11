@@ -31,7 +31,9 @@ async fn main() {
     let host = config.server.host.clone();
     let port = config.server.port;
 
-    let container = Container::from_config(config);
+    let container = Container::from_config(config)
+        .await
+        .expect("failed to build container");
 
     // Spawn heartbeat monitor
     let heartbeat_container = Arc::clone(&container);
