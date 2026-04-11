@@ -1,0 +1,221 @@
+use std::collections::HashMap;
+use std::str::FromStr;
+
+use chrono::{DateTime, Utc};
+
+use orchy_core::entities::{ContextSnapshot, CreateSnapshot};
+use orchy_core::error::{Error, Result};
+use orchy_core::store::ContextStore;
+use orchy_core::value_objects::{AgentId, Namespace, SnapshotId};
+
+use crate::{bytes_to_embedding, embedding_to_bytes, SqliteBackend};
+
+impl ContextStore for SqliteBackend {
+    async fn save(&self, cmd: CreateSnapshot) -> Result<ContextSnapshot> {
+        let snapshot = ContextSnapshot {
+            id: SnapshotId::new(),
+            agent_id: cmd.agent_id,
+            namespace: cmd.namespace,
+            summary: cmd.summary,
+            embedding: cmd.embedding,
+            embedding_model: cmd.embedding_model,
+            embedding_dimensions: cmd.embedding_dimensions,
+            metadata: cmd.metadata,
+            created_at: Utc::now(),
+        };
+
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let embedding_bytes = snapshot.embedding.as_ref().map(|e| embedding_to_bytes(e));
+
+        conn.execute(
+            "INSERT INTO contexts (id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                snapshot.id.to_string(),
+                snapshot.agent_id.to_string(),
+                snapshot.namespace.as_ref().map(|n| n.to_string()),
+                snapshot.summary,
+                embedding_bytes,
+                snapshot.embedding_model,
+                snapshot.embedding_dimensions.map(|d| d as i64),
+                serde_json::to_string(&snapshot.metadata).unwrap(),
+                snapshot.created_at.to_rfc3339(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        let rowid = conn.last_insert_rowid();
+
+        // Insert FTS entry
+        conn.execute(
+            "INSERT INTO contexts_fts(rowid, namespace, summary) VALUES(?1, ?2, ?3)",
+            rusqlite::params![
+                rowid,
+                snapshot.namespace.as_ref().map(|n| n.to_string()).unwrap_or_default(),
+                snapshot.summary,
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        // Insert vec entry if embedding provided
+        if let Some(ref emb_bytes) = embedding_bytes {
+            let _ = conn.execute(
+                "INSERT INTO contexts_vec(rowid, embedding) VALUES(?1, ?2)",
+                rusqlite::params![rowid, emb_bytes],
+            );
+        }
+
+        Ok(snapshot)
+    }
+
+    async fn load(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
+                 FROM contexts WHERE agent_id = ?1
+                 ORDER BY created_at DESC LIMIT 1",
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let result = stmt
+            .query_row(rusqlite::params![agent.to_string()], row_to_context)
+            .optional()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    async fn list(
+        &self,
+        agent: Option<&AgentId>,
+        namespace: Option<&Namespace>,
+    ) -> Result<Vec<ContextSnapshot>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+
+        let mut sql = String::from(
+            "SELECT id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
+             FROM contexts WHERE 1=1",
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut idx = 1;
+
+        if let Some(a) = agent {
+            sql.push_str(&format!(" AND agent_id = ?{idx}"));
+            params.push(Box::new(a.to_string()));
+            idx += 1;
+        }
+
+        if let Some(ns) = namespace {
+            sql.push_str(&format!(
+                " AND namespace IS NOT NULL AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(ns.to_string()));
+        }
+
+        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let snapshots = stmt
+            .query_map(param_refs.as_slice(), row_to_context)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(snapshots)
+    }
+
+    async fn search(
+        &self,
+        query: &str,
+        _embedding: Option<&[f32]>,
+        namespace: Option<&Namespace>,
+        agent_id: Option<&AgentId>,
+        limit: usize,
+    ) -> Result<Vec<ContextSnapshot>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+
+        let mut sql = String::from(
+            "SELECT c.id, c.agent_id, c.namespace, c.summary, c.embedding, c.embedding_model, c.embedding_dimensions, c.metadata, c.created_at
+             FROM contexts c
+             JOIN contexts_fts ON contexts_fts.rowid = c.rowid
+             WHERE contexts_fts MATCH ?1",
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let fts_query = sanitize_fts_query(query);
+        params.push(Box::new(fts_query));
+        let mut idx = 2;
+
+        if let Some(ns) = namespace {
+            sql.push_str(&format!(
+                " AND c.namespace IS NOT NULL AND (c.namespace = ?{idx} OR c.namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(ns.to_string()));
+            idx += 1;
+        }
+
+        if let Some(a) = agent_id {
+            sql.push_str(&format!(" AND c.agent_id = ?{idx}"));
+            params.push(Box::new(a.to_string()));
+            idx += 1;
+        }
+
+        sql.push_str(&format!(" ORDER BY rank LIMIT ?{idx}"));
+        params.push(Box::new(limit as i64));
+
+        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let snapshots = stmt
+            .query_map(param_refs.as_slice(), row_to_context)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(snapshots)
+    }
+}
+
+fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
+    let id_str: String = row.get(0)?;
+    let agent_id_str: String = row.get(1)?;
+    let namespace_str: Option<String> = row.get(2)?;
+    let summary: String = row.get(3)?;
+    let embedding_bytes: Option<Vec<u8>> = row.get(4)?;
+    let embedding_model: Option<String> = row.get(5)?;
+    let embedding_dimensions: Option<i64> = row.get(6)?;
+    let metadata_str: String = row.get(7)?;
+    let created_at_str: String = row.get(8)?;
+
+    Ok(ContextSnapshot {
+        id: SnapshotId::from_str(&id_str)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
+        agent_id: AgentId::from_str(&agent_id_str)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?,
+        namespace: namespace_str
+            .map(|s| Namespace::try_from(s).map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))))
+            .transpose()?,
+        summary,
+        embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
+        embedding_model,
+        embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        metadata: serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
+        created_at: DateTime::parse_from_rfc3339(&created_at_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e)))?,
+    })
+}
+
+/// Sanitize a user query for FTS5 by quoting it to avoid syntax errors.
+fn sanitize_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|word| {
+            let escaped = word.replace('"', "\"\"");
+            format!("\"{escaped}\"")
+        })
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
+use rusqlite::OptionalExtension;
