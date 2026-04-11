@@ -18,7 +18,7 @@ pub struct Container {
 }
 
 impl Container {
-    pub fn from_config(config: Config) -> Self {
+    pub fn from_config(config: Config) -> Arc<Self> {
         let store = Arc::new(Self::build_store(&config));
         let embeddings = config
             .embeddings
@@ -31,14 +31,14 @@ impl Container {
         let message_service = MessageService::new(Arc::clone(&store));
         let context_service = ContextService::new(Arc::clone(&store), embeddings);
 
-        Self {
+        Arc::new(Self {
             task_service,
             memory_service,
             agent_service,
             message_service,
             context_service,
             config,
-        }
+        })
     }
 
     fn build_store(config: &Config) -> MemoryBackend {
