@@ -1,0 +1,12 @@
+[package]
+name = "orchy-store-memory"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+orchy-core.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

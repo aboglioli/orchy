@@ -1,0 +1,13 @@
+[package]
+name = "orchy-core"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
