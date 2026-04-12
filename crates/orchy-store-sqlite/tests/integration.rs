@@ -13,8 +13,6 @@ fn ns(s: &str) -> Namespace {
     Namespace::try_from(s).unwrap()
 }
 
-// === Agent lifecycle ===
-
 #[tokio::test]
 async fn agent_register_and_get() {
     let store = backend();
@@ -103,8 +101,6 @@ async fn agent_find_timed_out() {
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(!timed_out.iter().any(|a| a.id == agent.id));
 }
-
-// === Task lifecycle ===
 
 #[tokio::test]
 async fn task_create_and_claim() {
@@ -275,8 +271,6 @@ async fn task_list_sorted_by_priority() {
     assert_eq!(tasks[0].title, "critical");
     assert_eq!(tasks[1].title, "low");
 }
-
-// === Memory lifecycle ===
 
 #[tokio::test]
 async fn memory_write_and_read() {
@@ -511,8 +505,6 @@ async fn memory_delete() {
     assert!(result.is_none());
 }
 
-// === Message lifecycle ===
-
 #[tokio::test]
 async fn message_send_and_check() {
     let store = backend();
@@ -570,8 +562,6 @@ async fn message_mark_read() {
     MessageStore::check(&store, &to, &project_ns).await.unwrap();
     MessageStore::mark_read(&store, &[msg.id]).await.unwrap();
 }
-
-// === Context lifecycle ===
 
 #[tokio::test]
 async fn context_save_and_load() {
@@ -706,10 +696,6 @@ async fn context_search_by_keyword() {
     assert_eq!(results.len(), 1);
     assert!(results[0].summary.contains("authentication"));
 }
-
-// =========================================================================
-// Skill tests
-// =========================================================================
 
 #[tokio::test]
 async fn skill_write_and_read() {

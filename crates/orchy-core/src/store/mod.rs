@@ -21,10 +21,7 @@ use crate::entities::{
 use crate::error::Result;
 use crate::value_objects::{AgentId, AgentStatus, MessageId, Namespace, TaskId, TaskStatus};
 
-/// Combined storage interface used by services.
-/// Concrete backends implement this via a dispatch enum in the server crate.
 pub trait Store: Send + Sync {
-    // --- TaskStore ---
     fn create_task(&self, task: CreateTask) -> impl Future<Output = Result<Task>> + Send;
     fn get_task(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
     fn list_tasks(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
@@ -34,7 +31,6 @@ pub trait Store: Send + Sync {
     fn release_task(&self, id: &TaskId) -> impl Future<Output = Result<Task>> + Send;
     fn update_task_status(&self, id: &TaskId, status: TaskStatus) -> impl Future<Output = Result<()>> + Send;
 
-    // --- MemoryStore ---
     fn write_memory(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
     fn read_memory(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
     fn list_memory(&self, filter: MemoryFilter) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
@@ -47,7 +43,6 @@ pub trait Store: Send + Sync {
     ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
     fn delete_memory(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<()>> + Send;
 
-    // --- AgentStore ---
     fn register(&self, registration: RegisterAgent) -> impl Future<Output = Result<Agent>> + Send;
     fn get_agent(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
     fn list_agents(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
@@ -56,12 +51,10 @@ pub trait Store: Send + Sync {
     fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
     fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 
-    // --- MessageStore ---
     fn send_message(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
     fn check_messages(&self, agent: &AgentId, namespace: &Namespace) -> impl Future<Output = Result<Vec<Message>>> + Send;
     fn mark_messages_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
 
-    // --- ContextStore ---
     fn save_context(&self, snapshot: CreateSnapshot) -> impl Future<Output = Result<ContextSnapshot>> + Send;
     fn load_context(&self, agent: &AgentId) -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
     fn list_contexts(
@@ -78,7 +71,6 @@ pub trait Store: Send + Sync {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
 
-    // --- SkillStore ---
     fn write_skill(&self, skill: WriteSkill) -> impl Future<Output = Result<Skill>> + Send;
     fn read_skill(&self, namespace: &Namespace, name: &str) -> impl Future<Output = Result<Option<Skill>>> + Send;
     fn list_skills(&self, filter: SkillFilter) -> impl Future<Output = Result<Vec<Skill>>> + Send;

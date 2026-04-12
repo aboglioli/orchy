@@ -17,8 +17,6 @@ fn ns(s: &str) -> Namespace {
     Namespace::try_from(s).unwrap()
 }
 
-// === Agent lifecycle ===
-
 #[tokio::test]
 #[ignore]
 async fn agent_register_and_get() {
@@ -111,8 +109,6 @@ async fn agent_find_timed_out() {
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(!timed_out.iter().any(|a| a.id == agent.id));
 }
-
-// === Task lifecycle ===
 
 #[tokio::test]
 #[ignore]
@@ -348,8 +344,6 @@ async fn task_list_sorted_by_priority() {
     assert_eq!(tasks[0].title, "critical");
     assert_eq!(tasks[1].title, "low");
 }
-
-// === Memory lifecycle ===
 
 #[tokio::test]
 #[ignore]
@@ -590,8 +584,6 @@ async fn memory_delete() {
     assert!(result.is_none());
 }
 
-// === Message lifecycle ===
-
 #[tokio::test]
 #[ignore]
 async fn message_send_and_check() {
@@ -694,8 +686,6 @@ async fn message_mark_read() {
     MessageStore::check(&store, &to_agent.id, &project_ns).await.unwrap();
     MessageStore::mark_read(&store, &[msg.id]).await.unwrap();
 }
-
-// === Context lifecycle ===
 
 #[tokio::test]
 #[ignore]
@@ -877,10 +867,6 @@ async fn context_search_by_keyword() {
     assert_eq!(results.len(), 1);
     assert!(results[0].summary.contains("authentication"));
 }
-
-// =========================================================================
-// Skill tests
-// =========================================================================
 
 #[tokio::test]
 async fn skill_write_and_read() {
