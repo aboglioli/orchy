@@ -61,7 +61,7 @@ match. You cannot access other projects.
 | Category | Tools |
 |----------|-------|
 | Agent    | `register_agent`, `list_agents`, `heartbeat` |
-| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `complete_task`, `fail_task` |
+| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task` |
 | Memory   | `write_memory`, `read_memory`, `list_memory`, `search_memory`, `delete_memory` |
 | Messages | `send_message`, `check_mailbox`, `mark_read` |
 | Context  | `save_context`, `load_context`, `list_contexts`, `search_contexts` |

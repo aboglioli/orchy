@@ -70,6 +70,11 @@ struct CompleteTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+struct StartTaskParams {
+    task_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 struct FailTaskParams {
     task_id: String,
     reason: Option<String>,
@@ -400,6 +405,33 @@ impl OrchyHandler {
         };
 
         match self.container.task_service.claim(&task_id, &agent_id).await {
+            Ok(task) => to_json(&task),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(
+        description = "Start working on a claimed task (transitions from claimed to in_progress). \
+        You must claim a task before starting it, and start it before completing it. \
+        Workflow: pending → claimed → in_progress → completed/failed."
+    )]
+    async fn start_task(&self, Parameters(params): Parameters<StartTaskParams>) -> String {
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return e,
+        };
+
+        match self
+            .container
+            .task_service
+            .start(&task_id, &agent_id)
+            .await
+        {
             Ok(task) => to_json(&task),
             Err(e) => format!("error: {e}"),
         }
