@@ -21,6 +21,9 @@ use crate::entities::{
 use crate::error::Result;
 use crate::value_objects::{AgentId, AgentStatus, MessageId, Namespace, TaskId, TaskStatus};
 
+#[cfg(test)]
+pub mod mock;
+
 pub trait Store: Send + Sync {
     fn create_task(&self, task: CreateTask) -> impl Future<Output = Result<Task>> + Send;
     fn get_task(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
