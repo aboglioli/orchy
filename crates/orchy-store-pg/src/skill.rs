@@ -52,24 +52,33 @@ impl SkillStore for PgBackend {
     }
 
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
-        let rows = if let Some(ref ns) = filter.namespace {
-            sqlx::query(
-                "SELECT namespace, name, description, content, written_by, created_at, updated_at
-                 FROM skills WHERE namespace = $1 OR namespace LIKE $1 || '/%'",
-            )
-            .bind(ns.to_string())
+        let mut sql = "SELECT namespace, name, description, content, written_by, created_at, updated_at FROM skills WHERE 1=1".to_string();
+        let mut params: Vec<String> = Vec::new();
+        let mut idx = 1u32;
+
+        if let Some(ref ns) = filter.namespace {
+            sql.push_str(&format!(
+                " AND (namespace = ${idx} OR namespace LIKE ${idx} || '/%')"
+            ));
+            params.push(ns.to_string());
+            idx += 1;
+        }
+        if let Some(ref project) = filter.project {
+            sql.push_str(&format!(
+                " AND (namespace = ${idx} OR namespace LIKE ${idx} || '/%')"
+            ));
+            params.push(project.to_string());
+        }
+
+        let mut query = sqlx::query(&sql);
+        for p in &params {
+            query = query.bind(p);
+        }
+
+        let rows = query
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?
-        } else {
-            sqlx::query(
-                "SELECT namespace, name, description, content, written_by, created_at, updated_at
-                 FROM skills",
-            )
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
-        };
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(rows.iter().map(row_to_skill).collect())
     }

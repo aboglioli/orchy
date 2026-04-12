@@ -75,20 +75,23 @@ impl SkillStore for SqliteBackend {
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
-            if let Some(ref ns) = filter.namespace {
-                (
-                "SELECT namespace, name, description, content, written_by, created_at, updated_at
-                 FROM skills WHERE namespace = ?1 OR namespace LIKE ?1 || '/%'".to_string(),
-                vec![Box::new(ns.to_string()) as Box<dyn rusqlite::types::ToSql>],
-            )
-            } else {
-                (
-                "SELECT namespace, name, description, content, written_by, created_at, updated_at
-                 FROM skills".to_string(),
-                vec![],
-            )
-            };
+        let mut sql = "SELECT namespace, name, description, content, written_by, created_at, updated_at FROM skills WHERE 1=1".to_string();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut idx = 1;
+
+        if let Some(ref ns) = filter.namespace {
+            sql.push_str(&format!(
+                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(ns.to_string()));
+            idx += 1;
+        }
+        if let Some(ref project) = filter.project {
+            sql.push_str(&format!(
+                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(project.to_string()));
+        }
 
         let mut stmt = conn
             .prepare(&sql)

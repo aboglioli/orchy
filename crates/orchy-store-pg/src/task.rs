@@ -113,6 +113,7 @@ impl TaskStore for PgBackend {
         // Simplest: build SQL with placeholders and use a Vec of string params.
 
         let mut ns_val: Option<String> = None;
+        let mut project_val: Option<String> = None;
         let mut status_val: Option<String> = None;
         let mut role_val: Option<String> = None;
         let mut claimed_val: Option<Uuid> = None;
@@ -122,6 +123,13 @@ impl TaskStore for PgBackend {
                 " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
             ));
             ns_val = Some(ns.to_string());
+            param_idx += 1;
+        }
+        if let Some(ref project) = filter.project {
+            sql.push_str(&format!(
+                " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
+            ));
+            project_val = Some(project.to_string());
             param_idx += 1;
         }
         if let Some(ref status) = filter.status {
@@ -154,6 +162,9 @@ impl TaskStore for PgBackend {
 
         let mut query = sqlx::query(&sql);
         if let Some(ref v) = ns_val {
+            query = query.bind(v);
+        }
+        if let Some(ref v) = project_val {
             query = query.bind(v);
         }
         if let Some(ref v) = status_val {

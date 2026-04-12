@@ -60,7 +60,7 @@ impl<S: Store> TaskService<S> {
                 namespace: namespace.clone(),
                 status: Some(TaskStatus::Pending),
                 assigned_role: Some(role.clone()),
-                claimed_by: None,
+                ..Default::default()
             };
             let mut tasks = self.store.list_tasks(filter).await?;
             tasks.sort_by(|a, b| b.priority.cmp(&a.priority));

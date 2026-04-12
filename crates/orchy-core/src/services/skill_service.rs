@@ -37,6 +37,7 @@ impl<S: Store> SkillService<S> {
             .store
             .list_skills(SkillFilter {
                 namespace: Some(Namespace::try_from(namespace.project().to_string()).unwrap()),
+                ..Default::default()
             })
             .await?;
 

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{AgentId, Namespace, Priority, TaskId, TaskStatus};
+use crate::value_objects::{AgentId, Namespace, Priority, Project, TaskId, TaskStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
@@ -35,6 +35,7 @@ pub struct CreateTask {
 #[derive(Debug, Clone, Default)]
 pub struct TaskFilter {
     pub namespace: Option<Namespace>,
+    pub project: Option<Project>,
     pub status: Option<TaskStatus>,
     pub assigned_role: Option<String>,
     pub claimed_by: Option<AgentId>,
