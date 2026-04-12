@@ -73,12 +73,13 @@ impl AgentStore for PgBackend {
     }
 
     async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        let result = sqlx::query("UPDATE agents SET last_heartbeat = $1 WHERE id = $2")
-            .bind(Utc::now())
-            .bind(id.as_uuid())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let result =
+            sqlx::query("UPDATE agents SET last_heartbeat = $1, status = 'online' WHERE id = $2")
+                .bind(Utc::now())
+                .bind(id.as_uuid())
+                .execute(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?;
 
         if result.rows_affected() == 0 {
             return Err(Error::NotFound(format!("agent {id}")));

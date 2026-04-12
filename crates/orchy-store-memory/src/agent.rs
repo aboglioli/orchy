@@ -54,6 +54,9 @@ impl AgentStore for MemoryBackend {
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
         agent.last_heartbeat = Utc::now();
+        if agent.status == AgentStatus::Disconnected {
+            agent.status = AgentStatus::Online;
+        }
         Ok(())
     }
 
