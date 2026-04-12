@@ -319,7 +319,15 @@ impl TaskStore for SqliteBackend {
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(task.clone())
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, created_by, created_at, updated_at
+                 FROM tasks WHERE id = ?1",
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        stmt.query_row(rusqlite::params![task.id.to_string()], row_to_task)
+            .map_err(|e| Error::Store(e.to_string()))
     }
 
     async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
