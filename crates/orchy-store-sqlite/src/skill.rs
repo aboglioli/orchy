@@ -75,22 +75,26 @@ impl SkillStore for SqliteBackend {
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(ref ns) = filter.namespace {
-            (
+        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+            if let Some(ref ns) = filter.namespace {
+                (
                 "SELECT namespace, name, description, content, written_by, created_at, updated_at
                  FROM skills WHERE namespace = ?1 OR namespace LIKE ?1 || '/%'".to_string(),
                 vec![Box::new(ns.to_string()) as Box<dyn rusqlite::types::ToSql>],
             )
-        } else {
-            (
+            } else {
+                (
                 "SELECT namespace, name, description, content, written_by, created_at, updated_at
                  FROM skills".to_string(),
                 vec![],
             )
-        };
+            };
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
         let skills = stmt
             .query_map(param_refs.as_slice(), row_to_skill)
             .map_err(|e| Error::Store(e.to_string()))?
@@ -123,17 +127,34 @@ fn row_to_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
     let updated_at_str: String = row.get(6)?;
 
     Ok(Skill {
-        namespace: Namespace::try_from(namespace_str)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))))?,
+        namespace: Namespace::try_from(namespace_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            )
+        })?,
         name,
         description,
         content,
         written_by: written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
         created_at: DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
         updated_at: DateTime::parse_from_rfc3339(&updated_at_str)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    6,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
     })
 }

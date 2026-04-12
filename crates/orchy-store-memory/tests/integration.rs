@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use orchy_core::entities::*;
-use orchy_core::store::{AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, TaskStore};
+use orchy_core::store::{
+    AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, TaskStore,
+};
 use orchy_core::value_objects::*;
 use orchy_store_memory::MemoryBackend;
 
@@ -267,7 +269,9 @@ async fn task_list_sorted_by_priority() {
     .await
     .unwrap();
 
-    let tasks = TaskStore::list(&store, TaskFilter::default()).await.unwrap();
+    let tasks = TaskStore::list(&store, TaskFilter::default())
+        .await
+        .unwrap();
     assert_eq!(tasks[0].title, "critical");
     assert_eq!(tasks[1].title, "low");
 }
@@ -648,9 +652,7 @@ async fn context_list_filters() {
     assert_eq!(by_agent.len(), 1);
     assert_eq!(by_agent[0].summary, "a1");
 
-    let by_ns = ContextStore::list(&store, None, &proj_ns)
-        .await
-        .unwrap();
+    let by_ns = ContextStore::list(&store, None, &proj_ns).await.unwrap();
     assert_eq!(by_ns.len(), 1);
 }
 
@@ -848,7 +850,9 @@ async fn skill_delete() {
     .await
     .unwrap();
 
-    SkillStore::delete(&store, &project_ns, "temp").await.unwrap();
+    SkillStore::delete(&store, &project_ns, "temp")
+        .await
+        .unwrap();
 
     let read = SkillStore::read(&store, &project_ns, "temp").await.unwrap();
     assert!(read.is_none());

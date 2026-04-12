@@ -19,7 +19,9 @@ impl MessageTarget {
         }
         if let Some(role) = s.strip_prefix("role:") {
             if role.is_empty() {
-                return Err(Error::InvalidInput("role name must not be empty".to_string()));
+                return Err(Error::InvalidInput(
+                    "role name must not be empty".to_string(),
+                ));
             }
             return Ok(MessageTarget::Role(role.to_string()));
         }

@@ -8,7 +8,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::store::ContextStore;
 use orchy_core::value_objects::{AgentId, Namespace, SnapshotId};
 
-use crate::{bytes_to_embedding, embedding_to_bytes, SqliteBackend};
+use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 
 impl ContextStore for SqliteBackend {
     async fn save(&self, cmd: CreateSnapshot) -> Result<ContextSnapshot> {
@@ -49,11 +49,7 @@ impl ContextStore for SqliteBackend {
         // Insert FTS entry
         conn.execute(
             "INSERT INTO contexts_fts(rowid, namespace, summary) VALUES(?1, ?2, ?3)",
-            rusqlite::params![
-                rowid,
-                snapshot.namespace.to_string(),
-                snapshot.summary,
-            ],
+            rusqlite::params![rowid, snapshot.namespace.to_string(), snapshot.summary,],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -108,8 +104,11 @@ impl ContextStore for SqliteBackend {
         }
         let _ = idx;
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         let snapshots = stmt
             .query_map(param_refs.as_slice(), row_to_context)
@@ -152,8 +151,11 @@ impl ContextStore for SqliteBackend {
         sql.push_str(&format!(" ORDER BY rank LIMIT ?{idx}"));
         params.push(Box::new(limit as i64));
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         let snapshots = stmt
             .query_map(param_refs.as_slice(), row_to_context)
@@ -177,12 +179,19 @@ fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
     let created_at_str: String = row.get(8)?;
 
     Ok(ContextSnapshot {
-        id: SnapshotId::from_str(&id_str)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
-        agent_id: AgentId::from_str(&agent_id_str)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?,
-        namespace: Namespace::try_from(namespace_str)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))))?,
+        id: SnapshotId::from_str(&id_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        agent_id: AgentId::from_str(&agent_id_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        namespace: Namespace::try_from(namespace_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            )
+        })?,
         summary,
         embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
         embedding_model,
@@ -190,7 +199,13 @@ fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
         metadata: serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
         created_at: DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    8,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
     })
 }
 

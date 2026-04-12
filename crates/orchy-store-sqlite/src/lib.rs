@@ -133,24 +133,20 @@ impl SqliteBackend {
         }
 
         if let Some(dims) = embedding_dimensions {
-            conn.execute_batch(
-                &format!(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(
                         rowid INTEGER PRIMARY KEY,
                         embedding FLOAT[{dims}]
                     )"
-                ),
-            )
+            ))
             .map_err(|e| Error::Store(e.to_string()))?;
 
-            conn.execute_batch(
-                &format!(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS contexts_vec USING vec0(
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS contexts_vec USING vec0(
                         rowid INTEGER PRIMARY KEY,
                         embedding FLOAT[{dims}]
                     )"
-                ),
-            )
+            ))
             .map_err(|e| Error::Store(e.to_string()))?;
         }
 
@@ -170,4 +166,3 @@ pub(crate) fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
 }
-

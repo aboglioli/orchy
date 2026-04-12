@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use rmcp::transport::{
-    streamable_http_server::session::local::LocalSessionManager, StreamableHttpService,
+    StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
 };
 use tokio::net::TcpListener;
 use tracing::info;
@@ -30,8 +30,7 @@ async fn main() {
     let config_content = std::fs::read_to_string(&config_path)
         .unwrap_or_else(|e| panic!("failed to read config file {config_path}: {e}"));
 
-    let config: Config =
-        toml::from_str(&config_content).expect("failed to parse config file");
+    let config: Config = toml::from_str(&config_content).expect("failed to parse config file");
 
     let host = config.server.host.clone();
     let port = config.server.port;
@@ -63,7 +62,10 @@ async fn main() {
 
     let router = axum::Router::new()
         .nest_service("/mcp", service)
-        .route("/bootstrap/{namespace}", axum::routing::get(bootstrap_handler))
+        .route(
+            "/bootstrap/{namespace}",
+            axum::routing::get(bootstrap_handler),
+        )
         .with_state(bootstrap_container);
 
     let addr = format!("{host}:{port}");
@@ -73,9 +75,7 @@ async fn main() {
 
     info!(%addr, "orchy server listening");
 
-    axum::serve(listener, router)
-        .await
-        .expect("server error");
+    axum::serve(listener, router).await.expect("server error");
 }
 
 async fn bootstrap_handler(
@@ -92,7 +92,10 @@ async fn bootstrap_handler(
 
     match bootstrap::generate_bootstrap_prompt(&ns, host, port, &container.skill_service).await {
         Ok(prompt) => (
-            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
             prompt,
         )
             .into_response(),

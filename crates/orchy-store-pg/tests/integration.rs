@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use orchy_core::entities::*;
-use orchy_core::store::{AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, TaskStore};
+use orchy_core::store::{
+    AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, TaskStore,
+};
 use orchy_core::value_objects::*;
 use orchy_store_pg::PgBackend;
 
@@ -340,7 +342,9 @@ async fn task_list_sorted_by_priority() {
     .await
     .unwrap();
 
-    let tasks = TaskStore::list(&store, TaskFilter::default()).await.unwrap();
+    let tasks = TaskStore::list(&store, TaskFilter::default())
+        .await
+        .unwrap();
     assert_eq!(tasks[0].title, "critical");
     assert_eq!(tasks[1].title, "low");
 }
@@ -630,13 +634,17 @@ async fn message_send_and_check() {
 
     assert_eq!(msg.status, MessageStatus::Pending);
 
-    let messages = MessageStore::check(&store, &to_agent.id, &project_ns).await.unwrap();
+    let messages = MessageStore::check(&store, &to_agent.id, &project_ns)
+        .await
+        .unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].body, "hello");
     assert_eq!(messages[0].status, MessageStatus::Delivered);
 
     // Second check returns nothing
-    let messages = MessageStore::check(&store, &to_agent.id, &project_ns).await.unwrap();
+    let messages = MessageStore::check(&store, &to_agent.id, &project_ns)
+        .await
+        .unwrap();
     assert!(messages.is_empty());
 }
 
@@ -683,7 +691,9 @@ async fn message_mark_read() {
     .await
     .unwrap();
 
-    MessageStore::check(&store, &to_agent.id, &project_ns).await.unwrap();
+    MessageStore::check(&store, &to_agent.id, &project_ns)
+        .await
+        .unwrap();
     MessageStore::mark_read(&store, &[msg.id]).await.unwrap();
 }
 
@@ -736,7 +746,10 @@ async fn context_save_and_load() {
     .await
     .unwrap();
 
-    let loaded = ContextStore::load(&store, &agent.id).await.unwrap().unwrap();
+    let loaded = ContextStore::load(&store, &agent.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(loaded.summary, "second snapshot");
 }
 
@@ -861,9 +874,16 @@ async fn context_search_by_keyword() {
     .await
     .unwrap();
 
-    let results = ContextStore::search(&store, "authentication", None, &ns("test-project"), None, 10)
-        .await
-        .unwrap();
+    let results = ContextStore::search(
+        &store,
+        "authentication",
+        None,
+        &ns("test-project"),
+        None,
+        10,
+    )
+    .await
+    .unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].summary.contains("authentication"));
 }
@@ -1019,7 +1039,9 @@ async fn skill_delete() {
     .await
     .unwrap();
 
-    SkillStore::delete(&store, &project_ns, "temp").await.unwrap();
+    SkillStore::delete(&store, &project_ns, "temp")
+        .await
+        .unwrap();
 
     let read = SkillStore::read(&store, &project_ns, "temp").await.unwrap();
     assert!(read.is_none());

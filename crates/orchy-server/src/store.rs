@@ -116,11 +116,7 @@ impl Store for StoreBackend {
         delegate!(self, send_message(message))
     }
 
-    async fn check_messages(
-        &self,
-        agent: &AgentId,
-        namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+    async fn check_messages(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         delegate!(self, check_messages(agent, namespace))
     }
 
@@ -152,7 +148,10 @@ impl Store for StoreBackend {
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
-        delegate!(self, search_contexts(query, embedding, namespace, agent_id, limit))
+        delegate!(
+            self,
+            search_contexts(query, embedding, namespace, agent_id, limit)
+        )
     }
 
     async fn write_skill(&self, skill: WriteSkill) -> Result<Skill> {

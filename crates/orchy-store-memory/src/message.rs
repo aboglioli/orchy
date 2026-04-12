@@ -19,13 +19,19 @@ impl MessageStore for MemoryBackend {
             created_at: Utc::now(),
         };
 
-        let mut messages = self.messages.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut messages = self
+            .messages
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         messages.insert(message.id, message.clone());
         Ok(message)
     }
 
     async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
-        let mut messages = self.messages.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut messages = self
+            .messages
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         let mut results = Vec::new();
 
@@ -56,7 +62,10 @@ impl MessageStore for MemoryBackend {
     }
 
     async fn mark_read(&self, ids: &[MessageId]) -> Result<()> {
-        let mut messages = self.messages.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut messages = self
+            .messages
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         for id in ids {
             if let Some(msg) = messages.get_mut(id) {

@@ -12,7 +12,10 @@ impl SkillStore for MemoryBackend {
         let now = Utc::now();
         let key = (cmd.namespace.to_string(), cmd.name.clone());
 
-        let mut store = self.skills.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self
+            .skills
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         let skill = if let Some(existing) = store.get(&key) {
             Skill {
@@ -41,13 +44,19 @@ impl SkillStore for MemoryBackend {
     }
 
     async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
-        let store = self.skills.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self
+            .skills
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let key = (namespace.to_string(), name.to_string());
         Ok(store.get(&key).cloned())
     }
 
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
-        let store = self.skills.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self
+            .skills
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(store
             .values()
@@ -63,7 +72,10 @@ impl SkillStore for MemoryBackend {
     }
 
     async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {
-        let mut store = self.skills.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self
+            .skills
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let key = (namespace.to_string(), name.to_string());
         store.remove(&key);
         Ok(())

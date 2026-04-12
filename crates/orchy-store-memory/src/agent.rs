@@ -21,23 +21,35 @@ impl AgentStore for MemoryBackend {
             metadata: registration.metadata,
         };
 
-        let mut agents = self.agents.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut agents = self
+            .agents
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         agents.insert(agent.id, agent.clone());
         Ok(agent)
     }
 
     async fn get(&self, id: &AgentId) -> Result<Option<Agent>> {
-        let agents = self.agents.read().map_err(|e| Error::Store(e.to_string()))?;
+        let agents = self
+            .agents
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
         Ok(agents.get(id).cloned())
     }
 
     async fn list(&self) -> Result<Vec<Agent>> {
-        let agents = self.agents.read().map_err(|e| Error::Store(e.to_string()))?;
+        let agents = self
+            .agents
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
         Ok(agents.values().cloned().collect())
     }
 
     async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        let mut agents = self.agents.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut agents = self
+            .agents
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let agent = agents
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
@@ -46,7 +58,10 @@ impl AgentStore for MemoryBackend {
     }
 
     async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        let mut agents = self.agents.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut agents = self
+            .agents
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let agent = agents
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
@@ -55,7 +70,10 @@ impl AgentStore for MemoryBackend {
     }
 
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
-        let mut agents = self.agents.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut agents = self
+            .agents
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let agent = agents
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
@@ -64,7 +82,10 @@ impl AgentStore for MemoryBackend {
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
-        let agents = self.agents.read().map_err(|e| Error::Store(e.to_string()))?;
+        let agents = self
+            .agents
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let now = Utc::now();
         let timeout = chrono::Duration::seconds(timeout_secs as i64);
 

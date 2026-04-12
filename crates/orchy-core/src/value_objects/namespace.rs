@@ -23,7 +23,9 @@ impl Namespace {
             }
             for ch in part.chars() {
                 if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
-                    return Err(format!("invalid character '{ch}' in namespace part '{part}'"));
+                    return Err(format!(
+                        "invalid character '{ch}' in namespace part '{part}'"
+                    ));
                 }
             }
         }
@@ -118,9 +120,18 @@ mod tests {
 
     #[test]
     fn empty_part_fails() {
-        assert!(Namespace::try_from("my//app").is_err(), "double slash should fail");
-        assert!(Namespace::try_from("/myapp").is_err(), "leading slash should fail");
-        assert!(Namespace::try_from("myapp/").is_err(), "trailing slash should fail");
+        assert!(
+            Namespace::try_from("my//app").is_err(),
+            "double slash should fail"
+        );
+        assert!(
+            Namespace::try_from("/myapp").is_err(),
+            "leading slash should fail"
+        );
+        assert!(
+            Namespace::try_from("myapp/").is_err(),
+            "trailing slash should fail"
+        );
     }
 
     #[test]

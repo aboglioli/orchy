@@ -7,7 +7,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::store::MemoryStore;
 use orchy_core::value_objects::{AgentId, Namespace, Version};
 
-use crate::{bytes_to_embedding, embedding_to_bytes, SqliteBackend};
+use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 
 impl MemoryStore for SqliteBackend {
     async fn write(&self, cmd: WriteMemory) -> Result<MemoryEntry> {
@@ -35,7 +35,16 @@ impl MemoryStore for SqliteBackend {
             .optional()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        let entry = if let Some((rowid, version, existing_emb, existing_model, existing_dims, existing_writer, created_at_str)) = existing {
+        let entry = if let Some((
+            rowid,
+            version,
+            existing_emb,
+            existing_model,
+            existing_dims,
+            existing_writer,
+            created_at_str,
+        )) = existing
+        {
             let current_version = Version::from(version as u64);
 
             if let Some(expected) = cmd.expected_version {
@@ -48,10 +57,14 @@ impl MemoryStore for SqliteBackend {
             }
 
             let new_version = current_version.next();
-            let embedding = cmd.embedding.or_else(|| existing_emb.as_ref().map(|b| bytes_to_embedding(b)));
+            let embedding = cmd
+                .embedding
+                .or_else(|| existing_emb.as_ref().map(|b| bytes_to_embedding(b)));
             let embedding_model = cmd.embedding_model.or(existing_model);
             let embedding_dimensions = cmd.embedding_dimensions.or(existing_dims);
-            let written_by = cmd.written_by.or_else(|| existing_writer.and_then(|s| AgentId::from_str(&s).ok()));
+            let written_by = cmd
+                .written_by
+                .or_else(|| existing_writer.and_then(|s| AgentId::from_str(&s).ok()));
             let embedding_bytes = embedding.as_ref().map(|e| embedding_to_bytes(e));
 
             // Delete old FTS entry
@@ -88,7 +101,10 @@ impl MemoryStore for SqliteBackend {
             // Update vec table if embedding provided
             if let Some(ref emb_bytes) = embedding_bytes {
                 // Try to update vec table; ignore errors if table doesn't exist
-                let _ = conn.execute("DELETE FROM memory_vec WHERE rowid = ?1", rusqlite::params![rowid]);
+                let _ = conn.execute(
+                    "DELETE FROM memory_vec WHERE rowid = ?1",
+                    rusqlite::params![rowid],
+                );
                 let _ = conn.execute(
                     "INSERT INTO memory_vec(rowid, embedding) VALUES(?1, ?2)",
                     rusqlite::params![rowid, emb_bytes],
@@ -195,7 +211,9 @@ impl MemoryStore for SqliteBackend {
     async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(ref ns) = filter.namespace {
+        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(ref ns) =
+            filter.namespace
+        {
             (
                 "SELECT namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at
                  FROM memory WHERE namespace = ?1 OR namespace LIKE ?1 || '/%'".to_string(),
@@ -209,8 +227,11 @@ impl MemoryStore for SqliteBackend {
             )
         };
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
         let entries = stmt
             .query_map(param_refs.as_slice(), row_to_memory)
             .map_err(|e| Error::Store(e.to_string()))?
@@ -253,8 +274,11 @@ impl MemoryStore for SqliteBackend {
         sql.push_str(&format!(" ORDER BY rank LIMIT ?{idx}"));
         params.push(Box::new(limit as i64));
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         let entries = stmt
             .query_map(param_refs.as_slice(), row_to_memory)
@@ -286,7 +310,10 @@ impl MemoryStore for SqliteBackend {
             );
 
             // Delete vec entry
-            let _ = conn.execute("DELETE FROM memory_vec WHERE rowid = ?1", rusqlite::params![rowid]);
+            let _ = conn.execute(
+                "DELETE FROM memory_vec WHERE rowid = ?1",
+                rusqlite::params![rowid],
+            );
         }
 
         conn.execute(
@@ -312,8 +339,13 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
     let updated_at_str: String = row.get(9)?;
 
     Ok(MemoryEntry {
-        namespace: Namespace::try_from(namespace_str)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))))?,
+        namespace: Namespace::try_from(namespace_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            )
+        })?,
         key,
         value,
         version: Version::from(version as u64),
@@ -323,10 +355,22 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
         written_by: written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
         created_at: DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    8,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
         updated_at: DateTime::parse_from_rfc3339(&updated_at_str)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    9,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
     })
 }
 

@@ -51,9 +51,7 @@ impl MemoryStore for PgBackend {
 
             let embedding = cmd.embedding.or(existing_embedding);
             let embedding_model = cmd.embedding_model.or(existing_model);
-            let embedding_dimensions = cmd
-                .embedding_dimensions
-                .or(existing_dims.map(|d| d as u32));
+            let embedding_dimensions = cmd.embedding_dimensions.or(existing_dims.map(|d| d as u32));
             let written_by = cmd
                 .written_by
                 .or_else(|| existing_writer.map(AgentId::from_uuid));
@@ -257,7 +255,9 @@ fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {
     if trimmed.is_empty() {
         return None;
     }
-    let result: std::result::Result<Vec<f32>, _> =
-        trimmed.split(',').map(|v| v.trim().parse::<f32>()).collect();
+    let result: std::result::Result<Vec<f32>, _> = trimmed
+        .split(',')
+        .map(|v| v.trim().parse::<f32>())
+        .collect();
     result.ok()
 }

@@ -8,7 +8,7 @@ use rmcp::model::{
 
 type ListPromptsResult = rmcp::model::ListPromptsResult;
 use rmcp::service::RequestContext;
-use rmcp::{ErrorData, RoleServer, schemars, tool, tool_router, ServerHandler};
+use rmcp::{ErrorData, RoleServer, ServerHandler, schemars, tool, tool_router};
 use serde::Deserialize;
 
 use orchy_core::entities::{
@@ -17,7 +17,7 @@ use orchy_core::entities::{
 };
 use orchy_core::value_objects::{MessageId, MessageTarget, Priority, TaskId, Version};
 
-use super::handler::{parse_namespace, OrchyHandler};
+use super::handler::{OrchyHandler, parse_namespace};
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct RegisterAgentParams {
@@ -202,7 +202,8 @@ struct GetBootstrapPromptParams {
 }
 
 fn parse_task_id(s: &str) -> Result<TaskId, String> {
-    s.parse::<TaskId>().map_err(|e| format!("invalid task_id: {e}"))
+    s.parse::<TaskId>()
+        .map_err(|e| format!("invalid task_id: {e}"))
 }
 
 fn parse_agent_id(s: &str) -> Result<orchy_core::value_objects::AgentId, String> {
@@ -211,7 +212,8 @@ fn parse_agent_id(s: &str) -> Result<orchy_core::value_objects::AgentId, String>
 }
 
 fn parse_message_id(s: &str) -> Result<MessageId, String> {
-    s.parse::<MessageId>().map_err(|e| format!("invalid message_id: {e}"))
+    s.parse::<MessageId>()
+        .map_err(|e| format!("invalid message_id: {e}"))
 }
 
 fn to_json<T: serde::Serialize>(val: &T) -> String {
@@ -220,14 +222,13 @@ fn to_json<T: serde::Serialize>(val: &T) -> String {
 
 #[tool_router]
 impl OrchyHandler {
-    #[tool(description = "Register this session as an agent within a project namespace. \
+    #[tool(
+        description = "Register this session as an agent within a project namespace. \
         The namespace must start with the project identifier (e.g. 'my-project' or \
         'my-project/backend'). All subsequent tool calls will be scoped to this project. \
-        Sub-scopes can be provided per call, but the project prefix is always enforced.")]
-    async fn register_agent(
-        &self,
-        Parameters(params): Parameters<RegisterAgentParams>,
-    ) -> String {
+        Sub-scopes can be provided per call, but the project prefix is always enforced."
+    )]
+    async fn register_agent(&self, Parameters(params): Parameters<RegisterAgentParams>) -> String {
         let namespace = match parse_namespace(&params.namespace) {
             Ok(ns) => ns,
             Err(e) => return e,
@@ -270,8 +271,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Create a new task. Namespace defaults to session namespace; \
-        if provided, the project prefix must match.")]
+    #[tool(
+        description = "Create a new task. Namespace defaults to session namespace; \
+        if provided, the project prefix must match."
+    )]
     async fn post_task(&self, Parameters(params): Parameters<PostTaskParams>) -> String {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -313,8 +316,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Get the next available task for the session agent, optionally filtered \
-        by namespace (defaults to session namespace) and role.")]
+    #[tool(
+        description = "Get the next available task for the session agent, optionally filtered \
+        by namespace (defaults to session namespace) and role."
+    )]
     async fn get_next_task(&self, Parameters(params): Parameters<GetNextTaskParams>) -> String {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
@@ -328,12 +333,10 @@ impl OrchyHandler {
 
         let roles = match params.role {
             Some(r) => vec![r],
-            None => {
-                match self.container.agent_service.get(&agent_id).await {
-                    Ok(agent) => agent.roles,
-                    Err(e) => return format!("error fetching agent roles: {e}"),
-                }
-            }
+            None => match self.container.agent_service.get(&agent_id).await {
+                Ok(agent) => agent.roles,
+                Err(e) => return format!("error fetching agent roles: {e}"),
+            },
         };
 
         match self
@@ -348,8 +351,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List tasks, optionally filtered by namespace (defaults to session \
-        namespace) and status.")]
+    #[tool(
+        description = "List tasks, optionally filtered by namespace (defaults to session \
+        namespace) and status."
+    )]
     async fn list_tasks(&self, Parameters(params): Parameters<ListTasksParams>) -> String {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -436,8 +441,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Write a key-value entry to shared memory. Namespace defaults to \
-        session namespace; if provided, the project prefix must match.")]
+    #[tool(
+        description = "Write a key-value entry to shared memory. Namespace defaults to \
+        session namespace; if provided, the project prefix must match."
+    )]
     async fn write_memory(&self, Parameters(params): Parameters<WriteMemoryParams>) -> String {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -468,7 +475,12 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        match self.container.memory_service.read(&namespace, &params.key).await {
+        match self
+            .container
+            .memory_service
+            .read(&namespace, &params.key)
+            .await
+        {
             Ok(Some(entry)) => to_json(&entry),
             Ok(None) => "null".to_string(),
             Err(e) => format!("error: {e}"),
@@ -482,7 +494,9 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        let filter = MemoryFilter { namespace: Some(namespace) };
+        let filter = MemoryFilter {
+            namespace: Some(namespace),
+        };
 
         match self.container.memory_service.list(filter).await {
             Ok(entries) => to_json(&entries),
@@ -490,8 +504,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Search memory entries by semantic similarity. Namespace defaults to \
-        session namespace.")]
+    #[tool(
+        description = "Search memory entries by semantic similarity. Namespace defaults to \
+        session namespace."
+    )]
     async fn search_memory(&self, Parameters(params): Parameters<SearchMemoryParams>) -> String {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -518,14 +534,21 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        match self.container.memory_service.delete(&namespace, &params.key).await {
+        match self
+            .container
+            .memory_service
+            .delete(&namespace, &params.key)
+            .await
+        {
             Ok(()) => "ok".to_string(),
             Err(e) => format!("error: {e}"),
         }
     }
 
-    #[tool(description = "Send a message to another agent (by ID), a role (role:name), or \
-        broadcast. Namespace defaults to session namespace.")]
+    #[tool(
+        description = "Send a message to another agent (by ID), a role (role:name), or \
+        broadcast. Namespace defaults to session namespace."
+    )]
     async fn send_message(&self, Parameters(params): Parameters<SendMessageParams>) -> String {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
@@ -555,8 +578,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Check the mailbox for pending messages. Namespace defaults to session \
-        namespace.")]
+    #[tool(
+        description = "Check the mailbox for pending messages. Namespace defaults to session \
+        namespace."
+    )]
     async fn check_mailbox(&self, Parameters(params): Parameters<CheckMailboxParams>) -> String {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
@@ -597,8 +622,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Save a context snapshot for the session agent. Namespace defaults to \
-        session namespace.")]
+    #[tool(
+        description = "Save a context snapshot for the session agent. Namespace defaults to \
+        session namespace."
+    )]
     async fn save_context(&self, Parameters(params): Parameters<SaveContextParams>) -> String {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
@@ -634,8 +661,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Load the most recent context snapshot for an agent (defaults to \
-        session agent).")]
+    #[tool(
+        description = "Load the most recent context snapshot for an agent (defaults to \
+        session agent)."
+    )]
     async fn load_context(&self, Parameters(params): Parameters<LoadContextParams>) -> String {
         let agent_id = match params.agent_id.as_deref() {
             Some(id_str) => match parse_agent_id(id_str) {
@@ -679,8 +708,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Search context snapshots by semantic similarity. Namespace defaults \
-        to session namespace.")]
+    #[tool(
+        description = "Search context snapshots by semantic similarity. Namespace defaults \
+        to session namespace."
+    )]
     async fn search_contexts(
         &self,
         Parameters(params): Parameters<SearchContextsParams>,
@@ -709,9 +740,11 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Write a project skill — shared instructions/conventions that all \
+    #[tool(
+        description = "Write a project skill — shared instructions/conventions that all \
         agents in this project will receive. Skills are identified by namespace + name. \
-        Writing to an existing name updates it. Namespace defaults to session namespace.")]
+        Writing to an existing name updates it. Namespace defaults to session namespace."
+    )]
     async fn write_skill(&self, Parameters(params): Parameters<WriteSkillParams>) -> String {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -739,16 +772,23 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        match self.container.skill_service.read(&namespace, &params.name).await {
+        match self
+            .container
+            .skill_service
+            .read(&namespace, &params.name)
+            .await
+        {
             Ok(Some(skill)) => to_json(&skill),
             Ok(None) => "null".to_string(),
             Err(e) => format!("error: {e}"),
         }
     }
 
-    #[tool(description = "List skills for the project. If inherited=true, includes skills \
+    #[tool(
+        description = "List skills for the project. If inherited=true, includes skills \
         from parent namespaces with more specific ones taking precedence. Namespace defaults \
-        to session namespace.")]
+        to session namespace."
+    )]
     async fn list_skills(&self, Parameters(params): Parameters<ListSkillsParams>) -> String {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -756,11 +796,16 @@ impl OrchyHandler {
         };
 
         let result = if params.inherited.unwrap_or(false) {
-            self.container.skill_service.list_with_inherited(&namespace).await
+            self.container
+                .skill_service
+                .list_with_inherited(&namespace)
+                .await
         } else {
             self.container
                 .skill_service
-                .list(SkillFilter { namespace: Some(namespace) })
+                .list(SkillFilter {
+                    namespace: Some(namespace),
+                })
                 .await
         };
 
@@ -777,16 +822,23 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        match self.container.skill_service.delete(&namespace, &params.name).await {
+        match self
+            .container
+            .skill_service
+            .delete(&namespace, &params.name)
+            .await
+        {
             Ok(()) => "ok".to_string(),
             Err(e) => format!("error: {e}"),
         }
     }
 
-    #[tool(description = "Generate a full bootstrap prompt for this project. Contains all \
+    #[tool(
+        description = "Generate a full bootstrap prompt for this project. Contains all \
         orchy instructions, coordination patterns, and project skills in a single text block. \
         Useful for agents that don't support MCP server instructions natively — copy-paste \
-        this into their system prompt. Also available as HTTP GET /bootstrap/<namespace>.")]
+        this into their system prompt. Also available as HTTP GET /bootstrap/<namespace>."
+    )]
     async fn get_bootstrap_prompt(
         &self,
         Parameters(params): Parameters<GetBootstrapPromptParams>,

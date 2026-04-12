@@ -5,14 +5,17 @@ use orchy_core::error::{Error, Result};
 use orchy_core::store::MemoryStore;
 use orchy_core::value_objects::{Namespace, Version};
 
-use crate::{cosine_similarity, MemoryBackend};
+use crate::{MemoryBackend, cosine_similarity};
 
 impl MemoryStore for MemoryBackend {
     async fn write(&self, cmd: WriteMemory) -> Result<MemoryEntry> {
         let now = Utc::now();
         let key = (cmd.namespace.to_string(), cmd.key.clone());
 
-        let mut store = self.memory.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self
+            .memory
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         let entry = if let Some(existing) = store.get(&key) {
             // Update existing entry
@@ -31,10 +34,10 @@ impl MemoryStore for MemoryBackend {
                 value: cmd.value,
                 version: existing.version.next(),
                 embedding: cmd.embedding.or_else(|| existing.embedding.clone()),
-                embedding_model: cmd.embedding_model.or_else(|| existing.embedding_model.clone()),
-                embedding_dimensions: cmd
-                    .embedding_dimensions
-                    .or(existing.embedding_dimensions),
+                embedding_model: cmd
+                    .embedding_model
+                    .or_else(|| existing.embedding_model.clone()),
+                embedding_dimensions: cmd.embedding_dimensions.or(existing.embedding_dimensions),
                 written_by: cmd.written_by.or(existing.written_by),
                 created_at: existing.created_at,
                 updated_at: now,
@@ -67,13 +70,19 @@ impl MemoryStore for MemoryBackend {
     }
 
     async fn read(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
-        let store = self.memory.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self
+            .memory
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let composite = (namespace.to_string(), key.to_string());
         Ok(store.get(&composite).cloned())
     }
 
     async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-        let store = self.memory.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self
+            .memory
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         let results: Vec<MemoryEntry> = store
             .values()
@@ -97,7 +106,10 @@ impl MemoryStore for MemoryBackend {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<MemoryEntry>> {
-        let store = self.memory.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self
+            .memory
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         let mut scored: Vec<(f32, &MemoryEntry)> = store
             .values()
@@ -113,7 +125,10 @@ impl MemoryStore for MemoryBackend {
                 let text_match = entry.value.contains(query);
 
                 let sim = embedding.and_then(|emb| {
-                    entry.embedding.as_ref().map(|e_emb| cosine_similarity(emb, e_emb))
+                    entry
+                        .embedding
+                        .as_ref()
+                        .map(|e_emb| cosine_similarity(emb, e_emb))
                 });
 
                 // Include if text matches or has positive similarity
@@ -133,7 +148,10 @@ impl MemoryStore for MemoryBackend {
     }
 
     async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()> {
-        let mut store = self.memory.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self
+            .memory
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let composite = (namespace.to_string(), key.to_string());
         store.remove(&composite);
         Ok(())

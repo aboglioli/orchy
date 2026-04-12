@@ -11,7 +11,6 @@ use orchy_core::value_objects::{AgentId, AgentStatus, MessageId, Namespace, Task
 use crate::MemoryBackend;
 
 impl Store for MemoryBackend {
-
     async fn create_task(&self, task: CreateTask) -> Result<Task> {
         TaskStore::create(self, task).await
     }
@@ -44,7 +43,6 @@ impl Store for MemoryBackend {
         TaskStore::update_status(self, id, status).await
     }
 
-
     async fn write_memory(&self, entry: WriteMemory) -> Result<MemoryEntry> {
         MemoryStore::write(self, entry).await
     }
@@ -70,7 +68,6 @@ impl Store for MemoryBackend {
     async fn delete_memory(&self, namespace: &Namespace, key: &str) -> Result<()> {
         MemoryStore::delete(self, namespace, key).await
     }
-
 
     async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
         AgentStore::register(self, registration).await
@@ -100,23 +97,17 @@ impl Store for MemoryBackend {
         AgentStore::find_timed_out(self, timeout_secs).await
     }
 
-
     async fn send_message(&self, message: CreateMessage) -> Result<Message> {
         MessageStore::send(self, message).await
     }
 
-    async fn check_messages(
-        &self,
-        agent: &AgentId,
-        namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+    async fn check_messages(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         MessageStore::check(self, agent, namespace).await
     }
 
     async fn mark_messages_read(&self, ids: &[MessageId]) -> Result<()> {
         MessageStore::mark_read(self, ids).await
     }
-
 
     async fn save_context(&self, snapshot: CreateSnapshot) -> Result<ContextSnapshot> {
         ContextStore::save(self, snapshot).await
@@ -144,7 +135,6 @@ impl Store for MemoryBackend {
     ) -> Result<Vec<ContextSnapshot>> {
         ContextStore::search(self, query, embedding, namespace, agent_id, limit).await
     }
-
 
     async fn write_skill(&self, skill: WriteSkill) -> Result<Skill> {
         SkillStore::write(self, skill).await
