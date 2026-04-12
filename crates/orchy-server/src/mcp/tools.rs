@@ -7,11 +7,9 @@ use serde::Deserialize;
 use orchy_core::entities::{
     CreateMessage, CreateSnapshot, CreateTask, MemoryFilter, RegisterAgent, TaskFilter, WriteMemory,
 };
-use orchy_core::value_objects::{
-    AgentId, MessageId, MessageTarget, Namespace, Priority, TaskId, Version,
-};
+use orchy_core::value_objects::{MessageId, MessageTarget, Priority, TaskId, Version};
 
-use super::handler::OrchyHandler;
+use super::handler::{parse_namespace, OrchyHandler};
 
 // ---------------------------------------------------------------------------
 // Parameter structs
@@ -19,9 +17,12 @@ use super::handler::OrchyHandler;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct RegisterAgentParams {
+    /// Project namespace (first segment is the project identifier, e.g. "my-project"
+    /// or "my-project/backend"). All tools in this session will be scoped to this
+    /// project. Sub-scopes can be added later per tool call.
+    namespace: String,
     roles: Vec<String>,
     description: String,
-    namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -29,7 +30,9 @@ struct ListAgentsParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct PostTaskParams {
-    namespace: String,
+    /// Namespace for the task. Defaults to session namespace. If provided, the first
+    /// segment (project) must match the session's project.
+    namespace: Option<String>,
     title: String,
     description: String,
     priority: Option<String>,
@@ -39,12 +42,14 @@ struct PostTaskParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct GetNextTaskParams {
+    /// Namespace filter. Defaults to session namespace.
     namespace: Option<String>,
     role: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListTasksParams {
+    /// Namespace filter. Defaults to session namespace.
     namespace: Option<String>,
     status: Option<String>,
 }
@@ -68,7 +73,8 @@ struct FailTaskParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct WriteMemoryParams {
-    namespace: String,
+    /// Namespace for the entry. Defaults to session namespace.
+    namespace: Option<String>,
     key: String,
     value: String,
     version: Option<u64>,
@@ -76,25 +82,29 @@ struct WriteMemoryParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ReadMemoryParams {
-    namespace: String,
+    /// Namespace for the entry. Defaults to session namespace.
+    namespace: Option<String>,
     key: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListMemoryParams {
+    /// Namespace filter. Defaults to session namespace.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct SearchMemoryParams {
     query: String,
+    /// Namespace filter. Defaults to session namespace.
     namespace: Option<String>,
     limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct DeleteMemoryParams {
-    namespace: String,
+    /// Namespace for the entry. Defaults to session namespace.
+    namespace: Option<String>,
     key: String,
 }
 
@@ -102,11 +112,13 @@ struct DeleteMemoryParams {
 struct SendMessageParams {
     to: String,
     body: String,
+    /// Namespace for the message. Defaults to session namespace.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct CheckMailboxParams {
+    /// Namespace filter. Defaults to session namespace.
     namespace: Option<String>,
 }
 
@@ -118,6 +130,7 @@ struct MarkReadParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct SaveContextParams {
     summary: String,
+    /// Namespace for the snapshot. Defaults to session namespace.
     namespace: Option<String>,
     /// JSON string of metadata key-value pairs
     metadata: Option<String>,
@@ -131,12 +144,14 @@ struct LoadContextParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListContextsParams {
     agent_id: Option<String>,
+    /// Namespace filter. Defaults to session namespace.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct SearchContextsParams {
     query: String,
+    /// Namespace filter. Defaults to session namespace.
     namespace: Option<String>,
     agent_id: Option<String>,
     limit: Option<u32>,
@@ -146,16 +161,13 @@ struct SearchContextsParams {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn parse_namespace(s: &str) -> Result<Namespace, String> {
-    Namespace::try_from(s.to_string())
-}
-
 fn parse_task_id(s: &str) -> Result<TaskId, String> {
     s.parse::<TaskId>().map_err(|e| format!("invalid task_id: {e}"))
 }
 
-fn parse_agent_id(s: &str) -> Result<AgentId, String> {
-    s.parse::<AgentId>().map_err(|e| format!("invalid agent_id: {e}"))
+fn parse_agent_id(s: &str) -> Result<orchy_core::value_objects::AgentId, String> {
+    s.parse::<orchy_core::value_objects::AgentId>()
+        .map_err(|e| format!("invalid agent_id: {e}"))
 }
 
 fn parse_message_id(s: &str) -> Result<MessageId, String> {
@@ -174,19 +186,21 @@ fn to_json<T: serde::Serialize>(val: &T) -> String {
 impl OrchyHandler {
     // === Agent tools ===
 
-    #[tool(description = "Register this session as an agent. Returns the assigned agent ID.")]
+    #[tool(description = "Register this session as an agent within a project namespace. \
+        The namespace must start with the project identifier (e.g. 'my-project' or \
+        'my-project/backend'). All subsequent tool calls will be scoped to this project. \
+        Sub-scopes can be provided per call, but the project prefix is always enforced.")]
     async fn register_agent(
         &self,
         Parameters(params): Parameters<RegisterAgentParams>,
     ) -> String {
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match parse_namespace(&params.namespace) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         let cmd = RegisterAgent {
-            namespace,
+            namespace: namespace.clone(),
             roles: params.roles,
             description: params.description,
             metadata: HashMap::new(),
@@ -194,7 +208,7 @@ impl OrchyHandler {
 
         match self.container.agent_service.register(cmd).await {
             Ok(agent) => {
-                self.set_session_agent(agent.id);
+                self.set_session(agent.id, namespace);
                 to_json(&agent)
             }
             Err(e) => format!("error: {e}"),
@@ -211,8 +225,8 @@ impl OrchyHandler {
 
     #[tool(description = "Send a heartbeat for the session agent to signal liveness.")]
     async fn heartbeat(&self) -> String {
-        let agent_id = match self.require_session_agent() {
-            Ok(id) => id,
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
             Err(e) => return e,
         };
 
@@ -224,9 +238,10 @@ impl OrchyHandler {
 
     // === Task tools ===
 
-    #[tool(description = "Create a new task in the given namespace.")]
+    #[tool(description = "Create a new task. Namespace defaults to session namespace; \
+        if provided, the project prefix must match.")]
     async fn post_task(&self, Parameters(params): Parameters<PostTaskParams>) -> String {
-        let namespace = match parse_namespace(&params.namespace) {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return e,
         };
@@ -266,25 +281,22 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Get the next available task for the session agent, optionally filtered by namespace and role.")]
+    #[tool(description = "Get the next available task for the session agent, optionally filtered \
+        by namespace (defaults to session namespace) and role.")]
     async fn get_next_task(&self, Parameters(params): Parameters<GetNextTaskParams>) -> String {
-        let agent_id = match self.require_session_agent() {
-            Ok(id) => id,
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
             Err(e) => return e,
         };
 
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
-        // If a role filter is specified, search with just that role.
-        // Otherwise use all roles the agent registered with (unavailable here, pass empty).
         let roles = match params.role {
             Some(r) => vec![r],
             None => {
-                // Fetch agent to get roles
                 match self.container.agent_service.get(&agent_id).await {
                     Ok(agent) => agent.roles,
                     Err(e) => return format!("error fetching agent roles: {e}"),
@@ -295,7 +307,7 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .get_next(&agent_id, &roles, namespace)
+            .get_next(&agent_id, &roles, Some(namespace))
             .await
         {
             Ok(Some(task)) => to_json(&task),
@@ -304,12 +316,12 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List tasks, optionally filtered by namespace and status.")]
+    #[tool(description = "List tasks, optionally filtered by namespace (defaults to session \
+        namespace) and status.")]
     async fn list_tasks(&self, Parameters(params): Parameters<ListTasksParams>) -> String {
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         let status = params.status.as_deref().map(|s| match s {
@@ -322,13 +334,12 @@ impl OrchyHandler {
             _ => None,
         });
 
-        // If status string was provided but didn't match, it's an error
         if params.status.is_some() && status == Some(None) {
             return "invalid status value".to_string();
         }
 
         let filter = TaskFilter {
-            namespace,
+            namespace: Some(namespace),
             status: status.flatten(),
             ..Default::default()
         };
@@ -341,8 +352,8 @@ impl OrchyHandler {
 
     #[tool(description = "Claim a specific task for the session agent.")]
     async fn claim_task(&self, Parameters(params): Parameters<ClaimTaskParams>) -> String {
-        let agent_id = match self.require_session_agent() {
-            Ok(id) => id,
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
             Err(e) => return e,
         };
 
@@ -395,9 +406,10 @@ impl OrchyHandler {
 
     // === Memory tools ===
 
-    #[tool(description = "Write a key-value entry to shared memory in the given namespace.")]
+    #[tool(description = "Write a key-value entry to shared memory. Namespace defaults to \
+        session namespace; if provided, the project prefix must match.")]
     async fn write_memory(&self, Parameters(params): Parameters<WriteMemoryParams>) -> String {
-        let namespace = match parse_namespace(&params.namespace) {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return e,
         };
@@ -419,9 +431,9 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Read a memory entry by namespace and key.")]
+    #[tool(description = "Read a memory entry by key. Namespace defaults to session namespace.")]
     async fn read_memory(&self, Parameters(params): Parameters<ReadMemoryParams>) -> String {
-        let namespace = match parse_namespace(&params.namespace) {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return e,
         };
@@ -433,15 +445,14 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List memory entries, optionally filtered by namespace.")]
+    #[tool(description = "List memory entries. Namespace defaults to session namespace.")]
     async fn list_memory(&self, Parameters(params): Parameters<ListMemoryParams>) -> String {
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
-        let filter = MemoryFilter { namespace };
+        let filter = MemoryFilter { namespace: Some(namespace) };
 
         match self.container.memory_service.list(filter).await {
             Ok(entries) => to_json(&entries),
@@ -449,12 +460,12 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Search memory entries by semantic similarity. Requires embeddings to be configured.")]
+    #[tool(description = "Search memory entries by semantic similarity. Namespace defaults to \
+        session namespace.")]
     async fn search_memory(&self, Parameters(params): Parameters<SearchMemoryParams>) -> String {
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         let limit = params.limit.unwrap_or(10) as usize;
@@ -462,7 +473,7 @@ impl OrchyHandler {
         match self
             .container
             .memory_service
-            .search(&params.query, namespace.as_ref(), limit)
+            .search(&params.query, Some(&namespace), limit)
             .await
         {
             Ok(entries) => to_json(&entries),
@@ -470,9 +481,9 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Delete a memory entry by namespace and key.")]
+    #[tool(description = "Delete a memory entry by key. Namespace defaults to session namespace.")]
     async fn delete_memory(&self, Parameters(params): Parameters<DeleteMemoryParams>) -> String {
-        let namespace = match parse_namespace(&params.namespace) {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return e,
         };
@@ -485,10 +496,11 @@ impl OrchyHandler {
 
     // === Message tools ===
 
-    #[tool(description = "Send a message to another agent (by ID), a role (role:name), or broadcast.")]
+    #[tool(description = "Send a message to another agent (by ID), a role (role:name), or \
+        broadcast. Namespace defaults to session namespace.")]
     async fn send_message(&self, Parameters(params): Parameters<SendMessageParams>) -> String {
-        let agent_id = match self.require_session_agent() {
-            Ok(id) => id,
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
             Err(e) => return e,
         };
 
@@ -497,10 +509,9 @@ impl OrchyHandler {
             Err(e) => return format!("invalid target: {e}"),
         };
 
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         let cmd = CreateMessage {
@@ -516,23 +527,23 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Check the mailbox for pending messages for the session agent.")]
+    #[tool(description = "Check the mailbox for pending messages. Namespace defaults to session \
+        namespace.")]
     async fn check_mailbox(&self, Parameters(params): Parameters<CheckMailboxParams>) -> String {
-        let agent_id = match self.require_session_agent() {
-            Ok(id) => id,
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
             Err(e) => return e,
         };
 
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         match self
             .container
             .message_service
-            .check(&agent_id, namespace.as_ref())
+            .check(&agent_id, &namespace)
             .await
         {
             Ok(messages) => to_json(&messages),
@@ -560,17 +571,17 @@ impl OrchyHandler {
 
     // === Context tools ===
 
-    #[tool(description = "Save a context snapshot for the session agent with a summary.")]
+    #[tool(description = "Save a context snapshot for the session agent. Namespace defaults to \
+        session namespace.")]
     async fn save_context(&self, Parameters(params): Parameters<SaveContextParams>) -> String {
-        let agent_id = match self.require_session_agent() {
-            Ok(id) => id,
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
             Err(e) => return e,
         };
 
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         let metadata: HashMap<String, String> = match params.metadata.as_deref() {
@@ -597,15 +608,16 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Load the most recent context snapshot for an agent (defaults to session agent).")]
+    #[tool(description = "Load the most recent context snapshot for an agent (defaults to \
+        session agent).")]
     async fn load_context(&self, Parameters(params): Parameters<LoadContextParams>) -> String {
         let agent_id = match params.agent_id.as_deref() {
             Some(id_str) => match parse_agent_id(id_str) {
                 Ok(id) => id,
                 Err(e) => return e,
             },
-            None => match self.require_session_agent() {
-                Ok(id) => id,
+            None => match self.require_session() {
+                Ok((id, _)) => id,
                 Err(e) => return e,
             },
         };
@@ -617,7 +629,7 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List context snapshots, optionally filtered by agent and namespace.")]
+    #[tool(description = "List context snapshots. Namespace defaults to session namespace.")]
     async fn list_contexts(&self, Parameters(params): Parameters<ListContextsParams>) -> String {
         let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
             Some(Ok(id)) => Some(id),
@@ -625,16 +637,15 @@ impl OrchyHandler {
             None => None,
         };
 
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         match self
             .container
             .context_service
-            .list(agent_id.as_ref(), namespace.as_ref())
+            .list(agent_id.as_ref(), &namespace)
             .await
         {
             Ok(snapshots) => to_json(&snapshots),
@@ -642,15 +653,15 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Search context snapshots by semantic similarity.")]
+    #[tool(description = "Search context snapshots by semantic similarity. Namespace defaults \
+        to session namespace.")]
     async fn search_contexts(
         &self,
         Parameters(params): Parameters<SearchContextsParams>,
     ) -> String {
-        let namespace = match params.namespace.as_deref().map(parse_namespace) {
-            Some(Ok(ns)) => Some(ns),
-            Some(Err(e)) => return e,
-            None => None,
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
         };
 
         let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
@@ -664,7 +675,7 @@ impl OrchyHandler {
         match self
             .container
             .context_service
-            .search(&params.query, namespace.as_ref(), agent_id.as_ref(), limit)
+            .search(&params.query, &namespace, agent_id.as_ref(), limit)
             .await
         {
             Ok(snapshots) => to_json(&snapshots),
@@ -673,5 +684,19 @@ impl OrchyHandler {
     }
 }
 
-#[tool_handler(instructions = "orchy - multi-agent orchestration server")]
+#[tool_handler(instructions = "orchy - multi-agent coordination server.\n\n\
+    ## Namespace convention\n\n\
+    Every session is scoped to a **project namespace**. The first segment of the \
+    namespace is always the project identifier (e.g. `my-project`). You can add \
+    sub-scopes with slashes (e.g. `my-project/backend/auth`).\n\n\
+    When you call `register_agent`, you set the project namespace for the session. \
+    All subsequent tool calls default to this namespace. You can override it per \
+    call by passing a `namespace` parameter, but the project prefix must always \
+    match.\n\n\
+    Examples:\n\
+    - Session registered with `my-project` → can use `my-project`, `my-project/api`, \
+      `my-project/frontend/components`\n\
+    - Session registered with `my-project` → CANNOT use `other-project` or `other-project/api`\n\n\
+    This ensures per-project isolation: tasks, memory, messages, and contexts all \
+    belong to a project and agents cannot accidentally cross project boundaries.")]
 impl ServerHandler for OrchyHandler {}

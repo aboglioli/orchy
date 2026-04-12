@@ -46,7 +46,7 @@ impl SqliteBackend {
         let ddl_statements = [
             "CREATE TABLE IF NOT EXISTS agents (
                 id TEXT PRIMARY KEY,
-                namespace TEXT,
+                namespace TEXT NOT NULL,
                 roles TEXT NOT NULL DEFAULT '[]',
                 description TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'online',
@@ -85,7 +85,7 @@ impl SqliteBackend {
             )",
             "CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
-                namespace TEXT,
+                namespace TEXT NOT NULL,
                 from_agent TEXT NOT NULL,
                 to_target TEXT NOT NULL,
                 body TEXT NOT NULL,
@@ -95,7 +95,7 @@ impl SqliteBackend {
             "CREATE TABLE IF NOT EXISTS contexts (
                 id TEXT PRIMARY KEY,
                 agent_id TEXT NOT NULL,
-                namespace TEXT,
+                namespace TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 embedding BLOB,
                 embedding_model TEXT,

@@ -14,7 +14,6 @@ impl<S: Store> MessageService<S> {
         Self { store }
     }
 
-    /// Send a message, fanning out for Role and Broadcast targets.
     pub async fn send(&self, cmd: CreateMessage) -> Result<Vec<Message>> {
         match &cmd.to {
             MessageTarget::Agent(_) => {
@@ -67,7 +66,7 @@ impl<S: Store> MessageService<S> {
     pub async fn check(
         &self,
         agent: &AgentId,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> Result<Vec<Message>> {
         self.store.check_messages(agent, namespace).await
     }

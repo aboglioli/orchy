@@ -33,7 +33,7 @@ impl<S: Store> ContextService<S> {
     pub async fn list(
         &self,
         agent: Option<&AgentId>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
         self.store.list_contexts(agent, namespace).await
     }
@@ -41,7 +41,7 @@ impl<S: Store> ContextService<S> {
     pub async fn search(
         &self,
         query: &str,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {

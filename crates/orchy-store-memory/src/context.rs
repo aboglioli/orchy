@@ -39,7 +39,7 @@ impl ContextStore for MemoryBackend {
     async fn list(
         &self,
         agent: Option<&AgentId>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
         let contexts = self.contexts.read().map_err(|e| Error::Store(e.to_string()))?;
 
@@ -51,16 +51,7 @@ impl ContextStore for MemoryBackend {
                         return false;
                     }
                 }
-                if let Some(ns) = namespace {
-                    if let Some(ref s_ns) = s.namespace {
-                        if !s_ns.starts_with(ns) {
-                            return false;
-                        }
-                    } else {
-                        return false;
-                    }
-                }
-                true
+                s.namespace.starts_with(namespace)
             })
             .cloned()
             .collect())
@@ -70,7 +61,7 @@ impl ContextStore for MemoryBackend {
         &self,
         query: &str,
         embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
@@ -84,16 +75,7 @@ impl ContextStore for MemoryBackend {
                         return false;
                     }
                 }
-                if let Some(ns) = namespace {
-                    if let Some(ref s_ns) = s.namespace {
-                        if !s_ns.starts_with(ns) {
-                            return false;
-                        }
-                    } else {
-                        return false;
-                    }
-                }
-                true
+                s.namespace.starts_with(namespace)
             })
             .filter_map(|s| {
                 let text_match = s.summary.contains(query);

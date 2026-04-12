@@ -39,7 +39,7 @@ impl PgBackend {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS agents (
                 id UUID PRIMARY KEY,
-                namespace TEXT,
+                namespace TEXT NOT NULL,
                 roles JSONB NOT NULL DEFAULT '[]',
                 description TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'online',
@@ -103,7 +103,7 @@ impl PgBackend {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS messages (
                 id UUID PRIMARY KEY,
-                namespace TEXT,
+                namespace TEXT NOT NULL,
                 from_agent UUID NOT NULL REFERENCES agents(id),
                 to_target TEXT NOT NULL,
                 body TEXT NOT NULL,
@@ -119,7 +119,7 @@ impl PgBackend {
             "CREATE TABLE IF NOT EXISTS contexts (
                 id UUID PRIMARY KEY,
                 agent_id UUID NOT NULL REFERENCES agents(id),
-                namespace TEXT,
+                namespace TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 embedding VECTOR,
                 embedding_model TEXT,

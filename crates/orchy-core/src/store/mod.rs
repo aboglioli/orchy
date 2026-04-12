@@ -56,7 +56,7 @@ pub trait Store: Send + Sync {
 
     // --- MessageStore ---
     fn send_message(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
-    fn check_messages(&self, agent: &AgentId, namespace: Option<&Namespace>) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn check_messages(&self, agent: &AgentId, namespace: &Namespace) -> impl Future<Output = Result<Vec<Message>>> + Send;
     fn mark_messages_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
 
     // --- ContextStore ---
@@ -65,13 +65,13 @@ pub trait Store: Send + Sync {
     fn list_contexts(
         &self,
         agent: Option<&AgentId>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
     fn search_contexts(
         &self,
         query: &str,
         embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;

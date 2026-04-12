@@ -26,7 +26,7 @@ impl MessageStore for PgBackend {
              VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(message.id.as_uuid())
-        .bind(message.namespace.as_ref().map(|n| n.to_string()))
+        .bind(message.namespace.to_string())
         .bind(message.from.as_uuid())
         .bind(message.to.to_string())
         .bind(&message.body)
@@ -39,30 +39,18 @@ impl MessageStore for PgBackend {
         Ok(message)
     }
 
-    async fn check(&self, agent: &AgentId, namespace: Option<&Namespace>) -> Result<Vec<Message>> {
-        let rows = if let Some(ns) = namespace {
-            sqlx::query(
-                "SELECT id, namespace, from_agent, to_target, body, status, created_at
-                 FROM messages
-                 WHERE status = 'pending' AND (to_target = $1 OR to_target = 'broadcast')
-                   AND namespace IS NOT NULL AND (namespace = $2 OR namespace LIKE $2 || '/%')",
-            )
-            .bind(agent.to_string())
-            .bind(ns.to_string())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
-        } else {
-            sqlx::query(
-                "SELECT id, namespace, from_agent, to_target, body, status, created_at
-                 FROM messages
-                 WHERE status = 'pending' AND (to_target = $1 OR to_target = 'broadcast')",
-            )
-            .bind(agent.to_string())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
-        };
+    async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
+        let rows = sqlx::query(
+            "SELECT id, namespace, from_agent, to_target, body, status, created_at
+             FROM messages
+             WHERE status = 'pending' AND (to_target = $1 OR to_target = 'broadcast')
+               AND (namespace = $2 OR namespace LIKE $2 || '/%')",
+        )
+        .bind(agent.to_string())
+        .bind(namespace.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
 
         let messages: Vec<Message> = rows.iter().map(row_to_message).collect();
 
@@ -101,7 +89,7 @@ impl MessageStore for PgBackend {
 
 fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
     let id: Uuid = row.get("id");
-    let namespace: Option<String> = row.get("namespace");
+    let namespace: String = row.get("namespace");
     let from_agent: Uuid = row.get("from_agent");
     let to_target: String = row.get("to_target");
     let body: String = row.get("body");
@@ -110,7 +98,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
 
     Message {
         id: MessageId::from_uuid(id),
-        namespace: namespace.and_then(|s| Namespace::try_from(s).ok()),
+        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
         from: AgentId::from_uuid(from_agent),
         to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,

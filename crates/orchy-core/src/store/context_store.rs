@@ -8,13 +8,13 @@ pub trait ContextStore: Send + Sync {
     async fn list(
         &self,
         agent: Option<&AgentId>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>>;
     async fn search(
         &self,
         query: &str,
         embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>>;

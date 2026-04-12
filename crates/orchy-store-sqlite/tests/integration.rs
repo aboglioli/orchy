@@ -21,7 +21,7 @@ async fn agent_register_and_get() {
     let agent = AgentStore::register(
         &store,
         RegisterAgent {
-            namespace: Some(ns("myapp")),
+            namespace: ns("myapp"),
             roles: vec!["coder".into()],
             description: "test agent".into(),
             metadata: HashMap::new(),
@@ -43,7 +43,7 @@ async fn agent_heartbeat_updates_timestamp() {
     let agent = AgentStore::register(
         &store,
         RegisterAgent {
-            namespace: None,
+            namespace: ns("test-project"),
             roles: vec![],
             description: "".into(),
             metadata: HashMap::new(),
@@ -66,7 +66,7 @@ async fn agent_disconnect_sets_status() {
     let agent = AgentStore::register(
         &store,
         RegisterAgent {
-            namespace: None,
+            namespace: ns("test-project"),
             roles: vec![],
             description: "".into(),
             metadata: HashMap::new(),
@@ -86,7 +86,7 @@ async fn agent_find_timed_out() {
     let agent = AgentStore::register(
         &store,
         RegisterAgent {
-            namespace: None,
+            namespace: ns("test-project"),
             roles: vec![],
             description: "".into(),
             metadata: HashMap::new(),
@@ -520,10 +520,12 @@ async fn message_send_and_check() {
     let from = AgentId::new();
     let to = AgentId::new();
 
+    let project_ns = ns("test-project");
+
     let msg = MessageStore::send(
         &store,
         CreateMessage {
-            namespace: None,
+            namespace: project_ns.clone(),
             from,
             to: MessageTarget::Agent(to),
             body: "hello".into(),
@@ -534,13 +536,13 @@ async fn message_send_and_check() {
 
     assert_eq!(msg.status, MessageStatus::Pending);
 
-    let messages = MessageStore::check(&store, &to, None).await.unwrap();
+    let messages = MessageStore::check(&store, &to, &project_ns).await.unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].body, "hello");
     assert_eq!(messages[0].status, MessageStatus::Delivered);
 
     // Second check returns nothing
-    let messages = MessageStore::check(&store, &to, None).await.unwrap();
+    let messages = MessageStore::check(&store, &to, &project_ns).await.unwrap();
     assert!(messages.is_empty());
 }
 
@@ -551,10 +553,12 @@ async fn message_mark_read() {
     let from = AgentId::new();
     let to = AgentId::new();
 
+    let project_ns = ns("test-project");
+
     let msg = MessageStore::send(
         &store,
         CreateMessage {
-            namespace: None,
+            namespace: project_ns.clone(),
             from,
             to: MessageTarget::Agent(to),
             body: "hi".into(),
@@ -563,7 +567,7 @@ async fn message_mark_read() {
     .await
     .unwrap();
 
-    MessageStore::check(&store, &to, None).await.unwrap();
+    MessageStore::check(&store, &to, &project_ns).await.unwrap();
     MessageStore::mark_read(&store, &[msg.id]).await.unwrap();
 }
 
@@ -578,7 +582,7 @@ async fn context_save_and_load() {
         &store,
         CreateSnapshot {
             agent_id: agent,
-            namespace: Some(ns("proj")),
+            namespace: ns("proj"),
             summary: "first snapshot".into(),
             embedding: None,
             embedding_model: None,
@@ -595,7 +599,7 @@ async fn context_save_and_load() {
         &store,
         CreateSnapshot {
             agent_id: agent,
-            namespace: Some(ns("proj")),
+            namespace: ns("proj"),
             summary: "second snapshot".into(),
             embedding: None,
             embedding_model: None,
@@ -620,7 +624,7 @@ async fn context_list_filters() {
         &store,
         CreateSnapshot {
             agent_id: agent1,
-            namespace: Some(ns("proj")),
+            namespace: ns("proj"),
             summary: "a1".into(),
             embedding: None,
             embedding_model: None,
@@ -635,7 +639,7 @@ async fn context_list_filters() {
         &store,
         CreateSnapshot {
             agent_id: agent2,
-            namespace: Some(ns("other")),
+            namespace: ns("other"),
             summary: "a2".into(),
             embedding: None,
             embedding_model: None,
@@ -646,16 +650,16 @@ async fn context_list_filters() {
     .await
     .unwrap();
 
-    let all = ContextStore::list(&store, None, None).await.unwrap();
-    assert_eq!(all.len(), 2);
+    let all = ContextStore::list(&store, None, &ns("proj")).await.unwrap();
+    assert_eq!(all.len(), 1);
 
-    let by_agent = ContextStore::list(&store, Some(&agent1), None)
+    let by_agent = ContextStore::list(&store, Some(&agent1), &ns("proj"))
         .await
         .unwrap();
     assert_eq!(by_agent.len(), 1);
     assert_eq!(by_agent[0].summary, "a1");
 
-    let by_ns = ContextStore::list(&store, None, Some(&ns("proj")))
+    let by_ns = ContextStore::list(&store, None, &ns("other"))
         .await
         .unwrap();
     assert_eq!(by_ns.len(), 1);
@@ -670,7 +674,7 @@ async fn context_search_by_keyword() {
         &store,
         CreateSnapshot {
             agent_id: agent,
-            namespace: None,
+            namespace: ns("test-project"),
             summary: "working on authentication module".into(),
             embedding: None,
             embedding_model: None,
@@ -685,7 +689,7 @@ async fn context_search_by_keyword() {
         &store,
         CreateSnapshot {
             agent_id: agent,
-            namespace: None,
+            namespace: ns("test-project"),
             summary: "fixing database migrations".into(),
             embedding: None,
             embedding_model: None,
@@ -696,7 +700,7 @@ async fn context_search_by_keyword() {
     .await
     .unwrap();
 
-    let results = ContextStore::search(&store, "authentication", None, None, None, 10)
+    let results = ContextStore::search(&store, "authentication", None, &ns("test-project"), None, 10)
         .await
         .unwrap();
     assert_eq!(results.len(), 1);

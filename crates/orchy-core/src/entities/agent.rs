@@ -7,7 +7,7 @@ use crate::value_objects::{AgentId, AgentStatus, Namespace};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     pub id: AgentId,
-    pub namespace: Option<Namespace>,
+    pub namespace: Namespace,
     pub roles: Vec<String>,
     pub description: String,
     pub status: AgentStatus,
@@ -18,7 +18,7 @@ pub struct Agent {
 
 #[derive(Debug, Clone)]
 pub struct RegisterAgent {
-    pub namespace: Option<Namespace>,
+    pub namespace: Namespace,
     pub roles: Vec<String>,
     pub description: String,
     pub metadata: HashMap<String, String>,

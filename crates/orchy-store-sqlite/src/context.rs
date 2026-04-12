@@ -33,7 +33,7 @@ impl ContextStore for SqliteBackend {
             rusqlite::params![
                 snapshot.id.to_string(),
                 snapshot.agent_id.to_string(),
-                snapshot.namespace.as_ref().map(|n| n.to_string()),
+                snapshot.namespace.to_string(),
                 snapshot.summary,
                 embedding_bytes,
                 snapshot.embedding_model,
@@ -51,7 +51,7 @@ impl ContextStore for SqliteBackend {
             "INSERT INTO contexts_fts(rowid, namespace, summary) VALUES(?1, ?2, ?3)",
             rusqlite::params![
                 rowid,
-                snapshot.namespace.as_ref().map(|n| n.to_string()).unwrap_or_default(),
+                snapshot.namespace.to_string(),
                 snapshot.summary,
             ],
         )
@@ -89,29 +89,24 @@ impl ContextStore for SqliteBackend {
     async fn list(
         &self,
         agent: Option<&AgentId>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
             "SELECT id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
-             FROM contexts WHERE 1=1",
+             FROM contexts WHERE (namespace = ?1 OR namespace LIKE ?1 || '/%')",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut idx = 1;
+        params.push(Box::new(namespace.to_string()));
+        let mut idx = 2;
 
         if let Some(a) = agent {
             sql.push_str(&format!(" AND agent_id = ?{idx}"));
             params.push(Box::new(a.to_string()));
             idx += 1;
         }
-
-        if let Some(ns) = namespace {
-            sql.push_str(&format!(
-                " AND namespace IS NOT NULL AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-            ));
-            params.push(Box::new(ns.to_string()));
-        }
+        let _ = idx;
 
         let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -129,7 +124,7 @@ impl ContextStore for SqliteBackend {
         &self,
         query: &str,
         _embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
@@ -139,20 +134,14 @@ impl ContextStore for SqliteBackend {
             "SELECT c.id, c.agent_id, c.namespace, c.summary, c.embedding, c.embedding_model, c.embedding_dimensions, c.metadata, c.created_at
              FROM contexts c
              JOIN contexts_fts ON contexts_fts.rowid = c.rowid
-             WHERE contexts_fts MATCH ?1",
+             WHERE contexts_fts MATCH ?1
+             AND (c.namespace = ?2 OR c.namespace LIKE ?2 || '/%')",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let fts_query = sanitize_fts_query(query);
         params.push(Box::new(fts_query));
-        let mut idx = 2;
-
-        if let Some(ns) = namespace {
-            sql.push_str(&format!(
-                " AND c.namespace IS NOT NULL AND (c.namespace = ?{idx} OR c.namespace LIKE ?{idx} || '/%')"
-            ));
-            params.push(Box::new(ns.to_string()));
-            idx += 1;
-        }
+        params.push(Box::new(namespace.to_string()));
+        let mut idx = 3;
 
         if let Some(a) = agent_id {
             sql.push_str(&format!(" AND c.agent_id = ?{idx}"));
@@ -179,7 +168,7 @@ impl ContextStore for SqliteBackend {
 fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
     let id_str: String = row.get(0)?;
     let agent_id_str: String = row.get(1)?;
-    let namespace_str: Option<String> = row.get(2)?;
+    let namespace_str: String = row.get(2)?;
     let summary: String = row.get(3)?;
     let embedding_bytes: Option<Vec<u8>> = row.get(4)?;
     let embedding_model: Option<String> = row.get(5)?;
@@ -192,9 +181,8 @@ fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
         agent_id: AgentId::from_str(&agent_id_str)
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?,
-        namespace: namespace_str
-            .map(|s| Namespace::try_from(s).map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))))
-            .transpose()?,
+        namespace: Namespace::try_from(namespace_str)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))))?,
         summary,
         embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
         embedding_model,
