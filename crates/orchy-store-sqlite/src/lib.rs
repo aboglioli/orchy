@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod memory;
 mod message;
+mod skill;
 mod store_impl;
 mod task;
 
@@ -102,6 +103,16 @@ impl SqliteBackend {
                 embedding_dimensions INTEGER,
                 metadata TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL
+            )",
+            "CREATE TABLE IF NOT EXISTS skills (
+                namespace TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                content TEXT NOT NULL,
+                written_by TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (namespace, name)
             )",
         ];
 

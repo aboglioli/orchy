@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use orchy_core::entities::*;
-use orchy_core::store::{AgentStore, ContextStore, MemoryStore, MessageStore, TaskStore};
+use orchy_core::store::{AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, TaskStore};
 use orchy_core::value_objects::*;
 use orchy_store_pg::PgBackend;
 
@@ -876,4 +876,165 @@ async fn context_search_by_keyword() {
         .unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].summary.contains("authentication"));
+}
+
+// =========================================================================
+// Skill tests
+// =========================================================================
+
+#[tokio::test]
+async fn skill_write_and_read() {
+    let store = backend().await;
+    let project_ns = ns("test-project");
+
+    let skill = SkillStore::write(
+        &store,
+        WriteSkill {
+            namespace: project_ns.clone(),
+            name: "commit-conventions".to_string(),
+            description: "How to write commit messages".to_string(),
+            content: "Use conventional commits".to_string(),
+            written_by: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(skill.name, "commit-conventions");
+    assert_eq!(skill.namespace, project_ns);
+
+    let read = SkillStore::read(&store, &project_ns, "commit-conventions")
+        .await
+        .unwrap();
+    assert!(read.is_some());
+    assert_eq!(read.unwrap().content, "Use conventional commits");
+
+    let missing = SkillStore::read(&store, &project_ns, "nonexistent")
+        .await
+        .unwrap();
+    assert!(missing.is_none());
+}
+
+#[tokio::test]
+async fn skill_write_updates_existing() {
+    let store = backend().await;
+    let project_ns = ns("test-project");
+
+    SkillStore::write(
+        &store,
+        WriteSkill {
+            namespace: project_ns.clone(),
+            name: "style".to_string(),
+            description: "v1".to_string(),
+            content: "old content".to_string(),
+            written_by: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let updated = SkillStore::write(
+        &store,
+        WriteSkill {
+            namespace: project_ns.clone(),
+            name: "style".to_string(),
+            description: "v2".to_string(),
+            content: "new content".to_string(),
+            written_by: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(updated.content, "new content");
+    assert_eq!(updated.description, "v2");
+}
+
+#[tokio::test]
+async fn skill_list_filters_by_namespace() {
+    let store = backend().await;
+
+    SkillStore::write(
+        &store,
+        WriteSkill {
+            namespace: ns("proj-a"),
+            name: "style".to_string(),
+            description: "A style".to_string(),
+            content: "A content".to_string(),
+            written_by: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    SkillStore::write(
+        &store,
+        WriteSkill {
+            namespace: ns("proj-a/backend"),
+            name: "arch".to_string(),
+            description: "Backend arch".to_string(),
+            content: "Hexagonal".to_string(),
+            written_by: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    SkillStore::write(
+        &store,
+        WriteSkill {
+            namespace: ns("proj-b"),
+            name: "style".to_string(),
+            description: "B style".to_string(),
+            content: "B content".to_string(),
+            written_by: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let all_a = SkillStore::list(
+        &store,
+        SkillFilter {
+            namespace: Some(ns("proj-a")),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(all_a.len(), 2);
+
+    let only_b = SkillStore::list(
+        &store,
+        SkillFilter {
+            namespace: Some(ns("proj-b")),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(only_b.len(), 1);
+    assert_eq!(only_b[0].name, "style");
+}
+
+#[tokio::test]
+async fn skill_delete() {
+    let store = backend().await;
+    let project_ns = ns("test-project");
+
+    SkillStore::write(
+        &store,
+        WriteSkill {
+            namespace: project_ns.clone(),
+            name: "temp".to_string(),
+            description: "temporary".to_string(),
+            content: "will be deleted".to_string(),
+            written_by: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    SkillStore::delete(&store, &project_ns, "temp").await.unwrap();
+
+    let read = SkillStore::read(&store, &project_ns, "temp").await.unwrap();
+    assert!(read.is_none());
 }

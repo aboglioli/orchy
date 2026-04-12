@@ -1,6 +1,6 @@
 use orchy_core::entities::{
     Agent, ContextSnapshot, CreateMessage, CreateSnapshot, CreateTask, MemoryEntry, MemoryFilter,
-    Message, RegisterAgent, Task, TaskFilter, WriteMemory,
+    Message, RegisterAgent, Skill, SkillFilter, Task, TaskFilter, WriteMemory, WriteSkill,
 };
 use orchy_core::error::Result;
 use orchy_core::store::Store;
@@ -163,5 +163,23 @@ impl Store for StoreBackend {
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
         delegate!(self, search_contexts(query, embedding, namespace, agent_id, limit))
+    }
+
+    // --- SkillStore ---
+
+    async fn write_skill(&self, skill: WriteSkill) -> Result<Skill> {
+        delegate!(self, write_skill(skill))
+    }
+
+    async fn read_skill(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
+        delegate!(self, read_skill(namespace, name))
+    }
+
+    async fn list_skills(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
+        delegate!(self, list_skills(filter))
+    }
+
+    async fn delete_skill(&self, namespace: &Namespace, name: &str) -> Result<()> {
+        delegate!(self, delete_skill(namespace, name))
     }
 }

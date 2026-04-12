@@ -2,19 +2,21 @@ pub mod agent_store;
 pub mod context_store;
 pub mod memory_store;
 pub mod message_store;
+pub mod skill_store;
 pub mod task_store;
 
 pub use agent_store::AgentStore;
 pub use context_store::ContextStore;
 pub use memory_store::MemoryStore;
 pub use message_store::MessageStore;
+pub use skill_store::SkillStore;
 pub use task_store::TaskStore;
 
 use std::future::Future;
 
 use crate::entities::{
     Agent, ContextSnapshot, CreateMessage, CreateSnapshot, CreateTask, MemoryEntry, MemoryFilter,
-    Message, RegisterAgent, Task, TaskFilter, WriteMemory,
+    Message, RegisterAgent, Skill, SkillFilter, Task, TaskFilter, WriteMemory, WriteSkill,
 };
 use crate::error::Result;
 use crate::value_objects::{AgentId, AgentStatus, MessageId, Namespace, TaskId, TaskStatus};
@@ -75,4 +77,10 @@ pub trait Store: Send + Sync {
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
+
+    // --- SkillStore ---
+    fn write_skill(&self, skill: WriteSkill) -> impl Future<Output = Result<Skill>> + Send;
+    fn read_skill(&self, namespace: &Namespace, name: &str) -> impl Future<Output = Result<Option<Skill>>> + Send;
+    fn list_skills(&self, filter: SkillFilter) -> impl Future<Output = Result<Vec<Skill>>> + Send;
+    fn delete_skill(&self, namespace: &Namespace, name: &str) -> impl Future<Output = Result<()>> + Send;
 }
