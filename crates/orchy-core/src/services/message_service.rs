@@ -63,11 +63,7 @@ impl<S: Store> MessageService<S> {
         }
     }
 
-    pub async fn check(
-        &self,
-        agent: &AgentId,
-        namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+    pub async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         self.store.check_messages(agent, namespace).await
     }
 

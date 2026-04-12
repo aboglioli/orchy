@@ -40,7 +40,9 @@ fn load_recursive<'a, S: Store>(
     current: &'a Path,
     service: &'a SkillService<S>,
     count: &'a mut usize,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>> {
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>,
+> {
     Box::pin(async move { load_recursive_inner(base, current, service, count).await })
 }
 
@@ -50,9 +52,7 @@ async fn load_recursive_inner<S: Store>(
     service: &SkillService<S>,
     count: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut entries: Vec<_> = std::fs::read_dir(current)?
-        .filter_map(|e| e.ok())
-        .collect();
+    let mut entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
     entries.sort_by_key(|e| e.file_name());
 
     for entry in entries {
@@ -104,9 +104,10 @@ async fn load_recursive_inner<S: Store>(
             written_by: None,
         };
 
-        service.write(cmd).await.map_err(|e| {
-            format!("failed to load skill {} in {}: {}", name, namespace, e)
-        })?;
+        service
+            .write(cmd)
+            .await
+            .map_err(|e| format!("failed to load skill {} in {}: {}", name, namespace, e))?;
 
         *count += 1;
     }

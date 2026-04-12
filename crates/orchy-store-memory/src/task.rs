@@ -47,7 +47,10 @@ impl TaskStore for MemoryBackend {
             updated_at: now,
         };
 
-        let mut tasks = self.tasks.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut tasks = self
+            .tasks
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         tasks.insert(task.id, task.clone());
         Ok(task)
     }
@@ -94,7 +97,10 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn claim(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
-        let mut tasks = self.tasks.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut tasks = self
+            .tasks
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let task = tasks
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("task {id}")))?;
@@ -109,7 +115,10 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
-        let mut tasks = self.tasks.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut tasks = self
+            .tasks
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let task = tasks
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("task {id}")))?;
@@ -123,7 +132,10 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn fail(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
-        let mut tasks = self.tasks.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut tasks = self
+            .tasks
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let task = tasks
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("task {id}")))?;
@@ -137,7 +149,10 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn release(&self, id: &TaskId) -> Result<Task> {
-        let mut tasks = self.tasks.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut tasks = self
+            .tasks
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let task = tasks
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("task {id}")))?;
@@ -152,7 +167,10 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
-        let mut tasks = self.tasks.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut tasks = self
+            .tasks
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let task = tasks
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("task {id}")))?;

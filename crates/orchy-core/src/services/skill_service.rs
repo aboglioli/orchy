@@ -16,7 +16,9 @@ impl<S: Store> SkillService<S> {
 
     pub async fn write(&self, skill: WriteSkill) -> Result<Skill> {
         if skill.name.is_empty() {
-            return Err(Error::InvalidInput("skill name must not be empty".to_string()));
+            return Err(Error::InvalidInput(
+                "skill name must not be empty".to_string(),
+            ));
         }
         self.store.write_skill(skill).await
     }

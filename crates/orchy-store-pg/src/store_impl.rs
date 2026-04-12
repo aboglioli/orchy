@@ -101,11 +101,7 @@ impl Store for PgBackend {
         MessageStore::send(self, message).await
     }
 
-    async fn check_messages(
-        &self,
-        agent: &AgentId,
-        namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+    async fn check_messages(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         MessageStore::check(self, agent, namespace).await
     }
 

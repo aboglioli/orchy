@@ -5,7 +5,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::store::ContextStore;
 use orchy_core::value_objects::{AgentId, Namespace, SnapshotId};
 
-use crate::{cosine_similarity, MemoryBackend};
+use crate::{MemoryBackend, cosine_similarity};
 
 impl ContextStore for MemoryBackend {
     async fn save(&self, cmd: CreateSnapshot) -> Result<ContextSnapshot> {
@@ -21,13 +21,19 @@ impl ContextStore for MemoryBackend {
             created_at: Utc::now(),
         };
 
-        let mut contexts = self.contexts.write().map_err(|e| Error::Store(e.to_string()))?;
+        let mut contexts = self
+            .contexts
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
         contexts.insert(snapshot.id, snapshot.clone());
         Ok(snapshot)
     }
 
     async fn load(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
-        let contexts = self.contexts.read().map_err(|e| Error::Store(e.to_string()))?;
+        let contexts = self
+            .contexts
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(contexts
             .values()
@@ -41,7 +47,10 @@ impl ContextStore for MemoryBackend {
         agent: Option<&AgentId>,
         namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
-        let contexts = self.contexts.read().map_err(|e| Error::Store(e.to_string()))?;
+        let contexts = self
+            .contexts
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(contexts
             .values()
@@ -65,7 +74,10 @@ impl ContextStore for MemoryBackend {
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
-        let contexts = self.contexts.read().map_err(|e| Error::Store(e.to_string()))?;
+        let contexts = self
+            .contexts
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         let mut scored: Vec<(f32, &ContextSnapshot)> = contexts
             .values()
@@ -81,7 +93,9 @@ impl ContextStore for MemoryBackend {
                 let text_match = s.summary.contains(query);
 
                 let sim = embedding.and_then(|emb| {
-                    s.embedding.as_ref().map(|s_emb| cosine_similarity(emb, s_emb))
+                    s.embedding
+                        .as_ref()
+                        .map(|s_emb| cosine_similarity(emb, s_emb))
                 });
 
                 if text_match || sim.map(|v| v > 0.0).unwrap_or(false) {

@@ -37,7 +37,10 @@ impl TaskStore for PgBackend {
 
         let roles_json = serde_json::to_value(&cmd.assigned_roles).unwrap();
         let depends_json = serde_json::to_value(
-            &cmd.depends_on.iter().map(|t| t.to_string()).collect::<Vec<_>>(),
+            &cmd.depends_on
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>(),
         )
         .unwrap();
 

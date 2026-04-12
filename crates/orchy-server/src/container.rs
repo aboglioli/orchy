@@ -63,7 +63,10 @@ impl Container {
                     .as_ref()
                     .expect("store.sqlite config required when backend = \"sqlite\"")
                     .path;
-                Ok(StoreBackend::Sqlite(SqliteBackend::new(path, embedding_dims)?))
+                Ok(StoreBackend::Sqlite(SqliteBackend::new(
+                    path,
+                    embedding_dims,
+                )?))
             }
             "postgres" => {
                 let url = &config
