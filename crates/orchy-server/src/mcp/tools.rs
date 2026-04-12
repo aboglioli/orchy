@@ -195,6 +195,12 @@ struct DeleteSkillParams {
     namespace: Option<String>,
 }
 
+#[derive(Deserialize, schemars::JsonSchema)]
+struct GetBootstrapPromptParams {
+    /// Namespace. Defaults to session namespace.
+    namespace: Option<String>,
+}
+
 fn parse_task_id(s: &str) -> Result<TaskId, String> {
     s.parse::<TaskId>().map_err(|e| format!("invalid task_id: {e}"))
 }
@@ -776,38 +782,69 @@ impl OrchyHandler {
             Err(e) => format!("error: {e}"),
         }
     }
+
+    #[tool(description = "Generate a full bootstrap prompt for this project. Contains all \
+        orchy instructions, coordination patterns, and project skills in a single text block. \
+        Useful for agents that don't support MCP server instructions natively — copy-paste \
+        this into their system prompt. Also available as HTTP GET /bootstrap/<namespace>.")]
+    async fn get_bootstrap_prompt(
+        &self,
+        Parameters(params): Parameters<GetBootstrapPromptParams>,
+    ) -> String {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
+        };
+
+        let host = &self.container.config.server.host;
+        let port = self.container.config.server.port;
+
+        match crate::bootstrap::generate_bootstrap_prompt(
+            &namespace,
+            host,
+            port,
+            &self.container.skill_service,
+        )
+        .await
+        {
+            Ok(prompt) => prompt,
+            Err(e) => format!("error: {e}"),
+        }
+    }
 }
 
 const INSTRUCTIONS: &str = "\
-orchy - multi-agent coordination server.
+orchy — multi-agent coordination server.
 
-## Namespace convention
+You are part of a coordinated multi-agent system. orchy provides shared \
+infrastructure: a task board, shared memory, messaging, and skills. You bring \
+the intelligence; orchy enforces the rules.
 
-Every session is scoped to a **project namespace**. The first segment of the \
-namespace is always the project identifier (e.g. `my-project`). You can add \
-sub-scopes with slashes (e.g. `my-project/backend/auth`).
+## On Session Start
 
-When you call `register_agent`, you set the project namespace for the session. \
-All subsequent tool calls default to this namespace. You can override it per \
-call by passing a `namespace` parameter, but the project prefix must always match.
+1. Call `register_agent` with your project namespace, roles, and description.
+2. Call `list_skills(inherited=true)` and follow the project conventions.
+3. Call `get_next_task` to claim work, or `check_mailbox` for messages.
+4. Call `heartbeat` every ~30s to signal liveness.
 
-Examples:
-- Session registered with `my-project` → can use `my-project`, `my-project/api`, \
-  `my-project/frontend/components`
-- Session registered with `my-project` → CANNOT use `other-project` or `other-project/api`
+## Namespace Rules
 
-This ensures per-project isolation: tasks, memory, messages, contexts, and skills \
-all belong to a project and agents cannot accidentally cross project boundaries.
+Every session is scoped to a project namespace (first path segment). \
+Sub-scopes are allowed (e.g. `my-project/backend`), but the project prefix \
+must always match. You cannot access other projects.
 
-## Skills
+## Coordination
 
-Skills are shared instructions/conventions stored per project. Use `list_skills` \
-with `inherited=true` to get all applicable skills for your namespace (including \
-those defined at parent scopes). Skills defined at more specific namespaces override \
-those with the same name at broader scopes.
+- Claim tasks before working. Complete them with a summary when done.
+- Use shared memory to store decisions and context for other agents.
+- Use messages to coordinate with teammates.
+- Save context before your session ends for continuity.
+- Use `list_skills(inherited=true)` to get project conventions.
 
-Skills are also available as MCP prompts — call `prompts/list` to discover them, \
-then `prompts/get` with the skill name to retrieve the full content.";
+## Bootstrap Prompt
+
+If your client doesn't support MCP instructions, call `get_bootstrap_prompt` \
+to get a full copy-pasteable prompt with all orchy instructions and project skills.";
 
 impl ServerHandler for OrchyHandler {
     fn get_info(&self) -> ServerInfo {
