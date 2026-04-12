@@ -14,148 +14,81 @@ pub struct PgBackend {
     pool: PgPool,
 }
 
+struct Migration {
+    version: i64,
+    name: &'static str,
+    sql: &'static str,
+}
+
+const MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    name: "initial_schema",
+    sql: include_str!("../../../migrations/postgres/001_initial_schema.sql"),
+}];
+
 impl PgBackend {
     pub async fn new(url: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
         let pool = PgPool::connect(url)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Self::init_schema(&pool, embedding_dimensions).await?;
+        Self::run_migrations(&pool).await?;
+        Self::init_vector_indexes(&pool, embedding_dimensions).await?;
 
         Ok(Self { pool })
     }
 
-    async fn init_schema(pool: &PgPool, embedding_dimensions: Option<u32>) -> Result<()> {
-        // Use advisory lock to prevent race conditions during parallel schema init
+    async fn run_migrations(pool: &PgPool) -> Result<()> {
         sqlx::query("SELECT pg_advisory_lock(42)")
             .execute(pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        sqlx::query("CREATE EXTENSION IF NOT EXISTS vector")
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                version BIGINT PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        for migration in MIGRATIONS {
+            let applied: bool =
+                sqlx::query_scalar("SELECT COUNT(*) > 0 FROM schema_migrations WHERE version = $1")
+                    .bind(migration.version)
+                    .fetch_one(pool)
+                    .await
+                    .map_err(|e| Error::Store(e.to_string()))?;
+
+            if !applied {
+                sqlx::query(migration.sql)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| {
+                        Error::Store(format!("migration {} failed: {e}", migration.name))
+                    })?;
+
+                sqlx::query("INSERT INTO schema_migrations (version, name) VALUES ($1, $2)")
+                    .bind(migration.version)
+                    .bind(migration.name)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| Error::Store(e.to_string()))?;
+            }
+        }
+
+        sqlx::query("SELECT pg_advisory_unlock(42)")
             .execute(pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS agents (
-                id UUID PRIMARY KEY,
-                namespace TEXT NOT NULL,
-                roles JSONB NOT NULL DEFAULT '[]',
-                description TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'online',
-                last_heartbeat TIMESTAMPTZ NOT NULL,
-                connected_at TIMESTAMPTZ NOT NULL,
-                metadata JSONB NOT NULL DEFAULT '{}'
-            )",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(())
+    }
 
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS tasks (
-                id UUID PRIMARY KEY,
-                namespace TEXT NOT NULL,
-                title TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'pending',
-                priority TEXT NOT NULL DEFAULT 'normal',
-                assigned_roles JSONB NOT NULL DEFAULT '[]',
-                claimed_by UUID REFERENCES agents(id),
-                claimed_at TIMESTAMPTZ,
-                depends_on JSONB NOT NULL DEFAULT '[]',
-                result_summary TEXT,
-                created_by UUID REFERENCES agents(id),
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL
-            )",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS memory (
-                namespace TEXT NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                version BIGINT NOT NULL DEFAULT 1,
-                embedding VECTOR,
-                embedding_model TEXT,
-                embedding_dimensions INTEGER,
-                written_by UUID REFERENCES agents(id),
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ NOT NULL,
-                PRIMARY KEY (namespace, key)
-            )",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS memory_fts_idx ON memory USING gin(to_tsvector('english', value))",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS messages (
-                id UUID PRIMARY KEY,
-                namespace TEXT NOT NULL,
-                from_agent UUID NOT NULL REFERENCES agents(id),
-                to_target TEXT NOT NULL,
-                body TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TIMESTAMPTZ NOT NULL
-            )",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS skills (
-                namespace TEXT NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL,
-                content TEXT NOT NULL,
-                written_by UUID REFERENCES agents(id),
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (namespace, name)
-            )",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS contexts (
-                id UUID PRIMARY KEY,
-                agent_id UUID NOT NULL REFERENCES agents(id),
-                namespace TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                embedding VECTOR,
-                embedding_model TEXT,
-                embedding_dimensions INTEGER,
-                metadata JSONB NOT NULL DEFAULT '{}',
-                created_at TIMESTAMPTZ NOT NULL
-            )",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS contexts_fts_idx ON contexts USING gin(to_tsvector('english', summary))",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
+    async fn init_vector_indexes(pool: &PgPool, embedding_dimensions: Option<u32>) -> Result<()> {
         if embedding_dimensions.is_some() {
             sqlx::query(
                 "CREATE INDEX IF NOT EXISTS memory_vec_idx ON memory USING hnsw (embedding vector_cosine_ops)",
@@ -172,16 +105,9 @@ impl PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
         }
 
-        // Release advisory lock
-        sqlx::query("SELECT pg_advisory_unlock(42)")
-            .execute(pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
         Ok(())
     }
 
-    /// Truncate all tables (useful for tests).
     pub async fn truncate_all(&self) -> Result<()> {
         sqlx::query("TRUNCATE contexts, messages, tasks, memory, skills, agents CASCADE")
             .execute(&self.pool)
