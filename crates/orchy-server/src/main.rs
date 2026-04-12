@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use rmcp::transport::{
-    StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
+    StreamableHttpService,
+    streamable_http_server::session::local::{LocalSessionManager, SessionConfig},
 };
 use tokio::net::TcpListener;
 use tracing::info;
@@ -52,11 +54,15 @@ async fn main() {
     });
 
     let bootstrap_container = Arc::clone(&container);
+    let heartbeat_timeout = container.config.server.heartbeat_timeout_secs;
     let mcp_container = container;
+
+    let mut session_manager = LocalSessionManager::default();
+    session_manager.session_config.keep_alive = Some(Duration::from_secs(heartbeat_timeout * 3));
 
     let service = StreamableHttpService::new(
         move || Ok(OrchyHandler::new(mcp_container.clone())),
-        Arc::new(LocalSessionManager::default()),
+        Arc::new(session_manager),
         Default::default(),
     );
 
