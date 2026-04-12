@@ -1,11 +1,19 @@
 use std::collections::HashMap;
 
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::{schemars, tool, tool_handler, tool_router, ServerHandler};
+use rmcp::model::{
+    GetPromptRequestParams, GetPromptResult, PaginatedRequestParams, Prompt, PromptMessage,
+    PromptMessageRole, ServerCapabilities, ServerInfo,
+};
+
+type ListPromptsResult = rmcp::model::ListPromptsResult;
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, schemars, tool, tool_router, ServerHandler};
 use serde::Deserialize;
 
 use orchy_core::entities::{
-    CreateMessage, CreateSnapshot, CreateTask, MemoryFilter, RegisterAgent, TaskFilter, WriteMemory,
+    CreateMessage, CreateSnapshot, CreateTask, MemoryFilter, RegisterAgent, SkillFilter,
+    TaskFilter, WriteMemory, WriteSkill,
 };
 use orchy_core::value_objects::{MessageId, MessageTarget, Priority, TaskId, Version};
 
@@ -155,6 +163,40 @@ struct SearchContextsParams {
     namespace: Option<String>,
     agent_id: Option<String>,
     limit: Option<u32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct WriteSkillParams {
+    /// Skill name (e.g. "commit-conventions", "architecture", "coding-style").
+    name: String,
+    /// Short description shown when listing skills.
+    description: String,
+    /// Full skill content — the instructions/prompt text agents will receive.
+    content: String,
+    /// Namespace for the skill. Defaults to session namespace.
+    namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct ReadSkillParams {
+    name: String,
+    /// Namespace. Defaults to session namespace.
+    namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct ListSkillsParams {
+    /// Namespace filter. Defaults to session namespace.
+    namespace: Option<String>,
+    /// If true, include inherited skills from parent namespaces. Defaults to false.
+    inherited: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct DeleteSkillParams {
+    name: String,
+    /// Namespace. Defaults to session namespace.
+    namespace: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -682,21 +724,225 @@ impl OrchyHandler {
             Err(e) => format!("error: {e}"),
         }
     }
+
+    // === Skill tools ===
+
+    #[tool(description = "Write a project skill — shared instructions/conventions that all \
+        agents in this project will receive. Skills are identified by namespace + name. \
+        Writing to an existing name updates it. Namespace defaults to session namespace.")]
+    async fn write_skill(&self, Parameters(params): Parameters<WriteSkillParams>) -> String {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
+        };
+
+        let cmd = WriteSkill {
+            namespace,
+            name: params.name,
+            description: params.description,
+            content: params.content,
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.skill_service.write(cmd).await {
+            Ok(skill) => to_json(&skill),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(description = "Read a specific skill by name. Namespace defaults to session namespace.")]
+    async fn read_skill(&self, Parameters(params): Parameters<ReadSkillParams>) -> String {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
+        };
+
+        match self.container.skill_service.read(&namespace, &params.name).await {
+            Ok(Some(skill)) => to_json(&skill),
+            Ok(None) => "null".to_string(),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(description = "List skills for the project. If inherited=true, includes skills \
+        from parent namespaces with more specific ones taking precedence. Namespace defaults \
+        to session namespace.")]
+    async fn list_skills(&self, Parameters(params): Parameters<ListSkillsParams>) -> String {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
+        };
+
+        let result = if params.inherited.unwrap_or(false) {
+            self.container.skill_service.list_with_inherited(&namespace).await
+        } else {
+            self.container
+                .skill_service
+                .list(SkillFilter { namespace: Some(namespace) })
+                .await
+        };
+
+        match result {
+            Ok(skills) => to_json(&skills),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(description = "Delete a skill by name. Namespace defaults to session namespace.")]
+    async fn delete_skill(&self, Parameters(params): Parameters<DeleteSkillParams>) -> String {
+        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return e,
+        };
+
+        match self.container.skill_service.delete(&namespace, &params.name).await {
+            Ok(()) => "ok".to_string(),
+            Err(e) => format!("error: {e}"),
+        }
+    }
 }
 
-#[tool_handler(instructions = "orchy - multi-agent coordination server.\n\n\
-    ## Namespace convention\n\n\
-    Every session is scoped to a **project namespace**. The first segment of the \
-    namespace is always the project identifier (e.g. `my-project`). You can add \
-    sub-scopes with slashes (e.g. `my-project/backend/auth`).\n\n\
-    When you call `register_agent`, you set the project namespace for the session. \
-    All subsequent tool calls default to this namespace. You can override it per \
-    call by passing a `namespace` parameter, but the project prefix must always \
-    match.\n\n\
-    Examples:\n\
-    - Session registered with `my-project` → can use `my-project`, `my-project/api`, \
-      `my-project/frontend/components`\n\
-    - Session registered with `my-project` → CANNOT use `other-project` or `other-project/api`\n\n\
-    This ensures per-project isolation: tasks, memory, messages, and contexts all \
-    belong to a project and agents cannot accidentally cross project boundaries.")]
-impl ServerHandler for OrchyHandler {}
+const INSTRUCTIONS: &str = "\
+orchy - multi-agent coordination server.
+
+## Namespace convention
+
+Every session is scoped to a **project namespace**. The first segment of the \
+namespace is always the project identifier (e.g. `my-project`). You can add \
+sub-scopes with slashes (e.g. `my-project/backend/auth`).
+
+When you call `register_agent`, you set the project namespace for the session. \
+All subsequent tool calls default to this namespace. You can override it per \
+call by passing a `namespace` parameter, but the project prefix must always match.
+
+Examples:
+- Session registered with `my-project` → can use `my-project`, `my-project/api`, \
+  `my-project/frontend/components`
+- Session registered with `my-project` → CANNOT use `other-project` or `other-project/api`
+
+This ensures per-project isolation: tasks, memory, messages, contexts, and skills \
+all belong to a project and agents cannot accidentally cross project boundaries.
+
+## Skills
+
+Skills are shared instructions/conventions stored per project. Use `list_skills` \
+with `inherited=true` to get all applicable skills for your namespace (including \
+those defined at parent scopes). Skills defined at more specific namespaces override \
+those with the same name at broader scopes.
+
+Skills are also available as MCP prompts — call `prompts/list` to discover them, \
+then `prompts/get` with the skill name to retrieve the full content.";
+
+impl ServerHandler for OrchyHandler {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .build(),
+        )
+        .with_instructions(INSTRUCTIONS.to_string())
+    }
+
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::CallToolResult, ErrorData> {
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        Self::tool_router().call(tcc).await
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, ErrorData> {
+        Ok(rmcp::model::ListToolsResult {
+            tools: Self::tool_router().list_all(),
+            meta: None,
+            next_cursor: None,
+        })
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, ErrorData> {
+        let namespace = match self.get_session_namespace() {
+            Some(ns) => ns,
+            None => {
+                return Ok(ListPromptsResult {
+                    prompts: vec![],
+                    meta: None,
+                    next_cursor: None,
+                });
+            }
+        };
+
+        let skills = self
+            .container
+            .skill_service
+            .list_with_inherited(&namespace)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let prompts = skills
+            .into_iter()
+            .map(|s| Prompt::new(s.name, Some(s.description), None))
+            .collect();
+
+        Ok(ListPromptsResult {
+            prompts,
+            meta: None,
+            next_cursor: None,
+        })
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResult, ErrorData> {
+        let namespace = self
+            .get_session_namespace()
+            .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
+
+        let skill = self
+            .container
+            .skill_service
+            .read(&namespace, &request.name)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let skill = match skill {
+            Some(s) => s,
+            None => {
+                let inherited = self
+                    .container
+                    .skill_service
+                    .list_with_inherited(&namespace)
+                    .await
+                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+                inherited
+                    .into_iter()
+                    .find(|s| s.name == request.name)
+                    .ok_or_else(|| {
+                        ErrorData::invalid_params(
+                            format!("skill '{}' not found", request.name),
+                            None,
+                        )
+                    })?
+            }
+        };
+
+        let mut result = GetPromptResult::new(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            skill.content,
+        )]);
+        result.description = Some(skill.description);
+        Ok(result)
+    }
+}

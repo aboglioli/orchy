@@ -1,10 +1,10 @@
 use orchy_core::entities::{
     Agent, ContextSnapshot, CreateMessage, CreateSnapshot, CreateTask, MemoryEntry, MemoryFilter,
-    Message, RegisterAgent, Task, TaskFilter, WriteMemory,
+    Message, RegisterAgent, Skill, SkillFilter, Task, TaskFilter, WriteMemory, WriteSkill,
 };
 use orchy_core::error::Result;
 use orchy_core::store::{
-    AgentStore, ContextStore, MemoryStore, MessageStore, Store, TaskStore,
+    AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, Store, TaskStore,
 };
 use orchy_core::value_objects::{AgentId, AgentStatus, MessageId, Namespace, TaskId, TaskStatus};
 
@@ -148,5 +148,23 @@ impl Store for SqliteBackend {
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
         ContextStore::search(self, query, embedding, namespace, agent_id, limit).await
+    }
+
+    // --- SkillStore ---
+
+    async fn write_skill(&self, skill: WriteSkill) -> Result<Skill> {
+        SkillStore::write(self, skill).await
+    }
+
+    async fn read_skill(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
+        SkillStore::read(self, namespace, name).await
+    }
+
+    async fn list_skills(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
+        SkillStore::list(self, filter).await
+    }
+
+    async fn delete_skill(&self, namespace: &Namespace, name: &str) -> Result<()> {
+        SkillStore::delete(self, namespace, name).await
     }
 }

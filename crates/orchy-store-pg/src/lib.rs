@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod memory;
 mod message;
+mod skill;
 mod store_impl;
 mod task;
 
@@ -116,6 +117,22 @@ impl PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
+            "CREATE TABLE IF NOT EXISTS skills (
+                namespace TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                content TEXT NOT NULL,
+                written_by UUID REFERENCES agents(id),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (namespace, name)
+            )",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS contexts (
                 id UUID PRIMARY KEY,
                 agent_id UUID NOT NULL REFERENCES agents(id),
@@ -166,7 +183,7 @@ impl PgBackend {
 
     /// Truncate all tables (useful for tests).
     pub async fn truncate_all(&self) -> Result<()> {
-        sqlx::query("TRUNCATE contexts, messages, tasks, memory, agents CASCADE")
+        sqlx::query("TRUNCATE contexts, messages, tasks, memory, skills, agents CASCADE")
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;

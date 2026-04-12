@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use orchy_core::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
 use orchy_core::services::{
-    AgentService, ContextService, MemoryService, MessageService, TaskService,
+    AgentService, ContextService, MemoryService, MessageService, SkillService, TaskService,
 };
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
@@ -17,6 +17,7 @@ pub struct Container {
     pub agent_service: AgentService<StoreBackend>,
     pub message_service: MessageService<StoreBackend>,
     pub context_service: ContextService<StoreBackend>,
+    pub skill_service: SkillService<StoreBackend>,
     pub config: Config,
 }
 
@@ -33,6 +34,7 @@ impl Container {
         let agent_service = AgentService::new(Arc::clone(&store));
         let message_service = MessageService::new(Arc::clone(&store));
         let context_service = ContextService::new(Arc::clone(&store), embeddings);
+        let skill_service = SkillService::new(Arc::clone(&store));
 
         Ok(Arc::new(Self {
             task_service,
@@ -40,6 +42,7 @@ impl Container {
             agent_service,
             message_service,
             context_service,
+            skill_service,
             config,
         }))
     }
