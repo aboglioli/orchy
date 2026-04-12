@@ -296,6 +296,32 @@ impl TaskStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))
     }
 
+    async fn update(&self, task: &Task) -> Result<Task> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let now = Utc::now();
+
+        conn.execute(
+            "UPDATE tasks SET namespace = ?1, title = ?2, description = ?3, status = ?4, priority = ?5, assigned_roles = ?6, claimed_by = ?7, claimed_at = ?8, depends_on = ?9, result_summary = ?10, updated_at = ?11 WHERE id = ?12",
+            rusqlite::params![
+                task.namespace.to_string(),
+                task.title,
+                task.description,
+                task.status.to_string(),
+                task.priority.to_string(),
+                serde_json::to_string(&task.assigned_roles).unwrap(),
+                task.claimed_by.map(|a| a.to_string()),
+                task.claimed_at.map(|dt| dt.to_rfc3339()),
+                serde_json::to_string(&task.depends_on.iter().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap(),
+                task.result_summary,
+                now.to_rfc3339(),
+                task.id.to_string(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(task.clone())
+    }
+
     async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let rows = conn

@@ -38,6 +38,7 @@ pub trait Store: Send + Sync {
         reason: Option<String>,
     ) -> impl Future<Output = Result<Task>> + Send;
     fn release_task(&self, id: &TaskId) -> impl Future<Output = Result<Task>> + Send;
+    fn update_task(&self, task: &Task) -> impl Future<Output = Result<Task>> + Send;
     fn update_task_status(
         &self,
         id: &TaskId,

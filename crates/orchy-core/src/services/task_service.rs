@@ -1,9 +1,11 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use crate::domain::TaskAggregate;
 use crate::entities::{CreateTask, Task, TaskFilter};
 use crate::error::{Error, Result};
 use crate::store::Store;
-use crate::value_objects::{AgentId, TaskId, TaskStatus};
+use crate::value_objects::{AgentId, Namespace, TaskId, TaskStatus};
 
 pub struct TaskService<S: Store> {
     store: Arc<S>,
@@ -15,16 +17,12 @@ impl<S: Store> TaskService<S> {
     }
 
     pub async fn create(&self, cmd: CreateTask) -> Result<Task> {
-        // Validate all declared dependencies exist.
         for dep_id in &cmd.depends_on {
-            let dep = self.store.get_task(dep_id).await?;
-            if dep.is_none() {
+            if self.store.get_task(dep_id).await?.is_none() {
                 return Err(Error::NotFound(format!("dependency task {dep_id}")));
             }
         }
-
-        let task = self.store.create_task(cmd).await?;
-        Ok(task)
+        self.store.create_task(cmd).await
     }
 
     pub async fn get(&self, id: &TaskId) -> Result<Task> {
@@ -39,31 +37,22 @@ impl<S: Store> TaskService<S> {
     }
 
     pub async fn claim(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
-        let task = self.get(id).await?;
-
-        if task.status != TaskStatus::Pending {
-            return Err(Error::InvalidTransition {
-                from: task.status.to_string(),
-                to: TaskStatus::Claimed.to_string(),
-            });
-        }
+        let mut task = self.get(id).await?;
 
         if !self.all_deps_completed(&task.depends_on).await? {
             return Err(Error::DependencyNotMet(id.to_string()));
         }
 
-        self.store.claim_task(id, agent).await
+        TaskAggregate::claim(&mut task, *agent)?;
+        self.store.update_task(&task).await
     }
 
-    /// Find the highest-priority pending task matching any of the agent's roles
-    /// whose dependencies are all completed, then claim it atomically.
     pub async fn get_next(
         &self,
         agent: &AgentId,
         roles: &[String],
-        namespace: Option<crate::value_objects::Namespace>,
+        namespace: Option<Namespace>,
     ) -> Result<Option<Task>> {
-        // Collect candidates for each role (first match wins by priority).
         let mut candidates: Vec<Task> = Vec::new();
 
         for role in roles {
@@ -74,24 +63,21 @@ impl<S: Store> TaskService<S> {
                 claimed_by: None,
             };
             let mut tasks = self.store.list_tasks(filter).await?;
-            // Sort descending by priority so highest-priority task comes first.
             tasks.sort_by(|a, b| b.priority.cmp(&a.priority));
             candidates.extend(tasks);
         }
 
-        // Deduplicate while preserving order.
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
         candidates.retain(|t| seen.insert(t.id));
-
-        // Resort after dedup.
         candidates.sort_by(|a, b| b.priority.cmp(&a.priority));
 
-        // Find first claimable task (all deps completed).
-        for task in &candidates {
+        for mut task in candidates {
             if self.all_deps_completed(&task.depends_on).await? {
-                match self.store.claim_task(&task.id, agent).await {
-                    Ok(claimed) => return Ok(Some(claimed)),
-                    // If another agent claimed it first, continue searching.
+                match TaskAggregate::claim(&mut task, *agent) {
+                    Ok(()) => {
+                        let claimed = self.store.update_task(&task).await?;
+                        return Ok(Some(claimed));
+                    }
                     Err(Error::InvalidTransition { .. }) => continue,
                     Err(e) => return Err(e),
                 }
@@ -102,36 +88,31 @@ impl<S: Store> TaskService<S> {
     }
 
     pub async fn start(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
-        let task = self.get(id).await?;
-        task.status.transition_to(TaskStatus::InProgress)?;
-
-        if task.claimed_by != Some(*agent) {
-            return Err(Error::InvalidInput(format!(
-                "task {id} is not claimed by agent {agent}"
-            )));
-        }
-
-        self.store
-            .update_task_status(id, TaskStatus::InProgress)
-            .await?;
-        self.get(id).await
+        let mut task = self.get(id).await?;
+        TaskAggregate::start(&mut task, agent)?;
+        self.store.update_task(&task).await
     }
 
     pub async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
-        let task = self.store.complete_task(id, summary).await?;
-        self.unblock_dependents(id).await?;
+        let mut task = self.get(id).await?;
+        TaskAggregate::complete(&mut task, summary)?;
+        let task = self.store.update_task(&task).await?;
+        self.unblock_dependents(&task.id).await?;
         Ok(task)
     }
 
     pub async fn fail(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
-        self.store.fail_task(id, reason).await
+        let mut task = self.get(id).await?;
+        TaskAggregate::fail(&mut task, reason)?;
+        self.store.update_task(&task).await
     }
 
     pub async fn release(&self, id: &TaskId) -> Result<Task> {
-        self.store.release_task(id).await
+        let mut task = self.get(id).await?;
+        TaskAggregate::release(&mut task)?;
+        self.store.update_task(&task).await
     }
 
-    /// Release all tasks currently claimed by the given agent back to Pending.
     pub async fn release_agent_tasks(&self, agent: &AgentId) -> Result<Vec<TaskId>> {
         let filter = TaskFilter {
             claimed_by: Some(*agent),
@@ -140,7 +121,7 @@ impl<S: Store> TaskService<S> {
         let tasks = self.store.list_tasks(filter).await?;
         let mut released = Vec::with_capacity(tasks.len());
         for task in &tasks {
-            self.store.release_task(&task.id).await?;
+            self.release(&task.id).await?;
             released.push(task.id);
         }
         Ok(released)
@@ -160,8 +141,6 @@ impl<S: Store> TaskService<S> {
         Ok(true)
     }
 
-    /// After completing a task, find all Blocked tasks that depend on it and
-    /// transition any whose entire dependency set is now Completed to Pending.
     async fn unblock_dependents(&self, completed_id: &TaskId) -> Result<()> {
         let blocked = self
             .store

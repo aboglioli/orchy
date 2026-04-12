@@ -1,5 +1,4 @@
-// Domain types, value objects, traits, services
-
+pub mod domain;
 pub mod embeddings;
 pub mod entities;
 pub mod error;

@@ -10,5 +10,6 @@ pub trait TaskStore: Send + Sync {
     async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task>;
     async fn fail(&self, id: &TaskId, reason: Option<String>) -> Result<Task>;
     async fn release(&self, id: &TaskId) -> Result<Task>;
+    async fn update(&self, task: &Task) -> Result<Task>;
     async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()>;
 }

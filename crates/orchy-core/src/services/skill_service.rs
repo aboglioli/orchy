@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::domain::SkillAggregate;
 use crate::entities::{Skill, SkillFilter, WriteSkill};
 use crate::error::{Error, Result};
 use crate::store::Store;
@@ -39,22 +40,7 @@ impl<S: Store> SkillService<S> {
             })
             .await?;
 
-        let mut result: Vec<Skill> = Vec::new();
-
-        for skill in all {
-            if skill.namespace.starts_with(namespace) || namespace.starts_with(&skill.namespace) {
-                if let Some(pos) = result.iter().position(|s| s.name == skill.name) {
-                    if skill.namespace.as_ref().len() > result[pos].namespace.as_ref().len() {
-                        result[pos] = skill;
-                    }
-                } else {
-                    result.push(skill);
-                }
-            }
-        }
-
-        result.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(result)
+        Ok(SkillAggregate::filter_with_inheritance(all, namespace))
     }
 
     pub async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {
