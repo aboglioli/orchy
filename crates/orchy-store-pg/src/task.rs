@@ -317,7 +317,9 @@ impl TaskStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(task.clone())
+        self.get(&task.id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("task {}", task.id)))
     }
 
     async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
