@@ -23,6 +23,7 @@ impl TaskStatus {
                 | (Blocked, Pending)
                 | (Claimed, InProgress)
                 | (Claimed, Pending)
+                | (Claimed, Failed)
                 | (InProgress, Completed)
                 | (InProgress, Failed)
                 | (InProgress, Pending)
@@ -65,6 +66,7 @@ mod tests {
         assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Blocked));
         assert!(TaskStatus::Blocked.can_transition_to(&TaskStatus::Pending));
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::InProgress));
+        assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Failed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Completed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Failed));
     }
