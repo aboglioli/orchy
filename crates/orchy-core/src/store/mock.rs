@@ -73,6 +73,14 @@ impl Store for MockStore {
     async fn update_agent_status(&self, _: &AgentId, _: AgentStatus) -> Result<()> {
         Ok(())
     }
+    async fn update_agent_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
+        let mut agents = self.agents.write().unwrap();
+        let agent = agents
+            .get_mut(id)
+            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
+        agent.roles = roles;
+        Ok(agent.clone())
+    }
     async fn disconnect(&self, _: &AgentId) -> Result<()> {
         Ok(())
     }

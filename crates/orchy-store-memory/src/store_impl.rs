@@ -93,6 +93,10 @@ impl Store for MemoryBackend {
         AgentStore::update_status(self, id, status).await
     }
 
+    async fn update_agent_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
+        AgentStore::update_roles(self, id, roles).await
+    }
+
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
         AgentStore::disconnect(self, id).await
     }

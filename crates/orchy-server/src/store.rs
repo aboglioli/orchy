@@ -108,6 +108,10 @@ impl Store for StoreBackend {
         delegate!(self, update_agent_status(id, status))
     }
 
+    async fn update_agent_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
+        delegate!(self, update_agent_roles(id, roles))
+    }
+
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
         delegate!(self, disconnect(id))
     }

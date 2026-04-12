@@ -80,6 +80,11 @@ pub trait Store: Send + Sync {
         id: &AgentId,
         status: AgentStatus,
     ) -> impl Future<Output = Result<()>> + Send;
+    fn update_agent_roles(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+    ) -> impl Future<Output = Result<Agent>> + Send;
     fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
     fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 
