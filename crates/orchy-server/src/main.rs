@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use axum::extract::{Path, State};
+use axum::response::IntoResponse;
 use rmcp::transport::{
     streamable_http_server::session::local::LocalSessionManager, StreamableHttpService,
 };
@@ -7,11 +9,13 @@ use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+use orchy_server::bootstrap;
 use orchy_server::config::Config;
 use orchy_server::container::Container;
 use orchy_server::heartbeat::run_heartbeat_monitor;
 use orchy_server::mcp::OrchyHandler;
 use orchy_server::skill_loader;
+use orchy_server::store::StoreBackend;
 
 #[tokio::main]
 async fn main() {
@@ -47,13 +51,20 @@ async fn main() {
     tokio::spawn(async move {
         run_heartbeat_monitor(heartbeat_container).await;
     });
+
+    let bootstrap_container = Arc::clone(&container);
+    let mcp_container = container;
+
     let service = StreamableHttpService::new(
-        move || Ok(OrchyHandler::new(container.clone())),
+        move || Ok(OrchyHandler::new(mcp_container.clone())),
         Arc::new(LocalSessionManager::default()),
         Default::default(),
     );
 
-    let router = axum::Router::new().nest_service("/mcp", service);
+    let router = axum::Router::new()
+        .nest_service("/mcp", service)
+        .route("/bootstrap/{namespace}", axum::routing::get(bootstrap_handler))
+        .with_state(bootstrap_container);
 
     let addr = format!("{host}:{port}");
     let listener = TcpListener::bind(&addr)
@@ -65,4 +76,26 @@ async fn main() {
     axum::serve(listener, router)
         .await
         .expect("server error");
+}
+
+async fn bootstrap_handler(
+    State(container): State<Arc<Container>>,
+    Path(namespace): Path<String>,
+) -> impl IntoResponse {
+    let ns = match orchy_core::value_objects::Namespace::try_from(namespace) {
+        Ok(ns) => ns,
+        Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
+    };
+
+    let host = &container.config.server.host;
+    let port = container.config.server.port;
+
+    match bootstrap::generate_bootstrap_prompt(&ns, host, port, &container.skill_service).await {
+        Ok(prompt) => (
+            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            prompt,
+        )
+            .into_response(),
+        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
 }
