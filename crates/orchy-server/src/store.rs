@@ -54,6 +54,10 @@ impl Store for StoreBackend {
         delegate!(self, release_task(id))
     }
 
+    async fn update_task(&self, task: &Task) -> Result<Task> {
+        delegate!(self, update_task(task))
+    }
+
     async fn update_task_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
         delegate!(self, update_task_status(id, status))
     }

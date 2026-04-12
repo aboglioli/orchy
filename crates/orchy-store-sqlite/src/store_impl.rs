@@ -39,6 +39,10 @@ impl Store for SqliteBackend {
         TaskStore::release(self, id).await
     }
 
+    async fn update_task(&self, task: &Task) -> Result<Task> {
+        TaskStore::update(self, task).await
+    }
+
     async fn update_task_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
         TaskStore::update_status(self, id, status).await
     }

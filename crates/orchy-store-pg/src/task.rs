@@ -286,6 +286,40 @@ impl TaskStore for PgBackend {
             .ok_or_else(|| Error::NotFound(format!("task {id}")))
     }
 
+    async fn update(&self, task: &Task) -> Result<Task> {
+        let now = Utc::now();
+        let roles_json = serde_json::to_value(&task.assigned_roles).unwrap();
+        let depends_json = serde_json::to_value(
+            &task
+                .depends_on
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        sqlx::query(
+            "UPDATE tasks SET namespace = $1, title = $2, description = $3, status = $4, priority = $5, assigned_roles = $6, claimed_by = $7, claimed_at = $8, depends_on = $9, result_summary = $10, updated_at = $11 WHERE id = $12",
+        )
+        .bind(task.namespace.to_string())
+        .bind(&task.title)
+        .bind(&task.description)
+        .bind(task.status.to_string())
+        .bind(task.priority.to_string())
+        .bind(&roles_json)
+        .bind(task.claimed_by.map(|a| *a.as_uuid()))
+        .bind(task.claimed_at)
+        .bind(&depends_json)
+        .bind(&task.result_summary)
+        .bind(now)
+        .bind(task.id.as_uuid())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(task.clone())
+    }
+
     async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
         let result = sqlx::query("UPDATE tasks SET status = $1, updated_at = $2 WHERE id = $3")
             .bind(status.to_string())

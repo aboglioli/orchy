@@ -286,7 +286,12 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        if let Err(e) = self.container.task_service.release_agent_tasks(&agent_id).await {
+        if let Err(e) = self
+            .container
+            .task_service
+            .release_agent_tasks(&agent_id)
+            .await
+        {
             return format!("error releasing tasks: {e}");
         }
 
@@ -446,12 +451,7 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        match self
-            .container
-            .task_service
-            .start(&task_id, &agent_id)
-            .await
-        {
+        match self.container.task_service.start(&task_id, &agent_id).await {
             Ok(task) => to_json(&task),
             Err(e) => format!("error: {e}"),
         }

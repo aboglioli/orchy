@@ -166,6 +166,20 @@ impl TaskStore for MemoryBackend {
         Ok(task.clone())
     }
 
+    async fn update(&self, task: &Task) -> Result<Task> {
+        let mut tasks = self
+            .tasks
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let existing = tasks
+            .get_mut(&task.id)
+            .ok_or_else(|| Error::NotFound(format!("task {}", task.id)))?;
+
+        *existing = task.clone();
+        existing.updated_at = Utc::now();
+        Ok(existing.clone())
+    }
+
     async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
         let mut tasks = self
             .tasks
