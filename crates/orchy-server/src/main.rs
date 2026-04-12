@@ -3,8 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use rmcp::transport::{
-    StreamableHttpService,
-    streamable_http_server::session::local::LocalSessionManager,
+    StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
 };
 use tokio::net::TcpListener;
 use tracing::info;
