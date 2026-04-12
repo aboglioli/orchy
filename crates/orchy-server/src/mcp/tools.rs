@@ -946,6 +946,7 @@ impl ServerHandler for OrchyHandler {
         request: rmcp::model::CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, ErrorData> {
+        self.touch_heartbeat();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         Self::tool_router().call(tcc).await
     }

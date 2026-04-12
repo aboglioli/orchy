@@ -52,6 +52,15 @@ impl OrchyHandler {
         });
     }
 
+    pub(crate) fn touch_heartbeat(&self) {
+        if let Some(agent_id) = self.get_session_agent() {
+            let container = self.container.clone();
+            tokio::spawn(async move {
+                let _ = container.agent_service.heartbeat(&agent_id).await;
+            });
+        }
+    }
+
     pub(crate) fn resolve_namespace(&self, explicit: Option<&str>) -> Result<Namespace, String> {
         match explicit {
             Some(ns_str) => {
