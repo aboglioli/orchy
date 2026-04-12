@@ -30,6 +30,11 @@ struct RegisterAgentParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+struct UpdateRolesParams {
+    roles: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 struct ListAgentsParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -78,6 +83,12 @@ struct StartTaskParams {
 struct FailTaskParams {
     task_id: String,
     reason: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct ReassignTaskParams {
+    task_id: String,
+    agent_id: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -259,6 +270,27 @@ impl OrchyHandler {
     async fn list_agents(&self, Parameters(_params): Parameters<ListAgentsParams>) -> String {
         match self.container.agent_service.list().await {
             Ok(agents) => to_json(&agents),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(
+        description = "Update the roles of the session agent. Affects which tasks \
+        get_next_task returns."
+    )]
+    async fn update_roles(&self, Parameters(params): Parameters<UpdateRolesParams>) -> String {
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+
+        match self
+            .container
+            .agent_service
+            .update_roles(&agent_id, params.roles)
+            .await
+        {
+            Ok(agent) => to_json(&agent),
             Err(e) => format!("error: {e}"),
         }
     }
@@ -486,6 +518,37 @@ impl OrchyHandler {
             .container
             .task_service
             .fail(&task_id, params.reason)
+            .await
+        {
+            Ok(task) => to_json(&task),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(
+        description = "Reassign a task to a different agent. The task must be claimed or \
+        in progress. Resets the task status to claimed for the new agent."
+    )]
+    async fn reassign_task(&self, Parameters(params): Parameters<ReassignTaskParams>) -> String {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return e,
+        };
+
+        let agent_id = match parse_agent_id(&params.agent_id) {
+            Ok(id) => id,
+            Err(e) => return e,
+        };
+
+        match self
+            .container
+            .task_service
+            .reassign(&task_id, &agent_id)
             .await
         {
             Ok(task) => to_json(&task),

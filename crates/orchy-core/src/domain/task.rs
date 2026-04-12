@@ -41,6 +41,19 @@ impl TaskAggregate {
         Ok(())
     }
 
+    pub fn reassign(task: &mut Task, new_agent: AgentId) -> Result<()> {
+        if !matches!(task.status, TaskStatus::Claimed | TaskStatus::InProgress) {
+            return Err(Error::InvalidInput(format!(
+                "task {} cannot be reassigned from status {}",
+                task.id, task.status
+            )));
+        }
+        task.status = TaskStatus::Claimed;
+        task.claimed_by = Some(new_agent);
+        task.claimed_at = Some(chrono::Utc::now());
+        Ok(())
+    }
+
     pub fn release(task: &mut Task) -> Result<()> {
         if !matches!(task.status, TaskStatus::Claimed | TaskStatus::InProgress) {
             return Err(Error::InvalidTransition {
@@ -224,5 +237,46 @@ mod tests {
         let mut task = make_task(TaskStatus::Completed, None);
         let result = TaskAggregate::release(&mut task);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn reassign_succeeds_from_claimed() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent1));
+        let result = TaskAggregate::reassign(&mut task, agent2);
+        assert!(result.is_ok());
+        assert_eq!(task.status, TaskStatus::Claimed);
+        assert_eq!(task.claimed_by, Some(agent2));
+        assert!(task.claimed_at.is_some());
+    }
+
+    #[test]
+    fn reassign_succeeds_from_in_progress() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_task(TaskStatus::InProgress, Some(agent1));
+        let result = TaskAggregate::reassign(&mut task, agent2);
+        assert!(result.is_ok());
+        assert_eq!(task.status, TaskStatus::Claimed);
+        assert_eq!(task.claimed_by, Some(agent2));
+    }
+
+    #[test]
+    fn reassign_fails_from_pending() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        assert!(TaskAggregate::reassign(&mut task, AgentId::new()).is_err());
+    }
+
+    #[test]
+    fn reassign_fails_from_completed() {
+        let mut task = make_task(TaskStatus::Completed, None);
+        assert!(TaskAggregate::reassign(&mut task, AgentId::new()).is_err());
+    }
+
+    #[test]
+    fn reassign_fails_from_failed() {
+        let mut task = make_task(TaskStatus::Failed, None);
+        assert!(TaskAggregate::reassign(&mut task, AgentId::new()).is_err());
     }
 }

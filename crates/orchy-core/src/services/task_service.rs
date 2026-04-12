@@ -107,6 +107,17 @@ impl<S: Store> TaskService<S> {
         self.store.update_task(&task).await
     }
 
+    pub async fn reassign(&self, id: &TaskId, new_agent: &AgentId) -> Result<Task> {
+        self.store
+            .get_agent(new_agent)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("agent {new_agent}")))?;
+
+        let mut task = self.get(id).await?;
+        TaskAggregate::reassign(&mut task, *new_agent)?;
+        self.store.update_task(&task).await
+    }
+
     pub async fn release(&self, id: &TaskId) -> Result<Task> {
         let mut task = self.get(id).await?;
         TaskAggregate::release(&mut task)?;
