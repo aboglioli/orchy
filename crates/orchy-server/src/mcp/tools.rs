@@ -15,7 +15,7 @@ use orchy_core::agent::RegisterAgent;
 use orchy_core::memory::{CreateSnapshot, MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{CreateMessage, MessageId, MessageTarget};
 use orchy_core::skill::{SkillFilter, WriteSkill};
-use orchy_core::task::{CreateTask, Priority, TaskFilter, TaskId};
+use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
 
 use super::handler::{OrchyHandler, parse_namespace};
 
@@ -362,18 +362,21 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
-        let cmd = CreateTask {
+        let is_blocked = !depends_on.is_empty();
+        let task = Task::new(
             namespace,
-            title: params.title,
-            description: params.description,
+            params.title,
+            params.description,
             priority,
-            assigned_roles: params.assigned_roles.unwrap_or_default(),
+            params.assigned_roles.unwrap_or_default(),
             depends_on,
-            created_by: self.get_session_agent(),
-        };
+            self.get_session_agent(),
+            is_blocked,
+        );
 
-        match self.container.task_service.create(cmd).await {
-            Ok(task) => to_json(&task),
+        let response = to_json(&task);
+        match self.container.task_service.create(task).await {
+            Ok(()) => response,
             Err(e) => format!("error: {e}"),
         }
     }

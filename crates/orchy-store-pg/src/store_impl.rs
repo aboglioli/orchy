@@ -8,13 +8,13 @@ use orchy_core::message::{CreateMessage, Message, MessageId, MessageStore};
 use orchy_core::namespace::Namespace;
 use orchy_core::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
 use orchy_core::store::Store;
-use orchy_core::task::{CreateTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 
 use crate::PgBackend;
 
 impl Store for PgBackend {
-    async fn create_task(&self, task: CreateTask) -> Result<Task> {
-        TaskStore::create(self, task).await
+    async fn save_task(&self, task: &Task) -> Result<()> {
+        TaskStore::save(self, task).await
     }
 
     async fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
@@ -23,30 +23,6 @@ impl Store for PgBackend {
 
     async fn list_tasks(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         TaskStore::list(self, filter).await
-    }
-
-    async fn claim_task(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
-        TaskStore::claim(self, id, agent).await
-    }
-
-    async fn complete_task(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
-        TaskStore::complete(self, id, summary).await
-    }
-
-    async fn fail_task(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
-        TaskStore::fail(self, id, reason).await
-    }
-
-    async fn release_task(&self, id: &TaskId) -> Result<Task> {
-        TaskStore::release(self, id).await
-    }
-
-    async fn update_task(&self, task: &Task) -> Result<Task> {
-        TaskStore::update(self, task).await
-    }
-
-    async fn update_task_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
-        TaskStore::update_status(self, id, status).await
     }
 
     async fn write_memory(&self, entry: WriteMemory) -> Result<MemoryEntry> {

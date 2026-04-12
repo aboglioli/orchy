@@ -1,4 +1,3 @@
-pub mod aggregate;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -77,7 +76,7 @@ impl TaskStatus {
         )
     }
 
-    pub fn transition_to(&self, target: TaskStatus) -> Result<TaskStatus> {
+    fn transition_to(self, target: TaskStatus) -> Result<TaskStatus> {
         if self.can_transition_to(&target) {
             Ok(target)
         } else {
@@ -146,31 +145,202 @@ impl FromStr for Priority {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
-    pub id: TaskId,
-    pub namespace: Namespace,
-    pub title: String,
-    pub description: String,
-    pub status: TaskStatus,
-    pub priority: Priority,
-    pub assigned_roles: Vec<String>,
-    pub claimed_by: Option<AgentId>,
-    pub claimed_at: Option<DateTime<Utc>>,
-    pub depends_on: Vec<TaskId>,
-    pub result_summary: Option<String>,
-    pub created_by: Option<AgentId>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    id: TaskId,
+    namespace: Namespace,
+    title: String,
+    description: String,
+    status: TaskStatus,
+    priority: Priority,
+    assigned_roles: Vec<String>,
+    claimed_by: Option<AgentId>,
+    claimed_at: Option<DateTime<Utc>>,
+    depends_on: Vec<TaskId>,
+    result_summary: Option<String>,
+    created_by: Option<AgentId>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone)]
-pub struct CreateTask {
-    pub namespace: Namespace,
-    pub title: String,
-    pub description: String,
-    pub priority: Priority,
-    pub assigned_roles: Vec<String>,
-    pub depends_on: Vec<TaskId>,
-    pub created_by: Option<AgentId>,
+impl Task {
+    pub fn new(
+        namespace: Namespace,
+        title: String,
+        description: String,
+        priority: Priority,
+        assigned_roles: Vec<String>,
+        depends_on: Vec<TaskId>,
+        created_by: Option<AgentId>,
+        is_blocked: bool,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: TaskId::new(),
+            namespace,
+            title,
+            description,
+            status: if is_blocked {
+                TaskStatus::Blocked
+            } else {
+                TaskStatus::Pending
+            },
+            priority,
+            assigned_roles,
+            claimed_by: None,
+            claimed_at: None,
+            depends_on,
+            result_summary: None,
+            created_by,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: TaskId,
+        namespace: Namespace,
+        title: String,
+        description: String,
+        status: TaskStatus,
+        priority: Priority,
+        assigned_roles: Vec<String>,
+        claimed_by: Option<AgentId>,
+        claimed_at: Option<DateTime<Utc>>,
+        depends_on: Vec<TaskId>,
+        result_summary: Option<String>,
+        created_by: Option<AgentId>,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id,
+            namespace,
+            title,
+            description,
+            status,
+            priority,
+            assigned_roles,
+            claimed_by,
+            claimed_at,
+            depends_on,
+            result_summary,
+            created_by,
+            created_at,
+            updated_at,
+        }
+    }
+
+    pub fn claim(&mut self, agent: AgentId) -> Result<()> {
+        self.status = self.status.transition_to(TaskStatus::Claimed)?;
+        self.claimed_by = Some(agent);
+        self.claimed_at = Some(Utc::now());
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn start(&mut self, agent: &AgentId) -> Result<()> {
+        if self.claimed_by != Some(*agent) {
+            return Err(Error::InvalidInput(format!(
+                "task {} is not claimed by agent {}",
+                self.id, agent
+            )));
+        }
+        self.status = self.status.transition_to(TaskStatus::InProgress)?;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn complete(&mut self, summary: Option<String>) -> Result<()> {
+        self.status = self.status.transition_to(TaskStatus::Completed)?;
+        self.result_summary = summary;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn fail(&mut self, reason: Option<String>) -> Result<()> {
+        self.status = self.status.transition_to(TaskStatus::Failed)?;
+        self.result_summary = reason;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn release(&mut self) -> Result<()> {
+        if !matches!(self.status, TaskStatus::Claimed | TaskStatus::InProgress) {
+            return Err(Error::InvalidTransition {
+                from: self.status.to_string(),
+                to: TaskStatus::Pending.to_string(),
+            });
+        }
+        self.status = self.status.transition_to(TaskStatus::Pending)?;
+        self.claimed_by = None;
+        self.claimed_at = None;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn reassign(&mut self, new_agent: AgentId) -> Result<()> {
+        if !matches!(self.status, TaskStatus::Claimed | TaskStatus::InProgress) {
+            return Err(Error::InvalidInput(format!(
+                "task {} cannot be reassigned from status {}",
+                self.id, self.status
+            )));
+        }
+        self.status = TaskStatus::Claimed;
+        self.claimed_by = Some(new_agent);
+        self.claimed_at = Some(Utc::now());
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn unblock(&mut self) {
+        if self.status == TaskStatus::Blocked {
+            self.status = TaskStatus::Pending;
+            self.updated_at = Utc::now();
+        }
+    }
+
+    pub fn id(&self) -> TaskId {
+        self.id
+    }
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn status(&self) -> TaskStatus {
+        self.status
+    }
+    pub fn priority(&self) -> Priority {
+        self.priority
+    }
+    pub fn assigned_roles(&self) -> &[String] {
+        &self.assigned_roles
+    }
+    pub fn claimed_by(&self) -> Option<AgentId> {
+        self.claimed_by
+    }
+    pub fn claimed_at(&self) -> Option<DateTime<Utc>> {
+        self.claimed_at
+    }
+    pub fn depends_on(&self) -> &[TaskId] {
+        &self.depends_on
+    }
+    pub fn result_summary(&self) -> Option<&str> {
+        self.result_summary.as_deref()
+    }
+    pub fn created_by(&self) -> Option<AgentId> {
+        self.created_by
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -183,20 +353,33 @@ pub struct TaskFilter {
 }
 
 pub trait TaskStore: Send + Sync {
-    async fn create(&self, task: CreateTask) -> Result<Task>;
+    async fn save(&self, task: &Task) -> Result<()>;
     async fn get(&self, id: &TaskId) -> Result<Option<Task>>;
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>>;
-    async fn claim(&self, id: &TaskId, agent: &AgentId) -> Result<Task>;
-    async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task>;
-    async fn fail(&self, id: &TaskId, reason: Option<String>) -> Result<Task>;
-    async fn release(&self, id: &TaskId) -> Result<Task>;
-    async fn update(&self, task: &Task) -> Result<Task>;
-    async fn update_status(&self, id: &TaskId, status: TaskStatus) -> Result<()>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_task(status: TaskStatus, claimed_by: Option<AgentId>) -> Task {
+        Task::restore(
+            TaskId::new(),
+            Namespace::try_from("test".to_string()).unwrap(),
+            "Test Task".to_string(),
+            "Test".to_string(),
+            status,
+            Priority::default(),
+            vec!["tester".to_string()],
+            claimed_by,
+            None,
+            vec![],
+            None,
+            None,
+            Utc::now(),
+            Utc::now(),
+        )
+    }
 
     #[test]
     fn valid_transitions() {
@@ -220,16 +403,147 @@ mod tests {
     }
 
     #[test]
-    fn release_transitions() {
-        assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Pending));
-        assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Pending));
+    fn claim_succeeds_from_pending() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::Pending, None);
+        assert!(task.claim(agent).is_ok());
+        assert_eq!(task.status(), TaskStatus::Claimed);
+        assert_eq!(task.claimed_by(), Some(agent));
+        assert!(task.claimed_at().is_some());
+    }
 
-        let result = TaskStatus::Claimed.transition_to(TaskStatus::Pending);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), TaskStatus::Pending);
+    #[test]
+    fn claim_fails_from_claimed() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent));
+        assert!(task.claim(agent).is_err());
+    }
 
-        let result = TaskStatus::InProgress.transition_to(TaskStatus::Pending);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), TaskStatus::Pending);
+    #[test]
+    fn start_succeeds_when_claimed_by_agent() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent));
+        assert!(task.start(&agent).is_ok());
+        assert_eq!(task.status(), TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn start_fails_when_claimed_by_different_agent() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent1));
+        assert!(task.start(&agent2).is_err());
+    }
+
+    #[test]
+    fn complete_succeeds_from_in_progress() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::InProgress, Some(agent));
+        assert!(task.complete(Some("done".to_string())).is_ok());
+        assert_eq!(task.status(), TaskStatus::Completed);
+        assert_eq!(task.result_summary(), Some("done"));
+    }
+
+    #[test]
+    fn complete_fails_from_pending() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        assert!(task.complete(None).is_err());
+    }
+
+    #[test]
+    fn fail_succeeds_from_in_progress() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::InProgress, Some(agent));
+        assert!(task.fail(Some("error".to_string())).is_ok());
+        assert_eq!(task.status(), TaskStatus::Failed);
+    }
+
+    #[test]
+    fn fail_succeeds_from_claimed() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent));
+        assert!(task.fail(None).is_ok());
+        assert_eq!(task.status(), TaskStatus::Failed);
+    }
+
+    #[test]
+    fn fail_fails_from_pending() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        assert!(task.fail(None).is_err());
+    }
+
+    #[test]
+    fn release_succeeds_from_claimed() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent));
+        assert!(task.release().is_ok());
+        assert_eq!(task.status(), TaskStatus::Pending);
+        assert!(task.claimed_by().is_none());
+    }
+
+    #[test]
+    fn release_fails_from_pending() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        assert!(task.release().is_err());
+    }
+
+    #[test]
+    fn reassign_succeeds_from_claimed() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent1));
+        assert!(task.reassign(agent2).is_ok());
+        assert_eq!(task.status(), TaskStatus::Claimed);
+        assert_eq!(task.claimed_by(), Some(agent2));
+    }
+
+    #[test]
+    fn reassign_fails_from_pending() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        assert!(task.reassign(AgentId::new()).is_err());
+    }
+
+    #[test]
+    fn unblock_from_blocked() {
+        let mut task = make_task(TaskStatus::Blocked, None);
+        task.unblock();
+        assert_eq!(task.status(), TaskStatus::Pending);
+    }
+
+    #[test]
+    fn unblock_noop_from_other_status() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        task.unblock();
+        assert_eq!(task.status(), TaskStatus::Pending);
+    }
+
+    #[test]
+    fn new_creates_pending_task() {
+        let task = Task::new(
+            Namespace::try_from("test".to_string()).unwrap(),
+            "title".to_string(),
+            "desc".to_string(),
+            Priority::High,
+            vec![],
+            vec![],
+            None,
+            false,
+        );
+        assert_eq!(task.status(), TaskStatus::Pending);
+    }
+
+    #[test]
+    fn new_creates_blocked_task() {
+        let task = Task::new(
+            Namespace::try_from("test".to_string()).unwrap(),
+            "title".to_string(),
+            "desc".to_string(),
+            Priority::Normal,
+            vec![],
+            vec![TaskId::new()],
+            None,
+            true,
+        );
+        assert_eq!(task.status(), TaskStatus::Blocked);
     }
 }
