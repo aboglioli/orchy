@@ -37,6 +37,13 @@ impl<S: Store> AgentService<S> {
         self.store.update_agent_status(id, status).await
     }
 
+    pub async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
+        if roles.is_empty() {
+            return Err(Error::InvalidInput("roles must not be empty".to_string()));
+        }
+        self.store.update_agent_roles(id, roles).await
+    }
+
     pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
         self.store.disconnect(id).await
     }
@@ -119,5 +126,40 @@ mod tests {
         service.register(make_registration()).await.unwrap();
         let result = service.list().await.unwrap();
         assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_roles_succeeds() {
+        let store = Arc::new(MockStore::default());
+        let service = AgentService::new(store);
+        let agent = service.register(make_registration()).await.unwrap();
+        let updated = service
+            .update_roles(
+                &agent.id,
+                vec!["reviewer".to_string(), "analyzer".to_string()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.roles, vec!["reviewer", "analyzer"]);
+    }
+
+    #[tokio::test]
+    async fn update_roles_fails_with_empty() {
+        let store = Arc::new(MockStore::default());
+        let service = AgentService::new(store);
+        let agent = service.register(make_registration()).await.unwrap();
+        assert!(service.update_roles(&agent.id, vec![]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn update_roles_fails_for_unknown_agent() {
+        let store = Arc::new(MockStore::default());
+        let service = AgentService::new(store);
+        assert!(
+            service
+                .update_roles(&AgentId::new(), vec!["tester".to_string()])
+                .await
+                .is_err()
+        );
     }
 }
