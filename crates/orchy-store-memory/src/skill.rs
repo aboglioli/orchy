@@ -62,10 +62,16 @@ impl SkillStore for MemoryBackend {
             .values()
             .filter(|skill| {
                 if let Some(ref ns) = filter.namespace {
-                    skill.namespace.starts_with(ns)
-                } else {
-                    true
+                    if !skill.namespace.starts_with(ns) {
+                        return false;
+                    }
                 }
+                if let Some(ref project) = filter.project {
+                    if skill.namespace.project() != project.as_ref() {
+                        return false;
+                    }
+                }
+                true
             })
             .cloned()
             .collect())

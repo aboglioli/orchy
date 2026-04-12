@@ -71,6 +71,11 @@ impl TaskStore for MemoryBackend {
                         return false;
                     }
                 }
+                if let Some(ref project) = filter.project {
+                    if t.namespace.project() != project.as_ref() {
+                        return false;
+                    }
+                }
                 if let Some(ref status) = filter.status {
                     if t.status != *status {
                         return false;

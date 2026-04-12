@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{AgentId, Namespace};
+use crate::value_objects::{AgentId, Namespace, Project};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
@@ -26,4 +26,5 @@ pub struct WriteSkill {
 #[derive(Debug, Clone, Default)]
 pub struct SkillFilter {
     pub namespace: Option<Namespace>,
+    pub project: Option<Project>,
 }

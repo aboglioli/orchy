@@ -116,6 +116,13 @@ impl TaskStore for SqliteBackend {
             params.push(Box::new(ns.to_string()));
             idx += 1;
         }
+        if let Some(ref project) = filter.project {
+            sql.push_str(&format!(
+                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(project.to_string()));
+            idx += 1;
+        }
         if let Some(ref status) = filter.status {
             sql.push_str(&format!(" AND status = ?{idx}"));
             params.push(Box::new(status.to_string()));

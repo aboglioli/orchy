@@ -423,6 +423,7 @@ async fn memory_list_with_namespace_prefix() {
         &store,
         MemoryFilter {
             namespace: Some(ns("app")),
+            ..Default::default()
         },
     )
     .await
@@ -433,6 +434,7 @@ async fn memory_list_with_namespace_prefix() {
         &store,
         MemoryFilter {
             namespace: Some(ns("app/tasks")),
+            ..Default::default()
         },
     )
     .await
@@ -823,6 +825,7 @@ async fn skill_list_filters_by_namespace() {
         &store,
         SkillFilter {
             namespace: Some(ns("proj-a")),
+            ..Default::default()
         },
     )
     .await
@@ -833,6 +836,7 @@ async fn skill_list_filters_by_namespace() {
         &store,
         SkillFilter {
             namespace: Some(ns("proj-b")),
+            ..Default::default()
         },
     )
     .await

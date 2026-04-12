@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{AgentId, Namespace, Version};
+use crate::value_objects::{AgentId, Namespace, Project, Version};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
@@ -32,4 +32,5 @@ pub struct WriteMemory {
 #[derive(Debug, Clone, Default)]
 pub struct MemoryFilter {
     pub namespace: Option<Namespace>,
+    pub project: Option<Project>,
 }

@@ -88,10 +88,16 @@ impl MemoryStore for MemoryBackend {
             .values()
             .filter(|entry| {
                 if let Some(ref ns) = filter.namespace {
-                    entry.namespace.starts_with(ns)
-                } else {
-                    true
+                    if !entry.namespace.starts_with(ns) {
+                        return false;
+                    }
                 }
+                if let Some(ref project) = filter.project {
+                    if entry.namespace.project() != project.as_ref() {
+                        return false;
+                    }
+                }
+                true
             })
             .cloned()
             .collect();

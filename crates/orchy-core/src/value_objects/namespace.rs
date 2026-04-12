@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use super::Project;
+
 /// Hierarchical slash-separated path: `<project>[/<scope>...]`
 ///
 /// The first segment is always the **project identifier** (e.g. `orchy`,
@@ -42,6 +44,10 @@ impl Namespace {
 
     pub fn with_scope(&self, scope: &str) -> Result<Namespace, String> {
         Namespace::try_from(format!("{}/{scope}", self.0))
+    }
+
+    pub fn to_project(&self) -> Project {
+        Project::from(self)
     }
 
     pub fn is_project_root(&self) -> bool {

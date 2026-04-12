@@ -611,6 +611,7 @@ impl OrchyHandler {
 
         let filter = MemoryFilter {
             namespace: Some(namespace),
+            ..Default::default()
         };
 
         match self.container.memory_service.list(filter).await {
@@ -920,6 +921,7 @@ impl OrchyHandler {
                 .skill_service
                 .list(SkillFilter {
                     namespace: Some(namespace),
+                    ..Default::default()
                 })
                 .await
         };
