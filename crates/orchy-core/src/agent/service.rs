@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use crate::entities::{Agent, RegisterAgent};
+use super::{Agent, AgentId, AgentStatus, RegisterAgent};
 use crate::error::{Error, Result};
 use crate::store::Store;
-use crate::value_objects::{AgentId, AgentStatus};
 
 pub struct AgentService<S: Store> {
     store: Arc<S>,
@@ -56,9 +55,8 @@ impl<S: Store> AgentService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::RegisterAgent;
+    use crate::namespace::Namespace;
     use crate::store::mock::MockStore;
-    use crate::value_objects::Namespace;
     use std::collections::HashMap;
 
     fn make_registration() -> RegisterAgent {

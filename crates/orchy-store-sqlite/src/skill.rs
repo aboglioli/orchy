@@ -3,10 +3,10 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use orchy_core::entities::{Skill, SkillFilter, WriteSkill};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::store::SkillStore;
-use orchy_core::value_objects::{AgentId, Namespace};
+use orchy_core::namespace::Namespace;
+use orchy_core::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
 
 use crate::SqliteBackend;
 

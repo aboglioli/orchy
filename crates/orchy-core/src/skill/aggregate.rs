@@ -1,5 +1,5 @@
-use crate::entities::Skill;
-use crate::value_objects::Namespace;
+use super::Skill;
+use crate::namespace::Namespace;
 
 pub struct SkillAggregate;
 

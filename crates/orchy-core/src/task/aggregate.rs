@@ -1,6 +1,7 @@
-use crate::entities::Task;
+use crate::agent::AgentId;
 use crate::error::{Error, Result};
-use crate::value_objects::{AgentId, Namespace, Priority, TaskId, TaskStatus};
+
+use super::{Task, TaskStatus};
 
 pub struct TaskAggregate;
 
@@ -71,7 +72,8 @@ impl TaskAggregate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value_objects::{AgentId, Priority, TaskId};
+    use crate::namespace::Namespace;
+    use crate::task::{Priority, TaskId};
 
     fn make_task(status: TaskStatus, claimed_by: Option<AgentId>) -> Task {
         Task {

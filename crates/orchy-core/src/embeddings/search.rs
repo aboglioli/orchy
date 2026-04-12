@@ -3,9 +3,6 @@ use std::hash::Hash;
 
 const RRF_K: f64 = 60.0;
 
-/// Reciprocal Rank Fusion — merges two ranked result lists.
-/// Each result is scored as `1 / (k + rank)` per list, then summed.
-/// Returns top `limit` results sorted by combined score descending.
 pub fn reciprocal_rank_fusion<K: Eq + Hash + Clone, T: Clone>(
     keyword_results: &[(K, T)],
     vector_results: &[(K, T)],
@@ -52,9 +49,6 @@ mod tests {
 
         let results = reciprocal_rank_fusion(&keyword, &vector, 3);
 
-        // "b" appears at rank 1 in keyword (score 1/62) and rank 0 in vector (score 1/61)
-        // "a" appears at rank 0 in keyword (score 1/61) and rank 2 in vector (score 1/63)
-        // "b" should have highest combined score
         assert_eq!(results[0], "b");
         assert_eq!(results[1], "a");
         assert_eq!(results.len(), 3);

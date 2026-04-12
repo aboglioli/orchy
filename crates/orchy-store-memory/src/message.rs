@@ -1,9 +1,11 @@
 use chrono::Utc;
 
-use orchy_core::entities::{CreateMessage, Message, MessageStatus};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::store::MessageStore;
-use orchy_core::value_objects::{AgentId, MessageId, MessageTarget, Namespace};
+use orchy_core::message::{
+    CreateMessage, Message, MessageId, MessageStatus, MessageStore, MessageTarget,
+};
+use orchy_core::namespace::Namespace;
 
 use crate::MemoryBackend;
 

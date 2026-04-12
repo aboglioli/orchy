@@ -1,7 +1,12 @@
+pub mod aggregate;
+pub mod service;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{AgentId, Namespace, Project};
+use crate::agent::AgentId;
+use crate::error::Result;
+use crate::namespace::{Namespace, Project};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
@@ -27,4 +32,11 @@ pub struct WriteSkill {
 pub struct SkillFilter {
     pub namespace: Option<Namespace>,
     pub project: Option<Project>,
+}
+
+pub trait SkillStore: Send + Sync {
+    async fn write(&self, skill: WriteSkill) -> Result<Skill>;
+    async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>>;
+    async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>>;
+    async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()>;
 }

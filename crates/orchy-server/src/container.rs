@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use orchy_core::agent::service::AgentService;
 use orchy_core::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
-use orchy_core::services::{
-    AgentService, ContextService, MemoryService, MessageService, SkillService, TaskService,
-};
+use orchy_core::memory::service::{ContextService, MemoryService};
+use orchy_core::message::service::MessageService;
+use orchy_core::skill::service::SkillService;
+use orchy_core::task::service::TaskService;
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;

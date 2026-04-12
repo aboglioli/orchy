@@ -9,8 +9,11 @@ mod task;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use orchy_core::entities::{Agent, ContextSnapshot, MemoryEntry, Message, Skill, Task};
-use orchy_core::value_objects::{AgentId, MessageId, SnapshotId, TaskId};
+use orchy_core::agent::{Agent, AgentId};
+use orchy_core::memory::{ContextSnapshot, MemoryEntry, SnapshotId};
+use orchy_core::message::{Message, MessageId};
+use orchy_core::skill::Skill;
+use orchy_core::task::{Task, TaskId};
 
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,

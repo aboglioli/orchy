@@ -3,10 +3,10 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 
-use orchy_core::entities::{ContextSnapshot, CreateSnapshot};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::store::ContextStore;
-use orchy_core::value_objects::{AgentId, Namespace, SnapshotId};
+use orchy_core::memory::{ContextSnapshot, ContextStore, CreateSnapshot, SnapshotId};
+use orchy_core::namespace::Namespace;
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 

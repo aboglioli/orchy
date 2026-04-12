@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use orchy_core::entities::WriteSkill;
-use orchy_core::services::SkillService;
+use orchy_core::namespace::Namespace;
+use orchy_core::skill::WriteSkill;
+use orchy_core::skill::service::SkillService;
 use orchy_core::store::Store;
-use orchy_core::value_objects::Namespace;
 use tracing::{info, warn};
 
 /// Loads skill files from a directory into the store.

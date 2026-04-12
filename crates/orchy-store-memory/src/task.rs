@@ -1,9 +1,8 @@
 use chrono::Utc;
 
-use orchy_core::entities::{CreateTask, Task, TaskFilter};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::store::TaskStore;
-use orchy_core::value_objects::{AgentId, TaskId, TaskStatus};
+use orchy_core::task::{CreateTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::MemoryBackend;
 
@@ -12,7 +11,6 @@ impl TaskStore for MemoryBackend {
         let now = Utc::now();
         let id = TaskId::new();
 
-        // Determine initial status based on dependencies
         let initial_status = if cmd.depends_on.is_empty() {
             TaskStatus::Pending
         } else {
@@ -96,7 +94,6 @@ impl TaskStore for MemoryBackend {
             .cloned()
             .collect();
 
-        // Sort by priority descending (Critical first)
         results.sort_by(|a, b| b.priority.cmp(&a.priority));
         Ok(results)
     }

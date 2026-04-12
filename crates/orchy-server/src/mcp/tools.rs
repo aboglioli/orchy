@@ -11,11 +11,11 @@ use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, schemars, tool, tool_router};
 use serde::Deserialize;
 
-use orchy_core::entities::{
-    CreateMessage, CreateSnapshot, CreateTask, MemoryFilter, RegisterAgent, SkillFilter,
-    TaskFilter, WriteMemory, WriteSkill,
-};
-use orchy_core::value_objects::{MessageId, MessageTarget, Priority, TaskId, Version};
+use orchy_core::agent::RegisterAgent;
+use orchy_core::memory::{CreateSnapshot, MemoryFilter, Version, WriteMemory};
+use orchy_core::message::{CreateMessage, MessageId, MessageTarget};
+use orchy_core::skill::{SkillFilter, WriteSkill};
+use orchy_core::task::{CreateTask, Priority, TaskFilter, TaskId};
 
 use super::handler::{OrchyHandler, parse_namespace};
 
@@ -222,8 +222,8 @@ fn parse_task_id(s: &str) -> Result<TaskId, String> {
         .map_err(|e| format!("invalid task_id: {e}"))
 }
 
-fn parse_agent_id(s: &str) -> Result<orchy_core::value_objects::AgentId, String> {
-    s.parse::<orchy_core::value_objects::AgentId>()
+fn parse_agent_id(s: &str) -> Result<orchy_core::agent::AgentId, String> {
+    s.parse::<orchy_core::agent::AgentId>()
         .map_err(|e| format!("invalid agent_id: {e}"))
 }
 
@@ -424,12 +424,12 @@ impl OrchyHandler {
         };
 
         let status = params.status.as_deref().map(|s| match s {
-            "pending" => Some(orchy_core::value_objects::TaskStatus::Pending),
-            "blocked" => Some(orchy_core::value_objects::TaskStatus::Blocked),
-            "claimed" => Some(orchy_core::value_objects::TaskStatus::Claimed),
-            "in_progress" => Some(orchy_core::value_objects::TaskStatus::InProgress),
-            "completed" => Some(orchy_core::value_objects::TaskStatus::Completed),
-            "failed" => Some(orchy_core::value_objects::TaskStatus::Failed),
+            "pending" => Some(orchy_core::task::TaskStatus::Pending),
+            "blocked" => Some(orchy_core::task::TaskStatus::Blocked),
+            "claimed" => Some(orchy_core::task::TaskStatus::Claimed),
+            "in_progress" => Some(orchy_core::task::TaskStatus::InProgress),
+            "completed" => Some(orchy_core::task::TaskStatus::Completed),
+            "failed" => Some(orchy_core::task::TaskStatus::Failed),
             _ => None,
         });
 

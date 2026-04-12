@@ -1,9 +1,8 @@
 use chrono::Utc;
 
-use orchy_core::entities::{MemoryEntry, MemoryFilter, WriteMemory};
 use orchy_core::error::{Error, Result};
-use orchy_core::store::MemoryStore;
-use orchy_core::value_objects::{Namespace, Version};
+use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, Version, WriteMemory};
+use orchy_core::namespace::Namespace;
 
 use crate::{MemoryBackend, cosine_similarity};
 
@@ -18,7 +17,6 @@ impl MemoryStore for MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let entry = if let Some(existing) = store.get(&key) {
-            // Update existing entry
             if let Some(expected) = cmd.expected_version {
                 if existing.version != expected {
                     return Err(Error::VersionMismatch {
@@ -43,7 +41,6 @@ impl MemoryStore for MemoryBackend {
                 updated_at: now,
             }
         } else {
-            // Create new entry
             if let Some(expected) = cmd.expected_version {
                 return Err(Error::VersionMismatch {
                     expected: expected.as_u64(),
@@ -137,7 +134,6 @@ impl MemoryStore for MemoryBackend {
                         .map(|e_emb| cosine_similarity(emb, e_emb))
                 });
 
-                // Include if text matches or has positive similarity
                 if text_match || sim.map(|s| s > 0.0).unwrap_or(false) {
                     let score = if text_match { 1.0 } else { 0.0 } + sim.unwrap_or(0.0);
                     Some((score, entry))

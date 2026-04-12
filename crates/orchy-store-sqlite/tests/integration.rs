@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
-use orchy_core::entities::*;
-use orchy_core::store::{
-    AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, TaskStore,
+use orchy_core::agent::{AgentId, AgentStatus, AgentStore, RegisterAgent};
+use orchy_core::memory::{
+    ContextStore, CreateSnapshot, MemoryFilter, MemoryStore, Version, WriteMemory,
 };
-use orchy_core::value_objects::*;
+use orchy_core::message::{CreateMessage, MessageStatus, MessageStore, MessageTarget};
+use orchy_core::namespace::Namespace;
+use orchy_core::skill::{SkillFilter, SkillStore, WriteSkill};
+use orchy_core::task::{CreateTask, Priority, TaskFilter, TaskId, TaskStatus, TaskStore};
 use orchy_store_sqlite::SqliteBackend;
 
 fn backend() -> SqliteBackend {

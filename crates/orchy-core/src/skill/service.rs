@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use crate::domain::SkillAggregate;
-use crate::entities::{Skill, SkillFilter, WriteSkill};
+use super::aggregate::SkillAggregate;
+use super::{Skill, SkillFilter, WriteSkill};
 use crate::error::{Error, Result};
+use crate::namespace::Namespace;
 use crate::store::Store;
-use crate::value_objects::Namespace;
 
 pub struct SkillService<S: Store> {
     store: Arc<S>,

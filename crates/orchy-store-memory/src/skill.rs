@@ -1,9 +1,8 @@
 use chrono::Utc;
 
-use orchy_core::entities::{Skill, SkillFilter, WriteSkill};
 use orchy_core::error::{Error, Result};
-use orchy_core::store::SkillStore;
-use orchy_core::value_objects::Namespace;
+use orchy_core::namespace::Namespace;
+use orchy_core::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
 
 use crate::MemoryBackend;
 

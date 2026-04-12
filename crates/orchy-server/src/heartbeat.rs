@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::value_objects::AgentStatus;
+use orchy_core::agent::AgentStatus;
 use tokio::time::{Duration, interval};
 use tracing::info;
 
