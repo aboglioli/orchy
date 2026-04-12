@@ -85,7 +85,7 @@ async fn bootstrap_handler(
     State(container): State<Arc<Container>>,
     Path(namespace): Path<String>,
 ) -> impl IntoResponse {
-    let ns = match orchy_core::value_objects::Namespace::try_from(namespace) {
+    let ns = match orchy_core::namespace::Namespace::try_from(namespace) {
         Ok(ns) => ns,
         Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
     };

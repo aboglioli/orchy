@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
-use crate::entities::{CreateMessage, Message, MessageStatus};
+use super::{CreateMessage, Message, MessageTarget};
+use crate::agent::AgentId;
 use crate::error::Result;
+use crate::message::MessageId;
+use crate::namespace::Namespace;
 use crate::store::Store;
-use crate::value_objects::{AgentId, MessageId, MessageTarget, Namespace};
 
 pub struct MessageService<S: Store> {
     store: Arc<S>,
@@ -75,9 +77,8 @@ impl<S: Store> MessageService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::RegisterAgent;
+    use crate::agent::RegisterAgent;
     use crate::store::mock::MockStore;
-    use crate::value_objects::Namespace;
     use std::collections::HashMap;
 
     fn make_registration(roles: Vec<&str>) -> RegisterAgent {

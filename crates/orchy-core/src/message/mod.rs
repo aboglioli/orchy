@@ -1,8 +1,52 @@
-use crate::error::{Error, Result};
-use crate::value_objects::ids::AgentId;
+pub mod service;
+
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+use uuid::Uuid;
+
+use crate::agent::AgentId;
+use crate::error::{Error, Result};
+use crate::namespace::Namespace;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct MessageId(Uuid);
+
+impl MessageId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for MessageId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for MessageId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for MessageId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -25,7 +69,6 @@ impl MessageTarget {
             }
             return Ok(MessageTarget::Role(role.to_string()));
         }
-        // Try parsing as UUID → Agent
         match AgentId::from_str(s) {
             Ok(id) => Ok(MessageTarget::Agent(id)),
             Err(_) => Err(Error::InvalidInput(format!(
@@ -57,6 +100,39 @@ impl fmt::Display for MessageTarget {
             MessageTarget::Agent(id) => write!(f, "{id}"),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageStatus {
+    Pending,
+    Delivered,
+    Read,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub id: MessageId,
+    pub namespace: Namespace,
+    pub from: AgentId,
+    pub to: MessageTarget,
+    pub body: String,
+    pub status: MessageStatus,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateMessage {
+    pub namespace: Namespace,
+    pub from: AgentId,
+    pub to: MessageTarget,
+    pub body: String,
+}
+
+pub trait MessageStore: Send + Sync {
+    async fn send(&self, message: CreateMessage) -> Result<Message>;
+    async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>>;
+    async fn mark_read(&self, ids: &[MessageId]) -> Result<()>;
 }
 
 #[cfg(test)]

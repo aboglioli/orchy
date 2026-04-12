@@ -1,7 +1,7 @@
-use orchy_core::entities::Skill;
-use orchy_core::services::SkillService;
+use orchy_core::namespace::Namespace;
+use orchy_core::skill::Skill;
+use orchy_core::skill::service::SkillService;
 use orchy_core::store::Store;
-use orchy_core::value_objects::Namespace;
 
 pub async fn generate_bootstrap_prompt<S: Store>(
     namespace: &Namespace,

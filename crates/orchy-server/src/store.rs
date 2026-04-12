@@ -1,10 +1,11 @@
-use orchy_core::entities::{
-    Agent, ContextSnapshot, CreateMessage, CreateSnapshot, CreateTask, MemoryEntry, MemoryFilter,
-    Message, RegisterAgent, Skill, SkillFilter, Task, TaskFilter, WriteMemory, WriteSkill,
-};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, RegisterAgent};
 use orchy_core::error::Result;
+use orchy_core::memory::{ContextSnapshot, CreateSnapshot, MemoryEntry, MemoryFilter, WriteMemory};
+use orchy_core::message::{CreateMessage, Message, MessageId};
+use orchy_core::namespace::Namespace;
+use orchy_core::skill::{Skill, SkillFilter, WriteSkill};
 use orchy_core::store::Store;
-use orchy_core::value_objects::{AgentId, AgentStatus, MessageId, Namespace, TaskId, TaskStatus};
+use orchy_core::task::{CreateTask, Task, TaskFilter, TaskId, TaskStatus};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;

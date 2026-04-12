@@ -5,10 +5,10 @@ use pgvector::Vector;
 use sqlx::Row;
 use uuid::Uuid;
 
-use orchy_core::entities::{ContextSnapshot, CreateSnapshot};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::store::ContextStore;
-use orchy_core::value_objects::{AgentId, Namespace, SnapshotId};
+use orchy_core::memory::{ContextSnapshot, ContextStore, CreateSnapshot, SnapshotId};
+use orchy_core::namespace::Namespace;
 
 use crate::PgBackend;
 

@@ -3,10 +3,9 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 
-use orchy_core::entities::{Agent, RegisterAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
 use orchy_core::error::{Error, Result};
-use orchy_core::store::AgentStore;
-use orchy_core::value_objects::{AgentId, AgentStatus, Namespace};
+use orchy_core::namespace::Namespace;
 
 use crate::SqliteBackend;
 

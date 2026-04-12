@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::domain::TaskAggregate;
-use crate::entities::{CreateTask, Task, TaskFilter};
+use super::aggregate::TaskAggregate;
+use super::{CreateTask, Task, TaskFilter, TaskId, TaskStatus};
+use crate::agent::AgentId;
 use crate::error::{Error, Result};
+use crate::namespace::Namespace;
 use crate::store::Store;
-use crate::value_objects::{AgentId, Namespace, TaskId, TaskStatus};
 
 pub struct TaskService<S: Store> {
     store: Arc<S>,

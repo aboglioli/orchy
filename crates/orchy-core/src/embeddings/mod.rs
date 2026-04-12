@@ -1,4 +1,5 @@
 pub mod openai;
+pub mod search;
 
 use crate::error::Result;
 pub use openai::OpenAiEmbeddingsProvider;

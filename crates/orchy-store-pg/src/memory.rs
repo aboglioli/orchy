@@ -3,10 +3,10 @@ use pgvector::Vector;
 use sqlx::Row;
 use uuid::Uuid;
 
-use orchy_core::entities::{MemoryEntry, MemoryFilter, WriteMemory};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::store::MemoryStore;
-use orchy_core::value_objects::{AgentId, Namespace, Version};
+use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, Version, WriteMemory};
+use orchy_core::namespace::Namespace;
 
 use crate::PgBackend;
 

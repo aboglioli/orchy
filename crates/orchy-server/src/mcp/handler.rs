@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::value_objects::{AgentId, Namespace};
+use orchy_core::agent::AgentId;
+use orchy_core::namespace::Namespace;
 
 use crate::container::Container;
 

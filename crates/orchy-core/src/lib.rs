@@ -1,8 +1,9 @@
-pub mod domain;
+pub mod agent;
 pub mod embeddings;
-pub mod entities;
 pub mod error;
-pub mod search;
-pub mod services;
+pub mod memory;
+pub mod message;
+pub mod namespace;
+pub mod skill;
 pub mod store;
-pub mod value_objects;
+pub mod task;

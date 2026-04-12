@@ -2,10 +2,10 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-use orchy_core::entities::{CreateTask, Task, TaskFilter};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::store::TaskStore;
-use orchy_core::value_objects::{AgentId, Namespace, Priority, TaskId, TaskStatus};
+use orchy_core::namespace::Namespace;
+use orchy_core::task::{CreateTask, Priority, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::PgBackend;
 
