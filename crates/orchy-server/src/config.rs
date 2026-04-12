@@ -22,7 +22,7 @@ pub struct ServerConfig {
 }
 
 fn default_heartbeat_timeout() -> u64 {
-    60
+    300
 }
 
 #[derive(Debug, Deserialize)]

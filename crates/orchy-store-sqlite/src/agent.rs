@@ -77,7 +77,7 @@ impl AgentStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let rows = conn
             .execute(
-                "UPDATE agents SET last_heartbeat = ?1 WHERE id = ?2",
+                "UPDATE agents SET last_heartbeat = ?1, status = 'online' WHERE id = ?2",
                 rusqlite::params![Utc::now().to_rfc3339(), id.to_string()],
             )
             .map_err(|e| Error::Store(e.to_string()))?;
