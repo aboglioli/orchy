@@ -14,7 +14,7 @@ pub enum MessageStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: MessageId,
-    pub namespace: Option<Namespace>,
+    pub namespace: Namespace,
     pub from: AgentId,
     pub to: MessageTarget,
     pub body: String,
@@ -24,7 +24,7 @@ pub struct Message {
 
 #[derive(Debug, Clone)]
 pub struct CreateMessage {
-    pub namespace: Option<Namespace>,
+    pub namespace: Namespace,
     pub from: AgentId,
     pub to: MessageTarget,
     pub body: String,

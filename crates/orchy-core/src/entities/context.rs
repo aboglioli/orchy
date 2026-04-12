@@ -8,7 +8,7 @@ use crate::value_objects::{AgentId, Namespace, SnapshotId};
 pub struct ContextSnapshot {
     pub id: SnapshotId,
     pub agent_id: AgentId,
-    pub namespace: Option<Namespace>,
+    pub namespace: Namespace,
     pub summary: String,
     pub embedding: Option<Vec<f32>>,
     pub embedding_model: Option<String>,
@@ -20,7 +20,7 @@ pub struct ContextSnapshot {
 #[derive(Debug, Clone)]
 pub struct CreateSnapshot {
     pub agent_id: AgentId,
-    pub namespace: Option<Namespace>,
+    pub namespace: Namespace,
     pub summary: String,
     pub embedding: Option<Vec<f32>>,
     pub embedding_model: Option<String>,

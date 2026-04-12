@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use orchy_core::entities::{Agent, ContextSnapshot, MemoryEntry, Message, Task};
-use orchy_core::value_objects::{AgentId, MessageId, Namespace, SnapshotId, TaskId};
+use orchy_core::value_objects::{AgentId, MessageId, SnapshotId, TaskId};
 
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,

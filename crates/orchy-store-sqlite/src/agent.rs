@@ -30,7 +30,7 @@ impl AgentStore for SqliteBackend {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 agent.id.to_string(),
-                agent.namespace.as_ref().map(|n| n.to_string()),
+                agent.namespace.to_string(),
                 serde_json::to_string(&agent.roles).unwrap(),
                 agent.description,
                 agent.status.to_string(),
@@ -131,7 +131,7 @@ impl AgentStore for SqliteBackend {
 
 fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let id_str: String = row.get(0)?;
-    let namespace_str: Option<String> = row.get(1)?;
+    let namespace_str: String = row.get(1)?;
     let roles_str: String = row.get(2)?;
     let description: String = row.get(3)?;
     let status_str: String = row.get(4)?;
@@ -142,9 +142,8 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     Ok(Agent {
         id: AgentId::from_str(&id_str)
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
-        namespace: namespace_str
-            .map(|s| Namespace::try_from(s).map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))))
-            .transpose()?,
+        namespace: Namespace::try_from(namespace_str)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))))?,
         roles: serde_json::from_str(&roles_str)
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?,
         description,

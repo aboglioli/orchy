@@ -79,11 +79,15 @@ own all invariant enforcement and coordination between store and embeddings.
 
 All validated at construction, immutable.
 
-**Namespace** — Hierarchical slash-separated path. Same rules as eventure:
-- Not empty
-- Slash-separated parts: `project/architecture`, `backend/auth`
+**Namespace** — Hierarchical slash-separated path with project-first convention:
+- First segment is always the **project identifier**: `my-project`, `orchy`
+- Subsequent segments are optional scoping: `my-project/backend/auth`
 - Each part: ASCII alphanumeric + hyphen + underscore only
 - No empty parts, no leading/trailing slashes
+- Methods: `project()` → first segment, `scopes()` → rest, `with_scope(s)` → append
+- All entities require a namespace (no optional namespaces)
+- Session-scoped: agents register with a project namespace, all subsequent calls
+  default to it. Sub-scopes can be provided per call but the project prefix is enforced.
 
 **AgentId** — UUID wrapper, auto-generated on registration.
 
@@ -106,7 +110,7 @@ Valid transitions enforced in the value object.
 ```
 Agent {
     id: AgentId
-    namespace: Option<Namespace>
+    namespace: Namespace
     roles: Vec<String>
     description: String
     status: AgentStatus
@@ -156,7 +160,7 @@ MemoryEntry {
 ```
 Message {
     id: MessageId
-    namespace: Option<Namespace>
+    namespace: Namespace
     from: AgentId
     to: MessageTarget
     body: String
@@ -170,7 +174,7 @@ Message {
 ContextSnapshot {
     id: SnapshotId
     agent_id: AgentId
-    namespace: Option<Namespace>
+    namespace: Namespace
     summary: String
     embedding: Option<Vec<f32>>
     embedding_model: Option<String>

@@ -27,7 +27,7 @@ impl MessageStore for SqliteBackend {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
                 message.id.to_string(),
-                message.namespace.as_ref().map(|n| n.to_string()),
+                message.namespace.to_string(),
                 message.from.to_string(),
                 message.to.to_string(),
                 message.body,
@@ -40,24 +40,18 @@ impl MessageStore for SqliteBackend {
         Ok(message)
     }
 
-    async fn check(&self, agent: &AgentId, namespace: Option<&Namespace>) -> Result<Vec<Message>> {
+    async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        // Find pending messages targeting this agent (direct or broadcast)
-        let mut sql = String::from(
+        let sql = String::from(
             "SELECT id, namespace, from_agent, to_target, body, status, created_at
              FROM messages
-             WHERE status = 'pending' AND (to_target = ?1 OR to_target = 'broadcast')",
+             WHERE status = 'pending' AND (to_target = ?1 OR to_target = 'broadcast')
+             AND (namespace = ?2 OR namespace LIKE ?2 || '/%')",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         params.push(Box::new(agent.to_string()));
-        if let Some(ns) = namespace {
-            let idx = 2;
-            sql.push_str(&format!(
-                " AND namespace IS NOT NULL AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-            ));
-            params.push(Box::new(ns.to_string()));
-        }
+        params.push(Box::new(namespace.to_string()));
 
         let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -104,7 +98,7 @@ impl MessageStore for SqliteBackend {
 
 fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
     let id_str: String = row.get(0)?;
-    let namespace_str: Option<String> = row.get(1)?;
+    let namespace_str: String = row.get(1)?;
     let from_str: String = row.get(2)?;
     let to_str: String = row.get(3)?;
     let body: String = row.get(4)?;
@@ -114,9 +108,8 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
     Ok(Message {
         id: MessageId::from_str(&id_str)
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
-        namespace: namespace_str
-            .map(|s| Namespace::try_from(s).map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))))
-            .transpose()?,
+        namespace: Namespace::try_from(namespace_str)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))))?,
         from: AgentId::from_str(&from_str)
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?,
         to: MessageTarget::parse(&to_str)

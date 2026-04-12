@@ -112,7 +112,7 @@ impl Store for SqliteBackend {
     async fn check_messages(
         &self,
         agent: &AgentId,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> Result<Vec<Message>> {
         MessageStore::check(self, agent, namespace).await
     }
@@ -134,7 +134,7 @@ impl Store for SqliteBackend {
     async fn list_contexts(
         &self,
         agent: Option<&AgentId>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
         ContextStore::list(self, agent, namespace).await
     }
@@ -143,7 +143,7 @@ impl Store for SqliteBackend {
         &self,
         query: &str,
         embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
+        namespace: &Namespace,
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {

@@ -33,7 +33,7 @@ impl AgentStore for PgBackend {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(agent.id.as_uuid())
-        .bind(agent.namespace.as_ref().map(|n| n.to_string()))
+        .bind(agent.namespace.to_string())
         .bind(&roles_json)
         .bind(&agent.description)
         .bind(agent.status.to_string())
@@ -123,7 +123,7 @@ impl AgentStore for PgBackend {
 
 fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
     let id: Uuid = row.get("id");
-    let namespace: Option<String> = row.get("namespace");
+    let namespace: String = row.get("namespace");
     let roles: serde_json::Value = row.get("roles");
     let description: String = row.get("description");
     let status: String = row.get("status");
@@ -133,7 +133,7 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
 
     Agent {
         id: AgentId::from_uuid(id),
-        namespace: namespace.and_then(|s| Namespace::try_from(s).ok()),
+        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
         roles: serde_json::from_value(roles).unwrap_or_default(),
         description,
         status: parse_agent_status(&status),

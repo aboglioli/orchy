@@ -12,7 +12,7 @@ impl AgentStore for MemoryBackend {
         let now = Utc::now();
         let agent = Agent {
             id: AgentId::new(),
-            namespace: registration.namespace,
+            namespace: registration.namespace.clone(),
             roles: registration.roles,
             description: registration.description,
             status: AgentStatus::Online,

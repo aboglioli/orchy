@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Hierarchical slash-separated path.
+/// Hierarchical slash-separated path: `<project>[/<scope>...]`
+///
+/// The first segment is always the **project identifier** (e.g. `orchy`,
+/// `my-api`).  Subsequent segments are optional scoping within that project
+/// (e.g. `orchy/backend/auth`).
+///
 /// Each part must be non-empty ASCII alphanumeric + hyphen + underscore.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -23,6 +28,22 @@ impl Namespace {
             }
         }
         Ok(())
+    }
+
+    pub fn project(&self) -> &str {
+        self.0.split('/').next().unwrap()
+    }
+
+    pub fn scopes(&self) -> &str {
+        self.0.split_once('/').map(|(_, rest)| rest).unwrap_or("")
+    }
+
+    pub fn with_scope(&self, scope: &str) -> Result<Namespace, String> {
+        Namespace::try_from(format!("{}/{scope}", self.0))
+    }
+
+    pub fn is_project_root(&self) -> bool {
+        !self.0.contains('/')
     }
 
     pub fn starts_with(&self, prefix: &Namespace) -> bool {
@@ -120,5 +141,52 @@ mod tests {
         assert!(!ns.starts_with(&other));
         assert!(ns.starts_with(&exact));
         assert!(!prefix.starts_with(&ns));
+    }
+
+    #[test]
+    fn project_returns_first_segment() {
+        let root = Namespace::try_from("orchy").unwrap();
+        assert_eq!(root.project(), "orchy");
+
+        let scoped = Namespace::try_from("orchy/backend/auth").unwrap();
+        assert_eq!(scoped.project(), "orchy");
+    }
+
+    #[test]
+    fn scopes_returns_rest_after_project() {
+        let root = Namespace::try_from("orchy").unwrap();
+        assert_eq!(root.scopes(), "");
+
+        let one = Namespace::try_from("orchy/backend").unwrap();
+        assert_eq!(one.scopes(), "backend");
+
+        let deep = Namespace::try_from("orchy/backend/auth").unwrap();
+        assert_eq!(deep.scopes(), "backend/auth");
+    }
+
+    #[test]
+    fn with_scope_appends() {
+        let root = Namespace::try_from("orchy").unwrap();
+        let scoped = root.with_scope("backend").unwrap();
+        assert_eq!(scoped.as_ref(), "orchy/backend");
+
+        let deeper = scoped.with_scope("auth").unwrap();
+        assert_eq!(deeper.as_ref(), "orchy/backend/auth");
+    }
+
+    #[test]
+    fn with_scope_validates() {
+        let root = Namespace::try_from("orchy").unwrap();
+        assert!(root.with_scope("").is_err());
+        assert!(root.with_scope("bad scope").is_err());
+    }
+
+    #[test]
+    fn is_project_root_works() {
+        let root = Namespace::try_from("orchy").unwrap();
+        assert!(root.is_project_root());
+
+        let scoped = Namespace::try_from("orchy/backend").unwrap();
+        assert!(!scoped.is_project_root());
     }
 }

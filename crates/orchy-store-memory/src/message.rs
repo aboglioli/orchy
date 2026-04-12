@@ -24,7 +24,7 @@ impl MessageStore for MemoryBackend {
         Ok(message)
     }
 
-    async fn check(&self, agent: &AgentId, namespace: Option<&Namespace>) -> Result<Vec<Message>> {
+    async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         let mut messages = self.messages.write().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut results = Vec::new();
@@ -34,26 +34,18 @@ impl MessageStore for MemoryBackend {
                 continue;
             }
 
-            // Check if message targets this agent
             let targets_agent = match &msg.to {
                 MessageTarget::Agent(id) => id == agent,
                 MessageTarget::Broadcast => true,
-                MessageTarget::Role(_) => false, // fan-out handled at service level
+                MessageTarget::Role(_) => false,
             };
 
             if !targets_agent {
                 continue;
             }
 
-            // Filter by namespace if provided
-            if let Some(ns) = namespace {
-                if let Some(ref msg_ns) = msg.namespace {
-                    if !msg_ns.starts_with(ns) {
-                        continue;
-                    }
-                } else {
-                    continue;
-                }
+            if !msg.namespace.starts_with(namespace) {
+                continue;
             }
 
             msg.status = MessageStatus::Delivered;
