@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use orchy_core::value_objects::AgentStatus;
 use tokio::time::{Duration, interval};
 use tracing::info;
 
@@ -14,12 +15,27 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
     loop {
         ticker.tick().await;
 
-        match container.agent_service.disconnect_timed_out(timeout).await {
-            Ok(disconnected) => {
-                for agent_id in &disconnected {
-                    info!(%agent_id, "agent timed out, disconnecting");
-                    if let Err(e) = container.task_service.release_agent_tasks(agent_id).await {
-                        tracing::error!(%agent_id, error = %e, "failed to release agent tasks");
+        match container.agent_service.find_timed_out(timeout).await {
+            Ok(agents) => {
+                for agent in &agents {
+                    match agent.status {
+                        AgentStatus::Online | AgentStatus::Busy => {
+                            info!(agent_id = %agent.id, "agent idle, marking as idle");
+                            let _ = container
+                                .agent_service
+                                .update_status(&agent.id, AgentStatus::Idle)
+                                .await;
+                        }
+                        AgentStatus::Idle => {
+                            info!(agent_id = %agent.id, "idle agent timed out, disconnecting");
+                            let _ = container.agent_service.disconnect(&agent.id).await;
+                            if let Err(e) =
+                                container.task_service.release_agent_tasks(&agent.id).await
+                            {
+                                tracing::error!(agent_id = %agent.id, error = %e, "failed to release agent tasks");
+                            }
+                        }
+                        AgentStatus::Disconnected => {}
                     }
                 }
             }
