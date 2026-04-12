@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17
+    environment:
+      POSTGRES_USER: orchy
+      POSTGRES_PASSWORD: orchy
+      POSTGRES_DB: orchy
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
