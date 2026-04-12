@@ -26,8 +26,6 @@ macro_rules! delegate {
 }
 
 impl Store for StoreBackend {
-    // --- TaskStore ---
-
     async fn create_task(&self, task: CreateTask) -> Result<Task> {
         delegate!(self, create_task(task))
     }
@@ -60,8 +58,6 @@ impl Store for StoreBackend {
         delegate!(self, update_task_status(id, status))
     }
 
-    // --- MemoryStore ---
-
     async fn write_memory(&self, entry: WriteMemory) -> Result<MemoryEntry> {
         delegate!(self, write_memory(entry))
     }
@@ -87,8 +83,6 @@ impl Store for StoreBackend {
     async fn delete_memory(&self, namespace: &Namespace, key: &str) -> Result<()> {
         delegate!(self, delete_memory(namespace, key))
     }
-
-    // --- AgentStore ---
 
     async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
         delegate!(self, register(registration))
@@ -118,8 +112,6 @@ impl Store for StoreBackend {
         delegate!(self, find_timed_out(timeout_secs))
     }
 
-    // --- MessageStore ---
-
     async fn send_message(&self, message: CreateMessage) -> Result<Message> {
         delegate!(self, send_message(message))
     }
@@ -135,8 +127,6 @@ impl Store for StoreBackend {
     async fn mark_messages_read(&self, ids: &[MessageId]) -> Result<()> {
         delegate!(self, mark_messages_read(ids))
     }
-
-    // --- ContextStore ---
 
     async fn save_context(&self, snapshot: CreateSnapshot) -> Result<ContextSnapshot> {
         delegate!(self, save_context(snapshot))
@@ -164,8 +154,6 @@ impl Store for StoreBackend {
     ) -> Result<Vec<ContextSnapshot>> {
         delegate!(self, search_contexts(query, embedding, namespace, agent_id, limit))
     }
-
-    // --- SkillStore ---
 
     async fn write_skill(&self, skill: WriteSkill) -> Result<Skill> {
         delegate!(self, write_skill(skill))

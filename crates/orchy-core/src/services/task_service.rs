@@ -130,8 +130,6 @@ impl<S: Store> TaskService<S> {
         Ok(released)
     }
 
-    // --- Private helpers ---
-
     async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
         for dep_id in deps {
             let dep = self

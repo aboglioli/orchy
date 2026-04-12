@@ -19,10 +19,6 @@ use orchy_core::value_objects::{MessageId, MessageTarget, Priority, TaskId, Vers
 
 use super::handler::{parse_namespace, OrchyHandler};
 
-// ---------------------------------------------------------------------------
-// Parameter structs
-// ---------------------------------------------------------------------------
-
 #[derive(Deserialize, schemars::JsonSchema)]
 struct RegisterAgentParams {
     /// Project namespace (first segment is the project identifier, e.g. "my-project"
@@ -199,10 +195,6 @@ struct DeleteSkillParams {
     namespace: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 fn parse_task_id(s: &str) -> Result<TaskId, String> {
     s.parse::<TaskId>().map_err(|e| format!("invalid task_id: {e}"))
 }
@@ -220,14 +212,8 @@ fn to_json<T: serde::Serialize>(val: &T) -> String {
     serde_json::to_string_pretty(val).unwrap_or_else(|e| format!("serialization error: {e}"))
 }
 
-// ---------------------------------------------------------------------------
-// Tool implementations
-// ---------------------------------------------------------------------------
-
 #[tool_router]
 impl OrchyHandler {
-    // === Agent tools ===
-
     #[tool(description = "Register this session as an agent within a project namespace. \
         The namespace must start with the project identifier (e.g. 'my-project' or \
         'my-project/backend'). All subsequent tool calls will be scoped to this project. \
@@ -277,8 +263,6 @@ impl OrchyHandler {
             Err(e) => format!("error: {e}"),
         }
     }
-
-    // === Task tools ===
 
     #[tool(description = "Create a new task. Namespace defaults to session namespace; \
         if provided, the project prefix must match.")]
@@ -446,8 +430,6 @@ impl OrchyHandler {
         }
     }
 
-    // === Memory tools ===
-
     #[tool(description = "Write a key-value entry to shared memory. Namespace defaults to \
         session namespace; if provided, the project prefix must match.")]
     async fn write_memory(&self, Parameters(params): Parameters<WriteMemoryParams>) -> String {
@@ -536,8 +518,6 @@ impl OrchyHandler {
         }
     }
 
-    // === Message tools ===
-
     #[tool(description = "Send a message to another agent (by ID), a role (role:name), or \
         broadcast. Namespace defaults to session namespace.")]
     async fn send_message(&self, Parameters(params): Parameters<SendMessageParams>) -> String {
@@ -610,8 +590,6 @@ impl OrchyHandler {
             Err(e) => format!("error: {e}"),
         }
     }
-
-    // === Context tools ===
 
     #[tool(description = "Save a context snapshot for the session agent. Namespace defaults to \
         session namespace.")]
@@ -724,8 +702,6 @@ impl OrchyHandler {
             Err(e) => format!("error: {e}"),
         }
     }
-
-    // === Skill tools ===
 
     #[tool(description = "Write a project skill — shared instructions/conventions that all \
         agents in this project will receive. Skills are identified by namespace + name. \
