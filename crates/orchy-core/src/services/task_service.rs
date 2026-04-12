@@ -101,6 +101,22 @@ impl<S: Store> TaskService<S> {
         Ok(None)
     }
 
+    pub async fn start(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
+        let task = self.get(id).await?;
+        task.status.transition_to(TaskStatus::InProgress)?;
+
+        if task.claimed_by != Some(*agent) {
+            return Err(Error::InvalidInput(format!(
+                "task {id} is not claimed by agent {agent}"
+            )));
+        }
+
+        self.store
+            .update_task_status(id, TaskStatus::InProgress)
+            .await?;
+        self.get(id).await
+    }
+
     pub async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
         let task = self.store.complete_task(id, summary).await?;
         self.unblock_dependents(id).await?;
