@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use super::aggregate::SkillAggregate;
 use super::{Skill, SkillFilter, WriteSkill};
 use crate::error::{Error, Result};
 use crate::namespace::Namespace;
@@ -41,7 +40,7 @@ impl<S: Store> SkillService<S> {
             })
             .await?;
 
-        Ok(SkillAggregate::filter_with_inheritance(all, namespace))
+        Ok(Skill::filter_with_inheritance(all, namespace))
     }
 
     pub async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {

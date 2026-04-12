@@ -7,7 +7,7 @@ use orchy_core::memory::{
 use orchy_core::message::{CreateMessage, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::Namespace;
 use orchy_core::skill::{SkillFilter, SkillStore, WriteSkill};
-use orchy_core::task::{CreateTask, Priority, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_sqlite::SqliteBackend;
 
 fn backend() -> SqliteBackend {
@@ -108,175 +108,135 @@ async fn agent_find_timed_out() {
 }
 
 #[tokio::test]
-async fn task_create_and_claim() {
+async fn task_save_and_get() {
     let store = backend();
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "Do thing".into(),
-            description: "Details".into(),
-            priority: Priority::High,
-            assigned_roles: vec!["dev".into()],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let task = Task::new(
+        ns("proj"),
+        "Do thing".into(),
+        "Details".into(),
+        Priority::High,
+        vec!["dev".into()],
+        vec![],
+        None,
+        false,
+    );
 
-    assert_eq!(task.status, TaskStatus::Pending);
+    TaskStore::save(&store, &task).await.unwrap();
 
-    let agent_id = AgentId::new();
-    let claimed = TaskStore::claim(&store, &task.id, &agent_id).await.unwrap();
-    assert_eq!(claimed.status, TaskStatus::Claimed);
-    assert_eq!(claimed.claimed_by, Some(agent_id));
+    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.status(), TaskStatus::Pending);
+    assert_eq!(fetched.title(), "Do thing");
+    assert_eq!(fetched.description(), "Details");
+    assert_eq!(fetched.priority(), Priority::High);
+    assert_eq!(fetched.assigned_roles(), &["dev".to_string()]);
 }
 
 #[tokio::test]
-async fn task_claim_fails_when_not_pending() {
+async fn task_save_overwrites_existing() {
     let store = backend();
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "t".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let task = Task::new(
+        ns("proj"),
+        "original".into(),
+        "desc".into(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    );
 
-    let agent = AgentId::new();
-    TaskStore::claim(&store, &task.id, &agent).await.unwrap();
+    TaskStore::save(&store, &task).await.unwrap();
 
-    let result = TaskStore::claim(&store, &task.id, &AgentId::new()).await;
-    assert!(result.is_err());
+    let updated = Task::restore(
+        task.id(),
+        ns("proj"),
+        "updated".into(),
+        "new desc".into(),
+        TaskStatus::Completed,
+        Priority::High,
+        vec![],
+        None,
+        None,
+        vec![],
+        Some("done".into()),
+        None,
+        task.created_at(),
+        task.updated_at(),
+    );
+    TaskStore::save(&store, &updated).await.unwrap();
+
+    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.title(), "updated");
+    assert_eq!(fetched.status(), TaskStatus::Completed);
+    assert_eq!(fetched.result_summary(), Some("done"));
 }
 
 #[tokio::test]
-async fn task_complete() {
-    let store = backend();
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "t".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    let agent = AgentId::new();
-    TaskStore::claim(&store, &task.id, &agent).await.unwrap();
-    TaskStore::update_status(&store, &task.id, TaskStatus::InProgress)
-        .await
-        .unwrap();
-
-    let completed = TaskStore::complete(&store, &task.id, Some("done".into()))
-        .await
-        .unwrap();
-    assert_eq!(completed.status, TaskStatus::Completed);
-    assert_eq!(completed.result_summary, Some("done".into()));
-}
-
-#[tokio::test]
-async fn task_dependency_blocking() {
+async fn task_dependency_stored() {
     let store = backend();
 
-    let dep = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "dep".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let dep = Task::new(
+        ns("proj"),
+        "dep".into(),
+        "".into(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    );
+    TaskStore::save(&store, &dep).await.unwrap();
 
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "main".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![dep.id],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(task.status, TaskStatus::Blocked);
+    let task = Task::new(
+        ns("proj"),
+        "main".into(),
+        "".into(),
+        Priority::Normal,
+        vec![],
+        vec![dep.id()],
+        None,
+        true,
+    );
+    TaskStore::save(&store, &task).await.unwrap();
 
-    let agent = AgentId::new();
-    TaskStore::claim(&store, &dep.id, &agent).await.unwrap();
-    TaskStore::update_status(&store, &dep.id, TaskStatus::InProgress)
-        .await
-        .unwrap();
-    TaskStore::complete(&store, &dep.id, None).await.unwrap();
-
-    TaskStore::update_status(&store, &task.id, TaskStatus::Pending)
-        .await
-        .unwrap();
-    let fetched = TaskStore::get(&store, &task.id).await.unwrap().unwrap();
-    assert_eq!(fetched.status, TaskStatus::Pending);
+    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.status(), TaskStatus::Blocked);
+    assert_eq!(fetched.depends_on(), &[dep.id()]);
 }
 
 #[tokio::test]
 async fn task_list_sorted_by_priority() {
     let store = backend();
 
-    TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "low".into(),
-            description: "".into(),
-            priority: Priority::Low,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let low = Task::new(
+        ns("proj"),
+        "low".into(),
+        "".into(),
+        Priority::Low,
+        vec![],
+        vec![],
+        None,
+        false,
+    );
+    TaskStore::save(&store, &low).await.unwrap();
 
-    TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "critical".into(),
-            description: "".into(),
-            priority: Priority::Critical,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let critical = Task::new(
+        ns("proj"),
+        "critical".into(),
+        "".into(),
+        Priority::Critical,
+        vec![],
+        vec![],
+        None,
+        false,
+    );
+    TaskStore::save(&store, &critical).await.unwrap();
 
     let tasks = TaskStore::list(&store, TaskFilter::default())
         .await
         .unwrap();
-    assert_eq!(tasks[0].title, "critical");
-    assert_eq!(tasks[1].title, "low");
+    assert_eq!(tasks[0].title(), "critical");
+    assert_eq!(tasks[1].title(), "low");
 }
 
 #[tokio::test]

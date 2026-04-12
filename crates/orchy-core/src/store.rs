@@ -9,31 +9,12 @@ use crate::memory::{
 use crate::message::{CreateMessage, Message, MessageId, MessageStore};
 use crate::namespace::Namespace;
 use crate::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
-use crate::task::{CreateTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use crate::task::{Task, TaskFilter, TaskId, TaskStore};
 
 pub trait Store: Send + Sync {
-    fn create_task(&self, task: CreateTask) -> impl Future<Output = Result<Task>> + Send;
+    fn save_task(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
     fn get_task(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
     fn list_tasks(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
-    fn claim_task(&self, id: &TaskId, agent: &AgentId)
-    -> impl Future<Output = Result<Task>> + Send;
-    fn complete_task(
-        &self,
-        id: &TaskId,
-        summary: Option<String>,
-    ) -> impl Future<Output = Result<Task>> + Send;
-    fn fail_task(
-        &self,
-        id: &TaskId,
-        reason: Option<String>,
-    ) -> impl Future<Output = Result<Task>> + Send;
-    fn release_task(&self, id: &TaskId) -> impl Future<Output = Result<Task>> + Send;
-    fn update_task(&self, task: &Task) -> impl Future<Output = Result<Task>> + Send;
-    fn update_task_status(
-        &self,
-        id: &TaskId,
-        status: TaskStatus,
-    ) -> impl Future<Output = Result<()>> + Send;
 
     fn write_memory(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
     fn read_memory(
@@ -130,7 +111,7 @@ pub mod mock {
     use crate::message::{CreateMessage, Message, MessageId, MessageStatus, MessageTarget};
     use crate::namespace::Namespace;
     use crate::skill::{Skill, SkillFilter, WriteSkill};
-    use crate::task::{CreateTask, Task, TaskFilter, TaskId, TaskStatus};
+    use crate::task::{Task, TaskFilter, TaskId};
 
     use super::Store;
 
@@ -141,31 +122,13 @@ pub mod mock {
     }
 
     impl Store for MockStore {
-        async fn create_task(&self, _: CreateTask) -> Result<Task> {
-            unimplemented!()
+        async fn save_task(&self, _: &Task) -> Result<()> {
+            Ok(())
         }
         async fn get_task(&self, _: &TaskId) -> Result<Option<Task>> {
             unimplemented!()
         }
         async fn list_tasks(&self, _: TaskFilter) -> Result<Vec<Task>> {
-            unimplemented!()
-        }
-        async fn claim_task(&self, _: &TaskId, _: &AgentId) -> Result<Task> {
-            unimplemented!()
-        }
-        async fn complete_task(&self, _: &TaskId, _: Option<String>) -> Result<Task> {
-            unimplemented!()
-        }
-        async fn fail_task(&self, _: &TaskId, _: Option<String>) -> Result<Task> {
-            unimplemented!()
-        }
-        async fn release_task(&self, _: &TaskId) -> Result<Task> {
-            unimplemented!()
-        }
-        async fn update_task(&self, _: &Task) -> Result<Task> {
-            unimplemented!()
-        }
-        async fn update_task_status(&self, _: &TaskId, _: TaskStatus) -> Result<()> {
             unimplemented!()
         }
 

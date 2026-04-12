@@ -5,7 +5,7 @@ use orchy_core::message::{CreateMessage, Message, MessageId};
 use orchy_core::namespace::Namespace;
 use orchy_core::skill::{Skill, SkillFilter, WriteSkill};
 use orchy_core::store::Store;
-use orchy_core::task::{CreateTask, Task, TaskFilter, TaskId, TaskStatus};
+use orchy_core::task::{Task, TaskFilter, TaskId};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
@@ -27,8 +27,8 @@ macro_rules! delegate {
 }
 
 impl Store for StoreBackend {
-    async fn create_task(&self, task: CreateTask) -> Result<Task> {
-        delegate!(self, create_task(task))
+    async fn save_task(&self, task: &Task) -> Result<()> {
+        delegate!(self, save_task(task))
     }
 
     async fn get_task(&self, id: &TaskId) -> Result<Option<Task>> {
@@ -37,30 +37,6 @@ impl Store for StoreBackend {
 
     async fn list_tasks(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         delegate!(self, list_tasks(filter))
-    }
-
-    async fn claim_task(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
-        delegate!(self, claim_task(id, agent))
-    }
-
-    async fn complete_task(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
-        delegate!(self, complete_task(id, summary))
-    }
-
-    async fn fail_task(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
-        delegate!(self, fail_task(id, reason))
-    }
-
-    async fn release_task(&self, id: &TaskId) -> Result<Task> {
-        delegate!(self, release_task(id))
-    }
-
-    async fn update_task(&self, task: &Task) -> Result<Task> {
-        delegate!(self, update_task(task))
-    }
-
-    async fn update_task_status(&self, id: &TaskId, status: TaskStatus) -> Result<()> {
-        delegate!(self, update_task_status(id, status))
     }
 
     async fn write_memory(&self, entry: WriteMemory) -> Result<MemoryEntry> {
