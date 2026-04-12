@@ -277,6 +277,26 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Disconnect the session agent. Releases all claimed tasks back to pending. \
+        Use this when your session is ending."
+    )]
+    async fn disconnect(&self) -> String {
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+
+        if let Err(e) = self.container.task_service.release_agent_tasks(&agent_id).await {
+            return format!("error releasing tasks: {e}");
+        }
+
+        match self.container.agent_service.disconnect(&agent_id).await {
+            Ok(()) => "disconnected".to_string(),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(
         description = "Create a new task. Namespace defaults to session namespace; \
         if provided, the project prefix must match."
     )]
