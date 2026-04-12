@@ -1,11 +1,10 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use rmcp::transport::{
     StreamableHttpService,
-    streamable_http_server::session::local::{LocalSessionManager, SessionConfig},
+    streamable_http_server::session::local::LocalSessionManager,
 };
 use tokio::net::TcpListener;
 use tracing::info;
@@ -17,7 +16,6 @@ use orchy_server::container::Container;
 use orchy_server::heartbeat::run_heartbeat_monitor;
 use orchy_server::mcp::OrchyHandler;
 use orchy_server::skill_loader;
-use orchy_server::store::StoreBackend;
 
 #[tokio::main]
 async fn main() {
@@ -54,11 +52,11 @@ async fn main() {
     });
 
     let bootstrap_container = Arc::clone(&container);
-    let heartbeat_timeout = container.config.server.heartbeat_timeout_secs;
     let mcp_container = container;
 
     let mut session_manager = LocalSessionManager::default();
-    session_manager.session_config.keep_alive = Some(Duration::from_secs(heartbeat_timeout * 3));
+    // Some(Duration::from_secs(heartbeat_timeout * 3)) to auto-cleanup idle sessions
+    session_manager.session_config.keep_alive = None;
 
     let service = StreamableHttpService::new(
         move || Ok(OrchyHandler::new(mcp_container.clone())),
