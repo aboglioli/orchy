@@ -4,7 +4,10 @@ port = 3100
 heartbeat_timeout_secs = 300
 
 [store]
-backend = "memory"
+backend = "sqlite"
+
+[store.sqlite]
+path = "orchy.db"
 
 [skills]
 dir = "skills"
