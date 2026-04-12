@@ -5,3 +5,6 @@ heartbeat_timeout_secs = 60
 
 [store]
 backend = "memory"
+
+[skills]
+dir = "skills"

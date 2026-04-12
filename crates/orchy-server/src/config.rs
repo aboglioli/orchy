@@ -5,6 +5,12 @@ pub struct Config {
     pub server: ServerConfig,
     pub store: StoreConfig,
     pub embeddings: Option<EmbeddingsConfig>,
+    pub skills: Option<SkillsConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SkillsConfig {
+    pub dir: String,
 }
 
 #[derive(Debug, Deserialize)]

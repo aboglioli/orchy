@@ -11,6 +11,7 @@ use orchy_server::config::Config;
 use orchy_server::container::Container;
 use orchy_server::heartbeat::run_heartbeat_monitor;
 use orchy_server::mcp::OrchyHandler;
+use orchy_server::skill_loader;
 
 #[tokio::main]
 async fn main() {
@@ -35,13 +36,17 @@ async fn main() {
         .await
         .expect("failed to build container");
 
-    // Spawn heartbeat monitor
+    if let Some(ref skills_config) = container.config.skills {
+        let dir = std::path::Path::new(&skills_config.dir);
+        skill_loader::load_skills_from_dir(dir, &container.skill_service)
+            .await
+            .expect("failed to load skills from disk");
+    }
+
     let heartbeat_container = Arc::clone(&container);
     tokio::spawn(async move {
         run_heartbeat_monitor(heartbeat_container).await;
     });
-
-    // Build MCP service
     let service = StreamableHttpService::new(
         move || Ok(OrchyHandler::new(container.clone())),
         Arc::new(LocalSessionManager::default()),
