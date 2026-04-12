@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:0.8.0-pg17
+    image: pgvector/pgvector:0.8.2-pg17
     environment:
       POSTGRES_USER: orchy
       POSTGRES_PASSWORD: orchy
