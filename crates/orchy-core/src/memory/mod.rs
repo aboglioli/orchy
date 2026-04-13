@@ -63,7 +63,7 @@ pub struct SnapshotId(Uuid);
 
 impl SnapshotId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self(Uuid::now_v7())
     }
 
     pub fn from_uuid(uuid: Uuid) -> Self {
