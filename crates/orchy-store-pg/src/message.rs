@@ -50,8 +50,7 @@ impl MessageStore for PgBackend {
                 to_target = EXCLUDED.to_target,
                 body = EXCLUDED.body,
                 reply_to = EXCLUDED.reply_to,
-                status = EXCLUDED.status,
-                created_at = EXCLUDED.created_at",
+                status = EXCLUDED.status",
         )
         .bind(message.id().as_uuid())
         .bind(message.project().to_string())
