@@ -65,27 +65,26 @@ impl Container {
         match config.store.backend.as_str() {
             "memory" => Ok(StoreBackend::Memory(MemoryBackend::new())),
             "sqlite" => {
-                let path = &config
+                let store_config = config
                     .store
                     .sqlite
                     .as_ref()
-                    .expect("store.sqlite config required when backend = \"sqlite\"")
-                    .path;
-                Ok(StoreBackend::Sqlite(SqliteBackend::new(
-                    path,
-                    embedding_dims,
-                )?))
+                    .expect("store.sqlite config required when backend = \"sqlite\"");
+                let backend = SqliteBackend::new(&store_config.path, embedding_dims)?;
+                backend.run_migrations(std::path::Path::new("migrations/sqlite"))?;
+                Ok(StoreBackend::Sqlite(backend))
             }
             "postgres" => {
-                let url = &config
+                let store_config = config
                     .store
                     .postgres
                     .as_ref()
-                    .expect("store.postgres config required when backend = \"postgres\"")
-                    .url;
-                Ok(StoreBackend::Postgres(
-                    PgBackend::new(url, embedding_dims).await?,
-                ))
+                    .expect("store.postgres config required when backend = \"postgres\"");
+                let backend = PgBackend::new(&store_config.url, embedding_dims).await?;
+                backend
+                    .run_migrations(std::path::Path::new("migrations/postgres"))
+                    .await?;
+                Ok(StoreBackend::Postgres(backend))
             }
             other => Err(format!("unsupported store backend: {other}").into()),
         }

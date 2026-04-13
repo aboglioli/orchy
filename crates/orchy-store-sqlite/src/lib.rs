@@ -9,6 +9,8 @@ mod project;
 mod skill;
 mod task;
 
+use std::path::Path;
+
 use rusqlite::Connection;
 use std::sync::Mutex;
 
@@ -42,6 +44,60 @@ impl SqliteBackend {
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    pub fn run_migrations(&self, dir: &Path) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                version TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )",
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .map_err(|e| Error::Store(format!("cannot read migrations dir: {e}")))?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "sql")
+                    .unwrap_or(false)
+            })
+            .collect();
+        files.sort_by_key(|e| e.file_name());
+
+        for entry in files {
+            let filename = entry.file_name().to_string_lossy().to_string();
+
+            let applied: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM schema_migrations WHERE version = ?1",
+                    rusqlite::params![&filename],
+                    |row| row.get(0),
+                )
+                .map_err(|e| Error::Store(e.to_string()))?;
+
+            if applied {
+                continue;
+            }
+
+            let sql = std::fs::read_to_string(entry.path())
+                .map_err(|e| Error::Store(format!("cannot read {filename}: {e}")))?;
+
+            conn.execute_batch(&sql)
+                .map_err(|e| Error::Store(format!("migration {filename} failed: {e}")))?;
+
+            conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+                rusqlite::params![&filename, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
+
+        Ok(())
     }
 
     pub fn apply_schema(&self) -> Result<()> {
