@@ -15,6 +15,7 @@ use crate::config::{Config, EmbeddingsConfig};
 use crate::store::StoreBackend;
 
 pub struct Container {
+    pub store: Arc<StoreBackend>,
     pub task_service: TaskService<StoreBackend, StoreBackend>,
     pub memory_service: MemoryService<StoreBackend>,
     pub agent_service: AgentService<StoreBackend>,
@@ -42,6 +43,7 @@ impl Container {
         let project_service = ProjectService::new(Arc::clone(&store));
 
         Ok(Arc::new(Self {
+            store,
             task_service,
             memory_service,
             agent_service,

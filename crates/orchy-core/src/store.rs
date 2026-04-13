@@ -7,7 +7,7 @@ pub mod mock {
     use crate::error::Result;
     use crate::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
     use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
-    use crate::namespace::{Namespace, ProjectId};
+    use crate::namespace::{Namespace, NamespaceStore, ProjectId};
     use crate::project::{Project, ProjectStore};
     use crate::skill::{Skill, SkillFilter, SkillStore};
     use crate::task::{Task, TaskFilter, TaskId, TaskStore};
@@ -139,6 +139,15 @@ pub mod mock {
             _: usize,
         ) -> Result<Vec<ContextSnapshot>> {
             unimplemented!()
+        }
+    }
+
+    impl NamespaceStore for MockStore {
+        async fn register(&self, _: &ProjectId, _: &Namespace) -> Result<()> {
+            Ok(())
+        }
+        async fn list(&self, _: &ProjectId) -> Result<Vec<Namespace>> {
+            Ok(vec![])
         }
     }
 

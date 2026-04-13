@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod memory;
 mod message;
+mod namespace;
 mod project;
 mod skill;
 mod task;
@@ -69,6 +70,11 @@ const MIGRATIONS: &[Migration] = &[
         version: "20260413-050001",
         name: "fix_memory_pk",
         sql: include_str!("../../../migrations/sqlite/20260413-050001_fix_memory_pk.sql"),
+    },
+    Migration {
+        version: "20260413-060000",
+        name: "namespaces_table",
+        sql: include_str!("../../../migrations/sqlite/20260413-060000_namespaces_table.sql"),
     },
 ];
 
