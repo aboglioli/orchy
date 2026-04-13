@@ -90,3 +90,40 @@ impl Project {
         self.updated_at
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_project() -> Project {
+        let id = ProjectId::try_from("test-project".to_string()).unwrap();
+        Project::new(id, "a test project".to_string())
+    }
+
+    #[test]
+    fn new_project_empty_notes() {
+        let project = test_project();
+        assert!(project.notes().is_empty());
+    }
+
+    #[test]
+    fn add_note_appends() {
+        let mut project = test_project();
+        project.add_note(None, "first note".to_string());
+        assert_eq!(project.notes().len(), 1);
+    }
+
+    #[test]
+    fn update_description_changes() {
+        let mut project = test_project();
+        project.update_description("new description".to_string());
+        assert_eq!(project.description(), "new description");
+    }
+
+    #[test]
+    fn set_metadata_inserts() {
+        let mut project = test_project();
+        project.set_metadata("env".to_string(), "prod".to_string());
+        assert_eq!(project.metadata().get("env"), Some(&"prod".to_string()));
+    }
+}

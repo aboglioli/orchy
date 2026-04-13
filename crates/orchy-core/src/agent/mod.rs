@@ -196,3 +196,89 @@ pub struct RegisterAgent {
     pub description: String,
     pub metadata: HashMap<String, String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    fn test_namespace() -> Namespace {
+        Namespace::try_from("test").unwrap()
+    }
+
+    fn register_agent() -> Agent {
+        Agent::register(
+            test_namespace(),
+            vec!["coder".to_string()],
+            "test agent".to_string(),
+            HashMap::new(),
+        )
+    }
+
+    #[test]
+    fn register_creates_online_agent() {
+        let agent = register_agent();
+        assert_eq!(agent.status(), AgentStatus::Online);
+        assert_eq!(agent.roles(), &["coder"]);
+        assert_eq!(agent.description(), "test agent");
+    }
+
+    #[test]
+    fn heartbeat_updates_timestamp() {
+        let mut agent = register_agent();
+        let before = agent.last_heartbeat();
+        sleep(Duration::from_millis(10));
+        agent.heartbeat();
+        assert!(agent.last_heartbeat() > before);
+    }
+
+    #[test]
+    fn heartbeat_reconnects_disconnected() {
+        let mut agent = register_agent();
+        agent.disconnect();
+        assert_eq!(agent.status(), AgentStatus::Disconnected);
+        agent.heartbeat();
+        assert_eq!(agent.status(), AgentStatus::Online);
+    }
+
+    #[test]
+    fn disconnect_sets_status() {
+        let mut agent = register_agent();
+        agent.disconnect();
+        assert_eq!(agent.status(), AgentStatus::Disconnected);
+    }
+
+    #[test]
+    fn reconnect_updates_all_fields() {
+        let mut agent = register_agent();
+        agent.disconnect();
+        let new_roles = vec!["reviewer".to_string()];
+        agent.reconnect(new_roles.clone(), "updated desc".to_string());
+        assert_eq!(agent.status(), AgentStatus::Online);
+        assert_eq!(agent.roles(), &["reviewer"]);
+        assert_eq!(agent.description(), "updated desc");
+    }
+
+    #[test]
+    fn is_timed_out_when_stale() {
+        let mut agent = register_agent();
+        agent.heartbeat();
+        sleep(Duration::from_millis(10));
+        assert!(agent.is_timed_out(0));
+    }
+
+    #[test]
+    fn is_timed_out_false_when_recent() {
+        let agent = register_agent();
+        assert!(!agent.is_timed_out(60));
+    }
+
+    #[test]
+    fn is_timed_out_false_when_disconnected() {
+        let mut agent = register_agent();
+        agent.disconnect();
+        sleep(Duration::from_millis(10));
+        assert!(!agent.is_timed_out(0));
+    }
+}
