@@ -86,7 +86,7 @@ impl<S: MemoryStore> MemoryService<S> {
         let old_key = entry.key().to_string();
         entry.move_to(new_namespace);
         self.store.save(&entry).await?;
-        self.store.delete(&old_namespace, &old_key).await?;
+        self.store.delete(project, &old_namespace, &old_key).await?;
         Ok(entry)
     }
 
@@ -106,8 +106,13 @@ impl<S: MemoryStore> MemoryService<S> {
             .await
     }
 
-    pub async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()> {
-        self.store.delete(namespace, key).await
+    pub async fn delete(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        key: &str,
+    ) -> Result<()> {
+        self.store.delete(project, namespace, key).await
     }
 }
 

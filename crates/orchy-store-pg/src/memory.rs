@@ -136,8 +136,9 @@ impl MemoryStore for PgBackend {
         Ok(rows.iter().map(row_to_memory).collect())
     }
 
-    async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()> {
-        sqlx::query("DELETE FROM memory WHERE namespace = $1 AND key = $2")
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
+        sqlx::query("DELETE FROM memory WHERE project = $1 AND namespace = $2 AND key = $3")
+            .bind(project.to_string())
             .bind(namespace.to_string())
             .bind(key)
             .execute(&self.pool)

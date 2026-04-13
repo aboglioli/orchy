@@ -28,7 +28,12 @@ pub trait MemoryStore: Send + Sync {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
-    fn delete(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<()>> + Send;
+    fn delete(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        key: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 pub trait ContextStore: Send + Sync {

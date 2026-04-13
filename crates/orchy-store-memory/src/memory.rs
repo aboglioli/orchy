@@ -105,12 +105,14 @@ impl MemoryStore for MemoryBackend {
         Ok(scored.into_iter().map(|(_, entry)| entry.clone()).collect())
     }
 
-    async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()> {
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
         let mut store = self
             .memory
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
-        store.retain(|k, _| !(k.1 == namespace.to_string() && k.2 == key));
+        store.retain(|k, _| {
+            !(k.0 == project.to_string() && k.1 == namespace.to_string() && k.2 == key)
+        });
         Ok(())
     }
 }
