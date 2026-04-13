@@ -1,3 +1,6 @@
+use orchy_core::agent::Agent;
+use orchy_core::agent::AgentStore;
+use orchy_core::agent::service::AgentService;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::project::Project;
 use orchy_core::project::ProjectStore;
@@ -5,14 +8,18 @@ use orchy_core::project::service::ProjectService;
 use orchy_core::skill::Skill;
 use orchy_core::skill::SkillStore;
 use orchy_core::skill::service::SkillService;
+use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
+use orchy_core::task::service::TaskService;
 
-pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore>(
+pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore, AS: AgentStore, TS: TaskStore>(
     project_id: &ProjectId,
     namespace: &Namespace,
     host: &str,
     port: u16,
     skill_service: &SkillService<SS>,
     project_service: &ProjectService<PS>,
+    agent_service: &AgentService<AS>,
+    task_service: &TaskService<TS, AS>,
 ) -> Result<String, String> {
     let skills = skill_service
         .list_with_inherited(project_id, namespace)
@@ -24,7 +31,30 @@ pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore>(
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(render(namespace, host, port, &project, &skills))
+    let agents: Vec<Agent> = agent_service
+        .list()
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|a| a.project() == project_id)
+        .collect();
+
+    let active_tasks: Vec<Task> = {
+        let mut all = Vec::new();
+        for status in &[TaskStatus::Pending, TaskStatus::Claimed, TaskStatus::InProgress, TaskStatus::Blocked] {
+            let filter = TaskFilter {
+                project: Some(project_id.clone()),
+                status: Some(*status),
+                ..Default::default()
+            };
+            if let Ok(tasks) = task_service.list(filter).await {
+                all.extend(tasks);
+            }
+        }
+        all
+    };
+
+    Ok(render(namespace, host, port, &project, &skills, &agents, &active_tasks))
 }
 
 fn render(
@@ -33,6 +63,8 @@ fn render(
     port: u16,
     project: &Project,
     skills: &[Skill],
+    agents: &[Agent],
+    tasks: &[Task],
 ) -> String {
     let mut out = format!(
         r#"# Multi-Agent Coordination — Project `{namespace}`
@@ -53,7 +85,7 @@ On every session start, execute these steps in order:
 
 1. **Register** — call `register_agent` with:
    - `project`: your project identifier
-   - `roles`: your capabilities (e.g. `["coder", "reviewer"]`)
+   - `roles`: your capabilities (e.g. `["coder", "reviewer"]`). Leave empty to let orchy assign roles based on pending task demand.
    - `description`: what you are (e.g. "Claude Code backend agent")
    - `namespace`: scope within the project (optional, e.g. "backend")
 
@@ -79,9 +111,10 @@ Use `list_namespaces` to discover available scopes.
 |----------|-------|
 | Agent    | `register_agent`, `list_agents`, `change_roles`, `move_agent`, `heartbeat`, `disconnect` |
 | Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task`, `assign_task`, `add_task_note` |
+| Task Hierarchy | `split_task`, `replace_task`, `add_dependency`, `remove_dependency` |
 | Move     | `move_task`, `move_memory`, `move_skill` |
 | Memory   | `write_memory`, `read_memory`, `list_memory`, `search_memory`, `delete_memory` |
-| Messages | `send_message`, `check_mailbox`, `mark_read` |
+| Messages | `send_message`, `check_mailbox`, `mark_read`, `check_sent_messages`, `list_conversation` |
 | Context  | `save_context`, `load_context`, `list_contexts`, `search_contexts` |
 | Skills   | `write_skill`, `read_skill`, `list_skills`, `delete_skill` |
 | Project  | `get_project`, `update_project`, `add_project_note` |
@@ -91,6 +124,9 @@ Use `list_namespaces` to discover available scopes.
 
 - **Claim before working** — always claim a task before starting. If another
   agent claimed it first, move on to the next one.
+- **Split large tasks** — use `split_task` to break a task into subtasks.
+  The parent blocks automatically and completes when all subtasks finish.
+  Work on subtasks directly, not the parent.
 - **Report results** — call `complete_task` with a summary when done.
 - **Share knowledge** — use `write_memory` to store decisions, discoveries,
   or context that other agents need.
@@ -113,6 +149,39 @@ Use `list_namespaces` to discover available scopes.
         out.push_str("## Project Notes\n\n");
         for note in notes {
             out.push_str(&format!("- {}\n", note.body()));
+        }
+        out.push('\n');
+    }
+
+    if !agents.is_empty() {
+        out.push_str("## Connected Agents\n\n");
+        out.push_str("| ID | Roles | Namespace | Status |\n|-----|-------|-----------|--------|\n");
+        for agent in agents {
+            out.push_str(&format!(
+                "| `{}` | {} | `{}` | {} |\n",
+                agent.id(),
+                agent.roles().join(", "),
+                agent.namespace(),
+                agent.status(),
+            ));
+        }
+        out.push('\n');
+    }
+
+    if !tasks.is_empty() {
+        out.push_str("## Active Tasks\n\n");
+        out.push_str("| ID | Title | Status | Roles | Assigned To |\n|-----|-------|--------|-------|-------------|\n");
+        for task in tasks {
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} | {} |\n",
+                task.id(),
+                task.title(),
+                task.status(),
+                task.assigned_roles().join(", "),
+                task.assigned_to()
+                    .map(|a| format!("`{a}`"))
+                    .unwrap_or_else(|| "-".to_string()),
+            ));
         }
         out.push('\n');
     }

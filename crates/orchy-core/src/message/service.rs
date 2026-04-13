@@ -99,6 +99,25 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         Ok(messages)
     }
 
+    pub async fn sent(
+        &self,
+        agent: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        self.message_store
+            .find_sent(agent, project, namespace)
+            .await
+    }
+
+    pub async fn thread(
+        &self,
+        message_id: &MessageId,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>> {
+        self.message_store.find_thread(message_id, limit).await
+    }
+
     pub async fn mark_read(&self, ids: &[MessageId]) -> Result<()> {
         for id in ids {
             if let Some(mut msg) = self.message_store.find_by_id(id).await? {

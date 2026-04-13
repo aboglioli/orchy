@@ -80,6 +80,34 @@ pub mod mock {
                 .cloned()
                 .collect())
         }
+
+        async fn find_sent(
+            &self,
+            sender: &AgentId,
+            project: &ProjectId,
+            namespace: &Namespace,
+        ) -> Result<Vec<Message>> {
+            Ok(self
+                .messages
+                .read()
+                .unwrap()
+                .values()
+                .filter(|m| {
+                    m.from() == *sender
+                        && m.project() == project
+                        && m.namespace() == namespace
+                })
+                .cloned()
+                .collect())
+        }
+
+        async fn find_thread(
+            &self,
+            _message_id: &MessageId,
+            _limit: Option<usize>,
+        ) -> Result<Vec<Message>> {
+            unimplemented!()
+        }
     }
 
     impl ProjectStore for MockStore {

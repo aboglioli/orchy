@@ -126,6 +126,7 @@ async fn task_save_and_get() {
     let task = Task::new(
         proj("proj"),
         Namespace::root(),
+        None,
         "Do thing".into(),
         "Details".into(),
         Priority::High,
@@ -152,6 +153,7 @@ async fn task_list_sorted_by_priority() {
     let low = Task::new(
         proj("proj"),
         Namespace::root(),
+        None,
         "low".into(),
         "".into(),
         Priority::Low,
@@ -165,6 +167,7 @@ async fn task_list_sorted_by_priority() {
     let critical = Task::new(
         proj("proj"),
         Namespace::root(),
+        None,
         "critical".into(),
         "".into(),
         Priority::Critical,

@@ -26,7 +26,8 @@ struct RegisterAgentParams {
     project: String,
     /// Scope within the project (e.g. "backend" or "backend/auth"). Optional.
     namespace: Option<String>,
-    roles: Vec<String>,
+    /// Agent capabilities (e.g. ["coder", "reviewer"]). If empty or omitted, orchy assigns roles based on pending task demand.
+    roles: Option<Vec<String>>,
     description: String,
     /// Resume an existing agent by its ID.
     agent_id: Option<String>,
@@ -46,6 +47,8 @@ struct ListAgentsParams {}
 struct PostTaskParams {
     /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
+    /// Parent task ID for creating subtasks. Optional.
+    parent_id: Option<String>,
     title: String,
     description: String,
     priority: Option<String>,
@@ -154,6 +157,20 @@ struct MarkReadParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+struct CheckSentMessagesParams {
+    /// Scope within the project (e.g. 'backend'). Optional.
+    namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct ListConversationParams {
+    /// ID of any message in the conversation thread.
+    message_id: String,
+    /// Maximum number of messages to return (most recent). Optional.
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 struct SaveContextParams {
     summary: String,
     /// Scope within the project (e.g. 'backend'). Optional.
@@ -215,6 +232,45 @@ struct DeleteSkillParams {
     name: String,
     /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct SplitTaskParams {
+    /// ID of the parent task to split.
+    task_id: String,
+    /// Subtask definitions.
+    subtasks: Vec<SubtaskParam>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct SubtaskParam {
+    title: String,
+    description: String,
+    priority: Option<String>,
+    assigned_roles: Option<Vec<String>>,
+    depends_on: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct ReplaceTaskParams {
+    /// ID of the task to replace.
+    task_id: String,
+    /// Reason for replacing the task.
+    reason: Option<String>,
+    /// Replacement task definitions.
+    replacements: Vec<SubtaskParam>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct AddDependencyParams {
+    task_id: String,
+    dependency_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct RemoveDependencyParams {
+    task_id: String,
+    dependency_id: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -299,8 +355,8 @@ fn to_json<T: serde::Serialize>(val: &T) -> String {
 impl OrchyHandler {
     #[tool(
         description = "Register this session as an agent within a project namespace. \
-        The namespace must start with the project identifier (e.g. 'my-project' or \
-        'my-project/backend'). All subsequent tool calls will be scoped to this project. \
+        All subsequent tool calls will be scoped to this project. \
+        If roles is empty, orchy assigns roles based on pending task demand. \
         Use agent_id to resume a previous agent (same identity, comes back online). \
         Use parent_id to create a new agent inheriting from a parent (lineage tracking)."
     )]
@@ -325,8 +381,8 @@ impl OrchyHandler {
                 .resume(
                     &agent_id,
                     namespace.clone(),
-                    params.roles,
-                    params.description,
+                    params.roles.clone().unwrap_or_default(),
+                    params.description.clone(),
                 )
                 .await
             {
@@ -342,10 +398,25 @@ impl OrchyHandler {
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
+        let input_roles = params.roles.unwrap_or_default();
+        let roles = if input_roles.is_empty() {
+            match self
+                .container
+                .task_service
+                .suggest_roles(&project, Some(namespace.clone()))
+                .await
+            {
+                Ok(r) if !r.is_empty() => r,
+                _ => input_roles,
+            }
+        } else {
+            input_roles
+        };
+
         let cmd = RegisterAgent {
             project: project.clone(),
             namespace: namespace.clone(),
-            roles: params.roles,
+            roles,
             description: params.description,
             parent_id,
             metadata: HashMap::new(),
@@ -518,10 +589,16 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
+        let parent_id = match params.parent_id.as_deref() {
+            Some(s) => Some(parse_task_id(s)?),
+            None => None,
+        };
+
         let is_blocked = !depends_on.is_empty();
         let task = Task::new(
             project,
             namespace,
+            parent_id,
             params.title,
             params.description,
             priority,
@@ -540,7 +617,8 @@ impl OrchyHandler {
 
     #[tool(
         description = "Get the next available task for the session agent, optionally filtered \
-        by namespace (defaults to session namespace) and role."
+        by namespace and role. Returns the task with full context: parent task \
+        (if this is a subtask) and children (if this task was split)."
     )]
     async fn get_next_task(
         &self,
@@ -570,7 +648,15 @@ impl OrchyHandler {
             .get_next(&agent_id, &roles, namespace)
             .await
         {
-            Ok(Some(task)) => Ok(to_json(&task)),
+            Ok(Some(task)) => {
+                let ctx = self
+                    .container
+                    .task_service
+                    .get_with_context(&task.id())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(to_json(&ctx))
+            }
             Ok(None) => Ok("null".to_string()),
             Err(e) => Err(e.to_string()),
         }
@@ -596,6 +682,7 @@ impl OrchyHandler {
             "in_progress" => Some(orchy_core::task::TaskStatus::InProgress),
             "completed" => Some(orchy_core::task::TaskStatus::Completed),
             "failed" => Some(orchy_core::task::TaskStatus::Failed),
+            "cancelled" => Some(orchy_core::task::TaskStatus::Cancelled),
             _ => None,
         });
 
@@ -636,7 +723,15 @@ impl OrchyHandler {
         };
 
         match self.container.task_service.claim(&task_id, &agent_id).await {
-            Ok(task) => Ok(to_json(&task)),
+            Ok(task) => {
+                let ctx = self
+                    .container
+                    .task_service
+                    .get_with_context(&task.id())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(to_json(&ctx))
+            }
             Err(e) => Err(e.to_string()),
         }
     }
@@ -661,7 +756,15 @@ impl OrchyHandler {
         };
 
         match self.container.task_service.start(&task_id, &agent_id).await {
-            Ok(task) => Ok(to_json(&task)),
+            Ok(task) => {
+                let ctx = self
+                    .container
+                    .task_service
+                    .get_with_context(&task.id())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(to_json(&ctx))
+            }
             Err(e) => Err(e.to_string()),
         }
     }
@@ -975,6 +1078,63 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Check the delivery/read status of messages you have sent. \
+        Namespace defaults to root."
+    )]
+    async fn check_sent_messages(
+        &self,
+        Parameters(params): Parameters<CheckSentMessagesParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+            None => Namespace::root(),
+        };
+
+        match self
+            .container
+            .message_service
+            .sent(&agent_id, &project, &namespace)
+            .await
+        {
+            Ok(messages) => Ok(to_json(&messages)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "List the full conversation thread for a given message ID. \
+        Walks the reply_to chain to find the root, then returns all messages in \
+        the thread in chronological order. Use limit to cap the number of messages \
+        returned (most recent N)."
+    )]
+    async fn list_conversation(
+        &self,
+        Parameters(params): Parameters<ListConversationParams>,
+    ) -> Result<String, String> {
+        let message_id = match parse_message_id(&params.message_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        let limit = params.limit.map(|n| n as usize);
+
+        match self
+            .container
+            .message_service
+            .thread(&message_id, limit)
+            .await
+        {
+            Ok(messages) => Ok(to_json(&messages)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
         description = "Save a context snapshot for the session agent. Namespace defaults to \
         session namespace."
     )]
@@ -1231,6 +1391,203 @@ impl OrchyHandler {
         }
     }
 
+    #[tool(
+        description = "Split a task into subtasks. The parent task is blocked and will \
+        auto-complete when all subtasks finish. Agents should work on subtasks directly, \
+        not the parent. Returns the parent (with updated status) and all created subtasks."
+    )]
+    async fn split_task(
+        &self,
+        Parameters(params): Parameters<SplitTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        let created_by = self.get_session_agent();
+
+        let mut subtasks = Vec::new();
+        for sp in params.subtasks {
+            let priority = match sp.priority.as_deref() {
+                Some(p) => match p.parse::<Priority>() {
+                    Ok(pri) => pri,
+                    Err(e) => return Err(format!("invalid priority: {e}")),
+                },
+                None => Priority::default(),
+            };
+            let depends_on: Vec<TaskId> = match sp
+                .depends_on
+                .unwrap_or_default()
+                .iter()
+                .map(|s| parse_task_id(s))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(ids) => ids,
+                Err(e) => return Err(e),
+            };
+            subtasks.push(orchy_core::task::SubtaskDef {
+                title: sp.title,
+                description: sp.description,
+                priority,
+                assigned_roles: sp.assigned_roles.unwrap_or_default(),
+                depends_on,
+            });
+        }
+
+        match self
+            .container
+            .task_service
+            .split_task(&task_id, subtasks, created_by)
+            .await
+        {
+            Ok((parent, children)) => {
+                let result = serde_json::json!({
+                    "parent": parent,
+                    "subtasks": children,
+                });
+                Ok(to_json(&result))
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Replace a task with new tasks. Cancels the original and creates \
+        replacements that inherit the original's parent (if any)."
+    )]
+    async fn replace_task(
+        &self,
+        Parameters(params): Parameters<ReplaceTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        let created_by = self.get_session_agent();
+
+        let mut replacements = Vec::new();
+        for sp in params.replacements {
+            let priority = match sp.priority.as_deref() {
+                Some(p) => match p.parse::<Priority>() {
+                    Ok(pri) => pri,
+                    Err(e) => return Err(format!("invalid priority: {e}")),
+                },
+                None => Priority::default(),
+            };
+            let depends_on: Vec<TaskId> = match sp
+                .depends_on
+                .unwrap_or_default()
+                .iter()
+                .map(|s| parse_task_id(s))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(ids) => ids,
+                Err(e) => return Err(e),
+            };
+            replacements.push(orchy_core::task::SubtaskDef {
+                title: sp.title,
+                description: sp.description,
+                priority,
+                assigned_roles: sp.assigned_roles.unwrap_or_default(),
+                depends_on,
+            });
+        }
+
+        match self
+            .container
+            .task_service
+            .replace_task(&task_id, params.reason, replacements, created_by)
+            .await
+        {
+            Ok((original, new_tasks)) => {
+                let result = serde_json::json!({
+                    "cancelled": original,
+                    "replacements": new_tasks,
+                });
+                Ok(to_json(&result))
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Add a dependency to a task. If the dependency is not yet completed, \
+        the task will be blocked."
+    )]
+    async fn add_dependency(
+        &self,
+        Parameters(params): Parameters<AddDependencyParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+        let dep_id = match parse_task_id(&params.dependency_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .task_service
+            .add_dependency(&task_id, &dep_id)
+            .await
+        {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Remove a dependency from a task. If all remaining dependencies are \
+        completed, the task will be unblocked."
+    )]
+    async fn remove_dependency(
+        &self,
+        Parameters(params): Parameters<RemoveDependencyParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+        let dep_id = match parse_task_id(&params.dependency_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .task_service
+            .remove_dependency(&task_id, &dep_id)
+            .await
+        {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     #[tool(description = "Get the project metadata for the current session's project.")]
     async fn get_project(
         &self,
@@ -1471,6 +1828,8 @@ impl OrchyHandler {
             port,
             &self.container.skill_service,
             &self.container.project_service,
+            &self.container.agent_service,
+            &self.container.task_service,
         )
         .await
         {
@@ -1507,10 +1866,16 @@ current namespace. Use `move_agent` to switch namespaces. Use \
 ## Coordination
 
 - Claim tasks before working. Complete them with a summary when done.
+- Split large tasks with `split_task` — parent auto-completes when subtasks finish.
+- Replace tasks with `replace_task` to cancel and create new ones.
+- Manage dependencies with `add_dependency` and `remove_dependency`.
 - Use shared memory to store decisions and context for other agents.
 - Use messages to coordinate with teammates. Reply with `reply_to`.
+- Check delivery status with `check_sent_messages`.
+- Browse conversation threads with `list_conversation`.
 - Save context before your session ends for continuity.
 - Use `list_skills(inherited=true)` to get project conventions.
+- Register without roles to let orchy assign roles based on task demand.
 
 ## Bootstrap Prompt
 

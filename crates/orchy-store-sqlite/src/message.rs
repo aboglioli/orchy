@@ -96,6 +96,106 @@ impl MessageStore for SqliteBackend {
 
         Ok(messages)
     }
+
+    async fn find_sent(
+        &self,
+        sender: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+
+        let mut sql = String::from(
+            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             FROM messages
+             WHERE from_agent = ?1 AND project = ?2",
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params.push(Box::new(sender.to_string()));
+        params.push(Box::new(project.to_string()));
+        let mut idx = 3;
+
+        if !namespace.is_root() {
+            sql.push_str(&format!(
+                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(namespace.to_string()));
+            idx += 1;
+        }
+        let _ = idx;
+
+        sql.push_str(" ORDER BY created_at DESC");
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+
+        let messages = stmt
+            .query_map(param_refs.as_slice(), row_to_message)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(messages)
+    }
+
+    async fn find_thread(
+        &self,
+        message_id: &MessageId,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+
+        let mut sql = String::from(
+            "WITH RECURSIVE
+             ancestors AS (
+                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 FROM messages WHERE id = ?1
+                 UNION ALL
+                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 FROM messages m JOIN ancestors a ON m.id = a.reply_to
+             ),
+             root AS (
+                 SELECT id FROM ancestors WHERE reply_to IS NULL
+                 UNION
+                 SELECT a.id FROM ancestors a WHERE NOT EXISTS (SELECT 1 FROM messages m2 WHERE m2.id = a.reply_to)
+             ),
+             thread AS (
+                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 FROM messages WHERE id = (SELECT id FROM root LIMIT 1)
+                 UNION ALL
+                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 FROM messages m JOIN thread t ON m.reply_to = t.id
+             )
+             SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             FROM thread ORDER BY created_at ASC",
+        );
+
+        if let Some(n) = limit {
+            // Wrap in subquery to get the most recent N messages in chronological order
+            sql = format!(
+                "SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}"
+            );
+            // Re-order chronologically
+            sql = format!(
+                "SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC"
+            );
+        }
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let messages = stmt
+            .query_map(rusqlite::params![message_id.to_string()], row_to_message)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(messages)
+    }
 }
 
 fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {

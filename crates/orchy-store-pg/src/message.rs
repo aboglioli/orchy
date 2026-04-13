@@ -91,6 +91,88 @@ impl MessageStore for PgBackend {
 
         Ok(rows.iter().map(row_to_message).collect())
     }
+
+    async fn find_sent(
+        &self,
+        sender: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        let mut sql = String::from(
+            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             FROM messages
+             WHERE from_agent = $1 AND project = $2",
+        );
+        let ns_str = namespace.to_string();
+        let mut bind_ns = false;
+
+        if !namespace.is_root() {
+            sql.push_str(" AND (namespace = $3 OR namespace LIKE $3 || '/%')");
+            bind_ns = true;
+        }
+
+        sql.push_str(" ORDER BY created_at DESC");
+
+        let mut q = sqlx::query(&sql);
+        q = q.bind(sender.as_uuid());
+        q = q.bind(project.to_string());
+        if bind_ns {
+            q = q.bind(&ns_str);
+        }
+
+        let rows = q
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_message).collect())
+    }
+
+    async fn find_thread(
+        &self,
+        message_id: &MessageId,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>> {
+        let mut sql = String::from(
+            "WITH RECURSIVE
+             ancestors AS (
+                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 FROM messages WHERE id = $1
+                 UNION ALL
+                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 FROM messages m JOIN ancestors a ON m.id = a.reply_to
+             ),
+             root AS (
+                 SELECT id FROM ancestors WHERE reply_to IS NULL
+             ),
+             thread AS (
+                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 FROM messages WHERE id = (SELECT id FROM root LIMIT 1)
+                 UNION ALL
+                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 FROM messages m JOIN thread t ON m.reply_to = t.id
+             )
+             SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             FROM thread ORDER BY created_at ASC",
+        );
+
+        if let Some(n) = limit {
+            sql = format!(
+                "SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}"
+            );
+            sql = format!(
+                "SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC"
+            );
+        }
+
+        let rows = sqlx::query(&sql)
+            .bind(message_id.as_uuid())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_message).collect())
+    }
 }
 
 fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {

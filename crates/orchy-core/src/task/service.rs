@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use super::{SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
 use crate::namespace::Namespace;
@@ -102,7 +102,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut task = self.get(id).await?;
         task.complete(summary)?;
         self.task_store.save(&task).await?;
-        self.unblock_dependents(task.id()).await?;
+        self.resolve_dependents(task.id()).await?;
         Ok(task)
     }
 
@@ -153,7 +153,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
     pub async fn release_agent_tasks(&self, agent: &AgentId) -> Result<Vec<TaskId>> {
         let filter = TaskFilter {
-            claimed_by: Some(*agent),
+            assigned_to: Some(*agent),
             ..Default::default()
         };
         let tasks = self.task_store.list(filter).await?;
@@ -163,6 +163,195 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             released.push(task.id());
         }
         Ok(released)
+    }
+
+    pub async fn split_task(
+        &self,
+        parent_id: &TaskId,
+        subtasks: Vec<SubtaskDef>,
+        created_by: Option<AgentId>,
+    ) -> Result<(Task, Vec<Task>)> {
+        let mut parent = self.get(parent_id).await?;
+
+        if matches!(
+            parent.status(),
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+        ) {
+            return Err(Error::InvalidInput(format!(
+                "cannot split task {} with status {}",
+                parent_id,
+                parent.status()
+            )));
+        }
+
+        let mut children = Vec::with_capacity(subtasks.len());
+
+        for def in subtasks {
+            let task = Task::new(
+                parent.project().clone(),
+                parent.namespace().clone(),
+                Some(*parent_id),
+                def.title,
+                def.description,
+                def.priority,
+                def.assigned_roles,
+                def.depends_on,
+                created_by,
+                false,
+            );
+            self.task_store.save(&task).await?;
+            children.push(task);
+        }
+
+        for child in &children {
+            parent.add_dependency(child.id());
+        }
+        parent.block()?;
+        self.task_store.save(&parent).await?;
+
+        Ok((parent, children))
+    }
+
+    pub async fn replace_task(
+        &self,
+        task_id: &TaskId,
+        reason: Option<String>,
+        replacements: Vec<SubtaskDef>,
+        created_by: Option<AgentId>,
+    ) -> Result<(Task, Vec<Task>)> {
+        let mut original = self.get(task_id).await?;
+        let cancel_reason = reason.unwrap_or_else(|| "replaced by new tasks".to_string());
+        original.cancel(Some(cancel_reason))?;
+        self.task_store.save(&original).await?;
+
+        let mut new_tasks = Vec::with_capacity(replacements.len());
+        for def in replacements {
+            let task = Task::new(
+                original.project().clone(),
+                original.namespace().clone(),
+                original.parent_id(),
+                def.title,
+                def.description,
+                def.priority,
+                def.assigned_roles,
+                def.depends_on,
+                created_by,
+                false,
+            );
+            self.task_store.save(&task).await?;
+            new_tasks.push(task);
+        }
+
+        Ok((original, new_tasks))
+    }
+
+    pub async fn add_dependency(
+        &self,
+        task_id: &TaskId,
+        dependency_id: &TaskId,
+    ) -> Result<Task> {
+
+        self.get(dependency_id).await?;
+
+        let mut task = self.get(task_id).await?;
+
+        if matches!(task.status(), TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled) {
+            return Err(Error::InvalidInput(format!(
+                "cannot add dependency to task {} with status {}",
+                task_id, task.status()
+            )));
+        }
+
+        task.add_dependency(*dependency_id);
+
+
+        if !self.all_deps_completed(task.depends_on()).await? {
+            if task.status() == TaskStatus::Pending {
+                task.block()?;
+            }
+        }
+
+        self.task_store.save(&task).await?;
+        Ok(task)
+    }
+
+    pub async fn remove_dependency(
+        &self,
+        task_id: &TaskId,
+        dependency_id: &TaskId,
+    ) -> Result<Task> {
+        let mut task = self.get(task_id).await?;
+        task.remove_dependency(dependency_id);
+
+
+        if task.status() == TaskStatus::Blocked
+            && self.all_deps_completed(task.depends_on()).await?
+        {
+            task.unblock();
+        }
+
+        self.task_store.save(&task).await?;
+        Ok(task)
+    }
+
+    pub async fn suggest_roles(
+        &self,
+        project: &ProjectId,
+        namespace: Option<Namespace>,
+    ) -> Result<Vec<String>> {
+        let mut role_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+
+
+        for status in &[TaskStatus::Pending, TaskStatus::Blocked] {
+            let filter = TaskFilter {
+                project: Some(project.clone()),
+                namespace: namespace.clone(),
+                status: Some(*status),
+                ..Default::default()
+            };
+            let tasks = self.task_store.list(filter).await?;
+            for task in &tasks {
+                for role in task.assigned_roles() {
+                    *role_counts.entry(role.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let mut roles: Vec<(String, usize)> = role_counts.into_iter().collect();
+        roles.sort_by(|a, b| b.1.cmp(&a.1));
+
+        Ok(roles.into_iter().take(3).map(|(r, _)| r).collect())
+    }
+
+    pub async fn get_with_context(&self, id: &TaskId) -> Result<TaskWithContext> {
+        let task = self.get(id).await?;
+
+        let mut ancestors = Vec::new();
+        let mut current_parent_id = task.parent_id();
+        while let Some(pid) = current_parent_id {
+            match self.task_store.find_by_id(&pid).await? {
+                Some(parent) => {
+                    current_parent_id = parent.parent_id();
+                    ancestors.push(parent);
+                }
+                None => break,
+            }
+        }
+
+        let children = self
+            .task_store
+            .list(TaskFilter {
+                parent_id: Some(*id),
+                ..Default::default()
+            })
+            .await?;
+
+        Ok(TaskWithContext {
+            task,
+            ancestors,
+            children,
+        })
     }
 
     async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
@@ -179,7 +368,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         Ok(true)
     }
 
-    async fn unblock_dependents(&self, completed_id: TaskId) -> Result<()> {
+    async fn resolve_dependents(&self, completed_id: TaskId) -> Result<()> {
         let blocked = self
             .task_store
             .list(TaskFilter {
@@ -192,11 +381,53 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             if task.depends_on().contains(&completed_id)
                 && self.all_deps_completed(task.depends_on()).await?
             {
-                task.unblock();
-                self.task_store.save(&task).await?;
+                if self.has_children(&task).await? {
+                    let summary = self.children_summaries(&task).await?;
+                    let task_id = task.id();
+                    task.auto_complete(summary);
+                    self.task_store.save(&task).await?;
+                    self.resolve_dependents(task_id).await?;
+                } else {
+                    task.unblock();
+                    self.task_store.save(&task).await?;
+                }
             }
         }
 
         Ok(())
+    }
+
+    async fn has_children(&self, task: &Task) -> Result<bool> {
+        let children = self
+            .task_store
+            .list(TaskFilter {
+                parent_id: Some(task.id()),
+                ..Default::default()
+            })
+            .await?;
+        Ok(!children.is_empty())
+    }
+
+    async fn children_summaries(&self, task: &Task) -> Result<String> {
+        let children = self
+            .task_store
+            .list(TaskFilter {
+                parent_id: Some(task.id()),
+                ..Default::default()
+            })
+            .await?;
+
+        let mut parts = Vec::new();
+        for child in &children {
+            let summary = child
+                .result_summary()
+                .unwrap_or("(no summary)");
+            parts.push(format!("- [{}] {}: {}", child.status(), child.title(), summary));
+        }
+        Ok(format!(
+            "All {} subtasks completed:\n{}",
+            children.len(),
+            parts.join("\n")
+        ))
     }
 }

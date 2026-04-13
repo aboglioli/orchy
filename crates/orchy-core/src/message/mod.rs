@@ -20,6 +20,17 @@ pub trait MessageStore: Send + Sync {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn find_sent(
+        &self,
+        sender: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn find_thread(
+        &self,
+        message_id: &MessageId,
+        limit: Option<usize>,
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
