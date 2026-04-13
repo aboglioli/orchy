@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
-    namespace TEXT NOT NULL,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    parent_id TEXT,
     roles TEXT NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
@@ -11,7 +13,8 @@ CREATE TABLE IF NOT EXISTS agents (
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
-    namespace TEXT NOT NULL,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
@@ -21,13 +24,15 @@ CREATE TABLE IF NOT EXISTS tasks (
     claimed_at TEXT,
     depends_on TEXT NOT NULL DEFAULT '[]',
     result_summary TEXT,
+    notes TEXT NOT NULL DEFAULT '[]',
     created_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS memory (
-    namespace TEXT NOT NULL,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
     key TEXT NOT NULL,
     value TEXT NOT NULL,
     version INTEGER NOT NULL DEFAULT 1,
@@ -37,23 +42,26 @@ CREATE TABLE IF NOT EXISTS memory (
     written_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (namespace, key)
+    PRIMARY KEY (project, namespace, key)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
-    namespace TEXT NOT NULL,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
     from_agent TEXT NOT NULL,
     to_target TEXT NOT NULL,
     body TEXT NOT NULL,
+    reply_to TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS contexts (
     id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
     agent_id TEXT NOT NULL,
-    namespace TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
     summary TEXT NOT NULL,
     embedding BLOB,
     embedding_model TEXT,
@@ -63,12 +71,29 @@ CREATE TABLE IF NOT EXISTS contexts (
 );
 
 CREATE TABLE IF NOT EXISTS skills (
-    namespace TEXT NOT NULL,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     content TEXT NOT NULL,
     written_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (namespace, name)
+    PRIMARY KEY (project, namespace, name)
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+    name TEXT PRIMARY KEY,
+    description TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '[]',
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS namespaces (
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (project, namespace)
 );

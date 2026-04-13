@@ -22,61 +22,11 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[
-    Migration {
-        version: "20260412-160000",
-        name: "initial_schema",
-        sql: include_str!("../../../migrations/sqlite/20260412-160000_initial_schema.sql"),
-    },
-    Migration {
-        version: "20260412-235000",
-        name: "notes_projects_reconnect",
-        sql: include_str!(
-            "../../../migrations/sqlite/20260412-235000_notes_projects_reconnect.sql"
-        ),
-    },
-    Migration {
-        version: "20260413-010000",
-        name: "message_reply_to",
-        sql: include_str!("../../../migrations/sqlite/20260413-010000_message_reply_to.sql"),
-    },
-    Migration {
-        version: "20260413-020000",
-        name: "agent_namespace_to_project",
-        sql: include_str!(
-            "../../../migrations/sqlite/20260413-020000_agent_namespace_to_project.sql"
-        ),
-    },
-    Migration {
-        version: "20260413-030000",
-        name: "agent_namespace_and_parent",
-        sql: include_str!(
-            "../../../migrations/sqlite/20260413-030000_agent_namespace_and_parent.sql"
-        ),
-    },
-    Migration {
-        version: "20260413-040000",
-        name: "add_project_to_all_tables",
-        sql: include_str!(
-            "../../../migrations/sqlite/20260413-040000_add_project_to_all_tables.sql"
-        ),
-    },
-    Migration {
-        version: "20260413-050000",
-        name: "fix_skills_pk",
-        sql: include_str!("../../../migrations/sqlite/20260413-050000_fix_skills_pk.sql"),
-    },
-    Migration {
-        version: "20260413-050001",
-        name: "fix_memory_pk",
-        sql: include_str!("../../../migrations/sqlite/20260413-050001_fix_memory_pk.sql"),
-    },
-    Migration {
-        version: "20260413-060000",
-        name: "namespaces_table",
-        sql: include_str!("../../../migrations/sqlite/20260413-060000_namespaces_table.sql"),
-    },
-];
+const MIGRATIONS: &[Migration] = &[Migration {
+    version: "20260412-160000",
+    name: "initial_schema",
+    sql: include_str!("../../../migrations/sqlite/20260412-160000_initial_schema.sql"),
+}];
 
 impl SqliteBackend {
     pub fn new(path: &str, embedding_dimensions: Option<u32>) -> Result<Self> {

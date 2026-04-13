@@ -1,2 +1,0 @@
-ALTER TABLE agents ADD COLUMN namespace TEXT NOT NULL DEFAULT '';
-ALTER TABLE agents ADD COLUMN parent_id TEXT;
