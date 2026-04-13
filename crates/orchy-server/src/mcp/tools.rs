@@ -1484,27 +1484,31 @@ const INSTRUCTIONS: &str = "\
 orchy — multi-agent coordination server.
 
 You are part of a coordinated multi-agent system. orchy provides shared \
-infrastructure: a task board, shared memory, messaging, and skills. You bring \
-the intelligence; orchy enforces the rules.
+infrastructure: a task board, shared memory, messaging, skills, and \
+project context. You bring the intelligence; orchy enforces the rules.
 
 ## On Session Start
 
-1. Call `register_agent` with your project namespace, roles, and description.
+1. Call `register_agent` with your project, roles, and description.
 2. Call `list_skills(inherited=true)` and follow the project conventions.
-3. Call `get_next_task` to claim work, or `check_mailbox` for messages.
-4. Call `heartbeat` every ~30s to signal liveness.
+3. Call `get_project` to read the project description and notes.
+4. Call `get_next_task` to claim work, or `check_mailbox` for messages.
+5. Call `heartbeat` every ~30s to signal liveness.
 
-## Namespace Rules
+## Project & Namespace
 
-Every session is scoped to a project namespace (first path segment). \
-Sub-scopes are allowed (e.g. `my-project/backend`), but the project prefix \
-must always match. You cannot access other projects.
+Each agent belongs to a project (e.g. `my-project`). Resources are \
+organized in namespaces within the project: `/` is root, `/backend`, \
+`/backend/auth` are scopes. Namespace is optional for reading — omit \
+it to see all project resources. Write operations default to your \
+current namespace. Use `move_agent` to switch namespaces. Use \
+`list_namespaces` to discover available scopes.
 
 ## Coordination
 
 - Claim tasks before working. Complete them with a summary when done.
 - Use shared memory to store decisions and context for other agents.
-- Use messages to coordinate with teammates.
+- Use messages to coordinate with teammates. Reply with `reply_to`.
 - Save context before your session ends for continuity.
 - Use `list_skills(inherited=true)` to get project conventions.
 

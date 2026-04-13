@@ -86,7 +86,7 @@ pub mod mock {
         async fn save(&self, _: &Project) -> Result<()> {
             Ok(())
         }
-        async fn get(&self, _: &ProjectId) -> Result<Option<Project>> {
+        async fn find_by_id(&self, _: &ProjectId) -> Result<Option<Project>> {
             Ok(None)
         }
     }

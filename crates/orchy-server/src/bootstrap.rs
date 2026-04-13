@@ -52,38 +52,40 @@ Project namespace: `{namespace}`
 On every session start, execute these steps in order:
 
 1. **Register** — call `register_agent` with:
-   - `namespace`: `"{namespace}"`
+   - `project`: your project identifier
    - `roles`: your capabilities (e.g. `["coder", "reviewer"]`)
-   - `description`: what you are (e.g. "Claude Code agent for backend")
+   - `description`: what you are (e.g. "Claude Code backend agent")
+   - `namespace`: scope within the project (optional, e.g. "backend")
 
-2. **Load skills** — call `list_skills` with `inherited: true` to get project
-   conventions. Read and follow them.
+2. **Load context** — call `get_project` for project description and notes.
+   Call `list_skills(inherited: true)` for project conventions.
 
-3. **Check for work** — call `get_next_task` to claim pending tasks assigned
-   to your roles, or `check_mailbox` for messages from other agents.
+3. **Check for work** — call `get_next_task` to claim pending tasks,
+   or `check_mailbox` for messages from other agents.
 
 4. **Heartbeat** — call `heartbeat` periodically (every ~30s) to signal liveness.
-   If you stop sending heartbeats, orchy will mark you disconnected and release
-   your claimed tasks.
 
 ## Namespace Rules
 
-All data is scoped to the project namespace `{namespace}`. You can use
-sub-scopes (e.g. `{namespace}/backend`) but the first segment must always
-match. You cannot access other projects.
+Resources are organized in namespaces within the project: `/` is root,
+`/backend` and `/backend/auth` are scopes. Namespace is optional for
+reading — omit it to see all project resources. Write operations default
+to your current namespace. Use `move_agent` to switch namespaces.
+Use `list_namespaces` to discover available scopes.
 
 ## Available Tools
 
 | Category | Tools |
 |----------|-------|
-| Agent    | `register_agent`, `list_agents`, `update_roles`, `move_agent`, `heartbeat`, `disconnect` |
-| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task`, `reassign_task`, `add_task_note` |
+| Agent    | `register_agent`, `list_agents`, `change_roles`, `move_agent`, `heartbeat`, `disconnect` |
+| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task`, `assign_task`, `add_task_note` |
+| Move     | `move_task`, `move_memory`, `move_skill` |
 | Memory   | `write_memory`, `read_memory`, `list_memory`, `search_memory`, `delete_memory` |
 | Messages | `send_message`, `check_mailbox`, `mark_read` |
 | Context  | `save_context`, `load_context`, `list_contexts`, `search_contexts` |
 | Skills   | `write_skill`, `read_skill`, `list_skills`, `delete_skill` |
 | Project  | `get_project`, `update_project`, `add_project_note` |
-| Bootstrap| `get_bootstrap_prompt` |
+| Discovery| `list_namespaces`, `get_bootstrap_prompt` |
 
 ## Coordination Patterns
 

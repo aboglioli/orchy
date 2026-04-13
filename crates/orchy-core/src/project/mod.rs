@@ -12,7 +12,7 @@ use crate::note::Note;
 
 pub trait ProjectStore: Send + Sync {
     fn save(&self, project: &Project) -> impl Future<Output = Result<()>> + Send;
-    fn get(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
+    fn find_by_id(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -37,7 +37,7 @@ impl ProjectStore for PgBackend {
         Ok(())
     }
 
-    async fn get(&self, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
         let row = sqlx::query(
             "SELECT name, description, notes, metadata, created_at, updated_at
              FROM projects WHERE name = $1",

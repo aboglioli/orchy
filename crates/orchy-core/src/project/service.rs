@@ -15,7 +15,7 @@ impl<S: ProjectStore> ProjectService<S> {
     }
 
     pub async fn get_or_create(&self, id: &ProjectId) -> Result<Project> {
-        match self.store.get(id).await? {
+        match self.store.find_by_id(id).await? {
             Some(project) => Ok(project),
             None => {
                 let project = Project::new(id.clone(), String::new());
@@ -26,7 +26,7 @@ impl<S: ProjectStore> ProjectService<S> {
     }
 
     pub async fn get(&self, id: &ProjectId) -> Result<Option<Project>> {
-        self.store.get(id).await
+        self.store.find_by_id(id).await
     }
 
     pub async fn update_description(&self, id: &ProjectId, description: String) -> Result<Project> {
