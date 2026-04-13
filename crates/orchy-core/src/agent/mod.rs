@@ -182,6 +182,14 @@ impl Agent {
         self.roles = roles;
     }
 
+    pub fn resume(&mut self, namespace: Namespace, roles: Vec<String>, description: String) {
+        self.namespace = namespace;
+        self.roles = roles;
+        self.description = description;
+        self.status = AgentStatus::Online;
+        self.last_heartbeat = Utc::now();
+    }
+
     pub fn move_to(&mut self, namespace: Namespace) {
         self.namespace = namespace;
     }

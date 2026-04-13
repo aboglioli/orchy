@@ -31,6 +31,19 @@ impl<S: AgentStore> AgentService<S> {
         Ok(agent)
     }
 
+    pub async fn resume(
+        &self,
+        id: &AgentId,
+        namespace: Namespace,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent> {
+        let mut agent = self.get(id).await?;
+        agent.resume(namespace, roles, description);
+        self.store.save(&agent).await?;
+        Ok(agent)
+    }
+
     pub async fn get(&self, id: &AgentId) -> Result<Agent> {
         self.store
             .find_by_id(id)

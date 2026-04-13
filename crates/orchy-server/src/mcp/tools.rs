@@ -28,7 +28,11 @@ struct RegisterAgentParams {
     namespace: String,
     roles: Vec<String>,
     description: String,
-    /// If provided, this agent is a child of the given parent agent ID (lineage tracking).
+    /// Resume an existing agent by its ID. The agent comes back online
+    /// with the same identity. Useful when reopening the same tool.
+    agent_id: Option<String>,
+    /// Create a new agent as a child of the given parent agent ID.
+    /// Inherits project and metadata from the parent.
     parent_id: Option<String>,
 }
 
@@ -272,8 +276,8 @@ impl OrchyHandler {
         description = "Register this session as an agent within a project namespace. \
         The namespace must start with the project identifier (e.g. 'my-project' or \
         'my-project/backend'). All subsequent tool calls will be scoped to this project. \
-        Sub-scopes can be provided per call, but the project prefix is always enforced. \
-        If parent_id is provided, the new agent is created as a child of that parent (lineage tracking)."
+        Use agent_id to resume a previous agent (same identity, comes back online). \
+        Use parent_id to create a new agent inheriting from a parent (lineage tracking)."
     )]
     async fn register_agent(
         &self,
@@ -283,6 +287,27 @@ impl OrchyHandler {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
+
+        if let Some(ref id_str) = params.agent_id {
+            let agent_id = parse_agent_id(id_str)?;
+            match self
+                .container
+                .agent_service
+                .resume(
+                    &agent_id,
+                    namespace.clone(),
+                    params.roles,
+                    params.description,
+                )
+                .await
+            {
+                Ok(agent) => {
+                    self.set_session(agent.id(), namespace);
+                    return Ok(to_json(&agent));
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
