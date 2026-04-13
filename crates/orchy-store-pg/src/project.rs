@@ -6,7 +6,7 @@ use sqlx::Row;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::note::Note;
-use orchy_core::project::{Project, ProjectStore};
+use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
 use crate::PgBackend;
 
@@ -64,5 +64,12 @@ fn row_to_project(row: &sqlx::postgres::PgRow) -> Project {
     let metadata: HashMap<String, String> =
         serde_json::from_value(metadata_json).unwrap_or_default();
 
-    Project::restore(id, description, notes, metadata, created_at, updated_at)
+    Project::restore(RestoreProject {
+        id,
+        description,
+        notes,
+        metadata,
+        created_at,
+        updated_at,
+    })
 }

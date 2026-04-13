@@ -24,7 +24,7 @@ pub struct TaskId(Uuid);
 
 impl TaskId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self(Uuid::now_v7())
     }
 
     pub fn from_uuid(uuid: Uuid) -> Self {
@@ -65,6 +65,7 @@ pub enum TaskStatus {
     InProgress,
     Completed,
     Failed,
+    Cancelled,
 }
 
 impl TaskStatus {
@@ -74,13 +75,19 @@ impl TaskStatus {
             (self, target),
             (Pending, Claimed)
                 | (Pending, Blocked)
+                | (Pending, Cancelled)
                 | (Blocked, Pending)
+                | (Blocked, Cancelled)
                 | (Claimed, InProgress)
+                | (Claimed, Blocked)
                 | (Claimed, Pending)
                 | (Claimed, Failed)
+                | (Claimed, Cancelled)
+                | (InProgress, Blocked)
                 | (InProgress, Completed)
                 | (InProgress, Failed)
                 | (InProgress, Pending)
+                | (InProgress, Cancelled)
         )
     }
 
@@ -105,8 +112,26 @@ impl fmt::Display for TaskStatus {
             TaskStatus::InProgress => "in_progress",
             TaskStatus::Completed => "completed",
             TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
         };
         write!(f, "{s}")
+    }
+}
+
+impl FromStr for TaskStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(TaskStatus::Pending),
+            "blocked" => Ok(TaskStatus::Blocked),
+            "claimed" => Ok(TaskStatus::Claimed),
+            "in_progress" => Ok(TaskStatus::InProgress),
+            "completed" => Ok(TaskStatus::Completed),
+            "failed" => Ok(TaskStatus::Failed),
+            "cancelled" => Ok(TaskStatus::Cancelled),
+            other => Err(format!("unknown task status: {other}")),
+        }
     }
 }
 
@@ -151,13 +176,14 @@ pub struct Task {
     id: TaskId,
     project: ProjectId,
     namespace: Namespace,
+    parent_id: Option<TaskId>,
     title: String,
     description: String,
     status: TaskStatus,
     priority: Priority,
     assigned_roles: Vec<String>,
-    claimed_by: Option<AgentId>,
-    claimed_at: Option<DateTime<Utc>>,
+    assigned_to: Option<AgentId>,
+    assigned_at: Option<DateTime<Utc>>,
     depends_on: Vec<TaskId>,
     result_summary: Option<String>,
     notes: Vec<Note>,
@@ -170,6 +196,7 @@ impl Task {
     pub fn new(
         project: ProjectId,
         namespace: Namespace,
+        parent_id: Option<TaskId>,
         title: String,
         description: String,
         priority: Priority,
@@ -177,12 +204,17 @@ impl Task {
         depends_on: Vec<TaskId>,
         created_by: Option<AgentId>,
         is_blocked: bool,
-    ) -> Self {
+    ) -> Result<Self> {
+        if title.trim().is_empty() {
+            return Err(Error::InvalidInput("task title must not be empty".into()));
+        }
+
         let now = Utc::now();
-        Self {
+        Ok(Self {
             id: TaskId::new(),
             project,
             namespace,
+            parent_id,
             title,
             description,
             status: if is_blocked {
@@ -192,66 +224,49 @@ impl Task {
             },
             priority,
             assigned_roles,
-            claimed_by: None,
-            claimed_at: None,
+            assigned_to: None,
+            assigned_at: None,
             depends_on,
             result_summary: None,
             notes: Vec::new(),
             created_by,
             created_at: now,
             updated_at: now,
-        }
+        })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        id: TaskId,
-        project: ProjectId,
-        namespace: Namespace,
-        title: String,
-        description: String,
-        status: TaskStatus,
-        priority: Priority,
-        assigned_roles: Vec<String>,
-        claimed_by: Option<AgentId>,
-        claimed_at: Option<DateTime<Utc>>,
-        depends_on: Vec<TaskId>,
-        result_summary: Option<String>,
-        notes: Vec<Note>,
-        created_by: Option<AgentId>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreTask) -> Self {
         Self {
-            id,
-            project,
-            namespace,
-            title,
-            description,
-            status,
-            priority,
-            assigned_roles,
-            claimed_by,
-            claimed_at,
-            depends_on,
-            result_summary,
-            notes,
-            created_by,
-            created_at,
-            updated_at,
+            id: r.id,
+            project: r.project,
+            namespace: r.namespace,
+            parent_id: r.parent_id,
+            title: r.title,
+            description: r.description,
+            status: r.status,
+            priority: r.priority,
+            assigned_roles: r.assigned_roles,
+            assigned_to: r.assigned_to,
+            assigned_at: r.assigned_at,
+            depends_on: r.depends_on,
+            result_summary: r.result_summary,
+            notes: r.notes,
+            created_by: r.created_by,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }
     }
 
     pub fn claim(&mut self, agent: AgentId) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Claimed)?;
-        self.claimed_by = Some(agent);
-        self.claimed_at = Some(Utc::now());
+        self.assigned_to = Some(agent);
+        self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
         Ok(())
     }
 
     pub fn start(&mut self, agent: &AgentId) -> Result<()> {
-        if self.claimed_by != Some(*agent) {
+        if self.assigned_to != Some(*agent) {
             return Err(Error::InvalidInput(format!(
                 "task {} is not claimed by agent {}",
                 self.id, agent
@@ -269,6 +284,12 @@ impl Task {
         Ok(())
     }
 
+    pub fn auto_complete(&mut self, summary: String) {
+        self.status = TaskStatus::Completed;
+        self.result_summary = Some(summary);
+        self.updated_at = Utc::now();
+    }
+
     pub fn fail(&mut self, reason: Option<String>) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Failed)?;
         self.result_summary = reason;
@@ -284,8 +305,8 @@ impl Task {
             });
         }
         self.status = self.status.transition_to(TaskStatus::Pending)?;
-        self.claimed_by = None;
-        self.claimed_at = None;
+        self.assigned_to = None;
+        self.assigned_at = None;
         self.updated_at = Utc::now();
         Ok(())
     }
@@ -298,8 +319,17 @@ impl Task {
             )));
         }
         self.status = TaskStatus::Claimed;
-        self.claimed_by = Some(new_agent);
-        self.claimed_at = Some(Utc::now());
+        self.assigned_to = Some(new_agent);
+        self.assigned_at = Some(Utc::now());
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn block(&mut self) -> Result<()> {
+        if self.status == TaskStatus::Blocked {
+            return Ok(());
+        }
+        self.status = self.status.transition_to(TaskStatus::Blocked)?;
         self.updated_at = Utc::now();
         Ok(())
     }
@@ -311,6 +341,25 @@ impl Task {
         }
     }
 
+    pub fn cancel(&mut self, reason: Option<String>) -> Result<()> {
+        self.status = self.status.transition_to(TaskStatus::Cancelled)?;
+        self.result_summary = reason;
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn add_dependency(&mut self, dep: TaskId) {
+        if !self.depends_on.contains(&dep) {
+            self.depends_on.push(dep);
+            self.updated_at = Utc::now();
+        }
+    }
+
+    pub fn remove_dependency(&mut self, dep: &TaskId) {
+        self.depends_on.retain(|d| d != dep);
+        self.updated_at = Utc::now();
+    }
+
     pub fn id(&self) -> TaskId {
         self.id
     }
@@ -319,6 +368,9 @@ impl Task {
     }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
+    }
+    pub fn parent_id(&self) -> Option<TaskId> {
+        self.parent_id
     }
     pub fn title(&self) -> &str {
         &self.title
@@ -335,11 +387,11 @@ impl Task {
     pub fn assigned_roles(&self) -> &[String] {
         &self.assigned_roles
     }
-    pub fn claimed_by(&self) -> Option<AgentId> {
-        self.claimed_by
+    pub fn assigned_to(&self) -> Option<AgentId> {
+        self.assigned_to
     }
-    pub fn claimed_at(&self) -> Option<DateTime<Utc>> {
-        self.claimed_at
+    pub fn assigned_at(&self) -> Option<DateTime<Utc>> {
+        self.assigned_at
     }
     pub fn depends_on(&self) -> &[TaskId] {
         &self.depends_on
@@ -369,38 +421,78 @@ impl Task {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskWithContext {
+    #[serde(flatten)]
+    pub task: Task,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ancestors: Vec<Task>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Task>,
+}
+
+pub struct RestoreTask {
+    pub id: TaskId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub parent_id: Option<TaskId>,
+    pub title: String,
+    pub description: String,
+    pub status: TaskStatus,
+    pub priority: Priority,
+    pub assigned_roles: Vec<String>,
+    pub assigned_to: Option<AgentId>,
+    pub assigned_at: Option<DateTime<Utc>>,
+    pub depends_on: Vec<TaskId>,
+    pub result_summary: Option<String>,
+    pub notes: Vec<Note>,
+    pub created_by: Option<AgentId>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub struct SubtaskDef {
+    pub title: String,
+    pub description: String,
+    pub priority: Priority,
+    pub assigned_roles: Vec<String>,
+    pub depends_on: Vec<TaskId>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TaskFilter {
     pub namespace: Option<Namespace>,
     pub project: Option<ProjectId>,
     pub status: Option<TaskStatus>,
     pub assigned_role: Option<String>,
-    pub claimed_by: Option<AgentId>,
+    pub assigned_to: Option<AgentId>,
+    pub parent_id: Option<TaskId>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_task(status: TaskStatus, claimed_by: Option<AgentId>) -> Task {
-        Task::restore(
-            TaskId::new(),
-            ProjectId::try_from("test").unwrap(),
-            Namespace::root(),
-            "Test Task".to_string(),
-            "Test".to_string(),
+    fn make_task(status: TaskStatus, assigned_to: Option<AgentId>) -> Task {
+        Task::restore(RestoreTask {
+            id: TaskId::new(),
+            project: ProjectId::try_from("test").unwrap(),
+            namespace: Namespace::root(),
+            parent_id: None,
+            title: "Test Task".to_string(),
+            description: "Test".to_string(),
             status,
-            Priority::default(),
-            vec!["tester".to_string()],
-            claimed_by,
-            None,
-            vec![],
-            None,
-            Vec::new(),
-            None,
-            Utc::now(),
-            Utc::now(),
-        )
+            priority: Priority::default(),
+            assigned_roles: vec!["tester".to_string()],
+            assigned_to,
+            assigned_at: None,
+            depends_on: vec![],
+            result_summary: None,
+            notes: Vec::new(),
+            created_by: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
     }
 
     #[test]
@@ -430,8 +522,8 @@ mod tests {
         let mut task = make_task(TaskStatus::Pending, None);
         assert!(task.claim(agent).is_ok());
         assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.claimed_by(), Some(agent));
-        assert!(task.claimed_at().is_some());
+        assert_eq!(task.assigned_to(), Some(agent));
+        assert!(task.assigned_at().is_some());
     }
 
     #[test]
@@ -500,7 +592,7 @@ mod tests {
         let mut task = make_task(TaskStatus::Claimed, Some(agent));
         assert!(task.release().is_ok());
         assert_eq!(task.status(), TaskStatus::Pending);
-        assert!(task.claimed_by().is_none());
+        assert!(task.assigned_to().is_none());
     }
 
     #[test]
@@ -516,7 +608,7 @@ mod tests {
         let mut task = make_task(TaskStatus::Claimed, Some(agent1));
         assert!(task.assign(agent2).is_ok());
         assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.claimed_by(), Some(agent2));
+        assert_eq!(task.assigned_to(), Some(agent2));
     }
 
     #[test]
@@ -544,6 +636,7 @@ mod tests {
         let task = Task::new(
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
+            None,
             "title".to_string(),
             "desc".to_string(),
             Priority::High,
@@ -551,7 +644,8 @@ mod tests {
             vec![],
             None,
             false,
-        );
+        )
+        .unwrap();
         assert_eq!(task.status(), TaskStatus::Pending);
     }
 
@@ -560,6 +654,7 @@ mod tests {
         let task = Task::new(
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
+            None,
             "title".to_string(),
             "desc".to_string(),
             Priority::Normal,
@@ -567,7 +662,8 @@ mod tests {
             vec![TaskId::new()],
             None,
             true,
-        );
+        )
+        .unwrap();
         assert_eq!(task.status(), TaskStatus::Blocked);
     }
 }

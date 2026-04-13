@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::agent::service::AgentService;
-use orchy_core::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
+use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::memory::service::{ContextService, MemoryService};
 use orchy_core::message::service::MessageService;
 use orchy_core::project::service::ProjectService;
@@ -12,6 +12,7 @@ use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
 
 use crate::config::{Config, EmbeddingsConfig};
+use crate::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
 use crate::store::StoreBackend;
 
 pub struct Container {
@@ -29,10 +30,10 @@ pub struct Container {
 impl Container {
     pub async fn from_config(config: Config) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
         let store = Arc::new(Self::build_store(&config).await?);
-        let embeddings = config
+        let embeddings: Option<Arc<dyn EmbeddingsProvider>> = config
             .embeddings
             .as_ref()
-            .map(|e| Arc::new(Self::build_embeddings(e)));
+            .map(|e| Arc::new(Self::build_embeddings(e)) as Arc<dyn EmbeddingsProvider>);
 
         let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
         let memory_service = MemoryService::new(Arc::clone(&store), embeddings.clone());

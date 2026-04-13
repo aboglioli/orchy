@@ -6,7 +6,7 @@ use rusqlite::OptionalExtension;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::note::Note;
-use orchy_core::project::{Project, ProjectStore};
+use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
 use crate::SqliteBackend;
 
@@ -76,12 +76,12 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
             rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    Ok(Project::restore(
+    Ok(Project::restore(RestoreProject {
         id,
         description,
         notes,
         metadata,
         created_at,
         updated_at,
-    ))
+    }))
 }

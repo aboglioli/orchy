@@ -4,7 +4,7 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 
@@ -118,19 +118,19 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    Ok(Agent::restore(
-        AgentId::from_str(&id_str).map_err(|e| {
+    Ok(Agent::restore(RestoreAgent {
+        id: AgentId::from_str(&id_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?,
-        ProjectId::try_from(project_str).map_err(|e| conversion_err(1, e))?,
-        Namespace::try_from(namespace_str).map_err(|e| conversion_err(2, e))?,
+        project: ProjectId::try_from(project_str).map_err(|e| conversion_err(1, e))?,
+        namespace: Namespace::try_from(namespace_str).map_err(|e| conversion_err(2, e))?,
         parent_id,
-        serde_json::from_str(&roles_str).map_err(|e| {
+        roles: serde_json::from_str(&roles_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?,
         description,
-        parse_agent_status(&status_str),
-        DateTime::parse_from_rfc3339(&heartbeat_str)
+        status: status_str.parse::<AgentStatus>().unwrap_or_default(),
+        last_heartbeat: DateTime::parse_from_rfc3339(&heartbeat_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -139,7 +139,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
                     Box::new(e),
                 )
             })?,
-        DateTime::parse_from_rfc3339(&connected_str)
+        connected_at: DateTime::parse_from_rfc3339(&connected_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -148,16 +148,6 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
                     Box::new(e),
                 )
             })?,
-        serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
-    ))
-}
-
-fn parse_agent_status(s: &str) -> AgentStatus {
-    match s {
-        "online" => AgentStatus::Online,
-        "busy" => AgentStatus::Busy,
-        "idle" => AgentStatus::Idle,
-        "disconnected" => AgentStatus::Disconnected,
-        _ => AgentStatus::Online,
-    }
+        metadata: serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
+    }))
 }

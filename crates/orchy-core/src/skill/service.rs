@@ -35,7 +35,7 @@ impl<S: SkillStore> SkillService<S> {
                 cmd.description,
                 cmd.content,
                 cmd.written_by,
-            )
+            )?
         };
 
         self.store.save(&skill).await?;
