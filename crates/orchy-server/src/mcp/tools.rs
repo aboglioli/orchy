@@ -269,16 +269,19 @@ impl OrchyHandler {
         Sub-scopes can be provided per call, but the project prefix is always enforced. \
         If agent_id is provided, reconnect to an existing agent instead of creating a new one."
     )]
-    async fn register_agent(&self, Parameters(params): Parameters<RegisterAgentParams>) -> String {
+    async fn register_agent(
+        &self,
+        Parameters(params): Parameters<RegisterAgentParams>,
+    ) -> Result<String, String> {
         let namespace = match parse_namespace(&params.namespace) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         if let Some(ref id_str) = params.agent_id {
             let agent_id = match parse_agent_id(id_str) {
                 Ok(id) => id,
-                Err(e) => return e,
+                Err(e) => return Err(e),
             };
 
             match self
@@ -289,9 +292,9 @@ impl OrchyHandler {
             {
                 Ok(agent) => {
                     self.set_session(agent.id, namespace);
-                    return to_json(&agent);
+                    return Ok(to_json(&agent));
                 }
-                Err(e) => return format!("error: {e}"),
+                Err(e) => return Err(e.to_string()),
             }
         }
 
@@ -305,17 +308,20 @@ impl OrchyHandler {
         match self.container.agent_service.register(cmd).await {
             Ok(agent) => {
                 self.set_session(agent.id, namespace);
-                to_json(&agent)
+                Ok(to_json(&agent))
             }
-            Err(e) => format!("error: {e}"),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "List all connected agents.")]
-    async fn list_agents(&self, Parameters(_params): Parameters<ListAgentsParams>) -> String {
+    async fn list_agents(
+        &self,
+        Parameters(_params): Parameters<ListAgentsParams>,
+    ) -> Result<String, String> {
         match self.container.agent_service.list().await {
-            Ok(agents) => to_json(&agents),
-            Err(e) => format!("error: {e}"),
+            Ok(agents) => Ok(to_json(&agents)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -323,10 +329,13 @@ impl OrchyHandler {
         description = "Update the roles of the session agent. Affects which tasks \
         get_next_task returns."
     )]
-    async fn update_roles(&self, Parameters(params): Parameters<UpdateRolesParams>) -> String {
+    async fn update_roles(
+        &self,
+        Parameters(params): Parameters<UpdateRolesParams>,
+    ) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -335,21 +344,21 @@ impl OrchyHandler {
             .update_roles(&agent_id, params.roles)
             .await
         {
-            Ok(agent) => to_json(&agent),
-            Err(e) => format!("error: {e}"),
+            Ok(agent) => Ok(to_json(&agent)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Send a heartbeat for the session agent to signal liveness.")]
-    async fn heartbeat(&self) -> String {
+    async fn heartbeat(&self) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self.container.agent_service.heartbeat(&agent_id).await {
-            Ok(()) => "ok".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -357,10 +366,10 @@ impl OrchyHandler {
         description = "Disconnect the session agent. Releases all claimed tasks back to pending. \
         Use this when your session is ending."
     )]
-    async fn disconnect(&self) -> String {
+    async fn disconnect(&self) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         if let Err(e) = self
@@ -369,12 +378,12 @@ impl OrchyHandler {
             .release_agent_tasks(&agent_id)
             .await
         {
-            return format!("error releasing tasks: {e}");
+            return Err(e.to_string());
         }
 
         match self.container.agent_service.disconnect(&agent_id).await {
-            Ok(()) => "disconnected".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(()) => Ok("disconnected".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -382,16 +391,19 @@ impl OrchyHandler {
         description = "Create a new task. Namespace defaults to session namespace; \
         if provided, the project prefix must match."
     )]
-    async fn post_task(&self, Parameters(params): Parameters<PostTaskParams>) -> String {
+    async fn post_task(
+        &self,
+        Parameters(params): Parameters<PostTaskParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let priority = match params.priority.as_deref() {
             Some(p) => match p.parse::<Priority>() {
                 Ok(pri) => pri,
-                Err(e) => return format!("invalid priority: {e}"),
+                Err(e) => return Err(format!("invalid priority: {e}")),
             },
             None => Priority::default(),
         };
@@ -404,7 +416,7 @@ impl OrchyHandler {
             .collect::<Result<Vec<_>, _>>()
         {
             Ok(ids) => ids,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let is_blocked = !depends_on.is_empty();
@@ -421,8 +433,8 @@ impl OrchyHandler {
 
         let response = to_json(&task);
         match self.container.task_service.create(task).await {
-            Ok(()) => response,
-            Err(e) => format!("error: {e}"),
+            Ok(()) => Ok(response),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -430,22 +442,25 @@ impl OrchyHandler {
         description = "Get the next available task for the session agent, optionally filtered \
         by namespace (defaults to session namespace) and role."
     )]
-    async fn get_next_task(&self, Parameters(params): Parameters<GetNextTaskParams>) -> String {
+    async fn get_next_task(
+        &self,
+        Parameters(params): Parameters<GetNextTaskParams>,
+    ) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let roles = match params.role {
             Some(r) => vec![r],
             None => match self.container.agent_service.get(&agent_id).await {
                 Ok(agent) => agent.roles,
-                Err(e) => return format!("error fetching agent roles: {e}"),
+                Err(e) => return Err(format!("error fetching agent roles: {e}")),
             },
         };
 
@@ -455,9 +470,9 @@ impl OrchyHandler {
             .get_next(&agent_id, &roles, Some(namespace))
             .await
         {
-            Ok(Some(task)) => to_json(&task),
-            Ok(None) => "null".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(Some(task)) => Ok(to_json(&task)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -465,10 +480,13 @@ impl OrchyHandler {
         description = "List tasks, optionally filtered by namespace (defaults to session \
         namespace) and status."
     )]
-    async fn list_tasks(&self, Parameters(params): Parameters<ListTasksParams>) -> String {
+    async fn list_tasks(
+        &self,
+        Parameters(params): Parameters<ListTasksParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let status = params.status.as_deref().map(|s| match s {
@@ -482,7 +500,7 @@ impl OrchyHandler {
         });
 
         if params.status.is_some() && status == Some(None) {
-            return "invalid status value".to_string();
+            return Err("invalid status value".to_string());
         }
 
         let filter = TaskFilter {
@@ -492,26 +510,29 @@ impl OrchyHandler {
         };
 
         match self.container.task_service.list(filter).await {
-            Ok(tasks) => to_json(&tasks),
-            Err(e) => format!("error: {e}"),
+            Ok(tasks) => Ok(to_json(&tasks)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Claim a specific task for the session agent.")]
-    async fn claim_task(&self, Parameters(params): Parameters<ClaimTaskParams>) -> String {
+    async fn claim_task(
+        &self,
+        Parameters(params): Parameters<ClaimTaskParams>,
+    ) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self.container.task_service.claim(&task_id, &agent_id).await {
-            Ok(task) => to_json(&task),
-            Err(e) => format!("error: {e}"),
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -520,28 +541,34 @@ impl OrchyHandler {
         You must claim a task before starting it, and start it before completing it. \
         Workflow: pending → claimed → in_progress → completed/failed."
     )]
-    async fn start_task(&self, Parameters(params): Parameters<StartTaskParams>) -> String {
+    async fn start_task(
+        &self,
+        Parameters(params): Parameters<StartTaskParams>,
+    ) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self.container.task_service.start(&task_id, &agent_id).await {
-            Ok(task) => to_json(&task),
-            Err(e) => format!("error: {e}"),
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Mark a task as completed with an optional summary.")]
-    async fn complete_task(&self, Parameters(params): Parameters<CompleteTaskParams>) -> String {
+    async fn complete_task(
+        &self,
+        Parameters(params): Parameters<CompleteTaskParams>,
+    ) -> Result<String, String> {
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -550,16 +577,19 @@ impl OrchyHandler {
             .complete(&task_id, params.summary)
             .await
         {
-            Ok(task) => to_json(&task),
-            Err(e) => format!("error: {e}"),
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Mark a task as failed with an optional reason.")]
-    async fn fail_task(&self, Parameters(params): Parameters<FailTaskParams>) -> String {
+    async fn fail_task(
+        &self,
+        Parameters(params): Parameters<FailTaskParams>,
+    ) -> Result<String, String> {
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -568,8 +598,8 @@ impl OrchyHandler {
             .fail(&task_id, params.reason)
             .await
         {
-            Ok(task) => to_json(&task),
-            Err(e) => format!("error: {e}"),
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -577,20 +607,23 @@ impl OrchyHandler {
         description = "Reassign a task to a different agent. The task must be claimed or \
         in progress. Resets the task status to claimed for the new agent."
     )]
-    async fn reassign_task(&self, Parameters(params): Parameters<ReassignTaskParams>) -> String {
+    async fn reassign_task(
+        &self,
+        Parameters(params): Parameters<ReassignTaskParams>,
+    ) -> Result<String, String> {
         let _ = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let agent_id = match parse_agent_id(&params.agent_id) {
             Ok(id) => id,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -599,8 +632,8 @@ impl OrchyHandler {
             .reassign(&task_id, &agent_id)
             .await
         {
-            Ok(task) => to_json(&task),
-            Err(e) => format!("error: {e}"),
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -608,10 +641,13 @@ impl OrchyHandler {
         description = "Write a key-value entry to shared memory. Namespace defaults to \
         session namespace; if provided, the project prefix must match."
     )]
-    async fn write_memory(&self, Parameters(params): Parameters<WriteMemoryParams>) -> String {
+    async fn write_memory(
+        &self,
+        Parameters(params): Parameters<WriteMemoryParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let cmd = WriteMemory {
@@ -626,16 +662,19 @@ impl OrchyHandler {
         };
 
         match self.container.memory_service.write(cmd).await {
-            Ok(entry) => to_json(&entry),
-            Err(e) => format!("error: {e}"),
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Read a memory entry by key. Namespace defaults to session namespace.")]
-    async fn read_memory(&self, Parameters(params): Parameters<ReadMemoryParams>) -> String {
+    async fn read_memory(
+        &self,
+        Parameters(params): Parameters<ReadMemoryParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -644,17 +683,20 @@ impl OrchyHandler {
             .read(&namespace, &params.key)
             .await
         {
-            Ok(Some(entry)) => to_json(&entry),
-            Ok(None) => "null".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(Some(entry)) => Ok(to_json(&entry)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "List memory entries. Namespace defaults to session namespace.")]
-    async fn list_memory(&self, Parameters(params): Parameters<ListMemoryParams>) -> String {
+    async fn list_memory(
+        &self,
+        Parameters(params): Parameters<ListMemoryParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let filter = MemoryFilter {
@@ -663,8 +705,8 @@ impl OrchyHandler {
         };
 
         match self.container.memory_service.list(filter).await {
-            Ok(entries) => to_json(&entries),
-            Err(e) => format!("error: {e}"),
+            Ok(entries) => Ok(to_json(&entries)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -672,10 +714,13 @@ impl OrchyHandler {
         description = "Search memory entries by semantic similarity. Namespace defaults to \
         session namespace."
     )]
-    async fn search_memory(&self, Parameters(params): Parameters<SearchMemoryParams>) -> String {
+    async fn search_memory(
+        &self,
+        Parameters(params): Parameters<SearchMemoryParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let limit = params.limit.unwrap_or(10) as usize;
@@ -686,16 +731,19 @@ impl OrchyHandler {
             .search(&params.query, Some(&namespace), limit)
             .await
         {
-            Ok(entries) => to_json(&entries),
-            Err(e) => format!("error: {e}"),
+            Ok(entries) => Ok(to_json(&entries)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Delete a memory entry by key. Namespace defaults to session namespace.")]
-    async fn delete_memory(&self, Parameters(params): Parameters<DeleteMemoryParams>) -> String {
+    async fn delete_memory(
+        &self,
+        Parameters(params): Parameters<DeleteMemoryParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -704,8 +752,8 @@ impl OrchyHandler {
             .delete(&namespace, &params.key)
             .await
         {
-            Ok(()) => "ok".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -713,26 +761,29 @@ impl OrchyHandler {
         description = "Send a message to another agent (by ID), a role (role:name), or \
         broadcast. Namespace defaults to session namespace."
     )]
-    async fn send_message(&self, Parameters(params): Parameters<SendMessageParams>) -> String {
+    async fn send_message(
+        &self,
+        Parameters(params): Parameters<SendMessageParams>,
+    ) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let target = match MessageTarget::parse(&params.to) {
             Ok(t) => t,
-            Err(e) => return format!("invalid target: {e}"),
+            Err(e) => return Err(format!("invalid target: {e}")),
         };
 
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let reply_to = match params.reply_to {
             Some(s) => match s.parse::<MessageId>() {
                 Ok(id) => Some(id),
-                Err(e) => return format!("invalid reply_to: {e}"),
+                Err(e) => return Err(format!("invalid reply_to: {e}")),
             },
             None => None,
         };
@@ -746,8 +797,8 @@ impl OrchyHandler {
         };
 
         match self.container.message_service.send(cmd).await {
-            Ok(messages) => to_json(&messages),
-            Err(e) => format!("error: {e}"),
+            Ok(messages) => Ok(to_json(&messages)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -755,15 +806,18 @@ impl OrchyHandler {
         description = "Check the mailbox for pending messages. Namespace defaults to session \
         namespace."
     )]
-    async fn check_mailbox(&self, Parameters(params): Parameters<CheckMailboxParams>) -> String {
+    async fn check_mailbox(
+        &self,
+        Parameters(params): Parameters<CheckMailboxParams>,
+    ) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -772,13 +826,16 @@ impl OrchyHandler {
             .check(&agent_id, &namespace)
             .await
         {
-            Ok(messages) => to_json(&messages),
-            Err(e) => format!("error: {e}"),
+            Ok(messages) => Ok(to_json(&messages)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Mark messages as read by their IDs.")]
-    async fn mark_read(&self, Parameters(params): Parameters<MarkReadParams>) -> String {
+    async fn mark_read(
+        &self,
+        Parameters(params): Parameters<MarkReadParams>,
+    ) -> Result<String, String> {
         let ids: Vec<MessageId> = match params
             .message_ids
             .iter()
@@ -786,12 +843,12 @@ impl OrchyHandler {
             .collect::<Result<Vec<_>, _>>()
         {
             Ok(ids) => ids,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self.container.message_service.mark_read(&ids).await {
-            Ok(()) => "ok".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -799,21 +856,24 @@ impl OrchyHandler {
         description = "Save a context snapshot for the session agent. Namespace defaults to \
         session namespace."
     )]
-    async fn save_context(&self, Parameters(params): Parameters<SaveContextParams>) -> String {
+    async fn save_context(
+        &self,
+        Parameters(params): Parameters<SaveContextParams>,
+    ) -> Result<String, String> {
         let (agent_id, _) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let metadata: HashMap<String, String> = match params.metadata.as_deref() {
             Some(json_str) => match serde_json::from_str(json_str) {
                 Ok(m) => m,
-                Err(e) => return format!("invalid metadata JSON: {e}"),
+                Err(e) => return Err(format!("invalid metadata JSON: {e}")),
             },
             None => HashMap::new(),
         };
@@ -829,8 +889,8 @@ impl OrchyHandler {
         };
 
         match self.container.context_service.save(cmd).await {
-            Ok(snapshot) => to_json(&snapshot),
-            Err(e) => format!("error: {e}"),
+            Ok(snapshot) => Ok(to_json(&snapshot)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -838,36 +898,42 @@ impl OrchyHandler {
         description = "Load the most recent context snapshot for an agent (defaults to \
         session agent)."
     )]
-    async fn load_context(&self, Parameters(params): Parameters<LoadContextParams>) -> String {
+    async fn load_context(
+        &self,
+        Parameters(params): Parameters<LoadContextParams>,
+    ) -> Result<String, String> {
         let agent_id = match params.agent_id.as_deref() {
             Some(id_str) => match parse_agent_id(id_str) {
                 Ok(id) => id,
-                Err(e) => return e,
+                Err(e) => return Err(e),
             },
             None => match self.require_session() {
                 Ok((id, _)) => id,
-                Err(e) => return e,
+                Err(e) => return Err(e),
             },
         };
 
         match self.container.context_service.load(&agent_id).await {
-            Ok(Some(snapshot)) => to_json(&snapshot),
-            Ok(None) => "null".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(Some(snapshot)) => Ok(to_json(&snapshot)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "List context snapshots. Namespace defaults to session namespace.")]
-    async fn list_contexts(&self, Parameters(params): Parameters<ListContextsParams>) -> String {
+    async fn list_contexts(
+        &self,
+        Parameters(params): Parameters<ListContextsParams>,
+    ) -> Result<String, String> {
         let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
             Some(Ok(id)) => Some(id),
-            Some(Err(e)) => return e,
+            Some(Err(e)) => return Err(e),
             None => None,
         };
 
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -876,8 +942,8 @@ impl OrchyHandler {
             .list(agent_id.as_ref(), &namespace)
             .await
         {
-            Ok(snapshots) => to_json(&snapshots),
-            Err(e) => format!("error: {e}"),
+            Ok(snapshots) => Ok(to_json(&snapshots)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -888,15 +954,15 @@ impl OrchyHandler {
     async fn search_contexts(
         &self,
         Parameters(params): Parameters<SearchContextsParams>,
-    ) -> String {
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
             Some(Ok(id)) => Some(id),
-            Some(Err(e)) => return e,
+            Some(Err(e)) => return Err(e),
             None => None,
         };
 
@@ -908,8 +974,8 @@ impl OrchyHandler {
             .search(&params.query, &namespace, agent_id.as_ref(), limit)
             .await
         {
-            Ok(snapshots) => to_json(&snapshots),
-            Err(e) => format!("error: {e}"),
+            Ok(snapshots) => Ok(to_json(&snapshots)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -918,10 +984,13 @@ impl OrchyHandler {
         agents in this project will receive. Skills are identified by namespace + name. \
         Writing to an existing name updates it. Namespace defaults to session namespace."
     )]
-    async fn write_skill(&self, Parameters(params): Parameters<WriteSkillParams>) -> String {
+    async fn write_skill(
+        &self,
+        Parameters(params): Parameters<WriteSkillParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let cmd = WriteSkill {
@@ -933,16 +1002,19 @@ impl OrchyHandler {
         };
 
         match self.container.skill_service.write(cmd).await {
-            Ok(skill) => to_json(&skill),
-            Err(e) => format!("error: {e}"),
+            Ok(skill) => Ok(to_json(&skill)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Read a specific skill by name. Namespace defaults to session namespace.")]
-    async fn read_skill(&self, Parameters(params): Parameters<ReadSkillParams>) -> String {
+    async fn read_skill(
+        &self,
+        Parameters(params): Parameters<ReadSkillParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -951,9 +1023,9 @@ impl OrchyHandler {
             .read(&namespace, &params.name)
             .await
         {
-            Ok(Some(skill)) => to_json(&skill),
-            Ok(None) => "null".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(Some(skill)) => Ok(to_json(&skill)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -962,10 +1034,13 @@ impl OrchyHandler {
         from parent namespaces with more specific ones taking precedence. Namespace defaults \
         to session namespace."
     )]
-    async fn list_skills(&self, Parameters(params): Parameters<ListSkillsParams>) -> String {
+    async fn list_skills(
+        &self,
+        Parameters(params): Parameters<ListSkillsParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let result = if params.inherited.unwrap_or(false) {
@@ -984,18 +1059,21 @@ impl OrchyHandler {
         };
 
         match result {
-            Ok(skills) => to_json(&skills),
-            Err(e) => format!("error: {e}"),
+            Ok(skills) => Ok(to_json(&skills)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(
         description = "Add a note to a task. Notes are timestamped comments attached to the task."
     )]
-    async fn add_task_note(&self, Parameters(params): Parameters<AddTaskNoteParams>) -> String {
+    async fn add_task_note(
+        &self,
+        Parameters(params): Parameters<AddTaskNoteParams>,
+    ) -> Result<String, String> {
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let author = self.get_session_agent();
@@ -1006,21 +1084,24 @@ impl OrchyHandler {
             .add_note(&task_id, author, params.body)
             .await
         {
-            Ok(task) => to_json(&task),
-            Err(e) => format!("error: {e}"),
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Get the project metadata for the current session's project.")]
-    async fn get_project(&self, Parameters(_params): Parameters<GetProjectParams>) -> String {
+    async fn get_project(
+        &self,
+        Parameters(_params): Parameters<GetProjectParams>,
+    ) -> Result<String, String> {
         let (_, namespace) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let project_id = match ProjectId::try_from(namespace.project()) {
             Ok(id) => id,
-            Err(e) => return format!("error: {e}"),
+            Err(e) => return Err(e.to_string()),
         };
 
         match self
@@ -1029,21 +1110,24 @@ impl OrchyHandler {
             .get_or_create(&project_id)
             .await
         {
-            Ok(project) => to_json(&project),
-            Err(e) => format!("error: {e}"),
+            Ok(project) => Ok(to_json(&project)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Update the project description for the current session's project.")]
-    async fn update_project(&self, Parameters(params): Parameters<UpdateProjectParams>) -> String {
+    async fn update_project(
+        &self,
+        Parameters(params): Parameters<UpdateProjectParams>,
+    ) -> Result<String, String> {
         let (_, namespace) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let project_id = match ProjectId::try_from(namespace.project()) {
             Ok(id) => id,
-            Err(e) => return format!("error: {e}"),
+            Err(e) => return Err(e.to_string()),
         };
 
         match self
@@ -1052,8 +1136,8 @@ impl OrchyHandler {
             .update_description(&project_id, params.description)
             .await
         {
-            Ok(project) => to_json(&project),
-            Err(e) => format!("error: {e}"),
+            Ok(project) => Ok(to_json(&project)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -1061,15 +1145,15 @@ impl OrchyHandler {
     async fn add_project_note(
         &self,
         Parameters(params): Parameters<AddProjectNoteParams>,
-    ) -> String {
+    ) -> Result<String, String> {
         let (_, namespace) = match self.require_session() {
             Ok(s) => s,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let project_id = match ProjectId::try_from(namespace.project()) {
             Ok(id) => id,
-            Err(e) => return format!("error: {e}"),
+            Err(e) => return Err(e.to_string()),
         };
 
         let author = self.get_session_agent();
@@ -1080,16 +1164,19 @@ impl OrchyHandler {
             .add_note(&project_id, author, params.body)
             .await
         {
-            Ok(project) => to_json(&project),
-            Err(e) => format!("error: {e}"),
+            Ok(project) => Ok(to_json(&project)),
+            Err(e) => Err(e.to_string()),
         }
     }
 
     #[tool(description = "Delete a skill by name. Namespace defaults to session namespace.")]
-    async fn delete_skill(&self, Parameters(params): Parameters<DeleteSkillParams>) -> String {
+    async fn delete_skill(
+        &self,
+        Parameters(params): Parameters<DeleteSkillParams>,
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         match self
@@ -1098,8 +1185,8 @@ impl OrchyHandler {
             .delete(&namespace, &params.name)
             .await
         {
-            Ok(()) => "ok".to_string(),
-            Err(e) => format!("error: {e}"),
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -1112,10 +1199,10 @@ impl OrchyHandler {
     async fn get_bootstrap_prompt(
         &self,
         Parameters(params): Parameters<GetBootstrapPromptParams>,
-    ) -> String {
+    ) -> Result<String, String> {
         let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         };
 
         let host = &self.container.config.server.host;
@@ -1129,8 +1216,8 @@ impl OrchyHandler {
         )
         .await
         {
-            Ok(prompt) => prompt,
-            Err(e) => format!("error: {e}"),
+            Ok(prompt) => Ok(prompt),
+            Err(e) => Err(e.to_string()),
         }
     }
 }
