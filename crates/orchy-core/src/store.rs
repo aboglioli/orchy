@@ -115,7 +115,7 @@ pub mod mock {
         ) -> Result<Vec<MemoryEntry>> {
             unimplemented!()
         }
-        async fn delete(&self, _: &Namespace, _: &str) -> Result<()> {
+        async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
             unimplemented!()
         }
     }

@@ -97,8 +97,8 @@ impl MemoryStore for StoreBackend {
             MemoryStore::search(query, embedding, namespace, limit)
         )
     }
-    async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()> {
-        delegate_trait!(self, MemoryStore::delete(namespace, key))
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
+        delegate_trait!(self, MemoryStore::delete(project, namespace, key))
     }
 }
 

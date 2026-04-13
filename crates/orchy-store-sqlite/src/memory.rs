@@ -174,13 +174,13 @@ impl MemoryStore for SqliteBackend {
         Ok(entries)
     }
 
-    async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()> {
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let rowid: Option<i64> = conn
             .query_row(
-                "SELECT rowid FROM memory WHERE namespace = ?1 AND key = ?2",
-                rusqlite::params![namespace.to_string(), key],
+                "SELECT rowid FROM memory WHERE project = ?1 AND namespace = ?2 AND key = ?3",
+                rusqlite::params![project.to_string(), namespace.to_string(), key],
                 |row| row.get(0),
             )
             .optional()
@@ -188,8 +188,8 @@ impl MemoryStore for SqliteBackend {
 
         if let Some(rowid) = rowid {
             let _ = conn.execute(
-                "INSERT INTO memory_fts(memory_fts, rowid, namespace, key, value) VALUES('delete', ?1, ?2, ?3, (SELECT value FROM memory WHERE namespace = ?2 AND key = ?3))",
-                rusqlite::params![rowid, namespace.to_string(), key],
+                "INSERT INTO memory_fts(memory_fts, rowid, namespace, key, value) VALUES('delete', ?1, ?2, ?3, (SELECT value FROM memory WHERE project = ?4 AND namespace = ?2 AND key = ?3))",
+                rusqlite::params![rowid, namespace.to_string(), key, project.to_string()],
             );
 
             let _ = conn.execute(
@@ -199,8 +199,8 @@ impl MemoryStore for SqliteBackend {
         }
 
         conn.execute(
-            "DELETE FROM memory WHERE namespace = ?1 AND key = ?2",
-            rusqlite::params![namespace.to_string(), key],
+            "DELETE FROM memory WHERE project = ?1 AND namespace = ?2 AND key = ?3",
+            rusqlite::params![project.to_string(), namespace.to_string(), key],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 

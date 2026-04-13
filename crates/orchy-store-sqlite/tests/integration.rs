@@ -372,7 +372,7 @@ async fn memory_delete() {
     let entry = MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None);
     MemoryStore::save(&store, &entry).await.unwrap();
 
-    MemoryStore::delete(&store, &Namespace::root(), "k")
+    MemoryStore::delete(&store, &proj("app"), &Namespace::root(), "k")
         .await
         .unwrap();
     let result = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "k")

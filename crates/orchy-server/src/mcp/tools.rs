@@ -827,6 +827,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DeleteMemoryParams>,
     ) -> Result<String, String> {
+        let project = self.get_session_project().ok_or("no agent registered")?;
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -835,7 +836,7 @@ impl OrchyHandler {
         match self
             .container
             .memory_service
-            .delete(&namespace, &params.key)
+            .delete(&project, &namespace, &params.key)
             .await
         {
             Ok(()) => Ok("ok".to_string()),
