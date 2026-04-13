@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -136,33 +137,41 @@ pub struct CreateSnapshot {
 }
 
 pub trait MemoryStore: Send + Sync {
-    async fn write(&self, entry: WriteMemory) -> Result<MemoryEntry>;
-    async fn read(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>>;
-    async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>>;
-    async fn search(
+    fn write(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
+    fn read(
+        &self,
+        namespace: &Namespace,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
+    fn list(&self, filter: MemoryFilter) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
+    fn search(
         &self,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<MemoryEntry>>;
-    async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()>;
+    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
+    fn delete(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<()>> + Send;
 }
 
 pub trait ContextStore: Send + Sync {
-    async fn save(&self, snapshot: CreateSnapshot) -> Result<ContextSnapshot>;
-    async fn load(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>>;
-    async fn list(
+    fn save(
+        &self,
+        snapshot: CreateSnapshot,
+    ) -> impl Future<Output = Result<ContextSnapshot>> + Send;
+    fn load(&self, agent: &AgentId)
+    -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
+    fn list(
         &self,
         agent: Option<&AgentId>,
         namespace: &Namespace,
-    ) -> Result<Vec<ContextSnapshot>>;
-    async fn search(
+    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
+    fn search(
         &self,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: &Namespace,
         agent_id: Option<&AgentId>,
         limit: usize,
-    ) -> Result<Vec<ContextSnapshot>>;
+    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
 }

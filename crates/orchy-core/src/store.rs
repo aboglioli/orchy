@@ -1,130 +1,21 @@
-use std::future::Future;
-
-use crate::agent::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
-use crate::error::Result;
-use crate::memory::{
-    ContextSnapshot, ContextStore, CreateSnapshot, MemoryEntry, MemoryFilter, MemoryStore,
-    WriteMemory,
-};
-use crate::message::{CreateMessage, Message, MessageId, MessageStore};
-use crate::namespace::{Namespace, ProjectId};
-use crate::project::{Project, ProjectStore};
-use crate::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
-use crate::task::{Task, TaskFilter, TaskId, TaskStore};
-
-pub trait Store: Send + Sync {
-    fn save_task(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
-    fn get_task(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
-    fn list_tasks(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
-
-    fn write_memory(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
-    fn read_memory(
-        &self,
-        namespace: &Namespace,
-        key: &str,
-    ) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
-    fn list_memory(
-        &self,
-        filter: MemoryFilter,
-    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
-    fn search_memory(
-        &self,
-        query: &str,
-        embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
-    fn delete_memory(
-        &self,
-        namespace: &Namespace,
-        key: &str,
-    ) -> impl Future<Output = Result<()>> + Send;
-
-    fn register(&self, registration: RegisterAgent) -> impl Future<Output = Result<Agent>> + Send;
-    fn get_agent(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
-    fn list_agents(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
-    fn heartbeat(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
-    fn update_agent_status(
-        &self,
-        id: &AgentId,
-        status: AgentStatus,
-    ) -> impl Future<Output = Result<()>> + Send;
-    fn update_agent_roles(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-    ) -> impl Future<Output = Result<Agent>> + Send;
-    fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> impl Future<Output = Result<Agent>> + Send;
-    fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
-    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
-
-    fn save_project(&self, project: &Project) -> impl Future<Output = Result<()>> + Send;
-    fn get_project(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
-
-    fn send_message(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
-    fn check_messages(
-        &self,
-        agent: &AgentId,
-        namespace: &Namespace,
-    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
-    fn mark_messages_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
-
-    fn save_context(
-        &self,
-        snapshot: CreateSnapshot,
-    ) -> impl Future<Output = Result<ContextSnapshot>> + Send;
-    fn load_context(
-        &self,
-        agent: &AgentId,
-    ) -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
-    fn list_contexts(
-        &self,
-        agent: Option<&AgentId>,
-        namespace: &Namespace,
-    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
-    fn search_contexts(
-        &self,
-        query: &str,
-        embedding: Option<&[f32]>,
-        namespace: &Namespace,
-        agent_id: Option<&AgentId>,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
-
-    fn write_skill(&self, skill: WriteSkill) -> impl Future<Output = Result<Skill>> + Send;
-    fn read_skill(
-        &self,
-        namespace: &Namespace,
-        name: &str,
-    ) -> impl Future<Output = Result<Option<Skill>>> + Send;
-    fn list_skills(&self, filter: SkillFilter) -> impl Future<Output = Result<Vec<Skill>>> + Send;
-    fn delete_skill(
-        &self,
-        namespace: &Namespace,
-        name: &str,
-    ) -> impl Future<Output = Result<()>> + Send;
-}
-
 #[cfg(test)]
 pub mod mock {
     use std::collections::HashMap;
     use std::sync::RwLock;
 
-    use crate::agent::{Agent, AgentId, AgentStatus, RegisterAgent};
+    use crate::agent::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
     use crate::error::{Error, Result};
-    use crate::memory::{ContextSnapshot, CreateSnapshot, MemoryEntry, MemoryFilter, WriteMemory};
-    use crate::message::{CreateMessage, Message, MessageId, MessageStatus, MessageTarget};
+    use crate::memory::{
+        ContextSnapshot, ContextStore, CreateSnapshot, MemoryEntry, MemoryFilter, MemoryStore,
+        WriteMemory,
+    };
+    use crate::message::{
+        CreateMessage, Message, MessageId, MessageStatus, MessageStore, MessageTarget,
+    };
     use crate::namespace::{Namespace, ProjectId};
-    use crate::project::Project;
-    use crate::skill::{Skill, SkillFilter, WriteSkill};
-    use crate::task::{Task, TaskFilter, TaskId};
-
-    use super::Store;
+    use crate::project::{Project, ProjectStore};
+    use crate::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
+    use crate::task::{Task, TaskFilter, TaskId, TaskStore};
 
     #[derive(Debug, Default)]
     pub struct MockStore {
@@ -132,17 +23,19 @@ pub mod mock {
         messages: RwLock<Vec<Message>>,
     }
 
-    impl Store for MockStore {
-        async fn save_task(&self, _: &Task) -> Result<()> {
+    impl TaskStore for MockStore {
+        async fn save(&self, _: &Task) -> Result<()> {
             Ok(())
         }
-        async fn get_task(&self, _: &TaskId) -> Result<Option<Task>> {
+        async fn get(&self, _: &TaskId) -> Result<Option<Task>> {
             unimplemented!()
         }
-        async fn list_tasks(&self, _: TaskFilter) -> Result<Vec<Task>> {
+        async fn list(&self, _: TaskFilter) -> Result<Vec<Task>> {
             unimplemented!()
         }
+    }
 
+    impl AgentStore for MockStore {
         async fn register(&self, reg: RegisterAgent) -> Result<Agent> {
             let agent = Agent {
                 id: AgentId::new(),
@@ -157,19 +50,19 @@ pub mod mock {
             self.agents.write().unwrap().insert(agent.id, agent.clone());
             Ok(agent)
         }
-        async fn get_agent(&self, id: &AgentId) -> Result<Option<Agent>> {
+        async fn get(&self, id: &AgentId) -> Result<Option<Agent>> {
             Ok(self.agents.read().unwrap().get(id).cloned())
         }
-        async fn list_agents(&self) -> Result<Vec<Agent>> {
+        async fn list(&self) -> Result<Vec<Agent>> {
             Ok(self.agents.read().unwrap().values().cloned().collect())
         }
         async fn heartbeat(&self, _: &AgentId) -> Result<()> {
             Ok(())
         }
-        async fn update_agent_status(&self, _: &AgentId, _: AgentStatus) -> Result<()> {
+        async fn update_status(&self, _: &AgentId, _: AgentStatus) -> Result<()> {
             Ok(())
         }
-        async fn update_agent_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
+        async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
             let mut agents = self.agents.write().unwrap();
             let agent = agents
                 .get_mut(id)
@@ -199,15 +92,10 @@ pub mod mock {
         async fn find_timed_out(&self, _: u64) -> Result<Vec<Agent>> {
             Ok(vec![])
         }
+    }
 
-        async fn save_project(&self, _: &Project) -> Result<()> {
-            Ok(())
-        }
-        async fn get_project(&self, _: &ProjectId) -> Result<Option<Project>> {
-            Ok(None)
-        }
-
-        async fn send_message(&self, cmd: CreateMessage) -> Result<Message> {
+    impl MessageStore for MockStore {
+        async fn send(&self, cmd: CreateMessage) -> Result<Message> {
             let msg = Message {
                 id: MessageId::new(),
                 namespace: cmd.namespace,
@@ -220,11 +108,7 @@ pub mod mock {
             self.messages.write().unwrap().push(msg.clone());
             Ok(msg)
         }
-        async fn check_messages(
-            &self,
-            agent: &AgentId,
-            namespace: &Namespace,
-        ) -> Result<Vec<Message>> {
+        async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
             Ok(self
                 .messages
                 .read()
@@ -234,57 +118,31 @@ pub mod mock {
                 .cloned()
                 .collect())
         }
-        async fn mark_messages_read(&self, _: &[MessageId]) -> Result<()> {
+        async fn mark_read(&self, _: &[MessageId]) -> Result<()> {
             Ok(())
         }
+    }
 
-        async fn save_context(&self, _: CreateSnapshot) -> Result<ContextSnapshot> {
-            unimplemented!()
+    impl ProjectStore for MockStore {
+        async fn save(&self, _: &Project) -> Result<()> {
+            Ok(())
         }
-        async fn load_context(&self, _: &AgentId) -> Result<Option<ContextSnapshot>> {
-            unimplemented!()
+        async fn get(&self, _: &ProjectId) -> Result<Option<Project>> {
+            Ok(None)
         }
-        async fn list_contexts(
-            &self,
-            _: Option<&AgentId>,
-            _: &Namespace,
-        ) -> Result<Vec<ContextSnapshot>> {
-            unimplemented!()
-        }
-        async fn search_contexts(
-            &self,
-            _: &str,
-            _: Option<&[f32]>,
-            _: &Namespace,
-            _: Option<&AgentId>,
-            _: usize,
-        ) -> Result<Vec<ContextSnapshot>> {
-            unimplemented!()
-        }
+    }
 
-        async fn write_skill(&self, _: WriteSkill) -> Result<Skill> {
+    impl MemoryStore for MockStore {
+        async fn write(&self, _: WriteMemory) -> Result<MemoryEntry> {
             unimplemented!()
         }
-        async fn read_skill(&self, _: &Namespace, _: &str) -> Result<Option<Skill>> {
+        async fn read(&self, _: &Namespace, _: &str) -> Result<Option<MemoryEntry>> {
             unimplemented!()
         }
-        async fn list_skills(&self, _: SkillFilter) -> Result<Vec<Skill>> {
+        async fn list(&self, _: MemoryFilter) -> Result<Vec<MemoryEntry>> {
             unimplemented!()
         }
-        async fn delete_skill(&self, _: &Namespace, _: &str) -> Result<()> {
-            unimplemented!()
-        }
-
-        async fn write_memory(&self, _: WriteMemory) -> Result<MemoryEntry> {
-            unimplemented!()
-        }
-        async fn read_memory(&self, _: &Namespace, _: &str) -> Result<Option<MemoryEntry>> {
-            unimplemented!()
-        }
-        async fn list_memory(&self, _: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-            unimplemented!()
-        }
-        async fn search_memory(
+        async fn search(
             &self,
             _: &str,
             _: Option<&[f32]>,
@@ -293,7 +151,44 @@ pub mod mock {
         ) -> Result<Vec<MemoryEntry>> {
             unimplemented!()
         }
-        async fn delete_memory(&self, _: &Namespace, _: &str) -> Result<()> {
+        async fn delete(&self, _: &Namespace, _: &str) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    impl ContextStore for MockStore {
+        async fn save(&self, _: CreateSnapshot) -> Result<ContextSnapshot> {
+            unimplemented!()
+        }
+        async fn load(&self, _: &AgentId) -> Result<Option<ContextSnapshot>> {
+            unimplemented!()
+        }
+        async fn list(&self, _: Option<&AgentId>, _: &Namespace) -> Result<Vec<ContextSnapshot>> {
+            unimplemented!()
+        }
+        async fn search(
+            &self,
+            _: &str,
+            _: Option<&[f32]>,
+            _: &Namespace,
+            _: Option<&AgentId>,
+            _: usize,
+        ) -> Result<Vec<ContextSnapshot>> {
+            unimplemented!()
+        }
+    }
+
+    impl SkillStore for MockStore {
+        async fn write(&self, _: WriteSkill) -> Result<Skill> {
+            unimplemented!()
+        }
+        async fn read(&self, _: &Namespace, _: &str) -> Result<Option<Skill>> {
+            unimplemented!()
+        }
+        async fn list(&self, _: SkillFilter) -> Result<Vec<Skill>> {
+            unimplemented!()
+        }
+        async fn delete(&self, _: &Namespace, _: &str) -> Result<()> {
             unimplemented!()
         }
     }

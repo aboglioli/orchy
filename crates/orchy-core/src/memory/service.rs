@@ -1,18 +1,20 @@
 use std::sync::Arc;
 
-use super::{ContextSnapshot, CreateSnapshot, MemoryEntry, MemoryFilter, WriteMemory};
+use super::{
+    ContextSnapshot, ContextStore, CreateSnapshot, MemoryEntry, MemoryFilter, MemoryStore,
+    WriteMemory,
+};
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsBackend;
 use crate::error::Result;
 use crate::namespace::Namespace;
-use crate::store::Store;
 
-pub struct MemoryService<S: Store> {
+pub struct MemoryService<S: MemoryStore> {
     store: Arc<S>,
     embeddings: Option<Arc<EmbeddingsBackend>>,
 }
 
-impl<S: Store> MemoryService<S> {
+impl<S: MemoryStore> MemoryService<S> {
     pub fn new(store: Arc<S>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
         Self { store, embeddings }
     }
@@ -24,15 +26,15 @@ impl<S: Store> MemoryService<S> {
             entry.embedding_model = Some(emb.model().to_string());
             entry.embedding_dimensions = Some(emb.dimensions());
         }
-        self.store.write_memory(entry).await
+        self.store.write(entry).await
     }
 
     pub async fn read(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
-        self.store.read_memory(namespace, key).await
+        self.store.read(namespace, key).await
     }
 
     pub async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-        self.store.list_memory(filter).await
+        self.store.list(filter).await
     }
 
     pub async fn search(
@@ -47,21 +49,21 @@ impl<S: Store> MemoryService<S> {
             None
         };
         self.store
-            .search_memory(query, embedding.as_deref(), namespace, limit)
+            .search(query, embedding.as_deref(), namespace, limit)
             .await
     }
 
     pub async fn delete(&self, namespace: &Namespace, key: &str) -> Result<()> {
-        self.store.delete_memory(namespace, key).await
+        self.store.delete(namespace, key).await
     }
 }
 
-pub struct ContextService<S: Store> {
+pub struct ContextService<S: ContextStore> {
     store: Arc<S>,
     embeddings: Option<Arc<EmbeddingsBackend>>,
 }
 
-impl<S: Store> ContextService<S> {
+impl<S: ContextStore> ContextService<S> {
     pub fn new(store: Arc<S>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
         Self { store, embeddings }
     }
@@ -73,11 +75,11 @@ impl<S: Store> ContextService<S> {
             snapshot.embedding_model = Some(emb.model().to_string());
             snapshot.embedding_dimensions = Some(emb.dimensions());
         }
-        self.store.save_context(snapshot).await
+        self.store.save(snapshot).await
     }
 
     pub async fn load(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
-        self.store.load_context(agent).await
+        self.store.load(agent).await
     }
 
     pub async fn list(
@@ -85,7 +87,7 @@ impl<S: Store> ContextService<S> {
         agent: Option<&AgentId>,
         namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
-        self.store.list_contexts(agent, namespace).await
+        self.store.list(agent, namespace).await
     }
 
     pub async fn search(
@@ -101,7 +103,7 @@ impl<S: Store> ContextService<S> {
             None
         };
         self.store
-            .search_contexts(query, embedding.as_deref(), namespace, agent_id, limit)
+            .search(query, embedding.as_deref(), namespace, agent_id, limit)
             .await
     }
 }

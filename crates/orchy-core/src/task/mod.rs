@@ -3,6 +3,7 @@ pub mod service;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -369,9 +370,9 @@ pub struct TaskFilter {
 }
 
 pub trait TaskStore: Send + Sync {
-    async fn save(&self, task: &Task) -> Result<()>;
-    async fn get(&self, id: &TaskId) -> Result<Option<Task>>;
-    async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>>;
+    fn save(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
+    fn get(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
+    fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
 }
 
 #[cfg(test)]

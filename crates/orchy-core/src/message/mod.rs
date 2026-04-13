@@ -3,6 +3,7 @@ pub mod service;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -130,9 +131,13 @@ pub struct CreateMessage {
 }
 
 pub trait MessageStore: Send + Sync {
-    async fn send(&self, message: CreateMessage) -> Result<Message>;
-    async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>>;
-    async fn mark_read(&self, ids: &[MessageId]) -> Result<()>;
+    fn send(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
+    fn check(
+        &self,
+        agent: &AgentId,
+        namespace: &Namespace,
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn mark_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[cfg(test)]

@@ -4,7 +4,6 @@ mod memory;
 mod message;
 mod project;
 mod skill;
-mod store_impl;
 mod task;
 
 use rusqlite::Connection;

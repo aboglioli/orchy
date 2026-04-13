@@ -1,39 +1,42 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{Task, TaskFilter, TaskId, TaskStatus};
-use crate::agent::AgentId;
+use super::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
 use crate::namespace::Namespace;
-use crate::store::Store;
 
-pub struct TaskService<S: Store> {
-    store: Arc<S>,
+pub struct TaskService<TS: TaskStore, AS: AgentStore> {
+    task_store: Arc<TS>,
+    agent_store: Arc<AS>,
 }
 
-impl<S: Store> TaskService<S> {
-    pub fn new(store: Arc<S>) -> Self {
-        Self { store }
+impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
+    pub fn new(task_store: Arc<TS>, agent_store: Arc<AS>) -> Self {
+        Self {
+            task_store,
+            agent_store,
+        }
     }
 
     pub async fn create(&self, task: Task) -> Result<()> {
         for dep_id in task.depends_on() {
-            if self.store.get_task(dep_id).await?.is_none() {
+            if self.task_store.get(dep_id).await?.is_none() {
                 return Err(Error::NotFound(format!("dependency task {dep_id}")));
             }
         }
-        self.store.save_task(&task).await
+        self.task_store.save(&task).await
     }
 
     pub async fn get(&self, id: &TaskId) -> Result<Task> {
-        self.store
-            .get_task(id)
+        self.task_store
+            .get(id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {id}")))
     }
 
     pub async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
-        self.store.list_tasks(filter).await
+        self.task_store.list(filter).await
     }
 
     pub async fn claim(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
@@ -44,7 +47,7 @@ impl<S: Store> TaskService<S> {
         }
 
         task.claim(*agent)?;
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         Ok(task)
     }
 
@@ -63,7 +66,7 @@ impl<S: Store> TaskService<S> {
                 assigned_role: Some(role.clone()),
                 ..Default::default()
             };
-            let mut tasks = self.store.list_tasks(filter).await?;
+            let mut tasks = self.task_store.list(filter).await?;
             tasks.sort_by(|a, b| b.priority().cmp(&a.priority()));
             candidates.extend(tasks);
         }
@@ -76,7 +79,7 @@ impl<S: Store> TaskService<S> {
             if self.all_deps_completed(task.depends_on()).await? {
                 match task.claim(*agent) {
                     Ok(()) => {
-                        self.store.save_task(&task).await?;
+                        self.task_store.save(&task).await?;
                         return Ok(Some(task));
                     }
                     Err(Error::InvalidTransition { .. }) => continue,
@@ -91,14 +94,14 @@ impl<S: Store> TaskService<S> {
     pub async fn start(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.start(agent)?;
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         Ok(task)
     }
 
     pub async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.complete(summary)?;
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         self.unblock_dependents(task.id()).await?;
         Ok(task)
     }
@@ -106,7 +109,7 @@ impl<S: Store> TaskService<S> {
     pub async fn fail(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.fail(reason)?;
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         Ok(task)
     }
 
@@ -118,33 +121,33 @@ impl<S: Store> TaskService<S> {
     ) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.add_note(author, body);
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         Ok(task)
     }
 
     pub async fn move_task(&self, id: &TaskId, namespace: Namespace) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.move_to(namespace);
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         Ok(task)
     }
 
     pub async fn reassign(&self, id: &TaskId, new_agent: &AgentId) -> Result<Task> {
-        self.store
-            .get_agent(new_agent)
+        self.agent_store
+            .get(new_agent)
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {new_agent}")))?;
 
         let mut task = self.get(id).await?;
         task.reassign(*new_agent)?;
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         Ok(task)
     }
 
     pub async fn release(&self, id: &TaskId) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.release()?;
-        self.store.save_task(&task).await?;
+        self.task_store.save(&task).await?;
         Ok(task)
     }
 
@@ -153,7 +156,7 @@ impl<S: Store> TaskService<S> {
             claimed_by: Some(*agent),
             ..Default::default()
         };
-        let tasks = self.store.list_tasks(filter).await?;
+        let tasks = self.task_store.list(filter).await?;
         let mut released = Vec::with_capacity(tasks.len());
         for task in &tasks {
             self.release(&task.id()).await?;
@@ -165,8 +168,8 @@ impl<S: Store> TaskService<S> {
     async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
         for dep_id in deps {
             let dep = self
-                .store
-                .get_task(dep_id)
+                .task_store
+                .get(dep_id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
             if dep.status() != TaskStatus::Completed {
@@ -178,8 +181,8 @@ impl<S: Store> TaskService<S> {
 
     async fn unblock_dependents(&self, completed_id: TaskId) -> Result<()> {
         let blocked = self
-            .store
-            .list_tasks(TaskFilter {
+            .task_store
+            .list(TaskFilter {
                 status: Some(TaskStatus::Blocked),
                 ..Default::default()
             })
@@ -190,7 +193,7 @@ impl<S: Store> TaskService<S> {
                 && self.all_deps_completed(task.depends_on()).await?
             {
                 task.unblock();
-                self.store.save_task(&task).await?;
+                self.task_store.save(&task).await?;
             }
         }
 
