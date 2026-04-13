@@ -218,6 +218,31 @@ struct DeleteSkillParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+struct MoveTaskParams {
+    task_id: String,
+    /// New scope within the project (e.g. "backend/auth"). Optional — defaults to session namespace.
+    namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct MoveMemoryParams {
+    /// Scope within the project (e.g. 'backend'). Optional — defaults to session namespace.
+    namespace: Option<String>,
+    key: String,
+    /// New scope to move the entry to (e.g. "backend/auth").
+    new_namespace: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct MoveSkillParams {
+    /// Scope within the project (e.g. 'backend'). Optional — defaults to session namespace.
+    namespace: Option<String>,
+    name: String,
+    /// New scope to move the skill to (e.g. "backend/auth").
+    new_namespace: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 struct GetBootstrapPromptParams {
     /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
@@ -335,13 +360,23 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List all connected agents.")]
+    #[tool(description = "List connected agents in the current project.")]
     async fn list_agents(
         &self,
         Parameters(_params): Parameters<ListAgentsParams>,
     ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
         match self.container.agent_service.list().await {
-            Ok(agents) => Ok(to_json(&agents)),
+            Ok(agents) => {
+                let filtered: Vec<_> = agents
+                    .into_iter()
+                    .filter(|a| *a.project() == project)
+                    .collect();
+                Ok(to_json(&filtered))
+            }
             Err(e) => Err(e.to_string()),
         }
     }
@@ -1272,6 +1307,115 @@ impl OrchyHandler {
 
         match NamespaceStore::list(&*self.container.store, &project).await {
             Ok(namespaces) => Ok(to_json(&namespaces)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Move a task to a different namespace within the same project. \
+        Namespace defaults to session namespace."
+    )]
+    async fn move_task(
+        &self,
+        Parameters(params): Parameters<MoveTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .task_service
+            .move_task(&task_id, namespace)
+            .await
+        {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Move a memory entry to a different namespace within the same project. \
+        Source namespace defaults to session namespace."
+    )]
+    async fn move_memory(
+        &self,
+        Parameters(params): Parameters<MoveMemoryParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let new_namespace = match self
+            .build_and_register_namespace(Some(&params.new_namespace))
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .memory_service
+            .move_entry(&project, &namespace, &params.key, new_namespace)
+            .await
+        {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Move a skill to a different namespace within the same project. \
+        Source namespace defaults to session namespace."
+    )]
+    async fn move_skill(
+        &self,
+        Parameters(params): Parameters<MoveSkillParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let new_namespace = match self
+            .build_and_register_namespace(Some(&params.new_namespace))
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .skill_service
+            .move_skill(&project, &namespace, &params.name, new_namespace)
+            .await
+        {
+            Ok(skill) => Ok(to_json(&skill)),
             Err(e) => Err(e.to_string()),
         }
     }
