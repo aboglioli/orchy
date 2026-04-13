@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use orchy_core::namespace::Namespace;
+use orchy_core::skill::SkillStore;
 use orchy_core::skill::WriteSkill;
 use orchy_core::skill::service::SkillService;
-use orchy_core::store::Store;
 use tracing::{info, warn};
 
 /// Loads skill files from a directory into the store.
@@ -20,7 +20,7 @@ use tracing::{info, warn};
 ///
 /// If no frontmatter, the filename (without extension) is the name and
 /// description defaults to the name.
-pub async fn load_skills_from_dir<S: Store>(
+pub async fn load_skills_from_dir<S: SkillStore>(
     dir: &Path,
     service: &SkillService<S>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
@@ -35,7 +35,7 @@ pub async fn load_skills_from_dir<S: Store>(
     Ok(count)
 }
 
-fn load_recursive<'a, S: Store>(
+fn load_recursive<'a, S: SkillStore>(
     base: &'a Path,
     current: &'a Path,
     service: &'a SkillService<S>,
@@ -46,7 +46,7 @@ fn load_recursive<'a, S: Store>(
     Box::pin(async move { load_recursive_inner(base, current, service, count).await })
 }
 
-async fn load_recursive_inner<S: Store>(
+async fn load_recursive_inner<S: SkillStore>(
     base: &Path,
     current: &Path,
     service: &SkillService<S>,

@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -96,18 +97,26 @@ pub struct RegisterAgent {
 }
 
 pub trait AgentStore: Send + Sync {
-    async fn register(&self, registration: RegisterAgent) -> Result<Agent>;
-    async fn get(&self, id: &AgentId) -> Result<Option<Agent>>;
-    async fn list(&self) -> Result<Vec<Agent>>;
-    async fn heartbeat(&self, id: &AgentId) -> Result<()>;
-    async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()>;
-    async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent>;
-    async fn reconnect(
+    fn register(&self, registration: RegisterAgent) -> impl Future<Output = Result<Agent>> + Send;
+    fn get(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
+    fn list(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+    fn heartbeat(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
+    fn update_status(
+        &self,
+        id: &AgentId,
+        status: AgentStatus,
+    ) -> impl Future<Output = Result<()>> + Send;
+    fn update_roles(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+    ) -> impl Future<Output = Result<Agent>> + Send;
+    fn reconnect(
         &self,
         id: &AgentId,
         roles: Vec<String>,
         description: String,
-    ) -> Result<Agent>;
-    async fn disconnect(&self, id: &AgentId) -> Result<()>;
-    async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
+    ) -> impl Future<Output = Result<Agent>> + Send;
+    fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
+    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 }

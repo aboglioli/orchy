@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use super::{Agent, AgentId, AgentStatus, RegisterAgent};
+use super::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
 use crate::error::{Error, Result};
-use crate::store::Store;
 
-pub struct AgentService<S: Store> {
+pub struct AgentService<S: AgentStore> {
     store: Arc<S>,
 }
 
-impl<S: Store> AgentService<S> {
+impl<S: AgentStore> AgentService<S> {
     pub fn new(store: Arc<S>) -> Self {
         Self { store }
     }
@@ -19,13 +18,13 @@ impl<S: Store> AgentService<S> {
 
     pub async fn get(&self, id: &AgentId) -> Result<Agent> {
         self.store
-            .get_agent(id)
+            .get(id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))
     }
 
     pub async fn list(&self) -> Result<Vec<Agent>> {
-        self.store.list_agents().await
+        self.store.list().await
     }
 
     pub async fn heartbeat(&self, id: &AgentId) -> Result<()> {
@@ -33,14 +32,14 @@ impl<S: Store> AgentService<S> {
     }
 
     pub async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        self.store.update_agent_status(id, status).await
+        self.store.update_status(id, status).await
     }
 
     pub async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
         if roles.is_empty() {
             return Err(Error::InvalidInput("roles must not be empty".to_string()));
         }
-        self.store.update_agent_roles(id, roles).await
+        self.store.update_roles(id, roles).await
     }
 
     pub async fn reconnect(

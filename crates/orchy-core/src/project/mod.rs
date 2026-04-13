@@ -3,6 +3,7 @@ pub mod service;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
 
 use crate::agent::AgentId;
 use crate::error::Result;
@@ -86,6 +87,6 @@ impl Project {
 }
 
 pub trait ProjectStore: Send + Sync {
-    async fn save(&self, project: &Project) -> Result<()>;
-    async fn get(&self, id: &ProjectId) -> Result<Option<Project>>;
+    fn save(&self, project: &Project) -> impl Future<Output = Result<()>> + Send;
+    fn get(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
 }

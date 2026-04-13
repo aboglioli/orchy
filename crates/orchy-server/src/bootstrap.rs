@@ -1,9 +1,9 @@
 use orchy_core::namespace::Namespace;
 use orchy_core::skill::Skill;
+use orchy_core::skill::SkillStore;
 use orchy_core::skill::service::SkillService;
-use orchy_core::store::Store;
 
-pub async fn generate_bootstrap_prompt<S: Store>(
+pub async fn generate_bootstrap_prompt<S: SkillStore>(
     namespace: &Namespace,
     host: &str,
     port: u16,

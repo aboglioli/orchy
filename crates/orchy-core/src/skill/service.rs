@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use super::{Skill, SkillFilter, WriteSkill};
+use super::{Skill, SkillFilter, SkillStore, WriteSkill};
 use crate::error::{Error, Result};
 use crate::namespace::Namespace;
-use crate::store::Store;
 
-pub struct SkillService<S: Store> {
+pub struct SkillService<S: SkillStore> {
     store: Arc<S>,
 }
 
-impl<S: Store> SkillService<S> {
+impl<S: SkillStore> SkillService<S> {
     pub fn new(store: Arc<S>) -> Self {
         Self { store }
     }
@@ -20,21 +19,21 @@ impl<S: Store> SkillService<S> {
                 "skill name must not be empty".to_string(),
             ));
         }
-        self.store.write_skill(skill).await
+        self.store.write(skill).await
     }
 
     pub async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
-        self.store.read_skill(namespace, name).await
+        self.store.read(namespace, name).await
     }
 
     pub async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
-        self.store.list_skills(filter).await
+        self.store.list(filter).await
     }
 
     pub async fn list_with_inherited(&self, namespace: &Namespace) -> Result<Vec<Skill>> {
         let all = self
             .store
-            .list_skills(SkillFilter {
+            .list(SkillFilter {
                 namespace: Some(Namespace::try_from(namespace.project().to_string()).unwrap()),
                 ..Default::default()
             })
@@ -44,6 +43,6 @@ impl<S: Store> SkillService<S> {
     }
 
     pub async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {
-        self.store.delete_skill(namespace, name).await
+        self.store.delete(namespace, name).await
     }
 }

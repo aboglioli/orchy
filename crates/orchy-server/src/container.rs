@@ -15,10 +15,10 @@ use crate::config::{Config, EmbeddingsConfig};
 use crate::store::StoreBackend;
 
 pub struct Container {
-    pub task_service: TaskService<StoreBackend>,
+    pub task_service: TaskService<StoreBackend, StoreBackend>,
     pub memory_service: MemoryService<StoreBackend>,
     pub agent_service: AgentService<StoreBackend>,
-    pub message_service: MessageService<StoreBackend>,
+    pub message_service: MessageService<StoreBackend, StoreBackend>,
     pub context_service: ContextService<StoreBackend>,
     pub skill_service: SkillService<StoreBackend>,
     pub project_service: ProjectService<StoreBackend>,
@@ -33,10 +33,10 @@ impl Container {
             .as_ref()
             .map(|e| Arc::new(Self::build_embeddings(e)));
 
-        let task_service = TaskService::new(Arc::clone(&store));
+        let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
         let memory_service = MemoryService::new(Arc::clone(&store), embeddings.clone());
         let agent_service = AgentService::new(Arc::clone(&store));
-        let message_service = MessageService::new(Arc::clone(&store));
+        let message_service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
         let context_service = ContextService::new(Arc::clone(&store), embeddings);
         let skill_service = SkillService::new(Arc::clone(&store));
         let project_service = ProjectService::new(Arc::clone(&store));

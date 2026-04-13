@@ -2,6 +2,7 @@ pub mod service;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 
 use crate::agent::AgentId;
 use crate::error::Result;
@@ -55,10 +56,14 @@ pub struct SkillFilter {
 }
 
 pub trait SkillStore: Send + Sync {
-    async fn write(&self, skill: WriteSkill) -> Result<Skill>;
-    async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>>;
-    async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>>;
-    async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()>;
+    fn write(&self, skill: WriteSkill) -> impl Future<Output = Result<Skill>> + Send;
+    fn read(
+        &self,
+        namespace: &Namespace,
+        name: &str,
+    ) -> impl Future<Output = Result<Option<Skill>>> + Send;
+    fn list(&self, filter: SkillFilter) -> impl Future<Output = Result<Vec<Skill>>> + Send;
+    fn delete(&self, namespace: &Namespace, name: &str) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[cfg(test)]
