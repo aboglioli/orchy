@@ -35,7 +35,7 @@ struct RegisterAgentParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-struct UpdateRolesParams {
+struct ChangeRolesParams {
     roles: Vec<String>,
 }
 
@@ -90,7 +90,7 @@ struct FailTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-struct ReassignTaskParams {
+struct AssignTaskParams {
     task_id: String,
     agent_id: String,
 }
@@ -220,8 +220,8 @@ struct DeleteSkillParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct MoveTaskParams {
     task_id: String,
-    /// New scope within the project (e.g. "backend/auth"). Optional — defaults to session namespace.
-    namespace: Option<String>,
+    /// New scope within the project (e.g. "backend/auth").
+    namespace: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -382,12 +382,12 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Update the roles of the session agent. Affects which tasks \
+        description = "Change the roles of the session agent. Affects which tasks \
         get_next_task returns."
     )]
-    async fn update_roles(
+    async fn change_roles(
         &self,
-        Parameters(params): Parameters<UpdateRolesParams>,
+        Parameters(params): Parameters<ChangeRolesParams>,
     ) -> Result<String, String> {
         let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
@@ -709,12 +709,12 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Reassign a task to a different agent. The task must be claimed or \
-        in progress. Resets the task status to claimed for the new agent."
+        description = "Assign a task to an agent. If the task is already assigned, \
+        it will be reassigned to the new agent."
     )]
-    async fn reassign_task(
+    async fn assign_task(
         &self,
-        Parameters(params): Parameters<ReassignTaskParams>,
+        Parameters(params): Parameters<AssignTaskParams>,
     ) -> Result<String, String> {
         let _ = match self.require_session() {
             Ok(s) => s,
@@ -1311,10 +1311,7 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(
-        description = "Move a task to a different namespace within the same project. \
-        Namespace defaults to session namespace."
-    )]
+    #[tool(description = "Move a task to a different namespace within the same project.")]
     async fn move_task(
         &self,
         Parameters(params): Parameters<MoveTaskParams>,
@@ -1330,7 +1327,7 @@ impl OrchyHandler {
         };
 
         let namespace = match self
-            .build_and_register_namespace(params.namespace.as_deref())
+            .build_and_register_namespace(Some(&params.namespace))
             .await
         {
             Ok(ns) => ns,
