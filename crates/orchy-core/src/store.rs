@@ -73,9 +73,13 @@ pub mod mock {
                 .values()
                 .filter(|m| {
                     m.status() == MessageStatus::Pending
-                        && *m.to() == MessageTarget::Agent(*agent)
+                        && match m.to() {
+                            MessageTarget::Agent(id) => id == agent,
+                            MessageTarget::Broadcast => true,
+                            _ => false,
+                        }
                         && m.project() == project
-                        && m.namespace() == namespace
+                        && m.namespace().starts_with(namespace)
                 })
                 .cloned()
                 .collect())
@@ -95,7 +99,7 @@ pub mod mock {
                 .filter(|m| {
                     m.from() == *sender
                         && m.project() == project
-                        && m.namespace() == namespace
+                        && m.namespace().starts_with(namespace)
                 })
                 .cloned()
                 .collect())
