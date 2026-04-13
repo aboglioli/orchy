@@ -336,3 +336,62 @@ impl ContextSnapshot {
         self.created_at
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_namespace() -> Namespace {
+        Namespace::try_from("test").unwrap()
+    }
+
+    #[test]
+    fn new_entry_has_initial_version() {
+        let entry = MemoryEntry::new(
+            test_namespace(),
+            "key".to_string(),
+            "value".to_string(),
+            None,
+        );
+        assert_eq!(entry.version().as_u64(), 1);
+    }
+
+    #[test]
+    fn update_increments_version() {
+        let mut entry = MemoryEntry::new(
+            test_namespace(),
+            "key".to_string(),
+            "value".to_string(),
+            None,
+        );
+        entry.update("new value".to_string(), None);
+        assert_eq!(entry.version().as_u64(), 2);
+    }
+
+    #[test]
+    fn update_changes_value() {
+        let mut entry = MemoryEntry::new(
+            test_namespace(),
+            "key".to_string(),
+            "original".to_string(),
+            None,
+        );
+        entry.update("updated".to_string(), None);
+        assert_eq!(entry.value(), "updated");
+    }
+
+    #[test]
+    fn set_embedding_sets_fields() {
+        let mut entry = MemoryEntry::new(
+            test_namespace(),
+            "key".to_string(),
+            "value".to_string(),
+            None,
+        );
+        let embedding = vec![0.1, 0.2, 0.3];
+        entry.set_embedding(embedding.clone(), "text-embedding-3".to_string(), 3);
+        assert_eq!(entry.embedding(), Some(embedding.as_slice()));
+        assert_eq!(entry.embedding_model(), Some("text-embedding-3"));
+        assert_eq!(entry.embedding_dimensions(), Some(3));
+    }
+}
