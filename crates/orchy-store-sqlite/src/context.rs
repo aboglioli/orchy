@@ -7,7 +7,7 @@ use rusqlite::OptionalExtension;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::memory::{ContextSnapshot, ContextStore, SnapshotId};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 
@@ -17,10 +17,11 @@ impl ContextStore for SqliteBackend {
         let embedding_bytes = snapshot.embedding().map(embedding_to_bytes);
 
         conn.execute(
-            "INSERT OR REPLACE INTO contexts (id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT OR REPLACE INTO contexts (id, project, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 snapshot.id().to_string(),
+                snapshot.project().to_string(),
                 snapshot.agent_id().to_string(),
                 snapshot.namespace().to_string(),
                 snapshot.summary(),
@@ -55,7 +56,7 @@ impl ContextStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
+                "SELECT id, project, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
                  FROM contexts WHERE agent_id = ?1
                  ORDER BY created_at DESC LIMIT 1",
             )
@@ -77,12 +78,19 @@ impl ContextStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
-             FROM contexts WHERE (namespace = ?1 OR namespace LIKE ?1 || '/%')",
+            "SELECT id, project, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
+             FROM contexts WHERE 1=1",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        params.push(Box::new(namespace.to_string()));
-        let mut idx = 2;
+        let mut idx = 1;
+
+        if !namespace.is_root() {
+            sql.push_str(&format!(
+                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(namespace.to_string()));
+            idx += 1;
+        }
 
         if let Some(a) = agent {
             sql.push_str(&format!(" AND agent_id = ?{idx}"));
@@ -117,17 +125,23 @@ impl ContextStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT c.id, c.agent_id, c.namespace, c.summary, c.embedding, c.embedding_model, c.embedding_dimensions, c.metadata, c.created_at
+            "SELECT c.id, c.project, c.agent_id, c.namespace, c.summary, c.embedding, c.embedding_model, c.embedding_dimensions, c.metadata, c.created_at
              FROM contexts c
              JOIN contexts_fts ON contexts_fts.rowid = c.rowid
-             WHERE contexts_fts MATCH ?1
-             AND (c.namespace = ?2 OR c.namespace LIKE ?2 || '/%')",
+             WHERE contexts_fts MATCH ?1",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let fts_query = sanitize_fts_query(query);
         params.push(Box::new(fts_query));
-        params.push(Box::new(namespace.to_string()));
-        let mut idx = 3;
+        let mut idx = 2;
+
+        if !namespace.is_root() {
+            sql.push_str(&format!(
+                " AND (c.namespace = ?{idx} OR c.namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(namespace.to_string()));
+            idx += 1;
+        }
 
         if let Some(a) = agent_id {
             sql.push_str(&format!(" AND c.agent_id = ?{idx}"));
@@ -156,24 +170,32 @@ impl ContextStore for SqliteBackend {
 
 fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
     let id_str: String = row.get(0)?;
-    let agent_id_str: String = row.get(1)?;
-    let namespace_str: String = row.get(2)?;
-    let summary: String = row.get(3)?;
-    let embedding_bytes: Option<Vec<u8>> = row.get(4)?;
-    let embedding_model: Option<String> = row.get(5)?;
-    let embedding_dimensions: Option<i64> = row.get(6)?;
-    let metadata_str: String = row.get(7)?;
-    let created_at_str: String = row.get(8)?;
+    let project_str: String = row.get(1)?;
+    let agent_id_str: String = row.get(2)?;
+    let namespace_str: String = row.get(3)?;
+    let summary: String = row.get(4)?;
+    let embedding_bytes: Option<Vec<u8>> = row.get(5)?;
+    let embedding_model: Option<String> = row.get(6)?;
+    let embedding_dimensions: Option<i64> = row.get(7)?;
+    let metadata_str: String = row.get(8)?;
+    let created_at_str: String = row.get(9)?;
 
     let id = SnapshotId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })?;
+    let project = ProjectId::try_from(project_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+        )
+    })?;
     let agent_id = AgentId::from_str(&agent_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
     })?;
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
-            2,
+            3,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
@@ -181,11 +203,12 @@ fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(ContextSnapshot::restore(
         id,
+        project,
         agent_id,
         namespace,
         summary,

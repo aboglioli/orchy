@@ -6,7 +6,7 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, Version};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::PgBackend;
 
@@ -15,9 +15,9 @@ impl MemoryStore for PgBackend {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
 
         sqlx::query(
-            "INSERT INTO memory (namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             ON CONFLICT (namespace, key) DO UPDATE
+            "INSERT INTO memory (project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (project, namespace, key) DO UPDATE
              SET value = EXCLUDED.value,
                  version = EXCLUDED.version,
                  embedding = EXCLUDED.embedding,
@@ -26,6 +26,7 @@ impl MemoryStore for PgBackend {
                  written_by = EXCLUDED.written_by,
                  updated_at = EXCLUDED.updated_at",
         )
+        .bind(entry.project().to_string())
         .bind(entry.namespace().to_string())
         .bind(entry.key())
         .bind(entry.value())
@@ -43,11 +44,17 @@ impl MemoryStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_key(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
+    async fn find_by_key(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        key: &str,
+    ) -> Result<Option<MemoryEntry>> {
         let row = sqlx::query(
-            "SELECT namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
-             FROM memory WHERE namespace = $1 AND key = $2",
+            "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
+             FROM memory WHERE project = $1 AND namespace = $2 AND key = $3",
         )
+        .bind(project.to_string())
         .bind(namespace.to_string())
         .bind(key)
         .fetch_optional(&self.pool)
@@ -58,21 +65,21 @@ impl MemoryStore for PgBackend {
     }
 
     async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-        let mut sql = "SELECT namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at FROM memory WHERE 1=1".to_string();
+        let mut sql = "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at FROM memory WHERE 1=1".to_string();
         let mut params: Vec<String> = Vec::new();
         let mut idx = 1u32;
 
         if let Some(ref ns) = filter.namespace {
-            sql.push_str(&format!(
-                " AND (namespace = ${idx} OR namespace LIKE ${idx} || '/%')"
-            ));
-            params.push(ns.to_string());
-            idx += 1;
+            if !ns.is_root() {
+                sql.push_str(&format!(
+                    " AND (namespace = ${idx} OR namespace LIKE ${idx} || '/%')"
+                ));
+                params.push(ns.to_string());
+                idx += 1;
+            }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(
-                " AND (namespace = ${idx} OR namespace LIKE ${idx} || '/%')"
-            ));
+            sql.push_str(&format!(" AND project = ${idx}"));
             params.push(project.to_string());
         }
 
@@ -96,9 +103,9 @@ impl MemoryStore for PgBackend {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<MemoryEntry>> {
-        let rows = if let Some(ns) = namespace {
+        let rows = if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
             sqlx::query(
-                "SELECT namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
+                "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
                  FROM memory
                  WHERE to_tsvector('english', value) @@ plainto_tsquery('english', $1)
                    AND (namespace = $2 OR namespace LIKE $2 || '/%')
@@ -113,7 +120,7 @@ impl MemoryStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
             sqlx::query(
-                "SELECT namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
+                "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
                  FROM memory
                  WHERE to_tsvector('english', value) @@ plainto_tsquery('english', $1)
                  ORDER BY ts_rank(to_tsvector('english', value), plainto_tsquery('english', $1)) DESC
@@ -142,6 +149,7 @@ impl MemoryStore for PgBackend {
 }
 
 fn row_to_memory(row: &sqlx::postgres::PgRow) -> MemoryEntry {
+    let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let key: String = row.get("key");
     let value: String = row.get("value");
@@ -154,6 +162,7 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> MemoryEntry {
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
     MemoryEntry::restore(
+        ProjectId::try_from(project).expect("invalid project in database"),
         Namespace::try_from(namespace).unwrap(),
         key,
         value,

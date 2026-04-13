@@ -16,7 +16,7 @@ fn ns(s: &str) -> Namespace {
     Namespace::try_from(s).unwrap()
 }
 
-fn project(s: &str) -> ProjectId {
+fn proj(s: &str) -> ProjectId {
     ProjectId::try_from(s).unwrap()
 }
 
@@ -24,8 +24,8 @@ fn project(s: &str) -> ProjectId {
 async fn agent_save_and_find() {
     let store = backend();
     let agent = Agent::register(
-        project("myapp"),
-        ns("myapp"),
+        proj("myapp"),
+        Namespace::root(),
         vec!["coder".into()],
         "test agent".into(),
         HashMap::new(),
@@ -46,8 +46,8 @@ async fn agent_save_and_find() {
 async fn agent_save_updates_existing() {
     let store = backend();
     let mut agent = Agent::register(
-        project("test-project"),
-        ns("test-project"),
+        proj("test-project"),
+        Namespace::root(),
         vec!["dev".into()],
         "original".into(),
         HashMap::new(),
@@ -70,8 +70,8 @@ async fn agent_save_updates_existing() {
 async fn agent_disconnect_sets_status() {
     let store = backend();
     let mut agent = Agent::register(
-        project("test-project"),
-        ns("test-project"),
+        proj("test-project"),
+        Namespace::root(),
         vec![],
         "".into(),
         HashMap::new(),
@@ -92,8 +92,8 @@ async fn agent_disconnect_sets_status() {
 async fn agent_find_timed_out() {
     let store = backend();
     let mut agent = Agent::register(
-        project("test-project"),
-        ns("test-project"),
+        proj("test-project"),
+        Namespace::root(),
         vec![],
         "".into(),
         HashMap::new(),
@@ -114,7 +114,8 @@ async fn agent_find_timed_out() {
 async fn task_save_and_get() {
     let store = backend();
     let task = Task::new(
-        ns("proj"),
+        proj("proj"),
+        Namespace::root(),
         "Do thing".into(),
         "Details".into(),
         Priority::High,
@@ -142,7 +143,8 @@ async fn task_list_sorted_by_priority() {
     let store = backend();
 
     let low = Task::new(
-        ns("proj"),
+        proj("proj"),
+        Namespace::root(),
         "low".into(),
         "".into(),
         Priority::Low,
@@ -154,7 +156,8 @@ async fn task_list_sorted_by_priority() {
     TaskStore::save(&store, &low).await.unwrap();
 
     let critical = Task::new(
-        ns("proj"),
+        proj("proj"),
+        Namespace::root(),
         "critical".into(),
         "".into(),
         Priority::Critical,
@@ -176,10 +179,16 @@ async fn task_list_sorted_by_priority() {
 async fn memory_save_and_find_by_key() {
     let store = backend();
 
-    let entry = MemoryEntry::new(ns("app"), "config".into(), "hello world".into(), None);
+    let entry = MemoryEntry::new(
+        proj("app"),
+        Namespace::root(),
+        "config".into(),
+        "hello world".into(),
+        None,
+    );
     MemoryStore::save(&store, &entry).await.unwrap();
 
-    let read = MemoryStore::find_by_key(&store, &ns("app"), "config")
+    let read = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "config")
         .await
         .unwrap()
         .unwrap();
@@ -190,13 +199,19 @@ async fn memory_save_and_find_by_key() {
 async fn memory_save_updates_existing() {
     let store = backend();
 
-    let mut entry = MemoryEntry::new(ns("app"), "k".into(), "v1".into(), None);
+    let mut entry = MemoryEntry::new(
+        proj("app"),
+        Namespace::root(),
+        "k".into(),
+        "v1".into(),
+        None,
+    );
     MemoryStore::save(&store, &entry).await.unwrap();
 
     entry.update("v2".into(), None);
     MemoryStore::save(&store, &entry).await.unwrap();
 
-    let read = MemoryStore::find_by_key(&store, &ns("app"), "k")
+    let read = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "k")
         .await
         .unwrap()
         .unwrap();
@@ -207,17 +222,17 @@ async fn memory_save_updates_existing() {
 async fn memory_list_with_namespace_prefix() {
     let store = backend();
 
-    let entry_a = MemoryEntry::new(ns("app/tasks"), "a".into(), "x".into(), None);
+    let entry_a = MemoryEntry::new(proj("app"), ns("/tasks"), "a".into(), "x".into(), None);
     MemoryStore::save(&store, &entry_a).await.unwrap();
 
-    let entry_b = MemoryEntry::new(ns("app/other"), "b".into(), "y".into(), None);
+    let entry_b = MemoryEntry::new(proj("app"), ns("/other"), "b".into(), "y".into(), None);
     MemoryStore::save(&store, &entry_b).await.unwrap();
 
     let all = MemoryStore::list(
         &store,
         MemoryFilter {
-            namespace: Some(ns("app")),
-            ..Default::default()
+            namespace: Some(Namespace::root()),
+            project: Some(proj("app")),
         },
     )
     .await
@@ -227,8 +242,8 @@ async fn memory_list_with_namespace_prefix() {
     let tasks_only = MemoryStore::list(
         &store,
         MemoryFilter {
-            namespace: Some(ns("app/tasks")),
-            ..Default::default()
+            namespace: Some(ns("/tasks")),
+            project: Some(proj("app")),
         },
     )
     .await
@@ -242,14 +257,21 @@ async fn memory_search_by_substring() {
     let store = backend();
 
     let entry1 = MemoryEntry::new(
-        ns("app"),
+        proj("app"),
+        Namespace::root(),
         "notes".into(),
         "the quick brown fox".into(),
         None,
     );
     MemoryStore::save(&store, &entry1).await.unwrap();
 
-    let entry2 = MemoryEntry::new(ns("app"), "other".into(), "lazy dog".into(), None);
+    let entry2 = MemoryEntry::new(
+        proj("app"),
+        Namespace::root(),
+        "other".into(),
+        "lazy dog".into(),
+        None,
+    );
     MemoryStore::save(&store, &entry2).await.unwrap();
 
     let results = MemoryStore::search(&store, "quick", None, None, 10)
@@ -263,11 +285,13 @@ async fn memory_search_by_substring() {
 async fn memory_delete() {
     let store = backend();
 
-    let entry = MemoryEntry::new(ns("app"), "k".into(), "v".into(), None);
+    let entry = MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None);
     MemoryStore::save(&store, &entry).await.unwrap();
 
-    MemoryStore::delete(&store, &ns("app"), "k").await.unwrap();
-    let result = MemoryStore::find_by_key(&store, &ns("app"), "k")
+    MemoryStore::delete(&store, &Namespace::root(), "k")
+        .await
+        .unwrap();
+    let result = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "k")
         .await
         .unwrap();
     assert!(result.is_none());
@@ -280,10 +304,11 @@ async fn message_save_and_find_pending() {
     let from = AgentId::new();
     let to = AgentId::new();
 
-    let project_ns = ns("test-project");
+    let p = proj("test-project");
 
     let msg = Message::new(
-        project_ns.clone(),
+        p.clone(),
+        Namespace::root(),
         from,
         MessageTarget::Agent(to),
         "hello".into(),
@@ -292,7 +317,7 @@ async fn message_save_and_find_pending() {
     MessageStore::save(&store, &msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
-    let messages = MessageStore::find_pending(&store, &to, &project_ns)
+    let messages = MessageStore::find_pending(&store, &to, &p, &Namespace::root())
         .await
         .unwrap();
     assert_eq!(messages.len(), 1);
@@ -303,7 +328,7 @@ async fn message_save_and_find_pending() {
     delivered.deliver();
     MessageStore::save(&store, &delivered).await.unwrap();
 
-    let messages = MessageStore::find_pending(&store, &to, &project_ns)
+    let messages = MessageStore::find_pending(&store, &to, &p, &Namespace::root())
         .await
         .unwrap();
     assert!(messages.is_empty());
@@ -316,10 +341,11 @@ async fn message_find_by_id_and_mark_read() {
     let from = AgentId::new();
     let to = AgentId::new();
 
-    let project_ns = ns("test-project");
+    let p = proj("test-project");
 
     let msg = Message::new(
-        project_ns.clone(),
+        p.clone(),
+        Namespace::root(),
         from,
         MessageTarget::Agent(to),
         "hi".into(),
@@ -346,12 +372,24 @@ async fn context_save_and_find_latest() {
     let store = backend();
     let agent = AgentId::new();
 
-    let snap1 = ContextSnapshot::new(agent, ns("proj"), "first snapshot".into(), HashMap::new());
+    let snap1 = ContextSnapshot::new(
+        proj("proj"),
+        agent,
+        Namespace::root(),
+        "first snapshot".into(),
+        HashMap::new(),
+    );
     ContextStore::save(&store, &snap1).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-    let snap2 = ContextSnapshot::new(agent, ns("proj"), "second snapshot".into(), HashMap::new());
+    let snap2 = ContextSnapshot::new(
+        proj("proj"),
+        agent,
+        Namespace::root(),
+        "second snapshot".into(),
+        HashMap::new(),
+    );
     ContextStore::save(&store, &snap2).await.unwrap();
 
     let loaded = ContextStore::find_latest(&store, &agent)
@@ -367,47 +405,60 @@ async fn context_list_filters() {
     let agent1 = AgentId::new();
     let agent2 = AgentId::new();
 
-    let snap1 = ContextSnapshot::new(agent1, ns("proj"), "a1".into(), HashMap::new());
+    let snap1 = ContextSnapshot::new(
+        proj("proj"),
+        agent1,
+        Namespace::root(),
+        "a1".into(),
+        HashMap::new(),
+    );
     ContextStore::save(&store, &snap1).await.unwrap();
 
-    let snap2 = ContextSnapshot::new(agent2, ns("other"), "a2".into(), HashMap::new());
+    let snap2 = ContextSnapshot::new(
+        proj("other"),
+        agent2,
+        ns("/sub"),
+        "a2".into(),
+        HashMap::new(),
+    );
     ContextStore::save(&store, &snap2).await.unwrap();
 
-    let proj_ns = ns("proj");
-
-    let by_agent = ContextStore::list(&store, Some(&agent1), &proj_ns)
+    let by_agent = ContextStore::list(&store, Some(&agent1), &Namespace::root())
         .await
         .unwrap();
     assert_eq!(by_agent.len(), 1);
     assert_eq!(by_agent[0].summary(), "a1");
 
-    let by_ns = ContextStore::list(&store, None, &proj_ns).await.unwrap();
-    assert_eq!(by_ns.len(), 1);
+    let by_ns = ContextStore::list(&store, None, &Namespace::root())
+        .await
+        .unwrap();
+    assert_eq!(by_ns.len(), 2);
 }
 
 #[tokio::test]
 async fn context_search_by_substring() {
     let store = backend();
     let agent = AgentId::new();
-    let project_ns = ns("test-project");
 
     let snap1 = ContextSnapshot::new(
+        proj("test-project"),
         agent,
-        project_ns.clone(),
+        Namespace::root(),
         "working on authentication module".into(),
         HashMap::new(),
     );
     ContextStore::save(&store, &snap1).await.unwrap();
 
     let snap2 = ContextSnapshot::new(
+        proj("test-project"),
         agent,
-        project_ns.clone(),
+        Namespace::root(),
         "fixing database migrations".into(),
         HashMap::new(),
     );
     ContextStore::save(&store, &snap2).await.unwrap();
 
-    let results = ContextStore::search(&store, "auth", None, &project_ns, None, 10)
+    let results = ContextStore::search(&store, "auth", None, &Namespace::root(), None, 10)
         .await
         .unwrap();
     assert_eq!(results.len(), 1);
@@ -417,10 +468,11 @@ async fn context_search_by_substring() {
 #[tokio::test]
 async fn skill_save_and_find_by_name() {
     let store = backend();
-    let project_ns = ns("test-project");
+    let p = proj("test-project");
 
     let skill = Skill::new(
-        project_ns.clone(),
+        p.clone(),
+        Namespace::root(),
         "commit-conventions".to_string(),
         "How to write commit messages".to_string(),
         "Use conventional commits".to_string(),
@@ -428,13 +480,13 @@ async fn skill_save_and_find_by_name() {
     );
     SkillStore::save(&store, &skill).await.unwrap();
 
-    let read = SkillStore::find_by_name(&store, &project_ns, "commit-conventions")
+    let read = SkillStore::find_by_name(&store, &p, &Namespace::root(), "commit-conventions")
         .await
         .unwrap();
     assert!(read.is_some());
     assert_eq!(read.unwrap().content(), "Use conventional commits");
 
-    let missing = SkillStore::find_by_name(&store, &project_ns, "nonexistent")
+    let missing = SkillStore::find_by_name(&store, &p, &Namespace::root(), "nonexistent")
         .await
         .unwrap();
     assert!(missing.is_none());
@@ -443,10 +495,11 @@ async fn skill_save_and_find_by_name() {
 #[tokio::test]
 async fn skill_save_updates_existing() {
     let store = backend();
-    let project_ns = ns("test-project");
+    let p = proj("test-project");
 
     let skill = Skill::new(
-        project_ns.clone(),
+        p.clone(),
+        Namespace::root(),
         "style".to_string(),
         "v1".to_string(),
         "old content".to_string(),
@@ -455,7 +508,8 @@ async fn skill_save_updates_existing() {
     SkillStore::save(&store, &skill).await.unwrap();
 
     let updated = Skill::new(
-        project_ns.clone(),
+        p.clone(),
+        Namespace::root(),
         "style".to_string(),
         "v2".to_string(),
         "new content".to_string(),
@@ -463,7 +517,7 @@ async fn skill_save_updates_existing() {
     );
     SkillStore::save(&store, &updated).await.unwrap();
 
-    let read = SkillStore::find_by_name(&store, &project_ns, "style")
+    let read = SkillStore::find_by_name(&store, &p, &Namespace::root(), "style")
         .await
         .unwrap()
         .unwrap();
@@ -474,9 +528,11 @@ async fn skill_save_updates_existing() {
 #[tokio::test]
 async fn skill_list_filters_by_namespace() {
     let store = backend();
+    let p = proj("proj-a");
 
     let s1 = Skill::new(
-        ns("proj-a"),
+        p.clone(),
+        Namespace::root(),
         "style".to_string(),
         "A style".to_string(),
         "A content".to_string(),
@@ -485,7 +541,8 @@ async fn skill_list_filters_by_namespace() {
     SkillStore::save(&store, &s1).await.unwrap();
 
     let s2 = Skill::new(
-        ns("proj-a/backend"),
+        p.clone(),
+        ns("/backend"),
         "arch".to_string(),
         "Backend arch".to_string(),
         "Hexagonal".to_string(),
@@ -493,8 +550,10 @@ async fn skill_list_filters_by_namespace() {
     );
     SkillStore::save(&store, &s2).await.unwrap();
 
+    let pb = proj("proj-b");
     let s3 = Skill::new(
-        ns("proj-b"),
+        pb.clone(),
+        Namespace::root(),
         "style".to_string(),
         "B style".to_string(),
         "B content".to_string(),
@@ -505,7 +564,7 @@ async fn skill_list_filters_by_namespace() {
     let all_a = SkillStore::list(
         &store,
         SkillFilter {
-            namespace: Some(ns("proj-a")),
+            project: Some(p.clone()),
             ..Default::default()
         },
     )
@@ -516,7 +575,7 @@ async fn skill_list_filters_by_namespace() {
     let only_b = SkillStore::list(
         &store,
         SkillFilter {
-            namespace: Some(ns("proj-b")),
+            project: Some(pb.clone()),
             ..Default::default()
         },
     )
@@ -529,10 +588,11 @@ async fn skill_list_filters_by_namespace() {
 #[tokio::test]
 async fn skill_delete() {
     let store = backend();
-    let project_ns = ns("test-project");
+    let p = proj("test-project");
 
     let skill = Skill::new(
-        project_ns.clone(),
+        p.clone(),
+        Namespace::root(),
         "temp".to_string(),
         "temporary".to_string(),
         "will be deleted".to_string(),
@@ -540,11 +600,11 @@ async fn skill_delete() {
     );
     SkillStore::save(&store, &skill).await.unwrap();
 
-    SkillStore::delete(&store, &project_ns, "temp")
+    SkillStore::delete(&store, &p, &Namespace::root(), "temp")
         .await
         .unwrap();
 
-    let read = SkillStore::find_by_name(&store, &project_ns, "temp")
+    let read = SkillStore::find_by_name(&store, &p, &Namespace::root(), "temp")
         .await
         .unwrap();
     assert!(read.is_none());

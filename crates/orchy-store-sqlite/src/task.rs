@@ -5,7 +5,7 @@ use rusqlite::OptionalExtension;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
@@ -15,10 +15,11 @@ impl TaskStore for SqliteBackend {
     async fn save(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "INSERT OR REPLACE INTO tasks (id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT OR REPLACE INTO tasks (id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             rusqlite::params![
                 task.id().to_string(),
+                task.project().to_string(),
                 task.namespace().to_string(),
                 task.title(),
                 task.description(),
@@ -44,7 +45,7 @@ impl TaskStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
+                "SELECT id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
                  FROM tasks WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -61,24 +62,24 @@ impl TaskStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
+            "SELECT id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE 1=1",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
 
         if let Some(ref ns) = filter.namespace {
-            sql.push_str(&format!(
-                " AND (namespace = ?{idx} OR namespace LIKE ?{} || '/%')",
-                idx
-            ));
-            params.push(Box::new(ns.to_string()));
-            idx += 1;
+            if !ns.is_root() {
+                sql.push_str(&format!(
+                    " AND (namespace = ?{idx} OR namespace LIKE ?{} || '/%')",
+                    idx
+                ));
+                params.push(Box::new(ns.to_string()));
+                idx += 1;
+            }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(
-                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-            ));
+            sql.push_str(&format!(" AND project = ?{idx}"));
             params.push(Box::new(project.to_string()));
             idx += 1;
         }
@@ -126,20 +127,21 @@ impl TaskStore for SqliteBackend {
 
 fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let id_str: String = row.get(0)?;
-    let namespace_str: String = row.get(1)?;
-    let title: String = row.get(2)?;
-    let description: String = row.get(3)?;
-    let status_str: String = row.get(4)?;
-    let priority_str: String = row.get(5)?;
-    let roles_str: String = row.get(6)?;
-    let claimed_by_str: Option<String> = row.get(7)?;
-    let claimed_at_str: Option<String> = row.get(8)?;
-    let depends_on_str: String = row.get(9)?;
-    let result_summary: Option<String> = row.get(10)?;
-    let notes_str: String = row.get(11)?;
-    let created_by_str: Option<String> = row.get(12)?;
-    let created_at_str: String = row.get(13)?;
-    let updated_at_str: String = row.get(14)?;
+    let project_str: String = row.get(1)?;
+    let namespace_str: String = row.get(2)?;
+    let title: String = row.get(3)?;
+    let description: String = row.get(4)?;
+    let status_str: String = row.get(5)?;
+    let priority_str: String = row.get(6)?;
+    let roles_str: String = row.get(7)?;
+    let claimed_by_str: Option<String> = row.get(8)?;
+    let claimed_at_str: Option<String> = row.get(9)?;
+    let depends_on_str: String = row.get(10)?;
+    let result_summary: Option<String> = row.get(11)?;
+    let notes_str: String = row.get(12)?;
+    let created_by_str: Option<String> = row.get(13)?;
+    let created_at_str: String = row.get(14)?;
+    let updated_at_str: String = row.get(15)?;
 
     let depends_on_strs: Vec<String> = serde_json::from_str(&depends_on_str).unwrap_or_default();
     let depends_on: Vec<TaskId> = depends_on_strs
@@ -152,9 +154,16 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let id = TaskId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })?;
-    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+    let project = ProjectId::try_from(project_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             1,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+        )
+    })?;
+    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            2,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
@@ -170,16 +179,17 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(13, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(14, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(14, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Task::restore(
         id,
+        project,
         namespace,
         title,
         description,

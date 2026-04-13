@@ -5,7 +5,7 @@ use rusqlite::OptionalExtension;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 
 use crate::SqliteBackend;
@@ -15,9 +15,10 @@ impl SkillStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         conn.execute(
-            "INSERT OR REPLACE INTO skills (namespace, name, description, content, written_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR REPLACE INTO skills (project, namespace, name, description, content, written_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
+                skill.project().to_string(),
                 skill.namespace().to_string(),
                 skill.name(),
                 skill.description(),
@@ -32,17 +33,25 @@ impl SkillStore for SqliteBackend {
         Ok(())
     }
 
-    async fn find_by_name(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
+    async fn find_by_name(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<Option<Skill>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT namespace, name, description, content, written_by, created_at, updated_at
-                 FROM skills WHERE namespace = ?1 AND name = ?2",
+                "SELECT project, namespace, name, description, content, written_by, created_at, updated_at
+                 FROM skills WHERE project = ?1 AND namespace = ?2 AND name = ?3",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let result = stmt
-            .query_row(rusqlite::params![namespace.to_string(), name], row_to_skill)
+            .query_row(
+                rusqlite::params![project.to_string(), namespace.to_string(), name],
+                row_to_skill,
+            )
             .optional()
             .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -52,21 +61,21 @@ impl SkillStore for SqliteBackend {
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut sql = "SELECT namespace, name, description, content, written_by, created_at, updated_at FROM skills WHERE 1=1".to_string();
+        let mut sql = "SELECT project, namespace, name, description, content, written_by, created_at, updated_at FROM skills WHERE 1=1".to_string();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
 
         if let Some(ref ns) = filter.namespace {
-            sql.push_str(&format!(
-                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-            ));
-            params.push(Box::new(ns.to_string()));
-            idx += 1;
+            if !ns.is_root() {
+                sql.push_str(&format!(
+                    " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+                ));
+                params.push(Box::new(ns.to_string()));
+                idx += 1;
+            }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(
-                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-            ));
+            sql.push_str(&format!(" AND project = ?{idx}"));
             params.push(Box::new(project.to_string()));
         }
 
@@ -84,12 +93,12 @@ impl SkillStore for SqliteBackend {
         Ok(skills)
     }
 
-    async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         conn.execute(
-            "DELETE FROM skills WHERE namespace = ?1 AND name = ?2",
-            rusqlite::params![namespace.to_string(), name],
+            "DELETE FROM skills WHERE project = ?1 AND namespace = ?2 AND name = ?3",
+            rusqlite::params![project.to_string(), namespace.to_string(), name],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -98,17 +107,25 @@ impl SkillStore for SqliteBackend {
 }
 
 fn row_to_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
-    let namespace_str: String = row.get(0)?;
-    let name: String = row.get(1)?;
-    let description: String = row.get(2)?;
-    let content: String = row.get(3)?;
-    let written_by_str: Option<String> = row.get(4)?;
-    let created_at_str: String = row.get(5)?;
-    let updated_at_str: String = row.get(6)?;
+    let project_str: String = row.get(0)?;
+    let namespace_str: String = row.get(1)?;
+    let name: String = row.get(2)?;
+    let description: String = row.get(3)?;
+    let content: String = row.get(4)?;
+    let written_by_str: Option<String> = row.get(5)?;
+    let created_at_str: String = row.get(6)?;
+    let updated_at_str: String = row.get(7)?;
 
-    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+    let project = ProjectId::try_from(project_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             0,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+        )
+    })?;
+    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
@@ -116,15 +133,16 @@ fn row_to_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Skill::restore(
+        project,
         namespace,
         name,
         description,

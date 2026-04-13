@@ -30,7 +30,7 @@ impl TaskStore for MemoryBackend {
                     }
                 }
                 if let Some(ref project) = filter.project {
-                    if t.namespace().project() != project.as_ref() {
+                    if t.project() != project {
                         return false;
                     }
                 }

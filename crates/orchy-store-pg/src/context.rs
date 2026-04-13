@@ -8,7 +8,7 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::memory::{ContextSnapshot, ContextStore, SnapshotId};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::PgBackend;
 
@@ -18,8 +18,8 @@ impl ContextStore for PgBackend {
         let metadata_json = serde_json::to_value(snapshot.metadata()).unwrap();
 
         sqlx::query(
-            "INSERT INTO contexts (id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "INSERT INTO contexts (id, project, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO UPDATE
              SET summary = EXCLUDED.summary,
                  embedding = EXCLUDED.embedding,
@@ -28,6 +28,7 @@ impl ContextStore for PgBackend {
                  metadata = EXCLUDED.metadata",
         )
         .bind(snapshot.id().as_uuid())
+        .bind(snapshot.project().to_string())
         .bind(snapshot.agent_id().as_uuid())
         .bind(snapshot.namespace().to_string())
         .bind(snapshot.summary())
@@ -45,7 +46,7 @@ impl ContextStore for PgBackend {
 
     async fn find_latest(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
         let row = sqlx::query(
-            "SELECT id, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
+            "SELECT id, project, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
              FROM contexts WHERE agent_id = $1
              ORDER BY created_at DESC LIMIT 1",
         )
@@ -63,12 +64,21 @@ impl ContextStore for PgBackend {
         namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
         let mut sql = String::from(
-            "SELECT id, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
-             FROM contexts WHERE (namespace = $1 OR namespace LIKE $1 || '/%')",
+            "SELECT id, project, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
+             FROM contexts WHERE 1=1",
         );
-        let param_idx = 2u32;
+        let mut param_idx = 1u32;
         let mut agent_uuid: Option<Uuid> = None;
         let ns_str = namespace.to_string();
+        let mut bind_ns = false;
+
+        if !namespace.is_root() {
+            sql.push_str(&format!(
+                " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
+            ));
+            bind_ns = true;
+            param_idx += 1;
+        }
 
         if let Some(a) = agent {
             sql.push_str(&format!(" AND agent_id = ${param_idx}"));
@@ -76,7 +86,9 @@ impl ContextStore for PgBackend {
         }
 
         let mut query = sqlx::query(&sql);
-        query = query.bind(&ns_str);
+        if bind_ns {
+            query = query.bind(&ns_str);
+        }
         if let Some(ref id) = agent_uuid {
             query = query.bind(id);
         }
@@ -98,14 +110,22 @@ impl ContextStore for PgBackend {
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
         let mut sql = String::from(
-            "SELECT id, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
+            "SELECT id, project, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
              FROM contexts
-             WHERE to_tsvector('english', summary) @@ plainto_tsquery('english', $1)
-               AND (namespace = $2 OR namespace LIKE $2 || '/%')",
+             WHERE to_tsvector('english', summary) @@ plainto_tsquery('english', $1)",
         );
-        let mut param_idx = 3u32;
+        let mut param_idx = 2u32;
         let ns_str = namespace.to_string();
         let mut agent_uuid: Option<Uuid> = None;
+        let mut bind_ns = false;
+
+        if !namespace.is_root() {
+            sql.push_str(&format!(
+                " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
+            ));
+            bind_ns = true;
+            param_idx += 1;
+        }
 
         if let Some(a) = agent_id {
             sql.push_str(&format!(" AND agent_id = ${param_idx}"));
@@ -119,7 +139,9 @@ impl ContextStore for PgBackend {
 
         let mut q = sqlx::query(&sql);
         q = q.bind(query);
-        q = q.bind(&ns_str);
+        if bind_ns {
+            q = q.bind(&ns_str);
+        }
         if let Some(ref id) = agent_uuid {
             q = q.bind(id);
         }
@@ -136,6 +158,7 @@ impl ContextStore for PgBackend {
 
 fn row_to_context(row: &sqlx::postgres::PgRow) -> ContextSnapshot {
     let id: Uuid = row.get("id");
+    let project: String = row.get("project");
     let agent_id: Uuid = row.get("agent_id");
     let namespace: String = row.get("namespace");
     let summary: String = row.get("summary");
@@ -147,6 +170,7 @@ fn row_to_context(row: &sqlx::postgres::PgRow) -> ContextSnapshot {
 
     ContextSnapshot::restore(
         SnapshotId::from_uuid(id),
+        ProjectId::try_from(project).expect("invalid project in database"),
         AgentId::from_uuid(agent_id),
         Namespace::try_from(namespace).expect("invalid namespace in database"),
         summary,

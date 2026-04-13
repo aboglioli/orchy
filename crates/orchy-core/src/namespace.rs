@@ -6,13 +6,23 @@ use std::fmt;
 pub struct Namespace(String);
 
 impl Namespace {
+    pub fn root() -> Self {
+        Self("/".to_string())
+    }
+
     fn validate(s: &str) -> Result<(), String> {
-        if s.is_empty() {
-            return Err("namespace must not be empty".to_string());
+        if s == "/" {
+            return Ok(());
         }
-        for part in s.split('/') {
+        if !s.starts_with('/') {
+            return Err("namespace must start with '/'".to_string());
+        }
+        for part in s[1..].split('/') {
             if part.is_empty() {
-                return Err("namespace parts must not be empty (check for leading, trailing, or double slashes)".to_string());
+                return Err(
+                    "namespace parts must not be empty (check for trailing or double slashes)"
+                        .to_string(),
+                );
             }
             for ch in part.chars() {
                 if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
@@ -25,31 +35,44 @@ impl Namespace {
         Ok(())
     }
 
-    pub fn project(&self) -> &str {
-        self.0.split('/').next().unwrap()
-    }
-
-    pub fn scopes(&self) -> &str {
-        self.0.split_once('/').map(|(_, rest)| rest).unwrap_or("")
+    pub fn is_root(&self) -> bool {
+        self.0 == "/"
     }
 
     pub fn with_scope(&self, scope: &str) -> Result<Namespace, String> {
-        Namespace::try_from(format!("{}/{scope}", self.0))
+        if self.is_root() {
+            Namespace::try_from(format!("/{scope}"))
+        } else {
+            Namespace::try_from(format!("{}/{scope}", self.0))
+        }
     }
 
-    pub fn to_project(&self) -> ProjectId {
-        ProjectId::from(self)
-    }
-
-    pub fn is_project_root(&self) -> bool {
-        !self.0.contains('/')
+    pub fn parent(&self) -> Namespace {
+        if self.is_root() {
+            return self.clone();
+        }
+        match self.0.rfind('/') {
+            Some(0) => Namespace::root(),
+            Some(pos) => Namespace(self.0[..pos].to_string()),
+            None => Namespace::root(),
+        }
     }
 
     pub fn starts_with(&self, prefix: &Namespace) -> bool {
+        if prefix.is_root() {
+            return true;
+        }
         if self.0 == prefix.0 {
             return true;
         }
         self.0.starts_with(&format!("{}/", prefix.0))
+    }
+
+    pub fn depth(&self) -> usize {
+        if self.is_root() {
+            return 0;
+        }
+        self.0[1..].split('/').count()
     }
 }
 
@@ -126,12 +149,6 @@ impl TryFrom<&str> for ProjectId {
     }
 }
 
-impl From<&Namespace> for ProjectId {
-    fn from(ns: &Namespace) -> Self {
-        ProjectId(ns.project().to_string())
-    }
-}
-
 impl From<ProjectId> for String {
     fn from(p: ProjectId) -> Self {
         p.0
@@ -155,109 +172,95 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valid_simple() {
-        let ns = Namespace::try_from("myapp").unwrap();
-        assert_eq!(ns.as_ref(), "myapp");
+    fn root_namespace() {
+        let ns = Namespace::root();
+        assert_eq!(ns.as_ref(), "/");
+        assert!(ns.is_root());
+        assert_eq!(ns.depth(), 0);
     }
 
     #[test]
-    fn valid_hierarchical() {
-        let ns = Namespace::try_from("myapp/tasks/processing").unwrap();
-        assert_eq!(ns.as_ref(), "myapp/tasks/processing");
+    fn valid_namespace() {
+        let ns = Namespace::try_from("/backend").unwrap();
+        assert_eq!(ns.as_ref(), "/backend");
+        assert!(!ns.is_root());
+        assert_eq!(ns.depth(), 1);
     }
 
     #[test]
-    fn valid_with_hyphens_and_underscores() {
-        let ns = Namespace::try_from("my-app/task_queue/v2").unwrap();
-        assert_eq!(ns.as_ref(), "my-app/task_queue/v2");
+    fn valid_nested_namespace() {
+        let ns = Namespace::try_from("/backend/auth").unwrap();
+        assert_eq!(ns.as_ref(), "/backend/auth");
+        assert_eq!(ns.depth(), 2);
     }
 
     #[test]
-    fn empty_fails() {
+    fn namespace_must_start_with_slash() {
+        assert!(Namespace::try_from("backend").is_err());
         assert!(Namespace::try_from("").is_err());
     }
 
     #[test]
-    fn empty_part_fails() {
-        assert!(
-            Namespace::try_from("my//app").is_err(),
-            "double slash should fail"
-        );
-        assert!(
-            Namespace::try_from("/myapp").is_err(),
-            "leading slash should fail"
-        );
-        assert!(
-            Namespace::try_from("myapp/").is_err(),
-            "trailing slash should fail"
-        );
+    fn no_double_slashes() {
+        assert!(Namespace::try_from("//backend").is_err());
+        assert!(Namespace::try_from("/backend//auth").is_err());
     }
 
     #[test]
-    fn invalid_chars_fail() {
-        assert!(Namespace::try_from("my@app").is_err(), "@ should fail");
-        assert!(Namespace::try_from("my.app").is_err(), ". should fail");
-        assert!(Namespace::try_from("my app").is_err(), "space should fail");
+    fn no_trailing_slash() {
+        assert!(Namespace::try_from("/backend/").is_err());
     }
 
     #[test]
-    fn starts_with_works() {
-        let ns = Namespace::try_from("myapp/tasks/processing").unwrap();
-        let prefix = Namespace::try_from("myapp/tasks").unwrap();
-        let other = Namespace::try_from("myapp/other").unwrap();
-        let exact = Namespace::try_from("myapp/tasks/processing").unwrap();
-
-        assert!(ns.starts_with(&prefix));
-        assert!(!ns.starts_with(&other));
-        assert!(ns.starts_with(&exact));
-        assert!(!prefix.starts_with(&ns));
+    fn starts_with_root_matches_all() {
+        let root = Namespace::root();
+        let child = Namespace::try_from("/backend").unwrap();
+        let deep = Namespace::try_from("/backend/auth").unwrap();
+        assert!(child.starts_with(&root));
+        assert!(deep.starts_with(&root));
+        assert!(root.starts_with(&root));
     }
 
     #[test]
-    fn project_returns_first_segment() {
-        let root = Namespace::try_from("orchy").unwrap();
-        assert_eq!(root.project(), "orchy");
+    fn starts_with_hierarchy() {
+        let parent = Namespace::try_from("/backend").unwrap();
+        let child = Namespace::try_from("/backend/auth").unwrap();
+        let sibling = Namespace::try_from("/frontend").unwrap();
 
-        let scoped = Namespace::try_from("orchy/backend/auth").unwrap();
-        assert_eq!(scoped.project(), "orchy");
+        assert!(child.starts_with(&parent));
+        assert!(!parent.starts_with(&child));
+        assert!(!sibling.starts_with(&parent));
     }
 
     #[test]
-    fn scopes_returns_rest_after_project() {
-        let root = Namespace::try_from("orchy").unwrap();
-        assert_eq!(root.scopes(), "");
-
-        let one = Namespace::try_from("orchy/backend").unwrap();
-        assert_eq!(one.scopes(), "backend");
-
-        let deep = Namespace::try_from("orchy/backend/auth").unwrap();
-        assert_eq!(deep.scopes(), "backend/auth");
+    fn with_scope_from_root() {
+        let root = Namespace::root();
+        let child = root.with_scope("backend").unwrap();
+        assert_eq!(child.as_ref(), "/backend");
     }
 
     #[test]
-    fn with_scope_appends() {
-        let root = Namespace::try_from("orchy").unwrap();
-        let scoped = root.with_scope("backend").unwrap();
-        assert_eq!(scoped.as_ref(), "orchy/backend");
-
-        let deeper = scoped.with_scope("auth").unwrap();
-        assert_eq!(deeper.as_ref(), "orchy/backend/auth");
+    fn with_scope_from_nested() {
+        let ns = Namespace::try_from("/backend").unwrap();
+        let child = ns.with_scope("auth").unwrap();
+        assert_eq!(child.as_ref(), "/backend/auth");
     }
 
     #[test]
-    fn with_scope_validates() {
-        let root = Namespace::try_from("orchy").unwrap();
-        assert!(root.with_scope("").is_err());
-        assert!(root.with_scope("bad scope").is_err());
+    fn parent_of_root_is_root() {
+        assert_eq!(Namespace::root().parent(), Namespace::root());
     }
 
     #[test]
-    fn is_project_root_works() {
-        let root = Namespace::try_from("orchy").unwrap();
-        assert!(root.is_project_root());
+    fn parent_of_child_is_root() {
+        let ns = Namespace::try_from("/backend").unwrap();
+        assert_eq!(ns.parent(), Namespace::root());
+    }
 
-        let scoped = Namespace::try_from("orchy/backend").unwrap();
-        assert!(!scoped.is_project_root());
+    #[test]
+    fn parent_of_nested() {
+        let ns = Namespace::try_from("/backend/auth").unwrap();
+        assert_eq!(ns.parent().as_ref(), "/backend");
     }
 
     #[test]
@@ -269,12 +272,5 @@ mod tests {
     #[test]
     fn project_slashes_fail() {
         assert!(ProjectId::try_from("my/project").is_err());
-    }
-
-    #[test]
-    fn project_from_namespace() {
-        let ns = Namespace::try_from("orchy/backend/auth".to_string()).unwrap();
-        let p = ProjectId::from(&ns);
-        assert_eq!(p.as_ref(), "orchy");
     }
 }

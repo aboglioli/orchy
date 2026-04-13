@@ -4,7 +4,7 @@ use super::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStor
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsBackend;
 use crate::error::{Error, Result};
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
 
 pub struct MemoryService<S: MemoryStore> {
     store: Arc<S>,
@@ -17,7 +17,10 @@ impl<S: MemoryStore> MemoryService<S> {
     }
 
     pub async fn write(&self, cmd: WriteMemory) -> Result<MemoryEntry> {
-        let existing = self.store.find_by_key(&cmd.namespace, &cmd.key).await?;
+        let existing = self
+            .store
+            .find_by_key(&cmd.project, &cmd.namespace, &cmd.key)
+            .await?;
 
         let mut entry = if let Some(mut existing) = existing {
             if let Some(expected) = cmd.expected_version.filter(|v| existing.version() != *v) {
@@ -35,7 +38,13 @@ impl<S: MemoryStore> MemoryService<S> {
                     actual: 0,
                 });
             }
-            MemoryEntry::new(cmd.namespace, cmd.key, cmd.value, cmd.written_by)
+            MemoryEntry::new(
+                cmd.project,
+                cmd.namespace,
+                cmd.key,
+                cmd.value,
+                cmd.written_by,
+            )
         };
 
         if let Some(emb) = &self.embeddings {
@@ -47,8 +56,13 @@ impl<S: MemoryStore> MemoryService<S> {
         Ok(entry)
     }
 
-    pub async fn read(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
-        self.store.find_by_key(namespace, key).await
+    pub async fn read(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        key: &str,
+    ) -> Result<Option<MemoryEntry>> {
+        self.store.find_by_key(project, namespace, key).await
     }
 
     pub async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
@@ -57,13 +71,14 @@ impl<S: MemoryStore> MemoryService<S> {
 
     pub async fn move_entry(
         &self,
+        project: &ProjectId,
         namespace: &Namespace,
         key: &str,
         new_namespace: Namespace,
     ) -> Result<MemoryEntry> {
         let mut entry = self
             .store
-            .find_by_key(namespace, key)
+            .find_by_key(project, namespace, key)
             .await?
             .ok_or_else(|| Error::NotFound(format!("memory {namespace}/{key}")))?;
 
@@ -108,12 +123,13 @@ impl<S: ContextStore> ContextService<S> {
 
     pub async fn save(
         &self,
+        project: ProjectId,
         agent_id: AgentId,
         namespace: Namespace,
         summary: String,
         metadata: std::collections::HashMap<String, String>,
     ) -> Result<ContextSnapshot> {
-        let mut snapshot = ContextSnapshot::new(agent_id, namespace, summary, metadata);
+        let mut snapshot = ContextSnapshot::new(project, agent_id, namespace, summary, metadata);
 
         if let Some(emb) = &self.embeddings {
             let vector = emb.embed(snapshot.summary()).await?;

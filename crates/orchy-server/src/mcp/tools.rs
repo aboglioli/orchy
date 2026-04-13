@@ -14,6 +14,7 @@ use serde::Deserialize;
 use orchy_core::agent::RegisterAgent;
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
+use orchy_core::namespace::Namespace;
 use orchy_core::skill::{SkillFilter, WriteSkill};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
 
@@ -282,11 +283,8 @@ impl OrchyHandler {
         let project = parse_project(&params.project)?;
 
         let namespace = match params.namespace.as_deref() {
-            Some(s) if !s.is_empty() => {
-                let full = format!("{project}/{s}");
-                parse_namespace(&full)?
-            }
-            _ => parse_namespace(project.as_ref())?,
+            Some(s) if !s.is_empty() => parse_namespace(&format!("/{s}"))?,
+            _ => Namespace::root(),
         };
 
         if let Some(ref id_str) = params.agent_id {
@@ -349,7 +347,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UpdateRolesParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -367,7 +365,7 @@ impl OrchyHandler {
 
     #[tool(description = "Send a heartbeat for the session agent to signal liveness.")]
     async fn heartbeat(&self) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -383,7 +381,7 @@ impl OrchyHandler {
         Use this when your session is ending."
     )]
     async fn disconnect(&self) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -411,7 +409,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveAgentParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -443,6 +441,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PostTaskParams>,
     ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -469,6 +472,7 @@ impl OrchyHandler {
 
         let is_blocked = !depends_on.is_empty();
         let task = Task::new(
+            project,
             namespace,
             params.title,
             params.description,
@@ -494,7 +498,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetNextTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -573,7 +577,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ClaimTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -598,7 +602,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<StartTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -698,12 +702,17 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WriteMemoryParams>,
     ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
 
         let cmd = WriteMemory {
+            project,
             namespace,
             key: params.key,
             value: params.value,
@@ -722,6 +731,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReadMemoryParams>,
     ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -730,7 +743,7 @@ impl OrchyHandler {
         match self
             .container
             .memory_service
-            .read(&namespace, &params.key)
+            .read(&project, &namespace, &params.key)
             .await
         {
             Ok(Some(entry)) => Ok(to_json(&entry)),
@@ -822,7 +835,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SendMessageParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, project, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -848,7 +861,7 @@ impl OrchyHandler {
         match self
             .container
             .message_service
-            .send(namespace, agent_id, target, params.body, reply_to)
+            .send(project, namespace, agent_id, target, params.body, reply_to)
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
@@ -864,7 +877,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckMailboxParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, project, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -877,7 +890,7 @@ impl OrchyHandler {
         match self
             .container
             .message_service
-            .check(&agent_id, &namespace)
+            .check(&agent_id, &project, &namespace)
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
@@ -914,7 +927,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SaveContextParams>,
     ) -> Result<String, String> {
-        let (agent_id, _) = match self.require_session() {
+        let (agent_id, project, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -935,7 +948,7 @@ impl OrchyHandler {
         match self
             .container
             .context_service
-            .save(agent_id, namespace, params.summary, metadata)
+            .save(project, agent_id, namespace, params.summary, metadata)
             .await
         {
             Ok(snapshot) => Ok(to_json(&snapshot)),
@@ -957,7 +970,7 @@ impl OrchyHandler {
                 Err(e) => return Err(e),
             },
             None => match self.require_session() {
-                Ok((id, _)) => id,
+                Ok((id, _, _)) => id,
                 Err(e) => return Err(e),
             },
         };
@@ -1037,12 +1050,17 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WriteSkillParams>,
     ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
 
         let cmd = WriteSkill {
+            project,
             namespace,
             name: params.name,
             description: params.description,
@@ -1061,6 +1079,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReadSkillParams>,
     ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -1069,7 +1091,7 @@ impl OrchyHandler {
         match self
             .container
             .skill_service
-            .read(&namespace, &params.name)
+            .read(&project, &namespace, &params.name)
             .await
         {
             Ok(Some(skill)) => Ok(to_json(&skill)),
@@ -1088,13 +1110,16 @@ impl OrchyHandler {
         Parameters(params): Parameters<ListSkillsParams>,
     ) -> Result<String, String> {
         let result = if params.inherited.unwrap_or(false) {
+            let project = self
+                .get_session_project()
+                .ok_or("no agent registered for this session; call register_agent first")?;
             let namespace = match self.build_namespace(params.namespace.as_deref()) {
                 Ok(ns) => ns,
                 Err(e) => return Err(e),
             };
             self.container
                 .skill_service
-                .list_with_inherited(&namespace)
+                .list_with_inherited(&project, &namespace)
                 .await
         } else {
             let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
@@ -1212,6 +1237,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DeleteSkillParams>,
     ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -1220,7 +1249,7 @@ impl OrchyHandler {
         match self
             .container
             .skill_service
-            .delete(&namespace, &params.name)
+            .delete(&project, &namespace, &params.name)
             .await
         {
             Ok(()) => Ok("ok".to_string()),
@@ -1238,6 +1267,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetBootstrapPromptParams>,
     ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -1247,6 +1280,7 @@ impl OrchyHandler {
         let port = self.container.config.server.port;
 
         match crate::bootstrap::generate_bootstrap_prompt(
+            &project,
             &namespace,
             host,
             port,
@@ -1332,9 +1366,10 @@ impl ServerHandler for OrchyHandler {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, ErrorData> {
-        let namespace = match self.get_session_namespace() {
-            Some(ns) => ns,
-            None => {
+        let (project, namespace) = match (self.get_session_project(), self.get_session_namespace())
+        {
+            (Some(p), Some(ns)) => (p, ns),
+            _ => {
                 return Ok(ListPromptsResult {
                     prompts: vec![],
                     meta: None,
@@ -1346,7 +1381,7 @@ impl ServerHandler for OrchyHandler {
         let skills = self
             .container
             .skill_service
-            .list_with_inherited(&namespace)
+            .list_with_inherited(&project, &namespace)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -1373,6 +1408,9 @@ impl ServerHandler for OrchyHandler {
         request: GetPromptRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, ErrorData> {
+        let project = self
+            .get_session_project()
+            .ok_or_else(|| ErrorData::internal_error("no session project", None))?;
         let namespace = self
             .get_session_namespace()
             .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
@@ -1380,7 +1418,7 @@ impl ServerHandler for OrchyHandler {
         let skill = self
             .container
             .skill_service
-            .read(&namespace, &request.name)
+            .read(&project, &namespace, &request.name)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -1390,7 +1428,7 @@ impl ServerHandler for OrchyHandler {
                 let inherited = self
                     .container
                     .skill_service
-                    .list_with_inherited(&namespace)
+                    .list_with_inherited(&project, &namespace)
                     .await
                     .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 

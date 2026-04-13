@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::skill::SkillStore;
 use orchy_core::skill::WriteSkill;
 use orchy_core::skill::service::SkillService;
@@ -79,12 +79,28 @@ async fn load_recursive_inner<S: SkillStore>(
             continue;
         }
 
-        let namespace = match Namespace::try_from(namespace_str.clone()) {
-            Ok(ns) => ns,
+        let (project_str, scope_str) = match namespace_str.split_once('/') {
+            Some((p, s)) => (p.to_string(), Some(s.to_string())),
+            None => (namespace_str.clone(), None),
+        };
+
+        let project = match ProjectId::try_from(project_str.clone()) {
+            Ok(p) => p,
             Err(e) => {
-                warn!(file = %path.display(), error = %e, "invalid namespace from path, skipping");
+                warn!(file = %path.display(), error = %e, "invalid project from path, skipping");
                 continue;
             }
+        };
+
+        let namespace = match scope_str {
+            Some(scope) => match Namespace::try_from(format!("/{scope}")) {
+                Ok(ns) => ns,
+                Err(e) => {
+                    warn!(file = %path.display(), error = %e, "invalid namespace from path, skipping");
+                    continue;
+                }
+            },
+            None => Namespace::root(),
         };
 
         let name = path
@@ -97,6 +113,7 @@ async fn load_recursive_inner<S: SkillStore>(
         let (description, content) = parse_frontmatter(&raw, &name);
 
         let cmd = WriteSkill {
+            project: project.clone(),
             namespace: namespace.clone(),
             name: name.clone(),
             description,

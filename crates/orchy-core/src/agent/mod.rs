@@ -252,7 +252,7 @@ mod tests {
     }
 
     fn test_namespace() -> Namespace {
-        Namespace::try_from("test").unwrap()
+        Namespace::root()
     }
 
     fn make_agent() -> Agent {

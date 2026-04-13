@@ -12,15 +12,22 @@ pub trait SkillStore: Send + Sync {
     fn save(&self, skill: &Skill) -> impl Future<Output = Result<()>> + Send;
     fn find_by_name(
         &self,
+        project: &ProjectId,
         namespace: &Namespace,
         name: &str,
     ) -> impl Future<Output = Result<Option<Skill>>> + Send;
     fn list(&self, filter: SkillFilter) -> impl Future<Output = Result<Vec<Skill>>> + Send;
-    fn delete(&self, namespace: &Namespace, name: &str) -> impl Future<Output = Result<()>> + Send;
+    fn delete(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
+    project: ProjectId,
     namespace: Namespace,
     name: String,
     description: String,
@@ -32,6 +39,7 @@ pub struct Skill {
 
 impl Skill {
     pub fn new(
+        project: ProjectId,
         namespace: Namespace,
         name: String,
         description: String,
@@ -40,6 +48,7 @@ impl Skill {
     ) -> Self {
         let now = Utc::now();
         Self {
+            project,
             namespace,
             name,
             description,
@@ -51,6 +60,7 @@ impl Skill {
     }
 
     pub fn restore(
+        project: ProjectId,
         namespace: Namespace,
         name: String,
         description: String,
@@ -60,6 +70,7 @@ impl Skill {
         updated_at: DateTime<Utc>,
     ) -> Self {
         Self {
+            project,
             namespace,
             name,
             description,
@@ -103,6 +114,9 @@ impl Skill {
         result
     }
 
+    pub fn project(&self) -> &ProjectId {
+        &self.project
+    }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
@@ -128,6 +142,7 @@ impl Skill {
 
 #[derive(Debug, Clone)]
 pub struct WriteSkill {
+    pub project: ProjectId,
     pub namespace: Namespace,
     pub name: String,
     pub description: String,
@@ -145,9 +160,14 @@ pub struct SkillFilter {
 mod tests {
     use super::*;
 
+    fn test_project() -> ProjectId {
+        ProjectId::try_from("test").unwrap()
+    }
+
     fn make_skill(namespace: &str, name: &str) -> Skill {
         Skill::new(
-            Namespace::try_from(namespace.to_string()).unwrap(),
+            test_project(),
+            Namespace::try_from(namespace).unwrap(),
             name.to_string(),
             "test".to_string(),
             "content".to_string(),
@@ -157,35 +177,35 @@ mod tests {
 
     #[test]
     fn empty_skills_returns_empty() {
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
+        let ns = Namespace::try_from("/orchy").unwrap();
         let result = Skill::filter_with_inheritance(vec![], &ns);
         assert!(result.is_empty());
     }
 
     #[test]
     fn exact_namespace_match() {
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
-        let skills = vec![make_skill("orchy", "test")];
+        let ns = Namespace::try_from("/orchy").unwrap();
+        let skills = vec![make_skill("/orchy", "test")];
         let result = Skill::filter_with_inheritance(skills, &ns);
         assert_eq!(result.len(), 1);
     }
 
     #[test]
     fn deduplicates_by_name_keeps_most_specific() {
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
+        let ns = Namespace::try_from("/orchy").unwrap();
         let skills = vec![
-            make_skill("orchy", "test"),
-            make_skill("orchy/tasks", "test"),
+            make_skill("/orchy", "test"),
+            make_skill("/orchy/tasks", "test"),
         ];
         let result = Skill::filter_with_inheritance(skills, &ns);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].namespace().as_ref(), "orchy/tasks");
+        assert_eq!(result[0].namespace().as_ref(), "/orchy/tasks");
     }
 
     #[test]
     fn sorts_by_name() {
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
-        let skills = vec![make_skill("orchy", "zebra"), make_skill("orchy", "alpha")];
+        let ns = Namespace::try_from("/orchy").unwrap();
+        let skills = vec![make_skill("/orchy", "zebra"), make_skill("/orchy", "alpha")];
         let result = Skill::filter_with_inheritance(skills, &ns);
         assert_eq!(result[0].name(), "alpha");
         assert_eq!(result[1].name(), "zebra");
