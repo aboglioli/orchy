@@ -290,7 +290,7 @@ impl Task {
         Ok(())
     }
 
-    pub fn reassign(&mut self, new_agent: AgentId) -> Result<()> {
+    pub fn assign(&mut self, new_agent: AgentId) -> Result<()> {
         if !matches!(self.status, TaskStatus::Claimed | TaskStatus::InProgress) {
             return Err(Error::InvalidInput(format!(
                 "task {} cannot be reassigned from status {}",
@@ -510,19 +510,19 @@ mod tests {
     }
 
     #[test]
-    fn reassign_succeeds_from_claimed() {
+    fn assign_succeeds_from_claimed() {
         let agent1 = AgentId::new();
         let agent2 = AgentId::new();
         let mut task = make_task(TaskStatus::Claimed, Some(agent1));
-        assert!(task.reassign(agent2).is_ok());
+        assert!(task.assign(agent2).is_ok());
         assert_eq!(task.status(), TaskStatus::Claimed);
         assert_eq!(task.claimed_by(), Some(agent2));
     }
 
     #[test]
-    fn reassign_fails_from_pending() {
+    fn assign_fails_from_pending() {
         let mut task = make_task(TaskStatus::Pending, None);
-        assert!(task.reassign(AgentId::new()).is_err());
+        assert!(task.assign(AgentId::new()).is_err());
     }
 
     #[test]

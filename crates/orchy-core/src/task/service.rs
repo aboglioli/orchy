@@ -132,14 +132,14 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         Ok(task)
     }
 
-    pub async fn reassign(&self, id: &TaskId, new_agent: &AgentId) -> Result<Task> {
+    pub async fn assign(&self, id: &TaskId, new_agent: &AgentId) -> Result<Task> {
         self.agent_store
             .find_by_id(new_agent)
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {new_agent}")))?;
 
         let mut task = self.get(id).await?;
-        task.reassign(*new_agent)?;
+        task.assign(*new_agent)?;
         self.task_store.save(&task).await?;
         Ok(task)
     }

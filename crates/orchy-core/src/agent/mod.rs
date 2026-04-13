@@ -178,7 +178,7 @@ impl Agent {
         self.status = status;
     }
 
-    pub fn update_roles(&mut self, roles: Vec<String>) {
+    pub fn change_roles(&mut self, roles: Vec<String>) {
         self.roles = roles;
     }
 
