@@ -61,7 +61,7 @@ struct GetNextTaskParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListTasksParams {
-    /// Namespace filter. Defaults to session namespace.
+    /// Namespace filter. If omitted, returns all tasks in the project.
     namespace: Option<String>,
     status: Option<String>,
 }
@@ -112,14 +112,14 @@ struct ReadMemoryParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListMemoryParams {
-    /// Namespace filter. Defaults to session namespace.
+    /// Namespace filter. If omitted, returns all entries in the project.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct SearchMemoryParams {
     query: String,
-    /// Namespace filter. Defaults to session namespace.
+    /// Namespace filter. If omitted, searches all entries in the project.
     namespace: Option<String>,
     limit: Option<u32>,
 }
@@ -226,6 +226,12 @@ struct GetBootstrapPromptParams {
 struct AddTaskNoteParams {
     task_id: String,
     body: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct MoveAgentParams {
+    /// New namespace to move the session agent to. Must belong to the same project.
+    namespace: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -372,6 +378,38 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Move the session agent to a new namespace within the same project. \
+        Updates both the agent record and the session scope."
+    )]
+    async fn move_agent(
+        &self,
+        Parameters(params): Parameters<MoveAgentParams>,
+    ) -> Result<String, String> {
+        let (agent_id, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self.resolve_namespace(Some(&params.namespace)) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .agent_service
+            .move_to(&agent_id, namespace.clone())
+            .await
+        {
+            Ok(agent) => {
+                self.set_session_namespace(namespace);
+                Ok(to_json(&agent))
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
         description = "Create a new task. Namespace defaults to session namespace; \
         if provided, the project prefix must match."
     )]
@@ -461,14 +499,14 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "List tasks, optionally filtered by namespace (defaults to session \
-        namespace) and status."
+        description = "List tasks, optionally filtered by namespace and status. \
+        If namespace is omitted, returns all tasks in the project."
     )]
     async fn list_tasks(
         &self,
         Parameters(params): Parameters<ListTasksParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -488,7 +526,12 @@ impl OrchyHandler {
         }
 
         let filter = TaskFilter {
-            namespace: Some(namespace),
+            project: if namespace.is_none() {
+                self.get_session_project()
+            } else {
+                None
+            },
+            namespace,
             status: status.flatten(),
             ..Default::default()
         };
@@ -670,19 +713,26 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List memory entries. Namespace defaults to session namespace.")]
+    #[tool(
+        description = "List memory entries. If namespace is omitted, returns all entries \
+        in the project."
+    )]
     async fn list_memory(
         &self,
         Parameters(params): Parameters<ListMemoryParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
 
         let filter = MemoryFilter {
-            namespace: Some(namespace),
-            ..Default::default()
+            project: if namespace.is_none() {
+                self.get_session_project()
+            } else {
+                None
+            },
+            namespace,
         };
 
         match self.container.memory_service.list(filter).await {
@@ -692,14 +742,14 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Search memory entries by semantic similarity. Namespace defaults to \
-        session namespace."
+        description = "Search memory entries by semantic similarity. If namespace is omitted, \
+        searches all entries in the project."
     )]
     async fn search_memory(
         &self,
         Parameters(params): Parameters<SearchMemoryParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -709,7 +759,7 @@ impl OrchyHandler {
         match self
             .container
             .memory_service
-            .search(&params.query, Some(&namespace), limit)
+            .search(&params.query, namespace.as_ref(), limit)
             .await
         {
             Ok(entries) => Ok(to_json(&entries)),
@@ -1004,29 +1054,36 @@ impl OrchyHandler {
 
     #[tool(
         description = "List skills for the project. If inherited=true, includes skills \
-        from parent namespaces with more specific ones taking precedence. Namespace defaults \
-        to session namespace."
+        from parent namespaces with more specific ones taking precedence (requires namespace). \
+        If namespace is omitted, returns all skills in the project."
     )]
     async fn list_skills(
         &self,
         Parameters(params): Parameters<ListSkillsParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
-
         let result = if params.inherited.unwrap_or(false) {
+            let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+                Ok(ns) => ns,
+                Err(e) => return Err(e),
+            };
             self.container
                 .skill_service
                 .list_with_inherited(&namespace)
                 .await
         } else {
+            let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
+                Ok(ns) => ns,
+                Err(e) => return Err(e),
+            };
             self.container
                 .skill_service
                 .list(SkillFilter {
-                    namespace: Some(namespace),
-                    ..Default::default()
+                    project: if namespace.is_none() {
+                        self.get_session_project()
+                    } else {
+                        None
+                    },
+                    namespace,
                 })
                 .await
         };
