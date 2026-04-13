@@ -118,6 +118,33 @@ impl AgentStore for PgBackend {
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))
     }
 
+    async fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent> {
+        let roles_json = serde_json::to_value(&roles).unwrap();
+        let result = sqlx::query(
+            "UPDATE agents SET status = 'online', roles = $1, description = $2, last_heartbeat = $3 WHERE id = $4",
+        )
+        .bind(&roles_json)
+        .bind(&description)
+        .bind(Utc::now())
+        .bind(id.as_uuid())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(Error::NotFound(format!("agent {id}")));
+        }
+
+        self.get(id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("agent {id}")))
+    }
+
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
         self.update_status(id, AgentStatus::Disconnected).await
     }

@@ -82,6 +82,26 @@ impl AgentStore for MemoryBackend {
         Ok(agent.clone())
     }
 
+    async fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent> {
+        let mut agents = self
+            .agents
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let agent = agents
+            .get_mut(id)
+            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
+        agent.status = AgentStatus::Online;
+        agent.roles = roles;
+        agent.description = description;
+        agent.last_heartbeat = Utc::now();
+        Ok(agent.clone())
+    }
+
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
         let mut agents = self
             .agents

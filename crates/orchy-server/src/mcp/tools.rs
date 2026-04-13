@@ -14,6 +14,7 @@ use serde::Deserialize;
 use orchy_core::agent::RegisterAgent;
 use orchy_core::memory::{CreateSnapshot, MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{CreateMessage, MessageId, MessageTarget};
+use orchy_core::namespace::ProjectId;
 use orchy_core::skill::{SkillFilter, WriteSkill};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
 
@@ -27,6 +28,8 @@ struct RegisterAgentParams {
     namespace: String,
     roles: Vec<String>,
     description: String,
+    /// If provided, reconnect to an existing agent instead of creating a new one.
+    agent_id: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -217,6 +220,25 @@ struct GetBootstrapPromptParams {
     namespace: Option<String>,
 }
 
+#[derive(Deserialize, schemars::JsonSchema)]
+struct AddTaskNoteParams {
+    task_id: String,
+    body: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct GetProjectParams {}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct UpdateProjectParams {
+    description: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct AddProjectNoteParams {
+    body: String,
+}
+
 fn parse_task_id(s: &str) -> Result<TaskId, String> {
     s.parse::<TaskId>()
         .map_err(|e| format!("invalid task_id: {e}"))
@@ -242,13 +264,34 @@ impl OrchyHandler {
         description = "Register this session as an agent within a project namespace. \
         The namespace must start with the project identifier (e.g. 'my-project' or \
         'my-project/backend'). All subsequent tool calls will be scoped to this project. \
-        Sub-scopes can be provided per call, but the project prefix is always enforced."
+        Sub-scopes can be provided per call, but the project prefix is always enforced. \
+        If agent_id is provided, reconnect to an existing agent instead of creating a new one."
     )]
     async fn register_agent(&self, Parameters(params): Parameters<RegisterAgentParams>) -> String {
         let namespace = match parse_namespace(&params.namespace) {
             Ok(ns) => ns,
             Err(e) => return e,
         };
+
+        if let Some(ref id_str) = params.agent_id {
+            let agent_id = match parse_agent_id(id_str) {
+                Ok(id) => id,
+                Err(e) => return e,
+            };
+
+            match self
+                .container
+                .agent_service
+                .reconnect(&agent_id, params.roles, params.description)
+                .await
+            {
+                Ok(agent) => {
+                    self.set_session(agent.id, namespace);
+                    return to_json(&agent);
+                }
+                Err(e) => return format!("error: {e}"),
+            }
+        }
 
         let cmd = RegisterAgent {
             namespace: namespace.clone(),
@@ -931,6 +974,102 @@ impl OrchyHandler {
 
         match result {
             Ok(skills) => to_json(&skills),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(
+        description = "Add a note to a task. Notes are timestamped comments attached to the task."
+    )]
+    async fn add_task_note(&self, Parameters(params): Parameters<AddTaskNoteParams>) -> String {
+        let task_id = match parse_task_id(&params.task_id) {
+            Ok(id) => id,
+            Err(e) => return e,
+        };
+
+        let author = self.get_session_agent();
+
+        match self
+            .container
+            .task_service
+            .add_note(&task_id, author, params.body)
+            .await
+        {
+            Ok(task) => to_json(&task),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(description = "Get the project metadata for the current session's project.")]
+    async fn get_project(&self, Parameters(_params): Parameters<GetProjectParams>) -> String {
+        let (_, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+
+        let project_id = match ProjectId::try_from(namespace.project()) {
+            Ok(id) => id,
+            Err(e) => return format!("error: {e}"),
+        };
+
+        match self
+            .container
+            .project_service
+            .get_or_create(&project_id)
+            .await
+        {
+            Ok(project) => to_json(&project),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(description = "Update the project description for the current session's project.")]
+    async fn update_project(&self, Parameters(params): Parameters<UpdateProjectParams>) -> String {
+        let (_, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+
+        let project_id = match ProjectId::try_from(namespace.project()) {
+            Ok(id) => id,
+            Err(e) => return format!("error: {e}"),
+        };
+
+        match self
+            .container
+            .project_service
+            .update_description(&project_id, params.description)
+            .await
+        {
+            Ok(project) => to_json(&project),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    #[tool(description = "Add a note to the current session's project.")]
+    async fn add_project_note(
+        &self,
+        Parameters(params): Parameters<AddProjectNoteParams>,
+    ) -> String {
+        let (_, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+
+        let project_id = match ProjectId::try_from(namespace.project()) {
+            Ok(id) => id,
+            Err(e) => return format!("error: {e}"),
+        };
+
+        let author = self.get_session_agent();
+
+        match self
+            .container
+            .project_service
+            .add_note(&project_id, author, params.body)
+            .await
+        {
+            Ok(project) => to_json(&project),
             Err(e) => format!("error: {e}"),
         }
     }

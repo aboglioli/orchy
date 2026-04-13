@@ -5,6 +5,7 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::Namespace;
+use orchy_core::note::Note;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::PgBackend;
@@ -20,10 +21,11 @@ impl TaskStore for PgBackend {
                 .collect::<Vec<_>>(),
         )
         .unwrap();
+        let notes_json = serde_json::to_value(task.notes()).unwrap();
 
         sqlx::query(
-            "INSERT INTO tasks (id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            "INSERT INTO tasks (id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
              ON CONFLICT (id) DO UPDATE SET
                 namespace = EXCLUDED.namespace,
                 title = EXCLUDED.title,
@@ -35,6 +37,7 @@ impl TaskStore for PgBackend {
                 claimed_at = EXCLUDED.claimed_at,
                 depends_on = EXCLUDED.depends_on,
                 result_summary = EXCLUDED.result_summary,
+                notes = EXCLUDED.notes,
                 updated_at = EXCLUDED.updated_at",
         )
         .bind(task.id().as_uuid())
@@ -48,6 +51,7 @@ impl TaskStore for PgBackend {
         .bind(task.claimed_at())
         .bind(&depends_json)
         .bind(task.result_summary())
+        .bind(&notes_json)
         .bind(task.created_by().map(|a| *a.as_uuid()))
         .bind(task.created_at())
         .bind(task.updated_at())
@@ -60,7 +64,7 @@ impl TaskStore for PgBackend {
 
     async fn get(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, created_by, created_at, updated_at
+            "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -73,7 +77,7 @@ impl TaskStore for PgBackend {
 
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         let mut sql = String::from(
-            "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, created_by, created_at, updated_at
+            "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE 1=1",
         );
         let mut param_idx = 1u32;
@@ -163,6 +167,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
     let claimed_at: Option<DateTime<Utc>> = row.get("claimed_at");
     let depends_on: serde_json::Value = row.get("depends_on");
     let result_summary: Option<String> = row.get("result_summary");
+    let notes_json: serde_json::Value = row.get("notes");
     let created_by: Option<Uuid> = row.get("created_by");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
@@ -172,6 +177,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
         .iter()
         .filter_map(|s| s.parse().ok())
         .collect();
+    let notes: Vec<Note> = serde_json::from_value(notes_json).unwrap_or_default();
 
     Task::restore(
         TaskId::from_uuid(id),
@@ -185,6 +191,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
         claimed_at,
         depends_on_ids,
         result_summary,
+        notes,
         created_by.map(AgentId::from_uuid),
         created_at,
         updated_at,

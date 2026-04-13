@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::AgentId;
 use crate::error::Result;
-use crate::namespace::{Namespace, Project};
+use crate::namespace::{Namespace, ProjectId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
@@ -51,7 +51,7 @@ pub struct WriteSkill {
 #[derive(Debug, Clone, Default)]
 pub struct SkillFilter {
     pub namespace: Option<Namespace>,
-    pub project: Option<Project>,
+    pub project: Option<ProjectId>,
 }
 
 pub trait SkillStore: Send + Sync {

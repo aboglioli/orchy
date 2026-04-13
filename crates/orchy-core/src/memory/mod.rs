@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::agent::AgentId;
 use crate::error::Result;
-use crate::namespace::{Namespace, Project};
+use crate::namespace::{Namespace, ProjectId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -108,7 +108,7 @@ pub struct WriteMemory {
 #[derive(Debug, Clone, Default)]
 pub struct MemoryFilter {
     pub namespace: Option<Namespace>,
-    pub project: Option<Project>,
+    pub project: Option<ProjectId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

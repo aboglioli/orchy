@@ -4,6 +4,7 @@ use orchy_core::agent::service::AgentService;
 use orchy_core::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
 use orchy_core::memory::service::{ContextService, MemoryService};
 use orchy_core::message::service::MessageService;
+use orchy_core::project::service::ProjectService;
 use orchy_core::skill::service::SkillService;
 use orchy_core::task::service::TaskService;
 use orchy_store_memory::MemoryBackend;
@@ -20,6 +21,7 @@ pub struct Container {
     pub message_service: MessageService<StoreBackend>,
     pub context_service: ContextService<StoreBackend>,
     pub skill_service: SkillService<StoreBackend>,
+    pub project_service: ProjectService<StoreBackend>,
     pub config: Config,
 }
 
@@ -37,6 +39,7 @@ impl Container {
         let message_service = MessageService::new(Arc::clone(&store));
         let context_service = ContextService::new(Arc::clone(&store), embeddings);
         let skill_service = SkillService::new(Arc::clone(&store));
+        let project_service = ProjectService::new(Arc::clone(&store));
 
         Ok(Arc::new(Self {
             task_service,
@@ -45,6 +48,7 @@ impl Container {
             message_service,
             context_service,
             skill_service,
+            project_service,
             config,
         }))
     }

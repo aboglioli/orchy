@@ -7,7 +7,8 @@ use crate::memory::{
     WriteMemory,
 };
 use crate::message::{CreateMessage, Message, MessageId, MessageStore};
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
+use crate::project::{Project, ProjectStore};
 use crate::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
 use crate::task::{Task, TaskFilter, TaskId, TaskStore};
 
@@ -53,8 +54,17 @@ pub trait Store: Send + Sync {
         id: &AgentId,
         roles: Vec<String>,
     ) -> impl Future<Output = Result<Agent>> + Send;
+    fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> impl Future<Output = Result<Agent>> + Send;
     fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
     fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+
+    fn save_project(&self, project: &Project) -> impl Future<Output = Result<()>> + Send;
+    fn get_project(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
 
     fn send_message(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
     fn check_messages(
@@ -109,7 +119,8 @@ pub mod mock {
     use crate::error::{Error, Result};
     use crate::memory::{ContextSnapshot, CreateSnapshot, MemoryEntry, MemoryFilter, WriteMemory};
     use crate::message::{CreateMessage, Message, MessageId, MessageStatus, MessageTarget};
-    use crate::namespace::Namespace;
+    use crate::namespace::{Namespace, ProjectId};
+    use crate::project::Project;
     use crate::skill::{Skill, SkillFilter, WriteSkill};
     use crate::task::{Task, TaskFilter, TaskId};
 
@@ -166,11 +177,34 @@ pub mod mock {
             agent.roles = roles;
             Ok(agent.clone())
         }
+        async fn reconnect(
+            &self,
+            id: &AgentId,
+            roles: Vec<String>,
+            description: String,
+        ) -> Result<Agent> {
+            let mut agents = self.agents.write().unwrap();
+            let agent = agents
+                .get_mut(id)
+                .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
+            agent.status = AgentStatus::Online;
+            agent.roles = roles;
+            agent.description = description;
+            agent.last_heartbeat = chrono::Utc::now();
+            Ok(agent.clone())
+        }
         async fn disconnect(&self, _: &AgentId) -> Result<()> {
             Ok(())
         }
         async fn find_timed_out(&self, _: u64) -> Result<Vec<Agent>> {
             Ok(vec![])
+        }
+
+        async fn save_project(&self, _: &Project) -> Result<()> {
+            Ok(())
+        }
+        async fn get_project(&self, _: &ProjectId) -> Result<Option<Project>> {
+            Ok(None)
         }
 
         async fn send_message(&self, cmd: CreateMessage) -> Result<Message> {

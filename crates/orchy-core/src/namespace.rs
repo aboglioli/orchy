@@ -37,8 +37,8 @@ impl Namespace {
         Namespace::try_from(format!("{}/{scope}", self.0))
     }
 
-    pub fn to_project(&self) -> Project {
-        Project::from(self)
+    pub fn to_project(&self) -> ProjectId {
+        ProjectId::from(self)
     }
 
     pub fn is_project_root(&self) -> bool {
@@ -90,9 +90,9 @@ impl AsRef<str> for Namespace {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct Project(String);
+pub struct ProjectId(String);
 
-impl Project {
+impl ProjectId {
     fn validate(s: &str) -> Result<(), String> {
         if s.is_empty() {
             return Err("project must not be empty".to_string());
@@ -109,16 +109,16 @@ impl Project {
     }
 }
 
-impl TryFrom<String> for Project {
+impl TryFrom<String> for ProjectId {
     type Error = String;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         Self::validate(&s)?;
-        Ok(Project(s))
+        Ok(ProjectId(s))
     }
 }
 
-impl TryFrom<&str> for Project {
+impl TryFrom<&str> for ProjectId {
     type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
@@ -126,25 +126,25 @@ impl TryFrom<&str> for Project {
     }
 }
 
-impl From<&Namespace> for Project {
+impl From<&Namespace> for ProjectId {
     fn from(ns: &Namespace) -> Self {
-        Project(ns.project().to_string())
+        ProjectId(ns.project().to_string())
     }
 }
 
-impl From<Project> for String {
-    fn from(p: Project) -> Self {
+impl From<ProjectId> for String {
+    fn from(p: ProjectId) -> Self {
         p.0
     }
 }
 
-impl fmt::Display for Project {
+impl fmt::Display for ProjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl AsRef<str> for Project {
+impl AsRef<str> for ProjectId {
     fn as_ref(&self) -> &str {
         &self.0
     }
@@ -262,19 +262,19 @@ mod tests {
 
     #[test]
     fn valid_project() {
-        let p = Project::try_from("my-project").unwrap();
+        let p = ProjectId::try_from("my-project").unwrap();
         assert_eq!(p.as_ref(), "my-project");
     }
 
     #[test]
     fn project_slashes_fail() {
-        assert!(Project::try_from("my/project").is_err());
+        assert!(ProjectId::try_from("my/project").is_err());
     }
 
     #[test]
     fn project_from_namespace() {
         let ns = Namespace::try_from("orchy/backend/auth".to_string()).unwrap();
-        let p = Project::from(&ns);
+        let p = ProjectId::from(&ns);
         assert_eq!(p.as_ref(), "orchy");
     }
 }

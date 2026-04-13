@@ -4,6 +4,8 @@ pub mod error;
 pub mod memory;
 pub mod message;
 pub mod namespace;
+pub mod note;
+pub mod project;
 pub mod skill;
 pub mod store;
 pub mod task;
