@@ -7,6 +7,7 @@ use crate::container::Container;
 
 struct SessionState {
     agent_id: AgentId,
+    project: ProjectId,
     namespace: Namespace,
 }
 
@@ -28,6 +29,14 @@ impl OrchyHandler {
         self.session.read().unwrap().as_ref().map(|s| s.agent_id)
     }
 
+    pub(crate) fn get_session_project(&self) -> Option<ProjectId> {
+        self.session
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.project.clone())
+    }
+
     pub(crate) fn get_session_namespace(&self) -> Option<Namespace> {
         self.session
             .read()
@@ -46,11 +55,18 @@ impl OrchyHandler {
         }
     }
 
-    pub(crate) fn set_session(&self, agent_id: AgentId, namespace: Namespace) {
+    pub(crate) fn set_session(&self, agent_id: AgentId, project: ProjectId, namespace: Namespace) {
         *self.session.write().unwrap() = Some(SessionState {
             agent_id,
+            project,
             namespace,
         });
+    }
+
+    pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
+        if let Some(state) = self.session.write().unwrap().as_mut() {
+            state.namespace = namespace;
+        }
     }
 
     pub(crate) fn touch_heartbeat(&self) {
@@ -62,50 +78,35 @@ impl OrchyHandler {
         }
     }
 
-    pub(crate) fn get_session_project(&self) -> Option<ProjectId> {
-        self.get_session_namespace().map(|ns| ns.to_project())
-    }
+    pub(crate) fn build_namespace(&self, scope: Option<&str>) -> Result<Namespace, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
 
-    pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
-        if let Some(state) = self.session.write().unwrap().as_mut() {
-            state.namespace = namespace;
-        }
-    }
-
-    pub(crate) fn resolve_namespace(&self, explicit: Option<&str>) -> Result<Namespace, String> {
-        match explicit {
-            Some(ns_str) => {
-                let ns = parse_namespace(ns_str)?;
-                let session_ns = self
-                    .get_session_namespace()
-                    .ok_or("no agent registered for this session; call register_agent first")?;
-                if ns.project() != session_ns.project() {
-                    return Err(format!(
-                        "namespace '{}' does not belong to session project '{}'; \
-                         the first segment must match the project you registered with",
-                        ns,
-                        session_ns.project()
-                    ));
-                }
-                Ok(ns)
+        match scope {
+            Some(s) if !s.is_empty() => {
+                let full = format!("{project}/{s}");
+                Namespace::try_from(full).map_err(|e| e.to_string())
             }
-            None => self.get_session_namespace().ok_or_else(|| {
-                "no agent registered for this session; call register_agent first".to_string()
-            }),
+            _ => Namespace::try_from(project.as_ref().to_string()).map_err(|e| e.to_string()),
         }
     }
 
-    pub(crate) fn resolve_optional_namespace(
+    pub(crate) fn build_optional_namespace(
         &self,
-        explicit: Option<&str>,
+        scope: Option<&str>,
     ) -> Result<Option<Namespace>, String> {
-        match explicit {
-            Some(ns_str) => self.resolve_namespace(Some(ns_str)).map(Some),
+        match scope {
+            Some(_) => self.build_namespace(scope).map(Some),
             None => Ok(None),
         }
     }
 }
 
+pub(crate) fn parse_project(s: &str) -> Result<ProjectId, String> {
+    ProjectId::try_from(s.to_string()).map_err(|e| e.to_string())
+}
+
 pub(crate) fn parse_namespace(s: &str) -> Result<Namespace, String> {
-    Namespace::try_from(s.to_string())
+    Namespace::try_from(s.to_string()).map_err(|e| e.to_string())
 }

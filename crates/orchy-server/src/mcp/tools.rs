@@ -14,25 +14,22 @@ use serde::Deserialize;
 use orchy_core::agent::RegisterAgent;
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
-use orchy_core::namespace::ProjectId;
 use orchy_core::skill::{SkillFilter, WriteSkill};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
 
-use super::handler::{OrchyHandler, parse_namespace};
+use super::handler::{OrchyHandler, parse_namespace, parse_project};
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct RegisterAgentParams {
-    /// Project namespace (first segment is the project identifier, e.g. "my-project"
-    /// or "my-project/backend"). All tools in this session will be scoped to this
-    /// project. Sub-scopes can be added later per tool call.
-    namespace: String,
+    /// Project identifier (e.g. "my-project").
+    project: String,
+    /// Scope within the project (e.g. "backend" or "backend/auth"). Optional.
+    namespace: Option<String>,
     roles: Vec<String>,
     description: String,
-    /// Resume an existing agent by its ID. The agent comes back online
-    /// with the same identity. Useful when reopening the same tool.
+    /// Resume an existing agent by its ID.
     agent_id: Option<String>,
     /// Create a new agent as a child of the given parent agent ID.
-    /// Inherits project and metadata from the parent.
     parent_id: Option<String>,
 }
 
@@ -46,8 +43,7 @@ struct ListAgentsParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct PostTaskParams {
-    /// Namespace for the task. Defaults to session namespace. If provided, the first
-    /// segment (project) must match the session's project.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     title: String,
     description: String,
@@ -58,14 +54,14 @@ struct PostTaskParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct GetNextTaskParams {
-    /// Namespace filter. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     role: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListTasksParams {
-    /// Namespace filter. If omitted, returns all tasks in the project.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     status: Option<String>,
 }
@@ -100,7 +96,7 @@ struct ReassignTaskParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct WriteMemoryParams {
-    /// Namespace for the entry. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     key: String,
     value: String,
@@ -109,28 +105,28 @@ struct WriteMemoryParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ReadMemoryParams {
-    /// Namespace for the entry. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     key: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListMemoryParams {
-    /// Namespace filter. If omitted, returns all entries in the project.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct SearchMemoryParams {
     query: String,
-    /// Namespace filter. If omitted, searches all entries in the project.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct DeleteMemoryParams {
-    /// Namespace for the entry. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     key: String,
 }
@@ -139,7 +135,7 @@ struct DeleteMemoryParams {
 struct SendMessageParams {
     to: String,
     body: String,
-    /// Namespace for the message. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     /// ID of a message this is replying to.
     reply_to: Option<String>,
@@ -147,7 +143,7 @@ struct SendMessageParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct CheckMailboxParams {
-    /// Namespace filter. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
 }
 
@@ -159,7 +155,7 @@ struct MarkReadParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct SaveContextParams {
     summary: String,
-    /// Namespace for the snapshot. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     /// JSON string of metadata key-value pairs
     metadata: Option<String>,
@@ -173,14 +169,14 @@ struct LoadContextParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListContextsParams {
     agent_id: Option<String>,
-    /// Namespace filter. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct SearchContextsParams {
     query: String,
-    /// Namespace filter. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     agent_id: Option<String>,
     limit: Option<u32>,
@@ -194,20 +190,20 @@ struct WriteSkillParams {
     description: String,
     /// Full skill content — the instructions/prompt text agents will receive.
     content: String,
-    /// Namespace for the skill. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ReadSkillParams {
     name: String,
-    /// Namespace. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct ListSkillsParams {
-    /// Namespace filter. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
     /// If true, include inherited skills from parent namespaces. Defaults to false.
     inherited: Option<bool>,
@@ -216,13 +212,13 @@ struct ListSkillsParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct DeleteSkillParams {
     name: String,
-    /// Namespace. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct GetBootstrapPromptParams {
-    /// Namespace. Defaults to session namespace.
+    /// Scope within the project (e.g. 'backend'). Optional.
     namespace: Option<String>,
 }
 
@@ -234,7 +230,7 @@ struct AddTaskNoteParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct MoveAgentParams {
-    /// New namespace to move the session agent to. Must belong to the same project.
+    /// New scope within the project to move to (e.g. "backend/auth").
     namespace: String,
 }
 
@@ -283,9 +279,14 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RegisterAgentParams>,
     ) -> Result<String, String> {
-        let namespace = match parse_namespace(&params.namespace) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
+        let project = parse_project(&params.project)?;
+
+        let namespace = match params.namespace.as_deref() {
+            Some(s) if !s.is_empty() => {
+                let full = format!("{project}/{s}");
+                parse_namespace(&full)?
+            }
+            _ => parse_namespace(project.as_ref())?,
         };
 
         if let Some(ref id_str) = params.agent_id {
@@ -302,7 +303,7 @@ impl OrchyHandler {
                 .await
             {
                 Ok(agent) => {
-                    self.set_session(agent.id(), namespace);
+                    self.set_session(agent.id(), project, namespace);
                     return Ok(to_json(&agent));
                 }
                 Err(e) => return Err(e.to_string()),
@@ -312,7 +313,7 @@ impl OrchyHandler {
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
         let cmd = RegisterAgent {
-            project: namespace.to_project(),
+            project: project.clone(),
             namespace: namespace.clone(),
             roles: params.roles,
             description: params.description,
@@ -322,7 +323,7 @@ impl OrchyHandler {
 
         match self.container.agent_service.register(cmd).await {
             Ok(agent) => {
-                self.set_session(agent.id(), namespace);
+                self.set_session(agent.id(), project, namespace);
                 Ok(to_json(&agent))
             }
             Err(e) => Err(e.to_string()),
@@ -415,7 +416,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.resolve_namespace(Some(&params.namespace)) {
+        let namespace = match self.build_namespace(Some(&params.namespace)) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -442,7 +443,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PostTaskParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -498,7 +499,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -531,7 +532,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTasksParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -697,7 +698,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WriteMemoryParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -721,7 +722,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReadMemoryParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -746,7 +747,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListMemoryParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -774,7 +775,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchMemoryParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -797,7 +798,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DeleteMemoryParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -831,7 +832,7 @@ impl OrchyHandler {
             Err(e) => return Err(format!("invalid target: {e}")),
         };
 
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -868,7 +869,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -918,7 +919,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -979,7 +980,7 @@ impl OrchyHandler {
             None => None,
         };
 
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -1003,7 +1004,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchContextsParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -1036,7 +1037,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WriteSkillParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -1060,7 +1061,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReadSkillParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -1087,7 +1088,7 @@ impl OrchyHandler {
         Parameters(params): Parameters<ListSkillsParams>,
     ) -> Result<String, String> {
         let result = if params.inherited.unwrap_or(false) {
-            let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+            let namespace = match self.build_namespace(params.namespace.as_deref()) {
                 Ok(ns) => ns,
                 Err(e) => return Err(e),
             };
@@ -1096,7 +1097,7 @@ impl OrchyHandler {
                 .list_with_inherited(&namespace)
                 .await
         } else {
-            let namespace = match self.resolve_optional_namespace(params.namespace.as_deref()) {
+            let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
                 Ok(ns) => ns,
                 Err(e) => return Err(e),
             };
@@ -1149,15 +1150,9 @@ impl OrchyHandler {
         &self,
         Parameters(_params): Parameters<GetProjectParams>,
     ) -> Result<String, String> {
-        let (_, namespace) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
-        let project_id = match ProjectId::try_from(namespace.project()) {
-            Ok(id) => id,
-            Err(e) => return Err(e.to_string()),
-        };
+        let project_id = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
 
         match self
             .container
@@ -1175,15 +1170,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UpdateProjectParams>,
     ) -> Result<String, String> {
-        let (_, namespace) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
-        let project_id = match ProjectId::try_from(namespace.project()) {
-            Ok(id) => id,
-            Err(e) => return Err(e.to_string()),
-        };
+        let project_id = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
 
         match self
             .container
@@ -1201,15 +1190,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddProjectNoteParams>,
     ) -> Result<String, String> {
-        let (_, namespace) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
-        let project_id = match ProjectId::try_from(namespace.project()) {
-            Ok(id) => id,
-            Err(e) => return Err(e.to_string()),
-        };
+        let project_id = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
 
         let author = self.get_session_agent();
 
@@ -1229,7 +1212,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DeleteSkillParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -1255,7 +1238,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetBootstrapPromptParams>,
     ) -> Result<String, String> {
-        let namespace = match self.resolve_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
