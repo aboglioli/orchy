@@ -421,7 +421,10 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.build_namespace(Some(&params.namespace)) {
+        let namespace = match self
+            .build_and_register_namespace(Some(&params.namespace))
+            .await
+        {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -453,12 +456,13 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
-
-        let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
 
         let priority = match params.priority.as_deref() {
             Some(p) => match p.parse::<Priority>() {
@@ -715,7 +719,10 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -854,7 +861,10 @@ impl OrchyHandler {
             Err(e) => return Err(format!("invalid target: {e}")),
         };
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -941,7 +951,10 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -1063,7 +1076,10 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
