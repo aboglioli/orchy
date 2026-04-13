@@ -99,7 +99,7 @@ impl<S: AgentStore> AgentService<S> {
 mod tests {
     use super::*;
     use crate::namespace::{Namespace, ProjectId};
-    use crate::store::mock::MockStore;
+    use crate::infrastructure::MockStore;
     use std::collections::HashMap;
 
     fn make_registration() -> RegisterAgent {
