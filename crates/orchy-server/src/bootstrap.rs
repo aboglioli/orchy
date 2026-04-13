@@ -1,23 +1,38 @@
 use orchy_core::namespace::Namespace;
+use orchy_core::project::Project;
+use orchy_core::project::ProjectStore;
+use orchy_core::project::service::ProjectService;
 use orchy_core::skill::Skill;
 use orchy_core::skill::SkillStore;
 use orchy_core::skill::service::SkillService;
 
-pub async fn generate_bootstrap_prompt<S: SkillStore>(
+pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore>(
     namespace: &Namespace,
     host: &str,
     port: u16,
-    skill_service: &SkillService<S>,
+    skill_service: &SkillService<SS>,
+    project_service: &ProjectService<PS>,
 ) -> Result<String, String> {
     let skills = skill_service
         .list_with_inherited(namespace)
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(render(namespace, host, port, &skills))
+    let project = project_service
+        .get_or_create(&namespace.to_project())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(render(namespace, host, port, &project, &skills))
 }
 
-fn render(namespace: &Namespace, host: &str, port: u16, skills: &[Skill]) -> String {
+fn render(
+    namespace: &Namespace,
+    host: &str,
+    port: u16,
+    project: &Project,
+    skills: &[Skill],
+) -> String {
     let mut out = format!(
         r#"# Multi-Agent Coordination — Project `{namespace}`
 
@@ -60,12 +75,13 @@ match. You cannot access other projects.
 
 | Category | Tools |
 |----------|-------|
-| Agent    | `register_agent`, `list_agents`, `heartbeat` |
-| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task` |
+| Agent    | `register_agent`, `list_agents`, `update_roles`, `move_agent`, `heartbeat`, `disconnect` |
+| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task`, `reassign_task`, `add_task_note` |
 | Memory   | `write_memory`, `read_memory`, `list_memory`, `search_memory`, `delete_memory` |
 | Messages | `send_message`, `check_mailbox`, `mark_read` |
 | Context  | `save_context`, `load_context`, `list_contexts`, `search_contexts` |
 | Skills   | `write_skill`, `read_skill`, `list_skills`, `delete_skill` |
+| Project  | `get_project`, `update_project`, `add_project_note` |
 | Bootstrap| `get_bootstrap_prompt` |
 
 ## Coordination Patterns
@@ -82,8 +98,24 @@ match. You cannot access other projects.
 "#
     );
 
+    let description = project.description();
+    if !description.is_empty() {
+        out.push_str("\n## Project Description\n\n");
+        out.push_str(description);
+        out.push_str("\n\n");
+    }
+
+    let notes = project.notes();
+    if !notes.is_empty() {
+        out.push_str("## Project Notes\n\n");
+        for note in notes {
+            out.push_str(&format!("- {}\n", note.body()));
+        }
+        out.push('\n');
+    }
+
     if !skills.is_empty() {
-        out.push_str("\n## Project Skills\n\n");
+        out.push_str("## Project Skills\n\n");
         out.push_str(
             "The following conventions and instructions apply to this project.\n\
              Follow them in all your work.\n\n",

@@ -1268,6 +1268,7 @@ impl OrchyHandler {
             host,
             port,
             &self.container.skill_service,
+            &self.container.project_service,
         )
         .await
         {

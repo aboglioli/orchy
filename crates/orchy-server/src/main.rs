@@ -92,7 +92,15 @@ async fn bootstrap_handler(
     let host = &container.config.server.host;
     let port = container.config.server.port;
 
-    match bootstrap::generate_bootstrap_prompt(&ns, host, port, &container.skill_service).await {
+    match bootstrap::generate_bootstrap_prompt(
+        &ns,
+        host,
+        port,
+        &container.skill_service,
+        &container.project_service,
+    )
+    .await
+    {
         Ok(prompt) => (
             [(
                 axum::http::header::CONTENT_TYPE,
