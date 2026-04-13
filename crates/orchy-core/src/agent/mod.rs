@@ -182,6 +182,10 @@ impl Agent {
         self.roles = roles;
     }
 
+    pub fn move_to(&mut self, namespace: Namespace) {
+        self.namespace = namespace;
+    }
+
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
         self.status != AgentStatus::Disconnected
             && (Utc::now() - self.last_heartbeat) > chrono::Duration::seconds(timeout_secs as i64)

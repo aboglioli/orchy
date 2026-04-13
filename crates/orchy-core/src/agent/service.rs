@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
 use crate::error::{Error, Result};
+use crate::namespace::Namespace;
 
 pub struct AgentService<S: AgentStore> {
     store: Arc<S>,
@@ -59,6 +60,13 @@ impl<S: AgentStore> AgentService<S> {
         }
         let mut agent = self.get(id).await?;
         agent.update_roles(roles);
+        self.store.save(&agent).await?;
+        Ok(agent)
+    }
+
+    pub async fn move_to(&self, id: &AgentId, namespace: Namespace) -> Result<Agent> {
+        let mut agent = self.get(id).await?;
+        agent.move_to(namespace);
         self.store.save(&agent).await?;
         Ok(agent)
     }

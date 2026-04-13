@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::container::Container;
 
@@ -62,6 +62,16 @@ impl OrchyHandler {
         }
     }
 
+    pub(crate) fn get_session_project(&self) -> Option<ProjectId> {
+        self.get_session_namespace().map(|ns| ns.to_project())
+    }
+
+    pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
+        if let Some(state) = self.session.write().unwrap().as_mut() {
+            state.namespace = namespace;
+        }
+    }
+
     pub(crate) fn resolve_namespace(&self, explicit: Option<&str>) -> Result<Namespace, String> {
         match explicit {
             Some(ns_str) => {
@@ -82,6 +92,16 @@ impl OrchyHandler {
             None => self.get_session_namespace().ok_or_else(|| {
                 "no agent registered for this session; call register_agent first".to_string()
             }),
+        }
+    }
+
+    pub(crate) fn resolve_optional_namespace(
+        &self,
+        explicit: Option<&str>,
+    ) -> Result<Option<Namespace>, String> {
+        match explicit {
+            Some(ns_str) => self.resolve_namespace(Some(ns_str)).map(Some),
+            None => Ok(None),
         }
     }
 }
