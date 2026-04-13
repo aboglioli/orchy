@@ -4,46 +4,58 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::message::{
-    CreateMessage, Message, MessageId, MessageStatus, MessageStore, MessageTarget,
-};
+use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::Namespace;
 
 use crate::PgBackend;
 
 impl MessageStore for PgBackend {
-    async fn send(&self, cmd: CreateMessage) -> Result<Message> {
-        let message = Message {
-            id: MessageId::new(),
-            namespace: cmd.namespace,
-            from: cmd.from,
-            to: cmd.to,
-            body: cmd.body,
-            reply_to: cmd.reply_to,
-            status: MessageStatus::Pending,
-            created_at: Utc::now(),
-        };
-
+    async fn save(&self, message: &Message) -> Result<()> {
         sqlx::query(
             "INSERT INTO messages (id, namespace, from_agent, to_target, body, reply_to, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (id) DO UPDATE SET
+                namespace = EXCLUDED.namespace,
+                from_agent = EXCLUDED.from_agent,
+                to_target = EXCLUDED.to_target,
+                body = EXCLUDED.body,
+                reply_to = EXCLUDED.reply_to,
+                status = EXCLUDED.status,
+                created_at = EXCLUDED.created_at",
         )
-        .bind(message.id.as_uuid())
-        .bind(message.namespace.to_string())
-        .bind(message.from.as_uuid())
-        .bind(message.to.to_string())
-        .bind(&message.body)
-        .bind(message.reply_to.map(|id| *id.as_uuid()))
-        .bind("pending")
-        .bind(message.created_at)
+        .bind(message.id().as_uuid())
+        .bind(message.namespace().to_string())
+        .bind(message.from().as_uuid())
+        .bind(message.to().to_string())
+        .bind(message.body())
+        .bind(message.reply_to().map(|id| *id.as_uuid()))
+        .bind(match message.status() {
+            MessageStatus::Pending => "pending",
+            MessageStatus::Delivered => "delivered",
+            MessageStatus::Read => "read",
+        })
+        .bind(message.created_at())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(message)
+        Ok(())
     }
 
-    async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
+    async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
+        let row = sqlx::query(
+            "SELECT id, namespace, from_agent, to_target, body, status, created_at, reply_to
+             FROM messages WHERE id = $1",
+        )
+        .bind(id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(row.map(|r| row_to_message(&r)))
+    }
+
+    async fn find_pending(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         let rows = sqlx::query(
             "SELECT id, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM messages
@@ -56,38 +68,7 @@ impl MessageStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        let messages: Vec<Message> = rows.iter().map(row_to_message).collect();
-
-        // Mark as delivered
-        for msg in &messages {
-            sqlx::query("UPDATE messages SET status = 'delivered' WHERE id = $1")
-                .bind(msg.id.as_uuid())
-                .execute(&self.pool)
-                .await
-                .map_err(|e| Error::Store(e.to_string()))?;
-        }
-
-        // Return with delivered status
-        let delivered: Vec<Message> = messages
-            .into_iter()
-            .map(|mut m| {
-                m.status = MessageStatus::Delivered;
-                m
-            })
-            .collect();
-
-        Ok(delivered)
-    }
-
-    async fn mark_read(&self, ids: &[MessageId]) -> Result<()> {
-        for id in ids {
-            sqlx::query("UPDATE messages SET status = 'read' WHERE id = $1")
-                .bind(id.as_uuid())
-                .execute(&self.pool)
-                .await
-                .map_err(|e| Error::Store(e.to_string()))?;
-        }
-        Ok(())
+        Ok(rows.iter().map(row_to_message).collect())
     }
 }
 
@@ -101,16 +82,16 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
     let created_at: DateTime<Utc> = row.get("created_at");
     let reply_to: Option<Uuid> = row.get("reply_to");
 
-    Message {
-        id: MessageId::from_uuid(id),
-        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
-        from: AgentId::from_uuid(from_agent),
-        to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
+    Message::restore(
+        MessageId::from_uuid(id),
+        Namespace::try_from(namespace).expect("invalid namespace in database"),
+        AgentId::from_uuid(from_agent),
+        MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
-        reply_to: reply_to.map(MessageId::from_uuid),
-        status: parse_message_status(&status),
+        reply_to.map(MessageId::from_uuid),
+        parse_message_status(&status),
         created_at,
-    }
+    )
 }
 
 fn parse_message_status(s: &str) -> MessageStatus {

@@ -92,7 +92,9 @@ match. You cannot access other projects.
         for skill in skills {
             out.push_str(&format!(
                 "### {} ({})\n\n{}\n\n",
-                skill.name, skill.namespace, skill.content
+                skill.name(),
+                skill.namespace(),
+                skill.content()
             ));
         }
     }

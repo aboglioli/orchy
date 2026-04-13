@@ -13,17 +13,33 @@ impl<S: SkillStore> SkillService<S> {
         Self { store }
     }
 
-    pub async fn write(&self, skill: WriteSkill) -> Result<Skill> {
-        if skill.name.is_empty() {
+    pub async fn write(&self, cmd: WriteSkill) -> Result<Skill> {
+        if cmd.name.is_empty() {
             return Err(Error::InvalidInput(
                 "skill name must not be empty".to_string(),
             ));
         }
-        self.store.write(skill).await
+
+        let skill =
+            if let Some(mut existing) = self.store.find_by_name(&cmd.namespace, &cmd.name).await? {
+                existing.update(cmd.description, cmd.content, cmd.written_by);
+                existing
+            } else {
+                Skill::new(
+                    cmd.namespace,
+                    cmd.name,
+                    cmd.description,
+                    cmd.content,
+                    cmd.written_by,
+                )
+            };
+
+        self.store.save(&skill).await?;
+        Ok(skill)
     }
 
     pub async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
-        self.store.read(namespace, name).await
+        self.store.find_by_name(namespace, name).await
     }
 
     pub async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {

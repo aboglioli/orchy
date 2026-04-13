@@ -12,27 +12,9 @@ use crate::error::Result;
 use crate::namespace::Namespace;
 
 pub trait AgentStore: Send + Sync {
-    fn register(&self, registration: RegisterAgent) -> impl Future<Output = Result<Agent>> + Send;
-    fn get(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
+    fn save(&self, agent: &Agent) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_id(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
     fn list(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
-    fn heartbeat(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
-    fn update_status(
-        &self,
-        id: &AgentId,
-        status: AgentStatus,
-    ) -> impl Future<Output = Result<()>> + Send;
-    fn update_roles(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-    ) -> impl Future<Output = Result<Agent>> + Send;
-    fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> impl Future<Output = Result<Agent>> + Send;
-    fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
     fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 }
 
@@ -103,14 +85,113 @@ impl fmt::Display for AgentStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
-    pub id: AgentId,
-    pub namespace: Namespace,
-    pub roles: Vec<String>,
-    pub description: String,
-    pub status: AgentStatus,
-    pub last_heartbeat: DateTime<Utc>,
-    pub connected_at: DateTime<Utc>,
-    pub metadata: HashMap<String, String>,
+    id: AgentId,
+    namespace: Namespace,
+    roles: Vec<String>,
+    description: String,
+    status: AgentStatus,
+    last_heartbeat: DateTime<Utc>,
+    connected_at: DateTime<Utc>,
+    metadata: HashMap<String, String>,
+}
+
+impl Agent {
+    pub fn register(
+        namespace: Namespace,
+        roles: Vec<String>,
+        description: String,
+        metadata: HashMap<String, String>,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: AgentId::new(),
+            namespace,
+            roles,
+            description,
+            status: AgentStatus::Online,
+            last_heartbeat: now,
+            connected_at: now,
+            metadata,
+        }
+    }
+
+    pub fn restore(
+        id: AgentId,
+        namespace: Namespace,
+        roles: Vec<String>,
+        description: String,
+        status: AgentStatus,
+        last_heartbeat: DateTime<Utc>,
+        connected_at: DateTime<Utc>,
+        metadata: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            id,
+            namespace,
+            roles,
+            description,
+            status,
+            last_heartbeat,
+            connected_at,
+            metadata,
+        }
+    }
+
+    pub fn heartbeat(&mut self) {
+        self.last_heartbeat = Utc::now();
+        if self.status == AgentStatus::Disconnected {
+            self.status = AgentStatus::Online;
+        }
+    }
+
+    pub fn reconnect(&mut self, roles: Vec<String>, description: String) {
+        self.status = AgentStatus::Online;
+        self.roles = roles;
+        self.description = description;
+        self.last_heartbeat = Utc::now();
+    }
+
+    pub fn disconnect(&mut self) {
+        self.status = AgentStatus::Disconnected;
+    }
+
+    pub fn update_status(&mut self, status: AgentStatus) {
+        self.status = status;
+    }
+
+    pub fn update_roles(&mut self, roles: Vec<String>) {
+        self.roles = roles;
+    }
+
+    pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
+        self.status != AgentStatus::Disconnected
+            && (Utc::now() - self.last_heartbeat) > chrono::Duration::seconds(timeout_secs as i64)
+    }
+
+    pub fn id(&self) -> AgentId {
+        self.id
+    }
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn roles(&self) -> &[String] {
+        &self.roles
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn status(&self) -> AgentStatus {
+        self.status
+    }
+    pub fn last_heartbeat(&self) -> DateTime<Utc> {
+        self.last_heartbeat
+    }
+    pub fn connected_at(&self) -> DateTime<Utc> {
+        self.connected_at
+    }
+    pub fn metadata(&self) -> &HashMap<String, String> {
+        &self.metadata
+    }
 }
 
 #[derive(Debug, Clone)]

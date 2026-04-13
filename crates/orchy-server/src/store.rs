@@ -1,13 +1,10 @@
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::Result;
-use orchy_core::memory::{
-    ContextSnapshot, ContextStore, CreateSnapshot, MemoryEntry, MemoryFilter, MemoryStore,
-    WriteMemory,
-};
-use orchy_core::message::{CreateMessage, Message, MessageId, MessageStore};
+use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
+use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
-use orchy_core::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
+use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
@@ -42,34 +39,14 @@ impl TaskStore for StoreBackend {
 }
 
 impl AgentStore for StoreBackend {
-    async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
-        delegate_trait!(self, AgentStore::register(registration))
+    async fn save(&self, agent: &Agent) -> Result<()> {
+        delegate_trait!(self, AgentStore::save(agent))
     }
-    async fn get(&self, id: &AgentId) -> Result<Option<Agent>> {
-        delegate_trait!(self, AgentStore::get(id))
+    async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
+        delegate_trait!(self, AgentStore::find_by_id(id))
     }
     async fn list(&self) -> Result<Vec<Agent>> {
         delegate_trait!(self, AgentStore::list())
-    }
-    async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        delegate_trait!(self, AgentStore::heartbeat(id))
-    }
-    async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        delegate_trait!(self, AgentStore::update_status(id, status))
-    }
-    async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
-        delegate_trait!(self, AgentStore::update_roles(id, roles))
-    }
-    async fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> Result<Agent> {
-        delegate_trait!(self, AgentStore::reconnect(id, roles, description))
-    }
-    async fn disconnect(&self, id: &AgentId) -> Result<()> {
-        delegate_trait!(self, AgentStore::disconnect(id))
     }
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         delegate_trait!(self, AgentStore::find_timed_out(timeout_secs))
@@ -77,23 +54,23 @@ impl AgentStore for StoreBackend {
 }
 
 impl MessageStore for StoreBackend {
-    async fn send(&self, message: CreateMessage) -> Result<Message> {
-        delegate_trait!(self, MessageStore::send(message))
+    async fn save(&self, message: &Message) -> Result<()> {
+        delegate_trait!(self, MessageStore::save(message))
     }
-    async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
-        delegate_trait!(self, MessageStore::check(agent, namespace))
+    async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
+        delegate_trait!(self, MessageStore::find_by_id(id))
     }
-    async fn mark_read(&self, ids: &[MessageId]) -> Result<()> {
-        delegate_trait!(self, MessageStore::mark_read(ids))
+    async fn find_pending(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
+        delegate_trait!(self, MessageStore::find_pending(agent, namespace))
     }
 }
 
 impl MemoryStore for StoreBackend {
-    async fn write(&self, entry: WriteMemory) -> Result<MemoryEntry> {
-        delegate_trait!(self, MemoryStore::write(entry))
+    async fn save(&self, entry: &MemoryEntry) -> Result<()> {
+        delegate_trait!(self, MemoryStore::save(entry))
     }
-    async fn read(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
-        delegate_trait!(self, MemoryStore::read(namespace, key))
+    async fn find_by_key(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
+        delegate_trait!(self, MemoryStore::find_by_key(namespace, key))
     }
     async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
         delegate_trait!(self, MemoryStore::list(filter))
@@ -116,11 +93,11 @@ impl MemoryStore for StoreBackend {
 }
 
 impl ContextStore for StoreBackend {
-    async fn save(&self, snapshot: CreateSnapshot) -> Result<ContextSnapshot> {
+    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
         delegate_trait!(self, ContextStore::save(snapshot))
     }
-    async fn load(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
-        delegate_trait!(self, ContextStore::load(agent))
+    async fn find_latest(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
+        delegate_trait!(self, ContextStore::find_latest(agent))
     }
     async fn list(
         &self,
@@ -145,11 +122,11 @@ impl ContextStore for StoreBackend {
 }
 
 impl SkillStore for StoreBackend {
-    async fn write(&self, skill: WriteSkill) -> Result<Skill> {
-        delegate_trait!(self, SkillStore::write(skill))
+    async fn save(&self, skill: &Skill) -> Result<()> {
+        delegate_trait!(self, SkillStore::save(skill))
     }
-    async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
-        delegate_trait!(self, SkillStore::read(namespace, name))
+    async fn find_by_name(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
+        delegate_trait!(self, SkillStore::find_by_name(namespace, name))
     }
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         delegate_trait!(self, SkillStore::list(filter))

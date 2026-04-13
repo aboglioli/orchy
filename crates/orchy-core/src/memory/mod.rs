@@ -13,8 +13,8 @@ use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait MemoryStore: Send + Sync {
-    fn write(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
-    fn read(
+    fn save(&self, entry: &MemoryEntry) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_key(
         &self,
         namespace: &Namespace,
         key: &str,
@@ -31,12 +31,11 @@ pub trait MemoryStore: Send + Sync {
 }
 
 pub trait ContextStore: Send + Sync {
-    fn save(
+    fn save(&self, snapshot: &ContextSnapshot) -> impl Future<Output = Result<()>> + Send;
+    fn find_latest(
         &self,
-        snapshot: CreateSnapshot,
-    ) -> impl Future<Output = Result<ContextSnapshot>> + Send;
-    fn load(&self, agent: &AgentId)
-    -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
+        agent: &AgentId,
+    ) -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
     fn list(
         &self,
         agent: Option<&AgentId>,
@@ -122,16 +121,112 @@ impl fmt::Display for Version {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
-    pub namespace: Namespace,
-    pub key: String,
-    pub value: String,
-    pub version: Version,
-    pub embedding: Option<Vec<f32>>,
-    pub embedding_model: Option<String>,
-    pub embedding_dimensions: Option<u32>,
-    pub written_by: Option<AgentId>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    namespace: Namespace,
+    key: String,
+    value: String,
+    version: Version,
+    embedding: Option<Vec<f32>>,
+    embedding_model: Option<String>,
+    embedding_dimensions: Option<u32>,
+    written_by: Option<AgentId>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl MemoryEntry {
+    pub fn new(
+        namespace: Namespace,
+        key: String,
+        value: String,
+        written_by: Option<AgentId>,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            namespace,
+            key,
+            value,
+            version: Version::initial(),
+            embedding: None,
+            embedding_model: None,
+            embedding_dimensions: None,
+            written_by,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        namespace: Namespace,
+        key: String,
+        value: String,
+        version: Version,
+        embedding: Option<Vec<f32>>,
+        embedding_model: Option<String>,
+        embedding_dimensions: Option<u32>,
+        written_by: Option<AgentId>,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            namespace,
+            key,
+            value,
+            version,
+            embedding,
+            embedding_model,
+            embedding_dimensions,
+            written_by,
+            created_at,
+            updated_at,
+        }
+    }
+
+    pub fn update(&mut self, value: String, written_by: Option<AgentId>) {
+        self.value = value;
+        self.version = self.version.next();
+        if let Some(author) = written_by {
+            self.written_by = Some(author);
+        }
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_embedding(&mut self, embedding: Vec<f32>, model: String, dimensions: u32) {
+        self.embedding = Some(embedding);
+        self.embedding_model = Some(model);
+        self.embedding_dimensions = Some(dimensions);
+    }
+
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+    pub fn version(&self) -> Version {
+        self.version
+    }
+    pub fn embedding(&self) -> Option<&[f32]> {
+        self.embedding.as_deref()
+    }
+    pub fn embedding_model(&self) -> Option<&str> {
+        self.embedding_model.as_deref()
+    }
+    pub fn embedding_dimensions(&self) -> Option<u32> {
+        self.embedding_dimensions
+    }
+    pub fn written_by(&self) -> Option<AgentId> {
+        self.written_by
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -140,9 +235,6 @@ pub struct WriteMemory {
     pub key: String,
     pub value: String,
     pub expected_version: Option<Version>,
-    pub embedding: Option<Vec<f32>>,
-    pub embedding_model: Option<String>,
-    pub embedding_dimensions: Option<u32>,
     pub written_by: Option<AgentId>,
 }
 
@@ -154,24 +246,93 @@ pub struct MemoryFilter {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextSnapshot {
-    pub id: SnapshotId,
-    pub agent_id: AgentId,
-    pub namespace: Namespace,
-    pub summary: String,
-    pub embedding: Option<Vec<f32>>,
-    pub embedding_model: Option<String>,
-    pub embedding_dimensions: Option<u32>,
-    pub metadata: HashMap<String, String>,
-    pub created_at: DateTime<Utc>,
+    id: SnapshotId,
+    agent_id: AgentId,
+    namespace: Namespace,
+    summary: String,
+    embedding: Option<Vec<f32>>,
+    embedding_model: Option<String>,
+    embedding_dimensions: Option<u32>,
+    metadata: HashMap<String, String>,
+    created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone)]
-pub struct CreateSnapshot {
-    pub agent_id: AgentId,
-    pub namespace: Namespace,
-    pub summary: String,
-    pub embedding: Option<Vec<f32>>,
-    pub embedding_model: Option<String>,
-    pub embedding_dimensions: Option<u32>,
-    pub metadata: HashMap<String, String>,
+impl ContextSnapshot {
+    pub fn new(
+        agent_id: AgentId,
+        namespace: Namespace,
+        summary: String,
+        metadata: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            id: SnapshotId::new(),
+            agent_id,
+            namespace,
+            summary,
+            embedding: None,
+            embedding_model: None,
+            embedding_dimensions: None,
+            metadata,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: SnapshotId,
+        agent_id: AgentId,
+        namespace: Namespace,
+        summary: String,
+        embedding: Option<Vec<f32>>,
+        embedding_model: Option<String>,
+        embedding_dimensions: Option<u32>,
+        metadata: HashMap<String, String>,
+        created_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id,
+            agent_id,
+            namespace,
+            summary,
+            embedding,
+            embedding_model,
+            embedding_dimensions,
+            metadata,
+            created_at,
+        }
+    }
+
+    pub fn set_embedding(&mut self, embedding: Vec<f32>, model: String, dimensions: u32) {
+        self.embedding = Some(embedding);
+        self.embedding_model = Some(model);
+        self.embedding_dimensions = Some(dimensions);
+    }
+
+    pub fn id(&self) -> SnapshotId {
+        self.id
+    }
+    pub fn agent_id(&self) -> AgentId {
+        self.agent_id
+    }
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn summary(&self) -> &str {
+        &self.summary
+    }
+    pub fn embedding(&self) -> Option<&[f32]> {
+        self.embedding.as_deref()
+    }
+    pub fn embedding_model(&self) -> Option<&str> {
+        self.embedding_model.as_deref()
+    }
+    pub fn embedding_dimensions(&self) -> Option<u32> {
+        self.embedding_dimensions
+    }
+    pub fn metadata(&self) -> &HashMap<String, String> {
+        &self.metadata
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }

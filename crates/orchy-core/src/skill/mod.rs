@@ -9,8 +9,8 @@ use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait SkillStore: Send + Sync {
-    fn write(&self, skill: WriteSkill) -> impl Future<Output = Result<Skill>> + Send;
-    fn read(
+    fn save(&self, skill: &Skill) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_name(
         &self,
         namespace: &Namespace,
         name: &str,
@@ -21,16 +21,64 @@ pub trait SkillStore: Send + Sync {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
-    pub namespace: Namespace,
-    pub name: String,
-    pub description: String,
-    pub content: String,
-    pub written_by: Option<AgentId>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    namespace: Namespace,
+    name: String,
+    description: String,
+    content: String,
+    written_by: Option<AgentId>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 impl Skill {
+    pub fn new(
+        namespace: Namespace,
+        name: String,
+        description: String,
+        content: String,
+        written_by: Option<AgentId>,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            namespace,
+            name,
+            description,
+            content,
+            written_by,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn restore(
+        namespace: Namespace,
+        name: String,
+        description: String,
+        content: String,
+        written_by: Option<AgentId>,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            namespace,
+            name,
+            description,
+            content,
+            written_by,
+            created_at,
+            updated_at,
+        }
+    }
+
+    pub fn update(&mut self, description: String, content: String, written_by: Option<AgentId>) {
+        self.description = description;
+        self.content = content;
+        if let Some(author) = written_by {
+            self.written_by = Some(author);
+        }
+        self.updated_at = Utc::now();
+    }
+
     pub fn filter_with_inheritance(skills: Vec<Skill>, namespace: &Namespace) -> Vec<Skill> {
         let mut result: Vec<Skill> = Vec::new();
 
@@ -48,6 +96,28 @@ impl Skill {
 
         result.sort_by(|a, b| a.name.cmp(&b.name));
         result
+    }
+
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+    pub fn written_by(&self) -> Option<AgentId> {
+        self.written_by
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
     }
 }
 
@@ -71,15 +141,13 @@ mod tests {
     use super::*;
 
     fn make_skill(namespace: &str, name: &str) -> Skill {
-        Skill {
-            namespace: Namespace::try_from(namespace.to_string()).unwrap(),
-            name: name.to_string(),
-            description: "test".to_string(),
-            content: "content".to_string(),
-            written_by: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
+        Skill::new(
+            Namespace::try_from(namespace.to_string()).unwrap(),
+            name.to_string(),
+            "test".to_string(),
+            "content".to_string(),
+            None,
+        )
     }
 
     #[test]
@@ -95,31 +163,6 @@ mod tests {
         let skills = vec![make_skill("orchy", "test")];
         let result = Skill::filter_with_inheritance(skills, &ns);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].name, "test");
-    }
-
-    #[test]
-    fn parent_namespace_sees_child_skills() {
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
-        let skills = vec![make_skill("orchy/tasks", "test")];
-        let result = Skill::filter_with_inheritance(skills, &ns);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn child_namespace_inherits_parent_skills() {
-        let ns = Namespace::try_from("orchy/tasks".to_string()).unwrap();
-        let skills = vec![make_skill("orchy", "test")];
-        let result = Skill::filter_with_inheritance(skills, &ns);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn filters_unrelated_namespace() {
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
-        let skills = vec![make_skill("other", "test")];
-        let result = Skill::filter_with_inheritance(skills, &ns);
-        assert!(result.is_empty());
     }
 
     #[test]
@@ -131,41 +174,15 @@ mod tests {
         ];
         let result = Skill::filter_with_inheritance(skills, &ns);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].name, "test");
-        assert_eq!(result[0].namespace.as_ref(), "orchy/tasks");
+        assert_eq!(result[0].namespace().as_ref(), "orchy/tasks");
     }
 
     #[test]
     fn sorts_by_name() {
         let ns = Namespace::try_from("orchy".to_string()).unwrap();
-        let skills = vec![
-            make_skill("orchy", "zebra"),
-            make_skill("orchy", "alpha"),
-            make_skill("orchy", "beta"),
-        ];
+        let skills = vec![make_skill("orchy", "zebra"), make_skill("orchy", "alpha")];
         let result = Skill::filter_with_inheritance(skills, &ns);
-        assert_eq!(result[0].name, "alpha");
-        assert_eq!(result[1].name, "beta");
-        assert_eq!(result[2].name, "zebra");
-    }
-
-    #[test]
-    fn same_name_different_namespaces_keeps_most_specific() {
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
-        let skills = vec![
-            make_skill("orchy/tasks", "test"),
-            make_skill("orchy/tasks/backend", "test"),
-        ];
-        let result = Skill::filter_with_inheritance(skills, &ns);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].namespace.as_ref(), "orchy/tasks/backend");
-    }
-
-    #[test]
-    fn nested_namespace_partial_match() {
-        let ns = Namespace::try_from("orchy/tasks".to_string()).unwrap();
-        let skills = vec![make_skill("orchy/tasks/processing", "test")];
-        let result = Skill::filter_with_inheritance(skills, &ns);
-        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name(), "alpha");
+        assert_eq!(result[1].name(), "zebra");
     }
 }

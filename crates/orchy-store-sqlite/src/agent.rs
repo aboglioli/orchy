@@ -2,48 +2,37 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use rusqlite::OptionalExtension;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::Namespace;
 
 use crate::SqliteBackend;
 
 impl AgentStore for SqliteBackend {
-    async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
-        let now = Utc::now();
-        let agent = Agent {
-            id: AgentId::new(),
-            namespace: registration.namespace,
-            roles: registration.roles,
-            description: registration.description,
-            status: AgentStatus::Online,
-            last_heartbeat: now,
-            connected_at: now,
-            metadata: registration.metadata,
-        };
-
+    async fn save(&self, agent: &Agent) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "INSERT INTO agents (id, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
+            "INSERT OR REPLACE INTO agents (id, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
-                agent.id.to_string(),
-                agent.namespace.to_string(),
-                serde_json::to_string(&agent.roles).unwrap(),
-                agent.description,
-                agent.status.to_string(),
-                agent.last_heartbeat.to_rfc3339(),
-                agent.connected_at.to_rfc3339(),
-                serde_json::to_string(&agent.metadata).unwrap(),
+                agent.id().to_string(),
+                agent.namespace().to_string(),
+                serde_json::to_string(agent.roles()).unwrap(),
+                agent.description(),
+                agent.status().to_string(),
+                agent.last_heartbeat().to_rfc3339(),
+                agent.connected_at().to_rfc3339(),
+                serde_json::to_string(agent.metadata()).unwrap(),
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(agent)
+        Ok(())
     }
 
-    async fn get(&self, id: &AgentId) -> Result<Option<Agent>> {
+    async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents WHERE id = ?1")
@@ -70,92 +59,6 @@ impl AgentStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(agents)
-    }
-
-    async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let rows = conn
-            .execute(
-                "UPDATE agents SET last_heartbeat = ?1, status = 'online' WHERE id = ?2",
-                rusqlite::params![Utc::now().to_rfc3339(), id.to_string()],
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if rows == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-        Ok(())
-    }
-
-    async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let rows = conn
-            .execute(
-                "UPDATE agents SET status = ?1 WHERE id = ?2",
-                rusqlite::params![status.to_string(), id.to_string()],
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if rows == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-        Ok(())
-    }
-
-    async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let rows = conn
-            .execute(
-                "UPDATE agents SET roles = ?1 WHERE id = ?2",
-                rusqlite::params![serde_json::to_string(&roles).unwrap(), id.to_string(),],
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if rows == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-
-        let mut stmt = conn
-            .prepare("SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents WHERE id = ?1")
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        stmt.query_row(rusqlite::params![id.to_string()], row_to_agent)
-            .map_err(|e| Error::Store(e.to_string()))
-    }
-
-    async fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> Result<Agent> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let rows = conn
-            .execute(
-                "UPDATE agents SET status = 'online', roles = ?1, description = ?2, last_heartbeat = ?3 WHERE id = ?4",
-                rusqlite::params![
-                    serde_json::to_string(&roles).unwrap(),
-                    description,
-                    Utc::now().to_rfc3339(),
-                    id.to_string(),
-                ],
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if rows == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-
-        let mut stmt = conn
-            .prepare("SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents WHERE id = ?1")
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        stmt.query_row(rusqlite::params![id.to_string()], row_to_agent)
-            .map_err(|e| Error::Store(e.to_string()))
-    }
-
-    async fn disconnect(&self, id: &AgentId) -> Result<()> {
-        self.update_status(id, AgentStatus::Disconnected).await
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
@@ -190,23 +93,23 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let connected_str: String = row.get(6)?;
     let metadata_str: String = row.get(7)?;
 
-    Ok(Agent {
-        id: AgentId::from_str(&id_str).map_err(|e| {
+    Ok(Agent::restore(
+        AgentId::from_str(&id_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?,
-        namespace: Namespace::try_from(namespace_str).map_err(|e| {
+        Namespace::try_from(namespace_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(
                 1,
                 rusqlite::types::Type::Text,
                 Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
             )
         })?,
-        roles: serde_json::from_str(&roles_str).map_err(|e| {
+        serde_json::from_str(&roles_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
         })?,
         description,
-        status: parse_agent_status(&status_str),
-        last_heartbeat: DateTime::parse_from_rfc3339(&heartbeat_str)
+        parse_agent_status(&status_str),
+        DateTime::parse_from_rfc3339(&heartbeat_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -215,7 +118,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
                     Box::new(e),
                 )
             })?,
-        connected_at: DateTime::parse_from_rfc3339(&connected_str)
+        DateTime::parse_from_rfc3339(&connected_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -224,8 +127,8 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
                     Box::new(e),
                 )
             })?,
-        metadata: serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
-    })
+        serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
+    ))
 }
 
 fn parse_agent_status(s: &str) -> AgentStatus {
@@ -237,5 +140,3 @@ fn parse_agent_status(s: &str) -> AgentStatus {
         _ => AgentStatus::Online,
     }
 }
-
-use rusqlite::OptionalExtension;

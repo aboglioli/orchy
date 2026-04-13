@@ -7,49 +7,43 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::memory::{ContextSnapshot, ContextStore, CreateSnapshot, SnapshotId};
+use orchy_core::memory::{ContextSnapshot, ContextStore, SnapshotId};
 use orchy_core::namespace::Namespace;
 
 use crate::PgBackend;
 
 impl ContextStore for PgBackend {
-    async fn save(&self, cmd: CreateSnapshot) -> Result<ContextSnapshot> {
-        let snapshot = ContextSnapshot {
-            id: SnapshotId::new(),
-            agent_id: cmd.agent_id,
-            namespace: cmd.namespace,
-            summary: cmd.summary,
-            embedding: cmd.embedding,
-            embedding_model: cmd.embedding_model,
-            embedding_dimensions: cmd.embedding_dimensions,
-            metadata: cmd.metadata,
-            created_at: Utc::now(),
-        };
-
-        let vec_binding = snapshot.embedding.as_ref().map(|e| Vector::from(e.clone()));
-        let metadata_json = serde_json::to_value(&snapshot.metadata).unwrap();
+    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
+        let vec_binding = snapshot.embedding().map(|e| Vector::from(e.to_vec()));
+        let metadata_json = serde_json::to_value(snapshot.metadata()).unwrap();
 
         sqlx::query(
             "INSERT INTO contexts (id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ON CONFLICT (id) DO UPDATE
+             SET summary = EXCLUDED.summary,
+                 embedding = EXCLUDED.embedding,
+                 embedding_model = EXCLUDED.embedding_model,
+                 embedding_dimensions = EXCLUDED.embedding_dimensions,
+                 metadata = EXCLUDED.metadata",
         )
-        .bind(snapshot.id.as_uuid())
-        .bind(snapshot.agent_id.as_uuid())
-        .bind(snapshot.namespace.to_string())
-        .bind(&snapshot.summary)
+        .bind(snapshot.id().as_uuid())
+        .bind(snapshot.agent_id().as_uuid())
+        .bind(snapshot.namespace().to_string())
+        .bind(snapshot.summary())
         .bind(vec_binding.as_ref())
-        .bind(&snapshot.embedding_model)
-        .bind(snapshot.embedding_dimensions.map(|d| d as i32))
+        .bind(snapshot.embedding_model())
+        .bind(snapshot.embedding_dimensions().map(|d| d as i32))
         .bind(&metadata_json)
-        .bind(snapshot.created_at)
+        .bind(snapshot.created_at())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(snapshot)
+        Ok(())
     }
 
-    async fn load(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
+    async fn find_latest(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
         let row = sqlx::query(
             "SELECT id, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
              FROM contexts WHERE agent_id = $1
@@ -151,20 +145,19 @@ fn row_to_context(row: &sqlx::postgres::PgRow) -> ContextSnapshot {
     let metadata: serde_json::Value = row.get("metadata");
     let created_at: DateTime<Utc> = row.get("created_at");
 
-    ContextSnapshot {
-        id: SnapshotId::from_uuid(id),
-        agent_id: AgentId::from_uuid(agent_id),
-        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
+    ContextSnapshot::restore(
+        SnapshotId::from_uuid(id),
+        AgentId::from_uuid(agent_id),
+        Namespace::try_from(namespace).expect("invalid namespace in database"),
         summary,
-        embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
+        embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,
-        embedding_dimensions: embedding_dimensions.map(|d| d as u32),
-        metadata: serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
+        embedding_dimensions.map(|d| d as u32),
+        serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
         created_at,
-    }
+    )
 }
 
-/// Parse pgvector text representation "[1,2,3]" into Vec<f32>
 fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {
     let trimmed = s.trim_start_matches('[').trim_end_matches(']');
     if trimmed.is_empty() {

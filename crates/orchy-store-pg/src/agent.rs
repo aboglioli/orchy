@@ -4,49 +4,45 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::Namespace;
 
 use crate::PgBackend;
 
 impl AgentStore for PgBackend {
-    async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
-        let now = Utc::now();
-        let agent = Agent {
-            id: AgentId::new(),
-            namespace: registration.namespace,
-            roles: registration.roles,
-            description: registration.description,
-            status: AgentStatus::Online,
-            last_heartbeat: now,
-            connected_at: now,
-            metadata: registration.metadata,
-        };
-
-        let roles_json = serde_json::to_value(&agent.roles).unwrap();
-        let metadata_json = serde_json::to_value(&agent.metadata).unwrap();
+    async fn save(&self, agent: &Agent) -> Result<()> {
+        let roles_json = serde_json::to_value(agent.roles()).unwrap();
+        let metadata_json = serde_json::to_value(agent.metadata()).unwrap();
 
         sqlx::query(
             "INSERT INTO agents (id, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (id) DO UPDATE SET
+                namespace = EXCLUDED.namespace,
+                roles = EXCLUDED.roles,
+                description = EXCLUDED.description,
+                status = EXCLUDED.status,
+                last_heartbeat = EXCLUDED.last_heartbeat,
+                connected_at = EXCLUDED.connected_at,
+                metadata = EXCLUDED.metadata",
         )
-        .bind(agent.id.as_uuid())
-        .bind(agent.namespace.to_string())
+        .bind(agent.id().as_uuid())
+        .bind(agent.namespace().to_string())
         .bind(&roles_json)
-        .bind(&agent.description)
-        .bind(agent.status.to_string())
-        .bind(agent.last_heartbeat)
-        .bind(agent.connected_at)
+        .bind(agent.description())
+        .bind(agent.status().to_string())
+        .bind(agent.last_heartbeat())
+        .bind(agent.connected_at())
         .bind(&metadata_json)
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(agent)
+        Ok(())
     }
 
-    async fn get(&self, id: &AgentId) -> Result<Option<Agent>> {
+    async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         let row = sqlx::query(
             "SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata
              FROM agents WHERE id = $1",
@@ -69,84 +65,6 @@ impl AgentStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(rows.iter().map(row_to_agent).collect())
-    }
-
-    async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        let result =
-            sqlx::query("UPDATE agents SET last_heartbeat = $1, status = 'online' WHERE id = $2")
-                .bind(Utc::now())
-                .bind(id.as_uuid())
-                .execute(&self.pool)
-                .await
-                .map_err(|e| Error::Store(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-        Ok(())
-    }
-
-    async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        let result = sqlx::query("UPDATE agents SET status = $1 WHERE id = $2")
-            .bind(status.to_string())
-            .bind(id.as_uuid())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-        Ok(())
-    }
-
-    async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
-        let roles_json = serde_json::to_value(&roles).unwrap();
-        let result = sqlx::query("UPDATE agents SET roles = $1 WHERE id = $2")
-            .bind(&roles_json)
-            .bind(id.as_uuid())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-
-        self.get(id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))
-    }
-
-    async fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> Result<Agent> {
-        let roles_json = serde_json::to_value(&roles).unwrap();
-        let result = sqlx::query(
-            "UPDATE agents SET status = 'online', roles = $1, description = $2, last_heartbeat = $3 WHERE id = $4",
-        )
-        .bind(&roles_json)
-        .bind(&description)
-        .bind(Utc::now())
-        .bind(id.as_uuid())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
-            return Err(Error::NotFound(format!("agent {id}")));
-        }
-
-        self.get(id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))
-    }
-
-    async fn disconnect(&self, id: &AgentId) -> Result<()> {
-        self.update_status(id, AgentStatus::Disconnected).await
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
@@ -176,16 +94,16 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
 
-    Agent {
-        id: AgentId::from_uuid(id),
-        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
-        roles: serde_json::from_value(roles).unwrap_or_default(),
+    Agent::restore(
+        AgentId::from_uuid(id),
+        Namespace::try_from(namespace).expect("invalid namespace in database"),
+        serde_json::from_value(roles).unwrap_or_default(),
         description,
-        status: parse_agent_status(&status),
+        parse_agent_status(&status),
         last_heartbeat,
         connected_at,
-        metadata: serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
-    }
+        serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
+    )
 }
 
 fn parse_agent_status(s: &str) -> AgentStatus {

@@ -12,13 +12,13 @@ use crate::error::{Error, Result};
 use crate::namespace::Namespace;
 
 pub trait MessageStore: Send + Sync {
-    fn send(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
-    fn check(
+    fn save(&self, message: &Message) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_id(&self, id: &MessageId) -> impl Future<Output = Result<Option<Message>>> + Send;
+    fn find_pending(
         &self,
         agent: &AgentId,
         namespace: &Namespace,
     ) -> impl Future<Output = Result<Vec<Message>>> + Send;
-    fn mark_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -123,23 +123,102 @@ pub enum MessageStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
-    pub id: MessageId,
-    pub namespace: Namespace,
-    pub from: AgentId,
-    pub to: MessageTarget,
-    pub body: String,
-    pub reply_to: Option<MessageId>,
-    pub status: MessageStatus,
-    pub created_at: DateTime<Utc>,
+    id: MessageId,
+    namespace: Namespace,
+    from: AgentId,
+    to: MessageTarget,
+    body: String,
+    reply_to: Option<MessageId>,
+    status: MessageStatus,
+    created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone)]
-pub struct CreateMessage {
-    pub namespace: Namespace,
-    pub from: AgentId,
-    pub to: MessageTarget,
-    pub body: String,
-    pub reply_to: Option<MessageId>,
+impl Message {
+    pub fn new(
+        namespace: Namespace,
+        from: AgentId,
+        to: MessageTarget,
+        body: String,
+        reply_to: Option<MessageId>,
+    ) -> Self {
+        Self {
+            id: MessageId::new(),
+            namespace,
+            from,
+            to,
+            body,
+            reply_to,
+            status: MessageStatus::Pending,
+            created_at: Utc::now(),
+        }
+    }
+
+    pub fn restore(
+        id: MessageId,
+        namespace: Namespace,
+        from: AgentId,
+        to: MessageTarget,
+        body: String,
+        reply_to: Option<MessageId>,
+        status: MessageStatus,
+        created_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id,
+            namespace,
+            from,
+            to,
+            body,
+            reply_to,
+            status,
+            created_at,
+        }
+    }
+
+    pub fn reply(&self, from: AgentId, body: String) -> Self {
+        Self::new(
+            self.namespace.clone(),
+            from,
+            MessageTarget::Agent(self.from),
+            body,
+            Some(self.id),
+        )
+    }
+
+    pub fn deliver(&mut self) {
+        if self.status == MessageStatus::Pending {
+            self.status = MessageStatus::Delivered;
+        }
+    }
+
+    pub fn mark_read(&mut self) {
+        self.status = MessageStatus::Read;
+    }
+
+    pub fn id(&self) -> MessageId {
+        self.id
+    }
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn from(&self) -> AgentId {
+        self.from
+    }
+    pub fn to(&self) -> &MessageTarget {
+        &self.to
+    }
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+    pub fn reply_to(&self) -> Option<MessageId> {
+        self.reply_to
+    }
+    pub fn status(&self) -> MessageStatus {
+        self.status
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[cfg(test)]
@@ -170,5 +249,64 @@ mod tests {
     fn empty_role_fails() {
         let result = MessageTarget::parse("role:");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn new_message_is_pending() {
+        let ns = Namespace::try_from("test".to_string()).unwrap();
+        let msg = Message::new(
+            ns,
+            AgentId::new(),
+            MessageTarget::Broadcast,
+            "hi".into(),
+            None,
+        );
+        assert_eq!(msg.status(), MessageStatus::Pending);
+    }
+
+    #[test]
+    fn deliver_transitions_to_delivered() {
+        let ns = Namespace::try_from("test".to_string()).unwrap();
+        let mut msg = Message::new(
+            ns,
+            AgentId::new(),
+            MessageTarget::Broadcast,
+            "hi".into(),
+            None,
+        );
+        msg.deliver();
+        assert_eq!(msg.status(), MessageStatus::Delivered);
+    }
+
+    #[test]
+    fn mark_read_transitions() {
+        let ns = Namespace::try_from("test".to_string()).unwrap();
+        let mut msg = Message::new(
+            ns,
+            AgentId::new(),
+            MessageTarget::Broadcast,
+            "hi".into(),
+            None,
+        );
+        msg.mark_read();
+        assert_eq!(msg.status(), MessageStatus::Read);
+    }
+
+    #[test]
+    fn reply_creates_threaded_message() {
+        let ns = Namespace::try_from("test".to_string()).unwrap();
+        let sender = AgentId::new();
+        let receiver = AgentId::new();
+        let original = Message::new(
+            ns,
+            sender,
+            MessageTarget::Agent(receiver),
+            "hello".into(),
+            None,
+        );
+        let reply = original.reply(receiver, "hey back".into());
+        assert_eq!(reply.reply_to(), Some(original.id()));
+        assert_eq!(reply.from(), receiver);
+        assert_eq!(reply.to(), &MessageTarget::Agent(sender));
     }
 }

@@ -6,56 +6,33 @@ use rusqlite::OptionalExtension;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::Namespace;
-use orchy_core::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
+use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 
 use crate::SqliteBackend;
 
 impl SkillStore for SqliteBackend {
-    async fn write(&self, cmd: WriteSkill) -> Result<Skill> {
-        let now = Utc::now();
+    async fn save(&self, skill: &Skill) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-
-        let existing_created_at: Option<String> = conn
-            .query_row(
-                "SELECT created_at FROM skills WHERE namespace = ?1 AND name = ?2",
-                rusqlite::params![cmd.namespace.to_string(), cmd.name],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        let created_at = existing_created_at
-            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or(now);
 
         conn.execute(
             "INSERT OR REPLACE INTO skills (namespace, name, description, content, written_by, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
-                cmd.namespace.to_string(),
-                cmd.name,
-                cmd.description,
-                cmd.content,
-                cmd.written_by.as_ref().map(|a| a.to_string()),
-                created_at.to_rfc3339(),
-                now.to_rfc3339(),
+                skill.namespace().to_string(),
+                skill.name(),
+                skill.description(),
+                skill.content(),
+                skill.written_by().map(|a| a.to_string()),
+                skill.created_at().to_rfc3339(),
+                skill.updated_at().to_rfc3339(),
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(Skill {
-            namespace: cmd.namespace,
-            name: cmd.name,
-            description: cmd.description,
-            content: cmd.content,
-            written_by: cmd.written_by,
-            created_at,
-            updated_at: now,
-        })
+        Ok(())
     }
 
-    async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
+    async fn find_by_name(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
@@ -129,35 +106,31 @@ fn row_to_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
     let created_at_str: String = row.get(5)?;
     let updated_at_str: String = row.get(6)?;
 
-    Ok(Skill {
-        namespace: Namespace::try_from(namespace_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                0,
-                rusqlite::types::Type::Text,
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-            )
-        })?,
+    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+        )
+    })?;
+    let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+        })?;
+    let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
+        })?;
+
+    Ok(Skill::restore(
+        namespace,
         name,
         description,
         content,
-        written_by: written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
-        created_at: DateTime::parse_from_rfc3339(&created_at_str)
-            .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    5,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
-            })?,
-        updated_at: DateTime::parse_from_rfc3339(&updated_at_str)
-            .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    6,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
-            })?,
-    })
+        written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
+        created_at,
+        updated_at,
+    ))
 }
