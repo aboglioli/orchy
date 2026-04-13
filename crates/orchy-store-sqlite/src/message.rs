@@ -19,20 +19,22 @@ impl MessageStore for SqliteBackend {
             from: cmd.from,
             to: cmd.to,
             body: cmd.body,
+            reply_to: cmd.reply_to,
             status: MessageStatus::Pending,
             created_at: Utc::now(),
         };
 
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "INSERT INTO messages (id, namespace, from_agent, to_target, body, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO messages (id, namespace, from_agent, to_target, body, reply_to, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 message.id.to_string(),
                 message.namespace.to_string(),
                 message.from.to_string(),
                 message.to.to_string(),
                 message.body,
+                message.reply_to.map(|id| id.to_string()),
                 "pending",
                 message.created_at.to_rfc3339(),
             ],
@@ -46,7 +48,7 @@ impl MessageStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let sql = String::from(
-            "SELECT id, namespace, from_agent, to_target, body, status, created_at
+            "SELECT id, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM messages
              WHERE status = 'pending' AND (to_target = ?1 OR to_target = 'broadcast')
              AND (namespace = ?2 OR namespace LIKE ?2 || '/%')",
@@ -109,6 +111,19 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
     let body: String = row.get(4)?;
     let status_str: String = row.get(5)?;
     let created_at_str: String = row.get(6)?;
+    let reply_to_str: Option<String> = row.get(7)?;
+
+    let reply_to = reply_to_str
+        .map(|s| {
+            MessageId::from_str(&s).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    7,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })
+        })
+        .transpose()?;
 
     Ok(Message {
         id: MessageId::from_str(&id_str).map_err(|e| {
@@ -135,6 +150,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
             )
         })?,
         body,
+        reply_to,
         status: parse_message_status(&status_str),
         created_at: DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))

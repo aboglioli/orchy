@@ -118,6 +118,7 @@ pub struct Message {
     pub from: AgentId,
     pub to: MessageTarget,
     pub body: String,
+    pub reply_to: Option<MessageId>,
     pub status: MessageStatus,
     pub created_at: DateTime<Utc>,
 }
@@ -128,6 +129,7 @@ pub struct CreateMessage {
     pub from: AgentId,
     pub to: MessageTarget,
     pub body: String,
+    pub reply_to: Option<MessageId>,
 }
 
 pub trait MessageStore: Send + Sync {

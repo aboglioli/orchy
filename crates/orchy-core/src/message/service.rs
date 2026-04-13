@@ -40,6 +40,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                         from: cmd.from,
                         to: MessageTarget::Agent(target_id),
                         body: cmd.body.clone(),
+                        reply_to: cmd.reply_to,
                     };
                     sent.push(self.message_store.send(individual).await?);
                 }
@@ -60,6 +61,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                         from: cmd.from,
                         to: MessageTarget::Agent(target_id),
                         body: cmd.body.clone(),
+                        reply_to: cmd.reply_to,
                     };
                     sent.push(self.message_store.send(individual).await?);
                 }
@@ -99,6 +101,7 @@ mod tests {
             from,
             to,
             body: "test".to_string(),
+            reply_to: None,
         }
     }
 
