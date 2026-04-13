@@ -14,7 +14,7 @@ impl ProjectStore for MemoryBackend {
         Ok(())
     }
 
-    async fn get(&self, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
         let projects = self
             .projects
             .read()

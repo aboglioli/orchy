@@ -155,8 +155,8 @@ impl ProjectStore for StoreBackend {
     async fn save(&self, project: &Project) -> Result<()> {
         delegate_trait!(self, ProjectStore::save(project))
     }
-    async fn get(&self, id: &ProjectId) -> Result<Option<Project>> {
-        delegate_trait!(self, ProjectStore::get(id))
+    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
+        delegate_trait!(self, ProjectStore::find_by_id(id))
     }
 }
 

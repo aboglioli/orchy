@@ -30,7 +30,7 @@ impl ProjectStore for SqliteBackend {
         Ok(())
     }
 
-    async fn get(&self, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
