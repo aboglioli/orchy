@@ -198,7 +198,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 def.depends_on,
                 created_by,
                 false,
-            );
+            )?;
             self.task_store.save(&task).await?;
             children.push(task);
         }
@@ -237,7 +237,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 def.depends_on,
                 created_by,
                 false,
-            );
+            )?;
             self.task_store.save(&task).await?;
             new_tasks.push(task);
         }

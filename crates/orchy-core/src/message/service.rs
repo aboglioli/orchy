@@ -27,59 +27,44 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         body: String,
         reply_to: Option<MessageId>,
     ) -> Result<Vec<Message>> {
-        match &to {
+        let targets = match &to {
             MessageTarget::Agent(_) => {
                 let msg = Message::new(project, namespace, from, to, body, reply_to);
                 self.message_store.save(&msg).await?;
-                Ok(vec![msg])
+                return Ok(vec![msg]);
             }
             MessageTarget::Role(role) => {
                 let agents = self.agent_store.list().await?;
-                let targets: Vec<AgentId> = agents
+                agents
                     .into_iter()
                     .filter(|a| a.roles().iter().any(|r| r == role))
                     .map(|a| a.id())
-                    .collect();
-
-                let mut sent = Vec::with_capacity(targets.len());
-                for target_id in targets {
-                    let msg = Message::new(
-                        project.clone(),
-                        namespace.clone(),
-                        from,
-                        MessageTarget::Agent(target_id),
-                        body.clone(),
-                        reply_to,
-                    );
-                    self.message_store.save(&msg).await?;
-                    sent.push(msg);
-                }
-                Ok(sent)
+                    .collect::<Vec<_>>()
             }
             MessageTarget::Broadcast => {
                 let agents = self.agent_store.list().await?;
-                let targets: Vec<AgentId> = agents
+                agents
                     .into_iter()
                     .filter(|a| a.id() != from)
                     .map(|a| a.id())
-                    .collect();
-
-                let mut sent = Vec::with_capacity(targets.len());
-                for target_id in targets {
-                    let msg = Message::new(
-                        project.clone(),
-                        namespace.clone(),
-                        from,
-                        MessageTarget::Agent(target_id),
-                        body.clone(),
-                        reply_to,
-                    );
-                    self.message_store.save(&msg).await?;
-                    sent.push(msg);
-                }
-                Ok(sent)
+                    .collect::<Vec<_>>()
             }
+        };
+
+        let mut sent = Vec::with_capacity(targets.len());
+        for target_id in targets {
+            let msg = Message::new(
+                project.clone(),
+                namespace.clone(),
+                from,
+                MessageTarget::Agent(target_id),
+                body.clone(),
+                reply_to,
+            );
+            self.message_store.save(&msg).await?;
+            sent.push(msg);
         }
+        Ok(sent)
     }
 
     pub async fn check(

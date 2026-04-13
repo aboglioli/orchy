@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 
 use crate::agent::AgentId;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait SkillStore: Send + Sync {
@@ -45,9 +45,13 @@ impl Skill {
         description: String,
         content: String,
         written_by: Option<AgentId>,
-    ) -> Self {
+    ) -> Result<Self> {
+        if name.trim().is_empty() {
+            return Err(Error::InvalidInput("skill name must not be empty".into()));
+        }
+
         let now = Utc::now();
-        Self {
+        Ok(Self {
             project,
             namespace,
             name,
@@ -56,7 +60,7 @@ impl Skill {
             written_by,
             created_at: now,
             updated_at: now,
-        }
+        })
     }
 
     pub fn restore(
@@ -173,6 +177,7 @@ mod tests {
             "content".to_string(),
             None,
         )
+        .unwrap()
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::agent::AgentId;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait MemoryStore: Send + Sync {
@@ -147,9 +147,13 @@ impl MemoryEntry {
         key: String,
         value: String,
         written_by: Option<AgentId>,
-    ) -> Self {
+    ) -> Result<Self> {
+        if key.trim().is_empty() {
+            return Err(Error::InvalidInput("memory key must not be empty".into()));
+        }
+
         let now = Utc::now();
-        Self {
+        Ok(Self {
             project,
             namespace,
             key,
@@ -161,7 +165,7 @@ impl MemoryEntry {
             written_by,
             created_at: now,
             updated_at: now,
-        }
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -385,7 +389,8 @@ mod tests {
             "key".to_string(),
             "value".to_string(),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(entry.version().as_u64(), 1);
     }
 
@@ -410,7 +415,8 @@ mod tests {
             "key".to_string(),
             "original".to_string(),
             None,
-        );
+        )
+        .unwrap();
         entry.update("updated".to_string(), None);
         assert_eq!(entry.value(), "updated");
     }

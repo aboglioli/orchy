@@ -187,9 +187,13 @@ impl Task {
         depends_on: Vec<TaskId>,
         created_by: Option<AgentId>,
         is_blocked: bool,
-    ) -> Self {
+    ) -> Result<Self> {
+        if title.trim().is_empty() {
+            return Err(Error::InvalidInput("task title must not be empty".into()));
+        }
+
         let now = Utc::now();
-        Self {
+        Ok(Self {
             id: TaskId::new(),
             project,
             namespace,
@@ -211,7 +215,7 @@ impl Task {
             created_by,
             created_at: now,
             updated_at: now,
-        }
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -622,7 +626,8 @@ mod tests {
             vec![],
             None,
             false,
-        );
+        )
+        .unwrap();
         assert_eq!(task.status(), TaskStatus::Pending);
     }
 
@@ -639,7 +644,8 @@ mod tests {
             vec![TaskId::new()],
             None,
             true,
-        );
+        )
+        .unwrap();
         assert_eq!(task.status(), TaskStatus::Blocked);
     }
 }

@@ -2,17 +2,17 @@ use std::sync::Arc;
 
 use super::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore, WriteMemory};
 use crate::agent::AgentId;
-use crate::embeddings::EmbeddingsBackend;
+use crate::embeddings::EmbeddingsProvider;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
 pub struct MemoryService<S: MemoryStore> {
     store: Arc<S>,
-    embeddings: Option<Arc<EmbeddingsBackend>>,
+    embeddings: Option<Arc<dyn EmbeddingsProvider>>,
 }
 
 impl<S: MemoryStore> MemoryService<S> {
-    pub fn new(store: Arc<S>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
+    pub fn new(store: Arc<S>, embeddings: Option<Arc<dyn EmbeddingsProvider>>) -> Self {
         Self { store, embeddings }
     }
 
@@ -44,7 +44,7 @@ impl<S: MemoryStore> MemoryService<S> {
                 cmd.key,
                 cmd.value,
                 cmd.written_by,
-            )
+            )?
         };
 
         if let Some(emb) = &self.embeddings {
@@ -118,11 +118,11 @@ impl<S: MemoryStore> MemoryService<S> {
 
 pub struct ContextService<S: ContextStore> {
     store: Arc<S>,
-    embeddings: Option<Arc<EmbeddingsBackend>>,
+    embeddings: Option<Arc<dyn EmbeddingsProvider>>,
 }
 
 impl<S: ContextStore> ContextService<S> {
-    pub fn new(store: Arc<S>, embeddings: Option<Arc<EmbeddingsBackend>>) -> Self {
+    pub fn new(store: Arc<S>, embeddings: Option<Arc<dyn EmbeddingsProvider>>) -> Self {
         Self { store, embeddings }
     }
 

@@ -126,7 +126,8 @@ async fn task_save_and_get() {
         vec![],
         None,
         false,
-    );
+    )
+    .unwrap();
 
     TaskStore::save(&store, &task).await.unwrap();
 
@@ -155,7 +156,8 @@ async fn task_save_overwrites_existing() {
         vec![],
         None,
         false,
-    );
+    )
+    .unwrap();
 
     TaskStore::save(&store, &task).await.unwrap();
 
@@ -204,7 +206,8 @@ async fn task_dependency_stored() {
         vec![],
         None,
         false,
-    );
+    )
+    .unwrap();
     TaskStore::save(&store, &dep).await.unwrap();
 
     let task = Task::new(
@@ -218,7 +221,8 @@ async fn task_dependency_stored() {
         vec![dep.id()],
         None,
         true,
-    );
+    )
+    .unwrap();
     TaskStore::save(&store, &task).await.unwrap();
 
     let fetched = TaskStore::find_by_id(&store, &task.id())
@@ -244,7 +248,8 @@ async fn task_list_sorted_by_priority() {
         vec![],
         None,
         false,
-    );
+    )
+    .unwrap();
     TaskStore::save(&store, &low).await.unwrap();
 
     let critical = Task::new(
@@ -258,7 +263,8 @@ async fn task_list_sorted_by_priority() {
         vec![],
         None,
         false,
-    );
+    )
+    .unwrap();
     TaskStore::save(&store, &critical).await.unwrap();
 
     let tasks = TaskStore::list(&store, TaskFilter::default())
@@ -278,7 +284,8 @@ async fn memory_save_and_find_by_key() {
         "config".into(),
         "hello world".into(),
         None,
-    );
+    )
+    .unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
     let read = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "config")
@@ -298,7 +305,8 @@ async fn memory_save_updates_existing() {
         "k".into(),
         "v1".into(),
         None,
-    );
+    )
+    .unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
     entry.update("v2".into(), None);
@@ -315,10 +323,10 @@ async fn memory_save_updates_existing() {
 async fn memory_list_with_namespace_prefix() {
     let store = backend();
 
-    let entry_a = MemoryEntry::new(proj("app"), ns("/tasks"), "a".into(), "x".into(), None);
+    let entry_a = MemoryEntry::new(proj("app"), ns("/tasks"), "a".into(), "x".into(), None).unwrap();
     MemoryStore::save(&store, &entry_a).await.unwrap();
 
-    let entry_b = MemoryEntry::new(proj("app"), ns("/other"), "b".into(), "y".into(), None);
+    let entry_b = MemoryEntry::new(proj("app"), ns("/other"), "b".into(), "y".into(), None).unwrap();
     MemoryStore::save(&store, &entry_b).await.unwrap();
 
     let all = MemoryStore::list(
@@ -355,7 +363,8 @@ async fn memory_search_by_keyword() {
         "notes".into(),
         "the quick brown fox".into(),
         None,
-    );
+    )
+    .unwrap();
     MemoryStore::save(&store, &entry1).await.unwrap();
 
     let entry2 = MemoryEntry::new(
@@ -364,7 +373,8 @@ async fn memory_search_by_keyword() {
         "other".into(),
         "lazy dog".into(),
         None,
-    );
+    )
+    .unwrap();
     MemoryStore::save(&store, &entry2).await.unwrap();
 
     let results = MemoryStore::search(&store, "quick", None, None, 10)
@@ -378,7 +388,7 @@ async fn memory_search_by_keyword() {
 async fn memory_delete() {
     let store = backend();
 
-    let entry = MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None);
+    let entry = MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None).unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
     MemoryStore::delete(&store, &proj("app"), &Namespace::root(), "k")
@@ -571,7 +581,8 @@ async fn skill_save_and_find_by_name() {
         "How to write commit messages".to_string(),
         "Use conventional commits".to_string(),
         None,
-    );
+    )
+    .unwrap();
     SkillStore::save(&store, &skill).await.unwrap();
 
     let read = SkillStore::find_by_name(&store, &p, &Namespace::root(), "commit-conventions")
@@ -598,7 +609,8 @@ async fn skill_save_updates_existing() {
         "v1".to_string(),
         "old content".to_string(),
         None,
-    );
+    )
+    .unwrap();
     SkillStore::save(&store, &skill).await.unwrap();
 
     let updated = Skill::new(
@@ -608,7 +620,8 @@ async fn skill_save_updates_existing() {
         "v2".to_string(),
         "new content".to_string(),
         None,
-    );
+    )
+    .unwrap();
     SkillStore::save(&store, &updated).await.unwrap();
 
     let read = SkillStore::find_by_name(&store, &p, &Namespace::root(), "style")
@@ -631,7 +644,8 @@ async fn skill_list_filters_by_namespace() {
         "A style".to_string(),
         "A content".to_string(),
         None,
-    );
+    )
+    .unwrap();
     SkillStore::save(&store, &s1).await.unwrap();
 
     let s2 = Skill::new(
@@ -641,7 +655,8 @@ async fn skill_list_filters_by_namespace() {
         "Backend arch".to_string(),
         "Hexagonal".to_string(),
         None,
-    );
+    )
+    .unwrap();
     SkillStore::save(&store, &s2).await.unwrap();
 
     let pb = proj("proj-b");
@@ -652,7 +667,8 @@ async fn skill_list_filters_by_namespace() {
         "B style".to_string(),
         "B content".to_string(),
         None,
-    );
+    )
+    .unwrap();
     SkillStore::save(&store, &s3).await.unwrap();
 
     let all_a = SkillStore::list(
@@ -691,7 +707,8 @@ async fn skill_delete() {
         "temporary".to_string(),
         "will be deleted".to_string(),
         None,
-    );
+    )
+    .unwrap();
     SkillStore::save(&store, &skill).await.unwrap();
 
     SkillStore::delete(&store, &p, &Namespace::root(), "temp")

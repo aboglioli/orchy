@@ -1,7 +1,8 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use orchy_core::embeddings::EmbeddingsProvider;
+use orchy_core::error::{Error, Result};
 
 pub struct OpenAiEmbeddingsProvider {
     client: Client,
@@ -37,7 +38,7 @@ impl OpenAiEmbeddingsProvider {
     }
 }
 
-impl super::EmbeddingsProvider for OpenAiEmbeddingsProvider {
+impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         let request = EmbeddingsRequest {
             model: &self.model,
@@ -97,5 +98,35 @@ impl super::EmbeddingsProvider for OpenAiEmbeddingsProvider {
 
     fn dimensions(&self) -> u32 {
         self.dimensions
+    }
+}
+
+pub enum EmbeddingsBackend {
+    OpenAi(OpenAiEmbeddingsProvider),
+}
+
+impl EmbeddingsProvider for EmbeddingsBackend {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        match self {
+            EmbeddingsBackend::OpenAi(p) => p.embed(text).await,
+        }
+    }
+
+    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        match self {
+            EmbeddingsBackend::OpenAi(p) => p.embed_batch(texts).await,
+        }
+    }
+
+    fn model(&self) -> &str {
+        match self {
+            EmbeddingsBackend::OpenAi(p) => p.model(),
+        }
+    }
+
+    fn dimensions(&self) -> u32 {
+        match self {
+            EmbeddingsBackend::OpenAi(p) => p.dimensions(),
+        }
     }
 }
