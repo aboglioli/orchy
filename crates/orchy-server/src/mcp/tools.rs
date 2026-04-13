@@ -551,7 +551,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
@@ -567,7 +567,7 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .get_next(&agent_id, &roles, Some(namespace))
+            .get_next(&agent_id, &roles, namespace)
             .await
         {
             Ok(Some(task)) => Ok(to_json(&task)),
@@ -937,9 +937,9 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+            None => Namespace::root(),
         };
 
         match self
@@ -1051,9 +1051,9 @@ impl OrchyHandler {
             None => None,
         };
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+            None => Namespace::root(),
         };
 
         match self
@@ -1075,9 +1075,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchContextsParams>,
     ) -> Result<String, String> {
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+            None => Namespace::root(),
         };
 
         let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
