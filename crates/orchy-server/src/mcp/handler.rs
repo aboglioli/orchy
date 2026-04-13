@@ -91,6 +91,18 @@ impl OrchyHandler {
         }
     }
 
+    pub(crate) async fn build_and_register_namespace(
+        &self,
+        scope: Option<&str>,
+    ) -> Result<Namespace, String> {
+        let ns = self.build_namespace(scope)?;
+        if let Some(project) = self.get_session_project() {
+            use orchy_core::namespace::NamespaceStore;
+            let _ = NamespaceStore::register(&*self.container.store, &project, &ns).await;
+        }
+        Ok(ns)
+    }
+
     pub(crate) fn build_optional_namespace(
         &self,
         scope: Option<&str>,
