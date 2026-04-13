@@ -40,7 +40,7 @@ impl TaskStore for SqliteBackend {
         Ok(())
     }
 
-    async fn get(&self, id: &TaskId) -> Result<Option<Task>> {
+    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(

@@ -54,7 +54,6 @@ async fn main() {
     let mcp_container = container;
 
     let mut session_manager = LocalSessionManager::default();
-    // Some(Duration::from_secs(heartbeat_timeout * 3)) to auto-cleanup idle sessions
     session_manager.session_config.keep_alive = None;
 
     let service = StreamableHttpService::new(

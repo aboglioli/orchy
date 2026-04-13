@@ -21,7 +21,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
     pub async fn create(&self, task: Task) -> Result<()> {
         for dep_id in task.depends_on() {
-            if self.task_store.get(dep_id).await?.is_none() {
+            if self.task_store.find_by_id(dep_id).await?.is_none() {
                 return Err(Error::NotFound(format!("dependency task {dep_id}")));
             }
         }
@@ -30,7 +30,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
     pub async fn get(&self, id: &TaskId) -> Result<Task> {
         self.task_store
-            .get(id)
+            .find_by_id(id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {id}")))
     }
@@ -67,13 +67,13 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 ..Default::default()
             };
             let mut tasks = self.task_store.list(filter).await?;
-            tasks.sort_by(|a, b| b.priority().cmp(&a.priority()));
+            tasks.sort_by_key(|t| std::cmp::Reverse(t.priority()));
             candidates.extend(tasks);
         }
 
         let mut seen = HashSet::new();
         candidates.retain(|t| seen.insert(t.id()));
-        candidates.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        candidates.sort_by_key(|t| std::cmp::Reverse(t.priority()));
 
         for mut task in candidates {
             if self.all_deps_completed(task.depends_on()).await? {
@@ -169,7 +169,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         for dep_id in deps {
             let dep = self
                 .task_store
-                .get(dep_id)
+                .find_by_id(dep_id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
             if dep.status() != TaskStatus::Completed {

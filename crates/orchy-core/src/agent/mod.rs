@@ -56,19 +56,14 @@ impl FromStr for AgentId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentStatus {
+    #[default]
     Online,
     Busy,
     Idle,
     Disconnected,
-}
-
-impl Default for AgentStatus {
-    fn default() -> Self {
-        AgentStatus::Online
-    }
 }
 
 impl fmt::Display for AgentStatus {

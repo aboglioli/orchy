@@ -14,10 +14,9 @@ impl TaskStore for PgBackend {
     async fn save(&self, task: &Task) -> Result<()> {
         let roles_json = serde_json::to_value(task.assigned_roles()).unwrap();
         let depends_json = serde_json::to_value(
-            &task
-                .depends_on()
+            task.depends_on()
                 .iter()
-                .map(|t| t.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>(),
         )
         .unwrap();
@@ -62,7 +61,7 @@ impl TaskStore for PgBackend {
         Ok(())
     }
 
-    async fn get(&self, id: &TaskId) -> Result<Option<Task>> {
+    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
             "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",

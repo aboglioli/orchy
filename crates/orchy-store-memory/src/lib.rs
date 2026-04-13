@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 mod agent;
 mod context;
 mod memory;

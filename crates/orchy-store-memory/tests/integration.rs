@@ -108,7 +108,10 @@ async fn task_save_and_get() {
 
     TaskStore::save(&store, &task).await.unwrap();
 
-    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    let fetched = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fetched.status(), TaskStatus::Pending);
     assert_eq!(fetched.title(), "Do thing");
     assert_eq!(fetched.description(), "Details");
