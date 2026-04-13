@@ -12,8 +12,8 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, schemars, tool, tool_router};
 use serde::Deserialize;
 
 use orchy_core::agent::RegisterAgent;
-use orchy_core::memory::{CreateSnapshot, MemoryFilter, Version, WriteMemory};
-use orchy_core::message::{CreateMessage, MessageId, MessageTarget};
+use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
+use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::ProjectId;
 use orchy_core::skill::{SkillFilter, WriteSkill};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
@@ -291,7 +291,7 @@ impl OrchyHandler {
                 .await
             {
                 Ok(agent) => {
-                    self.set_session(agent.id, namespace);
+                    self.set_session(agent.id(), namespace);
                     return Ok(to_json(&agent));
                 }
                 Err(e) => return Err(e.to_string()),
@@ -307,7 +307,7 @@ impl OrchyHandler {
 
         match self.container.agent_service.register(cmd).await {
             Ok(agent) => {
-                self.set_session(agent.id, namespace);
+                self.set_session(agent.id(), namespace);
                 Ok(to_json(&agent))
             }
             Err(e) => Err(e.to_string()),
@@ -459,7 +459,7 @@ impl OrchyHandler {
         let roles = match params.role {
             Some(r) => vec![r],
             None => match self.container.agent_service.get(&agent_id).await {
-                Ok(agent) => agent.roles,
+                Ok(agent) => agent.roles().to_vec(),
                 Err(e) => return Err(format!("error fetching agent roles: {e}")),
             },
         };
@@ -655,9 +655,6 @@ impl OrchyHandler {
             key: params.key,
             value: params.value,
             expected_version: params.version.map(Version::from),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
             written_by: self.get_session_agent(),
         };
 
@@ -788,15 +785,12 @@ impl OrchyHandler {
             None => None,
         };
 
-        let cmd = CreateMessage {
-            namespace,
-            from: agent_id,
-            to: target,
-            body: params.body,
-            reply_to,
-        };
-
-        match self.container.message_service.send(cmd).await {
+        match self
+            .container
+            .message_service
+            .send(namespace, agent_id, target, params.body, reply_to)
+            .await
+        {
             Ok(messages) => Ok(to_json(&messages)),
             Err(e) => Err(e.to_string()),
         }
@@ -878,17 +872,12 @@ impl OrchyHandler {
             None => HashMap::new(),
         };
 
-        let cmd = CreateSnapshot {
-            agent_id,
-            namespace,
-            summary: params.summary,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            metadata,
-        };
-
-        match self.container.context_service.save(cmd).await {
+        match self
+            .container
+            .context_service
+            .save(agent_id, namespace, params.summary, metadata)
+            .await
+        {
             Ok(snapshot) => Ok(to_json(&snapshot)),
             Err(e) => Err(e.to_string()),
         }
@@ -1313,7 +1302,13 @@ impl ServerHandler for OrchyHandler {
 
         let prompts = skills
             .into_iter()
-            .map(|s| Prompt::new(s.name, Some(s.description), None))
+            .map(|s| {
+                Prompt::new(
+                    s.name().to_string(),
+                    Some(s.description().to_string()),
+                    None,
+                )
+            })
             .collect();
 
         Ok(ListPromptsResult {
@@ -1351,7 +1346,7 @@ impl ServerHandler for OrchyHandler {
 
                 inherited
                     .into_iter()
-                    .find(|s| s.name == request.name)
+                    .find(|s| s.name() == request.name)
                     .ok_or_else(|| {
                         ErrorData::invalid_params(
                             format!("skill '{}' not found", request.name),
@@ -1363,9 +1358,9 @@ impl ServerHandler for OrchyHandler {
 
         let mut result = GetPromptResult::new(vec![PromptMessage::new_text(
             PromptMessageRole::User,
-            skill.content,
+            skill.content().to_string(),
         )]);
-        result.description = Some(skill.description);
+        result.description = Some(skill.description().to_string());
         Ok(result)
     }
 }

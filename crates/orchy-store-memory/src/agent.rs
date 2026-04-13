@@ -1,33 +1,19 @@
-use chrono::Utc;
-
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 
 use crate::MemoryBackend;
 
 impl AgentStore for MemoryBackend {
-    async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
-        let now = Utc::now();
-        let agent = Agent {
-            id: AgentId::new(),
-            namespace: registration.namespace.clone(),
-            roles: registration.roles,
-            description: registration.description,
-            status: AgentStatus::Online,
-            last_heartbeat: now,
-            connected_at: now,
-            metadata: registration.metadata,
-        };
-
+    async fn save(&self, agent: &Agent) -> Result<()> {
         let mut agents = self
             .agents
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
-        agents.insert(agent.id, agent.clone());
-        Ok(agent)
+        agents.insert(agent.id(), agent.clone());
+        Ok(())
     }
 
-    async fn get(&self, id: &AgentId) -> Result<Option<Agent>> {
+    async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         let agents = self
             .agents
             .read()
@@ -43,88 +29,15 @@ impl AgentStore for MemoryBackend {
         Ok(agents.values().cloned().collect())
     }
 
-    async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        let mut agents = self
-            .agents
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let agent = agents
-            .get_mut(id)
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
-        agent.last_heartbeat = Utc::now();
-        if agent.status == AgentStatus::Disconnected {
-            agent.status = AgentStatus::Online;
-        }
-        Ok(())
-    }
-
-    async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        let mut agents = self
-            .agents
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let agent = agents
-            .get_mut(id)
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
-        agent.status = status;
-        Ok(())
-    }
-
-    async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
-        let mut agents = self
-            .agents
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let agent = agents
-            .get_mut(id)
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
-        agent.roles = roles;
-        Ok(agent.clone())
-    }
-
-    async fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> Result<Agent> {
-        let mut agents = self
-            .agents
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let agent = agents
-            .get_mut(id)
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
-        agent.status = AgentStatus::Online;
-        agent.roles = roles;
-        agent.description = description;
-        agent.last_heartbeat = Utc::now();
-        Ok(agent.clone())
-    }
-
-    async fn disconnect(&self, id: &AgentId) -> Result<()> {
-        let mut agents = self
-            .agents
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let agent = agents
-            .get_mut(id)
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
-        agent.status = AgentStatus::Disconnected;
-        Ok(())
-    }
-
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let agents = self
             .agents
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        let now = Utc::now();
-        let timeout = chrono::Duration::seconds(timeout_secs as i64);
 
         Ok(agents
             .values()
-            .filter(|a| a.status != AgentStatus::Disconnected && (now - a.last_heartbeat) > timeout)
+            .filter(|a| a.is_timed_out(timeout_secs))
             .cloned()
             .collect())
     }

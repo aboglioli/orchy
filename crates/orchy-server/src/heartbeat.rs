@@ -18,21 +18,23 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
         match container.agent_service.find_timed_out(timeout).await {
             Ok(agents) => {
                 for agent in &agents {
-                    match agent.status {
+                    match agent.status() {
                         AgentStatus::Online | AgentStatus::Busy => {
-                            info!(agent_id = %agent.id, "agent idle, marking as idle");
+                            info!(agent_id = %agent.id(), "agent idle, marking as idle");
                             let _ = container
                                 .agent_service
-                                .update_status(&agent.id, AgentStatus::Idle)
+                                .update_status(&agent.id(), AgentStatus::Idle)
                                 .await;
                         }
                         AgentStatus::Idle => {
-                            info!(agent_id = %agent.id, "idle agent timed out, disconnecting");
-                            let _ = container.agent_service.disconnect(&agent.id).await;
-                            if let Err(e) =
-                                container.task_service.release_agent_tasks(&agent.id).await
+                            info!(agent_id = %agent.id(), "idle agent timed out, disconnecting");
+                            let _ = container.agent_service.disconnect(&agent.id()).await;
+                            if let Err(e) = container
+                                .task_service
+                                .release_agent_tasks(&agent.id())
+                                .await
                             {
-                                tracing::error!(agent_id = %agent.id, error = %e, "failed to release agent tasks");
+                                tracing::error!(agent_id = %agent.id(), error = %e, "failed to release agent tasks");
                             }
                         }
                         AgentStatus::Disconnected => {}

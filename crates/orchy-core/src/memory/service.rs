@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use super::{
-    ContextSnapshot, ContextStore, CreateSnapshot, MemoryEntry, MemoryFilter, MemoryStore,
-    WriteMemory,
+    ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore, Version, WriteMemory,
 };
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsBackend;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::Namespace;
 
 pub struct MemoryService<S: MemoryStore> {
@@ -19,18 +18,41 @@ impl<S: MemoryStore> MemoryService<S> {
         Self { store, embeddings }
     }
 
-    pub async fn write(&self, mut entry: WriteMemory) -> Result<MemoryEntry> {
+    pub async fn write(&self, cmd: WriteMemory) -> Result<MemoryEntry> {
+        let existing = self.store.find_by_key(&cmd.namespace, &cmd.key).await?;
+
+        let mut entry = if let Some(mut existing) = existing {
+            if let Some(expected) = cmd.expected_version {
+                if existing.version() != expected {
+                    return Err(Error::VersionMismatch {
+                        expected: expected.as_u64(),
+                        actual: existing.version().as_u64(),
+                    });
+                }
+            }
+            existing.update(cmd.value, cmd.written_by);
+            existing
+        } else {
+            if let Some(expected) = cmd.expected_version {
+                return Err(Error::VersionMismatch {
+                    expected: expected.as_u64(),
+                    actual: 0,
+                });
+            }
+            MemoryEntry::new(cmd.namespace, cmd.key, cmd.value, cmd.written_by)
+        };
+
         if let Some(emb) = &self.embeddings {
-            let vector = emb.embed(&entry.value).await?;
-            entry.embedding = Some(vector);
-            entry.embedding_model = Some(emb.model().to_string());
-            entry.embedding_dimensions = Some(emb.dimensions());
+            let vector = emb.embed(entry.value()).await?;
+            entry.set_embedding(vector, emb.model().to_string(), emb.dimensions());
         }
-        self.store.write(entry).await
+
+        self.store.save(&entry).await?;
+        Ok(entry)
     }
 
     pub async fn read(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
-        self.store.read(namespace, key).await
+        self.store.find_by_key(namespace, key).await
     }
 
     pub async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
@@ -68,18 +90,26 @@ impl<S: ContextStore> ContextService<S> {
         Self { store, embeddings }
     }
 
-    pub async fn save(&self, mut snapshot: CreateSnapshot) -> Result<ContextSnapshot> {
+    pub async fn save(
+        &self,
+        agent_id: AgentId,
+        namespace: Namespace,
+        summary: String,
+        metadata: std::collections::HashMap<String, String>,
+    ) -> Result<ContextSnapshot> {
+        let mut snapshot = ContextSnapshot::new(agent_id, namespace, summary, metadata);
+
         if let Some(emb) = &self.embeddings {
-            let vector = emb.embed(&snapshot.summary).await?;
-            snapshot.embedding = Some(vector);
-            snapshot.embedding_model = Some(emb.model().to_string());
-            snapshot.embedding_dimensions = Some(emb.dimensions());
+            let vector = emb.embed(snapshot.summary()).await?;
+            snapshot.set_embedding(vector, emb.model().to_string(), emb.dimensions());
         }
-        self.store.save(snapshot).await
+
+        self.store.save(&snapshot).await?;
+        Ok(snapshot)
     }
 
     pub async fn load(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
-        self.store.load(agent).await
+        self.store.find_latest(agent).await
     }
 
     pub async fn list(

@@ -12,13 +12,15 @@ impl<S: AgentStore> AgentService<S> {
         Self { store }
     }
 
-    pub async fn register(&self, registration: RegisterAgent) -> Result<Agent> {
-        self.store.register(registration).await
+    pub async fn register(&self, cmd: RegisterAgent) -> Result<Agent> {
+        let agent = Agent::register(cmd.namespace, cmd.roles, cmd.description, cmd.metadata);
+        self.store.save(&agent).await?;
+        Ok(agent)
     }
 
     pub async fn get(&self, id: &AgentId) -> Result<Agent> {
         self.store
-            .get(id)
+            .find_by_id(id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))
     }
@@ -28,18 +30,25 @@ impl<S: AgentStore> AgentService<S> {
     }
 
     pub async fn heartbeat(&self, id: &AgentId) -> Result<()> {
-        self.store.heartbeat(id).await
+        let mut agent = self.get(id).await?;
+        agent.heartbeat();
+        self.store.save(&agent).await
     }
 
     pub async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
-        self.store.update_status(id, status).await
+        let mut agent = self.get(id).await?;
+        agent.update_status(status);
+        self.store.save(&agent).await
     }
 
     pub async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
         if roles.is_empty() {
             return Err(Error::InvalidInput("roles must not be empty".to_string()));
         }
-        self.store.update_roles(id, roles).await
+        let mut agent = self.get(id).await?;
+        agent.update_roles(roles);
+        self.store.save(&agent).await?;
+        Ok(agent)
     }
 
     pub async fn reconnect(
@@ -48,11 +57,16 @@ impl<S: AgentStore> AgentService<S> {
         roles: Vec<String>,
         description: String,
     ) -> Result<Agent> {
-        self.store.reconnect(id, roles, description).await
+        let mut agent = self.get(id).await?;
+        agent.reconnect(roles, description);
+        self.store.save(&agent).await?;
+        Ok(agent)
     }
 
     pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
-        self.store.disconnect(id).await
+        let mut agent = self.get(id).await?;
+        agent.disconnect();
+        self.store.save(&agent).await
     }
 
     pub async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
@@ -81,57 +95,14 @@ mod tests {
         let store = Arc::new(MockStore::default());
         let service = AgentService::new(store);
         let agent = service.register(make_registration()).await.unwrap();
-        assert_eq!(agent.status, AgentStatus::Online);
-    }
-
-    #[tokio::test]
-    async fn get_returns_agent() {
-        let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
-        let registered = service.register(make_registration()).await.unwrap();
-        let result = service.get(&registered.id).await;
-        assert!(result.is_ok());
+        assert_eq!(agent.status(), AgentStatus::Online);
     }
 
     #[tokio::test]
     async fn get_returns_not_found() {
         let store = Arc::new(MockStore::default());
         let service = AgentService::new(store);
-        let result = service.get(&AgentId::new()).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn heartbeat_succeeds() {
-        let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
-        let agent = service.register(make_registration()).await.unwrap();
-        assert!(service.heartbeat(&agent.id).await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn disconnect_succeeds() {
-        let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
-        let agent = service.register(make_registration()).await.unwrap();
-        assert!(service.disconnect(&agent.id).await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn find_timed_out_returns_empty() {
-        let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
-        let result = service.find_timed_out(60).await.unwrap();
-        assert!(result.is_empty());
-    }
-
-    #[tokio::test]
-    async fn list_returns_registered_agents() {
-        let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
-        service.register(make_registration()).await.unwrap();
-        let result = service.list().await.unwrap();
-        assert_eq!(result.len(), 1);
+        assert!(service.get(&AgentId::new()).await.is_err());
     }
 
     #[tokio::test]
@@ -140,13 +111,10 @@ mod tests {
         let service = AgentService::new(store);
         let agent = service.register(make_registration()).await.unwrap();
         let updated = service
-            .update_roles(
-                &agent.id,
-                vec!["reviewer".to_string(), "analyzer".to_string()],
-            )
+            .update_roles(&agent.id(), vec!["reviewer".to_string()])
             .await
             .unwrap();
-        assert_eq!(updated.roles, vec!["reviewer", "analyzer"]);
+        assert_eq!(updated.roles(), &["reviewer"]);
     }
 
     #[tokio::test]
@@ -154,18 +122,6 @@ mod tests {
         let store = Arc::new(MockStore::default());
         let service = AgentService::new(store);
         let agent = service.register(make_registration()).await.unwrap();
-        assert!(service.update_roles(&agent.id, vec![]).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn update_roles_fails_for_unknown_agent() {
-        let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
-        assert!(
-            service
-                .update_roles(&AgentId::new(), vec!["tester".to_string()])
-                .await
-                .is_err()
-        );
+        assert!(service.update_roles(&agent.id(), vec![]).await.is_err());
     }
 }

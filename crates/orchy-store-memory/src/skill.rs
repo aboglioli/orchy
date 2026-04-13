@@ -1,48 +1,23 @@
-use chrono::Utc;
-
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::Namespace;
-use orchy_core::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
+use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 
 use crate::MemoryBackend;
 
 impl SkillStore for MemoryBackend {
-    async fn write(&self, cmd: WriteSkill) -> Result<Skill> {
-        let now = Utc::now();
-        let key = (cmd.namespace.to_string(), cmd.name.clone());
+    async fn save(&self, skill: &Skill) -> Result<()> {
+        let key = (skill.namespace().to_string(), skill.name().to_string());
 
         let mut store = self
             .skills
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        let skill = if let Some(existing) = store.get(&key) {
-            Skill {
-                namespace: existing.namespace.clone(),
-                name: existing.name.clone(),
-                description: cmd.description,
-                content: cmd.content,
-                written_by: cmd.written_by.or(existing.written_by),
-                created_at: existing.created_at,
-                updated_at: now,
-            }
-        } else {
-            Skill {
-                namespace: cmd.namespace,
-                name: cmd.name,
-                description: cmd.description,
-                content: cmd.content,
-                written_by: cmd.written_by,
-                created_at: now,
-                updated_at: now,
-            }
-        };
-
         store.insert(key, skill.clone());
-        Ok(skill)
+        Ok(())
     }
 
-    async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
+    async fn find_by_name(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
         let store = self
             .skills
             .read()
@@ -61,12 +36,12 @@ impl SkillStore for MemoryBackend {
             .values()
             .filter(|skill| {
                 if let Some(ref ns) = filter.namespace {
-                    if !skill.namespace.starts_with(ns) {
+                    if !skill.namespace().starts_with(ns) {
                         return false;
                     }
                 }
                 if let Some(ref project) = filter.project {
-                    if skill.namespace.project() != project.as_ref() {
+                    if skill.namespace().project() != project.as_ref() {
                         return false;
                     }
                 }

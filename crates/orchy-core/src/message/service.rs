@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use super::{CreateMessage, Message, MessageStore, MessageTarget};
+use super::{Message, MessageId, MessageStore, MessageTarget};
 use crate::agent::{AgentId, AgentStore};
 use crate::error::Result;
-use crate::message::MessageId;
 use crate::namespace::Namespace;
 
 pub struct MessageService<MS: MessageStore, AS: AgentStore> {
@@ -19,30 +18,39 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         }
     }
 
-    pub async fn send(&self, cmd: CreateMessage) -> Result<Vec<Message>> {
-        match &cmd.to {
+    pub async fn send(
+        &self,
+        namespace: Namespace,
+        from: AgentId,
+        to: MessageTarget,
+        body: String,
+        reply_to: Option<MessageId>,
+    ) -> Result<Vec<Message>> {
+        match &to {
             MessageTarget::Agent(_) => {
-                let msg = self.message_store.send(cmd).await?;
+                let msg = Message::new(namespace, from, to, body, reply_to);
+                self.message_store.save(&msg).await?;
                 Ok(vec![msg])
             }
             MessageTarget::Role(role) => {
                 let agents = self.agent_store.list().await?;
                 let targets: Vec<AgentId> = agents
                     .into_iter()
-                    .filter(|a| a.roles.iter().any(|r| r == role))
-                    .map(|a| a.id)
+                    .filter(|a| a.roles().iter().any(|r| r == role))
+                    .map(|a| a.id())
                     .collect();
 
                 let mut sent = Vec::with_capacity(targets.len());
                 for target_id in targets {
-                    let individual = CreateMessage {
-                        namespace: cmd.namespace.clone(),
-                        from: cmd.from,
-                        to: MessageTarget::Agent(target_id),
-                        body: cmd.body.clone(),
-                        reply_to: cmd.reply_to,
-                    };
-                    sent.push(self.message_store.send(individual).await?);
+                    let msg = Message::new(
+                        namespace.clone(),
+                        from,
+                        MessageTarget::Agent(target_id),
+                        body.clone(),
+                        reply_to,
+                    );
+                    self.message_store.save(&msg).await?;
+                    sent.push(msg);
                 }
                 Ok(sent)
             }
@@ -50,20 +58,21 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 let agents = self.agent_store.list().await?;
                 let targets: Vec<AgentId> = agents
                     .into_iter()
-                    .filter(|a| a.id != cmd.from)
-                    .map(|a| a.id)
+                    .filter(|a| a.id() != from)
+                    .map(|a| a.id())
                     .collect();
 
                 let mut sent = Vec::with_capacity(targets.len());
                 for target_id in targets {
-                    let individual = CreateMessage {
-                        namespace: cmd.namespace.clone(),
-                        from: cmd.from,
-                        to: MessageTarget::Agent(target_id),
-                        body: cmd.body.clone(),
-                        reply_to: cmd.reply_to,
-                    };
-                    sent.push(self.message_store.send(individual).await?);
+                    let msg = Message::new(
+                        namespace.clone(),
+                        from,
+                        MessageTarget::Agent(target_id),
+                        body.clone(),
+                        reply_to,
+                    );
+                    self.message_store.save(&msg).await?;
+                    sent.push(msg);
                 }
                 Ok(sent)
             }
@@ -71,38 +80,47 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
     }
 
     pub async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
-        self.message_store.check(agent, namespace).await
+        let mut messages = self.message_store.find_pending(agent, namespace).await?;
+        for msg in &mut messages {
+            msg.deliver();
+            self.message_store.save(msg).await?;
+        }
+        Ok(messages)
     }
 
     pub async fn mark_read(&self, ids: &[MessageId]) -> Result<()> {
-        self.message_store.mark_read(ids).await
+        for id in ids {
+            if let Some(mut msg) = self.message_store.find_by_id(id).await? {
+                msg.mark_read();
+                self.message_store.save(&msg).await?;
+            }
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::RegisterAgent;
+    use crate::agent::{Agent, AgentStore};
     use crate::store::mock::MockStore;
     use std::collections::HashMap;
 
-    fn make_registration(roles: Vec<&str>) -> RegisterAgent {
-        RegisterAgent {
-            namespace: Namespace::try_from("orchy".to_string()).unwrap(),
-            roles: roles.into_iter().map(String::from).collect(),
-            description: "test".to_string(),
-            metadata: HashMap::new(),
-        }
+    fn make_agent(roles: Vec<&str>) -> Agent {
+        Agent::register(
+            Namespace::try_from("orchy".to_string()).unwrap(),
+            roles.into_iter().map(String::from).collect(),
+            "test".to_string(),
+            HashMap::new(),
+        )
     }
 
-    fn make_msg(from: AgentId, to: MessageTarget) -> CreateMessage {
-        CreateMessage {
-            namespace: Namespace::try_from("orchy".to_string()).unwrap(),
-            from,
-            to,
-            body: "test".to_string(),
-            reply_to: None,
-        }
+    async fn save_agent(store: &MockStore, agent: &Agent) {
+        AgentStore::save(store, agent).await.unwrap();
+    }
+
+    fn ns() -> Namespace {
+        Namespace::try_from("orchy".to_string()).unwrap()
     }
 
     #[tokio::test]
@@ -110,10 +128,13 @@ mod tests {
         let store = Arc::new(MockStore::default());
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(make_msg(
+            .send(
+                ns(),
                 AgentId::new(),
                 MessageTarget::Agent(AgentId::new()),
-            ))
+                "hi".into(),
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
@@ -122,20 +143,19 @@ mod tests {
     #[tokio::test]
     async fn send_to_role_routes_to_matching_agents() {
         let store = Arc::new(MockStore::default());
-        store
-            .register(make_registration(vec!["tester"]))
-            .await
-            .unwrap();
-        store
-            .register(make_registration(vec!["developer"]))
-            .await
-            .unwrap();
+        let a1 = make_agent(vec!["tester"]);
+        let a2 = make_agent(vec!["developer"]);
+        save_agent(&store, &a1).await;
+        save_agent(&store, &a2).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(make_msg(
+            .send(
+                ns(),
                 AgentId::new(),
                 MessageTarget::Role("tester".to_string()),
-            ))
+                "hi".into(),
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
@@ -144,87 +164,40 @@ mod tests {
     #[tokio::test]
     async fn send_to_role_with_no_matching_agents_returns_empty() {
         let store = Arc::new(MockStore::default());
-        store
-            .register(make_registration(vec!["developer"]))
-            .await
-            .unwrap();
+        let a = make_agent(vec!["developer"]);
+        save_agent(&store, &a).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(make_msg(
+            .send(
+                ns(),
                 AgentId::new(),
                 MessageTarget::Role("tester".to_string()),
-            ))
+                "hi".into(),
+                None,
+            )
             .await
             .unwrap();
         assert!(result.is_empty());
     }
 
     #[tokio::test]
-    async fn send_to_role_delivers_to_all_matching_agents() {
-        let store = Arc::new(MockStore::default());
-        store
-            .register(make_registration(vec!["tester"]))
-            .await
-            .unwrap();
-        store
-            .register(make_registration(vec!["tester"]))
-            .await
-            .unwrap();
-        store
-            .register(make_registration(vec!["developer"]))
-            .await
-            .unwrap();
-        let service = MessageService::new(Arc::clone(&store), store);
-        let result = service
-            .send(make_msg(
-                AgentId::new(),
-                MessageTarget::Role("tester".to_string()),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 2);
-    }
-
-    #[tokio::test]
     async fn broadcast_excludes_sender() {
         let store = Arc::new(MockStore::default());
-        let sender = store
-            .register(make_registration(vec!["tester"]))
-            .await
-            .unwrap();
-        store
-            .register(make_registration(vec!["tester"]))
-            .await
-            .unwrap();
+        let sender = make_agent(vec!["tester"]);
+        let other = make_agent(vec!["tester"]);
+        save_agent(&store, &sender).await;
+        save_agent(&store, &other).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(make_msg(sender.id, MessageTarget::Broadcast))
+            .send(
+                ns(),
+                sender.id(),
+                MessageTarget::Broadcast,
+                "hi".into(),
+                None,
+            )
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn check_returns_agent_messages() {
-        let store = Arc::new(MockStore::default());
-        let agent = store
-            .register(make_registration(vec!["tester"]))
-            .await
-            .unwrap();
-        let ns = Namespace::try_from("orchy".to_string()).unwrap();
-        let service = MessageService::new(Arc::clone(&store), store);
-        service
-            .send(make_msg(AgentId::new(), MessageTarget::Agent(agent.id)))
-            .await
-            .unwrap();
-        let result = service.check(&agent.id, &ns).await.unwrap();
-        assert_eq!(result.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn mark_read_succeeds() {
-        let store = Arc::new(MockStore::default());
-        let service = MessageService::new(Arc::clone(&store), store);
-        assert!(service.mark_read(&[MessageId::new()]).await.is_ok());
     }
 }

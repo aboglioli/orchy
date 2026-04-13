@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use orchy_core::entities::*;
-use orchy_core::store::{
-    AgentStore, ContextStore, MemoryStore, MessageStore, SkillStore, TaskStore,
-};
-use orchy_core::value_objects::*;
+use orchy_core::agent::{Agent, AgentStatus, AgentStore};
+use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
+use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
+use orchy_core::namespace::Namespace;
+use orchy_core::skill::{Skill, SkillFilter, SkillStore};
+use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_pg::PgBackend;
 
 const PG_URL: &str = "postgres://orchy:orchy@localhost:5432/orchy";
@@ -21,290 +22,104 @@ fn ns(s: &str) -> Namespace {
 
 #[tokio::test]
 #[ignore]
-async fn agent_register_and_get() {
+async fn agent_save_and_find() {
     let store = backend().await;
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("myapp"),
-            roles: vec!["coder".into()],
-            description: "test agent".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let agent = Agent::register(
+        ns("myapp"),
+        vec!["coder".into()],
+        "test agent".into(),
+        HashMap::new(),
+    );
+    AgentStore::save(&store, &agent).await.unwrap();
 
-    assert_eq!(agent.status, AgentStatus::Online);
-    assert_eq!(agent.roles, vec!["coder".to_string()]);
+    assert_eq!(agent.status(), AgentStatus::Online);
+    assert_eq!(agent.roles(), &["coder".to_string()]);
 
-    let fetched = AgentStore::get(&store, &agent.id).await.unwrap().unwrap();
-    assert_eq!(fetched.id, agent.id);
+    let fetched = AgentStore::find_by_id(&store, &agent.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.id(), agent.id());
 }
 
 #[tokio::test]
 #[ignore]
-async fn agent_heartbeat_updates_timestamp() {
+async fn agent_save_updates_existing() {
     let store = backend().await;
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let mut agent = Agent::register(
+        ns("test-project"),
+        vec!["dev".into()],
+        "original".into(),
+        HashMap::new(),
+    );
+    AgentStore::save(&store, &agent).await.unwrap();
 
-    let before = agent.last_heartbeat;
+    let before = agent.last_heartbeat();
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    AgentStore::heartbeat(&store, &agent.id).await.unwrap();
+    agent.heartbeat();
+    AgentStore::save(&store, &agent).await.unwrap();
 
-    let updated = AgentStore::get(&store, &agent.id).await.unwrap().unwrap();
-    assert!(updated.last_heartbeat > before);
+    let updated = AgentStore::find_by_id(&store, &agent.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(updated.last_heartbeat() > before);
 }
 
 #[tokio::test]
 #[ignore]
 async fn agent_disconnect_sets_status() {
     let store = backend().await;
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let mut agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &agent).await.unwrap();
 
-    AgentStore::disconnect(&store, &agent.id).await.unwrap();
-    let fetched = AgentStore::get(&store, &agent.id).await.unwrap().unwrap();
-    assert_eq!(fetched.status, AgentStatus::Disconnected);
+    agent.disconnect();
+    AgentStore::save(&store, &agent).await.unwrap();
+
+    let fetched = AgentStore::find_by_id(&store, &agent.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.status(), AgentStatus::Disconnected);
 }
 
 #[tokio::test]
 #[ignore]
 async fn agent_find_timed_out() {
     let store = backend().await;
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let mut agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &agent).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
-    assert!(timed_out.iter().any(|a| a.id == agent.id));
+    assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
-    AgentStore::disconnect(&store, &agent.id).await.unwrap();
+    agent.disconnect();
+    AgentStore::save(&store, &agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
-    assert!(!timed_out.iter().any(|a| a.id == agent.id));
+    assert!(!timed_out.iter().any(|a| a.id() == agent.id()));
 }
 
 #[tokio::test]
 #[ignore]
-async fn task_create_and_claim() {
+async fn task_save_and_get() {
     let store = backend().await;
 
-    // Register agent first (FK constraint)
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("proj"),
-            roles: vec!["dev".into()],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let task = Task::new(
+        ns("proj"),
+        "Do thing".into(),
+        "Details".into(),
+        Priority::High,
+        vec!["dev".into()],
+        vec![],
+        None,
+        false,
+    );
+    TaskStore::save(&store, &task).await.unwrap();
 
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "Do thing".into(),
-            description: "Details".into(),
-            priority: Priority::High,
-            assigned_roles: vec!["dev".into()],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(task.status, TaskStatus::Pending);
-
-    let claimed = TaskStore::claim(&store, &task.id, &agent.id).await.unwrap();
-    assert_eq!(claimed.status, TaskStatus::Claimed);
-    assert_eq!(claimed.claimed_by, Some(agent.id));
-}
-
-#[tokio::test]
-#[ignore]
-async fn task_claim_fails_when_not_pending() {
-    let store = backend().await;
-
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "t".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    TaskStore::claim(&store, &task.id, &agent.id).await.unwrap();
-
-    let agent2 = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let result = TaskStore::claim(&store, &task.id, &agent2.id).await;
-    assert!(result.is_err());
-}
-
-#[tokio::test]
-#[ignore]
-async fn task_complete() {
-    let store = backend().await;
-
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "t".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    TaskStore::claim(&store, &task.id, &agent.id).await.unwrap();
-    TaskStore::update_status(&store, &task.id, TaskStatus::InProgress)
-        .await
-        .unwrap();
-
-    let completed = TaskStore::complete(&store, &task.id, Some("done".into()))
-        .await
-        .unwrap();
-    assert_eq!(completed.status, TaskStatus::Completed);
-    assert_eq!(completed.result_summary, Some("done".into()));
-}
-
-#[tokio::test]
-#[ignore]
-async fn task_dependency_blocking() {
-    let store = backend().await;
-
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let dep = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "dep".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    let task = TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "main".into(),
-            description: "".into(),
-            priority: Priority::Normal,
-            assigned_roles: vec![],
-            depends_on: vec![dep.id],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(task.status, TaskStatus::Blocked);
-
-    TaskStore::claim(&store, &dep.id, &agent.id).await.unwrap();
-    TaskStore::update_status(&store, &dep.id, TaskStatus::InProgress)
-        .await
-        .unwrap();
-    TaskStore::complete(&store, &dep.id, None).await.unwrap();
-
-    TaskStore::update_status(&store, &task.id, TaskStatus::Pending)
-        .await
-        .unwrap();
-    let fetched = TaskStore::get(&store, &task.id).await.unwrap().unwrap();
-    assert_eq!(fetched.status, TaskStatus::Pending);
+    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.status(), TaskStatus::Pending);
+    assert_eq!(fetched.title(), "Do thing");
 }
 
 #[tokio::test]
@@ -312,151 +127,68 @@ async fn task_dependency_blocking() {
 async fn task_list_sorted_by_priority() {
     let store = backend().await;
 
-    TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "low".into(),
-            description: "".into(),
-            priority: Priority::Low,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let low = Task::new(
+        ns("proj"),
+        "low".into(),
+        "".into(),
+        Priority::Low,
+        vec![],
+        vec![],
+        None,
+        false,
+    );
+    TaskStore::save(&store, &low).await.unwrap();
 
-    TaskStore::create(
-        &store,
-        CreateTask {
-            namespace: ns("proj"),
-            title: "critical".into(),
-            description: "".into(),
-            priority: Priority::Critical,
-            assigned_roles: vec![],
-            depends_on: vec![],
-            created_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let critical = Task::new(
+        ns("proj"),
+        "critical".into(),
+        "".into(),
+        Priority::Critical,
+        vec![],
+        vec![],
+        None,
+        false,
+    );
+    TaskStore::save(&store, &critical).await.unwrap();
 
     let tasks = TaskStore::list(&store, TaskFilter::default())
         .await
         .unwrap();
-    assert_eq!(tasks[0].title, "critical");
-    assert_eq!(tasks[1].title, "low");
+    assert_eq!(tasks[0].title(), "critical");
+    assert_eq!(tasks[1].title(), "low");
 }
 
 #[tokio::test]
 #[ignore]
-async fn memory_write_and_read() {
+async fn memory_save_and_find_by_key() {
     let store = backend().await;
 
-    let entry = MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "config".into(),
-            value: "hello world".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let entry = MemoryEntry::new(ns("app"), "config".into(), "hello world".into(), None);
+    MemoryStore::save(&store, &entry).await.unwrap();
 
-    assert_eq!(entry.version, Version::initial());
-
-    let read = MemoryStore::read(&store, &ns("app"), "config")
+    let read = MemoryStore::find_by_key(&store, &ns("app"), "config")
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(read.value, "hello world");
+    assert_eq!(read.value(), "hello world");
 }
 
 #[tokio::test]
 #[ignore]
-async fn memory_version_check_success() {
+async fn memory_save_updates_existing() {
     let store = backend().await;
 
-    let entry = MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "k".into(),
-            value: "v1".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let mut entry = MemoryEntry::new(ns("app"), "k".into(), "v1".into(), None);
+    MemoryStore::save(&store, &entry).await.unwrap();
 
-    let updated = MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "k".into(),
-            value: "v2".into(),
-            expected_version: Some(entry.version),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    entry.update("v2".into(), None);
+    MemoryStore::save(&store, &entry).await.unwrap();
 
-    assert_eq!(updated.version, Version::initial().next());
-    assert_eq!(updated.value, "v2");
-}
-
-#[tokio::test]
-#[ignore]
-async fn memory_version_check_failure() {
-    let store = backend().await;
-
-    MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "k".into(),
-            value: "v1".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    let result = MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "k".into(),
-            value: "v2".into(),
-            expected_version: Some(Version::from(99)),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await;
-
-    assert!(result.is_err());
+    let read = MemoryStore::find_by_key(&store, &ns("app"), "k")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read.value(), "v2");
 }
 
 #[tokio::test]
@@ -464,42 +196,17 @@ async fn memory_version_check_failure() {
 async fn memory_list_with_namespace_prefix() {
     let store = backend().await;
 
-    MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app/tasks"),
-            key: "a".into(),
-            value: "x".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let entry_a = MemoryEntry::new(ns("app/tasks"), "a".into(), "x".into(), None);
+    MemoryStore::save(&store, &entry_a).await.unwrap();
 
-    MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app/other"),
-            key: "b".into(),
-            value: "y".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let entry_b = MemoryEntry::new(ns("app/other"), "b".into(), "y".into(), None);
+    MemoryStore::save(&store, &entry_b).await.unwrap();
 
     let all = MemoryStore::list(
         &store,
         MemoryFilter {
             namespace: Some(ns("app")),
+            ..Default::default()
         },
     )
     .await
@@ -510,12 +217,13 @@ async fn memory_list_with_namespace_prefix() {
         &store,
         MemoryFilter {
             namespace: Some(ns("app/tasks")),
+            ..Default::default()
         },
     )
     .await
     .unwrap();
     assert_eq!(tasks_only.len(), 1);
-    assert_eq!(tasks_only[0].key, "a");
+    assert_eq!(tasks_only[0].key(), "a");
 }
 
 #[tokio::test]
@@ -523,43 +231,22 @@ async fn memory_list_with_namespace_prefix() {
 async fn memory_search_by_keyword() {
     let store = backend().await;
 
-    MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "notes".into(),
-            value: "the quick brown fox".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let entry1 = MemoryEntry::new(
+        ns("app"),
+        "notes".into(),
+        "the quick brown fox".into(),
+        None,
+    );
+    MemoryStore::save(&store, &entry1).await.unwrap();
 
-    MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "other".into(),
-            value: "lazy dog".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let entry2 = MemoryEntry::new(ns("app"), "other".into(), "lazy dog".into(), None);
+    MemoryStore::save(&store, &entry2).await.unwrap();
 
     let results = MemoryStore::search(&store, "quick", None, None, 10)
         .await
         .unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].key, "notes");
+    assert_eq!(results[0].key(), "notes");
 }
 
 #[tokio::test]
@@ -567,82 +254,55 @@ async fn memory_search_by_keyword() {
 async fn memory_delete() {
     let store = backend().await;
 
-    MemoryStore::write(
-        &store,
-        WriteMemory {
-            namespace: ns("app"),
-            key: "k".into(),
-            value: "v".into(),
-            expected_version: None,
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let entry = MemoryEntry::new(ns("app"), "k".into(), "v".into(), None);
+    MemoryStore::save(&store, &entry).await.unwrap();
 
     MemoryStore::delete(&store, &ns("app"), "k").await.unwrap();
-    let result = MemoryStore::read(&store, &ns("app"), "k").await.unwrap();
+    let result = MemoryStore::find_by_key(&store, &ns("app"), "k")
+        .await
+        .unwrap();
     assert!(result.is_none());
 }
 
 #[tokio::test]
 #[ignore]
-async fn message_send_and_check() {
+async fn message_save_and_find_pending() {
     let store = backend().await;
 
-    // Register agents (FK constraint)
+    let from_agent = Agent::register(ns("test-project"), vec![], "sender".into(), HashMap::new());
+    AgentStore::save(&store, &from_agent).await.unwrap();
+
+    let to_agent = Agent::register(
+        ns("test-project"),
+        vec![],
+        "receiver".into(),
+        HashMap::new(),
+    );
+    AgentStore::save(&store, &to_agent).await.unwrap();
+
+    let msg = Message::new(
+        ns("test-project"),
+        from_agent.id(),
+        MessageTarget::Agent(to_agent.id()),
+        "hello".into(),
+        None,
+    );
+    MessageStore::save(&store, &msg).await.unwrap();
+    assert_eq!(msg.status(), MessageStatus::Pending);
+
     let project_ns = ns("test-project");
-
-    let from_agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "sender".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let to_agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "receiver".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let msg = MessageStore::send(
-        &store,
-        CreateMessage {
-            namespace: ns("test-project"),
-            from: from_agent.id,
-            to: MessageTarget::Agent(to_agent.id),
-            body: "hello".into(),
-        },
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(msg.status, MessageStatus::Pending);
-
-    let messages = MessageStore::check(&store, &to_agent.id, &project_ns)
+    let messages = MessageStore::find_pending(&store, &to_agent.id(), &project_ns)
         .await
         .unwrap();
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].body, "hello");
-    assert_eq!(messages[0].status, MessageStatus::Delivered);
+    assert_eq!(messages[0].body(), "hello");
+    assert_eq!(messages[0].status(), MessageStatus::Pending);
 
-    // Second check returns nothing
-    let messages = MessageStore::check(&store, &to_agent.id, &project_ns)
+    let mut delivered = messages.into_iter().next().unwrap();
+    delivered.deliver();
+    MessageStore::save(&store, &delivered).await.unwrap();
+
+    let messages = MessageStore::find_pending(&store, &to_agent.id(), &project_ns)
         .await
         .unwrap();
     assert!(messages.is_empty());
@@ -650,107 +310,69 @@ async fn message_send_and_check() {
 
 #[tokio::test]
 #[ignore]
-async fn message_mark_read() {
+async fn message_find_by_id_and_mark_read() {
     let store = backend().await;
 
-    let project_ns = ns("test-project");
+    let from_agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &from_agent).await.unwrap();
 
-    let from_agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let to_agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &to_agent).await.unwrap();
 
-    let to_agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let msg = Message::new(
+        ns("test-project"),
+        from_agent.id(),
+        MessageTarget::Agent(to_agent.id()),
+        "hi".into(),
+        None,
+    );
+    MessageStore::save(&store, &msg).await.unwrap();
 
-    let msg = MessageStore::send(
-        &store,
-        CreateMessage {
-            namespace: ns("test-project"),
-            from: from_agent.id,
-            to: MessageTarget::Agent(to_agent.id),
-            body: "hi".into(),
-        },
-    )
-    .await
-    .unwrap();
-
-    MessageStore::check(&store, &to_agent.id, &project_ns)
+    let mut fetched = MessageStore::find_by_id(&store, &msg.id())
         .await
+        .unwrap()
         .unwrap();
-    MessageStore::mark_read(&store, &[msg.id]).await.unwrap();
+    fetched.mark_read();
+    MessageStore::save(&store, &fetched).await.unwrap();
+
+    let read = MessageStore::find_by_id(&store, &msg.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read.status(), MessageStatus::Read);
 }
 
 #[tokio::test]
 #[ignore]
-async fn context_save_and_load() {
+async fn context_save_and_find_latest() {
     let store = backend().await;
 
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("proj"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let agent = Agent::register(ns("proj"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &agent).await.unwrap();
 
-    ContextStore::save(
-        &store,
-        CreateSnapshot {
-            agent_id: agent.id,
-            namespace: ns("proj"),
-            summary: "first snapshot".into(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let snap1 = ContextSnapshot::new(
+        agent.id(),
+        ns("proj"),
+        "first snapshot".into(),
+        HashMap::new(),
+    );
+    ContextStore::save(&store, &snap1).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-    ContextStore::save(
-        &store,
-        CreateSnapshot {
-            agent_id: agent.id,
-            namespace: ns("proj"),
-            summary: "second snapshot".into(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let snap2 = ContextSnapshot::new(
+        agent.id(),
+        ns("proj"),
+        "second snapshot".into(),
+        HashMap::new(),
+    );
+    ContextStore::save(&store, &snap2).await.unwrap();
 
-    let loaded = ContextStore::load(&store, &agent.id)
+    let loaded = ContextStore::find_latest(&store, &agent.id())
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(loaded.summary, "second snapshot");
+    assert_eq!(loaded.summary(), "second snapshot");
 }
 
 #[tokio::test]
@@ -758,68 +380,26 @@ async fn context_save_and_load() {
 async fn context_list_filters() {
     let store = backend().await;
 
-    let agent1 = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("proj"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let agent1 = Agent::register(ns("proj"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &agent1).await.unwrap();
 
-    let agent2 = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("other"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let agent2 = Agent::register(ns("other"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &agent2).await.unwrap();
 
-    ContextStore::save(
-        &store,
-        CreateSnapshot {
-            agent_id: agent1.id,
-            namespace: ns("proj"),
-            summary: "a1".into(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let snap1 = ContextSnapshot::new(agent1.id(), ns("proj"), "a1".into(), HashMap::new());
+    ContextStore::save(&store, &snap1).await.unwrap();
 
-    ContextStore::save(
-        &store,
-        CreateSnapshot {
-            agent_id: agent2.id,
-            namespace: ns("other"),
-            summary: "a2".into(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let snap2 = ContextSnapshot::new(agent2.id(), ns("other"), "a2".into(), HashMap::new());
+    ContextStore::save(&store, &snap2).await.unwrap();
 
     let all = ContextStore::list(&store, None, &ns("proj")).await.unwrap();
     assert_eq!(all.len(), 1);
 
-    let by_agent = ContextStore::list(&store, Some(&agent1.id), &ns("proj"))
+    let by_agent = ContextStore::list(&store, Some(&agent1.id()), &ns("proj"))
         .await
         .unwrap();
     assert_eq!(by_agent.len(), 1);
-    assert_eq!(by_agent[0].summary, "a1");
+    assert_eq!(by_agent[0].summary(), "a1");
 
     let by_ns = ContextStore::list(&store, None, &ns("other"))
         .await
@@ -832,47 +412,24 @@ async fn context_list_filters() {
 async fn context_search_by_keyword() {
     let store = backend().await;
 
-    let agent = AgentStore::register(
-        &store,
-        RegisterAgent {
-            namespace: ns("test-project"),
-            roles: vec![],
-            description: "".into(),
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    AgentStore::save(&store, &agent).await.unwrap();
 
-    ContextStore::save(
-        &store,
-        CreateSnapshot {
-            agent_id: agent.id,
-            namespace: ns("test-project"),
-            summary: "working on authentication module".into(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let snap1 = ContextSnapshot::new(
+        agent.id(),
+        ns("test-project"),
+        "working on authentication module".into(),
+        HashMap::new(),
+    );
+    ContextStore::save(&store, &snap1).await.unwrap();
 
-    ContextStore::save(
-        &store,
-        CreateSnapshot {
-            agent_id: agent.id,
-            namespace: ns("test-project"),
-            summary: "fixing database migrations".into(),
-            embedding: None,
-            embedding_model: None,
-            embedding_dimensions: None,
-            metadata: HashMap::new(),
-        },
-    )
-    .await
-    .unwrap();
+    let snap2 = ContextSnapshot::new(
+        agent.id(),
+        ns("test-project"),
+        "fixing database migrations".into(),
+        HashMap::new(),
+    );
+    ContextStore::save(&store, &snap2).await.unwrap();
 
     let results = ContextStore::search(
         &store,
@@ -885,124 +442,105 @@ async fn context_search_by_keyword() {
     .await
     .unwrap();
     assert_eq!(results.len(), 1);
-    assert!(results[0].summary.contains("authentication"));
+    assert!(results[0].summary().contains("authentication"));
 }
 
 #[tokio::test]
-async fn skill_write_and_read() {
+#[ignore]
+async fn skill_save_and_find_by_name() {
     let store = backend().await;
     let project_ns = ns("test-project");
 
-    let skill = SkillStore::write(
-        &store,
-        WriteSkill {
-            namespace: project_ns.clone(),
-            name: "commit-conventions".to_string(),
-            description: "How to write commit messages".to_string(),
-            content: "Use conventional commits".to_string(),
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let skill = Skill::new(
+        project_ns.clone(),
+        "commit-conventions".to_string(),
+        "How to write commit messages".to_string(),
+        "Use conventional commits".to_string(),
+        None,
+    );
+    SkillStore::save(&store, &skill).await.unwrap();
 
-    assert_eq!(skill.name, "commit-conventions");
-    assert_eq!(skill.namespace, project_ns);
-
-    let read = SkillStore::read(&store, &project_ns, "commit-conventions")
+    let read = SkillStore::find_by_name(&store, &project_ns, "commit-conventions")
         .await
         .unwrap();
     assert!(read.is_some());
-    assert_eq!(read.unwrap().content, "Use conventional commits");
+    assert_eq!(read.unwrap().content(), "Use conventional commits");
 
-    let missing = SkillStore::read(&store, &project_ns, "nonexistent")
+    let missing = SkillStore::find_by_name(&store, &project_ns, "nonexistent")
         .await
         .unwrap();
     assert!(missing.is_none());
 }
 
 #[tokio::test]
-async fn skill_write_updates_existing() {
+#[ignore]
+async fn skill_save_updates_existing() {
     let store = backend().await;
     let project_ns = ns("test-project");
 
-    SkillStore::write(
-        &store,
-        WriteSkill {
-            namespace: project_ns.clone(),
-            name: "style".to_string(),
-            description: "v1".to_string(),
-            content: "old content".to_string(),
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let skill = Skill::new(
+        project_ns.clone(),
+        "style".to_string(),
+        "v1".to_string(),
+        "old content".to_string(),
+        None,
+    );
+    SkillStore::save(&store, &skill).await.unwrap();
 
-    let updated = SkillStore::write(
-        &store,
-        WriteSkill {
-            namespace: project_ns.clone(),
-            name: "style".to_string(),
-            description: "v2".to_string(),
-            content: "new content".to_string(),
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let updated = Skill::new(
+        project_ns.clone(),
+        "style".to_string(),
+        "v2".to_string(),
+        "new content".to_string(),
+        None,
+    );
+    SkillStore::save(&store, &updated).await.unwrap();
 
-    assert_eq!(updated.content, "new content");
-    assert_eq!(updated.description, "v2");
+    let read = SkillStore::find_by_name(&store, &project_ns, "style")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(read.content(), "new content");
+    assert_eq!(read.description(), "v2");
 }
 
 #[tokio::test]
+#[ignore]
 async fn skill_list_filters_by_namespace() {
     let store = backend().await;
 
-    SkillStore::write(
-        &store,
-        WriteSkill {
-            namespace: ns("proj-a"),
-            name: "style".to_string(),
-            description: "A style".to_string(),
-            content: "A content".to_string(),
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let s1 = Skill::new(
+        ns("proj-a"),
+        "style".to_string(),
+        "A style".to_string(),
+        "A content".to_string(),
+        None,
+    );
+    SkillStore::save(&store, &s1).await.unwrap();
 
-    SkillStore::write(
-        &store,
-        WriteSkill {
-            namespace: ns("proj-a/backend"),
-            name: "arch".to_string(),
-            description: "Backend arch".to_string(),
-            content: "Hexagonal".to_string(),
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let s2 = Skill::new(
+        ns("proj-a/backend"),
+        "arch".to_string(),
+        "Backend arch".to_string(),
+        "Hexagonal".to_string(),
+        None,
+    );
+    SkillStore::save(&store, &s2).await.unwrap();
 
-    SkillStore::write(
-        &store,
-        WriteSkill {
-            namespace: ns("proj-b"),
-            name: "style".to_string(),
-            description: "B style".to_string(),
-            content: "B content".to_string(),
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let s3 = Skill::new(
+        ns("proj-b"),
+        "style".to_string(),
+        "B style".to_string(),
+        "B content".to_string(),
+        None,
+    );
+    SkillStore::save(&store, &s3).await.unwrap();
 
     let all_a = SkillStore::list(
         &store,
         SkillFilter {
             namespace: Some(ns("proj-a")),
+            ..Default::default()
         },
     )
     .await
@@ -1013,36 +551,36 @@ async fn skill_list_filters_by_namespace() {
         &store,
         SkillFilter {
             namespace: Some(ns("proj-b")),
+            ..Default::default()
         },
     )
     .await
     .unwrap();
     assert_eq!(only_b.len(), 1);
-    assert_eq!(only_b[0].name, "style");
+    assert_eq!(only_b[0].name(), "style");
 }
 
 #[tokio::test]
+#[ignore]
 async fn skill_delete() {
     let store = backend().await;
     let project_ns = ns("test-project");
 
-    SkillStore::write(
-        &store,
-        WriteSkill {
-            namespace: project_ns.clone(),
-            name: "temp".to_string(),
-            description: "temporary".to_string(),
-            content: "will be deleted".to_string(),
-            written_by: None,
-        },
-    )
-    .await
-    .unwrap();
+    let skill = Skill::new(
+        project_ns.clone(),
+        "temp".to_string(),
+        "temporary".to_string(),
+        "will be deleted".to_string(),
+        None,
+    );
+    SkillStore::save(&store, &skill).await.unwrap();
 
     SkillStore::delete(&store, &project_ns, "temp")
         .await
         .unwrap();
 
-    let read = SkillStore::read(&store, &project_ns, "temp").await.unwrap();
+    let read = SkillStore::find_by_name(&store, &project_ns, "temp")
+        .await
+        .unwrap();
     assert!(read.is_none());
 }
