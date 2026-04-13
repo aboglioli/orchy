@@ -23,31 +23,6 @@ impl Namespace {
         Self("/".to_string())
     }
 
-    fn validate(s: &str) -> Result<(), String> {
-        if s == "/" {
-            return Ok(());
-        }
-        if !s.starts_with('/') {
-            return Err("namespace must start with '/'".to_string());
-        }
-        for part in s[1..].split('/') {
-            if part.is_empty() {
-                return Err(
-                    "namespace parts must not be empty (check for trailing or double slashes)"
-                        .to_string(),
-                );
-            }
-            for ch in part.chars() {
-                if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
-                    return Err(format!(
-                        "invalid character '{ch}' in namespace part '{part}'"
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-
     pub fn is_root(&self) -> bool {
         self.0 == "/"
     }
@@ -93,7 +68,27 @@ impl TryFrom<String> for Namespace {
     type Error = String;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        Self::validate(&s)?;
+        if s == "/" {
+            return Ok(Namespace(s));
+        }
+        if !s.starts_with('/') {
+            return Err("namespace must start with '/'".to_string());
+        }
+        for part in s[1..].split('/') {
+            if part.is_empty() {
+                return Err(
+                    "namespace parts must not be empty (check for trailing or double slashes)"
+                        .to_string(),
+                );
+            }
+            for ch in part.chars() {
+                if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
+                    return Err(format!(
+                        "invalid character '{ch}' in namespace part '{part}'"
+                    ));
+                }
+            }
+        }
         Ok(Namespace(s))
     }
 }
@@ -128,8 +123,10 @@ impl AsRef<str> for Namespace {
 #[serde(try_from = "String", into = "String")]
 pub struct ProjectId(String);
 
-impl ProjectId {
-    fn validate(s: &str) -> Result<(), String> {
+impl TryFrom<String> for ProjectId {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
         if s.is_empty() {
             return Err("project must not be empty".to_string());
         }
@@ -141,15 +138,6 @@ impl ProjectId {
                 return Err(format!("invalid character '{ch}' in project"));
             }
         }
-        Ok(())
-    }
-}
-
-impl TryFrom<String> for ProjectId {
-    type Error = String;
-
-    fn try_from(s: String) -> Result<Self, Self::Error> {
-        Self::validate(&s)?;
         Ok(ProjectId(s))
     }
 }
