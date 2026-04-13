@@ -1,6 +1,8 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
+use sea_query_binder::SqlxBinder;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -11,6 +13,45 @@ use orchy_core::note::Note;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::PgBackend;
+
+#[derive(Iden)]
+enum Tasks {
+    Table,
+    #[iden = "id"]
+    Id,
+    #[iden = "project"]
+    Project,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "parent_id"]
+    ParentId,
+    #[iden = "title"]
+    Title,
+    #[iden = "description"]
+    Description,
+    #[iden = "status"]
+    Status,
+    #[iden = "priority"]
+    Priority,
+    #[iden = "assigned_roles"]
+    AssignedRoles,
+    #[iden = "assigned_to"]
+    AssignedTo,
+    #[iden = "assigned_at"]
+    AssignedAt,
+    #[iden = "depends_on"]
+    DependsOn,
+    #[iden = "result_summary"]
+    ResultSummary,
+    #[iden = "notes"]
+    Notes,
+    #[iden = "created_by"]
+    CreatedBy,
+    #[iden = "created_at"]
+    CreatedAt,
+    #[iden = "updated_at"]
+    UpdatedAt,
+}
 
 impl TaskStore for PgBackend {
     async fn save(&self, task: &Task) -> Result<()> {
@@ -80,86 +121,67 @@ impl TaskStore for PgBackend {
     }
 
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
-        let mut sql = String::from(
-            "SELECT id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, result_summary, notes, created_by, created_at, updated_at
-             FROM tasks WHERE 1=1",
-        );
-        let mut param_idx = 1u32;
-
-        let mut ns_val: Option<String> = None;
-        let mut project_val: Option<String> = None;
-        let mut status_val: Option<String> = None;
-        let mut role_val: Option<String> = None;
-        let mut assigned_val: Option<Uuid> = None;
-        let mut parent_val: Option<Uuid> = None;
+        let mut select = Query::select();
+        select
+            .from(Tasks::Table)
+            .columns([
+                Tasks::Id,
+                Tasks::Project,
+                Tasks::Namespace,
+                Tasks::ParentId,
+                Tasks::Title,
+                Tasks::Description,
+                Tasks::Status,
+                Tasks::Priority,
+                Tasks::AssignedRoles,
+                Tasks::AssignedTo,
+                Tasks::AssignedAt,
+                Tasks::DependsOn,
+                Tasks::ResultSummary,
+                Tasks::Notes,
+                Tasks::CreatedBy,
+                Tasks::CreatedAt,
+                Tasks::UpdatedAt,
+            ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
-                ));
-                ns_val = Some(ns.to_string());
-                param_idx += 1;
+                select.cond_where(
+                    Cond::any()
+                        .add(Expr::col(Tasks::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(Tasks::Namespace).like(format!("{}/%", ns))),
+                );
             }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ${param_idx}"));
-            project_val = Some(project.to_string());
-            param_idx += 1;
+            select.and_where(Expr::col(Tasks::Project).eq(project.to_string()));
         }
         if let Some(ref status) = filter.status {
-            sql.push_str(&format!(" AND status = ${param_idx}"));
-            status_val = Some(status.to_string());
-            param_idx += 1;
+            select.and_where(Expr::col(Tasks::Status).eq(status.to_string()));
         }
         if let Some(ref role) = filter.assigned_role {
-            sql.push_str(&format!(
-                " AND (assigned_roles = '[]'::jsonb OR assigned_roles @> to_jsonb(${param_idx}::text))"
+            select.and_where(Expr::cust_with_values(
+                "(assigned_roles = '[]'::jsonb OR assigned_roles @> to_jsonb(?::text))",
+                [role.clone().into()],
             ));
-            role_val = Some(role.clone());
-            param_idx += 1;
         }
         if let Some(ref assigned) = filter.assigned_to {
-            sql.push_str(&format!(" AND assigned_to = ${param_idx}"));
-            assigned_val = Some(*assigned.as_uuid());
-            param_idx += 1;
+            select.and_where(Expr::col(Tasks::AssignedTo).eq(*assigned.as_uuid()));
         }
         if let Some(ref pid) = filter.parent_id {
-            sql.push_str(&format!(" AND parent_id = ${param_idx}"));
-            parent_val = Some(*pid.as_uuid());
+            select.and_where(Expr::col(Tasks::ParentId).eq(*pid.as_uuid()));
         }
 
-        sql.push_str(
-            " ORDER BY CASE priority
-                WHEN 'critical' THEN 3
-                WHEN 'high' THEN 2
-                WHEN 'normal' THEN 1
-                WHEN 'low' THEN 0
-                ELSE 1
-              END DESC",
+        select.order_by_expr(
+            Expr::cust(
+                "CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END",
+            ),
+            sea_query::Order::Desc,
         );
 
-        let mut query = sqlx::query(&sql);
-        if let Some(ref v) = ns_val {
-            query = query.bind(v);
-        }
-        if let Some(ref v) = project_val {
-            query = query.bind(v);
-        }
-        if let Some(ref v) = status_val {
-            query = query.bind(v);
-        }
-        if let Some(ref v) = role_val {
-            query = query.bind(v);
-        }
-        if let Some(v) = assigned_val {
-            query = query.bind(v);
-        }
-        if let Some(v) = parent_val {
-            query = query.bind(v);
-        }
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
-        let rows = query
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;

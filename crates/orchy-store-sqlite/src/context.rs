@@ -3,6 +3,8 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
+use sea_query::{Cond, Expr, Iden, Query, SqliteQueryBuilder};
+use sea_query_rusqlite::RusqliteBinder;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
@@ -10,6 +12,31 @@ use orchy_core::memory::{ContextSnapshot, ContextStore, RestoreContextSnapshot, 
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
+
+#[derive(Iden)]
+enum Contexts {
+    Table,
+    #[iden = "id"]
+    Id,
+    #[iden = "project"]
+    Project,
+    #[iden = "agent_id"]
+    AgentId,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "summary"]
+    Summary,
+    #[iden = "embedding"]
+    Embedding,
+    #[iden = "embedding_model"]
+    EmbeddingModel,
+    #[iden = "embedding_dimensions"]
+    EmbeddingDimensions,
+    #[iden = "metadata"]
+    Metadata,
+    #[iden = "created_at"]
+    CreatedAt,
+}
 
 impl ContextStore for SqliteBackend {
     async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
@@ -77,36 +104,38 @@ impl ContextStore for SqliteBackend {
     ) -> Result<Vec<ContextSnapshot>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut sql = String::from(
-            "SELECT id, project, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at
-             FROM contexts WHERE 1=1",
-        );
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut idx = 1;
+        let mut query = Query::select();
+        query.from(Contexts::Table).columns([
+            Contexts::Id,
+            Contexts::Project,
+            Contexts::AgentId,
+            Contexts::Namespace,
+            Contexts::Summary,
+            Contexts::Embedding,
+            Contexts::EmbeddingModel,
+            Contexts::EmbeddingDimensions,
+            Contexts::Metadata,
+            Contexts::CreatedAt,
+        ]);
 
         if !namespace.is_root() {
-            sql.push_str(&format!(
-                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-            ));
-            params.push(Box::new(namespace.to_string()));
-            idx += 1;
+            query.cond_where(
+                Cond::any()
+                    .add(Expr::col(Contexts::Namespace).eq(namespace.to_string()))
+                    .add(Expr::col(Contexts::Namespace).like(format!("{}/%", namespace))),
+            );
         }
 
         if let Some(a) = agent {
-            sql.push_str(&format!(" AND agent_id = ?{idx}"));
-            params.push(Box::new(a.to_string()));
-            idx += 1;
+            query.and_where(Expr::col(Contexts::AgentId).eq(a.to_string()));
         }
-        let _ = idx;
 
+        let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
-
         let snapshots = stmt
-            .query_map(param_refs.as_slice(), row_to_context)
+            .query_map(&*values.as_params(), row_to_context)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -124,6 +153,8 @@ impl ContextStore for SqliteBackend {
     ) -> Result<Vec<ContextSnapshot>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
+        let fts_query = sanitize_fts_query(query);
+
         let mut sql = String::from(
             "SELECT c.id, c.project, c.agent_id, c.namespace, c.summary, c.embedding, c.embedding_model, c.embedding_dimensions, c.metadata, c.created_at
              FROM contexts c
@@ -131,13 +162,13 @@ impl ContextStore for SqliteBackend {
              WHERE contexts_fts MATCH ?1",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let fts_query = sanitize_fts_query(query);
         params.push(Box::new(fts_query));
         let mut idx = 2;
 
         if !namespace.is_root() {
             sql.push_str(&format!(
-                " AND (c.namespace = ?{idx} OR c.namespace LIKE ?{idx} || '/%')"
+                " AND (c.namespace = ?{idx} OR c.namespace LIKE ?{} || '/%')",
+                idx
             ));
             params.push(Box::new(namespace.to_string()));
             idx += 1;

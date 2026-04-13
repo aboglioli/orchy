@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
+use sea_query::{Cond, Expr, Iden, Query, SqliteQueryBuilder};
+use sea_query_rusqlite::RusqliteBinder;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
@@ -9,6 +11,33 @@ use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, RestoreMemoryEn
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
+
+#[derive(Iden)]
+enum Memory {
+    Table,
+    #[iden = "project"]
+    Project,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "key"]
+    Key,
+    #[iden = "value"]
+    Value,
+    #[iden = "version"]
+    Version,
+    #[iden = "embedding"]
+    Embedding,
+    #[iden = "embedding_model"]
+    EmbeddingModel,
+    #[iden = "embedding_dimensions"]
+    EmbeddingDimensions,
+    #[iden = "written_by"]
+    WrittenBy,
+    #[iden = "created_at"]
+    CreatedAt,
+    #[iden = "updated_at"]
+    UpdatedAt,
+}
 
 impl MemoryStore for SqliteBackend {
     async fn save(&self, entry: &MemoryEntry) -> Result<()> {
@@ -94,31 +123,40 @@ impl MemoryStore for SqliteBackend {
     async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut sql = "SELECT project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at FROM memory WHERE 1=1".to_string();
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut idx = 1;
+        let mut query = Query::select();
+        query.from(Memory::Table).columns([
+            Memory::Project,
+            Memory::Namespace,
+            Memory::Key,
+            Memory::Value,
+            Memory::Version,
+            Memory::Embedding,
+            Memory::EmbeddingModel,
+            Memory::EmbeddingDimensions,
+            Memory::WrittenBy,
+            Memory::CreatedAt,
+            Memory::UpdatedAt,
+        ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-                ));
-                params.push(Box::new(ns.to_string()));
-                idx += 1;
+                query.cond_where(
+                    Cond::any()
+                        .add(Expr::col(Memory::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(Memory::Namespace).like(format!("{}/%", ns))),
+                );
             }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ?{idx}"));
-            params.push(Box::new(project.to_string()));
+            query.and_where(Expr::col(Memory::Project).eq(project.to_string()));
         }
 
+        let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
         let entries = stmt
-            .query_map(param_refs.as_slice(), row_to_memory)
+            .query_map(&*values.as_params(), row_to_memory)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;

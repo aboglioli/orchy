@@ -1,4 +1,6 @@
 use chrono::{DateTime, Utc};
+use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
+use sea_query_binder::SqlxBinder;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -8,6 +10,27 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::skill::{RestoreSkill, Skill, SkillFilter, SkillStore};
 
 use crate::PgBackend;
+
+#[derive(Iden)]
+enum Skills {
+    Table,
+    #[iden = "project"]
+    Project,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "name"]
+    Name,
+    #[iden = "description"]
+    Description,
+    #[iden = "content"]
+    Content,
+    #[iden = "written_by"]
+    WrittenBy,
+    #[iden = "created_at"]
+    CreatedAt,
+    #[iden = "updated_at"]
+    UpdatedAt,
+}
 
 impl SkillStore for PgBackend {
     async fn save(&self, skill: &Skill) -> Result<()> {
@@ -56,30 +79,36 @@ impl SkillStore for PgBackend {
     }
 
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
-        let mut sql = "SELECT project, namespace, name, description, content, written_by, created_at, updated_at FROM skills WHERE 1=1".to_string();
-        let mut params: Vec<String> = Vec::new();
-        let mut idx = 1u32;
+        let mut select = Query::select();
+        select
+            .from(Skills::Table)
+            .columns([
+                Skills::Project,
+                Skills::Namespace,
+                Skills::Name,
+                Skills::Description,
+                Skills::Content,
+                Skills::WrittenBy,
+                Skills::CreatedAt,
+                Skills::UpdatedAt,
+            ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (namespace = ${idx} OR namespace LIKE ${idx} || '/%')"
-                ));
-                params.push(ns.to_string());
-                idx += 1;
+                select.cond_where(
+                    Cond::any()
+                        .add(Expr::col(Skills::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(Skills::Namespace).like(format!("{}/%", ns))),
+                );
             }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ${idx}"));
-            params.push(project.to_string());
+            select.and_where(Expr::col(Skills::Project).eq(project.to_string()));
         }
 
-        let mut query = sqlx::query(&sql);
-        for p in &params {
-            query = query.bind(p);
-        }
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
-        let rows = query
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
