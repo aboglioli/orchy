@@ -112,6 +112,8 @@ async fn bootstrap_handler(
         port,
         &container.skill_service,
         &container.project_service,
+        &container.agent_service,
+        &container.task_service,
     )
     .await
     {

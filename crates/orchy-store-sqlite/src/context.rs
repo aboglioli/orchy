@@ -6,7 +6,7 @@ use rusqlite::OptionalExtension;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::memory::{ContextSnapshot, ContextStore, SnapshotId};
+use orchy_core::memory::{ContextSnapshot, ContextStore, RestoreContextSnapshot, SnapshotId};
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
@@ -206,18 +206,18 @@ fn row_to_context(row: &rusqlite::Row) -> rusqlite::Result<ContextSnapshot> {
             rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    Ok(ContextSnapshot::restore(
+    Ok(ContextSnapshot::restore(RestoreContextSnapshot {
         id,
         project,
         agent_id,
         namespace,
         summary,
-        embedding_bytes.map(|b| bytes_to_embedding(&b)),
+        embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
         embedding_model,
-        embedding_dimensions.map(|d| d as u32),
-        serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
+        embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        metadata: serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
         created_at,
-    ))
+    }))
 }
 
 fn sanitize_fts_query(query: &str) -> String {

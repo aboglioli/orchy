@@ -1,7 +1,0 @@
-[package]
-name = "orchy-cli"
-edition.workspace = true
-version.workspace = true
-
-[dependencies]
-orchy-core.workspace = true

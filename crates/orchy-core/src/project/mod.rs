@@ -38,21 +38,14 @@ impl Project {
         }
     }
 
-    pub fn restore(
-        id: ProjectId,
-        description: String,
-        notes: Vec<Note>,
-        metadata: HashMap<String, String>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreProject) -> Self {
         Self {
-            id,
-            description,
-            notes,
-            metadata,
-            created_at,
-            updated_at,
+            id: r.id,
+            description: r.description,
+            notes: r.notes,
+            metadata: r.metadata,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }
     }
 
@@ -89,6 +82,15 @@ impl Project {
     pub fn updated_at(&self) -> DateTime<Utc> {
         self.updated_at
     }
+}
+
+pub struct RestoreProject {
+    pub id: ProjectId,
+    pub description: String,
+    pub notes: Vec<Note>,
+    pub metadata: HashMap<String, String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use rusqlite::OptionalExtension;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::skill::{Skill, SkillFilter, SkillStore};
+use orchy_core::skill::{RestoreSkill, Skill, SkillFilter, SkillStore};
 
 use crate::SqliteBackend;
 
@@ -141,14 +141,14 @@ fn row_to_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
             rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    Ok(Skill::restore(
+    Ok(Skill::restore(RestoreSkill {
         project,
         namespace,
         name,
         description,
         content,
-        written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
+        written_by: written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
         created_at,
         updated_at,
-    ))
+    }))
 }

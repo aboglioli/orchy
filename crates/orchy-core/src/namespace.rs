@@ -119,6 +119,14 @@ impl AsRef<str> for Namespace {
     }
 }
 
+impl std::str::FromStr for Namespace {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.to_string())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ProjectId(String);
@@ -165,6 +173,14 @@ impl fmt::Display for ProjectId {
 impl AsRef<str> for ProjectId {
     fn as_ref(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::str::FromStr for ProjectId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.to_string())
     }
 }
 

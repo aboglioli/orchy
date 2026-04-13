@@ -68,6 +68,21 @@ impl MessageStore for StoreBackend {
     ) -> Result<Vec<Message>> {
         delegate_trait!(self, MessageStore::find_pending(agent, project, namespace))
     }
+    async fn find_sent(
+        &self,
+        sender: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        delegate_trait!(self, MessageStore::find_sent(sender, project, namespace))
+    }
+    async fn find_thread(
+        &self,
+        message_id: &MessageId,
+        limit: Option<usize>,
+    ) -> Result<Vec<Message>> {
+        delegate_trait!(self, MessageStore::find_thread(message_id, limit))
+    }
 }
 
 impl MemoryStore for StoreBackend {

@@ -20,6 +20,17 @@ pub trait MessageStore: Send + Sync {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn find_sent(
+        &self,
+        sender: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn find_thread(
+        &self,
+        message_id: &MessageId,
+        limit: Option<usize>,
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -28,7 +39,7 @@ pub struct MessageId(Uuid);
 
 impl MessageId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self(Uuid::now_v7())
     }
 
     pub fn from_uuid(uuid: Uuid) -> Self {
@@ -122,6 +133,19 @@ pub enum MessageStatus {
     Read,
 }
 
+impl FromStr for MessageStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(MessageStatus::Pending),
+            "delivered" => Ok(MessageStatus::Delivered),
+            "read" => Ok(MessageStatus::Read),
+            other => Err(format!("unknown message status: {other}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     id: MessageId,
@@ -157,27 +181,17 @@ impl Message {
         }
     }
 
-    pub fn restore(
-        id: MessageId,
-        project: ProjectId,
-        namespace: Namespace,
-        from: AgentId,
-        to: MessageTarget,
-        body: String,
-        reply_to: Option<MessageId>,
-        status: MessageStatus,
-        created_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreMessage) -> Self {
         Self {
-            id,
-            project,
-            namespace,
-            from,
-            to,
-            body,
-            reply_to,
-            status,
-            created_at,
+            id: r.id,
+            project: r.project,
+            namespace: r.namespace,
+            from: r.from,
+            to: r.to,
+            body: r.body,
+            reply_to: r.reply_to,
+            status: r.status,
+            created_at: r.created_at,
         }
     }
 
@@ -229,6 +243,18 @@ impl Message {
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
+}
+
+pub struct RestoreMessage {
+    pub id: MessageId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub from: AgentId,
+    pub to: MessageTarget,
+    pub body: String,
+    pub reply_to: Option<MessageId>,
+    pub status: MessageStatus,
+    pub created_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

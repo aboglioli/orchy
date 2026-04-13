@@ -7,10 +7,10 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::memory::{ContextSnapshot, ContextStore, SnapshotId};
+use orchy_core::memory::{ContextSnapshot, ContextStore, RestoreContextSnapshot, SnapshotId};
 use orchy_core::namespace::{Namespace, ProjectId};
 
-use crate::PgBackend;
+use crate::{PgBackend, parse_pg_vector_text};
 
 impl ContextStore for PgBackend {
     async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
@@ -168,28 +168,17 @@ fn row_to_context(row: &sqlx::postgres::PgRow) -> ContextSnapshot {
     let metadata: serde_json::Value = row.get("metadata");
     let created_at: DateTime<Utc> = row.get("created_at");
 
-    ContextSnapshot::restore(
-        SnapshotId::from_uuid(id),
-        ProjectId::try_from(project).expect("invalid project in database"),
-        AgentId::from_uuid(agent_id),
-        Namespace::try_from(namespace).expect("invalid namespace in database"),
+    ContextSnapshot::restore(RestoreContextSnapshot {
+        id: SnapshotId::from_uuid(id),
+        project: ProjectId::try_from(project).expect("invalid project in database"),
+        agent_id: AgentId::from_uuid(agent_id),
+        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
         summary,
-        embedding_str.and_then(|s| parse_pg_vector_text(&s)),
+        embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,
-        embedding_dimensions.map(|d| d as u32),
-        serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
+        embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        metadata: serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
         created_at,
-    )
+    })
 }
 
-fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {
-    let trimmed = s.trim_start_matches('[').trim_end_matches(']');
-    if trimmed.is_empty() {
-        return None;
-    }
-    let result: std::result::Result<Vec<f32>, _> = trimmed
-        .split(',')
-        .map(|v| v.trim().parse::<f32>())
-        .collect();
-    result.ok()
-}

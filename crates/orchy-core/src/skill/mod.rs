@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 
 use crate::agent::AgentId;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait SkillStore: Send + Sync {
@@ -45,9 +45,13 @@ impl Skill {
         description: String,
         content: String,
         written_by: Option<AgentId>,
-    ) -> Self {
+    ) -> Result<Self> {
+        if name.trim().is_empty() {
+            return Err(Error::InvalidInput("skill name must not be empty".into()));
+        }
+
         let now = Utc::now();
-        Self {
+        Ok(Self {
             project,
             namespace,
             name,
@@ -56,28 +60,19 @@ impl Skill {
             written_by,
             created_at: now,
             updated_at: now,
-        }
+        })
     }
 
-    pub fn restore(
-        project: ProjectId,
-        namespace: Namespace,
-        name: String,
-        description: String,
-        content: String,
-        written_by: Option<AgentId>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreSkill) -> Self {
         Self {
-            project,
-            namespace,
-            name,
-            description,
-            content,
-            written_by,
-            created_at,
-            updated_at,
+            project: r.project,
+            namespace: r.namespace,
+            name: r.name,
+            description: r.description,
+            content: r.content,
+            written_by: r.written_by,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }
     }
 
@@ -141,6 +136,17 @@ impl Skill {
 }
 
 #[derive(Debug, Clone)]
+pub struct RestoreSkill {
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub written_by: Option<AgentId>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 pub struct WriteSkill {
     pub project: ProjectId,
     pub namespace: Namespace,
@@ -173,6 +179,7 @@ mod tests {
             "content".to_string(),
             None,
         )
+        .unwrap()
     }
 
     #[test]

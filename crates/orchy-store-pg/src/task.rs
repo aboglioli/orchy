@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -6,7 +8,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
-use orchy_core::task::{Priority, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::PgBackend;
 
@@ -23,17 +25,18 @@ impl TaskStore for PgBackend {
         let notes_json = serde_json::to_value(task.notes()).unwrap();
 
         sqlx::query(
-            "INSERT INTO tasks (id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            "INSERT INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              ON CONFLICT (id) DO UPDATE SET
                 namespace = EXCLUDED.namespace,
+                parent_id = EXCLUDED.parent_id,
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
                 status = EXCLUDED.status,
                 priority = EXCLUDED.priority,
                 assigned_roles = EXCLUDED.assigned_roles,
-                claimed_by = EXCLUDED.claimed_by,
-                claimed_at = EXCLUDED.claimed_at,
+                assigned_to = EXCLUDED.assigned_to,
+                assigned_at = EXCLUDED.assigned_at,
                 depends_on = EXCLUDED.depends_on,
                 result_summary = EXCLUDED.result_summary,
                 notes = EXCLUDED.notes,
@@ -42,13 +45,14 @@ impl TaskStore for PgBackend {
         .bind(task.id().as_uuid())
         .bind(task.project().to_string())
         .bind(task.namespace().to_string())
+        .bind(task.parent_id().map(|id| *id.as_uuid()))
         .bind(task.title())
         .bind(task.description())
         .bind(task.status().to_string())
         .bind(task.priority().to_string())
         .bind(&roles_json)
-        .bind(task.claimed_by().map(|a| *a.as_uuid()))
-        .bind(task.claimed_at())
+        .bind(task.assigned_to().map(|a| *a.as_uuid()))
+        .bind(task.assigned_at())
         .bind(&depends_json)
         .bind(task.result_summary())
         .bind(&notes_json)
@@ -64,7 +68,7 @@ impl TaskStore for PgBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
+            "SELECT id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -77,7 +81,7 @@ impl TaskStore for PgBackend {
 
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         let mut sql = String::from(
-            "SELECT id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
+            "SELECT id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE 1=1",
         );
         let mut param_idx = 1u32;
@@ -86,7 +90,8 @@ impl TaskStore for PgBackend {
         let mut project_val: Option<String> = None;
         let mut status_val: Option<String> = None;
         let mut role_val: Option<String> = None;
-        let mut claimed_val: Option<Uuid> = None;
+        let mut assigned_val: Option<Uuid> = None;
+        let mut parent_val: Option<Uuid> = None;
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
@@ -114,9 +119,14 @@ impl TaskStore for PgBackend {
             role_val = Some(role.clone());
             param_idx += 1;
         }
-        if let Some(ref claimed) = filter.claimed_by {
-            sql.push_str(&format!(" AND claimed_by = ${param_idx}"));
-            claimed_val = Some(*claimed.as_uuid());
+        if let Some(ref assigned) = filter.assigned_to {
+            sql.push_str(&format!(" AND assigned_to = ${param_idx}"));
+            assigned_val = Some(*assigned.as_uuid());
+            param_idx += 1;
+        }
+        if let Some(ref pid) = filter.parent_id {
+            sql.push_str(&format!(" AND parent_id = ${param_idx}"));
+            parent_val = Some(*pid.as_uuid());
         }
 
         sql.push_str(
@@ -142,7 +152,10 @@ impl TaskStore for PgBackend {
         if let Some(ref v) = role_val {
             query = query.bind(v);
         }
-        if let Some(v) = claimed_val {
+        if let Some(v) = assigned_val {
+            query = query.bind(v);
+        }
+        if let Some(v) = parent_val {
             query = query.bind(v);
         }
 
@@ -159,13 +172,14 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
     let id: Uuid = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
+    let parent_id: Option<Uuid> = row.get("parent_id");
     let title: String = row.get("title");
     let description: String = row.get("description");
     let status: String = row.get("status");
     let priority: String = row.get("priority");
     let assigned_roles: serde_json::Value = row.get("assigned_roles");
-    let claimed_by: Option<Uuid> = row.get("claimed_by");
-    let claimed_at: Option<DateTime<Utc>> = row.get("claimed_at");
+    let assigned_to: Option<Uuid> = row.get("assigned_to");
+    let assigned_at: Option<DateTime<Utc>> = row.get("assigned_at");
     let depends_on: serde_json::Value = row.get("depends_on");
     let result_summary: Option<String> = row.get("result_summary");
     let notes_json: serde_json::Value = row.get("notes");
@@ -180,34 +194,23 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
         .collect();
     let notes: Vec<Note> = serde_json::from_value(notes_json).unwrap_or_default();
 
-    Task::restore(
-        TaskId::from_uuid(id),
-        ProjectId::try_from(project).expect("invalid project in database"),
-        Namespace::try_from(namespace).unwrap(),
+    Task::restore(RestoreTask {
+        id: TaskId::from_uuid(id),
+        project: ProjectId::try_from(project).expect("invalid project in database"),
+        namespace: Namespace::try_from(namespace).unwrap(),
+        parent_id: parent_id.map(TaskId::from_uuid),
         title,
         description,
-        parse_task_status(&status),
-        priority.parse::<Priority>().unwrap_or_default(),
-        serde_json::from_value(assigned_roles).unwrap_or_default(),
-        claimed_by.map(AgentId::from_uuid),
-        claimed_at,
-        depends_on_ids,
+        status: status.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending),
+        priority: priority.parse::<Priority>().unwrap_or_default(),
+        assigned_roles: serde_json::from_value(assigned_roles).unwrap_or_default(),
+        assigned_to: assigned_to.map(AgentId::from_uuid),
+        assigned_at,
+        depends_on: depends_on_ids,
         result_summary,
         notes,
-        created_by.map(AgentId::from_uuid),
+        created_by: created_by.map(AgentId::from_uuid),
         created_at,
         updated_at,
-    )
-}
-
-fn parse_task_status(s: &str) -> TaskStatus {
-    match s {
-        "pending" => TaskStatus::Pending,
-        "blocked" => TaskStatus::Blocked,
-        "claimed" => TaskStatus::Claimed,
-        "in_progress" => TaskStatus::InProgress,
-        "completed" => TaskStatus::Completed,
-        "failed" => TaskStatus::Failed,
-        _ => TaskStatus::Pending,
-    }
+    })
 }

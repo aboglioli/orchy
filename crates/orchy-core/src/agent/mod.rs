@@ -24,7 +24,7 @@ pub struct AgentId(Uuid);
 
 impl AgentId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self(Uuid::now_v7())
     }
 
     pub fn from_uuid(uuid: Uuid) -> Self {
@@ -75,6 +75,20 @@ impl fmt::Display for AgentStatus {
             AgentStatus::Disconnected => "disconnected",
         };
         write!(f, "{s}")
+    }
+}
+
+impl FromStr for AgentStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "online" => Ok(AgentStatus::Online),
+            "busy" => Ok(AgentStatus::Busy),
+            "idle" => Ok(AgentStatus::Idle),
+            "disconnected" => Ok(AgentStatus::Disconnected),
+            other => Err(format!("unknown agent status: {other}")),
+        }
     }
 }
 
@@ -136,30 +150,18 @@ impl Agent {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        id: AgentId,
-        project: ProjectId,
-        namespace: Namespace,
-        parent_id: Option<AgentId>,
-        roles: Vec<String>,
-        description: String,
-        status: AgentStatus,
-        last_heartbeat: DateTime<Utc>,
-        connected_at: DateTime<Utc>,
-        metadata: HashMap<String, String>,
-    ) -> Self {
+    pub fn restore(r: RestoreAgent) -> Self {
         Self {
-            id,
-            project,
-            namespace,
-            parent_id,
-            roles,
-            description,
-            status,
-            last_heartbeat,
-            connected_at,
-            metadata,
+            id: r.id,
+            project: r.project,
+            namespace: r.namespace,
+            parent_id: r.parent_id,
+            roles: r.roles,
+            description: r.description,
+            status: r.status,
+            last_heartbeat: r.last_heartbeat,
+            connected_at: r.connected_at,
+            metadata: r.metadata,
         }
     }
 
@@ -229,6 +231,19 @@ impl Agent {
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }
+}
+
+pub struct RestoreAgent {
+    pub id: AgentId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub parent_id: Option<AgentId>,
+    pub roles: Vec<String>,
+    pub description: String,
+    pub status: AgentStatus,
+    pub last_heartbeat: DateTime<Utc>,
+    pub connected_at: DateTime<Utc>,
+    pub metadata: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]

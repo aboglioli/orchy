@@ -5,7 +5,7 @@ use rusqlite::OptionalExtension;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, Version};
+use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, RestoreMemoryEntry, Version};
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
@@ -246,19 +246,19 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
             rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    Ok(MemoryEntry::restore(
+    Ok(MemoryEntry::restore(RestoreMemoryEntry {
         project,
         namespace,
         key,
         value,
-        Version::from(version as u64),
-        embedding_bytes.map(|b| bytes_to_embedding(&b)),
+        version: Version::from(version as u64),
+        embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
         embedding_model,
-        embedding_dimensions.map(|d| d as u32),
-        written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
+        embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        written_by: written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
         created_at,
         updated_at,
-    ))
+    }))
 }
 
 fn sanitize_fts_query(query: &str) -> String {

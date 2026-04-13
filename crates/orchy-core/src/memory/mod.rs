@@ -9,7 +9,7 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::agent::AgentId;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait MemoryStore: Send + Sync {
@@ -63,7 +63,7 @@ pub struct SnapshotId(Uuid);
 
 impl SnapshotId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self(Uuid::now_v7())
     }
 
     pub fn from_uuid(uuid: Uuid) -> Self {
@@ -147,9 +147,13 @@ impl MemoryEntry {
         key: String,
         value: String,
         written_by: Option<AgentId>,
-    ) -> Self {
+    ) -> Result<Self> {
+        if key.trim().is_empty() {
+            return Err(Error::InvalidInput("memory key must not be empty".into()));
+        }
+
         let now = Utc::now();
-        Self {
+        Ok(Self {
             project,
             namespace,
             key,
@@ -161,35 +165,22 @@ impl MemoryEntry {
             written_by,
             created_at: now,
             updated_at: now,
-        }
+        })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        project: ProjectId,
-        namespace: Namespace,
-        key: String,
-        value: String,
-        version: Version,
-        embedding: Option<Vec<f32>>,
-        embedding_model: Option<String>,
-        embedding_dimensions: Option<u32>,
-        written_by: Option<AgentId>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreMemoryEntry) -> Self {
         Self {
-            project,
-            namespace,
-            key,
-            value,
-            version,
-            embedding,
-            embedding_model,
-            embedding_dimensions,
-            written_by,
-            created_at,
-            updated_at,
+            project: r.project,
+            namespace: r.namespace,
+            key: r.key,
+            value: r.value,
+            version: r.version,
+            embedding: r.embedding,
+            embedding_model: r.embedding_model,
+            embedding_dimensions: r.embedding_dimensions,
+            written_by: r.written_by,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }
     }
 
@@ -249,6 +240,20 @@ impl MemoryEntry {
 }
 
 #[derive(Debug, Clone)]
+pub struct RestoreMemoryEntry {
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub key: String,
+    pub value: String,
+    pub version: Version,
+    pub embedding: Option<Vec<f32>>,
+    pub embedding_model: Option<String>,
+    pub embedding_dimensions: Option<u32>,
+    pub written_by: Option<AgentId>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 pub struct WriteMemory {
     pub project: ProjectId,
     pub namespace: Namespace,
@@ -300,30 +305,18 @@ impl ContextSnapshot {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        id: SnapshotId,
-        project: ProjectId,
-        agent_id: AgentId,
-        namespace: Namespace,
-        summary: String,
-        embedding: Option<Vec<f32>>,
-        embedding_model: Option<String>,
-        embedding_dimensions: Option<u32>,
-        metadata: HashMap<String, String>,
-        created_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreContextSnapshot) -> Self {
         Self {
-            id,
-            project,
-            agent_id,
-            namespace,
-            summary,
-            embedding,
-            embedding_model,
-            embedding_dimensions,
-            metadata,
-            created_at,
+            id: r.id,
+            project: r.project,
+            agent_id: r.agent_id,
+            namespace: r.namespace,
+            summary: r.summary,
+            embedding: r.embedding,
+            embedding_model: r.embedding_model,
+            embedding_dimensions: r.embedding_dimensions,
+            metadata: r.metadata,
+            created_at: r.created_at,
         }
     }
 
@@ -365,6 +358,19 @@ impl ContextSnapshot {
     }
 }
 
+pub struct RestoreContextSnapshot {
+    pub id: SnapshotId,
+    pub project: ProjectId,
+    pub agent_id: AgentId,
+    pub namespace: Namespace,
+    pub summary: String,
+    pub embedding: Option<Vec<f32>>,
+    pub embedding_model: Option<String>,
+    pub embedding_dimensions: Option<u32>,
+    pub metadata: HashMap<String, String>,
+    pub created_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,7 +391,8 @@ mod tests {
             "key".to_string(),
             "value".to_string(),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(entry.version().as_u64(), 1);
     }
 
@@ -410,7 +417,8 @@ mod tests {
             "key".to_string(),
             "original".to_string(),
             None,
-        );
+        )
+        .unwrap();
         entry.update("updated".to_string(), None);
         assert_eq!(entry.value(), "updated");
     }

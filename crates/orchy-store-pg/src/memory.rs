@@ -5,10 +5,10 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, Version};
+use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, RestoreMemoryEntry, Version};
 use orchy_core::namespace::{Namespace, ProjectId};
 
-use crate::PgBackend;
+use crate::{PgBackend, parse_pg_vector_text};
 
 impl MemoryStore for PgBackend {
     async fn save(&self, entry: &MemoryEntry) -> Result<()> {
@@ -162,29 +162,18 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> MemoryEntry {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    MemoryEntry::restore(
-        ProjectId::try_from(project).expect("invalid project in database"),
-        Namespace::try_from(namespace).unwrap(),
+    MemoryEntry::restore(RestoreMemoryEntry {
+        project: ProjectId::try_from(project).expect("invalid project in database"),
+        namespace: Namespace::try_from(namespace).unwrap(),
         key,
         value,
-        Version::from(version as u64),
-        embedding_str.and_then(|s| parse_pg_vector_text(&s)),
+        version: Version::from(version as u64),
+        embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,
-        embedding_dimensions.map(|d| d as u32),
-        written_by.map(AgentId::from_uuid),
+        embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        written_by: written_by.map(AgentId::from_uuid),
         created_at,
         updated_at,
-    )
+    })
 }
 
-fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {
-    let trimmed = s.trim_start_matches('[').trim_end_matches(']');
-    if trimmed.is_empty() {
-        return None;
-    }
-    let result: std::result::Result<Vec<f32>, _> = trimmed
-        .split(',')
-        .map(|v| v.trim().parse::<f32>())
-        .collect();
-    result.ok()
-}
