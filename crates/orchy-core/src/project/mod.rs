@@ -10,6 +10,11 @@ use crate::error::Result;
 use crate::namespace::ProjectId;
 use crate::note::Note;
 
+pub trait ProjectStore: Send + Sync {
+    fn save(&self, project: &Project) -> impl Future<Output = Result<()>> + Send;
+    fn get(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     id: ProjectId,
@@ -84,9 +89,4 @@ impl Project {
     pub fn updated_at(&self) -> DateTime<Utc> {
         self.updated_at
     }
-}
-
-pub trait ProjectStore: Send + Sync {
-    fn save(&self, project: &Project) -> impl Future<Output = Result<()>> + Send;
-    fn get(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
 }
