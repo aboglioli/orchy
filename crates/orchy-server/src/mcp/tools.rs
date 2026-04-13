@@ -786,9 +786,9 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+            None => Namespace::root(),
         };
 
         match self
@@ -1144,9 +1144,9 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+            None => Namespace::root(),
         };
 
         match self
@@ -1174,9 +1174,9 @@ impl OrchyHandler {
             let project = self
                 .get_session_project()
                 .ok_or("no agent registered for this session; call register_agent first")?;
-            let namespace = match self.build_namespace(params.namespace.as_deref()) {
-                Ok(ns) => ns,
-                Err(e) => return Err(e),
+            let namespace = match params.namespace.as_deref() {
+                Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+                None => Namespace::root(),
             };
             self.container
                 .skill_service
@@ -1459,9 +1459,9 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
+            None => Namespace::root(),
         };
 
         let host = &self.container.config.server.host;
