@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 mod agent;
 mod context;
 mod memory;
@@ -15,18 +17,6 @@ use orchy_core::error::{Error, Result};
 pub struct SqliteBackend {
     conn: Mutex<Connection>,
 }
-
-struct Migration {
-    version: &'static str,
-    name: &'static str,
-    sql: &'static str,
-}
-
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: "20260412-160000",
-    name: "initial_schema",
-    sql: include_str!("../../../migrations/sqlite/20260412-160000_initial_schema.sql"),
-}];
 
 impl SqliteBackend {
     pub fn new(path: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
@@ -47,7 +37,6 @@ impl SqliteBackend {
             .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Self::run_migrations(&conn)?;
         Self::init_virtual_tables(&conn, embedding_dimensions)?;
 
         Ok(Self {
@@ -55,43 +44,12 @@ impl SqliteBackend {
         })
     }
 
-    fn run_migrations(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
-                version TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                applied_at TEXT NOT NULL
-            )",
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        for migration in MIGRATIONS {
-            let applied: bool = conn
-                .query_row(
-                    "SELECT COUNT(*) > 0 FROM schema_migrations WHERE version = ?1",
-                    rusqlite::params![migration.version],
-                    |row| row.get(0),
-                )
-                .map_err(|e| Error::Store(e.to_string()))?;
-
-            if !applied {
-                conn.execute_batch(migration.sql).map_err(|e| {
-                    Error::Store(format!("migration {} failed: {e}", migration.name))
-                })?;
-
-                conn.execute(
-                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?1, ?2, ?3)",
-                    rusqlite::params![
-                        migration.version,
-                        migration.name,
-                        chrono::Utc::now().to_rfc3339(),
-                    ],
-                )
-                .map_err(|e| Error::Store(e.to_string()))?;
-            }
-        }
-
-        Ok(())
+    pub fn apply_schema(&self) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(
+            "../../../migrations/sqlite/20260412-160000_initial_schema.sql"
+        ))
+        .map_err(|e| Error::Store(e.to_string()))
     }
 
     fn init_virtual_tables(conn: &Connection, embedding_dimensions: Option<u32>) -> Result<()> {

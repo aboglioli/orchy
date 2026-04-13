@@ -9,7 +9,9 @@ use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_sqlite::SqliteBackend;
 
 fn backend() -> SqliteBackend {
-    SqliteBackend::new(":memory:", None).unwrap()
+    let store = SqliteBackend::new(":memory:", None).unwrap();
+    store.apply_schema().unwrap();
+    store
 }
 
 fn ns(s: &str) -> Namespace {
