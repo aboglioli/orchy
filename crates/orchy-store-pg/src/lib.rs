@@ -38,6 +38,20 @@ const MIGRATIONS: &[Migration] = &[
         name: "message_reply_to",
         sql: include_str!("../../../migrations/postgres/20260413-010000_message_reply_to.sql"),
     },
+    Migration {
+        version: "20260413-020000",
+        name: "agent_namespace_to_project",
+        sql: include_str!(
+            "../../../migrations/postgres/20260413-020000_agent_namespace_to_project.sql"
+        ),
+    },
+    Migration {
+        version: "20260413-030000",
+        name: "agent_namespace_and_parent",
+        sql: include_str!(
+            "../../../migrations/postgres/20260413-030000_agent_namespace_and_parent.sql"
+        ),
+    },
 ];
 
 impl PgBackend {

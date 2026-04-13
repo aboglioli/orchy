@@ -103,12 +103,14 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
 mod tests {
     use super::*;
     use crate::agent::{Agent, AgentStore};
+    use crate::namespace::{Namespace, ProjectId};
     use crate::store::mock::MockStore;
     use std::collections::HashMap;
 
     fn make_agent(roles: Vec<&str>) -> Agent {
         Agent::register(
-            Namespace::try_from("orchy".to_string()).unwrap(),
+            ProjectId::try_from("orchy").unwrap(),
+            Namespace::try_from("orchy").unwrap(),
             roles.into_iter().map(String::from).collect(),
             "test".to_string(),
             HashMap::new(),

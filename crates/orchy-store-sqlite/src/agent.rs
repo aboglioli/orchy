@@ -6,19 +6,23 @@ use rusqlite::OptionalExtension;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::SqliteBackend;
+
+const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for SqliteBackend {
     async fn save(&self, agent: &Agent) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "INSERT OR REPLACE INTO agents (id, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT OR REPLACE INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 agent.id().to_string(),
+                agent.project().to_string(),
                 agent.namespace().to_string(),
+                agent.parent_id().map(|id| id.to_string()),
                 serde_json::to_string(agent.roles()).unwrap(),
                 agent.description(),
                 agent.status().to_string(),
@@ -34,8 +38,9 @@ impl AgentStore for SqliteBackend {
 
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = ?1");
         let mut stmt = conn
-            .prepare("SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents WHERE id = ?1")
+            .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let result = stmt
@@ -48,8 +53,9 @@ impl AgentStore for SqliteBackend {
 
     async fn list(&self) -> Result<Vec<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let sql = format!("SELECT {SELECT_COLS} FROM agents");
         let mut stmt = conn
-            .prepare("SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents")
+            .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let agents = stmt
@@ -65,12 +71,11 @@ impl AgentStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 
+        let sql = format!(
+            "SELECT {SELECT_COLS} FROM agents WHERE status != 'disconnected' AND last_heartbeat < ?1"
+        );
         let mut stmt = conn
-            .prepare(
-                "SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata
-                 FROM agents
-                 WHERE status != 'disconnected' AND last_heartbeat < ?1",
-            )
+            .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let agents = stmt
@@ -83,29 +88,45 @@ impl AgentStore for SqliteBackend {
     }
 }
 
+fn conversion_err(col: usize, msg: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        col,
+        rusqlite::types::Type::Text,
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            msg.into(),
+        )),
+    )
+}
+
 fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let id_str: String = row.get(0)?;
-    let namespace_str: String = row.get(1)?;
-    let roles_str: String = row.get(2)?;
-    let description: String = row.get(3)?;
-    let status_str: String = row.get(4)?;
-    let heartbeat_str: String = row.get(5)?;
-    let connected_str: String = row.get(6)?;
-    let metadata_str: String = row.get(7)?;
+    let project_str: String = row.get(1)?;
+    let namespace_str: String = row.get(2)?;
+    let parent_id_str: Option<String> = row.get(3)?;
+    let roles_str: String = row.get(4)?;
+    let description: String = row.get(5)?;
+    let status_str: String = row.get(6)?;
+    let heartbeat_str: String = row.get(7)?;
+    let connected_str: String = row.get(8)?;
+    let metadata_str: String = row.get(9)?;
+
+    let parent_id = parent_id_str
+        .map(|s| AgentId::from_str(&s))
+        .transpose()
+        .map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+        })?;
 
     Ok(Agent::restore(
         AgentId::from_str(&id_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?,
-        Namespace::try_from(namespace_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                1,
-                rusqlite::types::Type::Text,
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-            )
-        })?,
+        ProjectId::try_from(project_str).map_err(|e| conversion_err(1, e))?,
+        Namespace::try_from(namespace_str).map_err(|e| conversion_err(2, e))?,
+        parent_id,
         serde_json::from_str(&roles_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?,
         description,
         parse_agent_status(&status_str),
@@ -113,7 +134,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    5,
+                    7,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
@@ -122,7 +143,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    6,
+                    8,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_memory::MemoryBackend;
@@ -16,10 +16,15 @@ fn ns(s: &str) -> Namespace {
     Namespace::try_from(s).unwrap()
 }
 
+fn project(s: &str) -> ProjectId {
+    ProjectId::try_from(s).unwrap()
+}
+
 #[tokio::test]
 async fn agent_save_and_find() {
     let store = backend();
     let agent = Agent::register(
+        project("myapp"),
         ns("myapp"),
         vec!["coder".into()],
         "test agent".into(),
@@ -41,6 +46,7 @@ async fn agent_save_and_find() {
 async fn agent_save_updates_existing() {
     let store = backend();
     let mut agent = Agent::register(
+        project("test-project"),
         ns("test-project"),
         vec!["dev".into()],
         "original".into(),
@@ -63,7 +69,13 @@ async fn agent_save_updates_existing() {
 #[tokio::test]
 async fn agent_disconnect_sets_status() {
     let store = backend();
-    let mut agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    let mut agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent).await.unwrap();
 
     agent.disconnect();
@@ -79,7 +91,13 @@ async fn agent_disconnect_sets_status() {
 #[tokio::test]
 async fn agent_find_timed_out() {
     let store = backend();
-    let mut agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    let mut agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;

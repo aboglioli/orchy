@@ -13,7 +13,19 @@ impl<S: AgentStore> AgentService<S> {
     }
 
     pub async fn register(&self, cmd: RegisterAgent) -> Result<Agent> {
-        let agent = Agent::register(cmd.namespace, cmd.roles, cmd.description, cmd.metadata);
+        let agent = if let Some(parent_id) = cmd.parent_id {
+            let parent = self.get(&parent_id).await?;
+            Agent::from_parent(&parent, cmd.namespace, cmd.roles, cmd.description)
+        } else {
+            Agent::register(
+                cmd.project,
+                cmd.namespace,
+                cmd.roles,
+                cmd.description,
+                cmd.metadata,
+            )
+        };
+
         self.store.save(&agent).await?;
         Ok(agent)
     }
@@ -51,18 +63,6 @@ impl<S: AgentStore> AgentService<S> {
         Ok(agent)
     }
 
-    pub async fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> Result<Agent> {
-        let mut agent = self.get(id).await?;
-        agent.reconnect(roles, description);
-        self.store.save(&agent).await?;
-        Ok(agent)
-    }
-
     pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
         let mut agent = self.get(id).await?;
         agent.disconnect();
@@ -77,15 +77,17 @@ impl<S: AgentStore> AgentService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::namespace::Namespace;
+    use crate::namespace::{Namespace, ProjectId};
     use crate::store::mock::MockStore;
     use std::collections::HashMap;
 
     fn make_registration() -> RegisterAgent {
         RegisterAgent {
+            project: ProjectId::try_from("orchy".to_string()).unwrap(),
             namespace: Namespace::try_from("orchy".to_string()).unwrap(),
             roles: vec!["tester".to_string()],
             description: "test agent".to_string(),
+            parent_id: None,
             metadata: HashMap::new(),
         }
     }
@@ -96,6 +98,26 @@ mod tests {
         let service = AgentService::new(store);
         let agent = service.register(make_registration()).await.unwrap();
         assert_eq!(agent.status(), AgentStatus::Online);
+        assert!(agent.parent_id().is_none());
+    }
+
+    #[tokio::test]
+    async fn register_from_parent() {
+        let store = Arc::new(MockStore::default());
+        let service = AgentService::new(store);
+        let parent = service.register(make_registration()).await.unwrap();
+
+        let child_cmd = RegisterAgent {
+            project: ProjectId::try_from("orchy".to_string()).unwrap(),
+            namespace: Namespace::try_from("orchy/backend".to_string()).unwrap(),
+            roles: vec!["reviewer".to_string()],
+            description: "child agent".to_string(),
+            parent_id: Some(parent.id()),
+            metadata: HashMap::new(),
+        };
+        let child = service.register(child_cmd).await.unwrap();
+        assert_eq!(child.parent_id(), Some(parent.id()));
+        assert_eq!(child.project().as_ref(), "orchy");
     }
 
     #[tokio::test]

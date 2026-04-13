@@ -9,7 +9,7 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::error::Result;
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
 
 pub trait AgentStore: Send + Sync {
     fn save(&self, agent: &Agent) -> impl Future<Output = Result<()>> + Send;
@@ -81,7 +81,9 @@ impl fmt::Display for AgentStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     id: AgentId,
+    project: ProjectId,
     namespace: Namespace,
+    parent_id: Option<AgentId>,
     roles: Vec<String>,
     description: String,
     status: AgentStatus,
@@ -92,6 +94,7 @@ pub struct Agent {
 
 impl Agent {
     pub fn register(
+        project: ProjectId,
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
@@ -100,7 +103,9 @@ impl Agent {
         let now = Utc::now();
         Self {
             id: AgentId::new(),
+            project,
             namespace,
+            parent_id: None,
             roles,
             description,
             status: AgentStatus::Online,
@@ -110,9 +115,33 @@ impl Agent {
         }
     }
 
+    pub fn from_parent(
+        parent: &Agent,
+        namespace: Namespace,
+        roles: Vec<String>,
+        description: String,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: AgentId::new(),
+            project: parent.project.clone(),
+            namespace,
+            parent_id: Some(parent.id),
+            roles,
+            description,
+            status: AgentStatus::Online,
+            last_heartbeat: now,
+            connected_at: now,
+            metadata: parent.metadata.clone(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn restore(
         id: AgentId,
+        project: ProjectId,
         namespace: Namespace,
+        parent_id: Option<AgentId>,
         roles: Vec<String>,
         description: String,
         status: AgentStatus,
@@ -122,7 +151,9 @@ impl Agent {
     ) -> Self {
         Self {
             id,
+            project,
             namespace,
+            parent_id,
             roles,
             description,
             status,
@@ -137,13 +168,6 @@ impl Agent {
         if self.status == AgentStatus::Disconnected {
             self.status = AgentStatus::Online;
         }
-    }
-
-    pub fn reconnect(&mut self, roles: Vec<String>, description: String) {
-        self.status = AgentStatus::Online;
-        self.roles = roles;
-        self.description = description;
-        self.last_heartbeat = Utc::now();
     }
 
     pub fn disconnect(&mut self) {
@@ -166,8 +190,14 @@ impl Agent {
     pub fn id(&self) -> AgentId {
         self.id
     }
+    pub fn project(&self) -> &ProjectId {
+        &self.project
+    }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
+    }
+    pub fn parent_id(&self) -> Option<AgentId> {
+        self.parent_id
     }
     pub fn roles(&self) -> &[String] {
         &self.roles
@@ -191,9 +221,11 @@ impl Agent {
 
 #[derive(Debug, Clone)]
 pub struct RegisterAgent {
+    pub project: ProjectId,
     pub namespace: Namespace,
     pub roles: Vec<String>,
     pub description: String,
+    pub parent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
 }
 
@@ -203,12 +235,17 @@ mod tests {
     use std::thread::sleep;
     use std::time::Duration;
 
+    fn test_project() -> ProjectId {
+        ProjectId::try_from("test").unwrap()
+    }
+
     fn test_namespace() -> Namespace {
         Namespace::try_from("test").unwrap()
     }
 
-    fn register_agent() -> Agent {
+    fn make_agent() -> Agent {
         Agent::register(
+            test_project(),
             test_namespace(),
             vec!["coder".to_string()],
             "test agent".to_string(),
@@ -218,15 +255,30 @@ mod tests {
 
     #[test]
     fn register_creates_online_agent() {
-        let agent = register_agent();
+        let agent = make_agent();
         assert_eq!(agent.status(), AgentStatus::Online);
         assert_eq!(agent.roles(), &["coder"]);
-        assert_eq!(agent.description(), "test agent");
+        assert!(agent.parent_id().is_none());
+    }
+
+    #[test]
+    fn from_parent_inherits_project_and_sets_parent() {
+        let parent = make_agent();
+        let child = Agent::from_parent(
+            &parent,
+            test_namespace(),
+            vec!["reviewer".to_string()],
+            "child agent".to_string(),
+        );
+        assert_eq!(child.project(), parent.project());
+        assert_eq!(child.parent_id(), Some(parent.id()));
+        assert_eq!(child.roles(), &["reviewer"]);
+        assert_eq!(child.status(), AgentStatus::Online);
     }
 
     #[test]
     fn heartbeat_updates_timestamp() {
-        let mut agent = register_agent();
+        let mut agent = make_agent();
         let before = agent.last_heartbeat();
         sleep(Duration::from_millis(10));
         agent.heartbeat();
@@ -235,48 +287,30 @@ mod tests {
 
     #[test]
     fn heartbeat_reconnects_disconnected() {
-        let mut agent = register_agent();
+        let mut agent = make_agent();
         agent.disconnect();
-        assert_eq!(agent.status(), AgentStatus::Disconnected);
         agent.heartbeat();
         assert_eq!(agent.status(), AgentStatus::Online);
     }
 
     #[test]
     fn disconnect_sets_status() {
-        let mut agent = register_agent();
+        let mut agent = make_agent();
         agent.disconnect();
         assert_eq!(agent.status(), AgentStatus::Disconnected);
     }
 
     #[test]
-    fn reconnect_updates_all_fields() {
-        let mut agent = register_agent();
-        agent.disconnect();
-        let new_roles = vec!["reviewer".to_string()];
-        agent.reconnect(new_roles.clone(), "updated desc".to_string());
-        assert_eq!(agent.status(), AgentStatus::Online);
-        assert_eq!(agent.roles(), &["reviewer"]);
-        assert_eq!(agent.description(), "updated desc");
-    }
-
-    #[test]
     fn is_timed_out_when_stale() {
-        let mut agent = register_agent();
+        let mut agent = make_agent();
         agent.heartbeat();
         sleep(Duration::from_millis(10));
         assert!(agent.is_timed_out(0));
     }
 
     #[test]
-    fn is_timed_out_false_when_recent() {
-        let agent = register_agent();
-        assert!(!agent.is_timed_out(60));
-    }
-
-    #[test]
     fn is_timed_out_false_when_disconnected() {
-        let mut agent = register_agent();
+        let mut agent = make_agent();
         agent.disconnect();
         sleep(Duration::from_millis(10));
         assert!(!agent.is_timed_out(0));

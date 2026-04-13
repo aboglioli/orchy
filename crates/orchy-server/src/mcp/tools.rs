@@ -28,8 +28,8 @@ struct RegisterAgentParams {
     namespace: String,
     roles: Vec<String>,
     description: String,
-    /// If provided, reconnect to an existing agent instead of creating a new one.
-    agent_id: Option<String>,
+    /// If provided, this agent is a child of the given parent agent ID (lineage tracking).
+    parent_id: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -267,7 +267,7 @@ impl OrchyHandler {
         The namespace must start with the project identifier (e.g. 'my-project' or \
         'my-project/backend'). All subsequent tool calls will be scoped to this project. \
         Sub-scopes can be provided per call, but the project prefix is always enforced. \
-        If agent_id is provided, reconnect to an existing agent instead of creating a new one."
+        If parent_id is provided, the new agent is created as a child of that parent (lineage tracking)."
     )]
     async fn register_agent(
         &self,
@@ -278,30 +278,14 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        if let Some(ref id_str) = params.agent_id {
-            let agent_id = match parse_agent_id(id_str) {
-                Ok(id) => id,
-                Err(e) => return Err(e),
-            };
-
-            match self
-                .container
-                .agent_service
-                .reconnect(&agent_id, params.roles, params.description)
-                .await
-            {
-                Ok(agent) => {
-                    self.set_session(agent.id(), namespace);
-                    return Ok(to_json(&agent));
-                }
-                Err(e) => return Err(e.to_string()),
-            }
-        }
+        let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
         let cmd = RegisterAgent {
+            project: namespace.to_project(),
             namespace: namespace.clone(),
             roles: params.roles,
             description: params.description,
+            parent_id,
             metadata: HashMap::new(),
         };
 

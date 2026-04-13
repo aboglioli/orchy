@@ -6,9 +6,11 @@ use uuid::Uuid;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::PgBackend;
+
+const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for PgBackend {
     async fn save(&self, agent: &Agent) -> Result<()> {
@@ -16,10 +18,12 @@ impl AgentStore for PgBackend {
         let metadata_json = serde_json::to_value(agent.metadata()).unwrap();
 
         sqlx::query(
-            "INSERT INTO agents (id, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "INSERT INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO UPDATE SET
+                project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
+                parent_id = EXCLUDED.parent_id,
                 roles = EXCLUDED.roles,
                 description = EXCLUDED.description,
                 status = EXCLUDED.status,
@@ -28,7 +32,9 @@ impl AgentStore for PgBackend {
                 metadata = EXCLUDED.metadata",
         )
         .bind(agent.id().as_uuid())
+        .bind(agent.project().to_string())
         .bind(agent.namespace().to_string())
+        .bind(agent.parent_id().map(|id| *id.as_uuid()))
         .bind(&roles_json)
         .bind(agent.description())
         .bind(agent.status().to_string())
@@ -43,26 +49,22 @@ impl AgentStore for PgBackend {
     }
 
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
-        let row = sqlx::query(
-            "SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata
-             FROM agents WHERE id = $1",
-        )
-        .bind(id.as_uuid())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = $1");
+        let row = sqlx::query(&sql)
+            .bind(id.as_uuid())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(row.map(|r| row_to_agent(&r)))
     }
 
     async fn list(&self) -> Result<Vec<Agent>> {
-        let rows = sqlx::query(
-            "SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata
-             FROM agents",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        let sql = format!("SELECT {SELECT_COLS} FROM agents");
+        let rows = sqlx::query(&sql)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(rows.iter().map(row_to_agent).collect())
     }
@@ -70,15 +72,14 @@ impl AgentStore for PgBackend {
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 
-        let rows = sqlx::query(
-            "SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata
-             FROM agents
-             WHERE status != 'disconnected' AND last_heartbeat < $1",
-        )
-        .bind(cutoff)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        let sql = format!(
+            "SELECT {SELECT_COLS} FROM agents WHERE status != 'disconnected' AND last_heartbeat < $1"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(cutoff)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(rows.iter().map(row_to_agent).collect())
     }
@@ -86,7 +87,9 @@ impl AgentStore for PgBackend {
 
 fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
     let id: Uuid = row.get("id");
+    let project: String = row.get("project");
     let namespace: String = row.get("namespace");
+    let parent_id: Option<Uuid> = row.get("parent_id");
     let roles: serde_json::Value = row.get("roles");
     let description: String = row.get("description");
     let status: String = row.get("status");
@@ -96,7 +99,9 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
 
     Agent::restore(
         AgentId::from_uuid(id),
+        ProjectId::try_from(project).expect("invalid project in database"),
         Namespace::try_from(namespace).expect("invalid namespace in database"),
+        parent_id.map(AgentId::from_uuid),
         serde_json::from_value(roles).unwrap_or_default(),
         description,
         parse_agent_status(&status),

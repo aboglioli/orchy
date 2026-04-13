@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use orchy_core::agent::{Agent, AgentStatus, AgentStore};
 use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_pg::PgBackend;
@@ -20,11 +20,16 @@ fn ns(s: &str) -> Namespace {
     Namespace::try_from(s).unwrap()
 }
 
+fn project(s: &str) -> ProjectId {
+    ProjectId::try_from(s).unwrap()
+}
+
 #[tokio::test]
 #[ignore]
 async fn agent_save_and_find() {
     let store = backend().await;
     let agent = Agent::register(
+        project("myapp"),
         ns("myapp"),
         vec!["coder".into()],
         "test agent".into(),
@@ -47,6 +52,7 @@ async fn agent_save_and_find() {
 async fn agent_save_updates_existing() {
     let store = backend().await;
     let mut agent = Agent::register(
+        project("test-project"),
         ns("test-project"),
         vec!["dev".into()],
         "original".into(),
@@ -70,7 +76,13 @@ async fn agent_save_updates_existing() {
 #[ignore]
 async fn agent_disconnect_sets_status() {
     let store = backend().await;
-    let mut agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    let mut agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent).await.unwrap();
 
     agent.disconnect();
@@ -87,7 +99,13 @@ async fn agent_disconnect_sets_status() {
 #[ignore]
 async fn agent_find_timed_out() {
     let store = backend().await;
-    let mut agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    let mut agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
@@ -272,10 +290,17 @@ async fn memory_delete() {
 async fn message_save_and_find_pending() {
     let store = backend().await;
 
-    let from_agent = Agent::register(ns("test-project"), vec![], "sender".into(), HashMap::new());
+    let from_agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "sender".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &from_agent).await.unwrap();
 
     let to_agent = Agent::register(
+        project("test-project"),
         ns("test-project"),
         vec![],
         "receiver".into(),
@@ -316,10 +341,22 @@ async fn message_save_and_find_pending() {
 async fn message_find_by_id_and_mark_read() {
     let store = backend().await;
 
-    let from_agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    let from_agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &from_agent).await.unwrap();
 
-    let to_agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    let to_agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &to_agent).await.unwrap();
 
     let msg = Message::new(
@@ -350,7 +387,13 @@ async fn message_find_by_id_and_mark_read() {
 async fn context_save_and_find_latest() {
     let store = backend().await;
 
-    let agent = Agent::register(ns("proj"), vec![], "".into(), HashMap::new());
+    let agent = Agent::register(
+        project("proj"),
+        ns("proj"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent).await.unwrap();
 
     let snap1 = ContextSnapshot::new(
@@ -383,10 +426,22 @@ async fn context_save_and_find_latest() {
 async fn context_list_filters() {
     let store = backend().await;
 
-    let agent1 = Agent::register(ns("proj"), vec![], "".into(), HashMap::new());
+    let agent1 = Agent::register(
+        project("proj"),
+        ns("proj"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent1).await.unwrap();
 
-    let agent2 = Agent::register(ns("other"), vec![], "".into(), HashMap::new());
+    let agent2 = Agent::register(
+        project("other"),
+        ns("other"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent2).await.unwrap();
 
     let snap1 = ContextSnapshot::new(agent1.id(), ns("proj"), "a1".into(), HashMap::new());
@@ -415,7 +470,13 @@ async fn context_list_filters() {
 async fn context_search_by_keyword() {
     let store = backend().await;
 
-    let agent = Agent::register(ns("test-project"), vec![], "".into(), HashMap::new());
+    let agent = Agent::register(
+        project("test-project"),
+        ns("test-project"),
+        vec![],
+        "".into(),
+        HashMap::new(),
+    );
     AgentStore::save(&store, &agent).await.unwrap();
 
     let snap1 = ContextSnapshot::new(
