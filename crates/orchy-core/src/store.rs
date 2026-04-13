@@ -63,6 +63,7 @@ pub mod mock {
         async fn find_pending(
             &self,
             agent: &AgentId,
+            project: &ProjectId,
             namespace: &Namespace,
         ) -> Result<Vec<Message>> {
             Ok(self
@@ -73,6 +74,7 @@ pub mod mock {
                 .filter(|m| {
                     m.status() == MessageStatus::Pending
                         && *m.to() == MessageTarget::Agent(*agent)
+                        && m.project() == project
                         && m.namespace() == namespace
                 })
                 .cloned()
@@ -93,7 +95,12 @@ pub mod mock {
         async fn save(&self, _: &MemoryEntry) -> Result<()> {
             unimplemented!()
         }
-        async fn find_by_key(&self, _: &Namespace, _: &str) -> Result<Option<MemoryEntry>> {
+        async fn find_by_key(
+            &self,
+            _: &ProjectId,
+            _: &Namespace,
+            _: &str,
+        ) -> Result<Option<MemoryEntry>> {
             unimplemented!()
         }
         async fn list(&self, _: MemoryFilter) -> Result<Vec<MemoryEntry>> {
@@ -139,13 +146,18 @@ pub mod mock {
         async fn save(&self, _: &Skill) -> Result<()> {
             unimplemented!()
         }
-        async fn find_by_name(&self, _: &Namespace, _: &str) -> Result<Option<Skill>> {
+        async fn find_by_name(
+            &self,
+            _: &ProjectId,
+            _: &Namespace,
+            _: &str,
+        ) -> Result<Option<Skill>> {
             unimplemented!()
         }
         async fn list(&self, _: SkillFilter) -> Result<Vec<Skill>> {
             unimplemented!()
         }
-        async fn delete(&self, _: &Namespace, _: &str) -> Result<()> {
+        async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
             unimplemented!()
         }
     }

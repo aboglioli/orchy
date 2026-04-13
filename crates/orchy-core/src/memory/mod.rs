@@ -16,6 +16,7 @@ pub trait MemoryStore: Send + Sync {
     fn save(&self, entry: &MemoryEntry) -> impl Future<Output = Result<()>> + Send;
     fn find_by_key(
         &self,
+        project: &ProjectId,
         namespace: &Namespace,
         key: &str,
     ) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
@@ -121,6 +122,7 @@ impl fmt::Display for Version {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
+    project: ProjectId,
     namespace: Namespace,
     key: String,
     value: String,
@@ -135,6 +137,7 @@ pub struct MemoryEntry {
 
 impl MemoryEntry {
     pub fn new(
+        project: ProjectId,
         namespace: Namespace,
         key: String,
         value: String,
@@ -142,6 +145,7 @@ impl MemoryEntry {
     ) -> Self {
         let now = Utc::now();
         Self {
+            project,
             namespace,
             key,
             value,
@@ -157,6 +161,7 @@ impl MemoryEntry {
 
     #[allow(clippy::too_many_arguments)]
     pub fn restore(
+        project: ProjectId,
         namespace: Namespace,
         key: String,
         value: String,
@@ -169,6 +174,7 @@ impl MemoryEntry {
         updated_at: DateTime<Utc>,
     ) -> Self {
         Self {
+            project,
             namespace,
             key,
             value,
@@ -202,6 +208,9 @@ impl MemoryEntry {
         self.embedding_dimensions = Some(dimensions);
     }
 
+    pub fn project(&self) -> &ProjectId {
+        &self.project
+    }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
@@ -236,6 +245,7 @@ impl MemoryEntry {
 
 #[derive(Debug, Clone)]
 pub struct WriteMemory {
+    pub project: ProjectId,
     pub namespace: Namespace,
     pub key: String,
     pub value: String,
@@ -252,6 +262,7 @@ pub struct MemoryFilter {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextSnapshot {
     id: SnapshotId,
+    project: ProjectId,
     agent_id: AgentId,
     namespace: Namespace,
     summary: String,
@@ -264,6 +275,7 @@ pub struct ContextSnapshot {
 
 impl ContextSnapshot {
     pub fn new(
+        project: ProjectId,
         agent_id: AgentId,
         namespace: Namespace,
         summary: String,
@@ -271,6 +283,7 @@ impl ContextSnapshot {
     ) -> Self {
         Self {
             id: SnapshotId::new(),
+            project,
             agent_id,
             namespace,
             summary,
@@ -285,6 +298,7 @@ impl ContextSnapshot {
     #[allow(clippy::too_many_arguments)]
     pub fn restore(
         id: SnapshotId,
+        project: ProjectId,
         agent_id: AgentId,
         namespace: Namespace,
         summary: String,
@@ -296,6 +310,7 @@ impl ContextSnapshot {
     ) -> Self {
         Self {
             id,
+            project,
             agent_id,
             namespace,
             summary,
@@ -315,6 +330,9 @@ impl ContextSnapshot {
 
     pub fn id(&self) -> SnapshotId {
         self.id
+    }
+    pub fn project(&self) -> &ProjectId {
+        &self.project
     }
     pub fn agent_id(&self) -> AgentId {
         self.agent_id
@@ -346,13 +364,18 @@ impl ContextSnapshot {
 mod tests {
     use super::*;
 
+    fn test_project() -> ProjectId {
+        ProjectId::try_from("test").unwrap()
+    }
+
     fn test_namespace() -> Namespace {
-        Namespace::try_from("test").unwrap()
+        Namespace::root()
     }
 
     #[test]
     fn new_entry_has_initial_version() {
         let entry = MemoryEntry::new(
+            test_project(),
             test_namespace(),
             "key".to_string(),
             "value".to_string(),
@@ -364,6 +387,7 @@ mod tests {
     #[test]
     fn update_increments_version() {
         let mut entry = MemoryEntry::new(
+            test_project(),
             test_namespace(),
             "key".to_string(),
             "value".to_string(),
@@ -376,6 +400,7 @@ mod tests {
     #[test]
     fn update_changes_value() {
         let mut entry = MemoryEntry::new(
+            test_project(),
             test_namespace(),
             "key".to_string(),
             "original".to_string(),
@@ -388,6 +413,7 @@ mod tests {
     #[test]
     fn set_embedding_sets_fields() {
         let mut entry = MemoryEntry::new(
+            test_project(),
             test_namespace(),
             "key".to_string(),
             "value".to_string(),

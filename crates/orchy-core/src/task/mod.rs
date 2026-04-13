@@ -149,6 +149,7 @@ impl FromStr for Priority {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     id: TaskId,
+    project: ProjectId,
     namespace: Namespace,
     title: String,
     description: String,
@@ -167,6 +168,7 @@ pub struct Task {
 
 impl Task {
     pub fn new(
+        project: ProjectId,
         namespace: Namespace,
         title: String,
         description: String,
@@ -179,6 +181,7 @@ impl Task {
         let now = Utc::now();
         Self {
             id: TaskId::new(),
+            project,
             namespace,
             title,
             description,
@@ -203,6 +206,7 @@ impl Task {
     #[allow(clippy::too_many_arguments)]
     pub fn restore(
         id: TaskId,
+        project: ProjectId,
         namespace: Namespace,
         title: String,
         description: String,
@@ -220,6 +224,7 @@ impl Task {
     ) -> Self {
         Self {
             id,
+            project,
             namespace,
             title,
             description,
@@ -309,6 +314,9 @@ impl Task {
     pub fn id(&self) -> TaskId {
         self.id
     }
+    pub fn project(&self) -> &ProjectId {
+        &self.project
+    }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
@@ -377,7 +385,8 @@ mod tests {
     fn make_task(status: TaskStatus, claimed_by: Option<AgentId>) -> Task {
         Task::restore(
             TaskId::new(),
-            Namespace::try_from("test".to_string()).unwrap(),
+            ProjectId::try_from("test").unwrap(),
+            Namespace::root(),
             "Test Task".to_string(),
             "Test".to_string(),
             status,
@@ -533,7 +542,8 @@ mod tests {
     #[test]
     fn new_creates_pending_task() {
         let task = Task::new(
-            Namespace::try_from("test".to_string()).unwrap(),
+            ProjectId::try_from("test").unwrap(),
+            Namespace::root(),
             "title".to_string(),
             "desc".to_string(),
             Priority::High,
@@ -548,7 +558,8 @@ mod tests {
     #[test]
     fn new_creates_blocked_task() {
         let task = Task::new(
-            Namespace::try_from("test".to_string()).unwrap(),
+            ProjectId::try_from("test").unwrap(),
+            Namespace::root(),
             "title".to_string(),
             "desc".to_string(),
             Priority::Normal,

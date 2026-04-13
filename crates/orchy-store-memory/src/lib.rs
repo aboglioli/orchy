@@ -22,10 +22,10 @@ use orchy_core::task::{Task, TaskId};
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
     pub(crate) tasks: RwLock<HashMap<TaskId, Task>>,
-    pub(crate) memory: RwLock<HashMap<(String, String), MemoryEntry>>,
+    pub(crate) memory: RwLock<HashMap<(String, String, String), MemoryEntry>>,
     pub(crate) messages: RwLock<HashMap<MessageId, Message>>,
     pub(crate) contexts: RwLock<HashMap<SnapshotId, ContextSnapshot>>,
-    pub(crate) skills: RwLock<HashMap<(String, String), Skill>>,
+    pub(crate) skills: RwLock<HashMap<(String, String, String), Skill>>,
     pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
 }
 

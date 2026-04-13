@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::{Message, MessageId, MessageStore, MessageTarget};
 use crate::agent::{AgentId, AgentStore};
 use crate::error::Result;
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
 
 pub struct MessageService<MS: MessageStore, AS: AgentStore> {
     message_store: Arc<MS>,
@@ -20,6 +20,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
 
     pub async fn send(
         &self,
+        project: ProjectId,
         namespace: Namespace,
         from: AgentId,
         to: MessageTarget,
@@ -28,7 +29,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
     ) -> Result<Vec<Message>> {
         match &to {
             MessageTarget::Agent(_) => {
-                let msg = Message::new(namespace, from, to, body, reply_to);
+                let msg = Message::new(project, namespace, from, to, body, reply_to);
                 self.message_store.save(&msg).await?;
                 Ok(vec![msg])
             }
@@ -43,6 +44,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 let mut sent = Vec::with_capacity(targets.len());
                 for target_id in targets {
                     let msg = Message::new(
+                        project.clone(),
                         namespace.clone(),
                         from,
                         MessageTarget::Agent(target_id),
@@ -65,6 +67,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 let mut sent = Vec::with_capacity(targets.len());
                 for target_id in targets {
                     let msg = Message::new(
+                        project.clone(),
                         namespace.clone(),
                         from,
                         MessageTarget::Agent(target_id),
@@ -79,8 +82,16 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         }
     }
 
-    pub async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
-        let mut messages = self.message_store.find_pending(agent, namespace).await?;
+    pub async fn check(
+        &self,
+        agent: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        let mut messages = self
+            .message_store
+            .find_pending(agent, project, namespace)
+            .await?;
         for msg in &mut messages {
             msg.deliver();
             self.message_store.save(msg).await?;
@@ -107,10 +118,14 @@ mod tests {
     use crate::store::mock::MockStore;
     use std::collections::HashMap;
 
+    fn test_project() -> ProjectId {
+        ProjectId::try_from("test").unwrap()
+    }
+
     fn make_agent(roles: Vec<&str>) -> Agent {
         Agent::register(
-            ProjectId::try_from("orchy").unwrap(),
-            Namespace::try_from("orchy").unwrap(),
+            test_project(),
+            Namespace::root(),
             roles.into_iter().map(String::from).collect(),
             "test".to_string(),
             HashMap::new(),
@@ -121,17 +136,14 @@ mod tests {
         AgentStore::save(store, agent).await.unwrap();
     }
 
-    fn ns() -> Namespace {
-        Namespace::try_from("orchy".to_string()).unwrap()
-    }
-
     #[tokio::test]
     async fn send_to_agent_returns_single_message() {
         let store = Arc::new(MockStore::default());
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
             .send(
-                ns(),
+                test_project(),
+                Namespace::root(),
                 AgentId::new(),
                 MessageTarget::Agent(AgentId::new()),
                 "hi".into(),
@@ -152,7 +164,8 @@ mod tests {
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
             .send(
-                ns(),
+                test_project(),
+                Namespace::root(),
                 AgentId::new(),
                 MessageTarget::Role("tester".to_string()),
                 "hi".into(),
@@ -171,7 +184,8 @@ mod tests {
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
             .send(
-                ns(),
+                test_project(),
+                Namespace::root(),
                 AgentId::new(),
                 MessageTarget::Role("tester".to_string()),
                 "hi".into(),
@@ -192,7 +206,8 @@ mod tests {
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
             .send(
-                ns(),
+                test_project(),
+                Namespace::root(),
                 sender.id(),
                 MessageTarget::Broadcast,
                 "hi".into(),

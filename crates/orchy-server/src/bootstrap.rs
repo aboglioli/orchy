@@ -1,4 +1,4 @@
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::project::Project;
 use orchy_core::project::ProjectStore;
 use orchy_core::project::service::ProjectService;
@@ -7,6 +7,7 @@ use orchy_core::skill::SkillStore;
 use orchy_core::skill::service::SkillService;
 
 pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore>(
+    project_id: &ProjectId,
     namespace: &Namespace,
     host: &str,
     port: u16,
@@ -14,12 +15,12 @@ pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore>(
     project_service: &ProjectService<PS>,
 ) -> Result<String, String> {
     let skills = skill_service
-        .list_with_inherited(namespace)
+        .list_with_inherited(project_id, namespace)
         .await
         .map_err(|e| e.to_string())?;
 
     let project = project_service
-        .get_or_create(&namespace.to_project())
+        .get_or_create(project_id)
         .await
         .map_err(|e| e.to_string())?;
 

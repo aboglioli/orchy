@@ -60,8 +60,13 @@ impl MessageStore for StoreBackend {
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         delegate_trait!(self, MessageStore::find_by_id(id))
     }
-    async fn find_pending(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
-        delegate_trait!(self, MessageStore::find_pending(agent, namespace))
+    async fn find_pending(
+        &self,
+        agent: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        delegate_trait!(self, MessageStore::find_pending(agent, project, namespace))
     }
 }
 
@@ -69,8 +74,13 @@ impl MemoryStore for StoreBackend {
     async fn save(&self, entry: &MemoryEntry) -> Result<()> {
         delegate_trait!(self, MemoryStore::save(entry))
     }
-    async fn find_by_key(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
-        delegate_trait!(self, MemoryStore::find_by_key(namespace, key))
+    async fn find_by_key(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        key: &str,
+    ) -> Result<Option<MemoryEntry>> {
+        delegate_trait!(self, MemoryStore::find_by_key(project, namespace, key))
     }
     async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
         delegate_trait!(self, MemoryStore::list(filter))
@@ -125,14 +135,19 @@ impl SkillStore for StoreBackend {
     async fn save(&self, skill: &Skill) -> Result<()> {
         delegate_trait!(self, SkillStore::save(skill))
     }
-    async fn find_by_name(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
-        delegate_trait!(self, SkillStore::find_by_name(namespace, name))
+    async fn find_by_name(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<Option<Skill>> {
+        delegate_trait!(self, SkillStore::find_by_name(project, namespace, name))
     }
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         delegate_trait!(self, SkillStore::list(filter))
     }
-    async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {
-        delegate_trait!(self, SkillStore::delete(namespace, name))
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+        delegate_trait!(self, SkillStore::delete(project, namespace, name))
     }
 }
 

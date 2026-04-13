@@ -1,12 +1,16 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{MemoryBackend, cosine_similarity};
 
 impl MemoryStore for MemoryBackend {
     async fn save(&self, entry: &MemoryEntry) -> Result<()> {
-        let key = (entry.namespace().to_string(), entry.key().to_string());
+        let key = (
+            entry.project().to_string(),
+            entry.namespace().to_string(),
+            entry.key().to_string(),
+        );
 
         let mut store = self
             .memory
@@ -17,12 +21,17 @@ impl MemoryStore for MemoryBackend {
         Ok(())
     }
 
-    async fn find_by_key(&self, namespace: &Namespace, key: &str) -> Result<Option<MemoryEntry>> {
+    async fn find_by_key(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        key: &str,
+    ) -> Result<Option<MemoryEntry>> {
         let store = self
             .memory
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        let composite = (namespace.to_string(), key.to_string());
+        let composite = (project.to_string(), namespace.to_string(), key.to_string());
         Ok(store.get(&composite).cloned())
     }
 
@@ -41,7 +50,7 @@ impl MemoryStore for MemoryBackend {
                     }
                 }
                 if let Some(ref project) = filter.project {
-                    if entry.namespace().project() != project.as_ref() {
+                    if entry.project() != project {
                         return false;
                     }
                 }
@@ -101,8 +110,7 @@ impl MemoryStore for MemoryBackend {
             .memory
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
-        let composite = (namespace.to_string(), key.to_string());
-        store.remove(&composite);
+        store.retain(|k, _| !(k.1 == namespace.to_string() && k.2 == key));
         Ok(())
     }
 }

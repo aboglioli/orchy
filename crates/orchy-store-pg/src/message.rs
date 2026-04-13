@@ -5,16 +5,17 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::PgBackend;
 
 impl MessageStore for PgBackend {
     async fn save(&self, message: &Message) -> Result<()> {
         sqlx::query(
-            "INSERT INTO messages (id, namespace, from_agent, to_target, body, reply_to, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "INSERT INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              ON CONFLICT (id) DO UPDATE SET
+                project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 from_agent = EXCLUDED.from_agent,
                 to_target = EXCLUDED.to_target,
@@ -24,6 +25,7 @@ impl MessageStore for PgBackend {
                 created_at = EXCLUDED.created_at",
         )
         .bind(message.id().as_uuid())
+        .bind(message.project().to_string())
         .bind(message.namespace().to_string())
         .bind(message.from().as_uuid())
         .bind(message.to().to_string())
@@ -44,7 +46,7 @@ impl MessageStore for PgBackend {
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         let row = sqlx::query(
-            "SELECT id, namespace, from_agent, to_target, body, status, created_at, reply_to
+            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM messages WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -55,18 +57,37 @@ impl MessageStore for PgBackend {
         Ok(row.map(|r| row_to_message(&r)))
     }
 
-    async fn find_pending(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
-        let rows = sqlx::query(
-            "SELECT id, namespace, from_agent, to_target, body, status, created_at, reply_to
+    async fn find_pending(
+        &self,
+        agent: &AgentId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        let mut sql = String::from(
+            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM messages
              WHERE status = 'pending' AND (to_target = $1 OR to_target = 'broadcast')
-               AND (namespace = $2 OR namespace LIKE $2 || '/%')",
-        )
-        .bind(agent.to_string())
-        .bind(namespace.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+               AND project = $2",
+        );
+        let ns_str = namespace.to_string();
+        let mut bind_ns = false;
+
+        if !namespace.is_root() {
+            sql.push_str(" AND (namespace = $3 OR namespace LIKE $3 || '/%')");
+            bind_ns = true;
+        }
+
+        let mut q = sqlx::query(&sql);
+        q = q.bind(agent.to_string());
+        q = q.bind(project.to_string());
+        if bind_ns {
+            q = q.bind(&ns_str);
+        }
+
+        let rows = q
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(rows.iter().map(row_to_message).collect())
     }
@@ -74,6 +95,7 @@ impl MessageStore for PgBackend {
 
 fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
     let id: Uuid = row.get("id");
+    let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let from_agent: Uuid = row.get("from_agent");
     let to_target: String = row.get("to_target");
@@ -84,6 +106,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
 
     Message::restore(
         MessageId::from_uuid(id),
+        ProjectId::try_from(project).expect("invalid project in database"),
         Namespace::try_from(namespace).expect("invalid namespace in database"),
         AgentId::from_uuid(from_agent),
         MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),

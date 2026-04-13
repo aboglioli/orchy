@@ -84,15 +84,29 @@ async fn bootstrap_handler(
     State(container): State<Arc<Container>>,
     Path(namespace): Path<String>,
 ) -> impl IntoResponse {
-    let ns = match orchy_core::namespace::Namespace::try_from(namespace) {
-        Ok(ns) => ns,
+    let (project_str, scope) = match namespace.split_once('/') {
+        Some((p, s)) => (p.to_string(), Some(s.to_string())),
+        None => (namespace.clone(), None),
+    };
+
+    let project_id = match orchy_core::namespace::ProjectId::try_from(project_str) {
+        Ok(p) => p,
         Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
+    };
+
+    let ns = match scope {
+        Some(s) => match orchy_core::namespace::Namespace::try_from(format!("/{s}")) {
+            Ok(ns) => ns,
+            Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
+        },
+        None => orchy_core::namespace::Namespace::root(),
     };
 
     let host = &container.config.server.host;
     let port = container.config.server.port;
 
     match bootstrap::generate_bootstrap_prompt(
+        &project_id,
         &ns,
         host,
         port,

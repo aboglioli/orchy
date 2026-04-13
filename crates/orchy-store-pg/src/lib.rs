@@ -52,6 +52,23 @@ const MIGRATIONS: &[Migration] = &[
             "../../../migrations/postgres/20260413-030000_agent_namespace_and_parent.sql"
         ),
     },
+    Migration {
+        version: "20260413-040000",
+        name: "add_project_to_all_tables",
+        sql: include_str!(
+            "../../../migrations/postgres/20260413-040000_add_project_to_all_tables.sql"
+        ),
+    },
+    Migration {
+        version: "20260413-050000",
+        name: "fix_skills_pk",
+        sql: include_str!("../../../migrations/postgres/20260413-050000_fix_skills_pk.sql"),
+    },
+    Migration {
+        version: "20260413-050001",
+        name: "fix_memory_pk",
+        sql: include_str!("../../../migrations/postgres/20260413-050001_fix_memory_pk.sql"),
+    },
 ];
 
 impl PgBackend {

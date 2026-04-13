@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
 
 pub trait MessageStore: Send + Sync {
     fn save(&self, message: &Message) -> impl Future<Output = Result<()>> + Send;
@@ -17,6 +17,7 @@ pub trait MessageStore: Send + Sync {
     fn find_pending(
         &self,
         agent: &AgentId,
+        project: &ProjectId,
         namespace: &Namespace,
     ) -> impl Future<Output = Result<Vec<Message>>> + Send;
 }
@@ -124,6 +125,7 @@ pub enum MessageStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     id: MessageId,
+    project: ProjectId,
     namespace: Namespace,
     from: AgentId,
     to: MessageTarget,
@@ -135,6 +137,7 @@ pub struct Message {
 
 impl Message {
     pub fn new(
+        project: ProjectId,
         namespace: Namespace,
         from: AgentId,
         to: MessageTarget,
@@ -143,6 +146,7 @@ impl Message {
     ) -> Self {
         Self {
             id: MessageId::new(),
+            project,
             namespace,
             from,
             to,
@@ -155,6 +159,7 @@ impl Message {
 
     pub fn restore(
         id: MessageId,
+        project: ProjectId,
         namespace: Namespace,
         from: AgentId,
         to: MessageTarget,
@@ -165,6 +170,7 @@ impl Message {
     ) -> Self {
         Self {
             id,
+            project,
             namespace,
             from,
             to,
@@ -177,6 +183,7 @@ impl Message {
 
     pub fn reply(&self, from: AgentId, body: String) -> Self {
         Self::new(
+            self.project.clone(),
             self.namespace.clone(),
             from,
             MessageTarget::Agent(self.from),
@@ -197,6 +204,9 @@ impl Message {
 
     pub fn id(&self) -> MessageId {
         self.id
+    }
+    pub fn project(&self) -> &ProjectId {
+        &self.project
     }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
@@ -224,6 +234,10 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_project() -> ProjectId {
+        ProjectId::try_from("test").unwrap()
+    }
 
     #[test]
     fn parse_broadcast() {
@@ -253,9 +267,9 @@ mod tests {
 
     #[test]
     fn new_message_is_pending() {
-        let ns = Namespace::try_from("test".to_string()).unwrap();
         let msg = Message::new(
-            ns,
+            test_project(),
+            Namespace::root(),
             AgentId::new(),
             MessageTarget::Broadcast,
             "hi".into(),
@@ -266,9 +280,9 @@ mod tests {
 
     #[test]
     fn deliver_transitions_to_delivered() {
-        let ns = Namespace::try_from("test".to_string()).unwrap();
         let mut msg = Message::new(
-            ns,
+            test_project(),
+            Namespace::root(),
             AgentId::new(),
             MessageTarget::Broadcast,
             "hi".into(),
@@ -280,9 +294,9 @@ mod tests {
 
     #[test]
     fn mark_read_transitions() {
-        let ns = Namespace::try_from("test".to_string()).unwrap();
         let mut msg = Message::new(
-            ns,
+            test_project(),
+            Namespace::root(),
             AgentId::new(),
             MessageTarget::Broadcast,
             "hi".into(),
@@ -294,11 +308,11 @@ mod tests {
 
     #[test]
     fn reply_creates_threaded_message() {
-        let ns = Namespace::try_from("test".to_string()).unwrap();
         let sender = AgentId::new();
         let receiver = AgentId::new();
         let original = Message::new(
-            ns,
+            test_project(),
+            Namespace::root(),
             sender,
             MessageTarget::Agent(receiver),
             "hello".into(),

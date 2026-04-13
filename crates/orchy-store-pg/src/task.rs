@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
@@ -23,8 +23,8 @@ impl TaskStore for PgBackend {
         let notes_json = serde_json::to_value(task.notes()).unwrap();
 
         sqlx::query(
-            "INSERT INTO tasks (id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            "INSERT INTO tasks (id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
              ON CONFLICT (id) DO UPDATE SET
                 namespace = EXCLUDED.namespace,
                 title = EXCLUDED.title,
@@ -40,6 +40,7 @@ impl TaskStore for PgBackend {
                 updated_at = EXCLUDED.updated_at",
         )
         .bind(task.id().as_uuid())
+        .bind(task.project().to_string())
         .bind(task.namespace().to_string())
         .bind(task.title())
         .bind(task.description())
@@ -63,7 +64,7 @@ impl TaskStore for PgBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
+            "SELECT id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -76,7 +77,7 @@ impl TaskStore for PgBackend {
 
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         let mut sql = String::from(
-            "SELECT id, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
+            "SELECT id, project, namespace, title, description, status, priority, assigned_roles, claimed_by, claimed_at, depends_on, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE 1=1",
         );
         let mut param_idx = 1u32;
@@ -88,16 +89,16 @@ impl TaskStore for PgBackend {
         let mut claimed_val: Option<Uuid> = None;
 
         if let Some(ref ns) = filter.namespace {
-            sql.push_str(&format!(
-                " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
-            ));
-            ns_val = Some(ns.to_string());
-            param_idx += 1;
+            if !ns.is_root() {
+                sql.push_str(&format!(
+                    " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
+                ));
+                ns_val = Some(ns.to_string());
+                param_idx += 1;
+            }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(
-                " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
-            ));
+            sql.push_str(&format!(" AND project = ${param_idx}"));
             project_val = Some(project.to_string());
             param_idx += 1;
         }
@@ -156,6 +157,7 @@ impl TaskStore for PgBackend {
 
 fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
     let id: Uuid = row.get("id");
+    let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let title: String = row.get("title");
     let description: String = row.get("description");
@@ -180,6 +182,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
 
     Task::restore(
         TaskId::from_uuid(id),
+        ProjectId::try_from(project).expect("invalid project in database"),
         Namespace::try_from(namespace).unwrap(),
         title,
         description,

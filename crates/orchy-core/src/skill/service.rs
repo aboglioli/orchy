@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::{Skill, SkillFilter, SkillStore, WriteSkill};
 use crate::error::{Error, Result};
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
 
 pub struct SkillService<S: SkillStore> {
     store: Arc<S>,
@@ -20,37 +20,50 @@ impl<S: SkillStore> SkillService<S> {
             ));
         }
 
-        let skill =
-            if let Some(mut existing) = self.store.find_by_name(&cmd.namespace, &cmd.name).await? {
-                existing.update(cmd.description, cmd.content, cmd.written_by);
-                existing
-            } else {
-                Skill::new(
-                    cmd.namespace,
-                    cmd.name,
-                    cmd.description,
-                    cmd.content,
-                    cmd.written_by,
-                )
-            };
+        let skill = if let Some(mut existing) = self
+            .store
+            .find_by_name(&cmd.project, &cmd.namespace, &cmd.name)
+            .await?
+        {
+            existing.update(cmd.description, cmd.content, cmd.written_by);
+            existing
+        } else {
+            Skill::new(
+                cmd.project,
+                cmd.namespace,
+                cmd.name,
+                cmd.description,
+                cmd.content,
+                cmd.written_by,
+            )
+        };
 
         self.store.save(&skill).await?;
         Ok(skill)
     }
 
-    pub async fn read(&self, namespace: &Namespace, name: &str) -> Result<Option<Skill>> {
-        self.store.find_by_name(namespace, name).await
+    pub async fn read(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<Option<Skill>> {
+        self.store.find_by_name(project, namespace, name).await
     }
 
     pub async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         self.store.list(filter).await
     }
 
-    pub async fn list_with_inherited(&self, namespace: &Namespace) -> Result<Vec<Skill>> {
+    pub async fn list_with_inherited(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Skill>> {
         let all = self
             .store
             .list(SkillFilter {
-                namespace: Some(Namespace::try_from(namespace.project().to_string()).unwrap()),
+                project: Some(project.clone()),
                 ..Default::default()
             })
             .await?;
@@ -60,13 +73,14 @@ impl<S: SkillStore> SkillService<S> {
 
     pub async fn move_skill(
         &self,
+        project: &ProjectId,
         namespace: &Namespace,
         name: &str,
         new_namespace: Namespace,
     ) -> Result<Skill> {
         let mut skill = self
             .store
-            .find_by_name(namespace, name)
+            .find_by_name(project, namespace, name)
             .await?
             .ok_or_else(|| Error::NotFound(format!("skill {namespace}/{name}")))?;
 
@@ -74,11 +88,18 @@ impl<S: SkillStore> SkillService<S> {
         let old_name = skill.name().to_string();
         skill.move_to(new_namespace);
         self.store.save(&skill).await?;
-        self.store.delete(&old_namespace, &old_name).await?;
+        self.store
+            .delete(project, &old_namespace, &old_name)
+            .await?;
         Ok(skill)
     }
 
-    pub async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {
-        self.store.delete(namespace, name).await
+    pub async fn delete(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<()> {
+        self.store.delete(project, namespace, name).await
     }
 }

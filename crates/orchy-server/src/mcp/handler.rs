@@ -45,10 +45,10 @@ impl OrchyHandler {
             .map(|s| s.namespace.clone())
     }
 
-    pub(crate) fn require_session(&self) -> Result<(AgentId, Namespace), String> {
+    pub(crate) fn require_session(&self) -> Result<(AgentId, ProjectId, Namespace), String> {
         let guard = self.session.read().unwrap();
         match guard.as_ref() {
-            Some(s) => Ok((s.agent_id, s.namespace.clone())),
+            Some(s) => Ok((s.agent_id, s.project.clone(), s.namespace.clone())),
             None => {
                 Err("no agent registered for this session; call register_agent first".to_string())
             }
@@ -79,16 +79,15 @@ impl OrchyHandler {
     }
 
     pub(crate) fn build_namespace(&self, scope: Option<&str>) -> Result<Namespace, String> {
-        let project = self
+        let _ = self
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
         match scope {
             Some(s) if !s.is_empty() => {
-                let full = format!("{project}/{s}");
-                Namespace::try_from(full).map_err(|e| e.to_string())
+                Namespace::try_from(format!("/{s}")).map_err(|e| e.to_string())
             }
-            _ => Namespace::try_from(project.as_ref().to_string()).map_err(|e| e.to_string()),
+            _ => Ok(Namespace::root()),
         }
     }
 

@@ -105,7 +105,7 @@ mod tests {
     fn make_registration() -> RegisterAgent {
         RegisterAgent {
             project: ProjectId::try_from("orchy".to_string()).unwrap(),
-            namespace: Namespace::try_from("orchy".to_string()).unwrap(),
+            namespace: Namespace::root(),
             roles: vec!["tester".to_string()],
             description: "test agent".to_string(),
             parent_id: None,
@@ -130,7 +130,7 @@ mod tests {
 
         let child_cmd = RegisterAgent {
             project: ProjectId::try_from("orchy".to_string()).unwrap(),
-            namespace: Namespace::try_from("orchy/backend".to_string()).unwrap(),
+            namespace: Namespace::try_from("/backend".to_string()).unwrap(),
             roles: vec!["reviewer".to_string()],
             description: "child agent".to_string(),
             parent_id: Some(parent.id()),
