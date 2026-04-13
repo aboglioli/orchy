@@ -58,6 +58,26 @@ impl<S: SkillStore> SkillService<S> {
         Ok(Skill::filter_with_inheritance(all, namespace))
     }
 
+    pub async fn move_skill(
+        &self,
+        namespace: &Namespace,
+        name: &str,
+        new_namespace: Namespace,
+    ) -> Result<Skill> {
+        let mut skill = self
+            .store
+            .find_by_name(namespace, name)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("skill {namespace}/{name}")))?;
+
+        let old_namespace = skill.namespace().clone();
+        let old_name = skill.name().to_string();
+        skill.move_to(new_namespace);
+        self.store.save(&skill).await?;
+        self.store.delete(&old_namespace, &old_name).await?;
+        Ok(skill)
+    }
+
     pub async fn delete(&self, namespace: &Namespace, name: &str) -> Result<()> {
         self.store.delete(namespace, name).await
     }

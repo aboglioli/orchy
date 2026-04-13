@@ -55,6 +55,26 @@ impl<S: MemoryStore> MemoryService<S> {
         self.store.list(filter).await
     }
 
+    pub async fn move_entry(
+        &self,
+        namespace: &Namespace,
+        key: &str,
+        new_namespace: Namespace,
+    ) -> Result<MemoryEntry> {
+        let mut entry = self
+            .store
+            .find_by_key(namespace, key)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("memory {namespace}/{key}")))?;
+
+        let old_namespace = entry.namespace().clone();
+        let old_key = entry.key().to_string();
+        entry.move_to(new_namespace);
+        self.store.save(&entry).await?;
+        self.store.delete(&old_namespace, &old_key).await?;
+        Ok(entry)
+    }
+
     pub async fn search(
         &self,
         query: &str,
