@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod memory;
 mod message;
+mod project;
 mod skill;
 mod store_impl;
 mod task;
@@ -12,6 +13,8 @@ use std::sync::RwLock;
 use orchy_core::agent::{Agent, AgentId};
 use orchy_core::memory::{ContextSnapshot, MemoryEntry, SnapshotId};
 use orchy_core::message::{Message, MessageId};
+use orchy_core::namespace::ProjectId;
+use orchy_core::project::Project;
 use orchy_core::skill::Skill;
 use orchy_core::task::{Task, TaskId};
 
@@ -22,6 +25,7 @@ pub struct MemoryBackend {
     pub(crate) messages: RwLock<HashMap<MessageId, Message>>,
     pub(crate) contexts: RwLock<HashMap<SnapshotId, ContextSnapshot>>,
     pub(crate) skills: RwLock<HashMap<(String, String), Skill>>,
+    pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
 }
 
 impl MemoryBackend {
@@ -33,6 +37,7 @@ impl MemoryBackend {
             messages: RwLock::new(HashMap::new()),
             contexts: RwLock::new(HashMap::new()),
             skills: RwLock::new(HashMap::new()),
+            projects: RwLock::new(HashMap::new()),
         }
     }
 }

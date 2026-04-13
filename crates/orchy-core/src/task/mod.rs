@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
-use crate::namespace::{Namespace, Project};
+use crate::namespace::{Namespace, ProjectId};
+use crate::note::Note;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -156,6 +157,7 @@ pub struct Task {
     claimed_at: Option<DateTime<Utc>>,
     depends_on: Vec<TaskId>,
     result_summary: Option<String>,
+    notes: Vec<Note>,
     created_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -189,6 +191,7 @@ impl Task {
             claimed_at: None,
             depends_on,
             result_summary: None,
+            notes: Vec::new(),
             created_by,
             created_at: now,
             updated_at: now,
@@ -208,6 +211,7 @@ impl Task {
         claimed_at: Option<DateTime<Utc>>,
         depends_on: Vec<TaskId>,
         result_summary: Option<String>,
+        notes: Vec<Note>,
         created_by: Option<AgentId>,
         created_at: DateTime<Utc>,
         updated_at: DateTime<Utc>,
@@ -224,6 +228,7 @@ impl Task {
             claimed_at,
             depends_on,
             result_summary,
+            notes,
             created_by,
             created_at,
             updated_at,
@@ -332,6 +337,17 @@ impl Task {
     pub fn result_summary(&self) -> Option<&str> {
         self.result_summary.as_deref()
     }
+    pub fn notes(&self) -> &[Note] {
+        &self.notes
+    }
+    pub fn add_note(&mut self, author: Option<AgentId>, body: String) {
+        self.notes.push(Note::new(author, body));
+        self.updated_at = Utc::now();
+    }
+    pub fn move_to(&mut self, namespace: Namespace) {
+        self.namespace = namespace;
+        self.updated_at = Utc::now();
+    }
     pub fn created_by(&self) -> Option<AgentId> {
         self.created_by
     }
@@ -346,7 +362,7 @@ impl Task {
 #[derive(Debug, Clone, Default)]
 pub struct TaskFilter {
     pub namespace: Option<Namespace>,
-    pub project: Option<Project>,
+    pub project: Option<ProjectId>,
     pub status: Option<TaskStatus>,
     pub assigned_role: Option<String>,
     pub claimed_by: Option<AgentId>,
@@ -375,6 +391,7 @@ mod tests {
             None,
             vec![],
             None,
+            Vec::new(),
             None,
             Utc::now(),
             Utc::now(),

@@ -110,6 +110,25 @@ impl<S: Store> TaskService<S> {
         Ok(task)
     }
 
+    pub async fn add_note(
+        &self,
+        id: &TaskId,
+        author: Option<AgentId>,
+        body: String,
+    ) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.add_note(author, body);
+        self.store.save_task(&task).await?;
+        Ok(task)
+    }
+
+    pub async fn move_task(&self, id: &TaskId, namespace: Namespace) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.move_to(namespace);
+        self.store.save_task(&task).await?;
+        Ok(task)
+    }
+
     pub async fn reassign(&self, id: &TaskId, new_agent: &AgentId) -> Result<Task> {
         self.store
             .get_agent(new_agent)

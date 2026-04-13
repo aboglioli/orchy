@@ -159,6 +159,7 @@ async fn task_save_overwrites_existing() {
         None,
         vec![],
         Some("done".into()),
+        vec![],
         None,
         task.created_at(),
         task.updated_at(),

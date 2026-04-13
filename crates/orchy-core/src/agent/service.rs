@@ -43,6 +43,15 @@ impl<S: Store> AgentService<S> {
         self.store.update_agent_roles(id, roles).await
     }
 
+    pub async fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent> {
+        self.store.reconnect(id, roles, description).await
+    }
+
     pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
         self.store.disconnect(id).await
     }

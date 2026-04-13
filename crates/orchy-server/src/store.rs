@@ -2,7 +2,8 @@ use orchy_core::agent::{Agent, AgentId, AgentStatus, RegisterAgent};
 use orchy_core::error::Result;
 use orchy_core::memory::{ContextSnapshot, CreateSnapshot, MemoryEntry, MemoryFilter, WriteMemory};
 use orchy_core::message::{CreateMessage, Message, MessageId};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::project::Project;
 use orchy_core::skill::{Skill, SkillFilter, WriteSkill};
 use orchy_core::store::Store;
 use orchy_core::task::{Task, TaskFilter, TaskId};
@@ -89,12 +90,29 @@ impl Store for StoreBackend {
         delegate!(self, update_agent_roles(id, roles))
     }
 
+    async fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent> {
+        delegate!(self, reconnect(id, roles, description))
+    }
+
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
         delegate!(self, disconnect(id))
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         delegate!(self, find_timed_out(timeout_secs))
+    }
+
+    async fn save_project(&self, project: &Project) -> Result<()> {
+        delegate!(self, save_project(project))
+    }
+
+    async fn get_project(&self, id: &ProjectId) -> Result<Option<Project>> {
+        delegate!(self, get_project(id))
     }
 
     async fn send_message(&self, message: CreateMessage) -> Result<Message> {

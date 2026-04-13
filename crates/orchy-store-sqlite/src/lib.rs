@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod memory;
 mod message;
+mod project;
 mod skill;
 mod store_impl;
 mod task;
@@ -16,16 +17,25 @@ pub struct SqliteBackend {
 }
 
 struct Migration {
-    version: u32,
+    version: &'static str,
     name: &'static str,
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_schema",
-    sql: include_str!("../../../migrations/sqlite/001_initial_schema.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: "20260412-160000",
+        name: "initial_schema",
+        sql: include_str!("../../../migrations/sqlite/20260412-160000_initial_schema.sql"),
+    },
+    Migration {
+        version: "20260412-235000",
+        name: "notes_projects_reconnect",
+        sql: include_str!(
+            "../../../migrations/sqlite/20260412-235000_notes_projects_reconnect.sql"
+        ),
+    },
+];
 
 impl SqliteBackend {
     pub fn new(path: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
@@ -57,7 +67,7 @@ impl SqliteBackend {
     fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_migrations (
-                version INTEGER PRIMARY KEY,
+                version TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 applied_at TEXT NOT NULL
             )",

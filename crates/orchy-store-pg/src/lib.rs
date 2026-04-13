@@ -2,6 +2,7 @@ mod agent;
 mod context;
 mod memory;
 mod message;
+mod project;
 mod skill;
 mod store_impl;
 mod task;
@@ -15,16 +16,25 @@ pub struct PgBackend {
 }
 
 struct Migration {
-    version: i64,
+    version: &'static str,
     name: &'static str,
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_schema",
-    sql: include_str!("../../../migrations/postgres/001_initial_schema.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: "20260412-160000",
+        name: "initial_schema",
+        sql: include_str!("../../../migrations/postgres/20260412-160000_initial_schema.sql"),
+    },
+    Migration {
+        version: "20260412-235000",
+        name: "notes_projects_reconnect",
+        sql: include_str!(
+            "../../../migrations/postgres/20260412-235000_notes_projects_reconnect.sql"
+        ),
+    },
+];
 
 impl PgBackend {
     pub async fn new(url: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
@@ -46,7 +56,7 @@ impl PgBackend {
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS schema_migrations (
-                version BIGINT PRIMARY KEY,
+                version TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
@@ -109,7 +119,7 @@ impl PgBackend {
     }
 
     pub async fn truncate_all(&self) -> Result<()> {
-        sqlx::query("TRUNCATE contexts, messages, tasks, memory, skills, agents CASCADE")
+        sqlx::query("TRUNCATE contexts, messages, tasks, memory, skills, agents, projects CASCADE")
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;

@@ -1,0 +1,91 @@
+pub mod service;
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+use crate::agent::AgentId;
+use crate::error::Result;
+use crate::namespace::ProjectId;
+use crate::note::Note;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    id: ProjectId,
+    description: String,
+    notes: Vec<Note>,
+    metadata: HashMap<String, String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl Project {
+    pub fn new(id: ProjectId, description: String) -> Self {
+        let now = Utc::now();
+        Self {
+            id,
+            description,
+            notes: Vec::new(),
+            metadata: HashMap::new(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn restore(
+        id: ProjectId,
+        description: String,
+        notes: Vec<Note>,
+        metadata: HashMap<String, String>,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id,
+            description,
+            notes,
+            metadata,
+            created_at,
+            updated_at,
+        }
+    }
+
+    pub fn update_description(&mut self, description: String) {
+        self.description = description;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn add_note(&mut self, author: Option<AgentId>, body: String) {
+        self.notes.push(Note::new(author, body));
+        self.updated_at = Utc::now();
+    }
+
+    pub fn set_metadata(&mut self, key: String, value: String) {
+        self.metadata.insert(key, value);
+        self.updated_at = Utc::now();
+    }
+
+    pub fn id(&self) -> &ProjectId {
+        &self.id
+    }
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+    pub fn notes(&self) -> &[Note] {
+        &self.notes
+    }
+    pub fn metadata(&self) -> &HashMap<String, String> {
+        &self.metadata
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
+    }
+}
+
+pub trait ProjectStore: Send + Sync {
+    async fn save(&self, project: &Project) -> Result<()>;
+    async fn get(&self, id: &ProjectId) -> Result<Option<Project>>;
+}

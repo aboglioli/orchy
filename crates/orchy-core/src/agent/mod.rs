@@ -102,6 +102,12 @@ pub trait AgentStore: Send + Sync {
     async fn heartbeat(&self, id: &AgentId) -> Result<()>;
     async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()>;
     async fn update_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent>;
+    async fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent>;
     async fn disconnect(&self, id: &AgentId) -> Result<()>;
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
 }

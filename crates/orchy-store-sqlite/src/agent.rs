@@ -123,6 +123,37 @@ impl AgentStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))
     }
 
+    async fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let rows = conn
+            .execute(
+                "UPDATE agents SET status = 'online', roles = ?1, description = ?2, last_heartbeat = ?3 WHERE id = ?4",
+                rusqlite::params![
+                    serde_json::to_string(&roles).unwrap(),
+                    description,
+                    Utc::now().to_rfc3339(),
+                    id.to_string(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        if rows == 0 {
+            return Err(Error::NotFound(format!("agent {id}")));
+        }
+
+        let mut stmt = conn
+            .prepare("SELECT id, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents WHERE id = ?1")
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        stmt.query_row(rusqlite::params![id.to_string()], row_to_agent)
+            .map_err(|e| Error::Store(e.to_string()))
+    }
+
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
         self.update_status(id, AgentStatus::Disconnected).await
     }

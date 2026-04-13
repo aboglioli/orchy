@@ -5,7 +5,8 @@ use orchy_core::memory::{
     WriteMemory,
 };
 use orchy_core::message::{CreateMessage, Message, MessageId, MessageStore};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::project::{Project, ProjectStore};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore, WriteSkill};
 use orchy_core::store::Store;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
@@ -75,12 +76,29 @@ impl Store for MemoryBackend {
         AgentStore::update_roles(self, id, roles).await
     }
 
+    async fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<Agent> {
+        AgentStore::reconnect(self, id, roles, description).await
+    }
+
     async fn disconnect(&self, id: &AgentId) -> Result<()> {
         AgentStore::disconnect(self, id).await
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         AgentStore::find_timed_out(self, timeout_secs).await
+    }
+
+    async fn save_project(&self, project: &Project) -> Result<()> {
+        ProjectStore::save(self, project).await
+    }
+
+    async fn get_project(&self, id: &ProjectId) -> Result<Option<Project>> {
+        ProjectStore::get(self, id).await
     }
 
     async fn send_message(&self, message: CreateMessage) -> Result<Message> {
