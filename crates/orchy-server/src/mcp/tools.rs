@@ -220,8 +220,8 @@ struct DeleteSkillParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 struct MoveTaskParams {
     task_id: String,
-    /// New scope within the project (e.g. "backend/auth").
-    namespace: String,
+    /// New scope to move the task to (e.g. "backend/auth").
+    new_namespace: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -397,7 +397,7 @@ impl OrchyHandler {
         match self
             .container
             .agent_service
-            .update_roles(&agent_id, params.roles)
+            .change_roles(&agent_id, params.roles)
             .await
         {
             Ok(agent) => Ok(to_json(&agent)),
@@ -734,7 +734,7 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .reassign(&task_id, &agent_id)
+            .assign(&task_id, &agent_id)
             .await
         {
             Ok(task) => Ok(to_json(&task)),
@@ -1327,7 +1327,7 @@ impl OrchyHandler {
         };
 
         let namespace = match self
-            .build_and_register_namespace(Some(&params.namespace))
+            .build_and_register_namespace(Some(&params.new_namespace))
             .await
         {
             Ok(ns) => ns,
