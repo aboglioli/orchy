@@ -14,7 +14,7 @@ use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 impl ContextStore for SqliteBackend {
     async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let embedding_bytes = snapshot.embedding().map(|e| embedding_to_bytes(e));
+        let embedding_bytes = snapshot.embedding().map(embedding_to_bytes);
 
         conn.execute(
             "INSERT OR REPLACE INTO contexts (id, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)

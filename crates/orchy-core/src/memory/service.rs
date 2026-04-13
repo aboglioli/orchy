@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use super::{
-    ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore, Version, WriteMemory,
-};
+use super::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore, WriteMemory};
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsBackend;
 use crate::error::{Error, Result};
@@ -22,13 +20,11 @@ impl<S: MemoryStore> MemoryService<S> {
         let existing = self.store.find_by_key(&cmd.namespace, &cmd.key).await?;
 
         let mut entry = if let Some(mut existing) = existing {
-            if let Some(expected) = cmd.expected_version {
-                if existing.version() != expected {
-                    return Err(Error::VersionMismatch {
-                        expected: expected.as_u64(),
-                        actual: existing.version().as_u64(),
-                    });
-                }
+            if let Some(expected) = cmd.expected_version.filter(|v| existing.version() != *v) {
+                return Err(Error::VersionMismatch {
+                    expected: expected.as_u64(),
+                    actual: existing.version().as_u64(),
+                });
             }
             existing.update(cmd.value, cmd.written_by);
             existing

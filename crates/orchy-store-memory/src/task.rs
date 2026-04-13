@@ -13,7 +13,7 @@ impl TaskStore for MemoryBackend {
         Ok(())
     }
 
-    async fn get(&self, id: &TaskId) -> Result<Option<Task>> {
+    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let tasks = self.tasks.read().map_err(|e| Error::Store(e.to_string()))?;
         Ok(tasks.get(id).cloned())
     }
@@ -54,7 +54,7 @@ impl TaskStore for MemoryBackend {
             .cloned()
             .collect();
 
-        results.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        results.sort_by_key(|t| std::cmp::Reverse(t.priority()));
         Ok(results)
     }
 }

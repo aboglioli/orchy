@@ -30,8 +30,8 @@ impl TaskStore for StoreBackend {
     async fn save(&self, task: &Task) -> Result<()> {
         delegate_trait!(self, TaskStore::save(task))
     }
-    async fn get(&self, id: &TaskId) -> Result<Option<Task>> {
-        delegate_trait!(self, TaskStore::get(id))
+    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
+        delegate_trait!(self, TaskStore::find_by_id(id))
     }
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         delegate_trait!(self, TaskStore::list(filter))

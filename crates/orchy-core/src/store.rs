@@ -22,7 +22,7 @@ pub mod mock {
         async fn save(&self, _: &Task) -> Result<()> {
             Ok(())
         }
-        async fn get(&self, _: &TaskId) -> Result<Option<Task>> {
+        async fn find_by_id(&self, _: &TaskId) -> Result<Option<Task>> {
             unimplemented!()
         }
         async fn list(&self, _: TaskFilter) -> Result<Vec<Task>> {

@@ -108,7 +108,10 @@ async fn task_save_and_get() {
 
     TaskStore::save(&store, &task).await.unwrap();
 
-    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    let fetched = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fetched.status(), TaskStatus::Pending);
     assert_eq!(fetched.title(), "Do thing");
     assert_eq!(fetched.description(), "Details");
@@ -151,7 +154,10 @@ async fn task_save_overwrites_existing() {
     );
     TaskStore::save(&store, &updated).await.unwrap();
 
-    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    let fetched = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fetched.title(), "updated");
     assert_eq!(fetched.status(), TaskStatus::Completed);
     assert_eq!(fetched.result_summary(), Some("done"));
@@ -185,7 +191,10 @@ async fn task_dependency_stored() {
     );
     TaskStore::save(&store, &task).await.unwrap();
 
-    let fetched = TaskStore::get(&store, &task.id()).await.unwrap().unwrap();
+    let fetched = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(fetched.status(), TaskStatus::Blocked);
     assert_eq!(fetched.depends_on(), &[dep.id()]);
 }

@@ -14,7 +14,7 @@ use crate::note::Note;
 
 pub trait TaskStore: Send + Sync {
     fn save(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
-    fn get(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
+    fn find_by_id(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
     fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
 }
 
@@ -110,19 +110,14 @@ impl fmt::Display for TaskStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
     Low,
+    #[default]
     Normal,
     High,
     Critical,
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Normal
-    }
 }
 
 impl fmt::Display for Priority {

@@ -14,7 +14,7 @@ impl MemoryStore for SqliteBackend {
     async fn save(&self, entry: &MemoryEntry) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let embedding_bytes = entry.embedding().map(|e| embedding_to_bytes(e));
+        let embedding_bytes = entry.embedding().map(embedding_to_bytes);
 
         conn.execute(
             "INSERT OR REPLACE INTO memory (namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at)
