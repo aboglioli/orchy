@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -194,16 +196,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
         MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
         reply_to.map(MessageId::from_uuid),
-        parse_message_status(&status),
+        status.parse::<MessageStatus>().unwrap_or(MessageStatus::Pending),
         created_at,
     )
-}
-
-fn parse_message_status(s: &str) -> MessageStatus {
-    match s {
-        "pending" => MessageStatus::Pending,
-        "delivered" => MessageStatus::Delivered,
-        "read" => MessageStatus::Read,
-        _ => MessageStatus::Pending,
-    }
 }

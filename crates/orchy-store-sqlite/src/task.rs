@@ -175,7 +175,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
-    let status = parse_task_status(&status_str);
+    let status = status_str.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending);
     let priority = priority_str.parse::<Priority>().unwrap_or_default();
     let assigned_roles: Vec<String> = serde_json::from_str(&roles_str).unwrap_or_default();
     let parent_id = parent_id_str.and_then(|s| TaskId::from_str(&s).ok());
@@ -214,17 +214,4 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         created_at,
         updated_at,
     ))
-}
-
-fn parse_task_status(s: &str) -> TaskStatus {
-    match s {
-        "pending" => TaskStatus::Pending,
-        "blocked" => TaskStatus::Blocked,
-        "claimed" => TaskStatus::Claimed,
-        "in_progress" => TaskStatus::InProgress,
-        "completed" => TaskStatus::Completed,
-        "failed" => TaskStatus::Failed,
-        "cancelled" => TaskStatus::Cancelled,
-        _ => TaskStatus::Pending,
-    }
 }

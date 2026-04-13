@@ -10,7 +10,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::memory::{ContextSnapshot, ContextStore, SnapshotId};
 use orchy_core::namespace::{Namespace, ProjectId};
 
-use crate::PgBackend;
+use crate::{PgBackend, parse_pg_vector_text};
 
 impl ContextStore for PgBackend {
     async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
@@ -182,14 +182,3 @@ fn row_to_context(row: &sqlx::postgres::PgRow) -> ContextSnapshot {
     )
 }
 
-fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {
-    let trimmed = s.trim_start_matches('[').trim_end_matches(']');
-    if trimmed.is_empty() {
-        return None;
-    }
-    let result: std::result::Result<Vec<f32>, _> = trimmed
-        .split(',')
-        .map(|v| v.trim().parse::<f32>())
-        .collect();
-    result.ok()
-}

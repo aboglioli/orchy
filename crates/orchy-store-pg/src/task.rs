@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -199,7 +201,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
         parent_id.map(TaskId::from_uuid),
         title,
         description,
-        parse_task_status(&status),
+        status.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending),
         priority.parse::<Priority>().unwrap_or_default(),
         serde_json::from_value(assigned_roles).unwrap_or_default(),
         assigned_to.map(AgentId::from_uuid),
@@ -211,17 +213,4 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
         created_at,
         updated_at,
     )
-}
-
-fn parse_task_status(s: &str) -> TaskStatus {
-    match s {
-        "pending" => TaskStatus::Pending,
-        "blocked" => TaskStatus::Blocked,
-        "claimed" => TaskStatus::Claimed,
-        "in_progress" => TaskStatus::InProgress,
-        "completed" => TaskStatus::Completed,
-        "failed" => TaskStatus::Failed,
-        "cancelled" => TaskStatus::Cancelled,
-        _ => TaskStatus::Pending,
-    }
 }

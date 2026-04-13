@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use sqlx::Row;
@@ -104,19 +105,9 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
         parent_id.map(AgentId::from_uuid),
         serde_json::from_value(roles).unwrap_or_default(),
         description,
-        parse_agent_status(&status),
+        status.parse::<AgentStatus>().unwrap_or_default(),
         last_heartbeat,
         connected_at,
         serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
     )
-}
-
-fn parse_agent_status(s: &str) -> AgentStatus {
-    match s {
-        "online" => AgentStatus::Online,
-        "busy" => AgentStatus::Busy,
-        "idle" => AgentStatus::Idle,
-        "disconnected" => AgentStatus::Disconnected,
-        _ => AgentStatus::Online,
-    }
 }

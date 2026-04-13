@@ -129,7 +129,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?,
         description,
-        parse_agent_status(&status_str),
+        status_str.parse::<AgentStatus>().unwrap_or_default(),
         DateTime::parse_from_rfc3339(&heartbeat_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
@@ -150,14 +150,4 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             })?,
         serde_json::from_str(&metadata_str).unwrap_or_else(|_| HashMap::new()),
     ))
-}
-
-fn parse_agent_status(s: &str) -> AgentStatus {
-    match s {
-        "online" => AgentStatus::Online,
-        "busy" => AgentStatus::Busy,
-        "idle" => AgentStatus::Idle,
-        "disconnected" => AgentStatus::Disconnected,
-        _ => AgentStatus::Online,
-    }
 }

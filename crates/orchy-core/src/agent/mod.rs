@@ -78,6 +78,20 @@ impl fmt::Display for AgentStatus {
     }
 }
 
+impl FromStr for AgentStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "online" => Ok(AgentStatus::Online),
+            "busy" => Ok(AgentStatus::Busy),
+            "idle" => Ok(AgentStatus::Idle),
+            "disconnected" => Ok(AgentStatus::Disconnected),
+            other => Err(format!("unknown agent status: {other}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     id: AgentId,

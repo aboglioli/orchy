@@ -133,6 +133,19 @@ pub enum MessageStatus {
     Read,
 }
 
+impl FromStr for MessageStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(MessageStatus::Pending),
+            "delivered" => Ok(MessageStatus::Delivered),
+            "read" => Ok(MessageStatus::Read),
+            other => Err(format!("unknown message status: {other}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     id: MessageId,

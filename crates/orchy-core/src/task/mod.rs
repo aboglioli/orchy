@@ -118,6 +118,23 @@ impl fmt::Display for TaskStatus {
     }
 }
 
+impl FromStr for TaskStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(TaskStatus::Pending),
+            "blocked" => Ok(TaskStatus::Blocked),
+            "claimed" => Ok(TaskStatus::Claimed),
+            "in_progress" => Ok(TaskStatus::InProgress),
+            "completed" => Ok(TaskStatus::Completed),
+            "failed" => Ok(TaskStatus::Failed),
+            "cancelled" => Ok(TaskStatus::Cancelled),
+            other => Err(format!("unknown task status: {other}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {

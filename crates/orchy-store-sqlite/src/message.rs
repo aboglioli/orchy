@@ -23,11 +23,11 @@ impl MessageStore for SqliteBackend {
                 message.to().to_string(),
                 message.body(),
                 message.reply_to().map(|id| id.to_string()),
-                format!("{}", match message.status() {
+                match message.status() {
                     MessageStatus::Pending => "pending",
                     MessageStatus::Delivered => "delivered",
                     MessageStatus::Read => "read",
-                }),
+                },
                 message.created_at().to_rfc3339(),
             ],
         )
@@ -254,7 +254,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
         })?,
         body,
         reply_to,
-        parse_message_status(&status_str),
+        status_str.parse::<MessageStatus>().unwrap_or(MessageStatus::Pending),
         DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
@@ -265,13 +265,4 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
                 )
             })?,
     ))
-}
-
-fn parse_message_status(s: &str) -> MessageStatus {
-    match s {
-        "pending" => MessageStatus::Pending,
-        "delivered" => MessageStatus::Delivered,
-        "read" => MessageStatus::Read,
-        _ => MessageStatus::Pending,
-    }
 }

@@ -121,3 +121,15 @@ impl PgBackend {
         Ok(())
     }
 }
+
+pub(crate) fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {
+    let trimmed = s.trim_start_matches('[').trim_end_matches(']');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let result: std::result::Result<Vec<f32>, _> = trimmed
+        .split(',')
+        .map(|v| v.trim().parse::<f32>())
+        .collect();
+    result.ok()
+}
