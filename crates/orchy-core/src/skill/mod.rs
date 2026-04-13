@@ -8,6 +8,17 @@ use crate::agent::AgentId;
 use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
 
+pub trait SkillStore: Send + Sync {
+    fn write(&self, skill: WriteSkill) -> impl Future<Output = Result<Skill>> + Send;
+    fn read(
+        &self,
+        namespace: &Namespace,
+        name: &str,
+    ) -> impl Future<Output = Result<Option<Skill>>> + Send;
+    fn list(&self, filter: SkillFilter) -> impl Future<Output = Result<Vec<Skill>>> + Send;
+    fn delete(&self, namespace: &Namespace, name: &str) -> impl Future<Output = Result<()>> + Send;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skill {
     pub namespace: Namespace,
@@ -53,17 +64,6 @@ pub struct WriteSkill {
 pub struct SkillFilter {
     pub namespace: Option<Namespace>,
     pub project: Option<ProjectId>,
-}
-
-pub trait SkillStore: Send + Sync {
-    fn write(&self, skill: WriteSkill) -> impl Future<Output = Result<Skill>> + Send;
-    fn read(
-        &self,
-        namespace: &Namespace,
-        name: &str,
-    ) -> impl Future<Output = Result<Option<Skill>>> + Send;
-    fn list(&self, filter: SkillFilter) -> impl Future<Output = Result<Vec<Skill>>> + Send;
-    fn delete(&self, namespace: &Namespace, name: &str) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[cfg(test)]

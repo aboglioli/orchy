@@ -12,6 +12,46 @@ use crate::agent::AgentId;
 use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
 
+pub trait MemoryStore: Send + Sync {
+    fn write(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
+    fn read(
+        &self,
+        namespace: &Namespace,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
+    fn list(&self, filter: MemoryFilter) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
+    fn search(
+        &self,
+        query: &str,
+        embedding: Option<&[f32]>,
+        namespace: Option<&Namespace>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
+    fn delete(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<()>> + Send;
+}
+
+pub trait ContextStore: Send + Sync {
+    fn save(
+        &self,
+        snapshot: CreateSnapshot,
+    ) -> impl Future<Output = Result<ContextSnapshot>> + Send;
+    fn load(&self, agent: &AgentId)
+    -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
+    fn list(
+        &self,
+        agent: Option<&AgentId>,
+        namespace: &Namespace,
+    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
+    fn search(
+        &self,
+        query: &str,
+        embedding: Option<&[f32]>,
+        namespace: &Namespace,
+        agent_id: Option<&AgentId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SnapshotId(Uuid);
@@ -134,44 +174,4 @@ pub struct CreateSnapshot {
     pub embedding_model: Option<String>,
     pub embedding_dimensions: Option<u32>,
     pub metadata: HashMap<String, String>,
-}
-
-pub trait MemoryStore: Send + Sync {
-    fn write(&self, entry: WriteMemory) -> impl Future<Output = Result<MemoryEntry>> + Send;
-    fn read(
-        &self,
-        namespace: &Namespace,
-        key: &str,
-    ) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
-    fn list(&self, filter: MemoryFilter) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
-    fn search(
-        &self,
-        query: &str,
-        embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
-    fn delete(&self, namespace: &Namespace, key: &str) -> impl Future<Output = Result<()>> + Send;
-}
-
-pub trait ContextStore: Send + Sync {
-    fn save(
-        &self,
-        snapshot: CreateSnapshot,
-    ) -> impl Future<Output = Result<ContextSnapshot>> + Send;
-    fn load(&self, agent: &AgentId)
-    -> impl Future<Output = Result<Option<ContextSnapshot>>> + Send;
-    fn list(
-        &self,
-        agent: Option<&AgentId>,
-        namespace: &Namespace,
-    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
-    fn search(
-        &self,
-        query: &str,
-        embedding: Option<&[f32]>,
-        namespace: &Namespace,
-        agent_id: Option<&AgentId>,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<ContextSnapshot>>> + Send;
 }

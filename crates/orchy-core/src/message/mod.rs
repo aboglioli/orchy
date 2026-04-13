@@ -11,6 +11,16 @@ use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::Namespace;
 
+pub trait MessageStore: Send + Sync {
+    fn send(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
+    fn check(
+        &self,
+        agent: &AgentId,
+        namespace: &Namespace,
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    fn mark_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct MessageId(Uuid);
@@ -130,16 +140,6 @@ pub struct CreateMessage {
     pub to: MessageTarget,
     pub body: String,
     pub reply_to: Option<MessageId>,
-}
-
-pub trait MessageStore: Send + Sync {
-    fn send(&self, message: CreateMessage) -> impl Future<Output = Result<Message>> + Send;
-    fn check(
-        &self,
-        agent: &AgentId,
-        namespace: &Namespace,
-    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
-    fn mark_read(&self, ids: &[MessageId]) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[cfg(test)]

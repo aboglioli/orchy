@@ -12,6 +12,12 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::note::Note;
 
+pub trait TaskStore: Send + Sync {
+    fn save(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
+    fn get(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
+    fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TaskId(Uuid);
@@ -367,12 +373,6 @@ pub struct TaskFilter {
     pub status: Option<TaskStatus>,
     pub assigned_role: Option<String>,
     pub claimed_by: Option<AgentId>,
-}
-
-pub trait TaskStore: Send + Sync {
-    fn save(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
-    fn get(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
-    fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
 }
 
 #[cfg(test)]

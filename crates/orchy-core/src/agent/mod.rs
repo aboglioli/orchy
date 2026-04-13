@@ -11,6 +11,31 @@ use uuid::Uuid;
 use crate::error::Result;
 use crate::namespace::Namespace;
 
+pub trait AgentStore: Send + Sync {
+    fn register(&self, registration: RegisterAgent) -> impl Future<Output = Result<Agent>> + Send;
+    fn get(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
+    fn list(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+    fn heartbeat(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
+    fn update_status(
+        &self,
+        id: &AgentId,
+        status: AgentStatus,
+    ) -> impl Future<Output = Result<()>> + Send;
+    fn update_roles(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+    ) -> impl Future<Output = Result<Agent>> + Send;
+    fn reconnect(
+        &self,
+        id: &AgentId,
+        roles: Vec<String>,
+        description: String,
+    ) -> impl Future<Output = Result<Agent>> + Send;
+    fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
+    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct AgentId(Uuid);
@@ -94,29 +119,4 @@ pub struct RegisterAgent {
     pub roles: Vec<String>,
     pub description: String,
     pub metadata: HashMap<String, String>,
-}
-
-pub trait AgentStore: Send + Sync {
-    fn register(&self, registration: RegisterAgent) -> impl Future<Output = Result<Agent>> + Send;
-    fn get(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
-    fn list(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
-    fn heartbeat(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
-    fn update_status(
-        &self,
-        id: &AgentId,
-        status: AgentStatus,
-    ) -> impl Future<Output = Result<()>> + Send;
-    fn update_roles(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-    ) -> impl Future<Output = Result<Agent>> + Send;
-    fn reconnect(
-        &self,
-        id: &AgentId,
-        roles: Vec<String>,
-        description: String,
-    ) -> impl Future<Output = Result<Agent>> + Send;
-    fn disconnect(&self, id: &AgentId) -> impl Future<Output = Result<()>> + Send;
-    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 }
