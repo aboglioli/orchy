@@ -7,7 +7,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
-use orchy_core::task::{Priority, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::SqliteBackend;
 
@@ -195,7 +195,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
             rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    Ok(Task::restore(
+    Ok(Task::restore(RestoreTask {
         id,
         project,
         namespace,
@@ -213,5 +213,5 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         created_by,
         created_at,
         updated_at,
-    ))
+    }))
 }

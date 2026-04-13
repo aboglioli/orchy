@@ -5,7 +5,7 @@ use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilte
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
-use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
+use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_sqlite::SqliteBackend;
 
 fn backend() -> SqliteBackend {
@@ -161,25 +161,25 @@ async fn task_save_overwrites_existing() {
 
     TaskStore::save(&store, &task).await.unwrap();
 
-    let updated = Task::restore(
-        task.id(),
-        proj("proj"),
-        Namespace::root(),
-        None,
-        "updated".into(),
-        "new desc".into(),
-        TaskStatus::Completed,
-        Priority::High,
-        vec![],
-        None,
-        None,
-        vec![],
-        Some("done".into()),
-        vec![],
-        None,
-        task.created_at(),
-        task.updated_at(),
-    );
+    let updated = Task::restore(RestoreTask {
+        id: task.id(),
+        project: proj("proj"),
+        namespace: Namespace::root(),
+        parent_id: None,
+        title: "updated".into(),
+        description: "new desc".into(),
+        status: TaskStatus::Completed,
+        priority: Priority::High,
+        assigned_roles: vec![],
+        assigned_to: None,
+        assigned_at: None,
+        depends_on: vec![],
+        result_summary: Some("done".into()),
+        notes: vec![],
+        created_by: None,
+        created_at: task.created_at(),
+        updated_at: task.updated_at(),
+    });
     TaskStore::save(&store, &updated).await.unwrap();
 
     let fetched = TaskStore::find_by_id(&store, &task.id())

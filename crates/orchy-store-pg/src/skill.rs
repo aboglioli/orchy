@@ -5,7 +5,7 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::skill::{Skill, SkillFilter, SkillStore};
+use orchy_core::skill::{RestoreSkill, Skill, SkillFilter, SkillStore};
 
 use crate::PgBackend;
 
@@ -110,14 +110,14 @@ fn row_to_skill(row: &sqlx::postgres::PgRow) -> Skill {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    Skill::restore(
-        ProjectId::try_from(project).expect("invalid project in database"),
-        Namespace::try_from(namespace).unwrap(),
+    Skill::restore(RestoreSkill {
+        project: ProjectId::try_from(project).expect("invalid project in database"),
+        namespace: Namespace::try_from(namespace).unwrap(),
         name,
         description,
         content,
-        written_by.map(AgentId::from_uuid),
+        written_by: written_by.map(AgentId::from_uuid),
         created_at,
         updated_at,
-    )
+    })
 }

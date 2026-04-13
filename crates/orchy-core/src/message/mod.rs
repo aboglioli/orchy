@@ -181,27 +181,17 @@ impl Message {
         }
     }
 
-    pub fn restore(
-        id: MessageId,
-        project: ProjectId,
-        namespace: Namespace,
-        from: AgentId,
-        to: MessageTarget,
-        body: String,
-        reply_to: Option<MessageId>,
-        status: MessageStatus,
-        created_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreMessage) -> Self {
         Self {
-            id,
-            project,
-            namespace,
-            from,
-            to,
-            body,
-            reply_to,
-            status,
-            created_at,
+            id: r.id,
+            project: r.project,
+            namespace: r.namespace,
+            from: r.from,
+            to: r.to,
+            body: r.body,
+            reply_to: r.reply_to,
+            status: r.status,
+            created_at: r.created_at,
         }
     }
 
@@ -253,6 +243,18 @@ impl Message {
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
+}
+
+pub struct RestoreMessage {
+    pub id: MessageId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub from: AgentId,
+    pub to: MessageTarget,
+    pub body: String,
+    pub reply_to: Option<MessageId>,
+    pub status: MessageStatus,
+    pub created_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

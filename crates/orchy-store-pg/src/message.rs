@@ -6,7 +6,9 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
+use orchy_core::message::{
+    Message, MessageId, MessageStatus, MessageStore, MessageTarget, RestoreMessage,
+};
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::PgBackend;
@@ -188,15 +190,15 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
     let created_at: DateTime<Utc> = row.get("created_at");
     let reply_to: Option<Uuid> = row.get("reply_to");
 
-    Message::restore(
-        MessageId::from_uuid(id),
-        ProjectId::try_from(project).expect("invalid project in database"),
-        Namespace::try_from(namespace).expect("invalid namespace in database"),
-        AgentId::from_uuid(from_agent),
-        MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
+    Message::restore(RestoreMessage {
+        id: MessageId::from_uuid(id),
+        project: ProjectId::try_from(project).expect("invalid project in database"),
+        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
+        from: AgentId::from_uuid(from_agent),
+        to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
-        reply_to.map(MessageId::from_uuid),
-        status.parse::<MessageStatus>().unwrap_or(MessageStatus::Pending),
+        reply_to: reply_to.map(MessageId::from_uuid),
+        status: status.parse::<MessageStatus>().unwrap_or(MessageStatus::Pending),
         created_at,
-    )
+    })
 }

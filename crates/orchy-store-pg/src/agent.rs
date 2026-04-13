@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 
@@ -98,16 +98,16 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
 
-    Agent::restore(
-        AgentId::from_uuid(id),
-        ProjectId::try_from(project).expect("invalid project in database"),
-        Namespace::try_from(namespace).expect("invalid namespace in database"),
-        parent_id.map(AgentId::from_uuid),
-        serde_json::from_value(roles).unwrap_or_default(),
+    Agent::restore(RestoreAgent {
+        id: AgentId::from_uuid(id),
+        project: ProjectId::try_from(project).expect("invalid project in database"),
+        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
+        parent_id: parent_id.map(AgentId::from_uuid),
+        roles: serde_json::from_value(roles).unwrap_or_default(),
         description,
-        status.parse::<AgentStatus>().unwrap_or_default(),
+        status: status.parse::<AgentStatus>().unwrap_or_default(),
         last_heartbeat,
         connected_at,
-        serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
-    )
+        metadata: serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
+    })
 }

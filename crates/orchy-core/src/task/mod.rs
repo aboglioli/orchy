@@ -235,44 +235,25 @@ impl Task {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        id: TaskId,
-        project: ProjectId,
-        namespace: Namespace,
-        parent_id: Option<TaskId>,
-        title: String,
-        description: String,
-        status: TaskStatus,
-        priority: Priority,
-        assigned_roles: Vec<String>,
-        assigned_to: Option<AgentId>,
-        assigned_at: Option<DateTime<Utc>>,
-        depends_on: Vec<TaskId>,
-        result_summary: Option<String>,
-        notes: Vec<Note>,
-        created_by: Option<AgentId>,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn restore(r: RestoreTask) -> Self {
         Self {
-            id,
-            project,
-            namespace,
-            parent_id,
-            title,
-            description,
-            status,
-            priority,
-            assigned_roles,
-            assigned_to,
-            assigned_at,
-            depends_on,
-            result_summary,
-            notes,
-            created_by,
-            created_at,
-            updated_at,
+            id: r.id,
+            project: r.project,
+            namespace: r.namespace,
+            parent_id: r.parent_id,
+            title: r.title,
+            description: r.description,
+            status: r.status,
+            priority: r.priority,
+            assigned_roles: r.assigned_roles,
+            assigned_to: r.assigned_to,
+            assigned_at: r.assigned_at,
+            depends_on: r.depends_on,
+            result_summary: r.result_summary,
+            notes: r.notes,
+            created_by: r.created_by,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }
     }
 
@@ -450,6 +431,26 @@ pub struct TaskWithContext {
     pub children: Vec<Task>,
 }
 
+pub struct RestoreTask {
+    pub id: TaskId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub parent_id: Option<TaskId>,
+    pub title: String,
+    pub description: String,
+    pub status: TaskStatus,
+    pub priority: Priority,
+    pub assigned_roles: Vec<String>,
+    pub assigned_to: Option<AgentId>,
+    pub assigned_at: Option<DateTime<Utc>>,
+    pub depends_on: Vec<TaskId>,
+    pub result_summary: Option<String>,
+    pub notes: Vec<Note>,
+    pub created_by: Option<AgentId>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 pub struct SubtaskDef {
     pub title: String,
     pub description: String,
@@ -473,25 +474,25 @@ mod tests {
     use super::*;
 
     fn make_task(status: TaskStatus, assigned_to: Option<AgentId>) -> Task {
-        Task::restore(
-            TaskId::new(),
-            ProjectId::try_from("test").unwrap(),
-            Namespace::root(),
-            None,
-            "Test Task".to_string(),
-            "Test".to_string(),
+        Task::restore(RestoreTask {
+            id: TaskId::new(),
+            project: ProjectId::try_from("test").unwrap(),
+            namespace: Namespace::root(),
+            parent_id: None,
+            title: "Test Task".to_string(),
+            description: "Test".to_string(),
             status,
-            Priority::default(),
-            vec!["tester".to_string()],
+            priority: Priority::default(),
+            assigned_roles: vec!["tester".to_string()],
             assigned_to,
-            None,
-            vec![],
-            None,
-            Vec::new(),
-            None,
-            Utc::now(),
-            Utc::now(),
-        )
+            assigned_at: None,
+            depends_on: vec![],
+            result_summary: None,
+            notes: Vec::new(),
+            created_by: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
     }
 
     #[test]

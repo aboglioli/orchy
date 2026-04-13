@@ -8,7 +8,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
-use orchy_core::task::{Priority, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::PgBackend;
 
@@ -194,23 +194,23 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
         .collect();
     let notes: Vec<Note> = serde_json::from_value(notes_json).unwrap_or_default();
 
-    Task::restore(
-        TaskId::from_uuid(id),
-        ProjectId::try_from(project).expect("invalid project in database"),
-        Namespace::try_from(namespace).unwrap(),
-        parent_id.map(TaskId::from_uuid),
+    Task::restore(RestoreTask {
+        id: TaskId::from_uuid(id),
+        project: ProjectId::try_from(project).expect("invalid project in database"),
+        namespace: Namespace::try_from(namespace).unwrap(),
+        parent_id: parent_id.map(TaskId::from_uuid),
         title,
         description,
-        status.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending),
-        priority.parse::<Priority>().unwrap_or_default(),
-        serde_json::from_value(assigned_roles).unwrap_or_default(),
-        assigned_to.map(AgentId::from_uuid),
+        status: status.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending),
+        priority: priority.parse::<Priority>().unwrap_or_default(),
+        assigned_roles: serde_json::from_value(assigned_roles).unwrap_or_default(),
+        assigned_to: assigned_to.map(AgentId::from_uuid),
         assigned_at,
-        depends_on_ids,
+        depends_on: depends_on_ids,
         result_summary,
         notes,
-        created_by.map(AgentId::from_uuid),
+        created_by: created_by.map(AgentId::from_uuid),
         created_at,
         updated_at,
-    )
+    })
 }
