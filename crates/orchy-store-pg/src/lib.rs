@@ -33,6 +33,11 @@ const MIGRATIONS: &[Migration] = &[
             "../../../migrations/postgres/20260412-235000_notes_projects_reconnect.sql"
         ),
     },
+    Migration {
+        version: "20260413-010000",
+        name: "message_reply_to",
+        sql: include_str!("../../../migrations/postgres/20260413-010000_message_reply_to.sql"),
+    },
 ];
 
 impl PgBackend {

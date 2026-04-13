@@ -137,6 +137,8 @@ struct SendMessageParams {
     body: String,
     /// Namespace for the message. Defaults to session namespace.
     namespace: Option<String>,
+    /// ID of a message this is replying to.
+    reply_to: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -727,11 +729,20 @@ impl OrchyHandler {
             Err(e) => return e,
         };
 
+        let reply_to = match params.reply_to {
+            Some(s) => match s.parse::<MessageId>() {
+                Ok(id) => Some(id),
+                Err(e) => return format!("invalid reply_to: {e}"),
+            },
+            None => None,
+        };
+
         let cmd = CreateMessage {
             namespace,
             from: agent_id,
             to: target,
             body: params.body,
+            reply_to,
         };
 
         match self.container.message_service.send(cmd).await {

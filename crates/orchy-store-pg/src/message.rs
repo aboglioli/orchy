@@ -19,19 +19,21 @@ impl MessageStore for PgBackend {
             from: cmd.from,
             to: cmd.to,
             body: cmd.body,
+            reply_to: cmd.reply_to,
             status: MessageStatus::Pending,
             created_at: Utc::now(),
         };
 
         sqlx::query(
-            "INSERT INTO messages (id, namespace, from_agent, to_target, body, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO messages (id, namespace, from_agent, to_target, body, reply_to, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(message.id.as_uuid())
         .bind(message.namespace.to_string())
         .bind(message.from.as_uuid())
         .bind(message.to.to_string())
         .bind(&message.body)
+        .bind(message.reply_to.map(|id| *id.as_uuid()))
         .bind("pending")
         .bind(message.created_at)
         .execute(&self.pool)
@@ -43,7 +45,7 @@ impl MessageStore for PgBackend {
 
     async fn check(&self, agent: &AgentId, namespace: &Namespace) -> Result<Vec<Message>> {
         let rows = sqlx::query(
-            "SELECT id, namespace, from_agent, to_target, body, status, created_at
+            "SELECT id, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM messages
              WHERE status = 'pending' AND (to_target = $1 OR to_target = 'broadcast')
                AND (namespace = $2 OR namespace LIKE $2 || '/%')",
@@ -97,6 +99,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
     let body: String = row.get("body");
     let status: String = row.get("status");
     let created_at: DateTime<Utc> = row.get("created_at");
+    let reply_to: Option<Uuid> = row.get("reply_to");
 
     Message {
         id: MessageId::from_uuid(id),
@@ -104,6 +107,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
         from: AgentId::from_uuid(from_agent),
         to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
+        reply_to: reply_to.map(MessageId::from_uuid),
         status: parse_message_status(&status),
         created_at,
     }

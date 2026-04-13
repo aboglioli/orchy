@@ -17,6 +17,7 @@ impl MessageStore for MemoryBackend {
             from: cmd.from,
             to: cmd.to,
             body: cmd.body,
+            reply_to: cmd.reply_to,
             status: MessageStatus::Pending,
             created_at: Utc::now(),
         };

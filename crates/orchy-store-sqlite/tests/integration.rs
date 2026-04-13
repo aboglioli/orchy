@@ -491,6 +491,7 @@ async fn message_send_and_check() {
             from,
             to: MessageTarget::Agent(to),
             body: "hello".into(),
+            reply_to: None,
         },
     )
     .await
@@ -524,6 +525,7 @@ async fn message_mark_read() {
             from,
             to: MessageTarget::Agent(to),
             body: "hi".into(),
+            reply_to: None,
         },
     )
     .await
