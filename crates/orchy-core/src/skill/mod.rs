@@ -79,6 +79,11 @@ impl Skill {
         self.updated_at = Utc::now();
     }
 
+    pub fn move_to(&mut self, namespace: Namespace) {
+        self.namespace = namespace;
+        self.updated_at = Utc::now();
+    }
+
     pub fn filter_with_inheritance(skills: Vec<Skill>, namespace: &Namespace) -> Vec<Skill> {
         let mut result: Vec<Skill> = Vec::new();
 

@@ -191,6 +191,11 @@ impl MemoryEntry {
         self.updated_at = Utc::now();
     }
 
+    pub fn move_to(&mut self, namespace: Namespace) {
+        self.namespace = namespace;
+        self.updated_at = Utc::now();
+    }
+
     pub fn set_embedding(&mut self, embedding: Vec<f32>, model: String, dimensions: u32) {
         self.embedding = Some(embedding);
         self.embedding_model = Some(model);
