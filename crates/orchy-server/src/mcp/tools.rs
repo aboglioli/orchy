@@ -14,7 +14,7 @@ use serde::Deserialize;
 use orchy_core::agent::RegisterAgent;
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::skill::{SkillFilter, WriteSkill};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
 
@@ -248,6 +248,9 @@ struct AddProjectNoteParams {
     body: String,
 }
 
+#[derive(Deserialize, schemars::JsonSchema)]
+struct ListNamespacesParams {}
+
 fn parse_task_id(s: &str) -> Result<TaskId, String> {
     s.parse::<TaskId>()
         .map_err(|e| format!("invalid task_id: {e}"))
@@ -289,6 +292,8 @@ impl OrchyHandler {
 
         if let Some(ref id_str) = params.agent_id {
             let agent_id = parse_agent_id(id_str)?;
+            let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
+
             match self
                 .container
                 .agent_service
@@ -307,6 +312,8 @@ impl OrchyHandler {
                 Err(e) => return Err(e.to_string()),
             }
         }
+
+        let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
@@ -450,6 +457,8 @@ impl OrchyHandler {
             Ok(ns) => ns,
             Err(e) => return Err(e),
         };
+
+        let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
 
         let priority = match params.priority.as_deref() {
             Some(p) => match p.parse::<Priority>() {
@@ -1228,6 +1237,24 @@ impl OrchyHandler {
             .await
         {
             Ok(project) => Ok(to_json(&project)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "List all registered namespaces for the current session's project. \
+        Namespaces are auto-registered when agents connect or tasks are created."
+    )]
+    async fn list_namespaces(
+        &self,
+        Parameters(_params): Parameters<ListNamespacesParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        match NamespaceStore::list(&*self.container.store, &project).await {
+            Ok(namespaces) => Ok(to_json(&namespaces)),
             Err(e) => Err(e.to_string()),
         }
     }

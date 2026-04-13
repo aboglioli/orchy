@@ -2,7 +2,7 @@ use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::Result;
 use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
-use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
@@ -157,5 +157,14 @@ impl ProjectStore for StoreBackend {
     }
     async fn get(&self, id: &ProjectId) -> Result<Option<Project>> {
         delegate_trait!(self, ProjectStore::get(id))
+    }
+}
+
+impl NamespaceStore for StoreBackend {
+    async fn register(&self, project: &ProjectId, namespace: &Namespace) -> Result<()> {
+        delegate_trait!(self, NamespaceStore::register(project, namespace))
+    }
+    async fn list(&self, project: &ProjectId) -> Result<Vec<Namespace>> {
+        delegate_trait!(self, NamespaceStore::list(project))
     }
 }

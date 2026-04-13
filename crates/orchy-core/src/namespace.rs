@@ -1,5 +1,18 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::future::Future;
+
+pub trait NamespaceStore: Send + Sync {
+    fn register(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> impl Future<Output = crate::error::Result<()>> + Send;
+    fn list(
+        &self,
+        project: &ProjectId,
+    ) -> impl Future<Output = crate::error::Result<Vec<Namespace>>> + Send;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
