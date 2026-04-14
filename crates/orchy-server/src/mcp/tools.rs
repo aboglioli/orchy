@@ -950,33 +950,46 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Load the most recent context snapshot for an agent (defaults to \
-        session agent)."
+        description = "Load a context snapshot. With agent_id, loads that agent's latest. \
+        Without agent_id, loads the most recent snapshot in the namespace — useful for \
+        picking up where a previous agent left off."
     )]
     async fn load_context(
         &self,
         Parameters(params): Parameters<LoadContextParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
+        let (session_agent, _, namespace) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
 
-        let agent_id = match params.agent_id.as_deref() {
-            Some(id_str) => match parse_agent_id(id_str) {
-                Ok(id) => id,
-                Err(e) => return Err(e),
-            },
-            None => match self.require_session() {
-                Ok((id, _, _)) => id,
-                Err(e) => return Err(e),
-            },
-        };
+        if let Some(id_str) = params.agent_id.as_deref() {
+            let agent_id = parse_agent_id(id_str)?;
+            return match self.container.context_service.load(&agent_id).await {
+                Ok(Some(snapshot)) => Ok(to_json(&snapshot)),
+                Ok(None) => Ok("null".to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+        }
 
-        match self.container.context_service.load(&agent_id).await {
-            Ok(Some(snapshot)) => Ok(to_json(&snapshot)),
-            Ok(None) => Ok("null".to_string()),
-            Err(e) => Err(e.to_string()),
+        match self.container.context_service.load(&session_agent).await {
+            Ok(Some(snapshot)) => return Ok(to_json(&snapshot)),
+            Ok(None) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+
+        let mut contexts = self
+            .container
+            .context_service
+            .list(None, &namespace)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        contexts.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+
+        match contexts.into_iter().next() {
+            Some(snapshot) => Ok(to_json(&snapshot)),
+            None => Ok("null".to_string()),
         }
     }
 

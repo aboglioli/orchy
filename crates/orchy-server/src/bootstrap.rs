@@ -101,11 +101,26 @@ Project namespace: `{namespace}`
 
 1. **Register** — `register_agent(project, description)`. Roles are optional;
    orchy assigns them based on pending task demand if omitted.
+   Pass `agent_id` to resume a previous session.
 2. **Load context** — `get_project` for description and notes,
    then `list_skills(inherited: true)` for conventions. Follow them.
-3. **Check for work** — `get_next_task` to claim a task,
-   or `check_mailbox` for messages from other agents.
-4. **Heartbeat** — `heartbeat` every ~30s to stay alive.
+3. **Resume** — `load_context` to check for handoff notes from a previous
+   session. Also `search_contexts(query)` to find relevant context from
+   other agents. Check `check_mailbox` for messages.
+4. **Claim work** — `get_next_task` to claim a task. Tasks from disconnected
+   agents return to pending automatically.
+5. **Heartbeat** — `heartbeat` every ~30s to stay alive.
+
+## Before Disconnecting
+
+Always call `save_context` with a structured summary:
+- What task you were working on (task ID and title)
+- What you accomplished
+- What's left to do
+- Key decisions made and reasoning
+- Any blockers or open questions
+
+This is the handoff note for the next agent (or your next session).
 
 ## Namespaces
 
