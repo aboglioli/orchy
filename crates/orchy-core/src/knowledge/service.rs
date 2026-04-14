@@ -179,41 +179,6 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         Ok(entry)
     }
 
-    pub async fn save_context(
-        &self,
-        project: ProjectId,
-        agent_id: AgentId,
-        namespace: Namespace,
-        summary: String,
-        metadata: HashMap<String, String>,
-    ) -> Result<Knowledge> {
-        let path = format!("context/{agent_id}");
-        let cmd = WriteKnowledge {
-            project,
-            namespace,
-            path,
-            kind: KnowledgeKind::Context,
-            title: "session context".into(),
-            content: summary,
-            tags: vec![],
-            expected_version: None,
-            agent_id: Some(agent_id),
-            metadata,
-        };
-        self.write(cmd).await
-    }
-
-    pub async fn load_context(&self, agent_id: &AgentId) -> Result<Option<Knowledge>> {
-        let filter = KnowledgeFilter {
-            kind: Some(KnowledgeKind::Context),
-            agent_id: Some(*agent_id),
-            ..Default::default()
-        };
-        let mut entries = self.store.list(filter).await?;
-        entries.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
-        Ok(entries.into_iter().next())
-    }
-
     pub async fn list_skills(
         &self,
         project: &ProjectId,

@@ -175,7 +175,7 @@ You bring the intelligence; orchy enforces the rules.
 
 ## Before Disconnecting
 
-Always `write_knowledge(kind: \"context\", path: \"context/handoff\")` with a structured \
+Always `write_knowledge(kind: \"context\", path: \"handoff\")` with a structured \
 summary: current task, progress, blockers, decisions. This is the handoff note \
 for the next agent.
 
@@ -215,7 +215,7 @@ You must externalize knowledge so future agents can benefit:
   (e.g. path: `decisions/auth-algorithm`, type: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned, \
   what the next agent should know. Never just 'done'.
-- Before disconnecting, `write_knowledge(kind: \"context\", path: \"context/handoff\")` \
+- Before disconnecting, `write_knowledge(kind: \"context\", path: \"handoff\")` \
   with structured summary: current task, progress, blockers, decisions.
 - When you discover something non-obvious (a gotcha, a pattern, a constraint), \
   write it to knowledge immediately — don't wait until task completion.

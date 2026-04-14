@@ -113,7 +113,7 @@ Project namespace: `{namespace}`
 
 ## Before Disconnecting
 
-Always `write_knowledge(kind: "context", path: "context/handoff")` with:
+Always `write_knowledge(kind: "context", path: "handoff")` with:
 - What task you were working on (task ID and title)
 - What you accomplished
 - What's left to do
@@ -162,7 +162,7 @@ You must externalize knowledge so future agents can benefit:
   (e.g. path: `decisions/auth-algorithm`, type: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned,
   what the next agent should know. Never just "done".
-- Before disconnecting, `write_knowledge(kind: "context", path: "context/handoff")`
+- Before disconnecting, `write_knowledge(kind: "context", path: "handoff")`
   with structured summary: current task, progress, blockers, decisions.
 - When you discover something non-obvious, write it to knowledge immediately.
 - Use `search_knowledge` before starting work to check
