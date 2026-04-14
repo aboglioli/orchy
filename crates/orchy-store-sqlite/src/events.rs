@@ -1,9 +1,9 @@
 use orchy_events::{Error, Result};
-use orchy_events::{EventFilter, EventStore, SerializedEvent};
+use orchy_events::{EventFilter, EventLog, SerializedEvent};
 
 use crate::SqliteBackend;
 
-impl EventStore for SqliteBackend {
+impl EventLog for SqliteBackend {
     async fn append(&self, events: &[SerializedEvent]) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         for event in events {

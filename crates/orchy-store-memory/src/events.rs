@@ -1,9 +1,9 @@
 use orchy_events::{Error, Result};
-use orchy_events::{EventFilter, EventStore, SerializedEvent};
+use orchy_events::{EventFilter, EventLog, SerializedEvent};
 
 use crate::MemoryBackend;
 
-impl EventStore for MemoryBackend {
+impl EventLog for MemoryBackend {
     async fn append(&self, events: &[SerializedEvent]) -> Result<()> {
         let mut store = self
             .events

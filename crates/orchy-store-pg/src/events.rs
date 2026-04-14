@@ -5,11 +5,11 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use orchy_events::{Error, Result};
-use orchy_events::{EventFilter, EventStore, SerializedEvent};
+use orchy_events::{EventFilter, EventLog, SerializedEvent};
 
 use crate::PgBackend;
 
-impl EventStore for PgBackend {
+impl EventLog for PgBackend {
     async fn append(&self, events: &[SerializedEvent]) -> Result<()> {
         for event in events {
             let id = Uuid::from_str(&event.id).map_err(|e| Error::Store(e.to_string()))?;

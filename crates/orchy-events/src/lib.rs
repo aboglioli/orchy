@@ -20,7 +20,7 @@ pub use topic::Topic;
 
 use std::future::Future;
 
-pub trait EventStore: Send + Sync {
+pub trait EventLog: Send + Sync {
     fn append(&self, events: &[SerializedEvent]) -> impl Future<Output = Result<()>> + Send;
     fn list(
         &self,
