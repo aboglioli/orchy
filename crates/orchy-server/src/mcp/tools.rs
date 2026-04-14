@@ -5,7 +5,6 @@ use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
 use orchy_core::document::{DocumentFilter, WriteDocument};
-use orchy_core::memory::MemoryStore;
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
@@ -176,11 +175,6 @@ impl OrchyHandler {
             .container
             .lock_service
             .release_agent_locks(&agent_id)
-            .await;
-        let _ = self
-            .container
-            .memory_service
-            .unlock_agent_entries(&agent_id)
             .await;
 
         let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
@@ -462,7 +456,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Mark a task as completed with an optional summary.")]
+    #[tool(
+        description = "Mark a task as completed. Always include a summary: what was done, \
+        what was learned, key decisions. Write important findings to memory/documents too."
+    )]
     async fn complete_task(
         &self,
         Parameters(params): Parameters<CompleteTaskParams>,
@@ -549,8 +546,10 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Write a key-value entry to shared memory. Use version param for \
-        optimistic concurrency (fails if entry was modified since you read it)."
+        description = "Write a key-value entry to shared memory. Use for decisions, facts, \
+        and findings that other agents should know. Use structured keys like \
+        'decision/auth-algo' or 'finding/db-connection-limit'. Version param enables \
+        optimistic concurrency."
     )]
     async fn write_memory(
         &self,
@@ -910,8 +909,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Save a context snapshot for the session agent. Namespace defaults to \
-        session namespace."
+        description = "Save a context snapshot as a handoff note. Include: current task ID, \
+        what you accomplished, what's left, decisions made, and blockers. The next agent \
+        will load this to continue your work."
     )]
     async fn save_context(
         &self,
@@ -2120,75 +2120,6 @@ impl OrchyHandler {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(e.to_string()),
         }
-    }
-
-    #[tool(description = "Lock a memory entry to make it read-only.")]
-    async fn lock_memory(
-        &self,
-        Parameters(params): Parameters<LockMemoryParams>,
-    ) -> Result<String, String> {
-        let (agent_id, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
-
-        let mut entry = match self
-            .container
-            .memory_service
-            .read(&project, &namespace, &params.key)
-            .await
-        {
-            Ok(Some(e)) => e,
-            Ok(None) => return Err(format!("memory '{}' not found", params.key)),
-            Err(e) => return Err(e.to_string()),
-        };
-
-        entry.lock(agent_id);
-        self.container
-            .store
-            .save(&mut entry)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(to_json(&entry))
-    }
-
-    #[tool(description = "Unlock a memory entry to make it writable again.")]
-    async fn unlock_memory(
-        &self,
-        Parameters(params): Parameters<UnlockMemoryParams>,
-    ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
-
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
-
-        let mut entry = match self
-            .container
-            .memory_service
-            .read(&project, &namespace, &params.key)
-            .await
-        {
-            Ok(Some(e)) => e,
-            Ok(None) => return Err(format!("memory '{}' not found", params.key)),
-            Err(e) => return Err(e.to_string()),
-        };
-
-        entry.unlock();
-        self.container
-            .store
-            .save(&mut entry)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(to_json(&entry))
     }
 
     #[tool(

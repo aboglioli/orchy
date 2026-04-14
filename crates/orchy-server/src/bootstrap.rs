@@ -153,6 +153,21 @@ namespace. Namespaces are auto-created on first use.
 - **save_context** — save session state before ending for continuity.
 - **link_project** — import skills/memory from other projects.
 - **get_project_summary** / **get_agent_workload** — check project status.
+
+## Knowledge Capture
+
+You must externalize knowledge so future agents can benefit:
+
+- After completing a task, `write_memory` for each key decision
+  (e.g. key: `decision/auth-algorithm`, value: `RS256 over HS256 for key rotation`).
+- Write longer analysis, specs, or architecture notes with `write_document`.
+- `complete_task` summary must be actionable: what was done, what was learned,
+  what the next agent should know. Never just "done".
+- Before disconnecting, `save_context` with structured handoff: current task,
+  progress, blockers, decisions.
+- When you discover something non-obvious, write it to memory immediately.
+- Use `search_memory` and `search_documents` before starting work to check
+  if a previous agent already explored this area.
 "#
     );
 

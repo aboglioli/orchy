@@ -204,7 +204,23 @@ On disconnect, claimed tasks return to pending.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
 - `save_context` before your session ends for continuity.
 - `link_project` to import skills/memory from other projects.
-- Register without roles — orchy assigns them based on task demand.";
+- Register without roles — orchy assigns them based on task demand.
+
+## Knowledge Capture
+
+You must externalize knowledge so future agents can benefit:
+
+- After completing a task, `write_memory` for each key decision \
+  (e.g. key: `decision/auth-algorithm`, value: `RS256 over HS256 for key rotation`).
+- Write longer analysis, specs, or architecture notes with `write_document`.
+- `complete_task` summary must be actionable: what was done, what was learned, \
+  what the next agent should know. Never just 'done'.
+- Before disconnecting, `save_context` with structured handoff: current task, \
+  progress, blockers, decisions.
+- When you discover something non-obvious (a gotcha, a pattern, a constraint), \
+  write it to memory immediately — don't wait until task completion.
+- Use `search_memory` and `search_documents` before starting work to check \
+  if a previous agent already explored this area.";
 
 impl ServerHandler for OrchyHandler {
     fn get_info(&self) -> ServerInfo {
