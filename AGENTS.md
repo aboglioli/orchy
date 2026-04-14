@@ -189,11 +189,11 @@ UUID v7 for all IDs (time-ordered).
 **Namespace hierarchy** — `/` (root), `/backend`, `/backend/auth`. Reads without
 namespace see everything. Writes default to agent's current namespace.
 
-**Optimistic concurrency** — Memory entries and documents use `Version` field.
+**Optimistic concurrency** — Knowledge entries use `Version` field.
 
 **Resource locking** — TTL-based. Released on disconnect. Use for files, not data.
 
-**Session continuity** — `save_context` before disconnect, `load_context` on
+**Session continuity** — `write_knowledge(kind: "context")` before disconnect, `list_knowledge(kind: "context")` on
 startup. Falls back to most recent snapshot in namespace if no own context exists.
 
 ### Agent Disconnect Cleanup
@@ -209,9 +209,9 @@ When an agent disconnects (or times out via heartbeat monitor):
 **Startup:**
 1. `register_agent(project, description)` — roles auto-assigned from task demand
 2. `get_project` + `get_project_summary` — understand project state
-3. `list_skills(inherited: true)` — load conventions
-4. `load_context` — find handoff notes from previous sessions
-5. `search_memory` / `search_documents` — check existing knowledge
+3. `list_knowledge(kind: "skill")` — load conventions
+4. `list_knowledge(kind: "context")` — find handoff notes from previous sessions
+5. `search_knowledge` — check existing decisions and discoveries
 6. `check_mailbox` — read pending messages
 7. `get_next_task` — claim work
 
@@ -227,7 +227,7 @@ When an agent disconnects (or times out via heartbeat monitor):
 - `write_knowledge` for each key decision or discovery
 
 **Disconnecting:**
-- `save_context` with structured handoff: task ID, progress, blockers, decisions
+- `write_knowledge(kind: "context", path: "handoff")` with: task ID, progress, blockers, decisions
 - `disconnect` — tasks released to pending, locks freed, watchers removed
 
 ## Knowledge Module
@@ -259,7 +259,7 @@ override parent skills with the same path.
 A new agent joining the project should:
 1. `list_knowledge(kind: "skill")` to understand conventions
 2. `search_knowledge` to find decisions and discoveries
-3. `load_context` for the latest handoff note
+3. `list_knowledge(kind: "context")` for the latest handoff note
 4. Check task notes for progress on specific work
 
 ## Maintenance Patterns

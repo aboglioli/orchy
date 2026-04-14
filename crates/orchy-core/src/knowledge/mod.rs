@@ -161,7 +161,7 @@ impl FromStr for KnowledgeKind {
             "plan" => Ok(KnowledgeKind::Plan),
             "log" => Ok(KnowledgeKind::Log),
             "skill" => Ok(KnowledgeKind::Skill),
-            other => Err(format!("unknown entry type: {other}")),
+            other => Err(format!("unknown knowledge kind: {other}")),
         }
     }
 }

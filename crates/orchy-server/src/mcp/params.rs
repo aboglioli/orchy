@@ -220,7 +220,7 @@ pub struct GetAgentWorkloadParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct LinkProjectParams {
     pub source_project: String,
-    /// "skills", "memory".
+    /// "knowledge", "tasks".
     pub resource_types: Vec<String>,
 }
 
