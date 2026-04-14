@@ -2,22 +2,39 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::{
-    Priority, SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore, TaskWithContext,
+    Priority, ReviewId, ReviewRequest, ReviewStore, SubtaskDef, Task, TaskFilter, TaskId,
+    TaskStatus, TaskStore, TaskWatcher, TaskWithContext, WatcherStore,
 };
 use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
+use crate::message::{Message, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, ProjectId};
 
-pub struct TaskService<TS: TaskStore, AS: AgentStore> {
+pub struct TaskService<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: ReviewStore>
+{
     task_store: Arc<TS>,
     agent_store: Arc<AS>,
+    watcher_store: Arc<WS>,
+    message_store: Arc<MS>,
+    review_store: Arc<RS>,
 }
 
-impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
-    pub fn new(task_store: Arc<TS>, agent_store: Arc<AS>) -> Self {
+impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: ReviewStore>
+    TaskService<TS, AS, WS, MS, RS>
+{
+    pub fn new(
+        task_store: Arc<TS>,
+        agent_store: Arc<AS>,
+        watcher_store: Arc<WS>,
+        message_store: Arc<MS>,
+        review_store: Arc<RS>,
+    ) -> Self {
         Self {
             task_store,
             agent_store,
+            watcher_store,
+            message_store,
+            review_store,
         }
     }
 
@@ -97,6 +114,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut task = self.get(id).await?;
         task.start(agent)?;
         self.task_store.save(&mut task).await?;
+        self.notify_watchers(&task, "started").await;
         Ok(task)
     }
 
@@ -104,6 +122,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut task = self.get(id).await?;
         task.complete(summary)?;
         self.task_store.save(&mut task).await?;
+        self.notify_watchers(&task, "completed").await;
         self.resolve_dependents(task.id()).await?;
         Ok(task)
     }
@@ -112,6 +131,8 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut task = self.get(id).await?;
         task.fail(reason)?;
         self.task_store.save(&mut task).await?;
+        self.notify_watchers(&task, "failed").await;
+        self.notify_blocked_dependents_of_failure(&task).await;
         Ok(task)
     }
 
@@ -572,6 +593,170 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             })
             .await?;
         Ok(!children.is_empty())
+    }
+
+    pub async fn watch(
+        &self,
+        task_id: &TaskId,
+        agent_id: AgentId,
+        project: ProjectId,
+        namespace: Namespace,
+    ) -> Result<TaskWatcher> {
+        self.get(task_id).await?;
+        let watcher = TaskWatcher::new(*task_id, agent_id, project, namespace);
+        self.watcher_store.save(&watcher).await?;
+        Ok(watcher)
+    }
+
+    pub async fn unwatch(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()> {
+        self.watcher_store.delete(task_id, agent_id).await
+    }
+
+    pub async fn request_review(
+        &self,
+        task_id: &TaskId,
+        project: ProjectId,
+        namespace: Namespace,
+        requester: AgentId,
+        reviewer: Option<AgentId>,
+        reviewer_role: Option<String>,
+    ) -> Result<ReviewRequest> {
+        self.get(task_id).await?;
+        let review = ReviewRequest::new(
+            *task_id,
+            project.clone(),
+            namespace.clone(),
+            requester,
+            reviewer,
+            reviewer_role.clone(),
+        );
+        self.review_store.save(&review).await?;
+
+        let body = format!(
+            "Review requested for task {} (review {})",
+            task_id,
+            review.id()
+        );
+        let target = if let Some(agent) = reviewer {
+            MessageTarget::Agent(agent)
+        } else if let Some(role) = reviewer_role {
+            MessageTarget::Role(role)
+        } else {
+            MessageTarget::Broadcast
+        };
+        let mut msg = Message::new(project, namespace, requester, target, body, None);
+        let _ = self.message_store.save(&mut msg).await;
+
+        Ok(review)
+    }
+
+    pub async fn resolve_review(
+        &self,
+        review_id: &ReviewId,
+        approved: bool,
+        comments: Option<String>,
+    ) -> Result<ReviewRequest> {
+        let mut review = self
+            .review_store
+            .find_by_id(review_id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("review {review_id}")))?;
+
+        if approved {
+            review.approve(comments)?;
+        } else {
+            review.reject(comments)?;
+        }
+        self.review_store.save(&review).await?;
+
+        let body = format!(
+            "Review {} for task {}: {}",
+            review.id(),
+            review.task_id(),
+            review.status()
+        );
+        let mut msg = Message::new(
+            review.project().clone(),
+            review.namespace().clone(),
+            review.reviewer().unwrap_or(review.requester()),
+            MessageTarget::Agent(review.requester()),
+            body,
+            None,
+        );
+        let _ = self.message_store.save(&mut msg).await;
+
+        Ok(review)
+    }
+
+    pub async fn get_review(&self, id: &ReviewId) -> Result<ReviewRequest> {
+        self.review_store
+            .find_by_id(id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("review {id}")))
+    }
+
+    pub async fn list_reviews_for_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
+        self.review_store.find_by_task(task_id).await
+    }
+
+    async fn notify_watchers(&self, task: &Task, event: &str) {
+        let watchers = self.watcher_store.find_watchers(&task.id()).await;
+        if let Ok(watchers) = watchers {
+            for watcher in watchers {
+                let body = format!(
+                    "[watch] task {} ({}): {}",
+                    task.id(),
+                    task.title(),
+                    event
+                );
+                let mut msg = Message::new(
+                    watcher.project().clone(),
+                    watcher.namespace().clone(),
+                    watcher.agent_id(),
+                    MessageTarget::Agent(watcher.agent_id()),
+                    body,
+                    None,
+                );
+                let _ = self.message_store.save(&mut msg).await;
+            }
+        }
+    }
+
+    async fn notify_blocked_dependents_of_failure(&self, failed_task: &Task) {
+        let blocked = self
+            .task_store
+            .list(TaskFilter {
+                project: Some(failed_task.project().clone()),
+                status: Some(TaskStatus::Blocked),
+                ..Default::default()
+            })
+            .await;
+
+        if let Ok(tasks) = blocked {
+            for task in tasks {
+                if task.depends_on().contains(&failed_task.id()) {
+                    if let Some(agent) = task.assigned_to() {
+                        let body = format!(
+                            "[dependency-failed] task {} ({}) depends on failed task {} ({})",
+                            task.id(),
+                            task.title(),
+                            failed_task.id(),
+                            failed_task.title(),
+                        );
+                        let mut msg = Message::new(
+                            task.project().clone(),
+                            task.namespace().clone(),
+                            agent,
+                            MessageTarget::Agent(agent),
+                            body,
+                            None,
+                        );
+                        let _ = self.message_store.save(&mut msg).await;
+                    }
+                    self.notify_watchers(&task, "dependency failed").await;
+                }
+            }
+        }
     }
 
     async fn children_summaries(&self, task: &Task) -> Result<String> {

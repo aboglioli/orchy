@@ -11,7 +11,10 @@ use crate::project::{Project, ProjectStore};
 use crate::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use crate::resource_lock::{LockStore, ResourceLock};
 use crate::skill::{Skill, SkillFilter, SkillStore};
-use crate::task::{Task, TaskFilter, TaskId, TaskStore};
+use crate::task::{
+    ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
+    WatcherStore,
+};
 
 #[derive(Debug, Default)]
 pub struct MockStore {

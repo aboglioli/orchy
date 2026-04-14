@@ -819,6 +819,291 @@ pub struct TaskFilter {
     pub tag: Option<String>,
 }
 
+pub trait WatcherStore: Send + Sync {
+    fn save(&self, watcher: &TaskWatcher) -> impl Future<Output = Result<()>> + Send;
+    fn delete(
+        &self,
+        task_id: &TaskId,
+        agent_id: &AgentId,
+    ) -> impl Future<Output = Result<()>> + Send;
+    fn find_watchers(
+        &self,
+        task_id: &TaskId,
+    ) -> impl Future<Output = Result<Vec<TaskWatcher>>> + Send;
+    fn find_by_agent(
+        &self,
+        agent_id: &AgentId,
+    ) -> impl Future<Output = Result<Vec<TaskWatcher>>> + Send;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskWatcher {
+    task_id: TaskId,
+    agent_id: AgentId,
+    project: ProjectId,
+    namespace: Namespace,
+    created_at: DateTime<Utc>,
+}
+
+impl TaskWatcher {
+    pub fn new(task_id: TaskId, agent_id: AgentId, project: ProjectId, namespace: Namespace) -> Self {
+        Self {
+            task_id,
+            agent_id,
+            project,
+            namespace,
+            created_at: Utc::now(),
+        }
+    }
+
+    pub fn restore(
+        task_id: TaskId,
+        agent_id: AgentId,
+        project: ProjectId,
+        namespace: Namespace,
+        created_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            task_id,
+            agent_id,
+            project,
+            namespace,
+            created_at,
+        }
+    }
+
+    pub fn task_id(&self) -> TaskId {
+        self.task_id
+    }
+    pub fn agent_id(&self) -> AgentId {
+        self.agent_id
+    }
+    pub fn project(&self) -> &ProjectId {
+        &self.project
+    }
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewStatus {
+    Pending,
+    Approved,
+    Rejected,
+}
+
+impl fmt::Display for ReviewStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReviewStatus::Pending => write!(f, "pending"),
+            ReviewStatus::Approved => write!(f, "approved"),
+            ReviewStatus::Rejected => write!(f, "rejected"),
+        }
+    }
+}
+
+impl FromStr for ReviewStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(ReviewStatus::Pending),
+            "approved" => Ok(ReviewStatus::Approved),
+            "rejected" => Ok(ReviewStatus::Rejected),
+            other => Err(format!("unknown review status: {other}")),
+        }
+    }
+}
+
+pub trait ReviewStore: Send + Sync {
+    fn save(&self, review: &ReviewRequest) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_id(
+        &self,
+        id: &ReviewId,
+    ) -> impl Future<Output = Result<Option<ReviewRequest>>> + Send;
+    fn find_pending_for_agent(
+        &self,
+        agent_id: &AgentId,
+    ) -> impl Future<Output = Result<Vec<ReviewRequest>>> + Send;
+    fn find_by_task(
+        &self,
+        task_id: &TaskId,
+    ) -> impl Future<Output = Result<Vec<ReviewRequest>>> + Send;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ReviewId(Uuid);
+
+impl ReviewId {
+    pub fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Default for ReviewId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for ReviewId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for ReviewId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(Uuid::parse_str(s)?))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewRequest {
+    id: ReviewId,
+    task_id: TaskId,
+    project: ProjectId,
+    namespace: Namespace,
+    requester: AgentId,
+    reviewer: Option<AgentId>,
+    reviewer_role: Option<String>,
+    status: ReviewStatus,
+    comments: Option<String>,
+    created_at: DateTime<Utc>,
+    resolved_at: Option<DateTime<Utc>>,
+}
+
+impl ReviewRequest {
+    pub fn new(
+        task_id: TaskId,
+        project: ProjectId,
+        namespace: Namespace,
+        requester: AgentId,
+        reviewer: Option<AgentId>,
+        reviewer_role: Option<String>,
+    ) -> Self {
+        Self {
+            id: ReviewId::new(),
+            task_id,
+            project,
+            namespace,
+            requester,
+            reviewer,
+            reviewer_role,
+            status: ReviewStatus::Pending,
+            comments: None,
+            created_at: Utc::now(),
+            resolved_at: None,
+        }
+    }
+
+    pub fn restore(r: RestoreReviewRequest) -> Self {
+        Self {
+            id: r.id,
+            task_id: r.task_id,
+            project: r.project,
+            namespace: r.namespace,
+            requester: r.requester,
+            reviewer: r.reviewer,
+            reviewer_role: r.reviewer_role,
+            status: r.status,
+            comments: r.comments,
+            created_at: r.created_at,
+            resolved_at: r.resolved_at,
+        }
+    }
+
+    pub fn approve(&mut self, comments: Option<String>) -> Result<()> {
+        if self.status != ReviewStatus::Pending {
+            return Err(Error::InvalidTransition {
+                from: self.status.to_string(),
+                to: "approved".into(),
+            });
+        }
+        self.status = ReviewStatus::Approved;
+        self.comments = comments;
+        self.resolved_at = Some(Utc::now());
+        Ok(())
+    }
+
+    pub fn reject(&mut self, comments: Option<String>) -> Result<()> {
+        if self.status != ReviewStatus::Pending {
+            return Err(Error::InvalidTransition {
+                from: self.status.to_string(),
+                to: "rejected".into(),
+            });
+        }
+        self.status = ReviewStatus::Rejected;
+        self.comments = comments;
+        self.resolved_at = Some(Utc::now());
+        Ok(())
+    }
+
+    pub fn id(&self) -> ReviewId {
+        self.id
+    }
+    pub fn task_id(&self) -> TaskId {
+        self.task_id
+    }
+    pub fn project(&self) -> &ProjectId {
+        &self.project
+    }
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn requester(&self) -> AgentId {
+        self.requester
+    }
+    pub fn reviewer(&self) -> Option<AgentId> {
+        self.reviewer
+    }
+    pub fn reviewer_role(&self) -> Option<&str> {
+        self.reviewer_role.as_deref()
+    }
+    pub fn status(&self) -> ReviewStatus {
+        self.status
+    }
+    pub fn comments(&self) -> Option<&str> {
+        self.comments.as_deref()
+    }
+    pub fn created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
+    pub fn resolved_at(&self) -> Option<DateTime<Utc>> {
+        self.resolved_at
+    }
+}
+
+pub struct RestoreReviewRequest {
+    pub id: ReviewId,
+    pub task_id: TaskId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub requester: AgentId,
+    pub reviewer: Option<AgentId>,
+    pub reviewer_role: Option<String>,
+    pub status: ReviewStatus,
+    pub comments: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub resolved_at: Option<DateTime<Utc>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

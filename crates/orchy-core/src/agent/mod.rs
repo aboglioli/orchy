@@ -232,6 +232,18 @@ impl Agent {
 
     pub fn update_status(&mut self, status: AgentStatus) {
         self.status = status;
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_STATUS_CHANGED,
+            Payload::from_json(&agent_events::AgentStatusChangedPayload {
+                agent_id: self.id.to_string(),
+                status: self.status.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn change_roles(&mut self, roles: Vec<String>) {
