@@ -1,8 +1,8 @@
 # orchy
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
-board, shared memory, messaging, skill registry, and project context — exposed
-as MCP tools over Streamable HTTP.
+board, shared memory, messaging, skill registry, documents, and project
+context — exposed as 78 MCP tools over Streamable HTTP.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides the
 coordination layer and enforces the rules.
@@ -60,32 +60,28 @@ path = "orchy.db"               # file path for the SQLite database
 
 ### Store
 
-Three backends are supported. Only configure the section that matches your
-`backend` value.
-
 | Backend | Use case |
 |---------|----------|
 | `memory` | Development and testing. Data is lost on restart. |
 | `sqlite` | Single-node deployments. Zero external dependencies. |
-| `postgres` | Production. Requires a running PostgreSQL instance with the `pgvector` extension. |
+| `postgres` | Production. Requires PostgreSQL with `pgvector` extension. |
 
 For PostgreSQL, use the included `compose.yml`:
 
 ```bash
-podman compose up -d   # or docker compose
+podman compose up -d
 ```
 
 ### Skills
 
 If `skills.dir` is set, orchy loads `.md` files from that directory on startup
-and registers them as project skills. Skills are instructions and conventions
-that agents receive when they connect.
+and registers them as project skills.
 
 ### Embeddings
 
-Optional. When configured, memory entries and context snapshots get vector
-embeddings for semantic search. Any OpenAI-compatible embeddings API works
-(OpenAI, Ollama, vLLM, etc.).
+Optional. When configured, memory entries, documents, and context snapshots get
+vector embeddings for semantic search. Any OpenAI-compatible embeddings API
+works (OpenAI, Ollama, vLLM, etc.).
 
 ## Concepts
 
@@ -94,100 +90,107 @@ embeddings for semantic search. Any OpenAI-compatible embeddings API works
 Every agent belongs to a **project** (e.g. `my-app`). Within a project,
 resources are organized in **namespaces**: `/` is the root, `/backend` and
 `/backend/auth` are scopes. Namespaces are hierarchical — reading from `/`
-returns resources from all child namespaces.
+returns resources from all child namespaces. Namespaces are auto-created on
+first use.
 
 ### Agent lifecycle
 
 1. Agent connects and calls `register_agent` with a project and optional roles.
 2. If roles are omitted, orchy assigns roles based on pending task demand.
 3. Agent calls `heartbeat` periodically to signal liveness.
-4. On disconnect, claimed tasks are released back to pending.
+4. On disconnect (or timeout), claimed tasks are released, resource locks are
+   freed, watchers are removed, and pending reviews are unassigned.
 
 ### Task lifecycle
-
-Tasks follow a state machine:
 
 ```
 Pending --> Claimed --> InProgress --> Completed
    |           |            |
    v           v            v
-Blocked    Failed       Failed
+Blocked     Failed       Failed
    |           |            |
    v           v            v
 Cancelled  Cancelled    Cancelled
 ```
 
-Tasks can be split into subtasks. When a task is split, the parent is blocked
-and auto-completes when all subtasks finish. The auto-completion chains up the
-full ancestor hierarchy.
+Tasks support hierarchy: `split_task` creates subtasks under a parent. The
+parent blocks and auto-completes when all subtasks finish. Auto-completion
+chains up the full ancestor hierarchy.
 
 Tasks return full context: when an agent claims a subtask, it receives the
-ancestor chain (parent, grandparent, ...) and any sibling subtasks.
+ancestor chain (parent, grandparent, ...) and sibling subtasks.
 
-### Messages
+### Documents
 
-Agents communicate through direct messages, role-targeted messages, or
-broadcasts. Messages support threading via `reply_to` and have delivery
-tracking (pending, delivered, read).
+Long-form versioned content with hierarchical paths (e.g. `specs/auth-design`).
+Supports tags, semantic search, and namespace scoping.
+
+### Resource locking
+
+TTL-based locking for any named resource (files, deployments, refactoring
+scopes). Locks auto-expire and are released on agent disconnect.
+
+### Project links
+
+Projects can link to other projects to share resources (skills, memory). Use a
+shared "global" project as a common resource pool by linking other projects to
+it.
+
+### Event log
+
+Every state change is recorded as a semantic domain event in an append-only
+event log. Events can be queried with `poll_updates` for change tracking.
+
+### Reviews and watchers
+
+Agents can request code reviews on tasks and watch tasks for updates. Pending
+reviews are cleaned up on agent disconnect.
 
 ## MCP tools
 
 All tools are exposed via the MCP protocol. Tools marked with **Session**
-require a registered agent (call `register_agent` first). Session-bound tools
-use the agent's project and namespace as defaults for scoping.
+require a registered agent (`register_agent` first).
 
 ---
 
 ### Agent
 
-#### `register_agent` 
+#### `register_agent`
 
-Register this session as an agent. All subsequent tools are scoped to the
-agent's project. If roles are empty, orchy assigns roles based on pending task
-demand.
+Register as an agent. Required before any other tool.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project` | string | yes | Project identifier |
-| `namespace` | string | no | Scope within the project (e.g. `"backend"`) |
-| `roles` | string[] | no | Agent capabilities (e.g. `["coder", "reviewer"]`). Auto-assigned if omitted. |
+| `namespace` | string | no | Scope within the project |
+| `roles` | string[] | no | Agent capabilities. Auto-assigned if omitted. |
 | `description` | string | yes | What this agent is |
-| `agent_id` | string | no | Resume a previous agent by its ID |
-| `parent_id` | string | no | Create as a child of the given parent agent |
+| `agent_id` | string | no | Resume a previous agent session |
+| `parent_id` | string | no | Create as a child of this parent agent |
 
 #### `list_agents` | Session
 
 List all connected agents in the current project.
 
-*No parameters.*
-
 #### `change_roles` | Session
 
-Change the roles of the current agent.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `roles` | string[] | yes | New role list |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `roles` | string[] | yes |
 
 #### `move_agent` | Session
 
-Move the current agent to a different namespace within the same project.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `namespace` | string | yes | Target namespace |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `namespace` | string | yes |
 
 #### `heartbeat` | Session
 
-Send a heartbeat to signal liveness.
-
-*No parameters.*
+Signal liveness.
 
 #### `disconnect` | Session
 
-Disconnect the agent. Releases all claimed tasks back to pending.
-
-*No parameters.*
+Disconnect and release all held resources (tasks, locks, watchers, reviews).
 
 ---
 
@@ -195,211 +198,273 @@ Disconnect the agent. Releases all claimed tasks back to pending.
 
 #### `post_task` | Session
 
-Create a new task.
-
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `title` | string | yes | Task title |
-| `description` | string | yes | Task details |
-| `namespace` | string | no | Scope. Defaults to session namespace. |
-| `parent_id` | string | no | Parent task ID for creating a subtask |
-| `priority` | string | no | `"low"`, `"normal"` (default), `"high"`, `"critical"` |
-| `assigned_roles` | string[] | no | Roles that can claim this task |
+| `title` | string | yes | |
+| `description` | string | yes | |
+| `namespace` | string | no | Defaults to session namespace |
+| `parent_id` | string | no | Parent task ID for subtask |
+| `priority` | string | no | low, normal (default), high, critical |
+| `assigned_roles` | string[] | no | Roles that can claim. Empty = any. |
 | `depends_on` | string[] | no | Task IDs that must complete first |
+
+#### `get_task` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
 
 #### `get_next_task` | Session
 
-Get the next available task matching the agent's roles. Returns the task with
-full context (ancestors and children).
+Claim the next available task matching your roles. Returns full context.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `namespace` | string | no | Filter by namespace |
-| `role` | string | no | Filter by specific role. Defaults to agent's roles. |
+| `role` | string | no | Defaults to all agent roles |
 
 #### `list_tasks` | Session
 
-List tasks with optional filters.
-
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `namespace` | string | no | Filter by namespace. Omit to see all project tasks. |
-| `status` | string | no | Filter by status: `"pending"`, `"blocked"`, `"claimed"`, `"in_progress"`, `"completed"`, `"failed"`, `"cancelled"` |
+| `namespace` | string | no | Omit to see all |
+| `status` | string | no | pending, blocked, claimed, in_progress, completed, failed, cancelled |
 
 #### `claim_task` | Session
 
-Claim a task for the current agent. Returns the task with full context.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID to claim |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
 
 #### `start_task` | Session
 
-Transition a claimed task to in-progress. Returns the task with full context.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID to start |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
 
 #### `complete_task` | Session
 
-Mark a task as completed.
-
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID |
-| `summary` | string | no | Result summary |
+| `task_id` | string | yes | |
+| `summary` | string | no | Visible to other agents and parent tasks |
 
 #### `fail_task` | Session
 
-Mark a task as failed.
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `reason` | string | no |
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID |
-| `reason` | string | no | Failure reason |
+#### `release_task` | Session
+
+Release a claimed task back to pending.
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
 
 #### `assign_task` | Session
 
-Assign or reassign a task to a specific agent.
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `agent_id` | string | yes |
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID |
-| `agent_id` | string | yes | Target agent ID |
+#### `delegate_task` | Session
+
+Create a subtask while keeping the parent claimed.
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `title` | string | yes |
+| `description` | string | yes |
+| `priority` | string | no |
+| `assigned_roles` | string[] | no |
 
 #### `add_task_note` | Session
 
-Add a timestamped note to a task.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID |
-| `body` | string | yes | Note content |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `body` | string | yes |
 
 #### `split_task` | Session
 
-Split a task into subtasks. The parent is blocked and auto-completes when all
-subtasks finish.
+Split a task into subtasks. Parent blocks and auto-completes when all finish.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Parent task ID |
-| `subtasks` | object[] | yes | List of subtask definitions (see below) |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `subtasks` | object[] | yes |
 
-Each subtask object:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `title` | string | yes | Subtask title |
-| `description` | string | yes | Subtask details |
-| `priority` | string | no | Priority level |
-| `assigned_roles` | string[] | no | Roles for this subtask |
-| `depends_on` | string[] | no | Dependency task IDs |
+Each subtask: `title` (required), `description` (required), `priority`, `assigned_roles`, `depends_on`.
 
 #### `replace_task` | Session
 
 Cancel a task and create replacements.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID to cancel |
-| `reason` | string | no | Cancellation reason |
-| `replacements` | object[] | yes | Replacement task definitions (same schema as subtasks) |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `reason` | string | no |
+| `replacements` | object[] | yes |
+
+#### `merge_tasks` | Session
+
+Merge multiple tasks into one.
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_ids` | string[] | yes |
+| `title` | string | yes |
+| `description` | string | yes |
+
+#### `list_subtasks` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
 
 #### `add_dependency` | Session
 
-Add a dependency to a task. Blocks the task if the dependency is not completed.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID |
-| `dependency_id` | string | yes | Task ID of the dependency |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `dependency_id` | string | yes |
 
 #### `remove_dependency` | Session
 
-Remove a dependency from a task. Unblocks the task if all remaining
-dependencies are completed.
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `dependency_id` | string | yes |
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID |
-| `dependency_id` | string | yes | Dependency to remove |
+#### `tag_task` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `tag` | string | yes |
+
+#### `untag_task` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `tag` | string | yes |
+
+#### `list_tags` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `namespace` | string | no |
 
 #### `move_task` | Session
 
-Move a task to a different namespace.
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+| `new_namespace` | string | yes |
+
+#### `watch_task` | Session
+
+Watch a task for updates.
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+
+#### `unwatch_task` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
+
+#### `request_review` | Session
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `task_id` | string | yes | Task ID |
-| `new_namespace` | string | yes | Target namespace |
+| `task_id` | string | yes | |
+| `reviewer_agent` | string | no | Specific reviewer agent ID |
+| `reviewer_role` | string | no | Target role (e.g. "reviewer") |
+
+#### `resolve_review` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `review_id` | string | yes |
+| `approved` | boolean | yes |
+| `comments` | string | no |
+
+#### `list_reviews` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `task_id` | string | yes |
 
 ---
 
 ### Memory
 
-Shared key-value store with optional vector search. Agents use memory to share
-decisions, context, and discoveries.
+Shared key-value store with optimistic concurrency via version checking.
 
 #### `write_memory` | Session
 
-Write a key-value entry to shared memory. Supports optimistic concurrency via
-version checking.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | yes | |
+| `value` | string | yes | |
+| `namespace` | string | no | |
+| `version` | integer | no | Expected version for optimistic concurrency |
+
+#### `append_memory` | Session
+
+Append to an existing entry's value.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `key` | string | yes | Entry key |
-| `value` | string | yes | Entry value |
-| `namespace` | string | no | Scope. Defaults to session namespace. |
-| `version` | integer | no | Expected version for optimistic concurrency |
+| `key` | string | yes | |
+| `value` | string | yes | Text to append |
+| `namespace` | string | no | |
+| `separator` | string | no | Defaults to `"\n"` |
 
 #### `read_memory` | Session
 
-Read a memory entry by key.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `key` | string | yes | Entry key |
-| `namespace` | string | no | Scope. Defaults to root. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `key` | string | yes |
+| `namespace` | string | no |
 
 #### `list_memory` | Session
 
-List all memory entries.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `namespace` | string | no | Filter by namespace. Omit to see all. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `namespace` | string | no |
 
 #### `search_memory` | Session
 
-Search memory entries by semantic similarity.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | yes | Search query |
-| `namespace` | string | no | Filter by namespace |
-| `limit` | integer | no | Max results. Default 10. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `query` | string | yes |
+| `namespace` | string | no |
+| `limit` | integer | no |
 
 #### `delete_memory` | Session
 
-Delete a memory entry.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `key` | string | yes | Entry key |
-| `namespace` | string | no | Scope. Defaults to session namespace. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `key` | string | yes |
+| `namespace` | string | no |
 
 #### `move_memory` | Session
 
-Move a memory entry to a different namespace.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `key` | string | yes | Entry key |
-| `namespace` | string | no | Source namespace. Defaults to session namespace. |
-| `new_namespace` | string | yes | Target namespace |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `key` | string | yes |
+| `namespace` | string | no |
+| `new_namespace` | string | yes |
 
 ---
 
@@ -407,92 +472,144 @@ Move a memory entry to a different namespace.
 
 #### `send_message` | Session
 
-Send a message to another agent, a role, or all agents.
-
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `to` | string | yes | Target: agent ID, `"role:name"`, or `"broadcast"` |
-| `body` | string | yes | Message content |
-| `namespace` | string | no | Scope. Defaults to session namespace. |
-| `reply_to` | string | no | Message ID this is replying to |
+| `to` | string | yes | Agent UUID, `"role:name"`, or `"broadcast"` |
+| `body` | string | yes | |
+| `namespace` | string | no | |
+| `reply_to` | string | no | Message ID to thread |
 
 #### `check_mailbox` | Session
 
-Check for pending messages.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `namespace` | string | no | Scope. Defaults to root. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `namespace` | string | no |
 
 #### `mark_read`
 
-Mark messages as read.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `message_ids` | string[] | yes | Message IDs to mark as read |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `message_ids` | string[] | yes |
 
 #### `check_sent_messages` | Session
 
-Check the delivery and read status of messages the agent has sent.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `namespace` | string | no | Scope. Defaults to root. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `namespace` | string | no |
 
 #### `list_conversation`
 
-List the full conversation thread for a given message. Walks the `reply_to`
-chain to find the root, then returns all messages in chronological order.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `message_id` | string | yes | Any message in the thread |
+| `limit` | integer | no | Most recent N |
+
+---
+
+### Documents
+
+Versioned long-form content with hierarchical paths.
+
+#### `write_document` | Session
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `message_id` | string | yes | Any message ID in the thread |
-| `limit` | integer | no | Max messages to return (most recent N) |
+| `path` | string | yes | Hierarchical path (e.g. `"specs/auth-design"`) |
+| `title` | string | yes | |
+| `content` | string | yes | |
+| `namespace` | string | no | |
+| `tags` | string[] | no | |
+| `version` | integer | no | Expected version for optimistic concurrency |
+
+#### `read_document` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `path` | string | yes |
+| `namespace` | string | no |
+
+#### `list_documents` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `namespace` | string | no |
+| `tag` | string | no |
+| `path_prefix` | string | no |
+
+#### `search_documents` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `query` | string | yes |
+| `namespace` | string | no |
+| `limit` | integer | no |
+
+#### `delete_document` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `path` | string | yes |
+| `namespace` | string | no |
+
+#### `move_document` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `path` | string | yes |
+| `namespace` | string | no |
+| `new_namespace` | string | yes |
+
+#### `rename_document` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `path` | string | yes |
+| `namespace` | string | no |
+| `new_path` | string | yes |
+
+#### `tag_document` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `path` | string | yes |
+| `namespace` | string | no |
+| `tag` | string | yes |
 
 ---
 
 ### Context
 
-Session context snapshots for continuity across agent sessions.
+Session snapshots for continuity across agent sessions.
 
 #### `save_context` | Session
-
-Save a context snapshot before the session ends.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `summary` | string | yes | Session summary |
-| `namespace` | string | no | Scope. Defaults to session namespace. |
-| `metadata` | string | no | JSON string of key-value metadata |
+| `namespace` | string | no | |
+| `metadata` | string | no | JSON string of key-value pairs |
 
 #### `load_context` | Session
 
-Load the most recent context snapshot.
-
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `agent_id` | string | no | Agent ID. Defaults to the current agent. |
+| `agent_id` | string | no | Defaults to current agent |
 
 #### `list_contexts` | Session
 
-List context snapshots.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `agent_id` | string | no | Filter by agent ID |
-| `namespace` | string | no | Filter by namespace. Defaults to root. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `agent_id` | string | no |
+| `namespace` | string | no |
 
 #### `search_contexts` | Session
 
-Search context snapshots by semantic similarity.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | yes | Search query |
-| `namespace` | string | no | Filter by namespace. Defaults to root. |
-| `agent_id` | string | no | Filter by agent ID |
-| `limit` | integer | no | Max results. Default 10. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `query` | string | yes |
+| `namespace` | string | no |
+| `agent_id` | string | no |
+| `limit` | integer | no |
 
 ---
 
@@ -502,51 +619,69 @@ Project-level instructions and conventions that agents receive on connect.
 
 #### `write_skill` | Session
 
-Create or update a skill.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | string | yes | Skill name (e.g. `"commit-conventions"`) |
-| `description` | string | yes | Short description |
-| `content` | string | yes | Full instruction text |
-| `namespace` | string | no | Scope. Defaults to session namespace. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `name` | string | yes |
+| `description` | string | yes |
+| `content` | string | yes |
+| `namespace` | string | no |
 
 #### `read_skill` | Session
 
-Read a skill by name.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | string | yes | Skill name |
-| `namespace` | string | no | Scope. Defaults to root. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `name` | string | yes |
+| `namespace` | string | no |
 
 #### `list_skills` | Session
 
-List skills.
-
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `namespace` | string | no | Filter by namespace. Omit to see all. |
-| `inherited` | boolean | no | Include skills from parent namespaces. Default false. |
+| `namespace` | string | no | |
+| `inherited` | boolean | no | Include parent namespace skills |
 
 #### `delete_skill` | Session
 
-Delete a skill.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | string | yes | Skill name |
-| `namespace` | string | no | Scope. Defaults to session namespace. |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `name` | string | yes |
+| `namespace` | string | no |
 
 #### `move_skill` | Session
 
-Move a skill to a different namespace.
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `name` | string | yes |
+| `namespace` | string | no |
+| `new_namespace` | string | yes |
+
+---
+
+### Resource Locking
+
+TTL-based locking for any named resource.
+
+#### `lock_resource` | Session
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | string | yes | Skill name |
-| `namespace` | string | no | Source namespace. Defaults to session namespace. |
-| `new_namespace` | string | yes | Target namespace |
+| `name` | string | yes | Resource name (e.g. file path) |
+| `namespace` | string | no | |
+| `ttl_secs` | integer | no | Auto-expiry. Default 300. |
+
+#### `unlock_resource` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `name` | string | yes |
+| `namespace` | string | no |
+
+#### `check_lock` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `name` | string | yes |
+| `namespace` | string | no |
 
 ---
 
@@ -554,25 +689,68 @@ Move a skill to a different namespace.
 
 #### `get_project` | Session
 
-Get the project metadata.
-
-*No parameters.*
-
 #### `update_project` | Session
 
-Update the project description.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `description` | string | yes | New project description |
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `description` | string | yes |
 
 #### `add_project_note` | Session
 
-Add a note to the project.
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `body` | string | yes |
+
+#### `get_project_summary` | Session
+
+Overview of connected agents, task counts, and recent activity.
+
+#### `get_agent_workload` | Session
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `body` | string | yes | Note content |
+| `agent_id` | string | no | Defaults to current agent |
+
+---
+
+### Project Links
+
+Cross-project resource sharing.
+
+#### `link_project` | Session
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `source_project` | string | yes | Project to import from |
+| `resource_types` | string[] | yes | `"skills"`, `"memory"` |
+
+#### `unlink_project` | Session
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `source_project` | string | yes |
+
+#### `list_project_links` | Session
+
+#### `import_skill` | Session
+
+Import a skill from a linked project.
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `source_project` | string | yes |
+| `name` | string | yes |
+| `source_namespace` | string | no |
+
+#### `import_memory` | Session
+
+Import a memory entry from a linked project.
+
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `source_project` | string | yes |
+| `key` | string | yes |
+| `source_namespace` | string | no |
 
 ---
 
@@ -580,18 +758,20 @@ Add a note to the project.
 
 #### `list_namespaces` | Session
 
-List all registered namespaces for the current project.
-
-*No parameters.*
-
 #### `get_bootstrap_prompt` | Session
 
-Generate a full bootstrap prompt with all orchy instructions and project
-skills. Use this for clients that don't support MCP instructions natively.
+| Parameter | Type | Required |
+|-----------|------|----------|
+| `namespace` | string | no |
+
+#### `poll_updates` | Session
+
+Poll the event log for recent changes.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `namespace` | string | no | Scope. Defaults to root. |
+| `since` | string | no | ISO 8601 timestamp |
+| `limit` | integer | no | Max events to return |
 
 ## License
 
