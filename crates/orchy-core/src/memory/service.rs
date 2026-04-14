@@ -29,7 +29,7 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
                     actual: existing.version().as_u64(),
                 });
             }
-            existing.update(cmd.value, cmd.written_by);
+            existing.update(cmd.value, cmd.written_by)?;
             existing
         } else {
             if let Some(expected) = cmd.expected_version {

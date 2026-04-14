@@ -135,6 +135,7 @@ pub struct MemoryEntry {
     embedding: Option<Vec<f32>>,
     embedding_model: Option<String>,
     embedding_dimensions: Option<u32>,
+    locked: bool,
     written_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -162,6 +163,7 @@ impl MemoryEntry {
             embedding: None,
             embedding_model: None,
             embedding_dimensions: None,
+            locked: false,
             written_by,
             created_at: now,
             updated_at: now,
@@ -178,19 +180,41 @@ impl MemoryEntry {
             embedding: r.embedding,
             embedding_model: r.embedding_model,
             embedding_dimensions: r.embedding_dimensions,
+            locked: r.locked,
             written_by: r.written_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
     }
 
-    pub fn update(&mut self, value: String, written_by: Option<AgentId>) {
+    pub fn update(&mut self, value: String, written_by: Option<AgentId>) -> Result<()> {
+        if self.locked {
+            return Err(Error::Conflict(format!(
+                "memory entry '{}' is locked",
+                self.key
+            )));
+        }
         self.value = value;
         self.version = self.version.next();
         if let Some(author) = written_by {
             self.written_by = Some(author);
         }
         self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    pub fn lock(&mut self) {
+        self.locked = true;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn unlock(&mut self) {
+        self.locked = false;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked
     }
 
     pub fn move_to(&mut self, namespace: Namespace) {
@@ -249,6 +273,7 @@ pub struct RestoreMemoryEntry {
     pub embedding: Option<Vec<f32>>,
     pub embedding_model: Option<String>,
     pub embedding_dimensions: Option<u32>,
+    pub locked: bool,
     pub written_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -406,7 +431,7 @@ mod tests {
             None,
         )
         .unwrap();
-        entry.update("new value".to_string(), None);
+        entry.update("new value".to_string(), None).unwrap();
         assert_eq!(entry.version().as_u64(), 2);
     }
 
@@ -420,7 +445,7 @@ mod tests {
             None,
         )
         .unwrap();
-        entry.update("updated".to_string(), None);
+        entry.update("updated".to_string(), None).unwrap();
         assert_eq!(entry.value(), "updated");
     }
 

@@ -31,6 +31,8 @@ enum Memory {
     EmbeddingModel,
     #[iden = "embedding_dimensions"]
     EmbeddingDimensions,
+    #[iden = "locked"]
+    Locked,
     #[iden = "written_by"]
     WrittenBy,
     #[iden = "created_at"]
@@ -46,8 +48,8 @@ impl MemoryStore for SqliteBackend {
         let embedding_bytes = entry.embedding().map(embedding_to_bytes);
 
         conn.execute(
-            "INSERT OR REPLACE INTO memory (project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO memory (project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, locked, written_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             rusqlite::params![
                 entry.project().to_string(),
                 entry.namespace().to_string(),
@@ -57,6 +59,7 @@ impl MemoryStore for SqliteBackend {
                 embedding_bytes,
                 entry.embedding_model(),
                 entry.embedding_dimensions().map(|d| d as i64),
+                entry.is_locked() as i64,
                 entry.written_by().map(|a| a.to_string()),
                 entry.created_at().to_rfc3339(),
                 entry.updated_at().to_rfc3339(),
@@ -104,7 +107,7 @@ impl MemoryStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at
+                "SELECT project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, locked, written_by, created_at, updated_at
                  FROM memory WHERE project = ?1 AND namespace = ?2 AND key = ?3",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -133,6 +136,7 @@ impl MemoryStore for SqliteBackend {
             Memory::Embedding,
             Memory::EmbeddingModel,
             Memory::EmbeddingDimensions,
+            Memory::Locked,
             Memory::WrittenBy,
             Memory::CreatedAt,
             Memory::UpdatedAt,
@@ -174,7 +178,7 @@ impl MemoryStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT m.project, m.namespace, m.key, m.value, m.version, m.embedding, m.embedding_model, m.embedding_dimensions, m.written_by, m.created_at, m.updated_at
+            "SELECT m.project, m.namespace, m.key, m.value, m.version, m.embedding, m.embedding_model, m.embedding_dimensions, m.locked, m.written_by, m.created_at, m.updated_at
              FROM memory m
              JOIN memory_fts ON memory_fts.rowid = m.rowid
              WHERE memory_fts MATCH ?1",
@@ -255,9 +259,10 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
     let embedding_bytes: Option<Vec<u8>> = row.get(5)?;
     let embedding_model: Option<String> = row.get(6)?;
     let embedding_dimensions: Option<i64> = row.get(7)?;
-    let written_by_str: Option<String> = row.get(8)?;
-    let created_at_str: String = row.get(9)?;
-    let updated_at_str: String = row.get(10)?;
+    let locked: i64 = row.get(8)?;
+    let written_by_str: Option<String> = row.get(9)?;
+    let created_at_str: String = row.get(10)?;
+    let updated_at_str: String = row.get(11)?;
 
     let project = ProjectId::try_from(project_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
@@ -276,12 +281,12 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(MemoryEntry::restore(RestoreMemoryEntry {
@@ -293,6 +298,7 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryEntry> {
         embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        locked: locked != 0,
         written_by: written_by_str.and_then(|s| AgentId::from_str(&s).ok()),
         created_at,
         updated_at,

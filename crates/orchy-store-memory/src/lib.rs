@@ -7,6 +7,7 @@ mod message;
 mod namespace;
 mod project;
 mod project_link;
+mod resource_lock;
 mod skill;
 mod task;
 
@@ -19,6 +20,7 @@ use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
 use orchy_core::project::Project;
 use orchy_core::project_link::{ProjectLink, ProjectLinkId};
+use orchy_core::resource_lock::ResourceLock;
 use orchy_core::skill::Skill;
 use orchy_core::task::{Task, TaskId};
 
@@ -31,6 +33,7 @@ pub struct MemoryBackend {
     pub(crate) skills: RwLock<HashMap<(String, String, String), Skill>>,
     pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
     pub(crate) project_links: RwLock<HashMap<ProjectLinkId, ProjectLink>>,
+    pub(crate) resource_locks: RwLock<HashMap<(String, String, String), ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String)>>,
 }
 
@@ -45,6 +48,7 @@ impl MemoryBackend {
             skills: RwLock::new(HashMap::new()),
             projects: RwLock::new(HashMap::new()),
             project_links: RwLock::new(HashMap::new()),
+            resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
         }
     }
