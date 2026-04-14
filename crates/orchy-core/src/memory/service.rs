@@ -69,15 +69,6 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
         self.store.list(filter).await
     }
 
-    pub async fn unlock_agent_entries(&self, agent: &AgentId) -> Result<()> {
-        let entries = self.store.find_locked_by(agent).await?;
-        for mut entry in entries {
-            entry.unlock();
-            self.store.save(&mut entry).await?;
-        }
-        Ok(())
-    }
-
     pub async fn move_entry(
         &self,
         project: &ProjectId,
@@ -90,10 +81,6 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
             .find_by_key(project, namespace, key)
             .await?
             .ok_or_else(|| Error::NotFound(format!("memory {namespace}/{key}")))?;
-
-        if entry.is_locked() {
-            return Err(Error::Conflict(format!("memory entry '{key}' is locked")));
-        }
 
         let old_namespace = entry.namespace().clone();
         let old_key = entry.key().to_string();
@@ -130,10 +117,6 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
             .find_by_key(project, namespace, key)
             .await?
             .ok_or_else(|| Error::NotFound(format!("memory {namespace}/{key}")))?;
-
-        if entry.is_locked() {
-            return Err(Error::Conflict(format!("memory entry '{key}' is locked")));
-        }
 
         entry.mark_deleted();
         self.store.save(&mut entry).await?;

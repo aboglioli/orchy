@@ -370,18 +370,6 @@ pub struct UntagTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct LockMemoryParams {
-    pub namespace: Option<String>,
-    pub key: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct UnlockMemoryParams {
-    pub namespace: Option<String>,
-    pub key: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct LockResourceParams {
     pub name: String,
     pub namespace: Option<String>,

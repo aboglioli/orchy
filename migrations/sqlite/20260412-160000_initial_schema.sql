@@ -41,8 +41,6 @@ CREATE TABLE IF NOT EXISTS memory (
     embedding BLOB,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
-    locked INTEGER NOT NULL DEFAULT 0,
-    locked_by TEXT,
     written_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

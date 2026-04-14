@@ -241,7 +241,6 @@ async fn memory_list_with_namespace_prefix() {
     let all = MemoryStore::list(
         &store,
         MemoryFilter {
-            locked_by: None,
             namespace: Some(Namespace::root()),
             project: Some(proj("app")),
         },
@@ -253,7 +252,6 @@ async fn memory_list_with_namespace_prefix() {
     let tasks_only = MemoryStore::list(
         &store,
         MemoryFilter {
-            locked_by: None,
             namespace: Some(ns("/tasks")),
             project: Some(proj("app")),
         },

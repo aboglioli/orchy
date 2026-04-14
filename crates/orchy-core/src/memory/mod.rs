@@ -33,10 +33,6 @@ pub trait MemoryStore: Send + Sync {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
-    fn find_locked_by(
-        &self,
-        agent: &AgentId,
-    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
     fn delete(
         &self,
         project: &ProjectId,
@@ -144,8 +140,6 @@ pub struct MemoryEntry {
     embedding: Option<Vec<f32>>,
     embedding_model: Option<String>,
     embedding_dimensions: Option<u32>,
-    locked: bool,
-    locked_by: Option<AgentId>,
     written_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -175,8 +169,6 @@ impl MemoryEntry {
             embedding: None,
             embedding_model: None,
             embedding_dimensions: None,
-            locked: false,
-            locked_by: None,
             written_by,
             created_at: now,
             updated_at: now,
@@ -211,8 +203,6 @@ impl MemoryEntry {
             embedding: r.embedding,
             embedding_model: r.embedding_model,
             embedding_dimensions: r.embedding_dimensions,
-            locked: r.locked,
-            locked_by: r.locked_by,
             written_by: r.written_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -221,12 +211,6 @@ impl MemoryEntry {
     }
 
     pub fn update(&mut self, value: String, written_by: Option<AgentId>) -> Result<()> {
-        if self.locked {
-            return Err(Error::Conflict(format!(
-                "memory entry '{}' is locked",
-                self.key
-            )));
-        }
         self.value = value;
         self.version = self.version.next();
         if let Some(author) = written_by {
@@ -251,45 +235,6 @@ impl MemoryEntry {
         Ok(())
     }
 
-    pub fn lock(&mut self, holder: AgentId) {
-        self.locked = true;
-        self.locked_by = Some(holder);
-        self.updated_at = Utc::now();
-
-        let _ = Event::create(
-            self.project.as_ref(),
-            memory_events::NAMESPACE,
-            memory_events::TOPIC_LOCKED,
-            Payload::from_json(&memory_events::MemoryLockedPayload {
-                project: self.project.to_string(),
-                namespace: self.namespace.to_string(),
-                key: self.key.clone(),
-                holder: holder.to_string(),
-            })
-            .unwrap(),
-        )
-        .map(|e| self.collector.collect(e));
-    }
-
-    pub fn unlock(&mut self) {
-        self.locked = false;
-        self.locked_by = None;
-        self.updated_at = Utc::now();
-
-        let _ = Event::create(
-            self.project.as_ref(),
-            memory_events::NAMESPACE,
-            memory_events::TOPIC_UNLOCKED,
-            Payload::from_json(&memory_events::MemoryUnlockedPayload {
-                project: self.project.to_string(),
-                namespace: self.namespace.to_string(),
-                key: self.key.clone(),
-            })
-            .unwrap(),
-        )
-        .map(|e| self.collector.collect(e));
-    }
-
     pub fn mark_deleted(&mut self) {
         let _ = Event::create(
             self.project.as_ref(),
@@ -303,14 +248,6 @@ impl MemoryEntry {
             .unwrap(),
         )
         .map(|e| self.collector.collect(e));
-    }
-
-    pub fn is_locked(&self) -> bool {
-        self.locked
-    }
-
-    pub fn locked_by(&self) -> Option<AgentId> {
-        self.locked_by
     }
 
     pub fn move_to(&mut self, namespace: Namespace) {
@@ -388,8 +325,6 @@ pub struct RestoreMemoryEntry {
     pub embedding: Option<Vec<f32>>,
     pub embedding_model: Option<String>,
     pub embedding_dimensions: Option<u32>,
-    pub locked: bool,
-    pub locked_by: Option<AgentId>,
     pub written_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -408,7 +343,6 @@ pub struct WriteMemory {
 pub struct MemoryFilter {
     pub namespace: Option<Namespace>,
     pub project: Option<ProjectId>,
-    pub locked_by: Option<AgentId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

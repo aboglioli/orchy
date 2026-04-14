@@ -41,10 +41,6 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
                                 .lock_service
                                 .release_agent_locks(&agent.id())
                                 .await;
-                            let _ = container
-                                .memory_service
-                                .unlock_agent_entries(&agent.id())
-                                .await;
                             let watchers =
                                 WatcherStore::find_by_agent(&*container.store, &agent.id())
                                     .await
@@ -57,12 +53,10 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
                                 )
                                 .await;
                             }
-                            let reviews = ReviewStore::find_pending_for_agent(
-                                &*container.store,
-                                &agent.id(),
-                            )
-                            .await
-                            .unwrap_or_default();
+                            let reviews =
+                                ReviewStore::find_pending_for_agent(&*container.store, &agent.id())
+                                    .await
+                                    .unwrap_or_default();
                             for mut r in reviews {
                                 r.unassign_reviewer();
                                 let _ = ReviewStore::save(&*container.store, &r).await;

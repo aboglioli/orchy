@@ -151,9 +151,6 @@ impl MemoryStore for MockStore {
     ) -> Result<Vec<MemoryEntry>> {
         unimplemented!()
     }
-    async fn find_locked_by(&self, _: &AgentId) -> Result<Vec<MemoryEntry>> {
-        Ok(vec![])
-    }
     async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
         unimplemented!()
     }

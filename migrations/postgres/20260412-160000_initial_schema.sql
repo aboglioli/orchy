@@ -43,8 +43,6 @@ CREATE TABLE IF NOT EXISTS memory (
     embedding VECTOR,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
-    locked BOOLEAN NOT NULL DEFAULT FALSE,
-    locked_by UUID REFERENCES agents(id),
     written_by UUID REFERENCES agents(id),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,

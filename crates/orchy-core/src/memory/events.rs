@@ -4,8 +4,6 @@ pub const NAMESPACE: &str = "memory";
 
 pub const TOPIC_CREATED: &str = "memory.created";
 pub const TOPIC_UPDATED: &str = "memory.updated";
-pub const TOPIC_LOCKED: &str = "memory.locked";
-pub const TOPIC_UNLOCKED: &str = "memory.unlocked";
 pub const TOPIC_MOVED: &str = "memory.moved";
 pub const TOPIC_DELETED: &str = "memory.deleted";
 pub const TOPIC_CONTEXT_CAPTURED: &str = "memory.context_captured";
@@ -23,21 +21,6 @@ pub struct MemoryUpdatedPayload {
     pub namespace: String,
     pub key: String,
     pub version: u64,
-}
-
-#[derive(Serialize)]
-pub struct MemoryLockedPayload {
-    pub project: String,
-    pub namespace: String,
-    pub key: String,
-    pub holder: String,
-}
-
-#[derive(Serialize)]
-pub struct MemoryUnlockedPayload {
-    pub project: String,
-    pub namespace: String,
-    pub key: String,
 }
 
 #[derive(Serialize)]

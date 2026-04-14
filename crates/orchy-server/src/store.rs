@@ -147,9 +147,6 @@ impl MemoryStore for StoreBackend {
             MemoryStore::search(query, embedding, namespace, limit)
         )
     }
-    async fn find_locked_by(&self, agent: &AgentId) -> Result<Vec<MemoryEntry>> {
-        delegate_trait!(self, MemoryStore::find_locked_by(agent))
-    }
     async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
         delegate_trait!(self, MemoryStore::delete(project, namespace, key))
     }
