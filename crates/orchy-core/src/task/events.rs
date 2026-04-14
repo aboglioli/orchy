@@ -28,6 +28,10 @@ pub struct TaskCreatedPayload {
     pub project: String,
     pub namespace: String,
     pub title: String,
+    pub description: String,
+    pub priority: String,
+    pub assigned_roles: Vec<String>,
+    pub depends_on: Vec<String>,
     pub parent_id: Option<String>,
 }
 

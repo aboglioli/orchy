@@ -196,6 +196,8 @@ impl Message {
                 message_id: msg.id.to_string(),
                 from: msg.from.to_string(),
                 to: msg.to.to_string(),
+                body: msg.body.clone(),
+                reply_to: msg.reply_to.map(|id| id.to_string()),
             })
             .unwrap(),
         )

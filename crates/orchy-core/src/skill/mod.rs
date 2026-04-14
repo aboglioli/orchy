@@ -79,6 +79,8 @@ impl Skill {
                     project: skill.project.to_string(),
                     namespace: skill.namespace.to_string(),
                     name: skill.name.clone(),
+                    description: skill.description.clone(),
+                    content: skill.content.clone(),
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,
             )
@@ -118,6 +120,8 @@ impl Skill {
                 project: self.project.to_string(),
                 namespace: self.namespace.to_string(),
                 name: self.name.clone(),
+                description: self.description.clone(),
+                content: self.content.clone(),
             })
             .unwrap(),
         )

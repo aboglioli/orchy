@@ -261,6 +261,10 @@ impl Task {
                     project: task.project.to_string(),
                     namespace: task.namespace.to_string(),
                     title: task.title.clone(),
+                    description: task.description.clone(),
+                    priority: task.priority.to_string(),
+                    assigned_roles: task.assigned_roles.clone(),
+                    depends_on: task.depends_on.iter().map(|id| id.to_string()).collect(),
                     parent_id: task.parent_id.map(|id| id.to_string()),
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,

@@ -12,6 +12,8 @@ pub struct SkillCreatedPayload {
     pub project: String,
     pub namespace: String,
     pub name: String,
+    pub description: String,
+    pub content: String,
 }
 
 #[derive(Serialize)]
@@ -19,6 +21,8 @@ pub struct SkillUpdatedPayload {
     pub project: String,
     pub namespace: String,
     pub name: String,
+    pub description: String,
+    pub content: String,
 }
 
 #[derive(Serialize)]
