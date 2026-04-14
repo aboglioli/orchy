@@ -5,6 +5,7 @@ use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
+use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 use orchy_store_memory::MemoryBackend;
@@ -195,6 +196,26 @@ impl ProjectLinkStore for StoreBackend {
         target: &ProjectId,
     ) -> Result<Option<ProjectLink>> {
         delegate_trait!(self, ProjectLinkStore::find_link(source, target))
+    }
+}
+
+impl LockStore for StoreBackend {
+    async fn save(&self, lock: &ResourceLock) -> Result<()> {
+        delegate_trait!(self, LockStore::save(lock))
+    }
+    async fn find(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<Option<ResourceLock>> {
+        delegate_trait!(self, LockStore::find(project, namespace, name))
+    }
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+        delegate_trait!(self, LockStore::delete(project, namespace, name))
+    }
+    async fn delete_expired(&self) -> Result<u64> {
+        delegate_trait!(self, LockStore::delete_expired())
     }
 }
 

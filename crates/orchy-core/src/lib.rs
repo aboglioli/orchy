@@ -9,5 +9,6 @@ pub mod namespace;
 pub mod note;
 pub mod project;
 pub mod project_link;
+pub mod resource_lock;
 pub mod skill;
 pub mod task;

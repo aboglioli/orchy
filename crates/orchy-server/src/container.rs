@@ -5,6 +5,7 @@ use orchy_core::memory::service::{ContextService, MemoryService};
 use orchy_core::message::service::MessageService;
 use orchy_core::project::service::ProjectService;
 use orchy_core::project_link::service::ProjectLinkService;
+use orchy_core::resource_lock::service::LockService;
 use orchy_core::skill::service::SkillService;
 use orchy_core::task::service::TaskService;
 use orchy_store_memory::MemoryBackend;
@@ -25,6 +26,7 @@ pub struct Container {
     pub skill_service: SkillService<StoreBackend>,
     pub project_service: ProjectService<StoreBackend>,
     pub project_link_service: ProjectLinkService<StoreBackend>,
+    pub lock_service: LockService<StoreBackend>,
     pub config: Config,
 }
 
@@ -44,6 +46,7 @@ impl Container {
         let skill_service = SkillService::new(Arc::clone(&store));
         let project_service = ProjectService::new(Arc::clone(&store));
         let project_link_service = ProjectLinkService::new(Arc::clone(&store));
+        let lock_service = LockService::new(Arc::clone(&store));
 
         Ok(Arc::new(Self {
             store,
@@ -55,6 +58,7 @@ impl Container {
             skill_service,
             project_service,
             project_link_service,
+            lock_service,
             config,
         }))
     }

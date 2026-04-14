@@ -8,6 +8,7 @@ use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTar
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
 use crate::project::{Project, ProjectStore};
 use crate::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
+use crate::resource_lock::{LockStore, ResourceLock};
 use crate::skill::{Skill, SkillFilter, SkillStore};
 use crate::task::{Task, TaskFilter, TaskId, TaskStore};
 
@@ -196,6 +197,21 @@ impl ProjectLinkStore for MockStore {
         unimplemented!()
     }
     async fn find_link(&self, _: &ProjectId, _: &ProjectId) -> Result<Option<ProjectLink>> {
+        unimplemented!()
+    }
+}
+
+impl LockStore for MockStore {
+    async fn save(&self, _: &ResourceLock) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<ResourceLock>> {
+        unimplemented!()
+    }
+    async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
+        unimplemented!()
+    }
+    async fn delete_expired(&self) -> Result<u64> {
         unimplemented!()
     }
 }
