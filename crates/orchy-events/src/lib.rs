@@ -1,6 +1,7 @@
 mod collector;
 mod error;
 mod event;
+pub mod io;
 mod metadata;
 mod namespace;
 mod organization;
