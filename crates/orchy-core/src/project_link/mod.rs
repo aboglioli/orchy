@@ -1,3 +1,4 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -7,8 +8,12 @@ use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::error::{Error, Result};
 use crate::namespace::ProjectId;
+
+use self::events as link_events;
 
 pub trait ProjectLinkStore: Send + Sync {
     fn save(&self, link: &mut ProjectLink) -> impl Future<Output = Result<()>> + Send;
@@ -101,6 +106,8 @@ pub struct ProjectLink {
     target_project: ProjectId,
     resource_types: Vec<SharedResourceType>,
     created_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl ProjectLink {
@@ -120,13 +127,30 @@ impl ProjectLink {
             ));
         }
 
-        Ok(Self {
+        let mut link = Self {
             id: ProjectLinkId::new(),
             source_project,
             target_project,
             resource_types,
             created_at: Utc::now(),
-        })
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            link.source_project.as_ref(),
+            link_events::NAMESPACE,
+            link_events::TOPIC_CREATED,
+            Payload::from_json(&link_events::ProjectLinkCreatedPayload {
+                link_id: link.id.to_string(),
+                source_project: link.source_project.to_string(),
+                target_project: link.target_project.to_string(),
+                resource_types: link.resource_types.iter().map(|r| r.to_string()).collect(),
+            })
+            .unwrap(),
+        )
+        .map(|e| link.collector.collect(e));
+
+        Ok(link)
     }
 
     pub fn restore(r: RestoreProjectLink) -> Self {
@@ -136,7 +160,12 @@ impl ProjectLink {
             target_project: r.target_project,
             resource_types: r.resource_types,
             created_at: r.created_at,
+            collector: EventCollector::new(),
         }
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> ProjectLinkId {

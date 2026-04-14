@@ -1,3 +1,4 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -7,9 +8,13 @@ use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::memory::Version;
+
+use self::events as doc_events;
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait DocumentStore: Send + Sync {
@@ -115,6 +120,8 @@ pub struct Document {
     updated_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Document {
@@ -135,7 +142,7 @@ impl Document {
         }
 
         let now = Utc::now();
-        Ok(Self {
+        let mut doc = Self {
             id: DocumentId::new(),
             project,
             namespace,
@@ -151,7 +158,27 @@ impl Document {
             updated_by: None,
             created_at: now,
             updated_at: now,
-        })
+            collector: EventCollector::new(),
+        };
+
+        doc.collector.collect(
+            Event::create(
+                doc.project.as_ref(),
+                doc_events::NAMESPACE,
+                doc_events::TOPIC_CREATED,
+                Payload::from_json(&doc_events::DocumentCreatedPayload {
+                    document_id: doc.id.to_string(),
+                    project: doc.project.to_string(),
+                    namespace: doc.namespace.to_string(),
+                    path: doc.path.clone(),
+                    title: doc.title.clone(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(doc)
     }
 
     pub fn restore(r: RestoreDocument) -> Self {
@@ -171,6 +198,7 @@ impl Document {
             updated_by: r.updated_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            collector: EventCollector::new(),
         }
     }
 
@@ -182,12 +210,36 @@ impl Document {
             self.updated_by = Some(author);
         }
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            doc_events::NAMESPACE,
+            doc_events::TOPIC_UPDATED,
+            Payload::from_json(&doc_events::DocumentUpdatedPayload {
+                document_id: self.id.to_string(),
+                title: self.title.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn add_tag(&mut self, tag: String) {
         if !self.tags.contains(&tag) {
-            self.tags.push(tag);
+            self.tags.push(tag.clone());
             self.updated_at = Utc::now();
+
+            let _ = Event::create(
+                self.project.as_ref(),
+                doc_events::NAMESPACE,
+                doc_events::TOPIC_TAGGED,
+                Payload::from_json(&doc_events::DocumentTaggedPayload {
+                    document_id: self.id.to_string(),
+                    tag,
+                })
+                .unwrap(),
+            )
+            .map(|e| self.collector.collect(e));
         }
     }
 
@@ -195,6 +247,18 @@ impl Document {
         if let Some(pos) = self.tags.iter().position(|t| t == tag) {
             self.tags.remove(pos);
             self.updated_at = Utc::now();
+
+            let _ = Event::create(
+                self.project.as_ref(),
+                doc_events::NAMESPACE,
+                doc_events::TOPIC_TAG_REMOVED,
+                Payload::from_json(&doc_events::DocumentTagRemovedPayload {
+                    document_id: self.id.to_string(),
+                    tag: tag.to_string(),
+                })
+                .unwrap(),
+            )
+            .map(|e| self.collector.collect(e));
         }
     }
 
@@ -205,15 +269,48 @@ impl Document {
     }
 
     pub fn move_to(&mut self, namespace: Namespace) {
+        let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            doc_events::NAMESPACE,
+            doc_events::TOPIC_MOVED,
+            Payload::from_json(&doc_events::DocumentMovedPayload {
+                document_id: self.id.to_string(),
+                from_namespace,
+                to_namespace: self.namespace.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn rename(&mut self, path: String) -> Result<()> {
         validate_path(&path)?;
+        let old_path = self.path.clone();
         self.path = path;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            doc_events::NAMESPACE,
+            doc_events::TOPIC_RENAMED,
+            Payload::from_json(&doc_events::DocumentRenamedPayload {
+                document_id: self.id.to_string(),
+                old_path,
+                new_path: self.path.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+
         Ok(())
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> DocumentId {

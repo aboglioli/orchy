@@ -1,6 +1,7 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
+use orchy_events::SerializedEvent;
 
 use crate::MemoryBackend;
 
@@ -16,6 +17,20 @@ impl LockStore for MemoryBackend {
             lock.name().to_string(),
         );
         locks.insert(key, lock.clone());
+        drop(locks);
+
+        let events = lock.drain_events();
+        if !events.is_empty() {
+            let serialized: Vec<SerializedEvent> = events
+                .iter()
+                .filter_map(|e| SerializedEvent::from_event(e).ok())
+                .collect();
+            let mut store = self
+                .events
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            store.extend(serialized);
+        }
         Ok(())
     }
 

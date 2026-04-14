@@ -1,6 +1,7 @@
 use orchy_core::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_events::SerializedEvent;
 
 use crate::{MemoryBackend, cosine_similarity};
 
@@ -11,6 +12,20 @@ impl DocumentStore for MemoryBackend {
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
         docs.insert(doc.id(), doc.clone());
+        drop(docs);
+
+        let events = doc.drain_events();
+        if !events.is_empty() {
+            let serialized: Vec<SerializedEvent> = events
+                .iter()
+                .filter_map(|e| SerializedEvent::from_event(e).ok())
+                .collect();
+            let mut store = self
+                .events
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            store.extend(serialized);
+        }
         Ok(())
     }
 

@@ -1,12 +1,17 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+
+use self::events as lock_events;
 
 pub trait LockStore: Send + Sync {
     fn save(&self, lock: &mut ResourceLock) -> impl Future<Output = Result<()>> + Send;
@@ -33,6 +38,8 @@ pub struct ResourceLock {
     holder: AgentId,
     acquired_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl ResourceLock {
@@ -50,14 +57,32 @@ impl ResourceLock {
         }
 
         let now = Utc::now();
-        Ok(Self {
+        let mut lock = Self {
             project,
             namespace,
             name,
             holder,
             acquired_at: now,
             expires_at: now + Duration::seconds(ttl_secs as i64),
-        })
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            lock.project.as_ref(),
+            lock_events::NAMESPACE,
+            lock_events::TOPIC_ACQUIRED,
+            Payload::from_json(&lock_events::LockAcquiredPayload {
+                project: lock.project.to_string(),
+                namespace: lock.namespace.to_string(),
+                name: lock.name.clone(),
+                holder: lock.holder.to_string(),
+                ttl_secs,
+            })
+            .unwrap(),
+        )
+        .map(|e| lock.collector.collect(e));
+
+        Ok(lock)
     }
 
     pub fn restore(r: RestoreResourceLock) -> Self {
@@ -68,7 +93,12 @@ impl ResourceLock {
             holder: r.holder,
             acquired_at: r.acquired_at,
             expires_at: r.expires_at,
+            collector: EventCollector::new(),
         }
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn is_expired(&self) -> bool {
