@@ -89,6 +89,7 @@ pub enum EntryType {
     Reference,
     Plan,
     Log,
+    Skill,
 }
 
 impl EntryType {
@@ -104,6 +105,7 @@ impl EntryType {
             EntryType::Reference => "external reference or link",
             EntryType::Plan => "strategy, roadmap, or approach",
             EntryType::Log => "activity or change log entry",
+            EntryType::Skill => "instruction or convention agents must follow",
         }
     }
 
@@ -119,6 +121,7 @@ impl EntryType {
             EntryType::Reference,
             EntryType::Plan,
             EntryType::Log,
+            EntryType::Skill,
         ]
     }
 }
@@ -136,6 +139,7 @@ impl fmt::Display for EntryType {
             EntryType::Reference => "reference",
             EntryType::Plan => "plan",
             EntryType::Log => "log",
+            EntryType::Skill => "skill",
         };
         write!(f, "{s}")
     }
@@ -156,6 +160,7 @@ impl FromStr for EntryType {
             "reference" => Ok(EntryType::Reference),
             "plan" => Ok(EntryType::Plan),
             "log" => Ok(EntryType::Log),
+            "skill" => Ok(EntryType::Skill),
             other => Err(format!("unknown entry type: {other}")),
         }
     }

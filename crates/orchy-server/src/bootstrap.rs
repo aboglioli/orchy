@@ -1,18 +1,18 @@
 use orchy_core::agent::Agent;
 use orchy_core::agent::AgentStore;
 use orchy_core::agent::service::AgentService;
+use orchy_core::knowledge::Entry;
+use orchy_core::knowledge::EntryStore;
+use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::project::Project;
 use orchy_core::project::ProjectStore;
 use orchy_core::project::service::ProjectService;
-use orchy_core::skill::Skill;
-use orchy_core::skill::SkillStore;
-use orchy_core::skill::service::SkillService;
 use orchy_core::task::service::TaskService;
 use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 
 pub async fn generate_bootstrap_prompt<
-    SS: SkillStore,
+    KS: EntryStore,
     PS: ProjectStore,
     AS: AgentStore,
     TS: TaskStore,
@@ -21,13 +21,13 @@ pub async fn generate_bootstrap_prompt<
     namespace: &Namespace,
     host: &str,
     port: u16,
-    skill_service: &SkillService<SS>,
+    knowledge_service: &KnowledgeService<KS, crate::embeddings::EmbeddingsBackend>,
     project_service: &ProjectService<PS>,
     agent_service: &AgentService<AS>,
     task_service: &TaskService<TS, AS>,
 ) -> Result<String, String> {
-    let skills = skill_service
-        .list_with_inherited(project_id, namespace)
+    let skills = knowledge_service
+        .list_skills(project_id, namespace)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -80,7 +80,7 @@ fn render(
     host: &str,
     port: u16,
     project: &Project,
-    skills: &[Skill],
+    skills: &[Entry],
     agents: &[Agent],
     tasks: &[Task],
 ) -> String {
@@ -88,8 +88,8 @@ fn render(
         r#"# Multi-Agent Coordination — Project `{namespace}`
 
 You are part of a coordinated multi-agent system managed by **orchy**.
-orchy provides shared infrastructure: a task board, shared memory,
-documents, messaging, skills, resource locks, and cross-project links
+orchy provides shared infrastructure: a task board, knowledge base,
+messaging, resource locks, and cross-project links
 — all exposed as MCP tools. You bring the intelligence; orchy enforces the rules.
 
 ## Connection
@@ -103,9 +103,9 @@ Project namespace: `{namespace}`
    orchy assigns them based on pending task demand if omitted.
    Pass `agent_id` to resume a previous session.
 2. **Load context** — `get_project` for description and notes,
-   then `list_skills(inherited: true)` for conventions. Follow them.
+   then `list_knowledge(entry_type: "skill")` for conventions. Follow them.
 3. **Resume** — `load_context` to check for handoff notes from a previous
-   session. Also `search_contexts(query)` to find relevant context from
+   session. Also `search_knowledge(query)` to find relevant context from
    other agents. Check `check_mailbox` for messages.
 4. **Claim work** — `get_next_task` to claim a task. Tasks from disconnected
    agents return to pending automatically.
@@ -143,30 +143,29 @@ namespace. Namespaces are auto-created on first use.
 
 ## Coordination
 
-- **write_memory** — share decisions and context with other agents.
-- **write_document** — share specs, architecture decisions, and analysis (markdown).
+- **write_knowledge** — persist decisions, discoveries, patterns, configs, plans.
+  Call `list_knowledge_types` to see available types.
 - **send_message** — coordinate by agent ID, `role:name`, or `broadcast`.
 - **watch_task** — get notified when a task you depend on changes status.
 - **request_review** / **resolve_review** — approval workflows between agents.
 - **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
 - **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
 - **save_context** — save session state before ending for continuity.
-- **link_project** — import skills/memory from other projects.
+- **link_project** — import knowledge from other projects.
 - **get_project_summary** / **get_agent_workload** — check project status.
 
 ## Knowledge Capture
 
 You must externalize knowledge so future agents can benefit:
 
-- After completing a task, `write_memory` for each key decision
-  (e.g. key: `decision/auth-algorithm`, value: `RS256 over HS256 for key rotation`).
-- Write longer analysis, specs, or architecture notes with `write_document`.
+- After completing a task, `write_knowledge` for each key decision
+  (e.g. path: `decisions/auth-algorithm`, type: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned,
   what the next agent should know. Never just "done".
 - Before disconnecting, `save_context` with structured handoff: current task,
   progress, blockers, decisions.
-- When you discover something non-obvious, write it to memory immediately.
-- Use `search_memory` and `search_documents` before starting work to check
+- When you discover something non-obvious, write it to knowledge immediately.
+- Use `search_knowledge` before starting work to check
   if a previous agent already explored this area.
 "#
     );
@@ -227,12 +226,12 @@ You must externalize knowledge so future agents can benefit:
              Follow them in all your work.\n\n",
         );
 
-        for skill in skills {
+        for entry in skills {
             out.push_str(&format!(
                 "### {} ({})\n\n{}\n\n",
-                skill.name(),
-                skill.namespace(),
-                skill.content()
+                entry.title(),
+                entry.namespace(),
+                entry.content()
             ));
         }
     }

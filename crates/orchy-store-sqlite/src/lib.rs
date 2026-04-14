@@ -1,18 +1,14 @@
 #![allow(clippy::collapsible_if)]
 
 mod agent;
-mod context;
-mod document;
 mod events;
 mod knowledge;
-mod memory;
 mod message;
 mod namespace;
 mod project;
 mod project_link;
 mod resource_lock;
 mod review;
-mod skill;
 mod task;
 mod watcher;
 

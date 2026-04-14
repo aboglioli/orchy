@@ -156,7 +156,7 @@ const INSTRUCTIONS: &str = "\
 orchy — multi-agent coordination server.
 
 You are part of a coordinated multi-agent system. orchy provides shared \
-infrastructure: a task board, shared memory, documents, messaging, skills, \
+infrastructure: a task board, knowledge base, messaging, \
 resource locks, and cross-project links. \
 You bring the intelligence; orchy enforces the rules.
 
@@ -165,9 +165,9 @@ You bring the intelligence; orchy enforces the rules.
 1. `register_agent` — project, roles (optional), description. \
    Pass `agent_id` to resume a previous session.
 2. `get_project` + `get_project_summary` — load project context.
-3. `list_skills(inherited: true)` — load conventions. Follow them.
+3. `list_knowledge(entry_type: \"skill\")` — load conventions. Follow them.
 4. `load_context` — check if a previous agent left a context snapshot. \
-   Also `search_contexts(query)` to find relevant handoff notes.
+   Also `search_knowledge(query)` to find relevant handoff notes.
 5. `check_mailbox` — check for messages from other agents.
 6. `get_next_task` — claim work. Tasks released by a disconnected agent \
    return to pending and can be re-claimed.
@@ -211,16 +211,15 @@ On disconnect, claimed tasks return to pending.
 
 You must externalize knowledge so future agents can benefit:
 
-- After completing a task, `write_memory` for each key decision \
-  (e.g. key: `decision/auth-algorithm`, value: `RS256 over HS256 for key rotation`).
-- Write longer analysis, specs, or architecture notes with `write_document`.
+- After completing a task, `write_knowledge` for each key decision \
+  (e.g. path: `decisions/auth-algorithm`, type: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned, \
   what the next agent should know. Never just 'done'.
 - Before disconnecting, `save_context` with structured handoff: current task, \
   progress, blockers, decisions.
 - When you discover something non-obvious (a gotcha, a pattern, a constraint), \
-  write it to memory immediately — don't wait until task completion.
-- Use `search_memory` and `search_documents` before starting work to check \
+  write it to knowledge immediately — don't wait until task completion.
+- Use `search_knowledge` before starting work to check \
   if a previous agent already explored this area.";
 
 impl ServerHandler for OrchyHandler {
@@ -275,8 +274,8 @@ impl ServerHandler for OrchyHandler {
 
         let skills = self
             .container
-            .skill_service
-            .list_with_inherited(&project, &namespace)
+            .knowledge_service
+            .list_skills(&project, &namespace)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -284,8 +283,8 @@ impl ServerHandler for OrchyHandler {
             .into_iter()
             .map(|s| {
                 Prompt::new(
-                    s.name().to_string(),
-                    Some(s.description().to_string()),
+                    s.title().to_string(),
+                    Some(s.title().to_string()),
                     None,
                 )
             })
@@ -310,40 +309,28 @@ impl ServerHandler for OrchyHandler {
             .get_session_namespace()
             .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
 
-        let skill = self
+        let skills = self
             .container
-            .skill_service
-            .read(&project, &namespace, &request.name)
+            .knowledge_service
+            .list_skills(&project, &namespace)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-        let skill = match skill {
-            Some(s) => s,
-            None => {
-                let inherited = self
-                    .container
-                    .skill_service
-                    .list_with_inherited(&project, &namespace)
-                    .await
-                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-                inherited
-                    .into_iter()
-                    .find(|s| s.name() == request.name)
-                    .ok_or_else(|| {
-                        ErrorData::invalid_params(
-                            format!("skill '{}' not found", request.name),
-                            None,
-                        )
-                    })?
-            }
-        };
+        let entry = skills
+            .into_iter()
+            .find(|s| s.title() == request.name)
+            .ok_or_else(|| {
+                ErrorData::invalid_params(
+                    format!("skill '{}' not found", request.name),
+                    None,
+                )
+            })?;
 
         let mut result = GetPromptResult::new(vec![PromptMessage::new_text(
             PromptMessageRole::User,
-            skill.content().to_string(),
+            entry.content().to_string(),
         )]);
-        result.description = Some(skill.description().to_string());
+        result.description = Some(entry.title().to_string());
         Ok(result)
     }
 }

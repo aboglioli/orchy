@@ -34,23 +34,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS memory (
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    key TEXT NOT NULL,
-    value TEXT NOT NULL,
-    version BIGINT NOT NULL DEFAULT 1,
-    embedding VECTOR,
-    embedding_model TEXT,
-    embedding_dimensions INTEGER,
-    written_by UUID REFERENCES agents(id),
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (project, namespace, key)
-);
-
-CREATE INDEX IF NOT EXISTS memory_fts_idx ON memory USING gin(to_tsvector('english', value));
-
 CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY,
     project TEXT NOT NULL,
@@ -61,33 +44,6 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to UUID REFERENCES messages(id),
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMPTZ NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS contexts (
-    id UUID PRIMARY KEY,
-    project TEXT NOT NULL,
-    agent_id UUID NOT NULL REFERENCES agents(id),
-    namespace TEXT NOT NULL DEFAULT '/',
-    summary TEXT NOT NULL,
-    embedding VECTOR,
-    embedding_model TEXT,
-    embedding_dimensions INTEGER,
-    metadata JSONB NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS contexts_fts_idx ON contexts USING gin(to_tsvector('english', summary));
-
-CREATE TABLE IF NOT EXISTS skills (
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    name TEXT NOT NULL,
-    description TEXT NOT NULL,
-    content TEXT NOT NULL,
-    written_by UUID REFERENCES agents(id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (project, namespace, name)
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -105,28 +61,6 @@ CREATE TABLE IF NOT EXISTS namespaces (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (project, namespace)
 );
-
-CREATE TABLE IF NOT EXISTS documents (
-    id UUID PRIMARY KEY,
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    path TEXT NOT NULL,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    tags JSONB NOT NULL DEFAULT '[]',
-    version BIGINT NOT NULL DEFAULT 1,
-    embedding VECTOR,
-    embedding_model TEXT,
-    embedding_dimensions INTEGER,
-    created_by UUID REFERENCES agents(id),
-    updated_by UUID REFERENCES agents(id),
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL,
-    UNIQUE(project, namespace, path)
-);
-
-CREATE INDEX IF NOT EXISTS documents_fts_idx ON documents
-    USING gin(to_tsvector('english', title || ' ' || content));
 
 CREATE TABLE IF NOT EXISTS entries (
     id UUID PRIMARY KEY,

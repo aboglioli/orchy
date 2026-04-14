@@ -40,7 +40,7 @@ async fn main() {
 
     if let Some(ref skills_config) = container.config.skills {
         let dir = std::path::Path::new(&skills_config.dir);
-        skill_loader::load_skills_from_dir(dir, &container.skill_service)
+        skill_loader::load_skills_from_dir(dir, &container.knowledge_service)
             .await
             .expect("failed to load skills from disk");
     }
@@ -110,7 +110,7 @@ async fn bootstrap_handler(
         &ns,
         host,
         port,
-        &container.skill_service,
+        &container.knowledge_service,
         &container.project_service,
         &container.agent_service,
         &container.task_service,

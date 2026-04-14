@@ -213,4 +213,39 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         entries.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
         Ok(entries.into_iter().next())
     }
+
+    pub async fn list_skills(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Entry>> {
+        let filter = EntryFilter {
+            project: Some(project.clone()),
+            entry_type: Some(EntryType::Skill),
+            ..Default::default()
+        };
+        let all = self.store.list(filter).await?;
+        Ok(Self::filter_with_inheritance(all, namespace))
+    }
+
+    fn filter_with_inheritance(entries: Vec<Entry>, namespace: &Namespace) -> Vec<Entry> {
+        let mut result: Vec<Entry> = Vec::new();
+
+        for entry in entries {
+            if entry.namespace().starts_with(namespace)
+                || namespace.starts_with(entry.namespace())
+            {
+                if let Some(pos) = result.iter().position(|e| e.path() == entry.path()) {
+                    if entry.namespace().as_ref().len() > result[pos].namespace().as_ref().len() {
+                        result[pos] = entry;
+                    }
+                } else {
+                    result.push(entry);
+                }
+            }
+        }
+
+        result.sort_by(|a, b| a.path().cmp(b.path()));
+        result
+    }
 }
