@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use orchy_core::knowledge::{KnowledgeStore, KnowledgeKind, WriteKnowledge};
 use orchy_core::knowledge::service::KnowledgeService;
+use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore, WriteKnowledge};
 use orchy_core::namespace::{Namespace, ProjectId};
 use tracing::{info, warn};
 

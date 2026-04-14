@@ -536,7 +536,14 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         Ok(true)
     }
 
-    async fn resolve_dependents(&self, completed_id: TaskId) -> Result<()> {
+    fn resolve_dependents(
+        &self,
+        completed_id: TaskId,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + '_>> {
+        Box::pin(async move { self.resolve_dependents_inner(completed_id).await })
+    }
+
+    async fn resolve_dependents_inner(&self, completed_id: TaskId) -> Result<()> {
         let blocked = self
             .task_store
             .list(TaskFilter {

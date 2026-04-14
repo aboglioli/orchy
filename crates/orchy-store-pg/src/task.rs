@@ -172,7 +172,7 @@ impl TaskStore for PgBackend {
         if let Some(ref role) = filter.assigned_role {
             select.and_where(Expr::cust_with_values(
                 "(assigned_roles = '[]'::jsonb OR assigned_roles @> to_jsonb(?::text))",
-                [role.clone().into()],
+                [sea_query::Value::String(Some(Box::new(role.clone())))],
             ));
         }
         if let Some(ref assigned) = filter.assigned_to {
@@ -184,7 +184,7 @@ impl TaskStore for PgBackend {
         if let Some(ref tag) = filter.tag {
             select.and_where(Expr::cust_with_values(
                 "tags @> to_jsonb(?::text)",
-                [tag.clone().into()],
+                [sea_query::Value::String(Some(Box::new(tag.clone())))],
             ));
         }
 

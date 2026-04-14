@@ -174,7 +174,10 @@ impl KnowledgeStore for StoreBackend {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<Knowledge>> {
-        delegate_trait!(self, KnowledgeStore::search(query, embedding, namespace, limit))
+        delegate_trait!(
+            self,
+            KnowledgeStore::search(query, embedding, namespace, limit)
+        )
     }
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
         delegate_trait!(self, KnowledgeStore::delete(id))

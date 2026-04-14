@@ -20,7 +20,10 @@ use self::events as knowledge_events;
 
 pub trait KnowledgeStore: Send + Sync {
     fn save(&self, entry: &mut Knowledge) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &KnowledgeId) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
+    fn find_by_id(
+        &self,
+        id: &KnowledgeId,
+    ) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
     fn find_by_path(
         &self,
         project: &ProjectId,

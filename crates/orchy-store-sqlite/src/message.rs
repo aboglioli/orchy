@@ -1,8 +1,6 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use sea_query::{Cond, Expr, Iden, Query, SqliteQueryBuilder};
-use sea_query_rusqlite::RusqliteBinder;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
@@ -12,29 +10,6 @@ use orchy_core::message::{
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::SqliteBackend;
-
-#[derive(Iden)]
-enum Messages {
-    Table,
-    #[iden = "id"]
-    Id,
-    #[iden = "project"]
-    Project,
-    #[iden = "namespace"]
-    Namespace,
-    #[iden = "from_agent"]
-    FromAgent,
-    #[iden = "to_target"]
-    ToTarget,
-    #[iden = "body"]
-    Body,
-    #[iden = "status"]
-    Status,
-    #[iden = "created_at"]
-    CreatedAt,
-    #[iden = "reply_to"]
-    ReplyTo,
-}
 
 impl MessageStore for SqliteBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
@@ -96,41 +71,31 @@ impl MessageStore for SqliteBackend {
     ) -> Result<Vec<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut query = Query::select();
-        query.from(Messages::Table).columns([
-            Messages::Id,
-            Messages::Project,
-            Messages::Namespace,
-            Messages::FromAgent,
-            Messages::ToTarget,
-            Messages::Body,
-            Messages::Status,
-            Messages::CreatedAt,
-            Messages::ReplyTo,
-        ]);
-
-        query.and_where(Expr::col(Messages::Status).eq("pending"));
-        query.cond_where(
-            Cond::any()
-                .add(Expr::col(Messages::ToTarget).eq(agent.to_string()))
-                .add(Expr::col(Messages::ToTarget).eq("broadcast")),
+        let mut sql = String::from(
+            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE status = ?1 AND (to_target = ?2 OR to_target = 'broadcast') AND project = ?3",
         );
-        query.and_where(Expr::col(Messages::Project).eq(project.to_string()));
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params.push(Box::new("pending".to_string()));
+        params.push(Box::new(agent.to_string()));
+        params.push(Box::new(project.to_string()));
+        let mut idx = 4;
 
         if !namespace.is_root() {
-            query.cond_where(
-                Cond::any()
-                    .add(Expr::col(Messages::Namespace).eq(namespace.to_string()))
-                    .add(Expr::col(Messages::Namespace).like(format!("{}/%", namespace))),
-            );
+            sql.push_str(&format!(
+                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(namespace.to_string()));
+            idx += 1;
         }
 
-        let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
+        let _ = idx;
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
         let messages = stmt
-            .query_map(&*values.as_params(), row_to_message)
+            .query_map(param_refs.as_slice(), row_to_message)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -146,38 +111,32 @@ impl MessageStore for SqliteBackend {
     ) -> Result<Vec<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut query = Query::select();
-        query.from(Messages::Table).columns([
-            Messages::Id,
-            Messages::Project,
-            Messages::Namespace,
-            Messages::FromAgent,
-            Messages::ToTarget,
-            Messages::Body,
-            Messages::Status,
-            Messages::CreatedAt,
-            Messages::ReplyTo,
-        ]);
-
-        query.and_where(Expr::col(Messages::FromAgent).eq(sender.to_string()));
-        query.and_where(Expr::col(Messages::Project).eq(project.to_string()));
+        let mut sql = String::from(
+            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE from_agent = ?1 AND project = ?2",
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params.push(Box::new(sender.to_string()));
+        params.push(Box::new(project.to_string()));
+        let mut idx = 3;
 
         if !namespace.is_root() {
-            query.cond_where(
-                Cond::any()
-                    .add(Expr::col(Messages::Namespace).eq(namespace.to_string()))
-                    .add(Expr::col(Messages::Namespace).like(format!("{}/%", namespace))),
-            );
+            sql.push_str(&format!(
+                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(namespace.to_string()));
+            idx += 1;
         }
 
-        query.order_by(Messages::CreatedAt, sea_query::Order::Desc);
+        let _ = idx;
+        sql.push_str(" ORDER BY created_at DESC");
 
-        let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
         let messages = stmt
-            .query_map(&*values.as_params(), row_to_message)
+            .query_map(param_refs.as_slice(), row_to_message)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;

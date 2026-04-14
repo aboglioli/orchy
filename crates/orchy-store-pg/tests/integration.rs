@@ -284,4 +284,3 @@ async fn message_find_by_id_and_mark_read() {
         .unwrap();
     assert_eq!(read.status(), MessageStatus::Read);
 }
-

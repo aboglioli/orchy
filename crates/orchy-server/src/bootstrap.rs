@@ -14,7 +14,10 @@ use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 pub async fn generate_bootstrap_prompt<
     KS: KnowledgeStore,
     PS: ProjectStore,
-    AS: AgentStore,
+    AS: AgentStore
+        + orchy_core::task::WatcherStore
+        + orchy_core::message::MessageStore
+        + orchy_core::task::ReviewStore,
     TS: TaskStore,
 >(
     project_id: &ProjectId,

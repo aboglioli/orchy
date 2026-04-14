@@ -3,54 +3,16 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
-use sea_query::{Cond, Expr, Iden, Query, SqliteQueryBuilder};
-use sea_query_rusqlite::RusqliteBinder;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore, KnowledgeKind, RestoreKnowledge, Version,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, RestoreKnowledge,
+    Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
-
-#[derive(Iden)]
-enum KnowledgeEntries {
-    Table,
-    #[iden = "id"]
-    Id,
-    #[iden = "project"]
-    Project,
-    #[iden = "namespace"]
-    Namespace,
-    #[iden = "path"]
-    Path,
-    #[iden = "kind"]
-    KnowledgeKind,
-    #[iden = "title"]
-    Title,
-    #[iden = "content"]
-    Content,
-    #[iden = "tags"]
-    Tags,
-    #[iden = "version"]
-    Version,
-    #[iden = "agent_id"]
-    AgentId,
-    #[iden = "metadata"]
-    Metadata,
-    #[iden = "embedding"]
-    Embedding,
-    #[iden = "embedding_model"]
-    EmbeddingModel,
-    #[iden = "embedding_dimensions"]
-    EmbeddingDimensions,
-    #[iden = "created_at"]
-    CreatedAt,
-    #[iden = "updated_at"]
-    UpdatedAt,
-}
 
 impl KnowledgeStore for SqliteBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
@@ -141,57 +103,55 @@ impl KnowledgeStore for SqliteBackend {
     async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut query = Query::select();
-        query.from(KnowledgeEntries::Table).columns([
-            KnowledgeEntries::Id,
-            KnowledgeEntries::Project,
-            KnowledgeEntries::Namespace,
-            KnowledgeEntries::Path,
-            KnowledgeEntries::KnowledgeKind,
-            KnowledgeEntries::Title,
-            KnowledgeEntries::Content,
-            KnowledgeEntries::Tags,
-            KnowledgeEntries::Version,
-            KnowledgeEntries::AgentId,
-            KnowledgeEntries::Metadata,
-            KnowledgeEntries::Embedding,
-            KnowledgeEntries::EmbeddingModel,
-            KnowledgeEntries::EmbeddingDimensions,
-            KnowledgeEntries::CreatedAt,
-            KnowledgeEntries::UpdatedAt,
-        ]);
+        let mut sql = String::from(
+            "SELECT id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at FROM knowledge_entries WHERE 1=1",
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut idx = 1;
 
         if let Some(ref project) = filter.project {
-            query.and_where(Expr::col(KnowledgeEntries::Project).eq(project.to_string()));
+            sql.push_str(&format!(" AND project = ?{idx}"));
+            params.push(Box::new(project.to_string()));
+            idx += 1;
         }
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
-                query.cond_where(
-                    Cond::any()
-                        .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
-                        .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
-                );
+                sql.push_str(&format!(
+                    " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+                ));
+                params.push(Box::new(ns.to_string()));
+                idx += 1;
             }
         }
         if let Some(ref kind) = filter.kind {
-            query.and_where(Expr::col(KnowledgeEntries::KnowledgeKind).eq(kind.to_string()));
+            sql.push_str(&format!(" AND kind = ?{idx}"));
+            params.push(Box::new(kind.to_string()));
+            idx += 1;
         }
         if let Some(ref tag) = filter.tag {
-            query.and_where(Expr::col(KnowledgeEntries::Tags).like(format!("%\"{}\"%%", tag)));
+            sql.push_str(&format!(" AND tags LIKE ?{idx}"));
+            params.push(Box::new(format!("%\"{tag}\"%")));
+            idx += 1;
         }
         if let Some(ref prefix) = filter.path_prefix {
-            query.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{}%", prefix)));
+            sql.push_str(&format!(" AND path LIKE ?{idx}"));
+            params.push(Box::new(format!("{prefix}%")));
+            idx += 1;
         }
         if let Some(ref agent_id) = filter.agent_id {
-            query.and_where(Expr::col(KnowledgeEntries::AgentId).eq(agent_id.to_string()));
+            sql.push_str(&format!(" AND agent_id = ?{idx}"));
+            params.push(Box::new(agent_id.to_string()));
+            idx += 1;
         }
 
-        let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
+        let _ = idx;
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
-        let knowledge_entries = stmt
-            .query_map(&*values.as_params(), row_to_entry)
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        let entries = stmt
+            .query_map(param_refs.as_slice(), row_to_entry)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -237,7 +197,7 @@ impl KnowledgeStore for SqliteBackend {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
 
-        let knowledge_entries = stmt
+        let entries = stmt
             .query_map(param_refs.as_slice(), row_to_entry)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()

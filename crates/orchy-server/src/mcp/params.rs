@@ -187,7 +187,6 @@ pub struct ListConversationParams {
     pub limit: Option<u32>,
 }
 
-
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetBootstrapPromptParams {
     pub namespace: Option<String>,

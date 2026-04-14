@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore, KnowledgeKind, Version, WriteKnowledge};
+use super::{
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, Version, WriteKnowledge,
+};
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsProvider;
 use crate::error::{Error, Result};
@@ -111,7 +113,11 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         self.store.delete(id).await
     }
 
-    pub async fn move_entry(&self, id: &KnowledgeId, new_namespace: Namespace) -> Result<Knowledge> {
+    pub async fn move_entry(
+        &self,
+        id: &KnowledgeId,
+        new_namespace: Namespace,
+    ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
         entry.move_to(new_namespace);
         self.store.save(&mut entry).await?;
@@ -197,8 +203,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         let mut result: Vec<Knowledge> = Vec::new();
 
         for entry in entries {
-            if entry.namespace().starts_with(namespace)
-                || namespace.starts_with(entry.namespace())
+            if entry.namespace().starts_with(namespace) || namespace.starts_with(entry.namespace())
             {
                 if let Some(pos) = result.iter().position(|e| e.path() == entry.path()) {
                     if entry.namespace().as_ref().len() > result[pos].namespace().as_ref().len() {

@@ -4,7 +4,9 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
-use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, Version as KnowledgeVersion, WriteKnowledge};
+use orchy_core::knowledge::{
+    KnowledgeFilter, KnowledgeKind, Version as KnowledgeVersion, WriteKnowledge,
+};
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::project_link::SharedResourceType;
@@ -187,7 +189,7 @@ impl OrchyHandler {
             .unwrap_or_default();
         for mut r in reviews {
             r.unassign_reviewer();
-            let _ = ReviewStore::save(&*self.container.store, &r).await;
+            let _ = ReviewStore::save(&*self.container.store, &mut r).await;
         }
 
         match self.container.agent_service.disconnect(&agent_id).await {
@@ -704,7 +706,6 @@ impl OrchyHandler {
             Err(e) => Err(e.to_string()),
         }
     }
-
 
     #[tool(
         description = "Add a note to a task. Notes are timestamped comments attached to the task."
@@ -1804,11 +1805,9 @@ impl OrchyHandler {
         Ok(to_json(&types))
     }
 
-    #[tool(
-        description = "Write a knowledge entry. Creates or updates by path. \
+    #[tool(description = "Write a knowledge entry. Creates or updates by path. \
         Type is required: note, decision, discovery, pattern, context, document, \
-        config, reference, plan, log."
-    )]
+        config, reference, plan, log.")]
     async fn write_knowledge(
         &self,
         Parameters(params): Parameters<WriteKnowledgeParams>,
@@ -1826,10 +1825,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let kind: KnowledgeKind = params
-            .kind
-            .parse()
-            .map_err(|e: String| e)?;
+        let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
 
         let metadata: HashMap<String, String> = match params.metadata.as_deref() {
             Some(json_str) => match serde_json::from_str(json_str) {
@@ -1863,9 +1859,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReadKnowledgeParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered")?;
+        let project = self.get_session_project().ok_or("no agent registered")?;
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s))?,
@@ -1955,9 +1949,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DeleteKnowledgeParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered")?;
+        let project = self.get_session_project().ok_or("no agent registered")?;
 
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -1996,10 +1988,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let kind: KnowledgeKind = params
-            .kind
-            .parse()
-            .map_err(|e: String| e)?;
+        let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
 
         let separator = params.separator.as_deref().unwrap_or("\n");
 
@@ -2027,9 +2016,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveKnowledgeParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered")?;
+        let project = self.get_session_project().ok_or("no agent registered")?;
 
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -2068,9 +2055,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RenameKnowledgeParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered")?;
+        let project = self.get_session_project().ok_or("no agent registered")?;
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s))?,
@@ -2101,9 +2086,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<TagKnowledgeParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered")?;
+        let project = self.get_session_project().ok_or("no agent registered")?;
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s))?,
@@ -2118,7 +2101,12 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
-        match self.container.knowledge_service.tag(&entry.id(), params.tag).await {
+        match self
+            .container
+            .knowledge_service
+            .tag(&entry.id(), params.tag)
+            .await
+        {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(e.to_string()),
         }
@@ -2174,5 +2162,117 @@ impl OrchyHandler {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(e.to_string()),
         }
+    }
+}
+
+use rmcp::model::{
+    GetPromptRequestParams, GetPromptResult, PaginatedRequestParams, Prompt, PromptMessage,
+    PromptMessageRole, ServerCapabilities, ServerInfo,
+};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, ServerHandler};
+type ListPromptsResult = rmcp::model::ListPromptsResult;
+
+impl ServerHandler for OrchyHandler {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .build(),
+        )
+        .with_instructions(super::handler::INSTRUCTIONS.to_string())
+    }
+
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::CallToolResult, ErrorData> {
+        self.touch_heartbeat();
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        Self::tool_router().call(tcc).await
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, ErrorData> {
+        Ok(rmcp::model::ListToolsResult {
+            tools: Self::tool_router().list_all(),
+            meta: None,
+            next_cursor: None,
+        })
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, ErrorData> {
+        let (project, namespace) = match (self.get_session_project(), self.get_session_namespace())
+        {
+            (Some(p), Some(ns)) => (p, ns),
+            _ => {
+                return Ok(ListPromptsResult {
+                    prompts: vec![],
+                    meta: None,
+                    next_cursor: None,
+                });
+            }
+        };
+
+        let skills = self
+            .container
+            .knowledge_service
+            .list_skills(&project, &namespace)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let prompts = skills
+            .into_iter()
+            .map(|s| Prompt::new(s.title().to_string(), Some(s.title().to_string()), None))
+            .collect();
+
+        Ok(ListPromptsResult {
+            prompts,
+            meta: None,
+            next_cursor: None,
+        })
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResult, ErrorData> {
+        let project = self
+            .get_session_project()
+            .ok_or_else(|| ErrorData::internal_error("no session project", None))?;
+        let namespace = self
+            .get_session_namespace()
+            .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
+
+        let skills = self
+            .container
+            .knowledge_service
+            .list_skills(&project, &namespace)
+            .await
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+        let entry = skills
+            .into_iter()
+            .find(|s| s.title() == request.name)
+            .ok_or_else(|| {
+                ErrorData::invalid_params(format!("skill '{}' not found", request.name), None)
+            })?;
+
+        let mut result = GetPromptResult::new(vec![PromptMessage::new_text(
+            PromptMessageRole::User,
+            entry.content().to_string(),
+        )]);
+        result.description = Some(entry.title().to_string());
+        Ok(result)
     }
 }

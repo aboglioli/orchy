@@ -207,7 +207,12 @@ impl KnowledgeStore for MockStore {
     async fn find_by_id(&self, _: &KnowledgeId) -> Result<Option<Knowledge>> {
         unimplemented!()
     }
-    async fn find_by_path(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Knowledge>> {
+    async fn find_by_path(
+        &self,
+        _: &ProjectId,
+        _: &Namespace,
+        _: &str,
+    ) -> Result<Option<Knowledge>> {
         unimplemented!()
     }
     async fn list(&self, _: KnowledgeFilter) -> Result<Vec<Knowledge>> {

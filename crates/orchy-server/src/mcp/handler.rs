@@ -1,20 +1,11 @@
 use std::sync::Arc;
 
-use rmcp::model::{
-    GetPromptRequestParams, GetPromptResult, PaginatedRequestParams, Prompt, PromptMessage,
-    PromptMessageRole, ServerCapabilities, ServerInfo,
-};
-use rmcp::service::RequestContext;
-use rmcp::{ErrorData, RoleServer, ServerHandler};
-
 use orchy_core::agent::AgentId;
 use orchy_core::message::MessageId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::task::TaskId;
 
 use crate::container::Container;
-
-type ListPromptsResult = rmcp::model::ListPromptsResult;
 
 struct SessionState {
     agent_id: AgentId,
@@ -152,7 +143,7 @@ pub(crate) fn to_json<T: serde::Serialize>(val: &T) -> String {
     serde_json::to_string_pretty(val).unwrap_or_else(|e| format!("serialization error: {e}"))
 }
 
-const INSTRUCTIONS: &str = "\
+pub(crate) const INSTRUCTIONS: &str = "\
 orchy — multi-agent coordination server.
 
 You are part of a coordinated multi-agent system. orchy provides shared \
@@ -221,116 +212,3 @@ You must externalize knowledge so future agents can benefit:
   write it to knowledge immediately — don't wait until task completion.
 - Use `search_knowledge` before starting work to check \
   if a previous agent already explored this area.";
-
-impl ServerHandler for OrchyHandler {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .enable_prompts()
-                .build(),
-        )
-        .with_instructions(INSTRUCTIONS.to_string())
-    }
-
-    async fn call_tool(
-        &self,
-        request: rmcp::model::CallToolRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::CallToolResult, ErrorData> {
-        self.touch_heartbeat();
-        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        Self::tool_router().call(tcc).await
-    }
-
-    async fn list_tools(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::ListToolsResult, ErrorData> {
-        Ok(rmcp::model::ListToolsResult {
-            tools: Self::tool_router().list_all(),
-            meta: None,
-            next_cursor: None,
-        })
-    }
-
-    async fn list_prompts(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ListPromptsResult, ErrorData> {
-        let (project, namespace) = match (self.get_session_project(), self.get_session_namespace())
-        {
-            (Some(p), Some(ns)) => (p, ns),
-            _ => {
-                return Ok(ListPromptsResult {
-                    prompts: vec![],
-                    meta: None,
-                    next_cursor: None,
-                });
-            }
-        };
-
-        let skills = self
-            .container
-            .knowledge_service
-            .list_skills(&project, &namespace)
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-        let prompts = skills
-            .into_iter()
-            .map(|s| {
-                Prompt::new(
-                    s.title().to_string(),
-                    Some(s.title().to_string()),
-                    None,
-                )
-            })
-            .collect();
-
-        Ok(ListPromptsResult {
-            prompts,
-            meta: None,
-            next_cursor: None,
-        })
-    }
-
-    async fn get_prompt(
-        &self,
-        request: GetPromptRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<GetPromptResult, ErrorData> {
-        let project = self
-            .get_session_project()
-            .ok_or_else(|| ErrorData::internal_error("no session project", None))?;
-        let namespace = self
-            .get_session_namespace()
-            .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
-
-        let skills = self
-            .container
-            .knowledge_service
-            .list_skills(&project, &namespace)
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-        let entry = skills
-            .into_iter()
-            .find(|s| s.title() == request.name)
-            .ok_or_else(|| {
-                ErrorData::invalid_params(
-                    format!("skill '{}' not found", request.name),
-                    None,
-                )
-            })?;
-
-        let mut result = GetPromptResult::new(vec![PromptMessage::new_text(
-            PromptMessageRole::User,
-            entry.content().to_string(),
-        )]);
-        result.description = Some(entry.title().to_string());
-        Ok(result)
-    }
-}

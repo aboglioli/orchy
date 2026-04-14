@@ -10,7 +10,8 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore, KnowledgeKind, RestoreKnowledge, Version,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, RestoreKnowledge,
+    Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 
@@ -139,7 +140,9 @@ impl KnowledgeStore for PgBackend {
 
     async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         let mut select = Query::select();
-        select.from(KnowledgeEntries::Table).expr(Expr::cust(SELECT_COLUMNS));
+        select
+            .from(KnowledgeEntries::Table)
+            .expr(Expr::cust(SELECT_COLUMNS));
 
         if let Some(ref project) = filter.project {
             select.and_where(Expr::col(KnowledgeEntries::Project).eq(project.to_string()));
@@ -159,7 +162,7 @@ impl KnowledgeStore for PgBackend {
         if let Some(ref tag) = filter.tag {
             select.and_where(Expr::cust_with_values(
                 "tags @> to_jsonb(?::text)",
-                [tag.clone().into()],
+                [sea_query::Value::String(Some(Box::new(tag.clone())))],
             ));
         }
         if let Some(ref prefix) = filter.path_prefix {
@@ -192,7 +195,7 @@ impl KnowledgeStore for PgBackend {
             .expr(Expr::cust(SELECT_COLUMNS))
             .and_where(Expr::cust_with_values(
                 "to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', ?)",
-                [query.into()],
+                [sea_query::Value::String(Some(Box::new(query.to_string())))],
             ));
 
         if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
@@ -207,7 +210,7 @@ impl KnowledgeStore for PgBackend {
             .order_by_expr(
                 Expr::cust_with_values(
                     "ts_rank(to_tsvector('english', title || ' ' || content), plainto_tsquery('english', ?))",
-                    [query.into()],
+                    [sea_query::Value::String(Some(Box::new(query.to_string())))],
                 ),
                 sea_query::Order::Desc,
             )

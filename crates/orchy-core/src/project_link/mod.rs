@@ -250,8 +250,12 @@ mod tests {
 
     #[test]
     fn has_resource_type_checks() {
-        let link =
-            ProjectLink::new(project("a"), project("b"), vec![SharedResourceType::Knowledge]).unwrap();
+        let link = ProjectLink::new(
+            project("a"),
+            project("b"),
+            vec![SharedResourceType::Knowledge],
+        )
+        .unwrap();
         assert!(link.has_resource_type(SharedResourceType::Knowledge));
         assert!(!link.has_resource_type(SharedResourceType::Tasks));
     }

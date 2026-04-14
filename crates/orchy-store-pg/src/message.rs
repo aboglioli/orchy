@@ -111,7 +111,7 @@ impl MessageStore for PgBackend {
                 Messages::ReplyTo,
             ])
             .and_where(Expr::col(Messages::Status).eq("pending"))
-            .and_where(
+            .cond_where(
                 Cond::any()
                     .add(Expr::col(Messages::ToTarget).eq(agent.to_string()))
                     .add(Expr::col(Messages::ToTarget).eq("broadcast")),
