@@ -1047,6 +1047,10 @@ impl ReviewRequest {
         Ok(())
     }
 
+    pub fn unassign_reviewer(&mut self) {
+        self.reviewer = None;
+    }
+
     pub fn reject(&mut self, comments: Option<String>) -> Result<()> {
         if self.status != ReviewStatus::Pending {
             return Err(Error::InvalidTransition {

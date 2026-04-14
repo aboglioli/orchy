@@ -33,6 +33,10 @@ pub trait MemoryStore: Send + Sync {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
+    fn find_locked_by(
+        &self,
+        agent: &AgentId,
+    ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send;
     fn delete(
         &self,
         project: &ProjectId,
@@ -141,6 +145,7 @@ pub struct MemoryEntry {
     embedding_model: Option<String>,
     embedding_dimensions: Option<u32>,
     locked: bool,
+    locked_by: Option<AgentId>,
     written_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -171,6 +176,7 @@ impl MemoryEntry {
             embedding_model: None,
             embedding_dimensions: None,
             locked: false,
+            locked_by: None,
             written_by,
             created_at: now,
             updated_at: now,
@@ -206,6 +212,7 @@ impl MemoryEntry {
             embedding_model: r.embedding_model,
             embedding_dimensions: r.embedding_dimensions,
             locked: r.locked,
+            locked_by: r.locked_by,
             written_by: r.written_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -244,8 +251,9 @@ impl MemoryEntry {
         Ok(())
     }
 
-    pub fn lock(&mut self) {
+    pub fn lock(&mut self, holder: AgentId) {
         self.locked = true;
+        self.locked_by = Some(holder);
         self.updated_at = Utc::now();
 
         let _ = Event::create(
@@ -256,6 +264,7 @@ impl MemoryEntry {
                 project: self.project.to_string(),
                 namespace: self.namespace.to_string(),
                 key: self.key.clone(),
+                holder: holder.to_string(),
             })
             .unwrap(),
         )
@@ -264,6 +273,7 @@ impl MemoryEntry {
 
     pub fn unlock(&mut self) {
         self.locked = false;
+        self.locked_by = None;
         self.updated_at = Utc::now();
 
         let _ = Event::create(
@@ -297,6 +307,10 @@ impl MemoryEntry {
 
     pub fn is_locked(&self) -> bool {
         self.locked
+    }
+
+    pub fn locked_by(&self) -> Option<AgentId> {
+        self.locked_by
     }
 
     pub fn move_to(&mut self, namespace: Namespace) {
@@ -375,6 +389,7 @@ pub struct RestoreMemoryEntry {
     pub embedding_model: Option<String>,
     pub embedding_dimensions: Option<u32>,
     pub locked: bool,
+    pub locked_by: Option<AgentId>,
     pub written_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -393,6 +408,7 @@ pub struct WriteMemory {
 pub struct MemoryFilter {
     pub namespace: Option<Namespace>,
     pub project: Option<ProjectId>,
+    pub locked_by: Option<AgentId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

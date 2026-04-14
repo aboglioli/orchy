@@ -1,3 +1,4 @@
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -111,6 +112,18 @@ impl MemoryStore for MemoryBackend {
         scored.truncate(limit);
 
         Ok(scored.into_iter().map(|(_, entry)| entry.clone()).collect())
+    }
+
+    async fn find_locked_by(&self, agent: &AgentId) -> Result<Vec<MemoryEntry>> {
+        let store = self
+            .memory
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(store
+            .values()
+            .filter(|entry| entry.locked_by() == Some(*agent))
+            .cloned()
+            .collect())
     }
 
     async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {

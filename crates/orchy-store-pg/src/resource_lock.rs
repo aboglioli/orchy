@@ -71,6 +71,19 @@ impl LockStore for PgBackend {
         Ok(())
     }
 
+    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+        let rows = sqlx::query(
+            "SELECT project, namespace, name, holder, acquired_at, expires_at
+             FROM resource_locks WHERE holder = $1",
+        )
+        .bind(*holder.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_resource_lock).collect())
+    }
+
     async fn delete_expired(&self) -> Result<u64> {
         let result = sqlx::query("DELETE FROM resource_locks WHERE expires_at < NOW()")
             .execute(&self.pool)

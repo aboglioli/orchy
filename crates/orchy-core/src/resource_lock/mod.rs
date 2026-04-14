@@ -27,6 +27,10 @@ pub trait LockStore: Send + Sync {
         namespace: &Namespace,
         name: &str,
     ) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_holder(
+        &self,
+        holder: &AgentId,
+    ) -> impl Future<Output = Result<Vec<ResourceLock>>> + Send;
     fn delete_expired(&self) -> impl Future<Output = Result<u64>> + Send;
 }
 

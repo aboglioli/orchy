@@ -63,6 +63,18 @@ impl<S: LockStore> LockService<S> {
         self.store.delete(project, namespace, name).await
     }
 
+    pub async fn release_agent_locks(&self, holder: &AgentId) -> Result<()> {
+        let locks = self.store.find_by_holder(holder).await?;
+        for mut lock in locks {
+            lock.mark_released();
+            self.store.save(&mut lock).await?;
+            self.store
+                .delete(lock.project(), lock.namespace(), lock.name())
+                .await?;
+        }
+        Ok(())
+    }
+
     pub async fn check(
         &self,
         project: &ProjectId,

@@ -31,6 +31,8 @@ enum Memory {
     EmbeddingDimensions,
     #[iden = "locked"]
     Locked,
+    #[iden = "locked_by"]
+    LockedBy,
     #[iden = "written_by"]
     WrittenBy,
     #[iden = "created_at"]
@@ -44,8 +46,8 @@ impl MemoryStore for PgBackend {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
 
         sqlx::query(
-            "INSERT INTO memory (project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, locked, written_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            "INSERT INTO memory (project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, locked, locked_by, written_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              ON CONFLICT (project, namespace, key) DO UPDATE
              SET value = EXCLUDED.value,
                  version = EXCLUDED.version,
@@ -53,6 +55,7 @@ impl MemoryStore for PgBackend {
                  embedding_model = EXCLUDED.embedding_model,
                  embedding_dimensions = EXCLUDED.embedding_dimensions,
                  locked = EXCLUDED.locked,
+                 locked_by = EXCLUDED.locked_by,
                  written_by = EXCLUDED.written_by,
                  updated_at = EXCLUDED.updated_at",
         )
@@ -65,6 +68,7 @@ impl MemoryStore for PgBackend {
         .bind(entry.embedding_model())
         .bind(entry.embedding_dimensions().map(|d| d as i32))
         .bind(entry.is_locked())
+        .bind(entry.locked_by().map(|a| *a.as_uuid()))
         .bind(entry.written_by().map(|a| *a.as_uuid()))
         .bind(entry.created_at())
         .bind(entry.updated_at())
@@ -87,7 +91,7 @@ impl MemoryStore for PgBackend {
         key: &str,
     ) -> Result<Option<MemoryEntry>> {
         let row = sqlx::query(
-            "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, locked, written_by, created_at, updated_at
+            "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, locked, locked_by, written_by, created_at, updated_at
              FROM memory WHERE project = $1 AND namespace = $2 AND key = $3",
         )
         .bind(project.to_string())
@@ -104,7 +108,7 @@ impl MemoryStore for PgBackend {
         let mut select = Query::select();
         select
             .from(Memory::Table)
-            .expr(Expr::cust("project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, locked, written_by, created_at, updated_at"));
+            .expr(Expr::cust("project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, locked, locked_by, written_by, created_at, updated_at"));
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
@@ -139,7 +143,7 @@ impl MemoryStore for PgBackend {
         let mut select = Query::select();
         select
             .from(Memory::Table)
-            .expr(Expr::cust("project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, locked, written_by, created_at, updated_at"))
+            .expr(Expr::cust("project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, locked, locked_by, written_by, created_at, updated_at"))
             .and_where(Expr::cust_with_values(
                 "to_tsvector('english', value) @@ plainto_tsquery('english', ?)",
                 [query.into()],
@@ -173,6 +177,19 @@ impl MemoryStore for PgBackend {
         Ok(rows.iter().map(row_to_memory).collect())
     }
 
+    async fn find_locked_by(&self, agent: &AgentId) -> Result<Vec<MemoryEntry>> {
+        let rows = sqlx::query(
+            "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, locked, locked_by, written_by, created_at, updated_at
+             FROM memory WHERE locked_by = $1",
+        )
+        .bind(*agent.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(rows.iter().map(row_to_memory).collect())
+    }
+
     async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
         sqlx::query("DELETE FROM memory WHERE project = $1 AND namespace = $2 AND key = $3")
             .bind(project.to_string())
@@ -196,6 +213,7 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> MemoryEntry {
     let embedding_model: Option<String> = row.get("embedding_model");
     let embedding_dimensions: Option<i32> = row.get("embedding_dimensions");
     let locked: bool = row.get("locked");
+    let locked_by: Option<Uuid> = row.get("locked_by");
     let written_by: Option<Uuid> = row.get("written_by");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
@@ -210,6 +228,7 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> MemoryEntry {
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
         locked,
+        locked_by: locked_by.map(AgentId::from_uuid),
         written_by: written_by.map(AgentId::from_uuid),
         created_at,
         updated_at,

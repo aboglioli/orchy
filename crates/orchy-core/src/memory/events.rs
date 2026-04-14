@@ -30,6 +30,7 @@ pub struct MemoryLockedPayload {
     pub project: String,
     pub namespace: String,
     pub key: String,
+    pub holder: String,
 }
 
 #[derive(Serialize)]

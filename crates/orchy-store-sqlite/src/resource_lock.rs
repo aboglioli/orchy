@@ -73,6 +73,24 @@ impl LockStore for SqliteBackend {
         Ok(())
     }
 
+    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT project, namespace, name, holder, acquired_at, expires_at
+                 FROM resource_locks WHERE holder = ?1",
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let locks = stmt
+            .query_map(rusqlite::params![holder.to_string()], row_to_resource_lock)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(locks)
+    }
+
     async fn delete_expired(&self) -> Result<u64> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let now = Utc::now().to_rfc3339();

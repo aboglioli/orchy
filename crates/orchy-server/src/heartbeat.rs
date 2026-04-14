@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::agent::AgentStatus;
+use orchy_core::task::{ReviewStore, WatcherStore};
 use tokio::time::{Duration, interval};
 use tracing::info;
 
@@ -35,6 +36,36 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
                                 .await
                             {
                                 tracing::error!(agent_id = %agent.id(), error = %e, "failed to release agent tasks");
+                            }
+                            let _ = container
+                                .lock_service
+                                .release_agent_locks(&agent.id())
+                                .await;
+                            let _ = container
+                                .memory_service
+                                .unlock_agent_entries(&agent.id())
+                                .await;
+                            let watchers =
+                                WatcherStore::find_by_agent(&*container.store, &agent.id())
+                                    .await
+                                    .unwrap_or_default();
+                            for w in &watchers {
+                                let _ = WatcherStore::delete(
+                                    &*container.store,
+                                    &w.task_id(),
+                                    &agent.id(),
+                                )
+                                .await;
+                            }
+                            let reviews = ReviewStore::find_pending_for_agent(
+                                &*container.store,
+                                &agent.id(),
+                            )
+                            .await
+                            .unwrap_or_default();
+                            for mut r in reviews {
+                                r.unassign_reviewer();
+                                let _ = ReviewStore::save(&*container.store, &r).await;
                             }
                         }
                         AgentStatus::Disconnected => {}

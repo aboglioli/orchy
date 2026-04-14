@@ -1,3 +1,4 @@
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
@@ -48,6 +49,18 @@ impl LockStore for MemoryBackend {
         let key = (project.to_string(), namespace.to_string(), name.to_string());
         locks.remove(&key);
         Ok(())
+    }
+
+    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+        let locks = self
+            .resource_locks
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(locks
+            .values()
+            .filter(|lock| lock.holder() == *holder)
+            .cloned()
+            .collect())
     }
 
     async fn delete_expired(&self) -> Result<u64> {

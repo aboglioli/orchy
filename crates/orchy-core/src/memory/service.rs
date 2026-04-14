@@ -69,6 +69,15 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
         self.store.list(filter).await
     }
 
+    pub async fn unlock_agent_entries(&self, agent: &AgentId) -> Result<()> {
+        let entries = self.store.find_locked_by(agent).await?;
+        for mut entry in entries {
+            entry.unlock();
+            self.store.save(&mut entry).await?;
+        }
+        Ok(())
+    }
+
     pub async fn move_entry(
         &self,
         project: &ProjectId,

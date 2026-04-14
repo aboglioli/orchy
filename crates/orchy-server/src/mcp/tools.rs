@@ -11,7 +11,7 @@ use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::project_link::SharedResourceType;
 use orchy_core::skill::{SkillFilter, WriteSkill};
-use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
+use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
     OrchyHandler, parse_agent_id, parse_message_id, parse_namespace, parse_project, parse_task_id,
@@ -170,6 +170,32 @@ impl OrchyHandler {
             .await
         {
             return Err(e.to_string());
+        }
+
+        let _ = self
+            .container
+            .lock_service
+            .release_agent_locks(&agent_id)
+            .await;
+        let _ = self
+            .container
+            .memory_service
+            .unlock_agent_entries(&agent_id)
+            .await;
+
+        let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
+            .await
+            .unwrap_or_default();
+        for w in &watchers {
+            let _ = WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
+        }
+
+        let reviews = ReviewStore::find_pending_for_agent(&*self.container.store, &agent_id)
+            .await
+            .unwrap_or_default();
+        for mut r in reviews {
+            r.unassign_reviewer();
+            let _ = ReviewStore::save(&*self.container.store, &r).await;
         }
 
         match self.container.agent_service.disconnect(&agent_id).await {
@@ -2088,9 +2114,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<LockMemoryParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
+        let (agent_id, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
 
         let namespace = match self.build_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
@@ -2108,7 +2135,7 @@ impl OrchyHandler {
             Err(e) => return Err(e.to_string()),
         };
 
-        entry.lock();
+        entry.lock(agent_id);
         self.container
             .store
             .save(&mut entry)
