@@ -10,7 +10,7 @@ use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 use crate::SqliteBackend;
 
 impl WatcherStore for SqliteBackend {
-    async fn save(&self, watcher: &TaskWatcher) -> Result<()> {
+    async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO task_watchers (task_id, agent_id, project, namespace, created_at)
@@ -24,6 +24,11 @@ impl WatcherStore for SqliteBackend {
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = watcher.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

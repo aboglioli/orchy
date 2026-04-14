@@ -13,7 +13,7 @@ use orchy_core::task::{
 use crate::SqliteBackend;
 
 impl ReviewStore for SqliteBackend {
-    async fn save(&self, review: &ReviewRequest) -> Result<()> {
+    async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO reviews (id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at)
@@ -33,6 +33,11 @@ impl ReviewStore for SqliteBackend {
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = review.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

@@ -5,14 +5,23 @@ use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 use crate::MemoryBackend;
 
 impl WatcherStore for MemoryBackend {
-    async fn save(&self, watcher: &TaskWatcher) -> Result<()> {
-        let mut watchers = self
-            .watchers
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        watchers
-            .retain(|w| !(w.task_id() == watcher.task_id() && w.agent_id() == watcher.agent_id()));
-        watchers.push(watcher.clone());
+    async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
+        {
+            let mut watchers = self
+                .watchers
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            watchers.retain(|w| {
+                !(w.task_id() == watcher.task_id() && w.agent_id() == watcher.agent_id())
+            });
+            watchers.push(watcher.clone());
+        }
+
+        let events = watcher.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 

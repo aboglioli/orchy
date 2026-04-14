@@ -291,7 +291,7 @@ impl LockStore for StoreBackend {
 }
 
 impl WatcherStore for StoreBackend {
-    async fn save(&self, watcher: &TaskWatcher) -> Result<()> {
+    async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
         delegate_trait!(self, WatcherStore::save(watcher))
     }
     async fn delete(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()> {
@@ -306,7 +306,7 @@ impl WatcherStore for StoreBackend {
 }
 
 impl ReviewStore for StoreBackend {
-    async fn save(&self, review: &ReviewRequest) -> Result<()> {
+    async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
         delegate_trait!(self, ReviewStore::save(review))
     }
     async fn find_by_id(&self, id: &ReviewId) -> Result<Option<ReviewRequest>> {

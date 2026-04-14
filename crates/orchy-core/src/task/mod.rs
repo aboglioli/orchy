@@ -820,7 +820,7 @@ pub struct TaskFilter {
 }
 
 pub trait WatcherStore: Send + Sync {
-    fn save(&self, watcher: &TaskWatcher) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, watcher: &mut TaskWatcher) -> impl Future<Output = Result<()>> + Send;
     fn delete(
         &self,
         task_id: &TaskId,
@@ -843,6 +843,8 @@ pub struct TaskWatcher {
     project: ProjectId,
     namespace: Namespace,
     created_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl TaskWatcher {
@@ -852,13 +854,28 @@ impl TaskWatcher {
         project: ProjectId,
         namespace: Namespace,
     ) -> Self {
-        Self {
+        let mut watcher = Self {
             task_id,
             agent_id,
             project,
             namespace,
             created_at: Utc::now(),
-        }
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            watcher.project.as_ref(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_WATCHER_ADDED,
+            Payload::from_json(&task_events::TaskWatcherAddedPayload {
+                task_id: watcher.task_id.to_string(),
+                agent_id: watcher.agent_id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| watcher.collector.collect(e));
+
+        watcher
     }
 
     pub fn restore(
@@ -874,7 +891,12 @@ impl TaskWatcher {
             project,
             namespace,
             created_at,
+            collector: EventCollector::new(),
         }
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn task_id(&self) -> TaskId {
@@ -926,7 +948,7 @@ impl FromStr for ReviewStatus {
 }
 
 pub trait ReviewStore: Send + Sync {
-    fn save(&self, review: &ReviewRequest) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, review: &mut ReviewRequest) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(
         &self,
         id: &ReviewId,
@@ -992,6 +1014,8 @@ pub struct ReviewRequest {
     comments: Option<String>,
     created_at: DateTime<Utc>,
     resolved_at: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl ReviewRequest {
@@ -1003,7 +1027,7 @@ impl ReviewRequest {
         reviewer: Option<AgentId>,
         reviewer_role: Option<String>,
     ) -> Self {
-        Self {
+        let mut review = Self {
             id: ReviewId::new(),
             task_id,
             project,
@@ -1015,7 +1039,23 @@ impl ReviewRequest {
             comments: None,
             created_at: Utc::now(),
             resolved_at: None,
-        }
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            review.project.as_ref(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_REVIEW_REQUESTED,
+            Payload::from_json(&task_events::ReviewRequestedPayload {
+                review_id: review.id.to_string(),
+                task_id: review.task_id.to_string(),
+                requester: review.requester.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| review.collector.collect(e));
+
+        review
     }
 
     pub fn restore(r: RestoreReviewRequest) -> Self {
@@ -1031,6 +1071,7 @@ impl ReviewRequest {
             comments: r.comments,
             created_at: r.created_at,
             resolved_at: r.resolved_at,
+            collector: EventCollector::new(),
         }
     }
 
@@ -1044,6 +1085,19 @@ impl ReviewRequest {
         self.status = ReviewStatus::Approved;
         self.comments = comments;
         self.resolved_at = Some(Utc::now());
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_REVIEW_APPROVED,
+            Payload::from_json(&task_events::ReviewApprovedPayload {
+                review_id: self.id.to_string(),
+                task_id: self.task_id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+
         Ok(())
     }
 
@@ -1061,7 +1115,24 @@ impl ReviewRequest {
         self.status = ReviewStatus::Rejected;
         self.comments = comments;
         self.resolved_at = Some(Utc::now());
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_REVIEW_REJECTED,
+            Payload::from_json(&task_events::ReviewRejectedPayload {
+                review_id: self.id.to_string(),
+                task_id: self.task_id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+
         Ok(())
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> ReviewId {
