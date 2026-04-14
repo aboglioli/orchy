@@ -17,7 +17,7 @@ use crate::namespace::{Namespace, ProjectId};
 use self::events as message_events;
 
 pub trait MessageStore: Send + Sync {
-    fn save(&self, message: &Message) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, message: &mut Message) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &MessageId) -> impl Future<Output = Result<Option<Message>>> + Send;
     fn find_pending(
         &self,

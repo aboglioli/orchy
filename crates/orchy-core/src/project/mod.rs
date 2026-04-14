@@ -16,7 +16,7 @@ use self::events as project_events;
 use crate::note::Note;
 
 pub trait ProjectStore: Send + Sync {
-    fn save(&self, project: &Project) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, project: &mut Project) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
 }
 

@@ -18,7 +18,7 @@ use crate::note::Note;
 use self::events as task_events;
 
 pub trait TaskStore: Send + Sync {
-    fn save(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, task: &mut Task) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
     fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
 }

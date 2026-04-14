@@ -18,7 +18,7 @@ use crate::namespace::{Namespace, ProjectId};
 use self::events as memory_events;
 
 pub trait MemoryStore: Send + Sync {
-    fn save(&self, entry: &MemoryEntry) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, entry: &mut MemoryEntry) -> impl Future<Output = Result<()>> + Send;
     fn find_by_key(
         &self,
         project: &ProjectId,
@@ -42,7 +42,7 @@ pub trait MemoryStore: Send + Sync {
 }
 
 pub trait ContextStore: Send + Sync {
-    fn save(&self, snapshot: &ContextSnapshot) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, snapshot: &mut ContextSnapshot) -> impl Future<Output = Result<()>> + Send;
     fn find_latest(
         &self,
         agent: &AgentId,

@@ -17,7 +17,7 @@ use crate::namespace::{Namespace, ProjectId};
 use self::events as agent_events;
 
 pub trait AgentStore: Send + Sync {
-    fn save(&self, agent: &Agent) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, agent: &mut Agent) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
     fn list(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
     fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;

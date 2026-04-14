@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-use orchy_events::{EventFilter, EventStore, SerializedEvent};
 use orchy_events::{Error, Result};
+use orchy_events::{EventFilter, EventStore, SerializedEvent};
 
 use crate::PgBackend;
 

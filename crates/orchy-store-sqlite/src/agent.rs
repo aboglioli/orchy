@@ -13,7 +13,7 @@ use crate::SqliteBackend;
 const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for SqliteBackend {
-    async fn save(&self, agent: &Agent) -> Result<()> {
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
@@ -32,6 +32,26 @@ impl AgentStore for SqliteBackend {
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = agent.drain_events();
+        for evt in &events {
+            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
+                let _ = conn.execute(
+                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    rusqlite::params![
+                        serialized.id,
+                        serialized.organization,
+                        serialized.namespace,
+                        serialized.topic,
+                        serde_json::to_string(&serialized.payload).unwrap(),
+                        serialized.content_type,
+                        serde_json::to_string(&serialized.metadata).unwrap(),
+                        serialized.timestamp.to_rfc3339(),
+                        serialized.version,
+                    ],
+                );
+            }
+        }
 
         Ok(())
     }

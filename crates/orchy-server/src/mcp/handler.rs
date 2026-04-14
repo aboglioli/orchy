@@ -156,14 +156,15 @@ const INSTRUCTIONS: &str = "\
 orchy — multi-agent coordination server.
 
 You are part of a coordinated multi-agent system. orchy provides shared \
-infrastructure: a task board, shared memory, messaging, and skills. \
+infrastructure: a task board, shared memory, documents, messaging, skills, \
+resource locks, and cross-project links. \
 You bring the intelligence; orchy enforces the rules.
 
 ## On Session Start
 
 1. `register_agent` — project, roles (optional), description.
-2. `get_project` — read project description and notes.
-3. `list_skills(inherited: true)` — load project conventions. Follow them.
+2. `get_project` + `get_project_summary` — load project context.
+3. `list_skills(inherited: true)` — load conventions. Follow them.
 4. `get_next_task` or `check_mailbox` — claim work or read messages.
 5. `heartbeat` — call every ~30s to stay alive.
 
@@ -177,14 +178,18 @@ namespace. Namespaces are auto-created on first use.
 
 pending → claimed → in_progress → completed/failed. \
 Always claim before starting. If another agent claimed it, move on. \
-Split large tasks with `split_task` — parent auto-completes when all \
-subtasks finish. On disconnect, claimed tasks return to pending.
+`split_task` breaks a task into subtasks — parent auto-completes when all finish. \
+`merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
+without blocking the parent. Use `tag_task` for cross-cutting labels. \
+On disconnect, claimed tasks return to pending.
 
 ## Coordination
 
-- `write_memory` to share decisions with other agents.
+- `write_memory` / `write_document` — share decisions and specs.
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
+- `lock_resource` before editing shared files to prevent conflicts.
 - `save_context` before your session ends for continuity.
+- `link_project` to import skills/memory from other projects.
 - Register without roles — orchy assigns them based on task demand.";
 
 impl ServerHandler for OrchyHandler {

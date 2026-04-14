@@ -1,11 +1,12 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_events::SerializedEvent;
 
 use crate::{MemoryBackend, cosine_similarity};
 
 impl MemoryStore for MemoryBackend {
-    async fn save(&self, entry: &MemoryEntry) -> Result<()> {
+    async fn save(&self, entry: &mut MemoryEntry) -> Result<()> {
         let key = (
             entry.project().to_string(),
             entry.namespace().to_string(),
@@ -18,6 +19,21 @@ impl MemoryStore for MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         store.insert(key, entry.clone());
+        drop(store);
+
+        let events = entry.drain_events();
+        if !events.is_empty() {
+            let serialized: Vec<SerializedEvent> = events
+                .iter()
+                .filter_map(|e| SerializedEvent::from_event(e).ok())
+                .collect();
+            let mut event_store = self
+                .events
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            event_store.extend(serialized);
+        }
+
         Ok(())
     }
 

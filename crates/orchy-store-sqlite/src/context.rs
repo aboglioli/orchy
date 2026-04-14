@@ -39,7 +39,7 @@ enum Contexts {
 }
 
 impl ContextStore for SqliteBackend {
-    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
+    async fn save(&self, snapshot: &mut ContextSnapshot) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let embedding_bytes = snapshot.embedding().map(embedding_to_bytes);
 
@@ -74,6 +74,26 @@ impl ContextStore for SqliteBackend {
                 "INSERT INTO contexts_vec(rowid, embedding) VALUES(?1, ?2)",
                 rusqlite::params![rowid, emb_bytes],
             );
+        }
+
+        let events = snapshot.drain_events();
+        for evt in &events {
+            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
+                let _ = conn.execute(
+                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    rusqlite::params![
+                        serialized.id,
+                        serialized.organization,
+                        serialized.namespace,
+                        serialized.topic,
+                        serde_json::to_string(&serialized.payload).unwrap(),
+                        serialized.content_type,
+                        serde_json::to_string(&serialized.metadata).unwrap(),
+                        serialized.timestamp.to_rfc3339(),
+                        serialized.version,
+                    ],
+                );
+            }
         }
 
         Ok(())

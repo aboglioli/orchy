@@ -14,7 +14,7 @@ use crate::PgBackend;
 const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for PgBackend {
-    async fn save(&self, agent: &Agent) -> Result<()> {
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
         let roles_json = serde_json::to_value(agent.roles()).unwrap();
         let metadata_json = serde_json::to_value(agent.metadata()).unwrap();
 
@@ -45,6 +45,27 @@ impl AgentStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = agent.drain_events();
+        for evt in &events {
+            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
+                let id = uuid::Uuid::parse_str(&serialized.id).unwrap();
+                let _ = sqlx::query(
+                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                )
+                .bind(id)
+                .bind(&serialized.organization)
+                .bind(&serialized.namespace)
+                .bind(&serialized.topic)
+                .bind(&serialized.payload)
+                .bind(&serialized.content_type)
+                .bind(serde_json::to_value(&serialized.metadata).unwrap())
+                .bind(serialized.timestamp)
+                .bind(serialized.version as i64)
+                .execute(&self.pool)
+                .await;
+            }
+        }
 
         Ok(())
     }

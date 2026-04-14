@@ -14,7 +14,7 @@ use crate::namespace::{Namespace, ProjectId};
 use self::events as skill_events;
 
 pub trait SkillStore: Send + Sync {
-    fn save(&self, skill: &Skill) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, skill: &mut Skill) -> impl Future<Output = Result<()>> + Send;
     fn find_by_name(
         &self,
         project: &ProjectId,

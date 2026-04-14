@@ -2,16 +2,32 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_events::SerializedEvent;
 
 use crate::MemoryBackend;
 
 impl MessageStore for MemoryBackend {
-    async fn save(&self, message: &Message) -> Result<()> {
+    async fn save(&self, message: &mut Message) -> Result<()> {
         let mut messages = self
             .messages
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
         messages.insert(message.id(), message.clone());
+        drop(messages);
+
+        let events = message.drain_events();
+        if !events.is_empty() {
+            let serialized: Vec<SerializedEvent> = events
+                .iter()
+                .filter_map(|e| SerializedEvent::from_event(e).ok())
+                .collect();
+            let mut store = self
+                .events
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            store.extend(serialized);
+        }
+
         Ok(())
     }
 
