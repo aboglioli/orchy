@@ -695,6 +695,18 @@ impl Task {
     pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) {
         self.parent_id = parent_id;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_PARENT_CHANGED,
+            Payload::from_json(&task_events::TaskParentChangedPayload {
+                task_id: self.id.to_string(),
+                parent_id: self.parent_id.map(|id| id.to_string()),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn replace_dependency(&mut self, old: &TaskId, new: TaskId) {
@@ -705,6 +717,19 @@ impl Task {
         }
         self.depends_on.dedup();
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_DEPENDENCY_REPLACED,
+            Payload::from_json(&task_events::TaskDependencyReplacedPayload {
+                task_id: self.id.to_string(),
+                old_dependency_id: old.to_string(),
+                new_dependency_id: new.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {

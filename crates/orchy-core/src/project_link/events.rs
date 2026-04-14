@@ -1,9 +1,9 @@
 use serde::Serialize;
 
-pub const NAMESPACE: &str = "project-link";
+pub const NAMESPACE: &str = "link";
 
-pub const TOPIC_CREATED: &str = "project-link.created";
-pub const TOPIC_DELETED: &str = "project-link.deleted";
+pub const TOPIC_CREATED: &str = "link.created";
+pub const TOPIC_DELETED: &str = "link.deleted";
 
 #[derive(Serialize)]
 pub struct ProjectLinkCreatedPayload {
