@@ -7,6 +7,7 @@ use orchy_core::agent::RegisterAgent;
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
+use orchy_core::project_link::SharedResourceType;
 use orchy_core::skill::{SkillFilter, WriteSkill};
 use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
 
@@ -18,11 +19,9 @@ use super::params::*;
 
 #[tool_router]
 impl OrchyHandler {
-    #[tool(
-        description = "Register as an agent. Required before any other tool. \
+    #[tool(description = "Register as an agent. Required before any other tool. \
         Roles are optional — orchy assigns them from pending task demand if omitted. \
-        Use agent_id to resume a previous session. Use parent_id for agent lineage."
-    )]
+        Use agent_id to resume a previous session. Use parent_id for agent lineage.")]
     async fn register_agent(
         &self,
         Parameters(params): Parameters<RegisterAgentParams>,
@@ -212,10 +211,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(
-        description = "Create a task. Use parent_id to create a subtask. \
-        Tasks with depends_on are auto-blocked until dependencies complete."
-    )]
+    #[tool(description = "Create a task. Use parent_id to create a subtask. \
+        Tasks with depends_on are auto-blocked until dependencies complete.")]
     async fn post_task(
         &self,
         Parameters(params): Parameters<PostTaskParams>,
@@ -402,10 +399,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(
-        description = "Start a claimed task (claimed → in_progress). \
-        Must be claimed by you first. Returns task with full context."
-    )]
+    #[tool(description = "Start a claimed task (claimed → in_progress). \
+        Must be claimed by you first. Returns task with full context.")]
     async fn start_task(
         &self,
         Parameters(params): Parameters<StartTaskParams>,
@@ -643,6 +638,58 @@ impl OrchyHandler {
             .await
         {
             Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Append text to an existing memory entry. Creates the entry if it \
+        doesn't exist. Uses optimistic concurrency to avoid lost updates."
+    )]
+    async fn append_memory(
+        &self,
+        Parameters(params): Parameters<AppendMemoryParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let separator = params.separator.as_deref().unwrap_or("\n");
+
+        let existing = self
+            .container
+            .memory_service
+            .read(&project, &namespace, &params.key)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let (new_value, expected_version) = match existing {
+            Some(entry) => {
+                let combined = format!("{}{}{}", entry.value(), separator, params.value);
+                (combined, Some(entry.version()))
+            }
+            None => (params.value, None),
+        };
+
+        let cmd = WriteMemory {
+            project,
+            namespace,
+            key: params.key,
+            value: new_value,
+            expected_version,
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.memory_service.write(cmd).await {
+            Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(e.to_string()),
         }
     }
@@ -987,7 +1034,8 @@ impl OrchyHandler {
 
     #[tool(
         description = "List skills. Use inherited=true to include skills from parent \
-        namespaces (child overrides parent on name collision)."
+        namespaces and linked projects (child overrides parent on name collision, \
+        local overrides linked)."
     )]
     async fn list_skills(
         &self,
@@ -1001,9 +1049,15 @@ impl OrchyHandler {
                 Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
                 None => Namespace::root(),
             };
+            let linked = self
+                .container
+                .project_link_service
+                .linked_projects(&project, SharedResourceType::Skills)
+                .await
+                .unwrap_or_default();
             self.container
                 .skill_service
-                .list_with_inherited(&project, &namespace)
+                .list_with_inherited_and_linked(&project, &namespace, &linked)
                 .await
         } else {
             let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
@@ -1186,6 +1240,131 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Merge multiple tasks into one. Source tasks must be pending, \
+        blocked, or claimed. They are cancelled and a new consolidated task is created \
+        with the highest priority, combined roles, combined dependencies, and collected notes. \
+        Children of source tasks are re-parented. Tasks depending on sources are updated."
+    )]
+    async fn merge_tasks(
+        &self,
+        Parameters(params): Parameters<MergeTasksParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_ids: Vec<TaskId> = match params
+            .task_ids
+            .iter()
+            .map(|s| parse_task_id(s))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(ids) => ids,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .task_service
+            .merge_tasks(
+                &task_ids,
+                params.title,
+                params.description,
+                self.get_session_agent(),
+            )
+            .await
+        {
+            Ok((merged, cancelled)) => {
+                let result = serde_json::json!({
+                    "merged": merged,
+                    "cancelled": cancelled,
+                });
+                Ok(to_json(&result))
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List direct children (subtasks) of a task.")]
+    async fn list_subtasks(
+        &self,
+        Parameters(params): Parameters<ListSubtasksParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+
+        match self
+            .container
+            .task_service
+            .list(TaskFilter {
+                parent_id: Some(task_id),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(tasks) => Ok(to_json(&tasks)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Create a subtask under a claimed/in-progress task without blocking the parent. \
+        Unlike split_task, the parent keeps its status."
+    )]
+    async fn delegate_task(
+        &self,
+        Parameters(params): Parameters<DelegateTaskParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let parent_id = parse_task_id(&params.task_id)?;
+        let parent = self
+            .container
+            .task_service
+            .get(&parent_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let priority = match params.priority.as_deref() {
+            Some(p) => match p.parse::<Priority>() {
+                Ok(pri) => pri,
+                Err(e) => return Err(format!("invalid priority: {e}")),
+            },
+            None => parent.priority(),
+        };
+
+        let task = match Task::new(
+            project,
+            parent.namespace().clone(),
+            Some(parent_id),
+            params.title,
+            params.description,
+            priority,
+            params.assigned_roles.unwrap_or_default(),
+            vec![],
+            self.get_session_agent(),
+            false,
+        ) {
+            Ok(t) => t,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let response = to_json(&task);
+        match self.container.task_service.create(task).await {
+            Ok(()) => Ok(response),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
         description = "Add a dependency to a task. If the dependency is not yet completed, \
         the task will be blocked."
     )]
@@ -1329,6 +1508,125 @@ impl OrchyHandler {
             Ok(namespaces) => Ok(to_json(&namespaces)),
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    #[tool(
+        description = "Get an aggregated project overview: agent count, task counts by status, \
+        and recent completions."
+    )]
+    async fn get_project_summary(
+        &self,
+        Parameters(_params): Parameters<GetProjectSummaryParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let agents = self
+            .container
+            .agent_service
+            .list()
+            .await
+            .map_err(|e| e.to_string())?;
+        let project_agents: Vec<_> = agents
+            .into_iter()
+            .filter(|a| *a.project() == project)
+            .collect();
+
+        let all_tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                project: Some(project.clone()),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut by_status = std::collections::HashMap::new();
+        for task in &all_tasks {
+            *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
+        }
+
+        let mut recent: Vec<_> = all_tasks
+            .iter()
+            .filter(|t| {
+                matches!(
+                    t.status(),
+                    orchy_core::task::TaskStatus::Completed | orchy_core::task::TaskStatus::Failed
+                )
+            })
+            .collect();
+        recent.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
+        recent.truncate(10);
+
+        let recent_items: Vec<_> = recent
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "id": t.id().to_string(),
+                    "title": t.title(),
+                    "status": t.status().to_string(),
+                    "summary": t.result_summary(),
+                })
+            })
+            .collect();
+
+        let result = serde_json::json!({
+            "agents_online": project_agents.len(),
+            "tasks_by_status": by_status,
+            "total_tasks": all_tasks.len(),
+            "recent_completions": recent_items,
+        });
+
+        Ok(to_json(&result))
+    }
+
+    #[tool(description = "Get tasks assigned to an agent grouped by status. \
+        Defaults to the current agent.")]
+    async fn get_agent_workload(
+        &self,
+        Parameters(params): Parameters<GetAgentWorkloadParams>,
+    ) -> Result<String, String> {
+        let (session_agent, _, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let agent_id = match params.agent_id.as_deref() {
+            Some(s) => parse_agent_id(s)?,
+            None => session_agent,
+        };
+
+        let tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                assigned_to: Some(agent_id),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut by_status = std::collections::HashMap::new();
+        for task in &tasks {
+            by_status
+                .entry(task.status().to_string())
+                .or_insert_with(Vec::new)
+                .push(serde_json::json!({
+                    "id": task.id().to_string(),
+                    "title": task.title(),
+                    "priority": task.priority().to_string(),
+                }));
+        }
+
+        let result = serde_json::json!({
+            "agent_id": agent_id.to_string(),
+            "total_tasks": tasks.len(),
+            "by_status": by_status,
+        });
+
+        Ok(to_json(&result))
     }
 
     #[tool(description = "Move a task to a different namespace within the same project.")]
@@ -1499,5 +1797,193 @@ impl OrchyHandler {
             Err(e) => Err(e.to_string()),
         }
     }
-}
 
+    #[tool(
+        description = "Link another project as a resource source. Linked skills appear \
+        in list_skills(inherited: true). Resource types: 'skills', 'memory'."
+    )]
+    async fn link_project(
+        &self,
+        Parameters(params): Parameters<LinkProjectParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source = parse_project(&params.source_project)?;
+
+        let resource_types: Vec<SharedResourceType> = match params
+            .resource_types
+            .iter()
+            .map(|s| s.parse::<SharedResourceType>().map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(types) => types,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .project_link_service
+            .link(source, project, resource_types)
+            .await
+        {
+            Ok(link) => Ok(to_json(&link)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Remove a project link.")]
+    async fn unlink_project(
+        &self,
+        Parameters(params): Parameters<UnlinkProjectParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source = parse_project(&params.source_project)?;
+
+        match self
+            .container
+            .project_link_service
+            .unlink(&source, &project)
+            .await
+        {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List all project links for the current project.")]
+    async fn list_project_links(
+        &self,
+        Parameters(_params): Parameters<ListProjectLinksParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        match self
+            .container
+            .project_link_service
+            .list_links(&project)
+            .await
+        {
+            Ok(links) => Ok(to_json(&links)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Copy a skill from another project into the current project. \
+        One-time copy, not a live link."
+    )]
+    async fn import_skill(
+        &self,
+        Parameters(params): Parameters<ImportSkillParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source_project = parse_project(&params.source_project)?;
+        let source_ns = match params.source_namespace.as_deref() {
+            Some(s) if !s.is_empty() => parse_namespace(&format!("/{s}"))?,
+            _ => Namespace::root(),
+        };
+
+        let skill = match self
+            .container
+            .skill_service
+            .read(&source_project, &source_ns, &params.name)
+            .await
+        {
+            Ok(Some(s)) => s,
+            Ok(None) => {
+                return Err(format!(
+                    "skill '{}' not found in project {}",
+                    params.name, source_project
+                ));
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let namespace = match self.build_and_register_namespace(None).await {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let cmd = WriteSkill {
+            project,
+            namespace,
+            name: skill.name().to_string(),
+            description: skill.description().to_string(),
+            content: skill.content().to_string(),
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.skill_service.write(cmd).await {
+            Ok(imported) => Ok(to_json(&imported)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Copy a memory entry from another project into the current project. \
+        One-time copy, not a live link."
+    )]
+    async fn import_memory(
+        &self,
+        Parameters(params): Parameters<ImportMemoryParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source_project = parse_project(&params.source_project)?;
+        let source_ns = match params.source_namespace.as_deref() {
+            Some(s) if !s.is_empty() => parse_namespace(&format!("/{s}"))?,
+            _ => Namespace::root(),
+        };
+
+        let entry = match self
+            .container
+            .memory_service
+            .read(&source_project, &source_ns, &params.key)
+            .await
+        {
+            Ok(Some(e)) => e,
+            Ok(None) => {
+                return Err(format!(
+                    "memory '{}' not found in project {}",
+                    params.key, source_project
+                ));
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let namespace = match self.build_and_register_namespace(None).await {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let cmd = WriteMemory {
+            project,
+            namespace,
+            key: entry.key().to_string(),
+            value: entry.value().to_string(),
+            expected_version: None,
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.memory_service.write(cmd).await {
+            Ok(imported) => Ok(to_json(&imported)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}

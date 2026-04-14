@@ -127,6 +127,29 @@ pub struct RemoveDependencyParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct MergeTasksParams {
+    /// At least 2 task UUIDs. Must be pending, blocked, or claimed.
+    pub task_ids: Vec<String>,
+    pub title: String,
+    pub description: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ListSubtasksParams {
+    pub task_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct DelegateTaskParams {
+    /// Parent task to delegate from (stays claimed).
+    pub task_id: String,
+    pub title: String,
+    pub description: String,
+    pub priority: Option<String>,
+    pub assigned_roles: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct MoveTaskParams {
     pub task_id: String,
     pub new_namespace: String,
@@ -163,6 +186,15 @@ pub struct SearchMemoryParams {
 pub struct DeleteMemoryParams {
     pub namespace: Option<String>,
     pub key: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct AppendMemoryParams {
+    pub namespace: Option<String>,
+    pub key: String,
+    pub value: String,
+    /// Defaults to "\n".
+    pub separator: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -287,3 +319,40 @@ pub struct AddProjectNoteParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListNamespacesParams {}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct GetProjectSummaryParams {}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct GetAgentWorkloadParams {
+    pub agent_id: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LinkProjectParams {
+    pub source_project: String,
+    /// "skills", "memory".
+    pub resource_types: Vec<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UnlinkProjectParams {
+    pub source_project: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ListProjectLinksParams {}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ImportSkillParams {
+    pub source_project: String,
+    pub name: String,
+    pub source_namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ImportMemoryParams {
+    pub source_project: String,
+    pub key: String,
+    pub source_namespace: Option<String>,
+}
