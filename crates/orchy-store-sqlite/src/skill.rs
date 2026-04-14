@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
+use sea_query::{Cond, Expr, Iden, Query, SqliteQueryBuilder};
+use sea_query_rusqlite::RusqliteBinder;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
@@ -9,6 +11,27 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::skill::{RestoreSkill, Skill, SkillFilter, SkillStore};
 
 use crate::SqliteBackend;
+
+#[derive(Iden)]
+enum Skills {
+    Table,
+    #[iden = "project"]
+    Project,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "name"]
+    Name,
+    #[iden = "description"]
+    Description,
+    #[iden = "content"]
+    Content,
+    #[iden = "written_by"]
+    WrittenBy,
+    #[iden = "created_at"]
+    CreatedAt,
+    #[iden = "updated_at"]
+    UpdatedAt,
+}
 
 impl SkillStore for SqliteBackend {
     async fn save(&self, skill: &Skill) -> Result<()> {
@@ -61,31 +84,37 @@ impl SkillStore for SqliteBackend {
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut sql = "SELECT project, namespace, name, description, content, written_by, created_at, updated_at FROM skills WHERE 1=1".to_string();
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut idx = 1;
+        let mut query = Query::select();
+        query.from(Skills::Table).columns([
+            Skills::Project,
+            Skills::Namespace,
+            Skills::Name,
+            Skills::Description,
+            Skills::Content,
+            Skills::WrittenBy,
+            Skills::CreatedAt,
+            Skills::UpdatedAt,
+        ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-                ));
-                params.push(Box::new(ns.to_string()));
-                idx += 1;
+                query.cond_where(
+                    Cond::any()
+                        .add(Expr::col(Skills::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(Skills::Namespace).like(format!("{}/%", ns))),
+                );
             }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ?{idx}"));
-            params.push(Box::new(project.to_string()));
+            query.and_where(Expr::col(Skills::Project).eq(project.to_string()));
         }
 
+        let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
         let skills = stmt
-            .query_map(param_refs.as_slice(), row_to_skill)
+            .query_map(&*values.as_params(), row_to_skill)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;

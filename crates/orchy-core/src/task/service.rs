@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use super::{SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore, TaskWithContext};
 use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
 
 pub struct TaskService<TS: TaskStore, AS: AgentStore> {
     task_store: Arc<TS>,

@@ -626,3 +626,207 @@ async fn skill_delete() {
         .unwrap();
     assert!(read.is_none());
 }
+
+#[tokio::test]
+async fn message_find_sent() {
+    let store = backend();
+    let sender = AgentId::new();
+    let receiver = AgentId::new();
+    let p = proj("proj");
+
+    let msg = Message::new(
+        p.clone(),
+        ns("/backend"),
+        sender,
+        MessageTarget::Agent(receiver),
+        "hello".into(),
+        None,
+    );
+    MessageStore::save(&store, &msg).await.unwrap();
+
+    let sent = MessageStore::find_sent(&store, &sender, &p, &Namespace::root())
+        .await
+        .unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].body(), "hello");
+
+    let sent_other = MessageStore::find_sent(&store, &receiver, &p, &Namespace::root())
+        .await
+        .unwrap();
+    assert!(sent_other.is_empty());
+}
+
+#[tokio::test]
+async fn message_find_thread() {
+    let store = backend();
+    let a = AgentId::new();
+    let b = AgentId::new();
+    let p = proj("proj");
+
+    let msg1 = Message::new(
+        p.clone(),
+        Namespace::root(),
+        a,
+        MessageTarget::Agent(b),
+        "first".into(),
+        None,
+    );
+    MessageStore::save(&store, &msg1).await.unwrap();
+
+    let msg2 = msg1.reply(b, "second".into());
+    MessageStore::save(&store, &msg2).await.unwrap();
+
+    let msg3 = msg2.reply(a, "third".into());
+    MessageStore::save(&store, &msg3).await.unwrap();
+
+    let thread = MessageStore::find_thread(&store, &msg3.id(), None)
+        .await
+        .unwrap();
+    assert_eq!(thread.len(), 3);
+    assert_eq!(thread[0].body(), "first");
+    assert_eq!(thread[1].body(), "second");
+    assert_eq!(thread[2].body(), "third");
+
+    let limited = MessageStore::find_thread(&store, &msg3.id(), Some(2))
+        .await
+        .unwrap();
+    assert_eq!(limited.len(), 2);
+    assert_eq!(limited[0].body(), "second");
+    assert_eq!(limited[1].body(), "third");
+}
+
+#[tokio::test]
+async fn message_find_pending_includes_broadcast() {
+    let store = backend();
+    let sender = AgentId::new();
+    let receiver = AgentId::new();
+    let p = proj("proj");
+
+    let msg = Message::new(
+        p.clone(),
+        Namespace::root(),
+        sender,
+        MessageTarget::Broadcast,
+        "to all".into(),
+        None,
+    );
+    MessageStore::save(&store, &msg).await.unwrap();
+
+    let pending = MessageStore::find_pending(&store, &receiver, &p, &Namespace::root())
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].body(), "to all");
+}
+
+#[tokio::test]
+async fn task_list_filters_by_parent_id() {
+    let store = backend();
+    let p = proj("proj");
+
+    let parent = Task::new(
+        p.clone(),
+        Namespace::root(),
+        None,
+        "parent".into(),
+        "".into(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(&store, &parent).await.unwrap();
+
+    let child = Task::new(
+        p.clone(),
+        Namespace::root(),
+        Some(parent.id()),
+        "child".into(),
+        "".into(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(&store, &child).await.unwrap();
+
+    let unrelated = Task::new(
+        p.clone(),
+        Namespace::root(),
+        None,
+        "other".into(),
+        "".into(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(&store, &unrelated).await.unwrap();
+
+    let children = TaskStore::list(
+        &store,
+        TaskFilter {
+            parent_id: Some(parent.id()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].title(), "child");
+}
+
+#[tokio::test]
+async fn task_list_filters_by_assigned_to() {
+    let store = backend();
+    let agent = AgentId::new();
+
+    let mut task = Task::new(
+        proj("proj"),
+        Namespace::root(),
+        None,
+        "assigned".into(),
+        "".into(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    task.claim(agent).unwrap();
+    TaskStore::save(&store, &task).await.unwrap();
+
+    let other = Task::new(
+        proj("proj"),
+        Namespace::root(),
+        None,
+        "unassigned".into(),
+        "".into(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(&store, &other).await.unwrap();
+
+    let assigned = TaskStore::list(
+        &store,
+        TaskFilter {
+            assigned_to: Some(agent),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(assigned.len(), 1);
+    assert_eq!(assigned[0].title(), "assigned");
+}

@@ -404,7 +404,8 @@ mod tests {
             "key".to_string(),
             "value".to_string(),
             None,
-        );
+        )
+        .unwrap();
         entry.update("new value".to_string(), None);
         assert_eq!(entry.version().as_u64(), 2);
     }
@@ -431,7 +432,8 @@ mod tests {
             "key".to_string(),
             "value".to_string(),
             None,
-        );
+        )
+        .unwrap();
         let embedding = vec![0.1, 0.2, 0.3];
         entry.set_embedding(embedding.clone(), "text-embedding-3".to_string(), 3);
         assert_eq!(entry.embedding(), Some(embedding.as_slice()));

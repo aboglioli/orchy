@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
+use sea_query::{Cond, Expr, Iden, Query, SqliteQueryBuilder};
+use sea_query_rusqlite::RusqliteBinder;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
@@ -10,6 +12,45 @@ use orchy_core::note::Note;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::SqliteBackend;
+
+#[derive(Iden)]
+enum Tasks {
+    Table,
+    #[iden = "id"]
+    Id,
+    #[iden = "project"]
+    Project,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "parent_id"]
+    ParentId,
+    #[iden = "title"]
+    Title,
+    #[iden = "description"]
+    Description,
+    #[iden = "status"]
+    Status,
+    #[iden = "priority"]
+    Priority,
+    #[iden = "assigned_roles"]
+    AssignedRoles,
+    #[iden = "assigned_to"]
+    AssignedTo,
+    #[iden = "assigned_at"]
+    AssignedAt,
+    #[iden = "depends_on"]
+    DependsOn,
+    #[iden = "result_summary"]
+    ResultSummary,
+    #[iden = "notes"]
+    Notes,
+    #[iden = "created_by"]
+    CreatedBy,
+    #[iden = "created_at"]
+    CreatedAt,
+    #[iden = "updated_at"]
+    UpdatedAt,
+}
 
 impl TaskStore for SqliteBackend {
     async fn save(&self, task: &Task) -> Result<()> {
@@ -62,67 +103,67 @@ impl TaskStore for SqliteBackend {
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut sql = String::from(
-            "SELECT id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, result_summary, notes, created_by, created_at, updated_at
-             FROM tasks WHERE 1=1",
-        );
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut idx = 1;
+        let mut query = Query::select();
+        query.from(Tasks::Table).columns([
+            Tasks::Id,
+            Tasks::Project,
+            Tasks::Namespace,
+            Tasks::ParentId,
+            Tasks::Title,
+            Tasks::Description,
+            Tasks::Status,
+            Tasks::Priority,
+            Tasks::AssignedRoles,
+            Tasks::AssignedTo,
+            Tasks::AssignedAt,
+            Tasks::DependsOn,
+            Tasks::ResultSummary,
+            Tasks::Notes,
+            Tasks::CreatedBy,
+            Tasks::CreatedAt,
+            Tasks::UpdatedAt,
+        ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (namespace = ?{idx} OR namespace LIKE ?{} || '/%')",
-                    idx
-                ));
-                params.push(Box::new(ns.to_string()));
-                idx += 1;
+                query.cond_where(
+                    Cond::any()
+                        .add(Expr::col(Tasks::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(Tasks::Namespace).like(format!("{}/%", ns))),
+                );
             }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ?{idx}"));
-            params.push(Box::new(project.to_string()));
-            idx += 1;
+            query.and_where(Expr::col(Tasks::Project).eq(project.to_string()));
         }
         if let Some(ref status) = filter.status {
-            sql.push_str(&format!(" AND status = ?{idx}"));
-            params.push(Box::new(status.to_string()));
-            idx += 1;
+            query.and_where(Expr::col(Tasks::Status).eq(status.to_string()));
         }
         if let Some(ref role) = filter.assigned_role {
-            sql.push_str(&format!(
-                " AND (assigned_roles = '[]' OR assigned_roles LIKE '%' || ?{idx} || '%')"
-            ));
-            params.push(Box::new(role.clone()));
-            idx += 1;
+            query.cond_where(
+                Cond::any()
+                    .add(Expr::col(Tasks::AssignedRoles).eq("[]"))
+                    .add(Expr::col(Tasks::AssignedRoles).like(format!("%{role}%"))),
+            );
         }
         if let Some(ref assigned) = filter.assigned_to {
-            sql.push_str(&format!(" AND assigned_to = ?{idx}"));
-            params.push(Box::new(assigned.to_string()));
-            idx += 1;
+            query.and_where(Expr::col(Tasks::AssignedTo).eq(assigned.to_string()));
         }
         if let Some(ref pid) = filter.parent_id {
-            sql.push_str(&format!(" AND parent_id = ?{idx}"));
-            params.push(Box::new(pid.to_string()));
+            query.and_where(Expr::col(Tasks::ParentId).eq(pid.to_string()));
         }
 
-        sql.push_str(
-            " ORDER BY CASE priority
-                WHEN 'critical' THEN 3
-                WHEN 'high' THEN 2
-                WHEN 'normal' THEN 1
-                WHEN 'low' THEN 0
-                ELSE 1
-              END DESC",
+        query.order_by_expr(
+            Expr::cust("CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END"),
+            sea_query::Order::Desc,
         );
 
+        let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
         let tasks = stmt
-            .query_map(param_refs.as_slice(), row_to_task)
+            .query_map(&*values.as_params(), row_to_task)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -175,7 +216,9 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
-    let status = status_str.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending);
+    let status = status_str
+        .parse::<TaskStatus>()
+        .unwrap_or(TaskStatus::Pending);
     let priority = priority_str.parse::<Priority>().unwrap_or_default();
     let assigned_roles: Vec<String> = serde_json::from_str(&roles_str).unwrap_or_default();
     let parent_id = parent_id_str.and_then(|s| TaskId::from_str(&s).ok());
