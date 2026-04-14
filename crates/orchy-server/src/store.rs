@@ -1,3 +1,5 @@
+use orchy_events::{EventFilter, EventStore, SerializedEvent};
+
 use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use orchy_core::error::Result;
@@ -261,5 +263,28 @@ impl NamespaceStore for StoreBackend {
     }
     async fn list(&self, project: &ProjectId) -> Result<Vec<Namespace>> {
         delegate_trait!(self, NamespaceStore::list(project))
+    }
+}
+
+impl EventStore for StoreBackend {
+    async fn append(
+        &self,
+        events: &[SerializedEvent],
+    ) -> orchy_events::Result<()> {
+        match self {
+            StoreBackend::Memory(b) => EventStore::append(b, events).await,
+            StoreBackend::Sqlite(b) => EventStore::append(b, events).await,
+            StoreBackend::Postgres(b) => EventStore::append(b, events).await,
+        }
+    }
+    async fn list(
+        &self,
+        filter: EventFilter,
+    ) -> orchy_events::Result<Vec<SerializedEvent>> {
+        match self {
+            StoreBackend::Memory(b) => EventStore::list(b, filter).await,
+            StoreBackend::Sqlite(b) => EventStore::list(b, filter).await,
+            StoreBackend::Postgres(b) => EventStore::list(b, filter).await,
+        }
     }
 }

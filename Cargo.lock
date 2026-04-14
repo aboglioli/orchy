@@ -1307,6 +1307,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "orchy-core",
+ "orchy-events",
  "orchy-store-memory",
  "orchy-store-pg",
  "orchy-store-sqlite",
@@ -1326,6 +1327,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "orchy-core",
+ "orchy-events",
  "serde_json",
  "tokio",
  "tracing",
@@ -1338,6 +1340,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "orchy-core",
+ "orchy-events",
  "pgvector",
  "sea-query",
  "sea-query-binder",
@@ -1354,6 +1357,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "orchy-core",
+ "orchy-events",
  "rusqlite",
  "sea-query",
  "sea-query-rusqlite",

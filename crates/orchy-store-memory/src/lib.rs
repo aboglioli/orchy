@@ -3,6 +3,7 @@
 mod agent;
 mod context;
 mod document;
+mod events;
 mod memory;
 mod message;
 mod namespace;
@@ -14,6 +15,8 @@ mod task;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
+
+use orchy_events::SerializedEvent;
 
 use orchy_core::agent::{Agent, AgentId};
 use orchy_core::document::{Document, DocumentId};
@@ -38,6 +41,7 @@ pub struct MemoryBackend {
     pub(crate) documents: RwLock<HashMap<DocumentId, Document>>,
     pub(crate) resource_locks: RwLock<HashMap<(String, String, String), ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String)>>,
+    pub(crate) events: RwLock<Vec<SerializedEvent>>,
 }
 
 impl MemoryBackend {
@@ -54,6 +58,7 @@ impl MemoryBackend {
             documents: RwLock::new(HashMap::new()),
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
+            events: RwLock::new(Vec::new()),
         }
     }
 }

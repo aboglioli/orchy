@@ -138,3 +138,19 @@ CREATE TABLE IF NOT EXISTS resource_locks (
     expires_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (project, namespace, name)
 );
+
+CREATE TABLE IF NOT EXISTS events (
+    id UUID PRIMARY KEY,
+    organization TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    content_type TEXT NOT NULL DEFAULT 'application/json',
+    metadata JSONB NOT NULL DEFAULT '{}',
+    timestamp TIMESTAMPTZ NOT NULL,
+    version BIGINT NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS events_topic_idx ON events (topic);
+CREATE INDEX IF NOT EXISTS events_namespace_idx ON events (namespace);
+CREATE INDEX IF NOT EXISTS events_timestamp_idx ON events (timestamp);
+CREATE INDEX IF NOT EXISTS events_organization_idx ON events (organization);

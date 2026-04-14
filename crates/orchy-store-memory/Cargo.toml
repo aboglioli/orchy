@@ -5,6 +5,7 @@ version.workspace = true
 
 [dependencies]
 orchy-core.workspace = true
+orchy-events.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 chrono.workspace = true

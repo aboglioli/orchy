@@ -5,6 +5,7 @@ version.workspace = true
 
 [dependencies]
 orchy-core.workspace = true
+orchy-events.workspace = true
 rusqlite.workspace = true
 sqlite-vec.workspace = true
 sea-query.workspace = true
