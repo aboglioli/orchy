@@ -10,8 +10,10 @@ mod namespace;
 mod project;
 mod project_link;
 mod resource_lock;
+mod review;
 mod skill;
 mod task;
+mod watcher;
 
 use std::path::Path;
 
