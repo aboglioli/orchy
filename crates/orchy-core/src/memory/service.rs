@@ -116,11 +116,18 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
         namespace: &Namespace,
         key: &str,
     ) -> Result<()> {
-        if let Some(entry) = self.store.find_by_key(project, namespace, key).await? {
-            if entry.is_locked() {
-                return Err(Error::Conflict(format!("memory entry '{key}' is locked")));
-            }
+        let mut entry = self
+            .store
+            .find_by_key(project, namespace, key)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("memory {namespace}/{key}")))?;
+
+        if entry.is_locked() {
+            return Err(Error::Conflict(format!("memory entry '{key}' is locked")));
         }
+
+        entry.mark_deleted();
+        self.store.save(&mut entry).await?;
         self.store.delete(project, namespace, key).await
     }
 }

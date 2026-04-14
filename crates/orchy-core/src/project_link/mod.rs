@@ -164,6 +164,19 @@ impl ProjectLink {
         }
     }
 
+    pub fn mark_deleted(&mut self) {
+        let _ = Event::create(
+            self.source_project.as_ref(),
+            link_events::NAMESPACE,
+            link_events::TOPIC_DELETED,
+            Payload::from_json(&link_events::ProjectLinkDeletedPayload {
+                link_id: self.id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
     pub fn drain_events(&mut self) -> Vec<Event> {
         self.collector.drain()
     }

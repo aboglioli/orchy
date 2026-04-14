@@ -130,6 +130,10 @@ impl<S: SkillStore> SkillService<S> {
         namespace: &Namespace,
         name: &str,
     ) -> Result<()> {
+        if let Some(mut skill) = self.store.find_by_name(project, namespace, name).await? {
+            skill.mark_deleted();
+            self.store.save(&mut skill).await?;
+        }
         self.store.delete(project, namespace, name).await
     }
 }

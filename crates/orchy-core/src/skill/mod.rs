@@ -144,6 +144,21 @@ impl Skill {
         .map(|e| self.collector.collect(e));
     }
 
+    pub fn mark_deleted(&mut self) {
+        let _ = Event::create(
+            self.project.as_ref(),
+            skill_events::NAMESPACE,
+            skill_events::TOPIC_DELETED,
+            Payload::from_json(&skill_events::SkillDeletedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                name: self.name.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
     pub fn filter_with_inheritance(skills: Vec<Skill>, namespace: &Namespace) -> Vec<Skill> {
         let mut result: Vec<Skill> = Vec::new();
 

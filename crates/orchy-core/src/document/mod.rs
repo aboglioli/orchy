@@ -287,6 +287,19 @@ impl Document {
         .map(|e| self.collector.collect(e));
     }
 
+    pub fn mark_deleted(&mut self) {
+        let _ = Event::create(
+            self.project.as_ref(),
+            doc_events::NAMESPACE,
+            doc_events::TOPIC_DELETED,
+            Payload::from_json(&doc_events::DocumentDeletedPayload {
+                document_id: self.id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
     pub fn rename(&mut self, path: String) -> Result<()> {
         validate_path(&path)?;
         let old_path = self.path.clone();

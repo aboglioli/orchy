@@ -45,7 +45,7 @@ impl<S: LockStore> LockService<S> {
         name: &str,
         holder: &AgentId,
     ) -> Result<()> {
-        let lock = self
+        let mut lock = self
             .store
             .find(project, namespace, name)
             .await?
@@ -58,6 +58,8 @@ impl<S: LockStore> LockService<S> {
             )));
         }
 
+        lock.mark_released();
+        self.store.save(&mut lock).await?;
         self.store.delete(project, namespace, name).await
     }
 

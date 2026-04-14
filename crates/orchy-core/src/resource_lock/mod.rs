@@ -97,6 +97,21 @@ impl ResourceLock {
         }
     }
 
+    pub fn mark_released(&mut self) {
+        let _ = Event::create(
+            self.project.as_ref(),
+            lock_events::NAMESPACE,
+            lock_events::TOPIC_RELEASED,
+            Payload::from_json(&lock_events::LockReleasedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                name: self.name.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
     pub fn drain_events(&mut self) -> Vec<Event> {
         self.collector.drain()
     }

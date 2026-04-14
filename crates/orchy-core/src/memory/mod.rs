@@ -280,6 +280,21 @@ impl MemoryEntry {
         .map(|e| self.collector.collect(e));
     }
 
+    pub fn mark_deleted(&mut self) {
+        let _ = Event::create(
+            self.project.as_ref(),
+            memory_events::NAMESPACE,
+            memory_events::TOPIC_DELETED,
+            Payload::from_json(&memory_events::MemoryDeletedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                key: self.key.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
     pub fn is_locked(&self) -> bool {
         self.locked
     }

@@ -19,7 +19,9 @@ impl<S: ProjectLinkStore> ProjectLinkService<S> {
         target: ProjectId,
         resource_types: Vec<SharedResourceType>,
     ) -> Result<ProjectLink> {
-        if let Some(existing) = self.store.find_link(&source, &target).await? {
+        if let Some(mut existing) = self.store.find_link(&source, &target).await? {
+            existing.mark_deleted();
+            self.store.save(&mut existing).await?;
             self.store.delete(&existing.id()).await?;
         }
 
@@ -29,12 +31,14 @@ impl<S: ProjectLinkStore> ProjectLinkService<S> {
     }
 
     pub async fn unlink(&self, source: &ProjectId, target: &ProjectId) -> Result<()> {
-        let link = self
+        let mut link = self
             .store
             .find_link(source, target)
             .await?
             .ok_or_else(|| Error::NotFound(format!("link from {source} to {target}")))?;
 
+        link.mark_deleted();
+        self.store.save(&mut link).await?;
         self.store.delete(&link.id()).await
     }
 

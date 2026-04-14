@@ -98,7 +98,9 @@ impl<S: DocumentStore, E: EmbeddingsProvider> DocumentService<S, E> {
     }
 
     pub async fn delete(&self, id: &DocumentId) -> Result<()> {
-        self.get(id).await?;
+        let mut doc = self.get(id).await?;
+        doc.mark_deleted();
+        self.store.save(&mut doc).await?;
         self.store.delete(id).await
     }
 
