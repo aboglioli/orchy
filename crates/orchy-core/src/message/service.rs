@@ -29,8 +29,8 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
     ) -> Result<Vec<Message>> {
         let targets = match &to {
             MessageTarget::Agent(_) => {
-                let msg = Message::new(project, namespace, from, to, body, reply_to);
-                self.message_store.save(&msg).await?;
+                let mut msg = Message::new(project, namespace, from, to, body, reply_to);
+                self.message_store.save(&mut msg).await?;
                 return Ok(vec![msg]);
             }
             MessageTarget::Role(role) => {
@@ -53,7 +53,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
 
         let mut sent = Vec::with_capacity(targets.len());
         for target_id in targets {
-            let msg = Message::new(
+            let mut msg = Message::new(
                 project.clone(),
                 namespace.clone(),
                 from,
@@ -61,7 +61,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 body.clone(),
                 reply_to,
             );
-            self.message_store.save(&msg).await?;
+            self.message_store.save(&mut msg).await?;
             sent.push(msg);
         }
         Ok(sent)
@@ -107,7 +107,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         for id in ids {
             if let Some(mut msg) = self.message_store.find_by_id(id).await? {
                 msg.mark_read();
-                self.message_store.save(&msg).await?;
+                self.message_store.save(&mut msg).await?;
             }
         }
         Ok(())
@@ -118,8 +118,8 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
 mod tests {
     use super::*;
     use crate::agent::{Agent, AgentStore};
-    use crate::namespace::{Namespace, ProjectId};
     use crate::infrastructure::MockStore;
+    use crate::namespace::{Namespace, ProjectId};
     use std::collections::HashMap;
 
     fn test_project() -> ProjectId {
@@ -136,7 +136,7 @@ mod tests {
         )
     }
 
-    async fn save_agent(store: &MockStore, agent: &Agent) {
+    async fn save_agent(store: &MockStore, agent: &mut Agent) {
         AgentStore::save(store, agent).await.unwrap();
     }
 
@@ -161,10 +161,10 @@ mod tests {
     #[tokio::test]
     async fn send_to_role_routes_to_matching_agents() {
         let store = Arc::new(MockStore::default());
-        let a1 = make_agent(vec!["tester"]);
-        let a2 = make_agent(vec!["developer"]);
-        save_agent(&store, &a1).await;
-        save_agent(&store, &a2).await;
+        let mut a1 = make_agent(vec!["tester"]);
+        let mut a2 = make_agent(vec!["developer"]);
+        save_agent(&store, &mut a1).await;
+        save_agent(&store, &mut a2).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
             .send(
@@ -183,8 +183,8 @@ mod tests {
     #[tokio::test]
     async fn send_to_role_with_no_matching_agents_returns_empty() {
         let store = Arc::new(MockStore::default());
-        let a = make_agent(vec!["developer"]);
-        save_agent(&store, &a).await;
+        let mut a = make_agent(vec!["developer"]);
+        save_agent(&store, &mut a).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
             .send(
@@ -203,10 +203,10 @@ mod tests {
     #[tokio::test]
     async fn broadcast_excludes_sender() {
         let store = Arc::new(MockStore::default());
-        let sender = make_agent(vec!["tester"]);
-        let other = make_agent(vec!["tester"]);
-        save_agent(&store, &sender).await;
-        save_agent(&store, &other).await;
+        let mut sender = make_agent(vec!["tester"]);
+        let mut other = make_agent(vec!["tester"]);
+        save_agent(&store, &mut sender).await;
+        save_agent(&store, &mut other).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
             .send(

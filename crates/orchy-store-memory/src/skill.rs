@@ -5,19 +5,27 @@ use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use crate::MemoryBackend;
 
 impl SkillStore for MemoryBackend {
-    async fn save(&self, skill: &Skill) -> Result<()> {
-        let key = (
-            skill.project().to_string(),
-            skill.namespace().to_string(),
-            skill.name().to_string(),
-        );
+    async fn save(&self, skill: &mut Skill) -> Result<()> {
+        {
+            let key = (
+                skill.project().to_string(),
+                skill.namespace().to_string(),
+                skill.name().to_string(),
+            );
 
-        let mut store = self
-            .skills
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            let mut store = self
+                .skills
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
 
-        store.insert(key, skill.clone());
+            store.insert(key, skill.clone());
+        }
+
+        let events = skill.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 

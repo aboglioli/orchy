@@ -29,7 +29,7 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
                     actual: existing.version().as_u64(),
                 });
             }
-            existing.update(cmd.value, cmd.written_by);
+            existing.update(cmd.value, cmd.written_by)?;
             existing
         } else {
             if let Some(expected) = cmd.expected_version {
@@ -52,7 +52,7 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
             entry.set_embedding(vector, emb.model().to_string(), emb.dimensions());
         }
 
-        self.store.save(&entry).await?;
+        self.store.save(&mut entry).await?;
         Ok(entry)
     }
 
@@ -85,7 +85,7 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
         let old_namespace = entry.namespace().clone();
         let old_key = entry.key().to_string();
         entry.move_to(new_namespace);
-        self.store.save(&entry).await?;
+        self.store.save(&mut entry).await?;
         self.store.delete(project, &old_namespace, &old_key).await?;
         Ok(entry)
     }
@@ -112,6 +112,14 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
         namespace: &Namespace,
         key: &str,
     ) -> Result<()> {
+        let mut entry = self
+            .store
+            .find_by_key(project, namespace, key)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("memory {namespace}/{key}")))?;
+
+        entry.mark_deleted();
+        self.store.save(&mut entry).await?;
         self.store.delete(project, namespace, key).await
     }
 }
@@ -141,7 +149,7 @@ impl<S: ContextStore, E: EmbeddingsProvider> ContextService<S, E> {
             snapshot.set_embedding(vector, emb.model().to_string(), emb.dimensions());
         }
 
-        self.store.save(&snapshot).await?;
+        self.store.save(&mut snapshot).await?;
         Ok(snapshot)
     }
 

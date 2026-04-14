@@ -14,7 +14,7 @@ use crate::PgBackend;
 const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for PgBackend {
-    async fn save(&self, agent: &Agent) -> Result<()> {
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
         let roles_json = serde_json::to_value(agent.roles()).unwrap();
         let metadata_json = serde_json::to_value(agent.metadata()).unwrap();
 
@@ -45,6 +45,11 @@ impl AgentStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = agent.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

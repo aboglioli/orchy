@@ -1,11 +1,21 @@
+use async_trait::async_trait;
+use orchy_events::Event;
+use orchy_events::io::Writer as EventWriter;
+
 use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use orchy_core::error::Result;
 use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
+use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
+use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
-use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
+use orchy_core::task::{
+    ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
+    WatcherStore,
+};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
@@ -14,6 +24,31 @@ pub enum StoreBackend {
     Memory(MemoryBackend),
     Sqlite(SqliteBackend),
     Postgres(PgBackend),
+}
+
+impl StoreBackend {
+    pub async fn query_events(
+        &self,
+        organization: &str,
+        since: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> orchy_core::error::Result<Vec<orchy_events::SerializedEvent>> {
+        match self {
+            StoreBackend::Memory(b) => {
+                let events = b.list_events()?;
+                let mut filtered: Vec<_> = events
+                    .into_iter()
+                    .filter(|e| e.organization == organization && e.timestamp >= since)
+                    .collect();
+                filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+                filtered.truncate(limit);
+                filtered.reverse();
+                Ok(filtered)
+            }
+            StoreBackend::Sqlite(b) => b.query_events(organization, since, limit),
+            StoreBackend::Postgres(b) => b.query_events(organization, since, limit).await,
+        }
+    }
 }
 
 macro_rules! delegate_trait {
@@ -27,7 +62,7 @@ macro_rules! delegate_trait {
 }
 
 impl TaskStore for StoreBackend {
-    async fn save(&self, task: &Task) -> Result<()> {
+    async fn save(&self, task: &mut Task) -> Result<()> {
         delegate_trait!(self, TaskStore::save(task))
     }
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
@@ -39,7 +74,7 @@ impl TaskStore for StoreBackend {
 }
 
 impl AgentStore for StoreBackend {
-    async fn save(&self, agent: &Agent) -> Result<()> {
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
         delegate_trait!(self, AgentStore::save(agent))
     }
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
@@ -54,7 +89,7 @@ impl AgentStore for StoreBackend {
 }
 
 impl MessageStore for StoreBackend {
-    async fn save(&self, message: &Message) -> Result<()> {
+    async fn save(&self, message: &mut Message) -> Result<()> {
         delegate_trait!(self, MessageStore::save(message))
     }
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
@@ -86,7 +121,7 @@ impl MessageStore for StoreBackend {
 }
 
 impl MemoryStore for StoreBackend {
-    async fn save(&self, entry: &MemoryEntry) -> Result<()> {
+    async fn save(&self, entry: &mut MemoryEntry) -> Result<()> {
         delegate_trait!(self, MemoryStore::save(entry))
     }
     async fn find_by_key(
@@ -118,7 +153,7 @@ impl MemoryStore for StoreBackend {
 }
 
 impl ContextStore for StoreBackend {
-    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
+    async fn save(&self, snapshot: &mut ContextSnapshot) -> Result<()> {
         delegate_trait!(self, ContextStore::save(snapshot))
     }
     async fn find_latest(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
@@ -147,7 +182,7 @@ impl ContextStore for StoreBackend {
 }
 
 impl SkillStore for StoreBackend {
-    async fn save(&self, skill: &Skill) -> Result<()> {
+    async fn save(&self, skill: &mut Skill) -> Result<()> {
         delegate_trait!(self, SkillStore::save(skill))
     }
     async fn find_by_name(
@@ -167,11 +202,121 @@ impl SkillStore for StoreBackend {
 }
 
 impl ProjectStore for StoreBackend {
-    async fn save(&self, project: &Project) -> Result<()> {
+    async fn save(&self, project: &mut Project) -> Result<()> {
         delegate_trait!(self, ProjectStore::save(project))
     }
     async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
         delegate_trait!(self, ProjectStore::find_by_id(id))
+    }
+}
+
+impl ProjectLinkStore for StoreBackend {
+    async fn save(&self, link: &mut ProjectLink) -> Result<()> {
+        delegate_trait!(self, ProjectLinkStore::save(link))
+    }
+    async fn delete(&self, id: &ProjectLinkId) -> Result<()> {
+        delegate_trait!(self, ProjectLinkStore::delete(id))
+    }
+    async fn find_by_id(&self, id: &ProjectLinkId) -> Result<Option<ProjectLink>> {
+        delegate_trait!(self, ProjectLinkStore::find_by_id(id))
+    }
+    async fn list_by_target(&self, target: &ProjectId) -> Result<Vec<ProjectLink>> {
+        delegate_trait!(self, ProjectLinkStore::list_by_target(target))
+    }
+    async fn find_link(
+        &self,
+        source: &ProjectId,
+        target: &ProjectId,
+    ) -> Result<Option<ProjectLink>> {
+        delegate_trait!(self, ProjectLinkStore::find_link(source, target))
+    }
+}
+
+impl DocumentStore for StoreBackend {
+    async fn save(&self, doc: &mut Document) -> Result<()> {
+        delegate_trait!(self, DocumentStore::save(doc))
+    }
+    async fn find_by_id(&self, id: &DocumentId) -> Result<Option<Document>> {
+        delegate_trait!(self, DocumentStore::find_by_id(id))
+    }
+    async fn find_by_path(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        path: &str,
+    ) -> Result<Option<Document>> {
+        delegate_trait!(self, DocumentStore::find_by_path(project, namespace, path))
+    }
+    async fn list(&self, filter: DocumentFilter) -> Result<Vec<Document>> {
+        delegate_trait!(self, DocumentStore::list(filter))
+    }
+    async fn search(
+        &self,
+        query: &str,
+        embedding: Option<&[f32]>,
+        namespace: Option<&Namespace>,
+        limit: usize,
+    ) -> Result<Vec<Document>> {
+        delegate_trait!(
+            self,
+            DocumentStore::search(query, embedding, namespace, limit)
+        )
+    }
+    async fn delete(&self, id: &DocumentId) -> Result<()> {
+        delegate_trait!(self, DocumentStore::delete(id))
+    }
+}
+
+impl LockStore for StoreBackend {
+    async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
+        delegate_trait!(self, LockStore::save(lock))
+    }
+    async fn find(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<Option<ResourceLock>> {
+        delegate_trait!(self, LockStore::find(project, namespace, name))
+    }
+    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+        delegate_trait!(self, LockStore::delete(project, namespace, name))
+    }
+    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+        delegate_trait!(self, LockStore::find_by_holder(holder))
+    }
+    async fn delete_expired(&self) -> Result<u64> {
+        delegate_trait!(self, LockStore::delete_expired())
+    }
+}
+
+impl WatcherStore for StoreBackend {
+    async fn save(&self, watcher: &TaskWatcher) -> Result<()> {
+        delegate_trait!(self, WatcherStore::save(watcher))
+    }
+    async fn delete(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()> {
+        delegate_trait!(self, WatcherStore::delete(task_id, agent_id))
+    }
+    async fn find_watchers(&self, task_id: &TaskId) -> Result<Vec<TaskWatcher>> {
+        delegate_trait!(self, WatcherStore::find_watchers(task_id))
+    }
+    async fn find_by_agent(&self, agent_id: &AgentId) -> Result<Vec<TaskWatcher>> {
+        delegate_trait!(self, WatcherStore::find_by_agent(agent_id))
+    }
+}
+
+impl ReviewStore for StoreBackend {
+    async fn save(&self, review: &ReviewRequest) -> Result<()> {
+        delegate_trait!(self, ReviewStore::save(review))
+    }
+    async fn find_by_id(&self, id: &ReviewId) -> Result<Option<ReviewRequest>> {
+        delegate_trait!(self, ReviewStore::find_by_id(id))
+    }
+    async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
+        delegate_trait!(self, ReviewStore::find_pending_for_agent(agent_id))
+    }
+    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
+        delegate_trait!(self, ReviewStore::find_by_task(task_id))
     }
 }
 
@@ -181,5 +326,16 @@ impl NamespaceStore for StoreBackend {
     }
     async fn list(&self, project: &ProjectId) -> Result<Vec<Namespace>> {
         delegate_trait!(self, NamespaceStore::list(project))
+    }
+}
+
+#[async_trait]
+impl EventWriter for StoreBackend {
+    async fn write(&self, event: &Event) -> orchy_events::Result<()> {
+        match self {
+            StoreBackend::Memory(b) => EventWriter::write(b, event).await,
+            StoreBackend::Sqlite(b) => EventWriter::write(b, event).await,
+            StoreBackend::Postgres(b) => EventWriter::write(b, event).await,
+        }
     }
 }

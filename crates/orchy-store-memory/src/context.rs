@@ -6,12 +6,20 @@ use orchy_core::namespace::Namespace;
 use crate::{MemoryBackend, cosine_similarity};
 
 impl ContextStore for MemoryBackend {
-    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
-        let mut contexts = self
-            .contexts
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        contexts.insert(snapshot.id(), snapshot.clone());
+    async fn save(&self, snapshot: &mut ContextSnapshot) -> Result<()> {
+        {
+            let mut contexts = self
+                .contexts
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            contexts.insert(snapshot.id(), snapshot.clone());
+        }
+
+        let events = snapshot.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 

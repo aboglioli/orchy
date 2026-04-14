@@ -38,7 +38,7 @@ enum Memory {
 }
 
 impl MemoryStore for PgBackend {
-    async fn save(&self, entry: &MemoryEntry) -> Result<()> {
+    async fn save(&self, entry: &mut MemoryEntry) -> Result<()> {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
 
         sqlx::query(
@@ -67,6 +67,11 @@ impl MemoryStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = entry.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }
@@ -204,4 +209,3 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> MemoryEntry {
         updated_at,
     })
 }
-

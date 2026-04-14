@@ -2,13 +2,19 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::agent::{Agent, AgentId, AgentStore};
+use crate::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use crate::error::Result;
 use crate::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
 use crate::project::{Project, ProjectStore};
+use crate::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
+use crate::resource_lock::{LockStore, ResourceLock};
 use crate::skill::{Skill, SkillFilter, SkillStore};
-use crate::task::{Task, TaskFilter, TaskId, TaskStore};
+use crate::task::{
+    ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
+    WatcherStore,
+};
 
 #[derive(Debug, Default)]
 pub struct MockStore {
@@ -17,7 +23,7 @@ pub struct MockStore {
 }
 
 impl TaskStore for MockStore {
-    async fn save(&self, _: &Task) -> Result<()> {
+    async fn save(&self, _: &mut Task) -> Result<()> {
         Ok(())
     }
     async fn find_by_id(&self, _: &TaskId) -> Result<Option<Task>> {
@@ -29,7 +35,7 @@ impl TaskStore for MockStore {
 }
 
 impl AgentStore for MockStore {
-    async fn save(&self, agent: &Agent) -> Result<()> {
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
         self.agents
             .write()
             .unwrap()
@@ -48,7 +54,7 @@ impl AgentStore for MockStore {
 }
 
 impl MessageStore for MockStore {
-    async fn save(&self, message: &Message) -> Result<()> {
+    async fn save(&self, message: &mut Message) -> Result<()> {
         self.messages
             .write()
             .unwrap()
@@ -113,7 +119,7 @@ impl MessageStore for MockStore {
 }
 
 impl ProjectStore for MockStore {
-    async fn save(&self, _: &Project) -> Result<()> {
+    async fn save(&self, _: &mut Project) -> Result<()> {
         Ok(())
     }
     async fn find_by_id(&self, _: &ProjectId) -> Result<Option<Project>> {
@@ -122,7 +128,7 @@ impl ProjectStore for MockStore {
 }
 
 impl MemoryStore for MockStore {
-    async fn save(&self, _: &MemoryEntry) -> Result<()> {
+    async fn save(&self, _: &mut MemoryEntry) -> Result<()> {
         unimplemented!()
     }
     async fn find_by_key(
@@ -151,7 +157,7 @@ impl MemoryStore for MockStore {
 }
 
 impl ContextStore for MockStore {
-    async fn save(&self, _: &ContextSnapshot) -> Result<()> {
+    async fn save(&self, _: &mut ContextSnapshot) -> Result<()> {
         unimplemented!()
     }
     async fn find_latest(&self, _: &AgentId) -> Result<Option<ContextSnapshot>> {
@@ -181,16 +187,109 @@ impl NamespaceStore for MockStore {
     }
 }
 
-impl SkillStore for MockStore {
-    async fn save(&self, _: &Skill) -> Result<()> {
+impl ProjectLinkStore for MockStore {
+    async fn save(&self, _: &mut ProjectLink) -> Result<()> {
         unimplemented!()
     }
-    async fn find_by_name(
+    async fn delete(&self, _: &ProjectLinkId) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find_by_id(&self, _: &ProjectLinkId) -> Result<Option<ProjectLink>> {
+        unimplemented!()
+    }
+    async fn list_by_target(&self, _: &ProjectId) -> Result<Vec<ProjectLink>> {
+        unimplemented!()
+    }
+    async fn find_link(&self, _: &ProjectId, _: &ProjectId) -> Result<Option<ProjectLink>> {
+        unimplemented!()
+    }
+}
+
+impl LockStore for MockStore {
+    async fn save(&self, _: &mut ResourceLock) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<ResourceLock>> {
+        unimplemented!()
+    }
+    async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find_by_holder(&self, _: &AgentId) -> Result<Vec<ResourceLock>> {
+        Ok(vec![])
+    }
+    async fn delete_expired(&self) -> Result<u64> {
+        unimplemented!()
+    }
+}
+
+impl DocumentStore for MockStore {
+    async fn save(&self, _: &mut Document) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find_by_id(&self, _: &DocumentId) -> Result<Option<Document>> {
+        unimplemented!()
+    }
+    async fn find_by_path(
         &self,
         _: &ProjectId,
         _: &Namespace,
         _: &str,
-    ) -> Result<Option<Skill>> {
+    ) -> Result<Option<Document>> {
+        unimplemented!()
+    }
+    async fn list(&self, _: DocumentFilter) -> Result<Vec<Document>> {
+        unimplemented!()
+    }
+    async fn search(
+        &self,
+        _: &str,
+        _: Option<&[f32]>,
+        _: Option<&Namespace>,
+        _: usize,
+    ) -> Result<Vec<Document>> {
+        unimplemented!()
+    }
+    async fn delete(&self, _: &DocumentId) -> Result<()> {
+        unimplemented!()
+    }
+}
+
+impl WatcherStore for MockStore {
+    async fn save(&self, _: &TaskWatcher) -> Result<()> {
+        Ok(())
+    }
+    async fn delete(&self, _: &TaskId, _: &AgentId) -> Result<()> {
+        Ok(())
+    }
+    async fn find_watchers(&self, _: &TaskId) -> Result<Vec<TaskWatcher>> {
+        Ok(vec![])
+    }
+    async fn find_by_agent(&self, _: &AgentId) -> Result<Vec<TaskWatcher>> {
+        Ok(vec![])
+    }
+}
+
+impl ReviewStore for MockStore {
+    async fn save(&self, _: &ReviewRequest) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_id(&self, _: &ReviewId) -> Result<Option<ReviewRequest>> {
+        unimplemented!()
+    }
+    async fn find_pending_for_agent(&self, _: &AgentId) -> Result<Vec<ReviewRequest>> {
+        Ok(vec![])
+    }
+    async fn find_by_task(&self, _: &TaskId) -> Result<Vec<ReviewRequest>> {
+        Ok(vec![])
+    }
+}
+
+impl SkillStore for MockStore {
+    async fn save(&self, _: &mut Skill) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find_by_name(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Skill>> {
         unimplemented!()
     }
     async fn list(&self, _: SkillFilter) -> Result<Vec<Skill>> {

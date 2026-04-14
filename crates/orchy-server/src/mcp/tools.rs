@@ -4,11 +4,13 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
+use orchy_core::document::{DocumentFilter, WriteDocument};
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
+use orchy_core::project_link::SharedResourceType;
 use orchy_core::skill::{SkillFilter, WriteSkill};
-use orchy_core::task::{Priority, Task, TaskFilter, TaskId};
+use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
     OrchyHandler, parse_agent_id, parse_message_id, parse_namespace, parse_project, parse_task_id,
@@ -18,13 +20,9 @@ use super::params::*;
 
 #[tool_router]
 impl OrchyHandler {
-    #[tool(
-        description = "Register this session as an agent within a project namespace. \
-        All subsequent tool calls will be scoped to this project. \
-        If roles is empty, orchy assigns roles based on pending task demand. \
-        Use agent_id to resume a previous agent (same identity, comes back online). \
-        Use parent_id to create a new agent inheriting from a parent (lineage tracking)."
-    )]
+    #[tool(description = "Register as an agent. Required before any other tool. \
+        Roles are optional — orchy assigns them from pending task demand if omitted. \
+        Use agent_id to resume a previous session. Use parent_id for agent lineage.")]
     async fn register_agent(
         &self,
         Parameters(params): Parameters<RegisterAgentParams>,
@@ -155,8 +153,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Disconnect the session agent. Releases all claimed tasks back to pending. \
-        Use this when your session is ending."
+        description = "Disconnect and release all claimed tasks back to pending. \
+        Call this when your session is ending."
     )]
     async fn disconnect(&self) -> Result<String, String> {
         let (agent_id, _, _) = match self.require_session() {
@@ -171,6 +169,27 @@ impl OrchyHandler {
             .await
         {
             return Err(e.to_string());
+        }
+
+        let _ = self
+            .container
+            .lock_service
+            .release_agent_locks(&agent_id)
+            .await;
+
+        let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
+            .await
+            .unwrap_or_default();
+        for w in &watchers {
+            let _ = WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
+        }
+
+        let reviews = ReviewStore::find_pending_for_agent(&*self.container.store, &agent_id)
+            .await
+            .unwrap_or_default();
+        for mut r in reviews {
+            r.unassign_reviewer();
+            let _ = ReviewStore::save(&*self.container.store, &r).await;
         }
 
         match self.container.agent_service.disconnect(&agent_id).await {
@@ -214,10 +233,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(
-        description = "Create a new task. Namespace defaults to session namespace; \
-        if provided, the project prefix must match."
-    )]
+    #[tool(description = "Create a task. Use parent_id to create a subtask. \
+        Tasks with depends_on are auto-blocked until dependencies complete.")]
     async fn post_task(
         &self,
         Parameters(params): Parameters<PostTaskParams>,
@@ -284,9 +301,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Get the next available task for the session agent, optionally filtered \
-        by namespace and role. Returns the task with full context: parent task \
-        (if this is a subtask) and children (if this task was split)."
+        description = "Claim the next available task matching your roles and return it. \
+        Returns full context: ancestor chain (if subtask) and children (if split). \
+        Skips tasks with incomplete dependencies."
     )]
     async fn get_next_task(
         &self,
@@ -338,6 +355,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTasksParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -404,11 +426,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(
-        description = "Start working on a claimed task (transitions from claimed to in_progress). \
-        You must claim a task before starting it, and start it before completing it. \
-        Workflow: pending → claimed → in_progress → completed/failed."
-    )]
+    #[tool(description = "Start a claimed task (claimed → in_progress). \
+        Must be claimed by you first. Returns task with full context.")]
     async fn start_task(
         &self,
         Parameters(params): Parameters<StartTaskParams>,
@@ -437,11 +456,19 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Mark a task as completed with an optional summary.")]
+    #[tool(
+        description = "Mark a task as completed. Always include a summary: what was done, \
+        what was learned, key decisions. Write important findings to memory/documents too."
+    )]
     async fn complete_task(
         &self,
         Parameters(params): Parameters<CompleteTaskParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -463,6 +490,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<FailTaskParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -480,8 +512,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Assign a task to an agent. If the task is already assigned, \
-        it will be reassigned to the new agent."
+        description = "Assign a claimed or in-progress task to a different agent. \
+        The task must already be claimed."
     )]
     async fn assign_task(
         &self,
@@ -514,8 +546,10 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Write a key-value entry to shared memory. Namespace defaults to \
-        session namespace; if provided, the project prefix must match."
+        description = "Write a key-value entry to shared memory. Use for decisions, facts, \
+        and findings that other agents should know. Use structured keys like \
+        'decision/auth-algo' or 'finding/db-connection-limit'. Version param enables \
+        optimistic concurrency."
     )]
     async fn write_memory(
         &self,
@@ -548,7 +582,7 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Read a memory entry by key. Namespace defaults to session namespace.")]
+    #[tool(description = "Read a memory entry by key. Namespace defaults to root.")]
     async fn read_memory(
         &self,
         Parameters(params): Parameters<ReadMemoryParams>,
@@ -582,6 +616,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListMemoryParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -610,6 +649,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchMemoryParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -628,7 +672,7 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Delete a memory entry by key. Namespace defaults to session namespace.")]
+    #[tool(description = "Delete a memory entry by key. Namespace defaults to root.")]
     async fn delete_memory(
         &self,
         Parameters(params): Parameters<DeleteMemoryParams>,
@@ -651,8 +695,60 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Send a message to another agent (by ID), a role (role:name), or \
-        broadcast. Namespace defaults to session namespace."
+        description = "Append text to an existing memory entry. Creates the entry if it \
+        doesn't exist. Uses optimistic concurrency to avoid lost updates."
+    )]
+    async fn append_memory(
+        &self,
+        Parameters(params): Parameters<AppendMemoryParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let separator = params.separator.as_deref().unwrap_or("\n");
+
+        let existing = self
+            .container
+            .memory_service
+            .read(&project, &namespace, &params.key)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let (new_value, expected_version) = match existing {
+            Some(entry) => {
+                let combined = format!("{}{}{}", entry.value(), separator, params.value);
+                (combined, Some(entry.version()))
+            }
+            None => (params.value, None),
+        };
+
+        let cmd = WriteMemory {
+            project,
+            namespace,
+            key: params.key,
+            value: new_value,
+            expected_version,
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.memory_service.write(cmd).await {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Send a message. Target: agent UUID, 'role:name' (all agents \
+        with that role), or 'broadcast' (all agents except you)."
     )]
     async fn send_message(
         &self,
@@ -729,6 +825,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MarkReadParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let ids: Vec<MessageId> = match params
             .message_ids
             .iter()
@@ -784,6 +885,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListConversationParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let message_id = match parse_message_id(&params.message_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -803,8 +909,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Save a context snapshot for the session agent. Namespace defaults to \
-        session namespace."
+        description = "Save a context snapshot as a handoff note. Include: current task ID, \
+        what you accomplished, what's left, decisions made, and blockers. The next agent \
+        will load this to continue your work."
     )]
     async fn save_context(
         &self,
@@ -843,28 +950,46 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Load the most recent context snapshot for an agent (defaults to \
-        session agent)."
+        description = "Load a context snapshot. With agent_id, loads that agent's latest. \
+        Without agent_id, loads the most recent snapshot in the namespace — useful for \
+        picking up where a previous agent left off."
     )]
     async fn load_context(
         &self,
         Parameters(params): Parameters<LoadContextParams>,
     ) -> Result<String, String> {
-        let agent_id = match params.agent_id.as_deref() {
-            Some(id_str) => match parse_agent_id(id_str) {
-                Ok(id) => id,
-                Err(e) => return Err(e),
-            },
-            None => match self.require_session() {
-                Ok((id, _, _)) => id,
-                Err(e) => return Err(e),
-            },
+        let (session_agent, _, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
         };
 
-        match self.container.context_service.load(&agent_id).await {
-            Ok(Some(snapshot)) => Ok(to_json(&snapshot)),
-            Ok(None) => Ok("null".to_string()),
-            Err(e) => Err(e.to_string()),
+        if let Some(id_str) = params.agent_id.as_deref() {
+            let agent_id = parse_agent_id(id_str)?;
+            return match self.container.context_service.load(&agent_id).await {
+                Ok(Some(snapshot)) => Ok(to_json(&snapshot)),
+                Ok(None) => Ok("null".to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+        }
+
+        match self.container.context_service.load(&session_agent).await {
+            Ok(Some(snapshot)) => return Ok(to_json(&snapshot)),
+            Ok(None) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+
+        let mut contexts = self
+            .container
+            .context_service
+            .list(None, &namespace)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        contexts.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+
+        match contexts.into_iter().next() {
+            Some(snapshot) => Ok(to_json(&snapshot)),
+            None => Ok("null".to_string()),
         }
     }
 
@@ -873,6 +998,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListContextsParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
             Some(Ok(id)) => Some(id),
             Some(Err(e)) => return Err(e),
@@ -897,12 +1027,17 @@ impl OrchyHandler {
 
     #[tool(
         description = "Search context snapshots by semantic similarity. Namespace defaults \
-        to session namespace."
+        to root."
     )]
     async fn search_contexts(
         &self,
         Parameters(params): Parameters<SearchContextsParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
             None => Namespace::root(),
@@ -928,9 +1063,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Write a project skill — shared instructions/conventions that all \
-        agents in this project will receive. Skills are identified by namespace + name. \
-        Writing to an existing name updates it. Namespace defaults to session namespace."
+        description = "Write a project skill (shared instructions/conventions). \
+        All agents receive these via list_skills. Writing to an existing name updates it."
     )]
     async fn write_skill(
         &self,
@@ -990,9 +1124,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "List skills for the project. If inherited=true, includes skills \
-        from parent namespaces with more specific ones taking precedence (requires namespace). \
-        If namespace is omitted, returns all skills in the project."
+        description = "List skills. Use inherited=true to include skills from parent \
+        namespaces and linked projects (child overrides parent on name collision, \
+        local overrides linked)."
     )]
     async fn list_skills(
         &self,
@@ -1006,9 +1140,15 @@ impl OrchyHandler {
                 Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
                 None => Namespace::root(),
             };
+            let linked = self
+                .container
+                .project_link_service
+                .linked_projects(&project, SharedResourceType::Skills)
+                .await
+                .unwrap_or_default();
             self.container
                 .skill_service
-                .list_with_inherited(&project, &namespace)
+                .list_with_inherited_and_linked(&project, &namespace, &linked)
                 .await
         } else {
             let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
@@ -1041,6 +1181,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddTaskNoteParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -1191,6 +1336,131 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Merge multiple tasks into one. Source tasks must be pending, \
+        blocked, or claimed. They are cancelled and a new consolidated task is created \
+        with the highest priority, combined roles, combined dependencies, and collected notes. \
+        Children of source tasks are re-parented. Tasks depending on sources are updated."
+    )]
+    async fn merge_tasks(
+        &self,
+        Parameters(params): Parameters<MergeTasksParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_ids: Vec<TaskId> = match params
+            .task_ids
+            .iter()
+            .map(|s| parse_task_id(s))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(ids) => ids,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .task_service
+            .merge_tasks(
+                &task_ids,
+                params.title,
+                params.description,
+                self.get_session_agent(),
+            )
+            .await
+        {
+            Ok((merged, cancelled)) => {
+                let result = serde_json::json!({
+                    "merged": merged,
+                    "cancelled": cancelled,
+                });
+                Ok(to_json(&result))
+            }
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List direct children (subtasks) of a task.")]
+    async fn list_subtasks(
+        &self,
+        Parameters(params): Parameters<ListSubtasksParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+
+        match self
+            .container
+            .task_service
+            .list(TaskFilter {
+                parent_id: Some(task_id),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(tasks) => Ok(to_json(&tasks)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Create a subtask under a claimed/in-progress task without blocking the parent. \
+        Unlike split_task, the parent keeps its status."
+    )]
+    async fn delegate_task(
+        &self,
+        Parameters(params): Parameters<DelegateTaskParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let parent_id = parse_task_id(&params.task_id)?;
+        let parent = self
+            .container
+            .task_service
+            .get(&parent_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let priority = match params.priority.as_deref() {
+            Some(p) => match p.parse::<Priority>() {
+                Ok(pri) => pri,
+                Err(e) => return Err(format!("invalid priority: {e}")),
+            },
+            None => parent.priority(),
+        };
+
+        let task = match Task::new(
+            project,
+            parent.namespace().clone(),
+            Some(parent_id),
+            params.title,
+            params.description,
+            priority,
+            params.assigned_roles.unwrap_or_default(),
+            vec![],
+            self.get_session_agent(),
+            false,
+        ) {
+            Ok(t) => t,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let response = to_json(&task);
+        match self.container.task_service.create(task).await {
+            Ok(()) => Ok(response),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
         description = "Add a dependency to a task. If the dependency is not yet completed, \
         the task will be blocked."
     )]
@@ -1336,6 +1606,125 @@ impl OrchyHandler {
         }
     }
 
+    #[tool(
+        description = "Get an aggregated project overview: agent count, task counts by status, \
+        and recent completions."
+    )]
+    async fn get_project_summary(
+        &self,
+        Parameters(_params): Parameters<GetProjectSummaryParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let agents = self
+            .container
+            .agent_service
+            .list()
+            .await
+            .map_err(|e| e.to_string())?;
+        let project_agents: Vec<_> = agents
+            .into_iter()
+            .filter(|a| *a.project() == project)
+            .collect();
+
+        let all_tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                project: Some(project.clone()),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut by_status = std::collections::HashMap::new();
+        for task in &all_tasks {
+            *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
+        }
+
+        let mut recent: Vec<_> = all_tasks
+            .iter()
+            .filter(|t| {
+                matches!(
+                    t.status(),
+                    orchy_core::task::TaskStatus::Completed | orchy_core::task::TaskStatus::Failed
+                )
+            })
+            .collect();
+        recent.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
+        recent.truncate(10);
+
+        let recent_items: Vec<_> = recent
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "id": t.id().to_string(),
+                    "title": t.title(),
+                    "status": t.status().to_string(),
+                    "summary": t.result_summary(),
+                })
+            })
+            .collect();
+
+        let result = serde_json::json!({
+            "agents_online": project_agents.len(),
+            "tasks_by_status": by_status,
+            "total_tasks": all_tasks.len(),
+            "recent_completions": recent_items,
+        });
+
+        Ok(to_json(&result))
+    }
+
+    #[tool(description = "Get tasks assigned to an agent grouped by status. \
+        Defaults to the current agent.")]
+    async fn get_agent_workload(
+        &self,
+        Parameters(params): Parameters<GetAgentWorkloadParams>,
+    ) -> Result<String, String> {
+        let (session_agent, _, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let agent_id = match params.agent_id.as_deref() {
+            Some(s) => parse_agent_id(s)?,
+            None => session_agent,
+        };
+
+        let tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                assigned_to: Some(agent_id),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut by_status = std::collections::HashMap::new();
+        for task in &tasks {
+            by_status
+                .entry(task.status().to_string())
+                .or_insert_with(Vec::new)
+                .push(serde_json::json!({
+                    "id": task.id().to_string(),
+                    "title": task.title(),
+                    "priority": task.priority().to_string(),
+                }));
+        }
+
+        let result = serde_json::json!({
+            "agent_id": agent_id.to_string(),
+            "total_tasks": tasks.len(),
+            "by_status": by_status,
+        });
+
+        Ok(to_json(&result))
+    }
+
     #[tool(description = "Move a task to a different namespace within the same project.")]
     async fn move_task(
         &self,
@@ -1468,10 +1857,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Generate a full bootstrap prompt for this project. Contains all \
-        orchy instructions, coordination patterns, and project skills in a single text block. \
-        Useful for agents that don't support MCP server instructions natively — copy-paste \
-        this into their system prompt. Also available as HTTP GET /bootstrap/<namespace>."
+        description = "Generate a full bootstrap prompt with all orchy instructions, \
+        project skills, connected agents, and active tasks. For clients that don't \
+        support MCP instructions natively."
     )]
     async fn get_bootstrap_prompt(
         &self,
@@ -1505,5 +1893,836 @@ impl OrchyHandler {
             Err(e) => Err(e.to_string()),
         }
     }
-}
 
+    #[tool(
+        description = "Link another project as a resource source. Linked skills appear \
+        in list_skills(inherited: true). Resource types: 'skills', 'memory'."
+    )]
+    async fn link_project(
+        &self,
+        Parameters(params): Parameters<LinkProjectParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source = parse_project(&params.source_project)?;
+
+        let resource_types: Vec<SharedResourceType> = match params
+            .resource_types
+            .iter()
+            .map(|s| s.parse::<SharedResourceType>().map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(types) => types,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .project_link_service
+            .link(source, project, resource_types)
+            .await
+        {
+            Ok(link) => Ok(to_json(&link)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Remove a project link.")]
+    async fn unlink_project(
+        &self,
+        Parameters(params): Parameters<UnlinkProjectParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source = parse_project(&params.source_project)?;
+
+        match self
+            .container
+            .project_link_service
+            .unlink(&source, &project)
+            .await
+        {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List all project links for the current project.")]
+    async fn list_project_links(
+        &self,
+        Parameters(_params): Parameters<ListProjectLinksParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        match self
+            .container
+            .project_link_service
+            .list_links(&project)
+            .await
+        {
+            Ok(links) => Ok(to_json(&links)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Copy a skill from another project into the current project. \
+        One-time copy, not a live link."
+    )]
+    async fn import_skill(
+        &self,
+        Parameters(params): Parameters<ImportSkillParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source_project = parse_project(&params.source_project)?;
+        let source_ns = match params.source_namespace.as_deref() {
+            Some(s) if !s.is_empty() => parse_namespace(&format!("/{s}"))?,
+            _ => Namespace::root(),
+        };
+
+        let skill = match self
+            .container
+            .skill_service
+            .read(&source_project, &source_ns, &params.name)
+            .await
+        {
+            Ok(Some(s)) => s,
+            Ok(None) => {
+                return Err(format!(
+                    "skill '{}' not found in project {}",
+                    params.name, source_project
+                ));
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let namespace = match self.build_and_register_namespace(None).await {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let cmd = WriteSkill {
+            project,
+            namespace,
+            name: skill.name().to_string(),
+            description: skill.description().to_string(),
+            content: skill.content().to_string(),
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.skill_service.write(cmd).await {
+            Ok(imported) => Ok(to_json(&imported)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Copy a memory entry from another project into the current project. \
+        One-time copy, not a live link."
+    )]
+    async fn import_memory(
+        &self,
+        Parameters(params): Parameters<ImportMemoryParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source_project = parse_project(&params.source_project)?;
+        let source_ns = match params.source_namespace.as_deref() {
+            Some(s) if !s.is_empty() => parse_namespace(&format!("/{s}"))?,
+            _ => Namespace::root(),
+        };
+
+        let entry = match self
+            .container
+            .memory_service
+            .read(&source_project, &source_ns, &params.key)
+            .await
+        {
+            Ok(Some(e)) => e,
+            Ok(None) => {
+                return Err(format!(
+                    "memory '{}' not found in project {}",
+                    params.key, source_project
+                ));
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+
+        let namespace = match self.build_and_register_namespace(None).await {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let cmd = WriteMemory {
+            project,
+            namespace,
+            key: entry.key().to_string(),
+            value: entry.value().to_string(),
+            expected_version: None,
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.memory_service.write(cmd).await {
+            Ok(imported) => Ok(to_json(&imported)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Add a tag to a task.")]
+    async fn tag_task(
+        &self,
+        Parameters(params): Parameters<TagTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self.container.task_service.tag(&task_id, params.tag).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Remove a tag from a task.")]
+    async fn untag_task(
+        &self,
+        Parameters(params): Parameters<UntagTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .untag(&task_id, &params.tag)
+            .await
+        {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Acquire a named distributed lock. Fails if held by another agent. \
+        Locks auto-expire after ttl_secs (default 300)."
+    )]
+    async fn lock_resource(
+        &self,
+        Parameters(params): Parameters<LockResourceParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let ttl = params.ttl_secs.unwrap_or(300);
+
+        match self
+            .container
+            .lock_service
+            .acquire(project, namespace, params.name, agent_id, ttl)
+            .await
+        {
+            Ok(lock) => Ok(to_json(&lock)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Release a named distributed lock.")]
+    async fn unlock_resource(
+        &self,
+        Parameters(params): Parameters<UnlockResourceParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .lock_service
+            .release(&project, &namespace, &params.name, &agent_id)
+            .await
+        {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Check if a resource lock exists without acquiring it.")]
+    async fn check_lock(
+        &self,
+        Parameters(params): Parameters<CheckLockParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .lock_service
+            .check(&project, &namespace, &params.name)
+            .await
+        {
+            Ok(Some(lock)) => Ok(to_json(&lock)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Release a claimed or in-progress task back to pending.")]
+    async fn release_task(
+        &self,
+        Parameters(params): Parameters<ReleaseTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self.container.task_service.release(&task_id).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List all unique tags used across tasks in the project.")]
+    async fn list_tags(
+        &self,
+        Parameters(params): Parameters<ListTagsParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                project: Some(project),
+                namespace,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut tags: Vec<String> = tasks
+            .iter()
+            .flat_map(|t| t.tags().iter().cloned())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        tags.sort();
+
+        Ok(to_json(&tags))
+    }
+
+    #[tool(
+        description = "Create or update a document. Documents are markdown knowledge artifacts \
+        for specs, architecture decisions, and shared analysis. Use version for optimistic concurrency."
+    )]
+    async fn write_document(
+        &self,
+        Parameters(params): Parameters<WriteDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let cmd = WriteDocument {
+            project,
+            namespace,
+            path: params.path,
+            title: params.title,
+            content: params.content,
+            tags: params.tags.unwrap_or_default(),
+            expected_version: params.version.map(Version::from),
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.document_service.write(cmd).await {
+            Ok(doc) => Ok(to_json(&doc)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Read a document by its path.")]
+    async fn read_document(
+        &self,
+        Parameters(params): Parameters<ReadDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(doc)) => Ok(to_json(&doc)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List documents with optional filters by namespace, tag, or path prefix.")]
+    async fn list_documents(
+        &self,
+        Parameters(params): Parameters<ListDocumentsParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let filter = DocumentFilter {
+            project: if namespace.is_none() {
+                self.get_session_project()
+            } else {
+                None
+            },
+            namespace,
+            tag: params.tag,
+            path_prefix: params.path_prefix,
+        };
+
+        match self.container.document_service.list(filter).await {
+            Ok(docs) => Ok(to_json(&docs)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Search documents by semantic similarity.")]
+    async fn search_documents(
+        &self,
+        Parameters(params): Parameters<SearchDocumentsParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let limit = params.limit.unwrap_or(10) as usize;
+
+        match self
+            .container
+            .document_service
+            .search(&params.query, namespace.as_ref(), limit)
+            .await
+        {
+            Ok(docs) => Ok(to_json(&docs)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Delete a document by path.")]
+    async fn delete_document(
+        &self,
+        Parameters(params): Parameters<DeleteDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self.container.document_service.delete(&doc.id()).await {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Move a document to a different namespace.")]
+    async fn move_document(
+        &self,
+        Parameters(params): Parameters<MoveDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let new_namespace = parse_namespace(&format!("/{}", params.new_namespace))?;
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self
+            .container
+            .document_service
+            .move_doc(&doc.id(), new_namespace)
+            .await
+        {
+            Ok(doc) => Ok(to_json(&doc)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Rename a document (change its path).")]
+    async fn rename_document(
+        &self,
+        Parameters(params): Parameters<RenameDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self
+            .container
+            .document_service
+            .rename(&doc.id(), params.new_path)
+            .await
+        {
+            Ok(doc) => Ok(to_json(&doc)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Add a tag to a document.")]
+    async fn tag_document(
+        &self,
+        Parameters(params): Parameters<TagDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self
+            .container
+            .document_service
+            .tag(&doc.id(), params.tag)
+            .await
+        {
+            Ok(doc) => Ok(to_json(&doc)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Get a task by its ID with full context (ancestors and children).")]
+    async fn get_task(
+        &self,
+        Parameters(params): Parameters<GetTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self.container.task_service.get_with_context(&task_id).await {
+            Ok(ctx) => Ok(to_json(&ctx)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Watch a task for status changes. You'll receive mailbox notifications \
+        when the task is started, completed, failed, or has a dependency failure."
+    )]
+    async fn watch_task(
+        &self,
+        Parameters(params): Parameters<WatchTaskParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .watch(&task_id, agent_id, project, namespace)
+            .await
+        {
+            Ok(watcher) => Ok(to_json(&watcher)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Stop watching a task.")]
+    async fn unwatch_task(
+        &self,
+        Parameters(params): Parameters<UnwatchTaskParams>,
+    ) -> Result<String, String> {
+        let (agent_id, _, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .unwatch(&task_id, &agent_id)
+            .await
+        {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Request a review for a task. Sends a notification to the target reviewer \
+        (by agent ID or role). Use list_reviews to check status."
+    )]
+    async fn request_review(
+        &self,
+        Parameters(params): Parameters<RequestReviewParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        let reviewer = match params.reviewer_agent.as_deref() {
+            Some(s) => Some(parse_agent_id(s)?),
+            None => None,
+        };
+
+        match self
+            .container
+            .task_service
+            .request_review(
+                &task_id,
+                project,
+                namespace,
+                agent_id,
+                reviewer,
+                params.reviewer_role,
+            )
+            .await
+        {
+            Ok(review) => Ok(to_json(&review)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Approve or reject a review request.")]
+    async fn resolve_review(
+        &self,
+        Parameters(params): Parameters<ResolveReviewParams>,
+    ) -> Result<String, String> {
+        let (agent_id, _, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let review_id = params
+            .review_id
+            .parse()
+            .map_err(|e| format!("invalid review_id: {e}"))?;
+
+        match self
+            .container
+            .task_service
+            .resolve_review(&review_id, agent_id, params.approved, params.comments)
+            .await
+        {
+            Ok(review) => Ok(to_json(&review)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List review requests for a task.")]
+    async fn list_reviews(
+        &self,
+        Parameters(params): Parameters<ListReviewsParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .list_reviews_for_task(&task_id)
+            .await
+        {
+            Ok(reviews) => Ok(to_json(&reviews)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Poll for recent events in the project since a timestamp. \
+        Returns domain events (task changes, messages, document updates, etc). \
+        Use alongside check_mailbox for full reactivity."
+    )]
+    async fn poll_updates(
+        &self,
+        Parameters(params): Parameters<PollUpdatesParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let since = match params.since.as_deref() {
+            Some(s) => chrono::DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .map_err(|e| format!("invalid timestamp: {e}"))?,
+            None => chrono::Utc::now() - chrono::Duration::minutes(5),
+        };
+
+        let limit = params.limit.unwrap_or(50) as usize;
+
+        let events = self
+            .container
+            .store
+            .query_events(project.as_ref(), since, limit)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let updates: Vec<_> = events
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "topic": e.topic,
+                    "namespace": e.namespace,
+                    "payload": e.payload,
+                    "timestamp": e.timestamp.to_rfc3339(),
+                })
+            })
+            .collect();
+
+        let result = serde_json::json!({
+            "since": since.to_rfc3339(),
+            "count": updates.len(),
+            "events": updates,
+        });
+
+        Ok(to_json(&result))
+    }
+}

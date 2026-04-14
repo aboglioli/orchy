@@ -2,23 +2,34 @@
 
 mod agent;
 mod context;
+mod document;
+mod events;
 mod memory;
 mod message;
 mod namespace;
 mod project;
+mod project_link;
+mod resource_lock;
+mod review;
 mod skill;
 mod task;
+mod watcher;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
+use orchy_events::SerializedEvent;
+
 use orchy_core::agent::{Agent, AgentId};
+use orchy_core::document::{Document, DocumentId};
 use orchy_core::memory::{ContextSnapshot, MemoryEntry, SnapshotId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
 use orchy_core::project::Project;
+use orchy_core::project_link::{ProjectLink, ProjectLinkId};
+use orchy_core::resource_lock::ResourceLock;
 use orchy_core::skill::Skill;
-use orchy_core::task::{Task, TaskId};
+use orchy_core::task::{ReviewId, ReviewRequest, Task, TaskId, TaskWatcher};
 
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
@@ -28,7 +39,13 @@ pub struct MemoryBackend {
     pub(crate) contexts: RwLock<HashMap<SnapshotId, ContextSnapshot>>,
     pub(crate) skills: RwLock<HashMap<(String, String, String), Skill>>,
     pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
+    pub(crate) project_links: RwLock<HashMap<ProjectLinkId, ProjectLink>>,
+    pub(crate) documents: RwLock<HashMap<DocumentId, Document>>,
+    pub(crate) watchers: RwLock<Vec<TaskWatcher>>,
+    pub(crate) reviews: RwLock<HashMap<ReviewId, ReviewRequest>>,
+    pub(crate) resource_locks: RwLock<HashMap<(String, String, String), ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String)>>,
+    pub(crate) events: RwLock<Vec<SerializedEvent>>,
 }
 
 impl MemoryBackend {
@@ -41,7 +58,13 @@ impl MemoryBackend {
             contexts: RwLock::new(HashMap::new()),
             skills: RwLock::new(HashMap::new()),
             projects: RwLock::new(HashMap::new()),
+            project_links: RwLock::new(HashMap::new()),
+            documents: RwLock::new(HashMap::new()),
+            watchers: RwLock::new(Vec::new()),
+            reviews: RwLock::new(HashMap::new()),
+            resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
+            events: RwLock::new(Vec::new()),
         }
     }
 }

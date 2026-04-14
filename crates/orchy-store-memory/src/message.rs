@@ -6,12 +6,20 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use crate::MemoryBackend;
 
 impl MessageStore for MemoryBackend {
-    async fn save(&self, message: &Message) -> Result<()> {
-        let mut messages = self
-            .messages
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        messages.insert(message.id(), message.clone());
+    async fn save(&self, message: &mut Message) -> Result<()> {
+        {
+            let mut messages = self
+                .messages
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            messages.insert(message.id(), message.clone());
+        }
+
+        let events = message.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 

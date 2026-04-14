@@ -4,12 +4,20 @@ use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 use crate::MemoryBackend;
 
 impl TaskStore for MemoryBackend {
-    async fn save(&self, task: &Task) -> Result<()> {
-        let mut tasks = self
-            .tasks
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        tasks.insert(task.id(), task.clone());
+    async fn save(&self, task: &mut Task) -> Result<()> {
+        {
+            let mut tasks = self
+                .tasks
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            tasks.insert(task.id(), task.clone());
+        }
+
+        let events = task.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 
@@ -51,6 +59,11 @@ impl TaskStore for MemoryBackend {
                 }
                 if let Some(ref pid) = filter.parent_id {
                     if t.parent_id().as_ref() != Some(pid) {
+                        return false;
+                    }
+                }
+                if let Some(ref tag) = filter.tag {
+                    if !t.tags().contains(tag) {
                         return false;
                     }
                 }

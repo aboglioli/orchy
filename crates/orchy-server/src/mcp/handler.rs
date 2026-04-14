@@ -156,44 +156,71 @@ const INSTRUCTIONS: &str = "\
 orchy — multi-agent coordination server.
 
 You are part of a coordinated multi-agent system. orchy provides shared \
-infrastructure: a task board, shared memory, messaging, skills, and \
-project context. You bring the intelligence; orchy enforces the rules.
+infrastructure: a task board, shared memory, documents, messaging, skills, \
+resource locks, and cross-project links. \
+You bring the intelligence; orchy enforces the rules.
 
 ## On Session Start
 
-1. Call `register_agent` with your project, roles, and description.
-2. Call `list_skills(inherited=true)` and follow the project conventions.
-3. Call `get_project` to read the project description and notes.
-4. Call `get_next_task` to claim work, or `check_mailbox` for messages.
-5. Call `heartbeat` every ~30s to signal liveness.
+1. `register_agent` — project, roles (optional), description. \
+   Pass `agent_id` to resume a previous session.
+2. `get_project` + `get_project_summary` — load project context.
+3. `list_skills(inherited: true)` — load conventions. Follow them.
+4. `load_context` — check if a previous agent left a context snapshot. \
+   Also `search_contexts(query)` to find relevant handoff notes.
+5. `check_mailbox` — check for messages from other agents.
+6. `get_next_task` — claim work. Tasks released by a disconnected agent \
+   return to pending and can be re-claimed.
+7. `heartbeat` — call every ~30s to stay alive.
 
-## Project & Namespace
+## Before Disconnecting
 
-Each agent belongs to a project (e.g. `my-project`). Resources are \
-organized in namespaces within the project: `/` is root, `/backend`, \
-`/backend/auth` are scopes. Namespace is optional for reading — omit \
-it to see all project resources. Write operations default to your \
-current namespace. Use `move_agent` to switch namespaces. Use \
-`list_namespaces` to discover available scopes.
+Always call `save_context` with a structured summary: \
+what task you were working on, what you accomplished, what's left, \
+and any decisions made. This is the handoff note for the next agent.
+
+## Namespaces
+
+Resources live in namespaces: `/` (root), `/backend`, `/backend/auth`. \
+Omit namespace on reads to see everything. Writes default to your current \
+namespace. Namespaces are auto-created on first use.
+
+## Task Workflow
+
+pending → claimed → in_progress → completed/failed. \
+Always claim before starting. If another agent claimed it, move on. \
+`split_task` breaks a task into subtasks — parent auto-completes when all finish. \
+`merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
+without blocking the parent. Use `tag_task` for cross-cutting labels. \
+On disconnect, claimed tasks return to pending.
 
 ## Coordination
 
-- Claim tasks before working. Complete them with a summary when done.
-- Split large tasks with `split_task` — parent auto-completes when subtasks finish.
-- Replace tasks with `replace_task` to cancel and create new ones.
-- Manage dependencies with `add_dependency` and `remove_dependency`.
-- Use shared memory to store decisions and context for other agents.
-- Use messages to coordinate with teammates. Reply with `reply_to`.
-- Check delivery status with `check_sent_messages`.
-- Browse conversation threads with `list_conversation`.
-- Save context before your session ends for continuity.
-- Use `list_skills(inherited=true)` to get project conventions.
-- Register without roles to let orchy assign roles based on task demand.
+- `write_memory` / `write_document` — share decisions and specs.
+- `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
+- `lock_resource` before editing shared files to prevent conflicts.
+- `watch_task` to get notified when a task status changes.
+- `request_review` to ask another agent to review your work.
+- `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
+- `save_context` before your session ends for continuity.
+- `link_project` to import skills/memory from other projects.
+- Register without roles — orchy assigns them based on task demand.
 
-## Bootstrap Prompt
+## Knowledge Capture
 
-If your client doesn't support MCP instructions, call `get_bootstrap_prompt` \
-to get a full copy-pasteable prompt with all orchy instructions and project skills.";
+You must externalize knowledge so future agents can benefit:
+
+- After completing a task, `write_memory` for each key decision \
+  (e.g. key: `decision/auth-algorithm`, value: `RS256 over HS256 for key rotation`).
+- Write longer analysis, specs, or architecture notes with `write_document`.
+- `complete_task` summary must be actionable: what was done, what was learned, \
+  what the next agent should know. Never just 'done'.
+- Before disconnecting, `save_context` with structured handoff: current task, \
+  progress, blockers, decisions.
+- When you discover something non-obvious (a gotcha, a pattern, a constraint), \
+  write it to memory immediately — don't wait until task completion.
+- Use `search_memory` and `search_documents` before starting work to check \
+  if a previous agent already explored this area.";
 
 impl ServerHandler for OrchyHandler {
     fn get_info(&self) -> ServerInfo {

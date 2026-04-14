@@ -14,7 +14,7 @@ impl<S: AgentStore> AgentService<S> {
     }
 
     pub async fn register(&self, cmd: RegisterAgent) -> Result<Agent> {
-        let agent = if let Some(parent_id) = cmd.parent_id {
+        let mut agent = if let Some(parent_id) = cmd.parent_id {
             let parent = self.get(&parent_id).await?;
             Agent::from_parent(&parent, cmd.namespace, cmd.roles, cmd.description)
         } else {
@@ -27,7 +27,7 @@ impl<S: AgentStore> AgentService<S> {
             )
         };
 
-        self.store.save(&agent).await?;
+        self.store.save(&mut agent).await?;
         Ok(agent)
     }
 
@@ -40,7 +40,7 @@ impl<S: AgentStore> AgentService<S> {
     ) -> Result<Agent> {
         let mut agent = self.get(id).await?;
         agent.resume(namespace, roles, description);
-        self.store.save(&agent).await?;
+        self.store.save(&mut agent).await?;
         Ok(agent)
     }
 
@@ -58,13 +58,13 @@ impl<S: AgentStore> AgentService<S> {
     pub async fn heartbeat(&self, id: &AgentId) -> Result<()> {
         let mut agent = self.get(id).await?;
         agent.heartbeat();
-        self.store.save(&agent).await
+        self.store.save(&mut agent).await
     }
 
     pub async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
         let mut agent = self.get(id).await?;
         agent.update_status(status);
-        self.store.save(&agent).await
+        self.store.save(&mut agent).await
     }
 
     pub async fn change_roles(&self, id: &AgentId, roles: Vec<String>) -> Result<Agent> {
@@ -73,21 +73,21 @@ impl<S: AgentStore> AgentService<S> {
         }
         let mut agent = self.get(id).await?;
         agent.change_roles(roles);
-        self.store.save(&agent).await?;
+        self.store.save(&mut agent).await?;
         Ok(agent)
     }
 
     pub async fn move_to(&self, id: &AgentId, namespace: Namespace) -> Result<Agent> {
         let mut agent = self.get(id).await?;
         agent.move_to(namespace);
-        self.store.save(&agent).await?;
+        self.store.save(&mut agent).await?;
         Ok(agent)
     }
 
     pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
         let mut agent = self.get(id).await?;
         agent.disconnect();
-        self.store.save(&agent).await
+        self.store.save(&mut agent).await
     }
 
     pub async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
@@ -98,8 +98,8 @@ impl<S: AgentStore> AgentService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::namespace::{Namespace, ProjectId};
     use crate::infrastructure::MockStore;
+    use crate::namespace::{Namespace, ProjectId};
     use std::collections::HashMap;
 
     fn make_registration() -> RegisterAgent {

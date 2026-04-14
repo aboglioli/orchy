@@ -1,15 +1,20 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
+use self::events as skill_events;
+
 pub trait SkillStore: Send + Sync {
-    fn save(&self, skill: &Skill) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, skill: &mut Skill) -> impl Future<Output = Result<()>> + Send;
     fn find_by_name(
         &self,
         project: &ProjectId,
@@ -35,6 +40,8 @@ pub struct Skill {
     written_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Skill {
@@ -51,7 +58,7 @@ impl Skill {
         }
 
         let now = Utc::now();
-        Ok(Self {
+        let mut skill = Self {
             project,
             namespace,
             name,
@@ -60,7 +67,25 @@ impl Skill {
             written_by,
             created_at: now,
             updated_at: now,
-        })
+            collector: EventCollector::new(),
+        };
+
+        skill.collector.collect(
+            Event::create(
+                skill.project.as_ref(),
+                skill_events::NAMESPACE,
+                skill_events::TOPIC_CREATED,
+                Payload::from_json(&skill_events::SkillCreatedPayload {
+                    project: skill.project.to_string(),
+                    namespace: skill.namespace.to_string(),
+                    name: skill.name.clone(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(skill)
     }
 
     pub fn restore(r: RestoreSkill) -> Self {
@@ -73,6 +98,7 @@ impl Skill {
             written_by: r.written_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            collector: EventCollector::new(),
         }
     }
 
@@ -83,11 +109,54 @@ impl Skill {
             self.written_by = Some(author);
         }
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            skill_events::NAMESPACE,
+            skill_events::TOPIC_UPDATED,
+            Payload::from_json(&skill_events::SkillUpdatedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                name: self.name.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn move_to(&mut self, namespace: Namespace) {
+        let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            skill_events::NAMESPACE,
+            skill_events::TOPIC_MOVED,
+            Payload::from_json(&skill_events::SkillMovedPayload {
+                project: self.project.to_string(),
+                from_namespace,
+                to_namespace: self.namespace.to_string(),
+                name: self.name.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
+    pub fn mark_deleted(&mut self) {
+        let _ = Event::create(
+            self.project.as_ref(),
+            skill_events::NAMESPACE,
+            skill_events::TOPIC_DELETED,
+            Payload::from_json(&skill_events::SkillDeletedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                name: self.name.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn filter_with_inheritance(skills: Vec<Skill>, namespace: &Namespace) -> Vec<Skill> {
@@ -107,6 +176,10 @@ impl Skill {
 
         result.sort_by(|a, b| a.name.cmp(&b.name));
         result
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn project(&self) -> &ProjectId {

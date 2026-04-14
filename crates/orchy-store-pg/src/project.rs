@@ -11,7 +11,7 @@ use orchy_core::project::{Project, ProjectStore, RestoreProject};
 use crate::PgBackend;
 
 impl ProjectStore for PgBackend {
-    async fn save(&self, project: &Project) -> Result<()> {
+    async fn save(&self, project: &mut Project) -> Result<()> {
         let notes_json = serde_json::to_value(project.notes()).unwrap();
         let metadata_json = serde_json::to_value(project.metadata()).unwrap();
 
@@ -33,6 +33,11 @@ impl ProjectStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = project.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

@@ -39,7 +39,7 @@ enum Messages {
 }
 
 impl MessageStore for PgBackend {
-    async fn save(&self, message: &Message) -> Result<()> {
+    async fn save(&self, message: &mut Message) -> Result<()> {
         sqlx::query(
             "INSERT INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -68,6 +68,11 @@ impl MessageStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = message.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }
@@ -203,12 +208,8 @@ impl MessageStore for PgBackend {
         );
 
         if let Some(n) = limit {
-            sql = format!(
-                "SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}"
-            );
-            sql = format!(
-                "SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC"
-            );
+            sql = format!("SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}");
+            sql = format!("SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC");
         }
 
         let rows = sqlx::query(&sql)
@@ -240,7 +241,9 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
         to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
         reply_to: reply_to.map(MessageId::from_uuid),
-        status: status.parse::<MessageStatus>().unwrap_or(MessageStatus::Pending),
+        status: status
+            .parse::<MessageStatus>()
+            .unwrap_or(MessageStatus::Pending),
         created_at,
     })
 }

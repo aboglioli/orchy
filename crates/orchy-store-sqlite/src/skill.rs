@@ -34,24 +34,31 @@ enum Skills {
 }
 
 impl SkillStore for SqliteBackend {
-    async fn save(&self, skill: &Skill) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+    async fn save(&self, skill: &mut Skill) -> Result<()> {
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        conn.execute(
-            "INSERT OR REPLACE INTO skills (project, namespace, name, description, content, written_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![
-                skill.project().to_string(),
-                skill.namespace().to_string(),
-                skill.name(),
-                skill.description(),
-                skill.content(),
-                skill.written_by().map(|a| a.to_string()),
-                skill.created_at().to_rfc3339(),
-                skill.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO skills (project, namespace, name, description, content, written_by, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    skill.project().to_string(),
+                    skill.namespace().to_string(),
+                    skill.name(),
+                    skill.description(),
+                    skill.content(),
+                    skill.written_by().map(|a| a.to_string()),
+                    skill.created_at().to_rfc3339(),
+                    skill.updated_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
+
+        let events = skill.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

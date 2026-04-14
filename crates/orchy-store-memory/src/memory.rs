@@ -5,19 +5,27 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use crate::{MemoryBackend, cosine_similarity};
 
 impl MemoryStore for MemoryBackend {
-    async fn save(&self, entry: &MemoryEntry) -> Result<()> {
-        let key = (
-            entry.project().to_string(),
-            entry.namespace().to_string(),
-            entry.key().to_string(),
-        );
+    async fn save(&self, entry: &mut MemoryEntry) -> Result<()> {
+        {
+            let key = (
+                entry.project().to_string(),
+                entry.namespace().to_string(),
+                entry.key().to_string(),
+            );
 
-        let mut store = self
-            .memory
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            let mut store = self
+                .memory
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
 
-        store.insert(key, entry.clone());
+            store.insert(key, entry.clone());
+        }
+
+        let events = entry.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 

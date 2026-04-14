@@ -4,12 +4,20 @@ use orchy_core::error::{Error, Result};
 use crate::MemoryBackend;
 
 impl AgentStore for MemoryBackend {
-    async fn save(&self, agent: &Agent) -> Result<()> {
-        let mut agents = self
-            .agents
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        agents.insert(agent.id(), agent.clone());
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
+        {
+            let mut agents = self
+                .agents
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            agents.insert(agent.id(), agent.clone());
+        }
+
+        let events = agent.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 

@@ -1,3 +1,4 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -7,12 +8,16 @@ use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
+use self::events as message_events;
+
 pub trait MessageStore: Send + Sync {
-    fn save(&self, message: &Message) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, message: &mut Message) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &MessageId) -> impl Future<Output = Result<Option<Message>>> + Send;
     fn find_pending(
         &self,
@@ -157,6 +162,8 @@ pub struct Message {
     reply_to: Option<MessageId>,
     status: MessageStatus,
     created_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Message {
@@ -168,7 +175,7 @@ impl Message {
         body: String,
         reply_to: Option<MessageId>,
     ) -> Self {
-        Self {
+        let mut msg = Self {
             id: MessageId::new(),
             project,
             namespace,
@@ -178,7 +185,23 @@ impl Message {
             reply_to,
             status: MessageStatus::Pending,
             created_at: Utc::now(),
-        }
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            msg.project.as_ref(),
+            message_events::NAMESPACE,
+            message_events::TOPIC_SENT,
+            Payload::from_json(&message_events::MessageSentPayload {
+                message_id: msg.id.to_string(),
+                from: msg.from.to_string(),
+                to: msg.to.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| msg.collector.collect(e));
+
+        msg
     }
 
     pub fn restore(r: RestoreMessage) -> Self {
@@ -192,6 +215,7 @@ impl Message {
             reply_to: r.reply_to,
             status: r.status,
             created_at: r.created_at,
+            collector: EventCollector::new(),
         }
     }
 
@@ -209,11 +233,37 @@ impl Message {
     pub fn deliver(&mut self) {
         if self.status == MessageStatus::Pending {
             self.status = MessageStatus::Delivered;
+
+            let _ = Event::create(
+                self.project.as_ref(),
+                message_events::NAMESPACE,
+                message_events::TOPIC_DELIVERED,
+                Payload::from_json(&message_events::MessageDeliveredPayload {
+                    message_id: self.id.to_string(),
+                })
+                .unwrap(),
+            )
+            .map(|e| self.collector.collect(e));
         }
     }
 
     pub fn mark_read(&mut self) {
         self.status = MessageStatus::Read;
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            message_events::NAMESPACE,
+            message_events::TOPIC_READ,
+            Payload::from_json(&message_events::MessageReadPayload {
+                message_id: self.id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> MessageId {

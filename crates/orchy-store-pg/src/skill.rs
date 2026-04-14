@@ -33,7 +33,7 @@ enum Skills {
 }
 
 impl SkillStore for PgBackend {
-    async fn save(&self, skill: &Skill) -> Result<()> {
+    async fn save(&self, skill: &mut Skill) -> Result<()> {
         sqlx::query(
             "INSERT INTO skills (project, namespace, name, description, content, written_by, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -54,6 +54,11 @@ impl SkillStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = skill.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }
@@ -80,18 +85,16 @@ impl SkillStore for PgBackend {
 
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         let mut select = Query::select();
-        select
-            .from(Skills::Table)
-            .columns([
-                Skills::Project,
-                Skills::Namespace,
-                Skills::Name,
-                Skills::Description,
-                Skills::Content,
-                Skills::WrittenBy,
-                Skills::CreatedAt,
-                Skills::UpdatedAt,
-            ]);
+        select.from(Skills::Table).columns([
+            Skills::Project,
+            Skills::Namespace,
+            Skills::Name,
+            Skills::Description,
+            Skills::Content,
+            Skills::WrittenBy,
+            Skills::CreatedAt,
+            Skills::UpdatedAt,
+        ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {

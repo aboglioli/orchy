@@ -37,28 +37,35 @@ enum Messages {
 }
 
 impl MessageStore for SqliteBackend {
-    async fn save(&self, message: &Message) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                message.id().to_string(),
-                message.project().to_string(),
-                message.namespace().to_string(),
-                message.from().to_string(),
-                message.to().to_string(),
-                message.body(),
-                message.reply_to().map(|id| id.to_string()),
-                match message.status() {
-                    MessageStatus::Pending => "pending",
-                    MessageStatus::Delivered => "delivered",
-                    MessageStatus::Read => "read",
-                },
-                message.created_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+    async fn save(&self, message: &mut Message) -> Result<()> {
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![
+                    message.id().to_string(),
+                    message.project().to_string(),
+                    message.namespace().to_string(),
+                    message.from().to_string(),
+                    message.to().to_string(),
+                    message.body(),
+                    message.reply_to().map(|id| id.to_string()),
+                    match message.status() {
+                        MessageStatus::Pending => "pending",
+                        MessageStatus::Delivered => "delivered",
+                        MessageStatus::Read => "read",
+                    },
+                    message.created_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
+
+        let events = message.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

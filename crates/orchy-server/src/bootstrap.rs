@@ -8,10 +8,15 @@ use orchy_core::project::service::ProjectService;
 use orchy_core::skill::Skill;
 use orchy_core::skill::SkillStore;
 use orchy_core::skill::service::SkillService;
-use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_core::task::service::TaskService;
+use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 
-pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore, AS: AgentStore, TS: TaskStore>(
+pub async fn generate_bootstrap_prompt<
+    SS: SkillStore,
+    PS: ProjectStore,
+    AS: AgentStore,
+    TS: TaskStore,
+>(
     project_id: &ProjectId,
     namespace: &Namespace,
     host: &str,
@@ -41,7 +46,12 @@ pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore, AS: Age
 
     let active_tasks: Vec<Task> = {
         let mut all = Vec::new();
-        for status in &[TaskStatus::Pending, TaskStatus::Claimed, TaskStatus::InProgress, TaskStatus::Blocked] {
+        for status in &[
+            TaskStatus::Pending,
+            TaskStatus::Claimed,
+            TaskStatus::InProgress,
+            TaskStatus::Blocked,
+        ] {
             let filter = TaskFilter {
                 project: Some(project_id.clone()),
                 status: Some(*status),
@@ -54,7 +64,15 @@ pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore, AS: Age
         all
     };
 
-    Ok(render(namespace, host, port, &project, &skills, &agents, &active_tasks))
+    Ok(render(
+        namespace,
+        host,
+        port,
+        &project,
+        &skills,
+        &agents,
+        &active_tasks,
+    ))
 }
 
 fn render(
@@ -70,70 +88,86 @@ fn render(
         r#"# Multi-Agent Coordination — Project `{namespace}`
 
 You are part of a coordinated multi-agent system managed by **orchy**.
-orchy is NOT an orchestrator — it's shared infrastructure: a task board,
-shared memory, messaging bus, and skill registry exposed as MCP tools.
-You bring the intelligence; orchy enforces the rules.
+orchy provides shared infrastructure: a task board, shared memory,
+documents, messaging, skills, resource locks, and cross-project links
+— all exposed as MCP tools. You bring the intelligence; orchy enforces the rules.
 
 ## Connection
 
 MCP server: `http://{host}:{port}/mcp`
 Project namespace: `{namespace}`
 
-## Bootstrap Protocol
+## On Session Start
 
-On every session start, execute these steps in order:
+1. **Register** — `register_agent(project, description)`. Roles are optional;
+   orchy assigns them based on pending task demand if omitted.
+   Pass `agent_id` to resume a previous session.
+2. **Load context** — `get_project` for description and notes,
+   then `list_skills(inherited: true)` for conventions. Follow them.
+3. **Resume** — `load_context` to check for handoff notes from a previous
+   session. Also `search_contexts(query)` to find relevant context from
+   other agents. Check `check_mailbox` for messages.
+4. **Claim work** — `get_next_task` to claim a task. Tasks from disconnected
+   agents return to pending automatically.
+5. **Heartbeat** — `heartbeat` every ~30s to stay alive.
 
-1. **Register** — call `register_agent` with:
-   - `project`: your project identifier
-   - `roles`: your capabilities (e.g. `["coder", "reviewer"]`). Leave empty to let orchy assign roles based on pending task demand.
-   - `description`: what you are (e.g. "Claude Code backend agent")
-   - `namespace`: scope within the project (optional, e.g. "backend")
+## Before Disconnecting
 
-2. **Load context** — call `get_project` for project description and notes.
-   Call `list_skills(inherited: true)` for project conventions.
+Always call `save_context` with a structured summary:
+- What task you were working on (task ID and title)
+- What you accomplished
+- What's left to do
+- Key decisions made and reasoning
+- Any blockers or open questions
 
-3. **Check for work** — call `get_next_task` to claim pending tasks,
-   or `check_mailbox` for messages from other agents.
+This is the handoff note for the next agent (or your next session).
 
-4. **Heartbeat** — call `heartbeat` periodically (every ~30s) to signal liveness.
+## Namespaces
 
-## Namespace Rules
+Resources live in namespaces: `/` (root), `/backend`, `/backend/auth`.
+Omit namespace on reads to see everything. Writes default to your current
+namespace. Namespaces are auto-created on first use.
 
-Resources are organized in namespaces within the project: `/` is root,
-`/backend` and `/backend/auth` are scopes. Namespace is optional for
-reading — omit it to see all project resources. Write operations default
-to your current namespace. Use `move_agent` to switch namespaces.
-Use `list_namespaces` to discover available scopes.
+## Task Workflow
 
-## Available Tools
+`pending → claimed → in_progress → completed/failed`
 
-| Category | Tools |
-|----------|-------|
-| Agent    | `register_agent`, `list_agents`, `change_roles`, `move_agent`, `heartbeat`, `disconnect` |
-| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task`, `assign_task`, `add_task_note` |
-| Task Hierarchy | `split_task`, `replace_task`, `add_dependency`, `remove_dependency` |
-| Move     | `move_task`, `move_memory`, `move_skill` |
-| Memory   | `write_memory`, `read_memory`, `list_memory`, `search_memory`, `delete_memory` |
-| Messages | `send_message`, `check_mailbox`, `mark_read`, `check_sent_messages`, `list_conversation` |
-| Context  | `save_context`, `load_context`, `list_contexts`, `search_contexts` |
-| Skills   | `write_skill`, `read_skill`, `list_skills`, `delete_skill` |
-| Project  | `get_project`, `update_project`, `add_project_note` |
-| Discovery| `list_namespaces`, `get_bootstrap_prompt` |
+- Always **claim** before starting. If another agent claimed it, move on.
+- Call **start_task** after claiming, then **complete_task** with a summary.
+- **split_task** breaks a task into subtasks — parent auto-completes when all finish.
+- **merge_tasks** consolidates related tasks into one.
+- **delegate_task** creates subtasks without blocking the parent.
+- **tag_task** / **list_tags** — label tasks for cross-cutting organization.
+- **release_task** — return a claimed task to pending.
+- On disconnect, your claimed tasks return to pending automatically.
 
-## Coordination Patterns
+## Coordination
 
-- **Claim before working** — always claim a task before starting. If another
-  agent claimed it first, move on to the next one.
-- **Split large tasks** — use `split_task` to break a task into subtasks.
-  The parent blocks automatically and completes when all subtasks finish.
-  Work on subtasks directly, not the parent.
-- **Report results** — call `complete_task` with a summary when done.
-- **Share knowledge** — use `write_memory` to store decisions, discoveries,
-  or context that other agents need.
-- **Message teammates** — use `send_message` to coordinate directly with
-  other agents or broadcast to all.
-- **Save context** — before your session ends, call `save_context` so the
-  next agent picking up your work has continuity.
+- **write_memory** — share decisions and context with other agents.
+- **write_document** — share specs, architecture decisions, and analysis (markdown).
+- **send_message** — coordinate by agent ID, `role:name`, or `broadcast`.
+- **watch_task** — get notified when a task you depend on changes status.
+- **request_review** / **resolve_review** — approval workflows between agents.
+- **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
+- **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
+- **save_context** — save session state before ending for continuity.
+- **link_project** — import skills/memory from other projects.
+- **get_project_summary** / **get_agent_workload** — check project status.
+
+## Knowledge Capture
+
+You must externalize knowledge so future agents can benefit:
+
+- After completing a task, `write_memory` for each key decision
+  (e.g. key: `decision/auth-algorithm`, value: `RS256 over HS256 for key rotation`).
+- Write longer analysis, specs, or architecture notes with `write_document`.
+- `complete_task` summary must be actionable: what was done, what was learned,
+  what the next agent should know. Never just "done".
+- Before disconnecting, `save_context` with structured handoff: current task,
+  progress, blockers, decisions.
+- When you discover something non-obvious, write it to memory immediately.
+- Use `search_memory` and `search_documents` before starting work to check
+  if a previous agent already explored this area.
 "#
     );
 

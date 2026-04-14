@@ -39,41 +39,48 @@ enum Contexts {
 }
 
 impl ContextStore for SqliteBackend {
-    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let embedding_bytes = snapshot.embedding().map(embedding_to_bytes);
+    async fn save(&self, snapshot: &mut ContextSnapshot) -> Result<()> {
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            let embedding_bytes = snapshot.embedding().map(embedding_to_bytes);
 
-        conn.execute(
-            "INSERT OR REPLACE INTO contexts (id, project, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            rusqlite::params![
-                snapshot.id().to_string(),
-                snapshot.project().to_string(),
-                snapshot.agent_id().to_string(),
-                snapshot.namespace().to_string(),
-                snapshot.summary(),
-                embedding_bytes,
-                snapshot.embedding_model(),
-                snapshot.embedding_dimensions().map(|d| d as i64),
-                serde_json::to_string(snapshot.metadata()).unwrap(),
-                snapshot.created_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO contexts (id, project, agent_id, namespace, summary, embedding, embedding_model, embedding_dimensions, metadata, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    snapshot.id().to_string(),
+                    snapshot.project().to_string(),
+                    snapshot.agent_id().to_string(),
+                    snapshot.namespace().to_string(),
+                    snapshot.summary(),
+                    embedding_bytes,
+                    snapshot.embedding_model(),
+                    snapshot.embedding_dimensions().map(|d| d as i64),
+                    serde_json::to_string(snapshot.metadata()).unwrap(),
+                    snapshot.created_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
 
-        let rowid = conn.last_insert_rowid();
+            let rowid = conn.last_insert_rowid();
 
-        conn.execute(
-            "INSERT INTO contexts_fts(rowid, namespace, summary) VALUES(?1, ?2, ?3)",
-            rusqlite::params![rowid, snapshot.namespace().to_string(), snapshot.summary()],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT INTO contexts_fts(rowid, namespace, summary) VALUES(?1, ?2, ?3)",
+                rusqlite::params![rowid, snapshot.namespace().to_string(), snapshot.summary()],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
 
-        if let Some(ref emb_bytes) = embedding_bytes {
-            let _ = conn.execute(
-                "INSERT INTO contexts_vec(rowid, embedding) VALUES(?1, ?2)",
-                rusqlite::params![rowid, emb_bytes],
-            );
+            if let Some(ref emb_bytes) = embedding_bytes {
+                let _ = conn.execute(
+                    "INSERT INTO contexts_vec(rowid, embedding) VALUES(?1, ?2)",
+                    rusqlite::params![rowid, emb_bytes],
+                );
+            }
+        }
+
+        let events = snapshot.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

@@ -23,14 +23,14 @@ fn proj(s: &str) -> ProjectId {
 #[tokio::test]
 async fn agent_save_and_find() {
     let store = backend();
-    let agent = Agent::register(
+    let mut agent = Agent::register(
         proj("myapp"),
         Namespace::root(),
         vec!["coder".into()],
         "test agent".into(),
         HashMap::new(),
     );
-    AgentStore::save(&store, &agent).await.unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
 
     assert_eq!(agent.status(), AgentStatus::Online);
     assert_eq!(agent.roles(), &["coder".to_string()]);
@@ -52,12 +52,12 @@ async fn agent_save_updates_existing() {
         "original".into(),
         HashMap::new(),
     );
-    AgentStore::save(&store, &agent).await.unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
 
     let before = agent.last_heartbeat();
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     agent.heartbeat();
-    AgentStore::save(&store, &agent).await.unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
 
     let updated = AgentStore::find_by_id(&store, &agent.id())
         .await
@@ -76,10 +76,10 @@ async fn agent_disconnect_sets_status() {
         "".into(),
         HashMap::new(),
     );
-    AgentStore::save(&store, &agent).await.unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
 
     agent.disconnect();
-    AgentStore::save(&store, &agent).await.unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
 
     let fetched = AgentStore::find_by_id(&store, &agent.id())
         .await
@@ -98,14 +98,14 @@ async fn agent_find_timed_out() {
         "".into(),
         HashMap::new(),
     );
-    AgentStore::save(&store, &agent).await.unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
     agent.disconnect();
-    AgentStore::save(&store, &agent).await.unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(!timed_out.iter().any(|a| a.id() == agent.id()));
 }
@@ -113,7 +113,7 @@ async fn agent_find_timed_out() {
 #[tokio::test]
 async fn task_save_and_get() {
     let store = backend();
-    let task = Task::new(
+    let mut task = Task::new(
         proj("proj"),
         Namespace::root(),
         None,
@@ -127,7 +127,7 @@ async fn task_save_and_get() {
     )
     .unwrap();
 
-    TaskStore::save(&store, &task).await.unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
 
     let fetched = TaskStore::find_by_id(&store, &task.id())
         .await
@@ -144,7 +144,7 @@ async fn task_save_and_get() {
 async fn task_list_sorted_by_priority() {
     let store = backend();
 
-    let low = Task::new(
+    let mut low = Task::new(
         proj("proj"),
         Namespace::root(),
         None,
@@ -157,9 +157,9 @@ async fn task_list_sorted_by_priority() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &low).await.unwrap();
+    TaskStore::save(&store, &mut low).await.unwrap();
 
-    let critical = Task::new(
+    let mut critical = Task::new(
         proj("proj"),
         Namespace::root(),
         None,
@@ -172,7 +172,7 @@ async fn task_list_sorted_by_priority() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &critical).await.unwrap();
+    TaskStore::save(&store, &mut critical).await.unwrap();
 
     let tasks = TaskStore::list(&store, TaskFilter::default())
         .await
@@ -185,7 +185,7 @@ async fn task_list_sorted_by_priority() {
 async fn memory_save_and_find_by_key() {
     let store = backend();
 
-    let entry = MemoryEntry::new(
+    let mut entry = MemoryEntry::new(
         proj("app"),
         Namespace::root(),
         "config".into(),
@@ -193,7 +193,7 @@ async fn memory_save_and_find_by_key() {
         None,
     )
     .unwrap();
-    MemoryStore::save(&store, &entry).await.unwrap();
+    MemoryStore::save(&store, &mut entry).await.unwrap();
 
     let read = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "config")
         .await
@@ -214,10 +214,10 @@ async fn memory_save_updates_existing() {
         None,
     )
     .unwrap();
-    MemoryStore::save(&store, &entry).await.unwrap();
+    MemoryStore::save(&store, &mut entry).await.unwrap();
 
-    entry.update("v2".into(), None);
-    MemoryStore::save(&store, &entry).await.unwrap();
+    entry.update("v2".into(), None).unwrap();
+    MemoryStore::save(&store, &mut entry).await.unwrap();
 
     let read = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "k")
         .await
@@ -230,11 +230,13 @@ async fn memory_save_updates_existing() {
 async fn memory_list_with_namespace_prefix() {
     let store = backend();
 
-    let entry_a = MemoryEntry::new(proj("app"), ns("/tasks"), "a".into(), "x".into(), None).unwrap();
-    MemoryStore::save(&store, &entry_a).await.unwrap();
+    let mut entry_a =
+        MemoryEntry::new(proj("app"), ns("/tasks"), "a".into(), "x".into(), None).unwrap();
+    MemoryStore::save(&store, &mut entry_a).await.unwrap();
 
-    let entry_b = MemoryEntry::new(proj("app"), ns("/other"), "b".into(), "y".into(), None).unwrap();
-    MemoryStore::save(&store, &entry_b).await.unwrap();
+    let mut entry_b =
+        MemoryEntry::new(proj("app"), ns("/other"), "b".into(), "y".into(), None).unwrap();
+    MemoryStore::save(&store, &mut entry_b).await.unwrap();
 
     let all = MemoryStore::list(
         &store,
@@ -264,7 +266,7 @@ async fn memory_list_with_namespace_prefix() {
 async fn memory_search_by_substring() {
     let store = backend();
 
-    let entry1 = MemoryEntry::new(
+    let mut entry1 = MemoryEntry::new(
         proj("app"),
         Namespace::root(),
         "notes".into(),
@@ -272,9 +274,9 @@ async fn memory_search_by_substring() {
         None,
     )
     .unwrap();
-    MemoryStore::save(&store, &entry1).await.unwrap();
+    MemoryStore::save(&store, &mut entry1).await.unwrap();
 
-    let entry2 = MemoryEntry::new(
+    let mut entry2 = MemoryEntry::new(
         proj("app"),
         Namespace::root(),
         "other".into(),
@@ -282,7 +284,7 @@ async fn memory_search_by_substring() {
         None,
     )
     .unwrap();
-    MemoryStore::save(&store, &entry2).await.unwrap();
+    MemoryStore::save(&store, &mut entry2).await.unwrap();
 
     let results = MemoryStore::search(&store, "quick", None, None, 10)
         .await
@@ -295,8 +297,9 @@ async fn memory_search_by_substring() {
 async fn memory_delete() {
     let store = backend();
 
-    let entry = MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None).unwrap();
-    MemoryStore::save(&store, &entry).await.unwrap();
+    let mut entry =
+        MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None).unwrap();
+    MemoryStore::save(&store, &mut entry).await.unwrap();
 
     MemoryStore::delete(&store, &proj("app"), &Namespace::root(), "k")
         .await
@@ -316,7 +319,7 @@ async fn message_save_and_find_pending() {
 
     let p = proj("test-project");
 
-    let msg = Message::new(
+    let mut msg = Message::new(
         p.clone(),
         Namespace::root(),
         from,
@@ -324,7 +327,7 @@ async fn message_save_and_find_pending() {
         "hello".into(),
         None,
     );
-    MessageStore::save(&store, &msg).await.unwrap();
+    MessageStore::save(&store, &mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
     let messages = MessageStore::find_pending(&store, &to, &p, &Namespace::root())
@@ -336,7 +339,7 @@ async fn message_save_and_find_pending() {
 
     let mut delivered = messages.into_iter().next().unwrap();
     delivered.deliver();
-    MessageStore::save(&store, &delivered).await.unwrap();
+    MessageStore::save(&store, &mut delivered).await.unwrap();
 
     let messages = MessageStore::find_pending(&store, &to, &p, &Namespace::root())
         .await
@@ -353,7 +356,7 @@ async fn message_find_by_id_and_mark_read() {
 
     let p = proj("test-project");
 
-    let msg = Message::new(
+    let mut msg = Message::new(
         p.clone(),
         Namespace::root(),
         from,
@@ -361,14 +364,14 @@ async fn message_find_by_id_and_mark_read() {
         "hi".into(),
         None,
     );
-    MessageStore::save(&store, &msg).await.unwrap();
+    MessageStore::save(&store, &mut msg).await.unwrap();
 
     let mut fetched = MessageStore::find_by_id(&store, &msg.id())
         .await
         .unwrap()
         .unwrap();
     fetched.mark_read();
-    MessageStore::save(&store, &fetched).await.unwrap();
+    MessageStore::save(&store, &mut fetched).await.unwrap();
 
     let read = MessageStore::find_by_id(&store, &msg.id())
         .await
@@ -382,25 +385,25 @@ async fn context_save_and_find_latest() {
     let store = backend();
     let agent = AgentId::new();
 
-    let snap1 = ContextSnapshot::new(
+    let mut snap1 = ContextSnapshot::new(
         proj("proj"),
         agent,
         Namespace::root(),
         "first snapshot".into(),
         HashMap::new(),
     );
-    ContextStore::save(&store, &snap1).await.unwrap();
+    ContextStore::save(&store, &mut snap1).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-    let snap2 = ContextSnapshot::new(
+    let mut snap2 = ContextSnapshot::new(
         proj("proj"),
         agent,
         Namespace::root(),
         "second snapshot".into(),
         HashMap::new(),
     );
-    ContextStore::save(&store, &snap2).await.unwrap();
+    ContextStore::save(&store, &mut snap2).await.unwrap();
 
     let loaded = ContextStore::find_latest(&store, &agent)
         .await
@@ -415,23 +418,23 @@ async fn context_list_filters() {
     let agent1 = AgentId::new();
     let agent2 = AgentId::new();
 
-    let snap1 = ContextSnapshot::new(
+    let mut snap1 = ContextSnapshot::new(
         proj("proj"),
         agent1,
         Namespace::root(),
         "a1".into(),
         HashMap::new(),
     );
-    ContextStore::save(&store, &snap1).await.unwrap();
+    ContextStore::save(&store, &mut snap1).await.unwrap();
 
-    let snap2 = ContextSnapshot::new(
+    let mut snap2 = ContextSnapshot::new(
         proj("other"),
         agent2,
         ns("/sub"),
         "a2".into(),
         HashMap::new(),
     );
-    ContextStore::save(&store, &snap2).await.unwrap();
+    ContextStore::save(&store, &mut snap2).await.unwrap();
 
     let by_agent = ContextStore::list(&store, Some(&agent1), &Namespace::root())
         .await
@@ -450,23 +453,23 @@ async fn context_search_by_substring() {
     let store = backend();
     let agent = AgentId::new();
 
-    let snap1 = ContextSnapshot::new(
+    let mut snap1 = ContextSnapshot::new(
         proj("test-project"),
         agent,
         Namespace::root(),
         "working on authentication module".into(),
         HashMap::new(),
     );
-    ContextStore::save(&store, &snap1).await.unwrap();
+    ContextStore::save(&store, &mut snap1).await.unwrap();
 
-    let snap2 = ContextSnapshot::new(
+    let mut snap2 = ContextSnapshot::new(
         proj("test-project"),
         agent,
         Namespace::root(),
         "fixing database migrations".into(),
         HashMap::new(),
     );
-    ContextStore::save(&store, &snap2).await.unwrap();
+    ContextStore::save(&store, &mut snap2).await.unwrap();
 
     let results = ContextStore::search(&store, "auth", None, &Namespace::root(), None, 10)
         .await
@@ -480,7 +483,7 @@ async fn skill_save_and_find_by_name() {
     let store = backend();
     let p = proj("test-project");
 
-    let skill = Skill::new(
+    let mut skill = Skill::new(
         p.clone(),
         Namespace::root(),
         "commit-conventions".to_string(),
@@ -489,7 +492,7 @@ async fn skill_save_and_find_by_name() {
         None,
     )
     .unwrap();
-    SkillStore::save(&store, &skill).await.unwrap();
+    SkillStore::save(&store, &mut skill).await.unwrap();
 
     let read = SkillStore::find_by_name(&store, &p, &Namespace::root(), "commit-conventions")
         .await
@@ -508,7 +511,7 @@ async fn skill_save_updates_existing() {
     let store = backend();
     let p = proj("test-project");
 
-    let skill = Skill::new(
+    let mut skill = Skill::new(
         p.clone(),
         Namespace::root(),
         "style".to_string(),
@@ -517,9 +520,9 @@ async fn skill_save_updates_existing() {
         None,
     )
     .unwrap();
-    SkillStore::save(&store, &skill).await.unwrap();
+    SkillStore::save(&store, &mut skill).await.unwrap();
 
-    let updated = Skill::new(
+    let mut updated = Skill::new(
         p.clone(),
         Namespace::root(),
         "style".to_string(),
@@ -528,7 +531,7 @@ async fn skill_save_updates_existing() {
         None,
     )
     .unwrap();
-    SkillStore::save(&store, &updated).await.unwrap();
+    SkillStore::save(&store, &mut updated).await.unwrap();
 
     let read = SkillStore::find_by_name(&store, &p, &Namespace::root(), "style")
         .await
@@ -543,7 +546,7 @@ async fn skill_list_filters_by_namespace() {
     let store = backend();
     let p = proj("proj-a");
 
-    let s1 = Skill::new(
+    let mut s1 = Skill::new(
         p.clone(),
         Namespace::root(),
         "style".to_string(),
@@ -552,9 +555,9 @@ async fn skill_list_filters_by_namespace() {
         None,
     )
     .unwrap();
-    SkillStore::save(&store, &s1).await.unwrap();
+    SkillStore::save(&store, &mut s1).await.unwrap();
 
-    let s2 = Skill::new(
+    let mut s2 = Skill::new(
         p.clone(),
         ns("/backend"),
         "arch".to_string(),
@@ -563,10 +566,10 @@ async fn skill_list_filters_by_namespace() {
         None,
     )
     .unwrap();
-    SkillStore::save(&store, &s2).await.unwrap();
+    SkillStore::save(&store, &mut s2).await.unwrap();
 
     let pb = proj("proj-b");
-    let s3 = Skill::new(
+    let mut s3 = Skill::new(
         pb.clone(),
         Namespace::root(),
         "style".to_string(),
@@ -575,7 +578,7 @@ async fn skill_list_filters_by_namespace() {
         None,
     )
     .unwrap();
-    SkillStore::save(&store, &s3).await.unwrap();
+    SkillStore::save(&store, &mut s3).await.unwrap();
 
     let all_a = SkillStore::list(
         &store,
@@ -606,7 +609,7 @@ async fn skill_delete() {
     let store = backend();
     let p = proj("test-project");
 
-    let skill = Skill::new(
+    let mut skill = Skill::new(
         p.clone(),
         Namespace::root(),
         "temp".to_string(),
@@ -615,7 +618,7 @@ async fn skill_delete() {
         None,
     )
     .unwrap();
-    SkillStore::save(&store, &skill).await.unwrap();
+    SkillStore::save(&store, &mut skill).await.unwrap();
 
     SkillStore::delete(&store, &p, &Namespace::root(), "temp")
         .await
@@ -634,7 +637,7 @@ async fn message_find_sent() {
     let receiver = AgentId::new();
     let p = proj("proj");
 
-    let msg = Message::new(
+    let mut msg = Message::new(
         p.clone(),
         ns("/backend"),
         sender,
@@ -642,7 +645,7 @@ async fn message_find_sent() {
         "hello".into(),
         None,
     );
-    MessageStore::save(&store, &msg).await.unwrap();
+    MessageStore::save(&store, &mut msg).await.unwrap();
 
     let sent = MessageStore::find_sent(&store, &sender, &p, &Namespace::root())
         .await
@@ -663,7 +666,7 @@ async fn message_find_thread() {
     let b = AgentId::new();
     let p = proj("proj");
 
-    let msg1 = Message::new(
+    let mut msg1 = Message::new(
         p.clone(),
         Namespace::root(),
         a,
@@ -671,13 +674,13 @@ async fn message_find_thread() {
         "first".into(),
         None,
     );
-    MessageStore::save(&store, &msg1).await.unwrap();
+    MessageStore::save(&store, &mut msg1).await.unwrap();
 
-    let msg2 = msg1.reply(b, "second".into());
-    MessageStore::save(&store, &msg2).await.unwrap();
+    let mut msg2 = msg1.reply(b, "second".into());
+    MessageStore::save(&store, &mut msg2).await.unwrap();
 
-    let msg3 = msg2.reply(a, "third".into());
-    MessageStore::save(&store, &msg3).await.unwrap();
+    let mut msg3 = msg2.reply(a, "third".into());
+    MessageStore::save(&store, &mut msg3).await.unwrap();
 
     let thread = MessageStore::find_thread(&store, &msg3.id(), None)
         .await
@@ -702,7 +705,7 @@ async fn message_find_pending_includes_broadcast() {
     let receiver = AgentId::new();
     let p = proj("proj");
 
-    let msg = Message::new(
+    let mut msg = Message::new(
         p.clone(),
         Namespace::root(),
         sender,
@@ -710,7 +713,7 @@ async fn message_find_pending_includes_broadcast() {
         "to all".into(),
         None,
     );
-    MessageStore::save(&store, &msg).await.unwrap();
+    MessageStore::save(&store, &mut msg).await.unwrap();
 
     let pending = MessageStore::find_pending(&store, &receiver, &p, &Namespace::root())
         .await
@@ -724,7 +727,7 @@ async fn task_list_filters_by_parent_id() {
     let store = backend();
     let p = proj("proj");
 
-    let parent = Task::new(
+    let mut parent = Task::new(
         p.clone(),
         Namespace::root(),
         None,
@@ -737,9 +740,9 @@ async fn task_list_filters_by_parent_id() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &parent).await.unwrap();
+    TaskStore::save(&store, &mut parent).await.unwrap();
 
-    let child = Task::new(
+    let mut child = Task::new(
         p.clone(),
         Namespace::root(),
         Some(parent.id()),
@@ -752,9 +755,9 @@ async fn task_list_filters_by_parent_id() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &child).await.unwrap();
+    TaskStore::save(&store, &mut child).await.unwrap();
 
-    let unrelated = Task::new(
+    let mut unrelated = Task::new(
         p.clone(),
         Namespace::root(),
         None,
@@ -767,7 +770,7 @@ async fn task_list_filters_by_parent_id() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &unrelated).await.unwrap();
+    TaskStore::save(&store, &mut unrelated).await.unwrap();
 
     let children = TaskStore::list(
         &store,
@@ -801,9 +804,9 @@ async fn task_list_filters_by_assigned_to() {
     )
     .unwrap();
     task.claim(agent).unwrap();
-    TaskStore::save(&store, &task).await.unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
 
-    let other = Task::new(
+    let mut other = Task::new(
         proj("proj"),
         Namespace::root(),
         None,
@@ -816,7 +819,7 @@ async fn task_list_filters_by_assigned_to() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &other).await.unwrap();
+    TaskStore::save(&store, &mut other).await.unwrap();
 
     let assigned = TaskStore::list(
         &store,

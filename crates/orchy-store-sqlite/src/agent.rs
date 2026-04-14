@@ -13,25 +13,32 @@ use crate::SqliteBackend;
 const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for SqliteBackend {
-    async fn save(&self, agent: &Agent) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            rusqlite::params![
-                agent.id().to_string(),
-                agent.project().to_string(),
-                agent.namespace().to_string(),
-                agent.parent_id().map(|id| id.to_string()),
-                serde_json::to_string(agent.roles()).unwrap(),
-                agent.description(),
-                agent.status().to_string(),
-                agent.last_heartbeat().to_rfc3339(),
-                agent.connected_at().to_rfc3339(),
-                serde_json::to_string(agent.metadata()).unwrap(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    agent.id().to_string(),
+                    agent.project().to_string(),
+                    agent.namespace().to_string(),
+                    agent.parent_id().map(|id| id.to_string()),
+                    serde_json::to_string(agent.roles()).unwrap(),
+                    agent.description(),
+                    agent.status().to_string(),
+                    agent.last_heartbeat().to_rfc3339(),
+                    agent.connected_at().to_rfc3339(),
+                    serde_json::to_string(agent.metadata()).unwrap(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
+
+        let events = agent.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

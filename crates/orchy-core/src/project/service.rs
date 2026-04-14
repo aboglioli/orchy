@@ -18,8 +18,8 @@ impl<S: ProjectStore> ProjectService<S> {
         match self.store.find_by_id(id).await? {
             Some(project) => Ok(project),
             None => {
-                let project = Project::new(id.clone(), String::new());
-                self.store.save(&project).await?;
+                let mut project = Project::new(id.clone(), String::new());
+                self.store.save(&mut project).await?;
                 Ok(project)
             }
         }
@@ -32,7 +32,7 @@ impl<S: ProjectStore> ProjectService<S> {
     pub async fn update_description(&self, id: &ProjectId, description: String) -> Result<Project> {
         let mut project = self.get_or_create(id).await?;
         project.update_description(description);
-        self.store.save(&project).await?;
+        self.store.save(&mut project).await?;
         Ok(project)
     }
 
@@ -44,7 +44,7 @@ impl<S: ProjectStore> ProjectService<S> {
     ) -> Result<Project> {
         let mut project = self.get_or_create(id).await?;
         project.add_note(author, body);
-        self.store.save(&project).await?;
+        self.store.save(&mut project).await?;
         Ok(project)
     }
 }

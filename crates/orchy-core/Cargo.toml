@@ -4,6 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+orchy-events.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 serde.workspace = true

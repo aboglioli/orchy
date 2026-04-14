@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::{Skill, SkillFilter, SkillStore, WriteSkill};
@@ -20,7 +21,7 @@ impl<S: SkillStore> SkillService<S> {
             ));
         }
 
-        let skill = if let Some(mut existing) = self
+        let mut skill = if let Some(mut existing) = self
             .store
             .find_by_name(&cmd.project, &cmd.namespace, &cmd.name)
             .await?
@@ -38,7 +39,7 @@ impl<S: SkillStore> SkillService<S> {
             )?
         };
 
-        self.store.save(&skill).await?;
+        self.store.save(&mut skill).await?;
         Ok(skill)
     }
 
@@ -71,6 +72,35 @@ impl<S: SkillStore> SkillService<S> {
         Ok(Skill::filter_with_inheritance(all, namespace))
     }
 
+    pub async fn list_with_inherited_and_linked(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        linked_projects: &[ProjectId],
+    ) -> Result<Vec<Skill>> {
+        let mut result = self.list_with_inherited(project, namespace).await?;
+        let local_names: HashSet<String> = result.iter().map(|s| s.name().to_string()).collect();
+
+        for linked in linked_projects {
+            let linked_skills = self
+                .store
+                .list(SkillFilter {
+                    project: Some(linked.clone()),
+                    ..Default::default()
+                })
+                .await?;
+
+            for skill in linked_skills {
+                if !local_names.contains(skill.name()) {
+                    result.push(skill);
+                }
+            }
+        }
+
+        result.sort_by(|a, b| a.name().cmp(b.name()));
+        Ok(result)
+    }
+
     pub async fn move_skill(
         &self,
         project: &ProjectId,
@@ -87,7 +117,7 @@ impl<S: SkillStore> SkillService<S> {
         let old_namespace = skill.namespace().clone();
         let old_name = skill.name().to_string();
         skill.move_to(new_namespace);
-        self.store.save(&skill).await?;
+        self.store.save(&mut skill).await?;
         self.store
             .delete(project, &old_namespace, &old_name)
             .await?;
@@ -100,6 +130,10 @@ impl<S: SkillStore> SkillService<S> {
         namespace: &Namespace,
         name: &str,
     ) -> Result<()> {
+        if let Some(mut skill) = self.store.find_by_name(project, namespace, name).await? {
+            skill.mark_deleted();
+            self.store.save(&mut skill).await?;
+        }
         self.store.delete(project, namespace, name).await
     }
 }

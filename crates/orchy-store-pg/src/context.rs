@@ -38,7 +38,7 @@ enum Contexts {
 }
 
 impl ContextStore for PgBackend {
-    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
+    async fn save(&self, snapshot: &mut ContextSnapshot) -> Result<()> {
         let vec_binding = snapshot.embedding().map(|e| Vector::from(e.to_vec()));
         let metadata_json = serde_json::to_value(snapshot.metadata()).unwrap();
 
@@ -65,6 +65,11 @@ impl ContextStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = snapshot.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }
@@ -190,4 +195,3 @@ fn row_to_context(row: &sqlx::postgres::PgRow) -> ContextSnapshot {
         created_at,
     })
 }
-

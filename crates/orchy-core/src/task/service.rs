@@ -1,31 +1,32 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore, TaskWithContext};
+use super::{
+    Priority, ReviewId, ReviewRequest, ReviewStore, SubtaskDef, Task, TaskFilter, TaskId,
+    TaskStatus, TaskStore, TaskWatcher, TaskWithContext, WatcherStore,
+};
 use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
+use crate::message::{Message, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, ProjectId};
 
-pub struct TaskService<TS: TaskStore, AS: AgentStore> {
+pub struct TaskService<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> {
     task_store: Arc<TS>,
-    agent_store: Arc<AS>,
+    store: Arc<S>,
 }
 
-impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
-    pub fn new(task_store: Arc<TS>, agent_store: Arc<AS>) -> Self {
-        Self {
-            task_store,
-            agent_store,
-        }
+impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> TaskService<TS, S> {
+    pub fn new(task_store: Arc<TS>, store: Arc<S>) -> Self {
+        Self { task_store, store }
     }
 
-    pub async fn create(&self, task: Task) -> Result<()> {
+    pub async fn create(&self, mut task: Task) -> Result<()> {
         for dep_id in task.depends_on() {
             if self.task_store.find_by_id(dep_id).await?.is_none() {
                 return Err(Error::NotFound(format!("dependency task {dep_id}")));
             }
         }
-        self.task_store.save(&task).await
+        self.task_store.save(&mut task).await
     }
 
     pub async fn get(&self, id: &TaskId) -> Result<Task> {
@@ -47,7 +48,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         }
 
         task.claim(*agent)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -79,7 +80,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             if self.all_deps_completed(task.depends_on()).await? {
                 match task.claim(*agent) {
                     Ok(()) => {
-                        self.task_store.save(&task).await?;
+                        self.task_store.save(&mut task).await?;
                         return Ok(Some(task));
                     }
                     Err(Error::InvalidTransition { .. }) => continue,
@@ -94,14 +95,16 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
     pub async fn start(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.start(agent)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
+        self.notify_watchers(&task, "started").await;
         Ok(task)
     }
 
     pub async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.complete(summary)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
+        self.notify_watchers(&task, "completed").await;
         self.resolve_dependents(task.id()).await?;
         Ok(task)
     }
@@ -109,7 +112,9 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
     pub async fn fail(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.fail(reason)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
+        self.notify_watchers(&task, "failed").await;
+        self.notify_blocked_dependents_of_failure(&task).await;
         Ok(task)
     }
 
@@ -120,34 +125,47 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         body: String,
     ) -> Result<Task> {
         let mut task = self.get(id).await?;
-        task.add_note(author, body);
-        self.task_store.save(&task).await?;
+        task.add_note(author, body)?;
+        self.task_store.save(&mut task).await?;
+        Ok(task)
+    }
+
+    pub async fn tag(&self, id: &TaskId, tag: String) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.add_tag(tag)?;
+        self.task_store.save(&mut task).await?;
+        Ok(task)
+    }
+
+    pub async fn untag(&self, id: &TaskId, tag: &str) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.remove_tag(tag)?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn move_task(&self, id: &TaskId, namespace: Namespace) -> Result<Task> {
         let mut task = self.get(id).await?;
-        task.move_to(namespace);
-        self.task_store.save(&task).await?;
+        task.move_to(namespace)?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn assign(&self, id: &TaskId, new_agent: &AgentId) -> Result<Task> {
-        self.agent_store
-            .find_by_id(new_agent)
+        AgentStore::find_by_id(&*self.store, new_agent)
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {new_agent}")))?;
 
         let mut task = self.get(id).await?;
         task.assign(*new_agent)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn release(&self, id: &TaskId) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.release()?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -187,7 +205,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut children = Vec::with_capacity(subtasks.len());
 
         for def in subtasks {
-            let task = Task::new(
+            let mut task = Task::new(
                 parent.project().clone(),
                 parent.namespace().clone(),
                 Some(*parent_id),
@@ -199,15 +217,15 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 created_by,
                 false,
             )?;
-            self.task_store.save(&task).await?;
+            self.task_store.save(&mut task).await?;
             children.push(task);
         }
 
         for child in &children {
-            parent.add_dependency(child.id());
+            parent.add_dependency(child.id())?;
         }
         parent.block()?;
-        self.task_store.save(&parent).await?;
+        self.task_store.save(&mut parent).await?;
 
         Ok((parent, children))
     }
@@ -222,11 +240,11 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut original = self.get(task_id).await?;
         let cancel_reason = reason.unwrap_or_else(|| "replaced by new tasks".to_string());
         original.cancel(Some(cancel_reason))?;
-        self.task_store.save(&original).await?;
+        self.task_store.save(&mut original).await?;
 
         let mut new_tasks = Vec::with_capacity(replacements.len());
         for def in replacements {
-            let task = Task::new(
+            let mut task = Task::new(
                 original.project().clone(),
                 original.namespace().clone(),
                 original.parent_id(),
@@ -238,32 +256,184 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 created_by,
                 false,
             )?;
-            self.task_store.save(&task).await?;
+            self.task_store.save(&mut task).await?;
             new_tasks.push(task);
         }
 
         Ok((original, new_tasks))
     }
 
-    pub async fn add_dependency(
+    pub async fn merge_tasks(
         &self,
-        task_id: &TaskId,
-        dependency_id: &TaskId,
-    ) -> Result<Task> {
+        task_ids: &[TaskId],
+        title: String,
+        description: String,
+        created_by: Option<AgentId>,
+    ) -> Result<(Task, Vec<Task>)> {
+        if task_ids.len() < 2 {
+            return Err(Error::InvalidInput(
+                "merge requires at least 2 tasks".into(),
+            ));
+        }
 
+        let mut sources = Vec::with_capacity(task_ids.len());
+        for id in task_ids {
+            sources.push(self.get(id).await?);
+        }
+
+        let project = sources[0].project().clone();
+        for task in &sources {
+            if *task.project() != project {
+                return Err(Error::InvalidInput(format!(
+                    "task {} belongs to project {}, expected {}",
+                    task.id(),
+                    task.project(),
+                    project
+                )));
+            }
+            if !task.status().is_mergeable() {
+                return Err(Error::InvalidInput(format!(
+                    "task {} has status {} which cannot be merged",
+                    task.id(),
+                    task.status()
+                )));
+            }
+        }
+
+        let source_ids: HashSet<TaskId> = task_ids.iter().copied().collect();
+
+        let priority = sources
+            .iter()
+            .map(|t| t.priority())
+            .max()
+            .unwrap_or(Priority::default());
+
+        let mut roles_set = HashSet::new();
+        for task in &sources {
+            for role in task.assigned_roles() {
+                roles_set.insert(role.clone());
+            }
+        }
+        let assigned_roles: Vec<String> = roles_set.into_iter().collect();
+
+        let mut deps_set = HashSet::new();
+        for task in &sources {
+            for dep in task.depends_on() {
+                if !source_ids.contains(dep) {
+                    deps_set.insert(*dep);
+                }
+            }
+        }
+        let depends_on: Vec<TaskId> = deps_set.into_iter().collect();
+
+        let parent_id = {
+            let first_parent = sources[0].parent_id();
+            if sources.iter().all(|t| t.parent_id() == first_parent) {
+                first_parent
+            } else {
+                None
+            }
+        };
+
+        let namespace = sources[0].namespace().clone();
+        let is_blocked = !depends_on.is_empty() && !self.all_deps_completed(&depends_on).await?;
+
+        let mut merged = Task::new(
+            project,
+            namespace,
+            parent_id,
+            title,
+            description,
+            priority,
+            assigned_roles,
+            depends_on,
+            created_by,
+            is_blocked,
+        )?;
+
+        for task in &sources {
+            for note in task.notes() {
+                merged.add_note(note.author(), note.body().to_string())?;
+            }
+        }
+
+        self.task_store.save(&mut merged).await?;
+
+        let mut cancelled = Vec::with_capacity(sources.len());
+        for mut task in sources {
+            task.cancel(Some(format!("merged into {}", merged.id())))?;
+            self.task_store.save(&mut task).await?;
+            cancelled.push(task);
+        }
+
+        for source_id in &source_ids {
+            let children = self
+                .task_store
+                .list(TaskFilter {
+                    parent_id: Some(*source_id),
+                    ..Default::default()
+                })
+                .await?;
+
+            for mut child in children {
+                child.set_parent_id(Some(merged.id()));
+                self.task_store.save(&mut child).await?;
+            }
+        }
+
+        for status in [
+            TaskStatus::Pending,
+            TaskStatus::Blocked,
+            TaskStatus::Claimed,
+        ] {
+            let tasks = self
+                .task_store
+                .list(TaskFilter {
+                    project: Some(merged.project().clone()),
+                    status: Some(status),
+                    ..Default::default()
+                })
+                .await?;
+
+            for mut task in tasks {
+                if source_ids.contains(&task.id()) || task.id() == merged.id() {
+                    continue;
+                }
+
+                let mut changed = false;
+                for source_id in &source_ids {
+                    if task.depends_on().contains(source_id) {
+                        task.replace_dependency(source_id, merged.id());
+                        changed = true;
+                    }
+                }
+
+                if changed {
+                    self.task_store.save(&mut task).await?;
+                }
+            }
+        }
+
+        Ok((merged, cancelled))
+    }
+
+    pub async fn add_dependency(&self, task_id: &TaskId, dependency_id: &TaskId) -> Result<Task> {
         self.get(dependency_id).await?;
 
         let mut task = self.get(task_id).await?;
 
-        if matches!(task.status(), TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled) {
+        if matches!(
+            task.status(),
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+        ) {
             return Err(Error::InvalidInput(format!(
                 "cannot add dependency to task {} with status {}",
-                task_id, task.status()
+                task_id,
+                task.status()
             )));
         }
 
-        task.add_dependency(*dependency_id);
-
+        task.add_dependency(*dependency_id)?;
 
         if !self.all_deps_completed(task.depends_on()).await? {
             if task.status() == TaskStatus::Pending {
@@ -271,7 +441,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             }
         }
 
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -281,16 +451,15 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         dependency_id: &TaskId,
     ) -> Result<Task> {
         let mut task = self.get(task_id).await?;
-        task.remove_dependency(dependency_id);
-
+        task.remove_dependency(dependency_id)?;
 
         if task.status() == TaskStatus::Blocked
             && self.all_deps_completed(task.depends_on()).await?
         {
-            task.unblock();
+            task.unblock()?;
         }
 
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -301,7 +470,6 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
     ) -> Result<Vec<String>> {
         let mut role_counts: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
-
 
         for status in &[TaskStatus::Pending, TaskStatus::Blocked] {
             let filter = TaskFilter {
@@ -384,12 +552,12 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 if self.has_children(&task).await? {
                     let summary = self.children_summaries(&task).await?;
                     let task_id = task.id();
-                    task.auto_complete(summary);
-                    self.task_store.save(&task).await?;
+                    task.auto_complete(summary)?;
+                    self.task_store.save(&mut task).await?;
                     self.resolve_dependents(task_id).await?;
                 } else {
-                    task.unblock();
-                    self.task_store.save(&task).await?;
+                    task.unblock()?;
+                    self.task_store.save(&mut task).await?;
                 }
             }
         }
@@ -408,6 +576,163 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         Ok(!children.is_empty())
     }
 
+    pub async fn watch(
+        &self,
+        task_id: &TaskId,
+        agent_id: AgentId,
+        project: ProjectId,
+        namespace: Namespace,
+    ) -> Result<TaskWatcher> {
+        self.get(task_id).await?;
+        let watcher = TaskWatcher::new(*task_id, agent_id, project, namespace);
+        WatcherStore::save(&*self.store, &watcher).await?;
+        Ok(watcher)
+    }
+
+    pub async fn unwatch(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()> {
+        WatcherStore::delete(&*self.store, task_id, agent_id).await
+    }
+
+    pub async fn request_review(
+        &self,
+        task_id: &TaskId,
+        project: ProjectId,
+        namespace: Namespace,
+        requester: AgentId,
+        reviewer: Option<AgentId>,
+        reviewer_role: Option<String>,
+    ) -> Result<ReviewRequest> {
+        self.get(task_id).await?;
+        let review = ReviewRequest::new(
+            *task_id,
+            project.clone(),
+            namespace.clone(),
+            requester,
+            reviewer,
+            reviewer_role.clone(),
+        );
+        ReviewStore::save(&*self.store, &review).await?;
+
+        let body = format!(
+            "Review requested for task {} (review {})",
+            task_id,
+            review.id()
+        );
+        let target = if let Some(agent) = reviewer {
+            MessageTarget::Agent(agent)
+        } else if let Some(role) = reviewer_role {
+            MessageTarget::Role(role)
+        } else {
+            MessageTarget::Broadcast
+        };
+        let mut msg = Message::new(project, namespace, requester, target, body, None);
+        let _ = MessageStore::save(&*self.store, &mut msg).await;
+
+        Ok(review)
+    }
+
+    pub async fn resolve_review(
+        &self,
+        review_id: &ReviewId,
+        resolver: AgentId,
+        approved: bool,
+        comments: Option<String>,
+    ) -> Result<ReviewRequest> {
+        let mut review = ReviewStore::find_by_id(&*self.store, review_id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("review {review_id}")))?;
+
+        if approved {
+            review.approve(comments)?;
+        } else {
+            review.reject(comments)?;
+        }
+        ReviewStore::save(&*self.store, &review).await?;
+
+        let body = format!(
+            "Review {} for task {}: {}",
+            review.id(),
+            review.task_id(),
+            review.status()
+        );
+        let mut msg = Message::new(
+            review.project().clone(),
+            review.namespace().clone(),
+            resolver,
+            MessageTarget::Agent(review.requester()),
+            body,
+            None,
+        );
+        let _ = MessageStore::save(&*self.store, &mut msg).await;
+
+        Ok(review)
+    }
+
+    pub async fn get_review(&self, id: &ReviewId) -> Result<ReviewRequest> {
+        ReviewStore::find_by_id(&*self.store, id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("review {id}")))
+    }
+
+    pub async fn list_reviews_for_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
+        ReviewStore::find_by_task(&*self.store, task_id).await
+    }
+
+    async fn notify_watchers(&self, task: &Task, event: &str) {
+        let watchers = WatcherStore::find_watchers(&*self.store, &task.id()).await;
+        if let Ok(watchers) = watchers {
+            for watcher in watchers {
+                let body = format!("[watch] task {} ({}): {}", task.id(), task.title(), event);
+                let mut msg = Message::new(
+                    watcher.project().clone(),
+                    watcher.namespace().clone(),
+                    watcher.agent_id(),
+                    MessageTarget::Agent(watcher.agent_id()),
+                    body,
+                    None,
+                );
+                let _ = MessageStore::save(&*self.store, &mut msg).await;
+            }
+        }
+    }
+
+    async fn notify_blocked_dependents_of_failure(&self, failed_task: &Task) {
+        let blocked = self
+            .task_store
+            .list(TaskFilter {
+                project: Some(failed_task.project().clone()),
+                status: Some(TaskStatus::Blocked),
+                ..Default::default()
+            })
+            .await;
+
+        if let Ok(tasks) = blocked {
+            for task in tasks {
+                if task.depends_on().contains(&failed_task.id()) {
+                    if let Some(agent) = task.assigned_to() {
+                        let body = format!(
+                            "[dependency-failed] task {} ({}) depends on failed task {} ({})",
+                            task.id(),
+                            task.title(),
+                            failed_task.id(),
+                            failed_task.title(),
+                        );
+                        let mut msg = Message::new(
+                            task.project().clone(),
+                            task.namespace().clone(),
+                            agent,
+                            MessageTarget::Agent(agent),
+                            body,
+                            None,
+                        );
+                        let _ = MessageStore::save(&*self.store, &mut msg).await;
+                    }
+                    self.notify_watchers(&task, "dependency failed").await;
+                }
+            }
+        }
+    }
+
     async fn children_summaries(&self, task: &Task) -> Result<String> {
         let children = self
             .task_store
@@ -419,10 +744,13 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
         let mut parts = Vec::new();
         for child in &children {
-            let summary = child
-                .result_summary()
-                .unwrap_or("(no summary)");
-            parts.push(format!("- [{}] {}: {}", child.status(), child.title(), summary));
+            let summary = child.result_summary().unwrap_or("(no summary)");
+            parts.push(format!(
+                "- [{}] {}: {}",
+                child.status(),
+                child.title(),
+                summary
+            ));
         }
         Ok(format!(
             "All {} subtasks completed:\n{}",

@@ -40,56 +40,63 @@ enum Memory {
 }
 
 impl MemoryStore for SqliteBackend {
-    async fn save(&self, entry: &MemoryEntry) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+    async fn save(&self, entry: &mut MemoryEntry) -> Result<()> {
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let embedding_bytes = entry.embedding().map(embedding_to_bytes);
+            let embedding_bytes = entry.embedding().map(embedding_to_bytes);
 
-        conn.execute(
-            "INSERT OR REPLACE INTO memory (project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            rusqlite::params![
-                entry.project().to_string(),
-                entry.namespace().to_string(),
-                entry.key(),
-                entry.value(),
-                entry.version().as_u64() as i64,
-                embedding_bytes,
-                entry.embedding_model(),
-                entry.embedding_dimensions().map(|d| d as i64),
-                entry.written_by().map(|a| a.to_string()),
-                entry.created_at().to_rfc3339(),
-                entry.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO memory (project, namespace, key, value, version, embedding, embedding_model, embedding_dimensions, written_by, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                rusqlite::params![
+                    entry.project().to_string(),
+                    entry.namespace().to_string(),
+                    entry.key(),
+                    entry.value(),
+                    entry.version().as_u64() as i64,
+                    embedding_bytes,
+                    entry.embedding_model(),
+                    entry.embedding_dimensions().map(|d| d as i64),
+                    entry.written_by().map(|a| a.to_string()),
+                    entry.created_at().to_rfc3339(),
+                    entry.updated_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
 
-        let rowid = conn.last_insert_rowid();
+            let rowid = conn.last_insert_rowid();
 
-        let _ = conn.execute(
-            "INSERT INTO memory_fts(memory_fts, rowid, namespace, key, value) VALUES('delete', ?1, ?2, ?3, ?4)",
-            rusqlite::params![rowid, entry.namespace().to_string(), entry.key(), entry.value()],
-        );
-        conn.execute(
-            "INSERT INTO memory_fts(rowid, namespace, key, value) VALUES(?1, ?2, ?3, ?4)",
-            rusqlite::params![
-                rowid,
-                entry.namespace().to_string(),
-                entry.key(),
-                entry.value()
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        if let Some(ref emb_bytes) = embedding_bytes {
             let _ = conn.execute(
-                "DELETE FROM memory_vec WHERE rowid = ?1",
-                rusqlite::params![rowid],
+                "INSERT INTO memory_fts(memory_fts, rowid, namespace, key, value) VALUES('delete', ?1, ?2, ?3, ?4)",
+                rusqlite::params![rowid, entry.namespace().to_string(), entry.key(), entry.value()],
             );
-            let _ = conn.execute(
-                "INSERT INTO memory_vec(rowid, embedding) VALUES(?1, ?2)",
-                rusqlite::params![rowid, emb_bytes],
-            );
+            conn.execute(
+                "INSERT INTO memory_fts(rowid, namespace, key, value) VALUES(?1, ?2, ?3, ?4)",
+                rusqlite::params![
+                    rowid,
+                    entry.namespace().to_string(),
+                    entry.key(),
+                    entry.value()
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+            if let Some(ref emb_bytes) = embedding_bytes {
+                let _ = conn.execute(
+                    "DELETE FROM memory_vec WHERE rowid = ?1",
+                    rusqlite::params![rowid],
+                );
+                let _ = conn.execute(
+                    "INSERT INTO memory_vec(rowid, embedding) VALUES(?1, ?2)",
+                    rusqlite::params![rowid, emb_bytes],
+                );
+            }
+        }
+
+        let events = entry.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

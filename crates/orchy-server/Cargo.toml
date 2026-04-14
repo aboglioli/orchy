@@ -5,6 +5,7 @@ version.workspace = true
 
 [dependencies]
 orchy-core.workspace = true
+orchy-events.workspace = true
 orchy-store-memory.workspace = true
 orchy-store-sqlite.workspace = true
 orchy-store-pg.workspace = true
@@ -17,3 +18,4 @@ toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 reqwest.workspace = true
+async-trait = "0.1"
