@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use pgvector::Vector;
+use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
+use sea_query_binder::SqlxBinder;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -9,6 +11,31 @@ use orchy_core::memory::{MemoryEntry, MemoryFilter, MemoryStore, RestoreMemoryEn
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{PgBackend, parse_pg_vector_text};
+
+#[derive(Iden)]
+enum Memory {
+    Table,
+    #[iden = "project"]
+    Project,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "key"]
+    Key,
+    #[iden = "value"]
+    Value,
+    #[iden = "version"]
+    Version,
+    #[iden = "embedding_model"]
+    EmbeddingModel,
+    #[iden = "embedding_dimensions"]
+    EmbeddingDimensions,
+    #[iden = "written_by"]
+    WrittenBy,
+    #[iden = "created_at"]
+    CreatedAt,
+    #[iden = "updated_at"]
+    UpdatedAt,
+}
 
 impl MemoryStore for PgBackend {
     async fn save(&self, entry: &MemoryEntry) -> Result<()> {
@@ -65,30 +92,27 @@ impl MemoryStore for PgBackend {
     }
 
     async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-        let mut sql = "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at FROM memory WHERE 1=1".to_string();
-        let mut params: Vec<String> = Vec::new();
-        let mut idx = 1u32;
+        let mut select = Query::select();
+        select
+            .from(Memory::Table)
+            .expr(Expr::cust("project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at"));
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (namespace = ${idx} OR namespace LIKE ${idx} || '/%')"
-                ));
-                params.push(ns.to_string());
-                idx += 1;
+                select.cond_where(
+                    Cond::any()
+                        .add(Expr::col(Memory::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(Memory::Namespace).like(format!("{}/%", ns))),
+                );
             }
         }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ${idx}"));
-            params.push(project.to_string());
+            select.and_where(Expr::col(Memory::Project).eq(project.to_string()));
         }
 
-        let mut query = sqlx::query(&sql);
-        for p in &params {
-            query = query.bind(p);
-        }
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
-        let rows = query
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -103,35 +127,39 @@ impl MemoryStore for PgBackend {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<MemoryEntry>> {
-        let rows = if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
-            sqlx::query(
-                "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
-                 FROM memory
-                 WHERE to_tsvector('english', value) @@ plainto_tsquery('english', $1)
-                   AND (namespace = $2 OR namespace LIKE $2 || '/%')
-                 ORDER BY ts_rank(to_tsvector('english', value), plainto_tsquery('english', $1)) DESC
-                 LIMIT $3",
+        let mut select = Query::select();
+        select
+            .from(Memory::Table)
+            .expr(Expr::cust("project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at"))
+            .and_where(Expr::cust_with_values(
+                "to_tsvector('english', value) @@ plainto_tsquery('english', ?)",
+                [query.into()],
+            ));
+
+        if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
+            select.cond_where(
+                Cond::any()
+                    .add(Expr::col(Memory::Namespace).eq(ns.to_string()))
+                    .add(Expr::col(Memory::Namespace).like(format!("{}/%", ns))),
+            );
+        }
+
+        select
+            .order_by_expr(
+                Expr::cust_with_values(
+                    "ts_rank(to_tsvector('english', value), plainto_tsquery('english', ?))",
+                    [query.into()],
+                ),
+                sea_query::Order::Desc,
             )
-            .bind(query)
-            .bind(ns.to_string())
-            .bind(limit as i64)
+            .limit(limit as u64);
+
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
+
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?
-        } else {
-            sqlx::query(
-                "SELECT project, namespace, key, value, version, embedding::text, embedding_model, embedding_dimensions, written_by, created_at, updated_at
-                 FROM memory
-                 WHERE to_tsvector('english', value) @@ plainto_tsquery('english', $1)
-                 ORDER BY ts_rank(to_tsvector('english', value), plainto_tsquery('english', $1)) DESC
-                 LIMIT $2",
-            )
-            .bind(query)
-            .bind(limit as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
-        };
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(rows.iter().map(row_to_memory).collect())
     }

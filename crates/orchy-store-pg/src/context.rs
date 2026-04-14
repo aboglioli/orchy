@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use pgvector::Vector;
+use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
+use sea_query_binder::SqlxBinder;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -11,6 +13,29 @@ use orchy_core::memory::{ContextSnapshot, ContextStore, RestoreContextSnapshot, 
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{PgBackend, parse_pg_vector_text};
+
+#[derive(Iden)]
+enum Contexts {
+    Table,
+    #[iden = "id"]
+    Id,
+    #[iden = "project"]
+    Project,
+    #[iden = "agent_id"]
+    AgentId,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "summary"]
+    Summary,
+    #[iden = "embedding_model"]
+    EmbeddingModel,
+    #[iden = "embedding_dimensions"]
+    EmbeddingDimensions,
+    #[iden = "metadata"]
+    Metadata,
+    #[iden = "created_at"]
+    CreatedAt,
+}
 
 impl ContextStore for PgBackend {
     async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
@@ -63,37 +88,26 @@ impl ContextStore for PgBackend {
         agent: Option<&AgentId>,
         namespace: &Namespace,
     ) -> Result<Vec<ContextSnapshot>> {
-        let mut sql = String::from(
-            "SELECT id, project, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
-             FROM contexts WHERE 1=1",
-        );
-        let mut param_idx = 1u32;
-        let mut agent_uuid: Option<Uuid> = None;
-        let ns_str = namespace.to_string();
-        let mut bind_ns = false;
+        let mut select = Query::select();
+        select
+            .from(Contexts::Table)
+            .expr(Expr::cust("id, project, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at"));
 
         if !namespace.is_root() {
-            sql.push_str(&format!(
-                " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
-            ));
-            bind_ns = true;
-            param_idx += 1;
+            select.cond_where(
+                Cond::any()
+                    .add(Expr::col(Contexts::Namespace).eq(namespace.to_string()))
+                    .add(Expr::col(Contexts::Namespace).like(format!("{}/%", namespace))),
+            );
         }
 
         if let Some(a) = agent {
-            sql.push_str(&format!(" AND agent_id = ${param_idx}"));
-            agent_uuid = Some(*a.as_uuid());
+            select.and_where(Expr::col(Contexts::AgentId).eq(*a.as_uuid()));
         }
 
-        let mut query = sqlx::query(&sql);
-        if bind_ns {
-            query = query.bind(&ns_str);
-        }
-        if let Some(ref id) = agent_uuid {
-            query = query.bind(id);
-        }
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
-        let rows = query
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -109,45 +123,40 @@ impl ContextStore for PgBackend {
         agent_id: Option<&AgentId>,
         limit: usize,
     ) -> Result<Vec<ContextSnapshot>> {
-        let mut sql = String::from(
-            "SELECT id, project, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at
-             FROM contexts
-             WHERE to_tsvector('english', summary) @@ plainto_tsquery('english', $1)",
-        );
-        let mut param_idx = 2u32;
-        let ns_str = namespace.to_string();
-        let mut agent_uuid: Option<Uuid> = None;
-        let mut bind_ns = false;
+        let mut select = Query::select();
+        select
+            .from(Contexts::Table)
+            .expr(Expr::cust("id, project, agent_id, namespace, summary, embedding::text, embedding_model, embedding_dimensions, metadata, created_at"))
+            .and_where(Expr::cust_with_values(
+                "to_tsvector('english', summary) @@ plainto_tsquery('english', ?)",
+                [query.into()],
+            ));
 
         if !namespace.is_root() {
-            sql.push_str(&format!(
-                " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
-            ));
-            bind_ns = true;
-            param_idx += 1;
+            select.cond_where(
+                Cond::any()
+                    .add(Expr::col(Contexts::Namespace).eq(namespace.to_string()))
+                    .add(Expr::col(Contexts::Namespace).like(format!("{}/%", namespace))),
+            );
         }
 
         if let Some(a) = agent_id {
-            sql.push_str(&format!(" AND agent_id = ${param_idx}"));
-            agent_uuid = Some(*a.as_uuid());
-            param_idx += 1;
+            select.and_where(Expr::col(Contexts::AgentId).eq(*a.as_uuid()));
         }
 
-        sql.push_str(&format!(
-            " ORDER BY ts_rank(to_tsvector('english', summary), plainto_tsquery('english', $1)) DESC LIMIT ${param_idx}"
-        ));
+        select
+            .order_by_expr(
+                Expr::cust_with_values(
+                    "ts_rank(to_tsvector('english', summary), plainto_tsquery('english', ?))",
+                    [query.into()],
+                ),
+                sea_query::Order::Desc,
+            )
+            .limit(limit as u64);
 
-        let mut q = sqlx::query(&sql);
-        q = q.bind(query);
-        if bind_ns {
-            q = q.bind(&ns_str);
-        }
-        if let Some(ref id) = agent_uuid {
-            q = q.bind(id);
-        }
-        q = q.bind(limit as i64);
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
-        let rows = q
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;

@@ -8,10 +8,11 @@ use crate::PgBackend;
 impl NamespaceStore for PgBackend {
     async fn register(&self, project: &ProjectId, namespace: &Namespace) -> Result<()> {
         sqlx::query(
-            "INSERT INTO namespaces (project, namespace) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO namespaces (project, namespace, created_at) VALUES ($1, $2, $3) ON CONFLICT (project, namespace) DO NOTHING",
         )
         .bind(project.to_string())
         .bind(namespace.to_string())
+        .bind(chrono::Utc::now())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;

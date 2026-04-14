@@ -1,6 +1,8 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
+use sea_query_binder::SqlxBinder;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -12,6 +14,29 @@ use orchy_core::message::{
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::PgBackend;
+
+#[derive(Iden)]
+enum Messages {
+    Table,
+    #[iden = "id"]
+    Id,
+    #[iden = "project"]
+    Project,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "from_agent"]
+    FromAgent,
+    #[iden = "to_target"]
+    ToTarget,
+    #[iden = "body"]
+    Body,
+    #[iden = "status"]
+    Status,
+    #[iden = "created_at"]
+    CreatedAt,
+    #[iden = "reply_to"]
+    ReplyTo,
+}
 
 impl MessageStore for PgBackend {
     async fn save(&self, message: &Message) -> Result<()> {
@@ -25,8 +50,7 @@ impl MessageStore for PgBackend {
                 to_target = EXCLUDED.to_target,
                 body = EXCLUDED.body,
                 reply_to = EXCLUDED.reply_to,
-                status = EXCLUDED.status,
-                created_at = EXCLUDED.created_at",
+                status = EXCLUDED.status",
         )
         .bind(message.id().as_uuid())
         .bind(message.project().to_string())
@@ -67,28 +91,39 @@ impl MessageStore for PgBackend {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
-        let mut sql = String::from(
-            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-             FROM messages
-             WHERE status = 'pending' AND (to_target = $1 OR to_target = 'broadcast')
-               AND project = $2",
-        );
-        let ns_str = namespace.to_string();
-        let mut bind_ns = false;
+        let mut select = Query::select();
+        select
+            .from(Messages::Table)
+            .columns([
+                Messages::Id,
+                Messages::Project,
+                Messages::Namespace,
+                Messages::FromAgent,
+                Messages::ToTarget,
+                Messages::Body,
+                Messages::Status,
+                Messages::CreatedAt,
+                Messages::ReplyTo,
+            ])
+            .and_where(Expr::col(Messages::Status).eq("pending"))
+            .and_where(
+                Cond::any()
+                    .add(Expr::col(Messages::ToTarget).eq(agent.to_string()))
+                    .add(Expr::col(Messages::ToTarget).eq("broadcast")),
+            )
+            .and_where(Expr::col(Messages::Project).eq(project.to_string()));
 
         if !namespace.is_root() {
-            sql.push_str(" AND (namespace = $3 OR namespace LIKE $3 || '/%')");
-            bind_ns = true;
+            select.cond_where(
+                Cond::any()
+                    .add(Expr::col(Messages::Namespace).eq(namespace.to_string()))
+                    .add(Expr::col(Messages::Namespace).like(format!("{}/%", namespace))),
+            );
         }
 
-        let mut q = sqlx::query(&sql);
-        q = q.bind(agent.to_string());
-        q = q.bind(project.to_string());
-        if bind_ns {
-            q = q.bind(&ns_str);
-        }
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
-        let rows = q
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -102,29 +137,36 @@ impl MessageStore for PgBackend {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
-        let mut sql = String::from(
-            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-             FROM messages
-             WHERE from_agent = $1 AND project = $2",
-        );
-        let ns_str = namespace.to_string();
-        let mut bind_ns = false;
+        let mut select = Query::select();
+        select
+            .from(Messages::Table)
+            .columns([
+                Messages::Id,
+                Messages::Project,
+                Messages::Namespace,
+                Messages::FromAgent,
+                Messages::ToTarget,
+                Messages::Body,
+                Messages::Status,
+                Messages::CreatedAt,
+                Messages::ReplyTo,
+            ])
+            .and_where(Expr::col(Messages::FromAgent).eq(*sender.as_uuid()))
+            .and_where(Expr::col(Messages::Project).eq(project.to_string()));
 
         if !namespace.is_root() {
-            sql.push_str(" AND (namespace = $3 OR namespace LIKE $3 || '/%')");
-            bind_ns = true;
+            select.cond_where(
+                Cond::any()
+                    .add(Expr::col(Messages::Namespace).eq(namespace.to_string()))
+                    .add(Expr::col(Messages::Namespace).like(format!("{}/%", namespace))),
+            );
         }
 
-        sql.push_str(" ORDER BY created_at DESC");
+        select.order_by(Messages::CreatedAt, sea_query::Order::Desc);
 
-        let mut q = sqlx::query(&sql);
-        q = q.bind(sender.as_uuid());
-        q = q.bind(project.to_string());
-        if bind_ns {
-            q = q.bind(&ns_str);
-        }
+        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
-        let rows = q
+        let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use orchy_core::agent::service::AgentService;
-use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::memory::service::{ContextService, MemoryService};
 use orchy_core::message::service::MessageService;
 use orchy_core::project::service::ProjectService;
@@ -18,10 +17,10 @@ use crate::store::StoreBackend;
 pub struct Container {
     pub store: Arc<StoreBackend>,
     pub task_service: TaskService<StoreBackend, StoreBackend>,
-    pub memory_service: MemoryService<StoreBackend>,
+    pub memory_service: MemoryService<StoreBackend, EmbeddingsBackend>,
     pub agent_service: AgentService<StoreBackend>,
     pub message_service: MessageService<StoreBackend, StoreBackend>,
-    pub context_service: ContextService<StoreBackend>,
+    pub context_service: ContextService<StoreBackend, EmbeddingsBackend>,
     pub skill_service: SkillService<StoreBackend>,
     pub project_service: ProjectService<StoreBackend>,
     pub config: Config,
@@ -30,10 +29,10 @@ pub struct Container {
 impl Container {
     pub async fn from_config(config: Config) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
         let store = Arc::new(Self::build_store(&config).await?);
-        let embeddings: Option<Arc<dyn EmbeddingsProvider>> = config
+        let embeddings: Option<Arc<EmbeddingsBackend>> = config
             .embeddings
             .as_ref()
-            .map(|e| Arc::new(Self::build_embeddings(e)) as Arc<dyn EmbeddingsProvider>);
+            .map(|e| Arc::new(Self::build_embeddings(e)));
 
         let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
         let memory_service = MemoryService::new(Arc::clone(&store), embeddings.clone());

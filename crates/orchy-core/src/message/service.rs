@@ -119,7 +119,7 @@ mod tests {
     use super::*;
     use crate::agent::{Agent, AgentStore};
     use crate::namespace::{Namespace, ProjectId};
-    use crate::store::mock::MockStore;
+    use crate::infrastructure::MockStore;
     use std::collections::HashMap;
 
     fn test_project() -> ProjectId {

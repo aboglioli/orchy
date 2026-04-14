@@ -6,13 +6,13 @@ use crate::embeddings::EmbeddingsProvider;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
-pub struct MemoryService<S: MemoryStore> {
+pub struct MemoryService<S: MemoryStore, E: EmbeddingsProvider> {
     store: Arc<S>,
-    embeddings: Option<Arc<dyn EmbeddingsProvider>>,
+    embeddings: Option<Arc<E>>,
 }
 
-impl<S: MemoryStore> MemoryService<S> {
-    pub fn new(store: Arc<S>, embeddings: Option<Arc<dyn EmbeddingsProvider>>) -> Self {
+impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
+    pub fn new(store: Arc<S>, embeddings: Option<Arc<E>>) -> Self {
         Self { store, embeddings }
     }
 
@@ -116,13 +116,13 @@ impl<S: MemoryStore> MemoryService<S> {
     }
 }
 
-pub struct ContextService<S: ContextStore> {
+pub struct ContextService<S: ContextStore, E: EmbeddingsProvider> {
     store: Arc<S>,
-    embeddings: Option<Arc<dyn EmbeddingsProvider>>,
+    embeddings: Option<Arc<E>>,
 }
 
-impl<S: ContextStore> ContextService<S> {
-    pub fn new(store: Arc<S>, embeddings: Option<Arc<dyn EmbeddingsProvider>>) -> Self {
+impl<S: ContextStore, E: EmbeddingsProvider> ContextService<S, E> {
+    pub fn new(store: Arc<S>, embeddings: Option<Arc<E>>) -> Self {
         Self { store, embeddings }
     }
 
