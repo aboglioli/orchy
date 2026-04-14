@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore, TaskWithContext};
+use super::{
+    Priority, SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore, TaskWithContext,
+};
 use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
@@ -245,25 +247,177 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         Ok((original, new_tasks))
     }
 
-    pub async fn add_dependency(
+    pub async fn merge_tasks(
         &self,
-        task_id: &TaskId,
-        dependency_id: &TaskId,
-    ) -> Result<Task> {
+        task_ids: &[TaskId],
+        title: String,
+        description: String,
+        created_by: Option<AgentId>,
+    ) -> Result<(Task, Vec<Task>)> {
+        if task_ids.len() < 2 {
+            return Err(Error::InvalidInput(
+                "merge requires at least 2 tasks".into(),
+            ));
+        }
 
+        let mut sources = Vec::with_capacity(task_ids.len());
+        for id in task_ids {
+            sources.push(self.get(id).await?);
+        }
+
+        let project = sources[0].project().clone();
+        for task in &sources {
+            if *task.project() != project {
+                return Err(Error::InvalidInput(format!(
+                    "task {} belongs to project {}, expected {}",
+                    task.id(),
+                    task.project(),
+                    project
+                )));
+            }
+            if !task.status().is_mergeable() {
+                return Err(Error::InvalidInput(format!(
+                    "task {} has status {} which cannot be merged",
+                    task.id(),
+                    task.status()
+                )));
+            }
+        }
+
+        let source_ids: HashSet<TaskId> = task_ids.iter().copied().collect();
+
+        let priority = sources
+            .iter()
+            .map(|t| t.priority())
+            .max()
+            .unwrap_or(Priority::default());
+
+        let mut roles_set = HashSet::new();
+        for task in &sources {
+            for role in task.assigned_roles() {
+                roles_set.insert(role.clone());
+            }
+        }
+        let assigned_roles: Vec<String> = roles_set.into_iter().collect();
+
+        let mut deps_set = HashSet::new();
+        for task in &sources {
+            for dep in task.depends_on() {
+                if !source_ids.contains(dep) {
+                    deps_set.insert(*dep);
+                }
+            }
+        }
+        let depends_on: Vec<TaskId> = deps_set.into_iter().collect();
+
+        let parent_id = {
+            let first_parent = sources[0].parent_id();
+            if sources.iter().all(|t| t.parent_id() == first_parent) {
+                first_parent
+            } else {
+                None
+            }
+        };
+
+        let namespace = sources[0].namespace().clone();
+        let is_blocked = !depends_on.is_empty() && !self.all_deps_completed(&depends_on).await?;
+
+        let mut merged = Task::new(
+            project,
+            namespace,
+            parent_id,
+            title,
+            description,
+            priority,
+            assigned_roles,
+            depends_on,
+            created_by,
+            is_blocked,
+        )?;
+
+        for task in &sources {
+            for note in task.notes() {
+                merged.add_note(note.author(), note.body().to_string());
+            }
+        }
+
+        self.task_store.save(&merged).await?;
+
+        let mut cancelled = Vec::with_capacity(sources.len());
+        for mut task in sources {
+            task.cancel(Some(format!("merged into {}", merged.id())))?;
+            self.task_store.save(&task).await?;
+            cancelled.push(task);
+        }
+
+        for source_id in &source_ids {
+            let children = self
+                .task_store
+                .list(TaskFilter {
+                    parent_id: Some(*source_id),
+                    ..Default::default()
+                })
+                .await?;
+
+            for mut child in children {
+                child.set_parent_id(Some(merged.id()));
+                self.task_store.save(&child).await?;
+            }
+        }
+
+        for status in [
+            TaskStatus::Pending,
+            TaskStatus::Blocked,
+            TaskStatus::Claimed,
+        ] {
+            let tasks = self
+                .task_store
+                .list(TaskFilter {
+                    project: Some(merged.project().clone()),
+                    status: Some(status),
+                    ..Default::default()
+                })
+                .await?;
+
+            for mut task in tasks {
+                if source_ids.contains(&task.id()) || task.id() == merged.id() {
+                    continue;
+                }
+
+                let mut changed = false;
+                for source_id in &source_ids {
+                    if task.depends_on().contains(source_id) {
+                        task.replace_dependency(source_id, merged.id());
+                        changed = true;
+                    }
+                }
+
+                if changed {
+                    self.task_store.save(&task).await?;
+                }
+            }
+        }
+
+        Ok((merged, cancelled))
+    }
+
+    pub async fn add_dependency(&self, task_id: &TaskId, dependency_id: &TaskId) -> Result<Task> {
         self.get(dependency_id).await?;
 
         let mut task = self.get(task_id).await?;
 
-        if matches!(task.status(), TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled) {
+        if matches!(
+            task.status(),
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+        ) {
             return Err(Error::InvalidInput(format!(
                 "cannot add dependency to task {} with status {}",
-                task_id, task.status()
+                task_id,
+                task.status()
             )));
         }
 
         task.add_dependency(*dependency_id);
-
 
         if !self.all_deps_completed(task.depends_on()).await? {
             if task.status() == TaskStatus::Pending {
@@ -283,7 +437,6 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut task = self.get(task_id).await?;
         task.remove_dependency(dependency_id);
 
-
         if task.status() == TaskStatus::Blocked
             && self.all_deps_completed(task.depends_on()).await?
         {
@@ -301,7 +454,6 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
     ) -> Result<Vec<String>> {
         let mut role_counts: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
-
 
         for status in &[TaskStatus::Pending, TaskStatus::Blocked] {
             let filter = TaskFilter {
@@ -419,10 +571,13 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
         let mut parts = Vec::new();
         for child in &children {
-            let summary = child
-                .result_summary()
-                .unwrap_or("(no summary)");
-            parts.push(format!("- [{}] {}: {}", child.status(), child.title(), summary));
+            let summary = child.result_summary().unwrap_or("(no summary)");
+            parts.push(format!(
+                "- [{}] {}: {}",
+                child.status(),
+                child.title(),
+                summary
+            ));
         }
         Ok(format!(
             "All {} subtasks completed:\n{}",

@@ -69,6 +69,13 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
+    pub fn is_mergeable(&self) -> bool {
+        matches!(
+            self,
+            TaskStatus::Pending | TaskStatus::Blocked | TaskStatus::Claimed
+        )
+    }
+
     pub fn can_transition_to(&self, target: &TaskStatus) -> bool {
         use TaskStatus::*;
         matches!(
@@ -406,6 +413,21 @@ impl Task {
         self.notes.push(Note::new(author, body));
         self.updated_at = Utc::now();
     }
+    pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) {
+        self.parent_id = parent_id;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn replace_dependency(&mut self, old: &TaskId, new: TaskId) {
+        for dep in &mut self.depends_on {
+            if dep == old {
+                *dep = new;
+            }
+        }
+        self.depends_on.dedup();
+        self.updated_at = Utc::now();
+    }
+
     pub fn move_to(&mut self, namespace: Namespace) {
         self.namespace = namespace;
         self.updated_at = Utc::now();
@@ -629,6 +651,52 @@ mod tests {
         let mut task = make_task(TaskStatus::Pending, None);
         task.unblock();
         assert_eq!(task.status(), TaskStatus::Pending);
+    }
+
+    #[test]
+    fn is_mergeable_for_valid_statuses() {
+        assert!(TaskStatus::Pending.is_mergeable());
+        assert!(TaskStatus::Blocked.is_mergeable());
+        assert!(TaskStatus::Claimed.is_mergeable());
+    }
+
+    #[test]
+    fn is_not_mergeable_for_terminal_or_active_statuses() {
+        assert!(!TaskStatus::InProgress.is_mergeable());
+        assert!(!TaskStatus::Completed.is_mergeable());
+        assert!(!TaskStatus::Failed.is_mergeable());
+        assert!(!TaskStatus::Cancelled.is_mergeable());
+    }
+
+    #[test]
+    fn set_parent_id_updates_field() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        let parent = TaskId::new();
+        task.set_parent_id(Some(parent));
+        assert_eq!(task.parent_id(), Some(parent));
+    }
+
+    #[test]
+    fn replace_dependency_swaps_id() {
+        let old_dep = TaskId::new();
+        let new_dep = TaskId::new();
+        let mut task = make_task(TaskStatus::Pending, None);
+        task.add_dependency(old_dep);
+        task.replace_dependency(&old_dep, new_dep);
+        assert!(!task.depends_on().contains(&old_dep));
+        assert!(task.depends_on().contains(&new_dep));
+    }
+
+    #[test]
+    fn replace_dependency_deduplicates() {
+        let dep_a = TaskId::new();
+        let dep_b = TaskId::new();
+        let mut task = make_task(TaskStatus::Pending, None);
+        task.add_dependency(dep_a);
+        task.add_dependency(dep_b);
+        task.replace_dependency(&dep_a, dep_b);
+        assert_eq!(task.depends_on().len(), 1);
+        assert!(task.depends_on().contains(&dep_b));
     }
 
     #[test]
