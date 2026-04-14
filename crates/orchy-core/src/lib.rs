@@ -4,6 +4,7 @@ pub mod embeddings;
 pub mod error;
 #[cfg(test)]
 pub(crate) mod infrastructure;
+pub mod knowledge;
 pub mod memory;
 pub mod message;
 pub mod namespace;
