@@ -90,9 +90,7 @@ crates/
 │       ├── agent/         # Agent aggregate + AgentStore trait + events
 │       ├── task/          # Task + TaskWatcher + ReviewRequest + state machine
 │       ├── message/       # Message threading + delivery tracking
-│       ├── memory/        # Key-value memory + ContextSnapshot + versioning
-│       ├── document/      # Markdown documents + versioning + search
-│       ├── skill/         # Project conventions with namespace inheritance
+│       ├── knowledge/     # Unified knowledge: notes, decisions, skills, context, docs
 │       ├── project/       # Project metadata + notes
 │       ├── resource_lock/ # TTL-based distributed locking
 │       ├── project_link/  # Cross-project resource sharing
@@ -222,51 +220,53 @@ When an agent disconnects (or times out via heartbeat monitor):
 - `poll_updates` + `check_mailbox` for reactivity
 - `watch_task` to track dependencies
 - `lock_resource` before editing shared files
-- `write_memory` for decisions, `write_document` for analysis
+- `write_knowledge` for decisions, discoveries, patterns
 
 **Completing:**
 - `complete_task` with actionable summary (never just "done")
-- `write_memory` for each key decision
-- `write_document` for analysis/specs
+- `write_knowledge` for each key decision or discovery
 
 **Disconnecting:**
 - `save_context` with structured handoff: task ID, progress, blockers, decisions
 - `disconnect` — tasks released to pending, locks freed, watchers removed
 
-## Knowledge Capture
+## Knowledge Module
 
-Knowledge must be externalized — agents don't retain state between sessions.
+All persistent knowledge lives in a single unified module with typed entries.
+Use `list_knowledge_types` to discover available kinds.
 
-**Memory** (`write_memory`) — Short facts and decisions. Structured keys:
-`decision/auth-algorithm`, `finding/db-pool-limit`, `pattern/error-handling`.
-Searchable via `search_memory`.
+| Kind | Use for |
+|------|---------|
+| `note` | general observations and records |
+| `decision` | choices made with rationale |
+| `discovery` | things found or learned |
+| `pattern` | recurring approaches or conventions |
+| `context` | session summaries / agent state snapshots |
+| `document` | long-form specs, analysis, architecture |
+| `config` | configuration or setup information |
+| `reference` | external references or links |
+| `plan` | strategies, roadmaps, approaches |
+| `log` | activity or change log entries |
+| `skill` | instructions/conventions agents must follow |
 
-**Documents** (`write_document`) — Long-form analysis, specs, architecture
-decisions. Hierarchical paths: `specs/auth`, `architecture/database-design`.
-Searchable via `search_documents`.
+**Paths** are hierarchical: `decisions/auth-algorithm`, `specs/auth-design`,
+`patterns/error-handling`. Scoped by `(project, namespace, path)`.
 
-**Task notes** (`add_task_note`) — Progress notes on specific tasks. Persist
-across agent sessions (not cleared on release).
-
-**Context snapshots** (`save_context`) — Session handoff notes. Include current
-task, progress, blockers, decisions.
-
-**Skills** (`write_skill`) — Reusable conventions and patterns. Inherited through
-namespace hierarchy. Agents should follow them.
+**Skills** (kind=skill) inherit through namespace hierarchy — child namespaces
+override parent skills with the same path.
 
 A new agent joining the project should:
-1. Read skills to understand conventions
-2. Search memory/documents to understand decisions already made
-3. Load context to find the latest handoff note
+1. `list_knowledge(kind: "skill")` to understand conventions
+2. `search_knowledge` to find decisions and discoveries
+3. `load_context` for the latest handoff note
 4. Check task notes for progress on specific work
 
 ## Maintenance Patterns
 
 A "janitor" agent can compact and reorganize:
 
-- **Compact memory** — list related entries, merge into one, delete old ones
-- **Compact documents** — merge overlapping docs into a single comprehensive one
-- **Extract skills** — read memory/documents for recurring patterns, create skills
+- **Compact knowledge** — list related entries, merge into one, delete old ones
+- **Extract skills** — find recurring patterns in knowledge, create kind=skill entries
 - **Reorganize tasks** — merge related items, move to correct namespace
 - **Lock during compaction** — `lock_resource("compaction")` to prevent conflicts
 

@@ -1,7 +1,7 @@
 use orchy_core::agent::Agent;
 use orchy_core::agent::AgentStore;
 use orchy_core::agent::service::AgentService;
-use orchy_core::knowledge::Entry;
+use orchy_core::knowledge::Knowledge;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -80,7 +80,7 @@ fn render(
     host: &str,
     port: u16,
     project: &Project,
-    skills: &[Entry],
+    skills: &[Knowledge],
     agents: &[Agent],
     tasks: &[Task],
 ) -> String {
