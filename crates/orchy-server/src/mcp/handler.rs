@@ -196,14 +196,15 @@ On disconnect, claimed tasks return to pending.
 
 ## Coordination
 
-- `write_memory` / `write_document` — share decisions and specs.
+- `write_knowledge` — persist decisions, discoveries, patterns, configs, plans. \
+  Call `list_knowledge_types` to see available types.
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.
 - `watch_task` to get notified when a task status changes.
 - `request_review` to ask another agent to review your work.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
 - `save_context` before your session ends for continuity.
-- `link_project` to import skills/memory from other projects.
+- `link_project` + `import_knowledge` to share knowledge across projects.
 - Register without roles — orchy assigns them based on task demand.
 
 ## Knowledge Capture
