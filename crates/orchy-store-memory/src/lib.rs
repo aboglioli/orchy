@@ -18,7 +18,7 @@ use std::sync::RwLock;
 use orchy_events::SerializedEvent;
 
 use orchy_core::agent::{Agent, AgentId};
-use orchy_core::knowledge::{Entry, EntryId};
+use orchy_core::knowledge::{Knowledge, KnowledgeId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
 use orchy_core::project::Project;
@@ -34,7 +34,7 @@ pub struct MemoryBackend {
     pub(crate) project_links: RwLock<HashMap<ProjectLinkId, ProjectLink>>,
     pub(crate) watchers: RwLock<Vec<TaskWatcher>>,
     pub(crate) reviews: RwLock<HashMap<ReviewId, ReviewRequest>>,
-    pub(crate) entries: RwLock<HashMap<EntryId, Entry>>,
+    pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
     pub(crate) resource_locks: RwLock<HashMap<(String, String, String), ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String)>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
@@ -50,7 +50,7 @@ impl MemoryBackend {
             project_links: RwLock::new(HashMap::new()),
             watchers: RwLock::new(Vec::new()),
             reviews: RwLock::new(HashMap::new()),
-            entries: RwLock::new(HashMap::new()),
+            knowledge_entries: RwLock::new(HashMap::new()),
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
             events: RwLock::new(Vec::new()),

@@ -10,14 +10,14 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Entry, EntryFilter, EntryId, EntryStore, EntryType, RestoreEntry, Version,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore, KnowledgeKind, RestoreKnowledge, Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{PgBackend, parse_pg_vector_text};
 
 #[derive(Iden)]
-enum Entries {
+enum KnowledgeEntries {
     Table,
     #[iden = "id"]
     Id,
@@ -27,8 +27,8 @@ enum Entries {
     Namespace,
     #[iden = "path"]
     Path,
-    #[iden = "entry_type"]
-    EntryType,
+    #[iden = "kind"]
+    KnowledgeKind,
     #[iden = "title"]
     Title,
     #[iden = "content"]
@@ -51,22 +51,22 @@ enum Entries {
     UpdatedAt,
 }
 
-const SELECT_COLUMNS: &str = "id, project, namespace, path, entry_type, title, content, tags, version, agent_id, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
+const SELECT_COLUMNS: &str = "id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
 
-impl EntryStore for PgBackend {
-    async fn save(&self, entry: &mut Entry) -> Result<()> {
+impl KnowledgeStore for PgBackend {
+    async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
         let tags_json = serde_json::to_value(entry.tags()).unwrap();
         let metadata_json = serde_json::to_value(entry.metadata()).unwrap();
 
         sqlx::query(
-            "INSERT INTO entries (id, project, namespace, path, entry_type, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+            "INSERT INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
              ON CONFLICT (id) DO UPDATE SET
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 path = EXCLUDED.path,
-                entry_type = EXCLUDED.entry_type,
+                kind = EXCLUDED.kind,
                 title = EXCLUDED.title,
                 content = EXCLUDED.content,
                 tags = EXCLUDED.tags,
@@ -82,7 +82,7 @@ impl EntryStore for PgBackend {
         .bind(entry.project().to_string())
         .bind(entry.namespace().to_string())
         .bind(entry.path())
-        .bind(entry.entry_type().to_string())
+        .bind(entry.kind().to_string())
         .bind(entry.title())
         .bind(entry.content())
         .bind(&tags_json)
@@ -106,9 +106,9 @@ impl EntryStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &EntryId) -> Result<Option<Entry>> {
+    async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
         let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM entries WHERE id = $1"
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE id = $1"
         ))
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
@@ -123,9 +123,9 @@ impl EntryStore for PgBackend {
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> Result<Option<Entry>> {
+    ) -> Result<Option<Knowledge>> {
         let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM entries WHERE project = $1 AND namespace = $2 AND path = $3"
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE project = $1 AND namespace = $2 AND path = $3"
         ))
         .bind(project.to_string())
         .bind(namespace.to_string())
@@ -137,24 +137,24 @@ impl EntryStore for PgBackend {
         Ok(row.map(|r| row_to_entry(&r)))
     }
 
-    async fn list(&self, filter: EntryFilter) -> Result<Vec<Entry>> {
+    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         let mut select = Query::select();
-        select.from(Entries::Table).expr(Expr::cust(SELECT_COLUMNS));
+        select.from(KnowledgeEntries::Table).expr(Expr::cust(SELECT_COLUMNS));
 
         if let Some(ref project) = filter.project {
-            select.and_where(Expr::col(Entries::Project).eq(project.to_string()));
+            select.and_where(Expr::col(KnowledgeEntries::Project).eq(project.to_string()));
         }
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
                 select.cond_where(
                     Cond::any()
-                        .add(Expr::col(Entries::Namespace).eq(ns.to_string()))
-                        .add(Expr::col(Entries::Namespace).like(format!("{}/%", ns))),
+                        .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
                 );
             }
         }
-        if let Some(ref entry_type) = filter.entry_type {
-            select.and_where(Expr::col(Entries::EntryType).eq(entry_type.to_string()));
+        if let Some(ref kind) = filter.kind {
+            select.and_where(Expr::col(KnowledgeEntries::KnowledgeKind).eq(kind.to_string()));
         }
         if let Some(ref tag) = filter.tag {
             select.and_where(Expr::cust_with_values(
@@ -163,10 +163,10 @@ impl EntryStore for PgBackend {
             ));
         }
         if let Some(ref prefix) = filter.path_prefix {
-            select.and_where(Expr::col(Entries::Path).like(format!("{prefix}%")));
+            select.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{prefix}%")));
         }
         if let Some(ref agent_id) = filter.agent_id {
-            select.and_where(Expr::col(Entries::AgentId).eq(agent_id.to_string()));
+            select.and_where(Expr::col(KnowledgeEntries::AgentId).eq(agent_id.to_string()));
         }
 
         let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
@@ -185,10 +185,10 @@ impl EntryStore for PgBackend {
         _embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Entry>> {
+    ) -> Result<Vec<Knowledge>> {
         let mut select = Query::select();
         select
-            .from(Entries::Table)
+            .from(KnowledgeEntries::Table)
             .expr(Expr::cust(SELECT_COLUMNS))
             .and_where(Expr::cust_with_values(
                 "to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', ?)",
@@ -198,8 +198,8 @@ impl EntryStore for PgBackend {
         if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
             select.cond_where(
                 Cond::any()
-                    .add(Expr::col(Entries::Namespace).eq(ns.to_string()))
-                    .add(Expr::col(Entries::Namespace).like(format!("{}/%", ns))),
+                    .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
+                    .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
             );
         }
 
@@ -223,8 +223,8 @@ impl EntryStore for PgBackend {
         Ok(rows.iter().map(row_to_entry).collect())
     }
 
-    async fn delete(&self, id: &EntryId) -> Result<()> {
-        sqlx::query("DELETE FROM entries WHERE id = $1")
+    async fn delete(&self, id: &KnowledgeId) -> Result<()> {
+        sqlx::query("DELETE FROM knowledge_entries WHERE id = $1")
             .bind(id.as_uuid())
             .execute(&self.pool)
             .await
@@ -234,12 +234,12 @@ impl EntryStore for PgBackend {
     }
 }
 
-fn row_to_entry(row: &sqlx::postgres::PgRow) -> Entry {
+fn row_to_entry(row: &sqlx::postgres::PgRow) -> Knowledge {
     let id: Uuid = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let path: String = row.get("path");
-    let entry_type_str: String = row.get("entry_type");
+    let kind_str: String = row.get("kind");
     let title: String = row.get("title");
     let content: String = row.get("content");
     let tags: serde_json::Value = row.get("tags");
@@ -252,12 +252,12 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Entry {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    Entry::restore(RestoreEntry {
-        id: EntryId::from_uuid(id),
+    Knowledge::restore(RestoreKnowledge {
+        id: KnowledgeId::from_uuid(id),
         project: ProjectId::try_from(project).expect("invalid project in database"),
         namespace: Namespace::try_from(namespace).unwrap(),
         path,
-        entry_type: EntryType::from_str(&entry_type_str).expect("invalid entry_type in database"),
+        kind: KnowledgeKind::from_str(&kind_str).expect("invalid kind in database"),
         title,
         content,
         tags: serde_json::from_value(tags).unwrap_or_default(),

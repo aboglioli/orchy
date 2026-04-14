@@ -14,12 +14,12 @@ pub const TOPIC_DELETED: &str = "knowledge.deleted";
 pub const TOPIC_METADATA_SET: &str = "knowledge.metadata_set";
 
 #[derive(Serialize)]
-pub struct EntryCreatedPayload {
+pub struct KnowledgeCreatedPayload {
     pub entry_id: String,
     pub project: String,
     pub namespace: String,
     pub path: String,
-    pub entry_type: String,
+    pub kind: String,
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
@@ -28,7 +28,7 @@ pub struct EntryCreatedPayload {
 }
 
 #[derive(Serialize)]
-pub struct EntryUpdatedPayload {
+pub struct KnowledgeUpdatedPayload {
     pub entry_id: String,
     pub path: String,
     pub title: String,
@@ -38,39 +38,39 @@ pub struct EntryUpdatedPayload {
 }
 
 #[derive(Serialize)]
-pub struct EntryTaggedPayload {
+pub struct KnowledgeTaggedPayload {
     pub entry_id: String,
     pub tag: String,
 }
 
 #[derive(Serialize)]
-pub struct EntryTagRemovedPayload {
+pub struct KnowledgeTagRemovedPayload {
     pub entry_id: String,
     pub tag: String,
 }
 
 #[derive(Serialize)]
-pub struct EntryMovedPayload {
+pub struct KnowledgeMovedPayload {
     pub entry_id: String,
     pub from_namespace: String,
     pub to_namespace: String,
 }
 
 #[derive(Serialize)]
-pub struct EntryRenamedPayload {
+pub struct KnowledgeRenamedPayload {
     pub entry_id: String,
     pub old_path: String,
     pub new_path: String,
 }
 
 #[derive(Serialize)]
-pub struct EntryDeletedPayload {
+pub struct KnowledgeDeletedPayload {
     pub entry_id: String,
     pub path: String,
 }
 
 #[derive(Serialize)]
-pub struct EntryMetadataSetPayload {
+pub struct KnowledgeMetadataSetPayload {
     pub entry_id: String,
     pub key: String,
     pub value: String,

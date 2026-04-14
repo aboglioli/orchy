@@ -2,7 +2,7 @@ use orchy_core::agent::Agent;
 use orchy_core::agent::AgentStore;
 use orchy_core::agent::service::AgentService;
 use orchy_core::knowledge::Entry;
-use orchy_core::knowledge::EntryStore;
+use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::project::Project;
@@ -12,7 +12,7 @@ use orchy_core::task::service::TaskService;
 use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 
 pub async fn generate_bootstrap_prompt<
-    KS: EntryStore,
+    KS: KnowledgeStore,
     PS: ProjectStore,
     AS: AgentStore,
     TS: TaskStore,
@@ -103,7 +103,7 @@ Project namespace: `{namespace}`
    orchy assigns them based on pending task demand if omitted.
    Pass `agent_id` to resume a previous session.
 2. **Load context** — `get_project` for description and notes,
-   then `list_knowledge(entry_type: "skill")` for conventions. Follow them.
+   then `list_knowledge(kind: "skill")` for conventions. Follow them.
 3. **Resume** — `load_context` to check for handoff notes from a previous
    session. Also `search_knowledge(query)` to find relevant context from
    other agents. Check `check_mailbox` for messages.

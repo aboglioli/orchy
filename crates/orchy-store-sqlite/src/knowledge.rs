@@ -9,14 +9,14 @@ use sea_query_rusqlite::RusqliteBinder;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Entry, EntryFilter, EntryId, EntryStore, EntryType, RestoreEntry, Version,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore, KnowledgeKind, RestoreKnowledge, Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 
 #[derive(Iden)]
-enum Entries {
+enum KnowledgeEntries {
     Table,
     #[iden = "id"]
     Id,
@@ -26,8 +26,8 @@ enum Entries {
     Namespace,
     #[iden = "path"]
     Path,
-    #[iden = "entry_type"]
-    EntryType,
+    #[iden = "kind"]
+    KnowledgeKind,
     #[iden = "title"]
     Title,
     #[iden = "content"]
@@ -52,8 +52,8 @@ enum Entries {
     UpdatedAt,
 }
 
-impl EntryStore for SqliteBackend {
-    async fn save(&self, entry: &mut Entry) -> Result<()> {
+impl KnowledgeStore for SqliteBackend {
+    async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         {
             let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
@@ -64,14 +64,14 @@ impl EntryStore for SqliteBackend {
                 serde_json::to_string(entry.metadata()).map_err(|e| Error::Store(e.to_string()))?;
 
             conn.execute(
-                "INSERT OR REPLACE INTO entries (id, project, namespace, path, entry_type, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+                "INSERT OR REPLACE INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 rusqlite::params![
                     entry.id().to_string(),
                     entry.project().to_string(),
                     entry.namespace().to_string(),
                     entry.path(),
-                    entry.entry_type().to_string(),
+                    entry.kind().to_string(),
                     entry.title(),
                     entry.content(),
                     tags_json,
@@ -96,12 +96,12 @@ impl EntryStore for SqliteBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &EntryId) -> Result<Option<Entry>> {
+    async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, project, namespace, path, entry_type, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
-                 FROM entries WHERE id = ?1",
+                "SELECT id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                 FROM knowledge_entries WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -118,12 +118,12 @@ impl EntryStore for SqliteBackend {
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> Result<Option<Entry>> {
+    ) -> Result<Option<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, project, namespace, path, entry_type, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
-                 FROM entries WHERE project = ?1 AND namespace = ?2 AND path = ?3",
+                "SELECT id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                 FROM knowledge_entries WHERE project = ?1 AND namespace = ?2 AND path = ?3",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -138,59 +138,59 @@ impl EntryStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn list(&self, filter: EntryFilter) -> Result<Vec<Entry>> {
+    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut query = Query::select();
-        query.from(Entries::Table).columns([
-            Entries::Id,
-            Entries::Project,
-            Entries::Namespace,
-            Entries::Path,
-            Entries::EntryType,
-            Entries::Title,
-            Entries::Content,
-            Entries::Tags,
-            Entries::Version,
-            Entries::AgentId,
-            Entries::Metadata,
-            Entries::Embedding,
-            Entries::EmbeddingModel,
-            Entries::EmbeddingDimensions,
-            Entries::CreatedAt,
-            Entries::UpdatedAt,
+        query.from(KnowledgeEntries::Table).columns([
+            KnowledgeEntries::Id,
+            KnowledgeEntries::Project,
+            KnowledgeEntries::Namespace,
+            KnowledgeEntries::Path,
+            KnowledgeEntries::KnowledgeKind,
+            KnowledgeEntries::Title,
+            KnowledgeEntries::Content,
+            KnowledgeEntries::Tags,
+            KnowledgeEntries::Version,
+            KnowledgeEntries::AgentId,
+            KnowledgeEntries::Metadata,
+            KnowledgeEntries::Embedding,
+            KnowledgeEntries::EmbeddingModel,
+            KnowledgeEntries::EmbeddingDimensions,
+            KnowledgeEntries::CreatedAt,
+            KnowledgeEntries::UpdatedAt,
         ]);
 
         if let Some(ref project) = filter.project {
-            query.and_where(Expr::col(Entries::Project).eq(project.to_string()));
+            query.and_where(Expr::col(KnowledgeEntries::Project).eq(project.to_string()));
         }
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
                 query.cond_where(
                     Cond::any()
-                        .add(Expr::col(Entries::Namespace).eq(ns.to_string()))
-                        .add(Expr::col(Entries::Namespace).like(format!("{}/%", ns))),
+                        .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
                 );
             }
         }
-        if let Some(ref entry_type) = filter.entry_type {
-            query.and_where(Expr::col(Entries::EntryType).eq(entry_type.to_string()));
+        if let Some(ref kind) = filter.kind {
+            query.and_where(Expr::col(KnowledgeEntries::KnowledgeKind).eq(kind.to_string()));
         }
         if let Some(ref tag) = filter.tag {
-            query.and_where(Expr::col(Entries::Tags).like(format!("%\"{}\"%%", tag)));
+            query.and_where(Expr::col(KnowledgeEntries::Tags).like(format!("%\"{}\"%%", tag)));
         }
         if let Some(ref prefix) = filter.path_prefix {
-            query.and_where(Expr::col(Entries::Path).like(format!("{}%", prefix)));
+            query.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{}%", prefix)));
         }
         if let Some(ref agent_id) = filter.agent_id {
-            query.and_where(Expr::col(Entries::AgentId).eq(agent_id.to_string()));
+            query.and_where(Expr::col(KnowledgeEntries::AgentId).eq(agent_id.to_string()));
         }
 
         let (sql, values) = query.build_rusqlite(SqliteQueryBuilder);
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
-        let entries = stmt
+        let knowledge_entries = stmt
             .query_map(&*values.as_params(), row_to_entry)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
@@ -205,12 +205,12 @@ impl EntryStore for SqliteBackend {
         _embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Entry>> {
+    ) -> Result<Vec<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT e.id, e.project, e.namespace, e.path, e.entry_type, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
-             FROM entries e
+            "SELECT e.id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+             FROM knowledge_entries e
              WHERE (e.title LIKE ?1 OR e.content LIKE ?1 OR e.path LIKE ?1)",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -237,7 +237,7 @@ impl EntryStore for SqliteBackend {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
 
-        let entries = stmt
+        let knowledge_entries = stmt
             .query_map(param_refs.as_slice(), row_to_entry)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
@@ -246,11 +246,11 @@ impl EntryStore for SqliteBackend {
         Ok(entries)
     }
 
-    async fn delete(&self, id: &EntryId) -> Result<()> {
+    async fn delete(&self, id: &KnowledgeId) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         conn.execute(
-            "DELETE FROM entries WHERE id = ?1",
+            "DELETE FROM knowledge_entries WHERE id = ?1",
             rusqlite::params![id.to_string()],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -259,12 +259,12 @@ impl EntryStore for SqliteBackend {
     }
 }
 
-fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
+fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
     let id_str: String = row.get(0)?;
     let project_str: String = row.get(1)?;
     let namespace_str: String = row.get(2)?;
     let path: String = row.get(3)?;
-    let entry_type_str: String = row.get(4)?;
+    let kind_str: String = row.get(4)?;
     let title: String = row.get(5)?;
     let content: String = row.get(6)?;
     let tags_json: String = row.get(7)?;
@@ -277,7 +277,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
     let created_at_str: String = row.get(14)?;
     let updated_at_str: String = row.get(15)?;
 
-    let id = EntryId::from_str(&id_str).map_err(|e| {
+    let id = KnowledgeId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })?;
     let project = ProjectId::try_from(project_str).map_err(|e| {
@@ -294,7 +294,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
-    let entry_type = EntryType::from_str(&entry_type_str).map_err(|e| {
+    let kind = KnowledgeKind::from_str(&kind_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             4,
             rusqlite::types::Type::Text,
@@ -318,12 +318,12 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
             rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-    Ok(Entry::restore(RestoreEntry {
+    Ok(Knowledge::restore(RestoreKnowledge {
         id,
         project,
         namespace,
         path,
-        entry_type,
+        kind,
         title,
         content,
         tags,

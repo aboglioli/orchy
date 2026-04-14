@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use orchy_core::knowledge::{EntryStore, EntryType, WriteEntry};
+use orchy_core::knowledge::{KnowledgeStore, KnowledgeKind, WriteKnowledge};
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::namespace::{Namespace, ProjectId};
 use tracing::{info, warn};
 
-pub async fn load_skills_from_dir<S: EntryStore>(
+pub async fn load_skills_from_dir<S: KnowledgeStore>(
     dir: &Path,
     service: &KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
@@ -20,7 +20,7 @@ pub async fn load_skills_from_dir<S: EntryStore>(
     Ok(count)
 }
 
-fn load_recursive<'a, S: EntryStore>(
+fn load_recursive<'a, S: KnowledgeStore>(
     base: &'a Path,
     current: &'a Path,
     service: &'a KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
@@ -31,7 +31,7 @@ fn load_recursive<'a, S: EntryStore>(
     Box::pin(async move { load_recursive_inner(base, current, service, count).await })
 }
 
-async fn load_recursive_inner<S: EntryStore>(
+async fn load_recursive_inner<S: KnowledgeStore>(
     base: &Path,
     current: &Path,
     service: &KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
@@ -97,11 +97,11 @@ async fn load_recursive_inner<S: EntryStore>(
         let raw = std::fs::read_to_string(&path)?;
         let (description, content) = parse_frontmatter(&raw, &name);
 
-        let cmd = WriteEntry {
+        let cmd = WriteKnowledge {
             project: project.clone(),
             namespace: namespace.clone(),
             path: format!("skills/{name}"),
-            entry_type: EntryType::Skill,
+            kind: KnowledgeKind::Skill,
             title: description,
             content,
             tags: vec![],

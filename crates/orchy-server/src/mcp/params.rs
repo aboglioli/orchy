@@ -335,7 +335,7 @@ pub struct WriteKnowledgeParams {
     /// Hierarchical path (e.g. "decisions/db-choice").
     pub path: String,
     /// Required: note, decision, discovery, pattern, context, document, config, reference, plan, log.
-    pub entry_type: String,
+    pub kind: String,
     pub title: String,
     pub content: String,
     pub tags: Option<Vec<String>>,
@@ -354,7 +354,7 @@ pub struct ReadKnowledgeParams {
 pub struct ListKnowledgeParams {
     pub namespace: Option<String>,
     /// Filter: note, decision, discovery, pattern, context, document, config, reference, plan, log.
-    pub entry_type: Option<String>,
+    pub kind: Option<String>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
     pub agent_id: Option<String>,
@@ -364,7 +364,7 @@ pub struct ListKnowledgeParams {
 pub struct SearchKnowledgeParams {
     pub query: String,
     pub namespace: Option<String>,
-    pub entry_type: Option<String>,
+    pub kind: Option<String>,
     pub limit: Option<u32>,
 }
 
@@ -378,7 +378,7 @@ pub struct DeleteKnowledgeParams {
 pub struct AppendKnowledgeParams {
     pub namespace: Option<String>,
     pub path: String,
-    pub entry_type: String,
+    pub kind: String,
     pub value: String,
     /// Defaults to "\n".
     pub separator: Option<String>,

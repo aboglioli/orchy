@@ -4,7 +4,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
-use orchy_core::knowledge::{EntryFilter, EntryType, Version as KnowledgeVersion, WriteEntry};
+use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, Version as KnowledgeVersion, WriteKnowledge};
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::project_link::SharedResourceType;
@@ -1861,7 +1861,7 @@ impl OrchyHandler {
         &self,
         Parameters(_params): Parameters<ListKnowledgeTypesParams>,
     ) -> Result<String, String> {
-        let types: Vec<serde_json::Value> = EntryType::all()
+        let types: Vec<serde_json::Value> = KnowledgeKind::all()
             .iter()
             .map(|t| {
                 serde_json::json!({
@@ -1895,8 +1895,8 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let entry_type: EntryType = params
-            .entry_type
+        let kind: KnowledgeKind = params
+            .kind
             .parse()
             .map_err(|e: String| e)?;
 
@@ -1908,11 +1908,11 @@ impl OrchyHandler {
             None => HashMap::new(),
         };
 
-        let cmd = WriteEntry {
+        let cmd = WriteKnowledge {
             project,
             namespace,
             path: params.path,
-            entry_type,
+            kind,
             title: params.title,
             content: params.content,
             tags: params.tags.unwrap_or_default(),
@@ -1966,8 +1966,8 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let entry_type = match params.entry_type.as_deref() {
-            Some(t) => Some(t.parse::<EntryType>().map_err(|e: String| e)?),
+        let kind = match params.kind.as_deref() {
+            Some(t) => Some(t.parse::<KnowledgeKind>().map_err(|e: String| e)?),
             None => None,
         };
 
@@ -1977,14 +1977,14 @@ impl OrchyHandler {
             None => None,
         };
 
-        let filter = EntryFilter {
+        let filter = KnowledgeFilter {
             project: if namespace.is_none() {
                 self.get_session_project()
             } else {
                 None
             },
             namespace,
-            entry_type,
+            kind,
             tag: params.tag,
             path_prefix: params.path_prefix,
             agent_id,
@@ -2065,8 +2065,8 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let entry_type: EntryType = params
-            .entry_type
+        let kind: KnowledgeKind = params
+            .kind
             .parse()
             .map_err(|e: String| e)?;
 
@@ -2079,7 +2079,7 @@ impl OrchyHandler {
                 &project,
                 &namespace,
                 &params.path,
-                entry_type,
+                kind,
                 params.value,
                 separator,
                 self.get_session_agent(),
@@ -2226,11 +2226,11 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let cmd = WriteEntry {
+        let cmd = WriteKnowledge {
             project,
             namespace,
             path: source_entry.path().to_string(),
-            entry_type: source_entry.entry_type(),
+            kind: source_entry.kind(),
             title: source_entry.title().to_string(),
             content: source_entry.content().to_string(),
             tags: source_entry.tags().to_vec(),

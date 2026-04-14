@@ -4,7 +4,7 @@ use orchy_events::io::Writer as EventWriter;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::Result;
-use orchy_core::knowledge::{Entry, EntryFilter, EntryId, EntryStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
@@ -149,23 +149,23 @@ impl ProjectLinkStore for StoreBackend {
     }
 }
 
-impl EntryStore for StoreBackend {
-    async fn save(&self, entry: &mut Entry) -> Result<()> {
-        delegate_trait!(self, EntryStore::save(entry))
+impl KnowledgeStore for StoreBackend {
+    async fn save(&self, entry: &mut Knowledge) -> Result<()> {
+        delegate_trait!(self, KnowledgeStore::save(entry))
     }
-    async fn find_by_id(&self, id: &EntryId) -> Result<Option<Entry>> {
-        delegate_trait!(self, EntryStore::find_by_id(id))
+    async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::find_by_id(id))
     }
     async fn find_by_path(
         &self,
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> Result<Option<Entry>> {
-        delegate_trait!(self, EntryStore::find_by_path(project, namespace, path))
+    ) -> Result<Option<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::find_by_path(project, namespace, path))
     }
-    async fn list(&self, filter: EntryFilter) -> Result<Vec<Entry>> {
-        delegate_trait!(self, EntryStore::list(filter))
+    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::list(filter))
     }
     async fn search(
         &self,
@@ -173,11 +173,11 @@ impl EntryStore for StoreBackend {
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Entry>> {
-        delegate_trait!(self, EntryStore::search(query, embedding, namespace, limit))
+    ) -> Result<Vec<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::search(query, embedding, namespace, limit))
     }
-    async fn delete(&self, id: &EntryId) -> Result<()> {
-        delegate_trait!(self, EntryStore::delete(id))
+    async fn delete(&self, id: &KnowledgeId) -> Result<()> {
+        delegate_trait!(self, KnowledgeStore::delete(id))
     }
 }
 

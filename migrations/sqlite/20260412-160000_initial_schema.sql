@@ -60,12 +60,12 @@ CREATE TABLE IF NOT EXISTS namespaces (
     PRIMARY KEY (project, namespace)
 );
 
-CREATE TABLE IF NOT EXISTS entries (
+CREATE TABLE IF NOT EXISTS knowledge_entries (
     id TEXT PRIMARY KEY,
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     path TEXT NOT NULL,
-    entry_type TEXT NOT NULL,
+    kind TEXT NOT NULL,
     title TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
@@ -79,8 +79,8 @@ CREATE TABLE IF NOT EXISTS entries (
     updated_at TEXT NOT NULL,
     UNIQUE(project, namespace, path)
 );
-CREATE INDEX IF NOT EXISTS entries_type_idx ON entries (entry_type);
-CREATE INDEX IF NOT EXISTS entries_agent_idx ON entries (agent_id);
+CREATE INDEX IF NOT EXISTS knowledge_entries_type_idx ON knowledge_entries (kind);
+CREATE INDEX IF NOT EXISTS knowledge_entries_agent_idx ON knowledge_entries (agent_id);
 
 CREATE TABLE IF NOT EXISTS resource_locks (
     project TEXT NOT NULL,

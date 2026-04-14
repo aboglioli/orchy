@@ -1,23 +1,23 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::{Entry, EntryFilter, EntryId, EntryStore, EntryType, Version, WriteEntry};
+use super::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore, KnowledgeKind, Version, WriteKnowledge};
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsProvider;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
-pub struct KnowledgeService<S: EntryStore, E: EmbeddingsProvider> {
+pub struct KnowledgeService<S: KnowledgeStore, E: EmbeddingsProvider> {
     store: Arc<S>,
     embeddings: Option<Arc<E>>,
 }
 
-impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
+impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
     pub fn new(store: Arc<S>, embeddings: Option<Arc<E>>) -> Self {
         Self { store, embeddings }
     }
 
-    pub async fn write(&self, cmd: WriteEntry) -> Result<Entry> {
+    pub async fn write(&self, cmd: WriteKnowledge) -> Result<Knowledge> {
         let existing = self
             .store
             .find_by_path(&cmd.project, &cmd.namespace, &cmd.path)
@@ -45,11 +45,11 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                     actual: 0,
                 });
             }
-            Entry::new(
+            Knowledge::new(
                 cmd.project,
                 cmd.namespace,
                 cmd.path,
-                cmd.entry_type,
+                cmd.kind,
                 cmd.title,
                 cmd.content,
                 cmd.tags,
@@ -73,18 +73,18 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> Result<Option<Entry>> {
+    ) -> Result<Option<Knowledge>> {
         self.store.find_by_path(project, namespace, path).await
     }
 
-    pub async fn get(&self, id: &EntryId) -> Result<Entry> {
+    pub async fn get(&self, id: &KnowledgeId) -> Result<Knowledge> {
         self.store
             .find_by_id(id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("entry {id}")))
     }
 
-    pub async fn list(&self, filter: EntryFilter) -> Result<Vec<Entry>> {
+    pub async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         self.store.list(filter).await
     }
 
@@ -93,7 +93,7 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         query: &str,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Entry>> {
+    ) -> Result<Vec<Knowledge>> {
         let embedding = if let Some(emb) = &self.embeddings {
             Some(emb.embed(query).await?)
         } else {
@@ -104,35 +104,35 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             .await
     }
 
-    pub async fn delete(&self, id: &EntryId) -> Result<()> {
+    pub async fn delete(&self, id: &KnowledgeId) -> Result<()> {
         let mut entry = self.get(id).await?;
         entry.mark_deleted();
         self.store.save(&mut entry).await?;
         self.store.delete(id).await
     }
 
-    pub async fn move_entry(&self, id: &EntryId, new_namespace: Namespace) -> Result<Entry> {
+    pub async fn move_entry(&self, id: &KnowledgeId, new_namespace: Namespace) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
         entry.move_to(new_namespace);
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
 
-    pub async fn rename(&self, id: &EntryId, new_path: String) -> Result<Entry> {
+    pub async fn rename(&self, id: &KnowledgeId, new_path: String) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
         entry.rename(new_path)?;
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
 
-    pub async fn tag(&self, id: &EntryId, tag: String) -> Result<Entry> {
+    pub async fn tag(&self, id: &KnowledgeId, tag: String) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
         entry.add_tag(tag);
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
 
-    pub async fn untag(&self, id: &EntryId, tag: &str) -> Result<Entry> {
+    pub async fn untag(&self, id: &KnowledgeId, tag: &str) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
         entry.remove_tag(tag);
         self.store.save(&mut entry).await?;
@@ -144,11 +144,11 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-        entry_type: EntryType,
+        kind: KnowledgeKind,
         value: String,
         separator: &str,
         agent_id: Option<AgentId>,
-    ) -> Result<Entry> {
+    ) -> Result<Knowledge> {
         let existing = self.store.find_by_path(project, namespace, path).await?;
 
         let mut entry = if let Some(mut existing) = existing {
@@ -156,11 +156,11 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             existing.update(existing.title().to_string(), new_content, agent_id);
             existing
         } else {
-            Entry::new(
+            Knowledge::new(
                 project.clone(),
                 namespace.clone(),
                 path.to_string(),
-                entry_type,
+                kind,
                 path.to_string(),
                 value,
                 vec![],
@@ -186,13 +186,13 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         namespace: Namespace,
         summary: String,
         metadata: HashMap<String, String>,
-    ) -> Result<Entry> {
+    ) -> Result<Knowledge> {
         let path = format!("context/{agent_id}");
-        let cmd = WriteEntry {
+        let cmd = WriteKnowledge {
             project,
             namespace,
             path,
-            entry_type: EntryType::Context,
+            kind: KnowledgeKind::Context,
             title: "session context".into(),
             content: summary,
             tags: vec![],
@@ -203,9 +203,9 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         self.write(cmd).await
     }
 
-    pub async fn load_context(&self, agent_id: &AgentId) -> Result<Option<Entry>> {
-        let filter = EntryFilter {
-            entry_type: Some(EntryType::Context),
+    pub async fn load_context(&self, agent_id: &AgentId) -> Result<Option<Knowledge>> {
+        let filter = KnowledgeFilter {
+            kind: Some(KnowledgeKind::Context),
             agent_id: Some(*agent_id),
             ..Default::default()
         };
@@ -218,18 +218,18 @@ impl<S: EntryStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         &self,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Entry>> {
-        let filter = EntryFilter {
+    ) -> Result<Vec<Knowledge>> {
+        let filter = KnowledgeFilter {
             project: Some(project.clone()),
-            entry_type: Some(EntryType::Skill),
+            kind: Some(KnowledgeKind::Skill),
             ..Default::default()
         };
         let all = self.store.list(filter).await?;
         Ok(Self::filter_with_inheritance(all, namespace))
     }
 
-    fn filter_with_inheritance(entries: Vec<Entry>, namespace: &Namespace) -> Vec<Entry> {
-        let mut result: Vec<Entry> = Vec::new();
+    fn filter_with_inheritance(entries: Vec<Knowledge>, namespace: &Namespace) -> Vec<Knowledge> {
+        let mut result: Vec<Knowledge> = Vec::new();
 
         for entry in entries {
             if entry.namespace().starts_with(namespace)

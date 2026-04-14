@@ -1,14 +1,14 @@
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Entry, EntryFilter, EntryId, EntryStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::MemoryBackend;
 
-impl EntryStore for MemoryBackend {
-    async fn save(&self, entry: &mut Entry) -> Result<()> {
+impl KnowledgeStore for MemoryBackend {
+    async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         {
             let mut entries = self
-                .entries
+                .knowledge_entries
                 .write()
                 .map_err(|e| Error::Store(e.to_string()))?;
             entries.insert(entry.id(), entry.clone());
@@ -21,9 +21,9 @@ impl EntryStore for MemoryBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &EntryId) -> Result<Option<Entry>> {
+    async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
         let entries = self
-            .entries
+            .knowledge_entries
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(entries.get(id).cloned())
@@ -34,9 +34,9 @@ impl EntryStore for MemoryBackend {
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> Result<Option<Entry>> {
+    ) -> Result<Option<Knowledge>> {
         let entries = self
-            .entries
+            .knowledge_entries
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(entries
@@ -45,13 +45,13 @@ impl EntryStore for MemoryBackend {
             .cloned())
     }
 
-    async fn list(&self, filter: EntryFilter) -> Result<Vec<Entry>> {
+    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         let entries = self
-            .entries
+            .knowledge_entries
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        let results: Vec<Entry> = entries
+        let results: Vec<Knowledge> = entries
             .values()
             .filter(|e| {
                 if let Some(ref project) = filter.project {
@@ -64,8 +64,8 @@ impl EntryStore for MemoryBackend {
                         return false;
                     }
                 }
-                if let Some(ref entry_type) = filter.entry_type {
-                    if e.entry_type() != *entry_type {
+                if let Some(ref kind) = filter.kind {
+                    if e.kind() != *kind {
                         return false;
                     }
                 }
@@ -98,14 +98,14 @@ impl EntryStore for MemoryBackend {
         _embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Entry>> {
+    ) -> Result<Vec<Knowledge>> {
         let entries = self
-            .entries
+            .knowledge_entries
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let query_lower = query.to_lowercase();
-        let mut results: Vec<Entry> = entries
+        let mut results: Vec<Knowledge> = entries
             .values()
             .filter(|e| {
                 if let Some(ns) = namespace {
@@ -125,9 +125,9 @@ impl EntryStore for MemoryBackend {
         Ok(results)
     }
 
-    async fn delete(&self, id: &EntryId) -> Result<()> {
+    async fn delete(&self, id: &KnowledgeId) -> Result<()> {
         let mut entries = self
-            .entries
+            .knowledge_entries
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
         entries.remove(id);

@@ -18,31 +18,31 @@ use crate::namespace::{Namespace, ProjectId};
 
 use self::events as knowledge_events;
 
-pub trait EntryStore: Send + Sync {
-    fn save(&self, entry: &mut Entry) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &EntryId) -> impl Future<Output = Result<Option<Entry>>> + Send;
+pub trait KnowledgeStore: Send + Sync {
+    fn save(&self, entry: &mut Knowledge) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_id(&self, id: &KnowledgeId) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
     fn find_by_path(
         &self,
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> impl Future<Output = Result<Option<Entry>>> + Send;
-    fn list(&self, filter: EntryFilter) -> impl Future<Output = Result<Vec<Entry>>> + Send;
+    ) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
+    fn list(&self, filter: KnowledgeFilter) -> impl Future<Output = Result<Vec<Knowledge>>> + Send;
     fn search(
         &self,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<Entry>>> + Send;
-    fn delete(&self, id: &EntryId) -> impl Future<Output = Result<()>> + Send;
+    ) -> impl Future<Output = Result<Vec<Knowledge>>> + Send;
+    fn delete(&self, id: &KnowledgeId) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct EntryId(Uuid);
+pub struct KnowledgeId(Uuid);
 
-impl EntryId {
+impl KnowledgeId {
     pub fn new() -> Self {
         Self(Uuid::now_v7())
     }
@@ -56,19 +56,19 @@ impl EntryId {
     }
 }
 
-impl Default for EntryId {
+impl Default for KnowledgeId {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl fmt::Display for EntryId {
+impl fmt::Display for KnowledgeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl FromStr for EntryId {
+impl FromStr for KnowledgeId {
     type Err = uuid::Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
@@ -78,7 +78,7 @@ impl FromStr for EntryId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum EntryType {
+pub enum KnowledgeKind {
     Note,
     Decision,
     Discovery,
@@ -92,75 +92,75 @@ pub enum EntryType {
     Skill,
 }
 
-impl EntryType {
+impl KnowledgeKind {
     pub fn description(&self) -> &'static str {
         match self {
-            EntryType::Note => "general observation or record",
-            EntryType::Decision => "a choice made with rationale",
-            EntryType::Discovery => "something found or learned",
-            EntryType::Pattern => "a recurring approach or convention",
-            EntryType::Context => "session summary or agent state snapshot",
-            EntryType::Document => "long-form structured content",
-            EntryType::Config => "configuration or setup information",
-            EntryType::Reference => "external reference or link",
-            EntryType::Plan => "strategy, roadmap, or approach",
-            EntryType::Log => "activity or change log entry",
-            EntryType::Skill => "instruction or convention agents must follow",
+            KnowledgeKind::Note => "general observation or record",
+            KnowledgeKind::Decision => "a choice made with rationale",
+            KnowledgeKind::Discovery => "something found or learned",
+            KnowledgeKind::Pattern => "a recurring approach or convention",
+            KnowledgeKind::Context => "session summary or agent state snapshot",
+            KnowledgeKind::Document => "long-form structured content",
+            KnowledgeKind::Config => "configuration or setup information",
+            KnowledgeKind::Reference => "external reference or link",
+            KnowledgeKind::Plan => "strategy, roadmap, or approach",
+            KnowledgeKind::Log => "activity or change log entry",
+            KnowledgeKind::Skill => "instruction or convention agents must follow",
         }
     }
 
-    pub fn all() -> &'static [EntryType] {
+    pub fn all() -> &'static [KnowledgeKind] {
         &[
-            EntryType::Note,
-            EntryType::Decision,
-            EntryType::Discovery,
-            EntryType::Pattern,
-            EntryType::Context,
-            EntryType::Document,
-            EntryType::Config,
-            EntryType::Reference,
-            EntryType::Plan,
-            EntryType::Log,
-            EntryType::Skill,
+            KnowledgeKind::Note,
+            KnowledgeKind::Decision,
+            KnowledgeKind::Discovery,
+            KnowledgeKind::Pattern,
+            KnowledgeKind::Context,
+            KnowledgeKind::Document,
+            KnowledgeKind::Config,
+            KnowledgeKind::Reference,
+            KnowledgeKind::Plan,
+            KnowledgeKind::Log,
+            KnowledgeKind::Skill,
         ]
     }
 }
 
-impl fmt::Display for EntryType {
+impl fmt::Display for KnowledgeKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            EntryType::Note => "note",
-            EntryType::Decision => "decision",
-            EntryType::Discovery => "discovery",
-            EntryType::Pattern => "pattern",
-            EntryType::Context => "context",
-            EntryType::Document => "document",
-            EntryType::Config => "config",
-            EntryType::Reference => "reference",
-            EntryType::Plan => "plan",
-            EntryType::Log => "log",
-            EntryType::Skill => "skill",
+            KnowledgeKind::Note => "note",
+            KnowledgeKind::Decision => "decision",
+            KnowledgeKind::Discovery => "discovery",
+            KnowledgeKind::Pattern => "pattern",
+            KnowledgeKind::Context => "context",
+            KnowledgeKind::Document => "document",
+            KnowledgeKind::Config => "config",
+            KnowledgeKind::Reference => "reference",
+            KnowledgeKind::Plan => "plan",
+            KnowledgeKind::Log => "log",
+            KnowledgeKind::Skill => "skill",
         };
         write!(f, "{s}")
     }
 }
 
-impl FromStr for EntryType {
+impl FromStr for KnowledgeKind {
     type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "note" => Ok(EntryType::Note),
-            "decision" => Ok(EntryType::Decision),
-            "discovery" => Ok(EntryType::Discovery),
-            "pattern" => Ok(EntryType::Pattern),
-            "context" => Ok(EntryType::Context),
-            "document" => Ok(EntryType::Document),
-            "config" => Ok(EntryType::Config),
-            "reference" => Ok(EntryType::Reference),
-            "plan" => Ok(EntryType::Plan),
-            "log" => Ok(EntryType::Log),
-            "skill" => Ok(EntryType::Skill),
+            "note" => Ok(KnowledgeKind::Note),
+            "decision" => Ok(KnowledgeKind::Decision),
+            "discovery" => Ok(KnowledgeKind::Discovery),
+            "pattern" => Ok(KnowledgeKind::Pattern),
+            "context" => Ok(KnowledgeKind::Context),
+            "document" => Ok(KnowledgeKind::Document),
+            "config" => Ok(KnowledgeKind::Config),
+            "reference" => Ok(KnowledgeKind::Reference),
+            "plan" => Ok(KnowledgeKind::Plan),
+            "log" => Ok(KnowledgeKind::Log),
+            "skill" => Ok(KnowledgeKind::Skill),
             other => Err(format!("unknown entry type: {other}")),
         }
     }
@@ -225,12 +225,12 @@ fn validate_path(path: &str) -> Result<()> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Entry {
-    id: EntryId,
+pub struct Knowledge {
+    id: KnowledgeId,
     project: ProjectId,
     namespace: Namespace,
     path: String,
-    entry_type: EntryType,
+    kind: KnowledgeKind,
     title: String,
     content: String,
     tags: Vec<String>,
@@ -246,12 +246,12 @@ pub struct Entry {
     collector: EventCollector,
 }
 
-impl Entry {
+impl Knowledge {
     pub fn new(
         project: ProjectId,
         namespace: Namespace,
         path: String,
-        entry_type: EntryType,
+        kind: KnowledgeKind,
         title: String,
         content: String,
         tags: Vec<String>,
@@ -265,11 +265,11 @@ impl Entry {
 
         let now = Utc::now();
         let mut entry = Self {
-            id: EntryId::new(),
+            id: KnowledgeId::new(),
             project,
             namespace,
             path,
-            entry_type,
+            kind,
             title,
             content,
             tags,
@@ -289,12 +289,12 @@ impl Entry {
                 entry.project.as_ref(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_CREATED,
-                Payload::from_json(&knowledge_events::EntryCreatedPayload {
+                Payload::from_json(&knowledge_events::KnowledgeCreatedPayload {
                     entry_id: entry.id.to_string(),
                     project: entry.project.to_string(),
                     namespace: entry.namespace.to_string(),
                     path: entry.path.clone(),
-                    entry_type: entry.entry_type.to_string(),
+                    kind: entry.kind.to_string(),
                     title: entry.title.clone(),
                     content: entry.content.clone(),
                     tags: entry.tags.clone(),
@@ -309,13 +309,13 @@ impl Entry {
         Ok(entry)
     }
 
-    pub fn restore(r: RestoreEntry) -> Self {
+    pub fn restore(r: RestoreKnowledge) -> Self {
         Self {
             id: r.id,
             project: r.project,
             namespace: r.namespace,
             path: r.path,
-            entry_type: r.entry_type,
+            kind: r.kind,
             title: r.title,
             content: r.content,
             tags: r.tags,
@@ -344,7 +344,7 @@ impl Entry {
             self.project.as_ref(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_UPDATED,
-            Payload::from_json(&knowledge_events::EntryUpdatedPayload {
+            Payload::from_json(&knowledge_events::KnowledgeUpdatedPayload {
                 entry_id: self.id.to_string(),
                 path: self.path.clone(),
                 title: self.title.clone(),
@@ -366,7 +366,7 @@ impl Entry {
                 self.project.as_ref(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAGGED,
-                Payload::from_json(&knowledge_events::EntryTaggedPayload {
+                Payload::from_json(&knowledge_events::KnowledgeTaggedPayload {
                     entry_id: self.id.to_string(),
                     tag,
                 })
@@ -385,7 +385,7 @@ impl Entry {
                 self.project.as_ref(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAG_REMOVED,
-                Payload::from_json(&knowledge_events::EntryTagRemovedPayload {
+                Payload::from_json(&knowledge_events::KnowledgeTagRemovedPayload {
                     entry_id: self.id.to_string(),
                     tag: tag.to_string(),
                 })
@@ -404,7 +404,7 @@ impl Entry {
             self.project.as_ref(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_MOVED,
-            Payload::from_json(&knowledge_events::EntryMovedPayload {
+            Payload::from_json(&knowledge_events::KnowledgeMovedPayload {
                 entry_id: self.id.to_string(),
                 from_namespace,
                 to_namespace: self.namespace.to_string(),
@@ -424,7 +424,7 @@ impl Entry {
             self.project.as_ref(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_RENAMED,
-            Payload::from_json(&knowledge_events::EntryRenamedPayload {
+            Payload::from_json(&knowledge_events::KnowledgeRenamedPayload {
                 entry_id: self.id.to_string(),
                 old_path,
                 new_path: self.path.clone(),
@@ -444,7 +444,7 @@ impl Entry {
             self.project.as_ref(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_SET,
-            Payload::from_json(&knowledge_events::EntryMetadataSetPayload {
+            Payload::from_json(&knowledge_events::KnowledgeMetadataSetPayload {
                 entry_id: self.id.to_string(),
                 key,
                 value,
@@ -459,7 +459,7 @@ impl Entry {
             self.project.as_ref(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_DELETED,
-            Payload::from_json(&knowledge_events::EntryDeletedPayload {
+            Payload::from_json(&knowledge_events::KnowledgeDeletedPayload {
                 entry_id: self.id.to_string(),
                 path: self.path.clone(),
             })
@@ -478,7 +478,7 @@ impl Entry {
         self.collector.drain()
     }
 
-    pub fn id(&self) -> EntryId {
+    pub fn id(&self) -> KnowledgeId {
         self.id
     }
     pub fn project(&self) -> &ProjectId {
@@ -490,8 +490,8 @@ impl Entry {
     pub fn path(&self) -> &str {
         &self.path
     }
-    pub fn entry_type(&self) -> EntryType {
-        self.entry_type
+    pub fn kind(&self) -> KnowledgeKind {
+        self.kind
     }
     pub fn title(&self) -> &str {
         &self.title
@@ -528,12 +528,12 @@ impl Entry {
     }
 }
 
-pub struct RestoreEntry {
-    pub id: EntryId,
+pub struct RestoreKnowledge {
+    pub id: KnowledgeId,
     pub project: ProjectId,
     pub namespace: Namespace,
     pub path: String,
-    pub entry_type: EntryType,
+    pub kind: KnowledgeKind,
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
@@ -547,11 +547,11 @@ pub struct RestoreEntry {
     pub updated_at: DateTime<Utc>,
 }
 
-pub struct WriteEntry {
+pub struct WriteKnowledge {
     pub project: ProjectId,
     pub namespace: Namespace,
     pub path: String,
-    pub entry_type: EntryType,
+    pub kind: KnowledgeKind,
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
@@ -561,10 +561,10 @@ pub struct WriteEntry {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct EntryFilter {
+pub struct KnowledgeFilter {
     pub project: Option<ProjectId>,
     pub namespace: Option<Namespace>,
-    pub entry_type: Option<EntryType>,
+    pub kind: Option<KnowledgeKind>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
     pub agent_id: Option<AgentId>,
@@ -599,11 +599,11 @@ mod tests {
 
     #[test]
     fn create_entry() {
-        let entry = Entry::new(
+        let entry = Knowledge::new(
             proj("test"),
             Namespace::root(),
             "decisions/db".into(),
-            EntryType::Decision,
+            KnowledgeKind::Decision,
             "Database choice".into(),
             "We chose PostgreSQL".into(),
             vec!["infra".into()],
@@ -611,7 +611,7 @@ mod tests {
             HashMap::new(),
         )
         .unwrap();
-        assert_eq!(entry.entry_type(), EntryType::Decision);
+        assert_eq!(entry.kind(), KnowledgeKind::Decision);
         assert_eq!(entry.path(), "decisions/db");
         assert_eq!(entry.version().as_u64(), 1);
         assert_eq!(entry.tags(), &["infra"]);
@@ -619,11 +619,11 @@ mod tests {
 
     #[test]
     fn empty_title_fails() {
-        let result = Entry::new(
+        let result = Knowledge::new(
             proj("test"),
             Namespace::root(),
             "path".into(),
-            EntryType::Note,
+            KnowledgeKind::Note,
             "".into(),
             "content".into(),
             vec![],
@@ -634,21 +634,21 @@ mod tests {
     }
 
     #[test]
-    fn entry_type_roundtrip() {
-        for t in EntryType::all() {
+    fn kind_roundtrip() {
+        for t in KnowledgeKind::all() {
             let s = t.to_string();
-            let parsed: EntryType = s.parse().unwrap();
+            let parsed: KnowledgeKind = s.parse().unwrap();
             assert_eq!(*t, parsed);
         }
     }
 
     #[test]
     fn update_increments_version() {
-        let mut entry = Entry::new(
+        let mut entry = Knowledge::new(
             proj("test"),
             Namespace::root(),
             "key".into(),
-            EntryType::Note,
+            KnowledgeKind::Note,
             "title".into(),
             "v1".into(),
             vec![],

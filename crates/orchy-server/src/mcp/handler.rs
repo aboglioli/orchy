@@ -165,7 +165,7 @@ You bring the intelligence; orchy enforces the rules.
 1. `register_agent` — project, roles (optional), description. \
    Pass `agent_id` to resume a previous session.
 2. `get_project` + `get_project_summary` — load project context.
-3. `list_knowledge(entry_type: \"skill\")` — load conventions. Follow them.
+3. `list_knowledge(kind: \"skill\")` — load conventions. Follow them.
 4. `load_context` — check if a previous agent left a context snapshot. \
    Also `search_knowledge(query)` to find relevant handoff notes.
 5. `check_mailbox` — check for messages from other agents.

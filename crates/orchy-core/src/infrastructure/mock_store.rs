@@ -3,7 +3,7 @@ use std::sync::RwLock;
 
 use crate::agent::{Agent, AgentId, AgentStore};
 use crate::error::Result;
-use crate::knowledge::{Entry, EntryFilter, EntryId, EntryStore};
+use crate::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
 use crate::project::{Project, ProjectStore};
@@ -200,17 +200,17 @@ impl ReviewStore for MockStore {
     }
 }
 
-impl EntryStore for MockStore {
-    async fn save(&self, _: &mut Entry) -> Result<()> {
+impl KnowledgeStore for MockStore {
+    async fn save(&self, _: &mut Knowledge) -> Result<()> {
         Ok(())
     }
-    async fn find_by_id(&self, _: &EntryId) -> Result<Option<Entry>> {
+    async fn find_by_id(&self, _: &KnowledgeId) -> Result<Option<Knowledge>> {
         unimplemented!()
     }
-    async fn find_by_path(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Entry>> {
+    async fn find_by_path(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Knowledge>> {
         unimplemented!()
     }
-    async fn list(&self, _: EntryFilter) -> Result<Vec<Entry>> {
+    async fn list(&self, _: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         unimplemented!()
     }
     async fn search(
@@ -219,10 +219,10 @@ impl EntryStore for MockStore {
         _: Option<&[f32]>,
         _: Option<&Namespace>,
         _: usize,
-    ) -> Result<Vec<Entry>> {
+    ) -> Result<Vec<Knowledge>> {
         unimplemented!()
     }
-    async fn delete(&self, _: &EntryId) -> Result<()> {
+    async fn delete(&self, _: &KnowledgeId) -> Result<()> {
         unimplemented!()
     }
 }
