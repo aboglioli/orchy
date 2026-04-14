@@ -2661,7 +2661,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ResolveReviewParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
+        let (agent_id, _, _) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
@@ -2674,7 +2674,7 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .resolve_review(&review_id, params.approved, params.comments)
+            .resolve_review(&review_id, agent_id, params.approved, params.comments)
             .await
         {
             Ok(review) => Ok(to_json(&review)),
@@ -2705,8 +2705,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Poll for recent activity across the project. Returns task changes, \
-        messages, and document updates since a timestamp. Use with heartbeat for reactive coordination."
+        description = "Poll for recent task activity in the project since a timestamp. \
+        Returns tasks updated after the given time. Use alongside check_mailbox for full reactivity."
     )]
     async fn poll_updates(
         &self,

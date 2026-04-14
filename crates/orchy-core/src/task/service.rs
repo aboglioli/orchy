@@ -658,6 +658,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
     pub async fn resolve_review(
         &self,
         review_id: &ReviewId,
+        resolver: AgentId,
         approved: bool,
         comments: Option<String>,
     ) -> Result<ReviewRequest> {
@@ -683,7 +684,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
         let mut msg = Message::new(
             review.project().clone(),
             review.namespace().clone(),
-            review.reviewer().unwrap_or(review.requester()),
+            resolver,
             MessageTarget::Agent(review.requester()),
             body,
             None,

@@ -131,7 +131,10 @@ namespace. Namespaces are auto-created on first use.
 - **write_memory** — share decisions and context with other agents.
 - **write_document** — share specs, architecture decisions, and analysis (markdown).
 - **send_message** — coordinate by agent ID, `role:name`, or `broadcast`.
+- **watch_task** — get notified when a task you depend on changes status.
+- **request_review** / **resolve_review** — approval workflows between agents.
 - **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
+- **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
 - **save_context** — save session state before ending for continuity.
 - **link_project** — import skills/memory from other projects.
 - **get_project_summary** / **get_agent_workload** — check project status.
