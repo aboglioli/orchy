@@ -1,4 +1,6 @@
-use orchy_events::{EventFilter, EventLog, SerializedEvent};
+use async_trait::async_trait;
+use orchy_events::Event;
+use orchy_events::io::Writer as EventWriter;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::document::{Document, DocumentFilter, DocumentId, DocumentStore};
@@ -299,19 +301,13 @@ impl NamespaceStore for StoreBackend {
     }
 }
 
-impl EventLog for StoreBackend {
-    async fn append(&self, events: &[SerializedEvent]) -> orchy_events::Result<()> {
+#[async_trait]
+impl EventWriter for StoreBackend {
+    async fn write(&self, event: &Event) -> orchy_events::Result<()> {
         match self {
-            StoreBackend::Memory(b) => EventLog::append(b, events).await,
-            StoreBackend::Sqlite(b) => EventLog::append(b, events).await,
-            StoreBackend::Postgres(b) => EventLog::append(b, events).await,
-        }
-    }
-    async fn list(&self, filter: EventFilter) -> orchy_events::Result<Vec<SerializedEvent>> {
-        match self {
-            StoreBackend::Memory(b) => EventLog::list(b, filter).await,
-            StoreBackend::Sqlite(b) => EventLog::list(b, filter).await,
-            StoreBackend::Postgres(b) => EventLog::list(b, filter).await,
+            StoreBackend::Memory(b) => EventWriter::write(b, event).await,
+            StoreBackend::Sqlite(b) => EventWriter::write(b, event).await,
+            StoreBackend::Postgres(b) => EventWriter::write(b, event).await,
         }
     }
 }

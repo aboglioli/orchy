@@ -11,38 +11,25 @@ use crate::SqliteBackend;
 
 impl ProjectLinkStore for SqliteBackend {
     async fn save(&self, link: &mut ProjectLink) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO project_links (id, source_project, target_project, resource_types, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![
-                link.id().to_string(),
-                link.source_project().to_string(),
-                link.target_project().to_string(),
-                serde_json::to_string(link.resource_types()).unwrap(),
-                link.created_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO project_links (id, source_project, target_project, resource_types, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    link.id().to_string(),
+                    link.source_project().to_string(),
+                    link.target_project().to_string(),
+                    serde_json::to_string(link.resource_types()).unwrap(),
+                    link.created_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
 
         let events = link.drain_events();
-        for evt in &events {
-            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
-                let _ = conn.execute(
-                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    rusqlite::params![
-                        serialized.id,
-                        serialized.organization,
-                        serialized.namespace,
-                        serialized.topic,
-                        serde_json::to_string(&serialized.payload).unwrap(),
-                        serialized.content_type,
-                        serde_json::to_string(&serialized.metadata).unwrap(),
-                        serialized.timestamp.to_rfc3339(),
-                        serialized.version,
-                    ],
-                );
-            }
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

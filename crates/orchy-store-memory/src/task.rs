@@ -1,29 +1,21 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
-use orchy_events::SerializedEvent;
 
 use crate::MemoryBackend;
 
 impl TaskStore for MemoryBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        let mut tasks = self
-            .tasks
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        tasks.insert(task.id(), task.clone());
-        drop(tasks);
+        {
+            let mut tasks = self
+                .tasks
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            tasks.insert(task.id(), task.clone());
+        }
 
         let events = task.drain_events();
         if !events.is_empty() {
-            let serialized: Vec<SerializedEvent> = events
-                .iter()
-                .filter_map(|e| SerializedEvent::from_event(e).ok())
-                .collect();
-            let mut store = self
-                .events
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
-            store.extend(serialized);
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

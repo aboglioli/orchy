@@ -1,35 +1,27 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
-use orchy_events::SerializedEvent;
 
 use crate::MemoryBackend;
 
 impl LockStore for MemoryBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
-        let mut locks = self
-            .resource_locks
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let key = (
-            lock.project().to_string(),
-            lock.namespace().to_string(),
-            lock.name().to_string(),
-        );
-        locks.insert(key, lock.clone());
-        drop(locks);
+        {
+            let mut locks = self
+                .resource_locks
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            let key = (
+                lock.project().to_string(),
+                lock.namespace().to_string(),
+                lock.name().to_string(),
+            );
+            locks.insert(key, lock.clone());
+        }
 
         let events = lock.drain_events();
         if !events.is_empty() {
-            let serialized: Vec<SerializedEvent> = events
-                .iter()
-                .filter_map(|e| SerializedEvent::from_event(e).ok())
-                .collect();
-            let mut store = self
-                .events
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
-            store.extend(serialized);
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
         Ok(())
     }

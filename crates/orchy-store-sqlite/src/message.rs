@@ -38,46 +38,33 @@ enum Messages {
 
 impl MessageStore for SqliteBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                message.id().to_string(),
-                message.project().to_string(),
-                message.namespace().to_string(),
-                message.from().to_string(),
-                message.to().to_string(),
-                message.body(),
-                message.reply_to().map(|id| id.to_string()),
-                match message.status() {
-                    MessageStatus::Pending => "pending",
-                    MessageStatus::Delivered => "delivered",
-                    MessageStatus::Read => "read",
-                },
-                message.created_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![
+                    message.id().to_string(),
+                    message.project().to_string(),
+                    message.namespace().to_string(),
+                    message.from().to_string(),
+                    message.to().to_string(),
+                    message.body(),
+                    message.reply_to().map(|id| id.to_string()),
+                    match message.status() {
+                        MessageStatus::Pending => "pending",
+                        MessageStatus::Delivered => "delivered",
+                        MessageStatus::Read => "read",
+                    },
+                    message.created_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
 
         let events = message.drain_events();
-        for evt in &events {
-            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
-                let _ = conn.execute(
-                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    rusqlite::params![
-                        serialized.id,
-                        serialized.organization,
-                        serialized.namespace,
-                        serialized.topic,
-                        serde_json::to_string(&serialized.payload).unwrap(),
-                        serialized.content_type,
-                        serde_json::to_string(&serialized.metadata).unwrap(),
-                        serialized.timestamp.to_rfc3339(),
-                        serialized.version,
-                    ],
-                );
-            }
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

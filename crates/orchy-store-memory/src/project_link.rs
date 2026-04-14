@@ -1,30 +1,22 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
-use orchy_events::SerializedEvent;
 
 use crate::MemoryBackend;
 
 impl ProjectLinkStore for MemoryBackend {
     async fn save(&self, link: &mut ProjectLink) -> Result<()> {
-        let mut links = self
-            .project_links
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        links.insert(link.id(), link.clone());
-        drop(links);
+        {
+            let mut links = self
+                .project_links
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            links.insert(link.id(), link.clone());
+        }
 
         let events = link.drain_events();
         if !events.is_empty() {
-            let serialized: Vec<SerializedEvent> = events
-                .iter()
-                .filter_map(|e| SerializedEvent::from_event(e).ok())
-                .collect();
-            let mut store = self
-                .events
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
-            store.extend(serialized);
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
         Ok(())
     }

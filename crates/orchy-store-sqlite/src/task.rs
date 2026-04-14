@@ -56,51 +56,38 @@ enum Tasks {
 
 impl TaskStore for SqliteBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
-            rusqlite::params![
-                task.id().to_string(),
-                task.project().to_string(),
-                task.namespace().to_string(),
-                task.parent_id().map(|id| id.to_string()),
-                task.title(),
-                task.description(),
-                task.status().to_string(),
-                task.priority().to_string(),
-                serde_json::to_string(task.assigned_roles()).unwrap(),
-                task.assigned_to().map(|a| a.to_string()),
-                task.assigned_at().map(|dt| dt.to_rfc3339()),
-                serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap(),
-                serde_json::to_string(task.tags()).unwrap(),
-                task.result_summary().map(|s| s.to_string()),
-                serde_json::to_string(&task.notes()).unwrap(),
-                task.created_by().map(|a| a.to_string()),
-                task.created_at().to_rfc3339(),
-                task.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                rusqlite::params![
+                    task.id().to_string(),
+                    task.project().to_string(),
+                    task.namespace().to_string(),
+                    task.parent_id().map(|id| id.to_string()),
+                    task.title(),
+                    task.description(),
+                    task.status().to_string(),
+                    task.priority().to_string(),
+                    serde_json::to_string(task.assigned_roles()).unwrap(),
+                    task.assigned_to().map(|a| a.to_string()),
+                    task.assigned_at().map(|dt| dt.to_rfc3339()),
+                    serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap(),
+                    serde_json::to_string(task.tags()).unwrap(),
+                    task.result_summary().map(|s| s.to_string()),
+                    serde_json::to_string(&task.notes()).unwrap(),
+                    task.created_by().map(|a| a.to_string()),
+                    task.created_at().to_rfc3339(),
+                    task.updated_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
 
         let events = task.drain_events();
-        for evt in &events {
-            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
-                let _ = conn.execute(
-                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    rusqlite::params![
-                        serialized.id,
-                        serialized.organization,
-                        serialized.namespace,
-                        serialized.topic,
-                        serde_json::to_string(&serialized.payload).unwrap(),
-                        serialized.content_type,
-                        serde_json::to_string(&serialized.metadata).unwrap(),
-                        serialized.timestamp.to_rfc3339(),
-                        serialized.version,
-                    ],
-                );
-            }
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

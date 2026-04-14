@@ -1,60 +1,31 @@
-use orchy_events::{Error, Result};
-use orchy_events::{EventFilter, EventLog, SerializedEvent};
+use async_trait::async_trait;
+
+use orchy_core::error::{Error, Result};
+use orchy_events::io::Writer;
+use orchy_events::{Event, SerializedEvent};
 
 use crate::MemoryBackend;
 
-impl EventLog for MemoryBackend {
-    async fn append(&self, events: &[SerializedEvent]) -> Result<()> {
+#[async_trait]
+impl Writer for MemoryBackend {
+    async fn write(&self, event: &Event) -> orchy_events::Result<()> {
+        let serialized = SerializedEvent::from_event(event)
+            .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
         let mut store = self
             .events
             .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        for event in events {
-            store.push(event.clone());
-        }
+            .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
+        store.push(serialized);
         Ok(())
     }
+}
 
-    async fn list(&self, filter: EventFilter) -> Result<Vec<SerializedEvent>> {
+impl MemoryBackend {
+    pub fn list_events(&self) -> Result<Vec<SerializedEvent>> {
         let store = self
             .events
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-
-        let mut results: Vec<SerializedEvent> = store
-            .iter()
-            .filter(|e| {
-                if let Some(ref org) = filter.organization {
-                    if e.organization != *org {
-                        return false;
-                    }
-                }
-                if let Some(ref ns) = filter.namespace {
-                    if e.namespace != *ns {
-                        return false;
-                    }
-                }
-                if let Some(ref topic) = filter.topic {
-                    if e.topic != *topic {
-                        return false;
-                    }
-                }
-                if let Some(ref since) = filter.since {
-                    if e.timestamp < *since {
-                        return false;
-                    }
-                }
-                true
-            })
-            .cloned()
-            .collect();
-
-        results.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
-
-        if let Some(limit) = filter.limit {
-            results.truncate(limit);
-        }
-
-        Ok(results)
+        Ok(store.clone())
     }
 }

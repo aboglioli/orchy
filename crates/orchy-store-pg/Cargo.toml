@@ -6,6 +6,7 @@ version.workspace = true
 [dependencies]
 orchy-core.workspace = true
 orchy-events.workspace = true
+async-trait = "0.1"
 sqlx.workspace = true
 pgvector.workspace = true
 sea-query.workspace = true

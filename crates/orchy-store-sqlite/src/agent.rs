@@ -14,43 +14,30 @@ const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description
 
 impl AgentStore for SqliteBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            rusqlite::params![
-                agent.id().to_string(),
-                agent.project().to_string(),
-                agent.namespace().to_string(),
-                agent.parent_id().map(|id| id.to_string()),
-                serde_json::to_string(agent.roles()).unwrap(),
-                agent.description(),
-                agent.status().to_string(),
-                agent.last_heartbeat().to_rfc3339(),
-                agent.connected_at().to_rfc3339(),
-                serde_json::to_string(agent.metadata()).unwrap(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![
+                    agent.id().to_string(),
+                    agent.project().to_string(),
+                    agent.namespace().to_string(),
+                    agent.parent_id().map(|id| id.to_string()),
+                    serde_json::to_string(agent.roles()).unwrap(),
+                    agent.description(),
+                    agent.status().to_string(),
+                    agent.last_heartbeat().to_rfc3339(),
+                    agent.connected_at().to_rfc3339(),
+                    serde_json::to_string(agent.metadata()).unwrap(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
 
         let events = agent.drain_events();
-        for evt in &events {
-            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
-                let _ = conn.execute(
-                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    rusqlite::params![
-                        serialized.id,
-                        serialized.organization,
-                        serialized.namespace,
-                        serialized.topic,
-                        serde_json::to_string(&serialized.payload).unwrap(),
-                        serialized.content_type,
-                        serde_json::to_string(&serialized.metadata).unwrap(),
-                        serialized.timestamp.to_rfc3339(),
-                        serialized.version,
-                    ],
-                );
-            }
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

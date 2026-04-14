@@ -10,37 +10,14 @@ use crate::error::{Error, Result};
 use crate::message::{Message, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, ProjectId};
 
-pub struct TaskService<
-    TS: TaskStore,
-    AS: AgentStore,
-    WS: WatcherStore,
-    MS: MessageStore,
-    RS: ReviewStore,
-> {
+pub struct TaskService<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> {
     task_store: Arc<TS>,
-    agent_store: Arc<AS>,
-    watcher_store: Arc<WS>,
-    message_store: Arc<MS>,
-    review_store: Arc<RS>,
+    store: Arc<S>,
 }
 
-impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: ReviewStore>
-    TaskService<TS, AS, WS, MS, RS>
-{
-    pub fn new(
-        task_store: Arc<TS>,
-        agent_store: Arc<AS>,
-        watcher_store: Arc<WS>,
-        message_store: Arc<MS>,
-        review_store: Arc<RS>,
-    ) -> Self {
-        Self {
-            task_store,
-            agent_store,
-            watcher_store,
-            message_store,
-            review_store,
-        }
+impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> TaskService<TS, S> {
+    pub fn new(task_store: Arc<TS>, store: Arc<S>) -> Self {
+        Self { task_store, store }
     }
 
     pub async fn create(&self, mut task: Task) -> Result<()> {
@@ -175,8 +152,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
     }
 
     pub async fn assign(&self, id: &TaskId, new_agent: &AgentId) -> Result<Task> {
-        self.agent_store
-            .find_by_id(new_agent)
+        AgentStore::find_by_id(&*self.store, new_agent)
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {new_agent}")))?;
 
@@ -609,12 +585,12 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
     ) -> Result<TaskWatcher> {
         self.get(task_id).await?;
         let watcher = TaskWatcher::new(*task_id, agent_id, project, namespace);
-        self.watcher_store.save(&watcher).await?;
+        WatcherStore::save(&*self.store, &watcher).await?;
         Ok(watcher)
     }
 
     pub async fn unwatch(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()> {
-        self.watcher_store.delete(task_id, agent_id).await
+        WatcherStore::delete(&*self.store, task_id, agent_id).await
     }
 
     pub async fn request_review(
@@ -635,7 +611,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
             reviewer,
             reviewer_role.clone(),
         );
-        self.review_store.save(&review).await?;
+        ReviewStore::save(&*self.store, &review).await?;
 
         let body = format!(
             "Review requested for task {} (review {})",
@@ -650,7 +626,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
             MessageTarget::Broadcast
         };
         let mut msg = Message::new(project, namespace, requester, target, body, None);
-        let _ = self.message_store.save(&mut msg).await;
+        let _ = MessageStore::save(&*self.store, &mut msg).await;
 
         Ok(review)
     }
@@ -662,9 +638,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
         approved: bool,
         comments: Option<String>,
     ) -> Result<ReviewRequest> {
-        let mut review = self
-            .review_store
-            .find_by_id(review_id)
+        let mut review = ReviewStore::find_by_id(&*self.store, review_id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("review {review_id}")))?;
 
@@ -673,7 +647,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
         } else {
             review.reject(comments)?;
         }
-        self.review_store.save(&review).await?;
+        ReviewStore::save(&*self.store, &review).await?;
 
         let body = format!(
             "Review {} for task {}: {}",
@@ -689,24 +663,23 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
             body,
             None,
         );
-        let _ = self.message_store.save(&mut msg).await;
+        let _ = MessageStore::save(&*self.store, &mut msg).await;
 
         Ok(review)
     }
 
     pub async fn get_review(&self, id: &ReviewId) -> Result<ReviewRequest> {
-        self.review_store
-            .find_by_id(id)
+        ReviewStore::find_by_id(&*self.store, id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("review {id}")))
     }
 
     pub async fn list_reviews_for_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
-        self.review_store.find_by_task(task_id).await
+        ReviewStore::find_by_task(&*self.store, task_id).await
     }
 
     async fn notify_watchers(&self, task: &Task, event: &str) {
-        let watchers = self.watcher_store.find_watchers(&task.id()).await;
+        let watchers = WatcherStore::find_watchers(&*self.store, &task.id()).await;
         if let Ok(watchers) = watchers {
             for watcher in watchers {
                 let body = format!("[watch] task {} ({}): {}", task.id(), task.title(), event);
@@ -718,7 +691,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
                     body,
                     None,
                 );
-                let _ = self.message_store.save(&mut msg).await;
+                let _ = MessageStore::save(&*self.store, &mut msg).await;
             }
         }
     }
@@ -752,7 +725,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
                             body,
                             None,
                         );
-                        let _ = self.message_store.save(&mut msg).await;
+                        let _ = MessageStore::save(&*self.store, &mut msg).await;
                     }
                     self.notify_watchers(&task, "dependency failed").await;
                 }

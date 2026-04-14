@@ -50,53 +50,40 @@ enum Documents {
 
 impl DocumentStore for SqliteBackend {
     async fn save(&self, doc: &mut Document) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let embedding_bytes = doc.embedding().map(embedding_to_bytes);
-        let tags_json =
-            serde_json::to_string(doc.tags()).map_err(|e| Error::Store(e.to_string()))?;
+            let embedding_bytes = doc.embedding().map(embedding_to_bytes);
+            let tags_json =
+                serde_json::to_string(doc.tags()).map_err(|e| Error::Store(e.to_string()))?;
 
-        conn.execute(
-            "INSERT OR REPLACE INTO documents (id, project, namespace, path, title, content, tags, version, embedding, embedding_model, embedding_dimensions, created_by, updated_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            rusqlite::params![
-                doc.id().to_string(),
-                doc.project().to_string(),
-                doc.namespace().to_string(),
-                doc.path(),
-                doc.title(),
-                doc.content(),
-                tags_json,
-                doc.version().as_u64() as i64,
-                embedding_bytes,
-                doc.embedding_model(),
-                doc.embedding_dimensions().map(|d| d as i64),
-                doc.created_by().map(|a| a.to_string()),
-                doc.updated_by().map(|a| a.to_string()),
-                doc.created_at().to_rfc3339(),
-                doc.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO documents (id, project, namespace, path, title, content, tags, version, embedding, embedding_model, embedding_dimensions, created_by, updated_by, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                rusqlite::params![
+                    doc.id().to_string(),
+                    doc.project().to_string(),
+                    doc.namespace().to_string(),
+                    doc.path(),
+                    doc.title(),
+                    doc.content(),
+                    tags_json,
+                    doc.version().as_u64() as i64,
+                    embedding_bytes,
+                    doc.embedding_model(),
+                    doc.embedding_dimensions().map(|d| d as i64),
+                    doc.created_by().map(|a| a.to_string()),
+                    doc.updated_by().map(|a| a.to_string()),
+                    doc.created_at().to_rfc3339(),
+                    doc.updated_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
 
         let events = doc.drain_events();
-        for evt in &events {
-            if let Ok(serialized) = orchy_events::SerializedEvent::from_event(evt) {
-                let _ = conn.execute(
-                    "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    rusqlite::params![
-                        serialized.id,
-                        serialized.organization,
-                        serialized.namespace,
-                        serialized.topic,
-                        serde_json::to_string(&serialized.payload).unwrap(),
-                        serialized.content_type,
-                        serde_json::to_string(&serialized.metadata).unwrap(),
-                        serialized.timestamp.to_rfc3339(),
-                        serialized.version,
-                    ],
-                );
-            }
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
 
         Ok(())

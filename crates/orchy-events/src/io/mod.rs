@@ -5,8 +5,8 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures::Stream;
 
-use crate::event::Event;
 use crate::error::{Error, Result};
+use crate::event::Event;
 
 #[async_trait]
 pub trait Acker: Send + Sync + Clone {
@@ -56,9 +56,7 @@ pub trait Handler: Send + Sync {
 pub trait Reader: Send + Sync {
     type Acker: Acker;
 
-    fn read(
-        &self,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Message<Self::Acker>>> + Send>>>;
+    fn read(&self) -> Result<Pin<Box<dyn Stream<Item = Result<Message<Self::Acker>>> + Send>>>;
 }
 
 #[async_trait]
