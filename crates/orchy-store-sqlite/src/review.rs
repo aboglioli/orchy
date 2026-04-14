@@ -127,8 +127,7 @@ fn row_to_review(row: &rusqlite::Row) -> rusqlite::Result<ReviewRequest> {
     let requester = AgentId::from_str(&requester_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
     })?;
-    let reviewer = reviewer_str
-        .and_then(|s| AgentId::from_str(&s).ok());
+    let reviewer = reviewer_str.and_then(|s| AgentId::from_str(&s).ok());
     let status = status_str
         .parse::<ReviewStatus>()
         .unwrap_or(ReviewStatus::Pending);

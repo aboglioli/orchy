@@ -106,7 +106,9 @@ fn row_to_review(row: &sqlx::postgres::PgRow) -> ReviewRequest {
         requester: AgentId::from_uuid(requester),
         reviewer: reviewer.map(AgentId::from_uuid),
         reviewer_role,
-        status: status.parse::<ReviewStatus>().unwrap_or(ReviewStatus::Pending),
+        status: status
+            .parse::<ReviewStatus>()
+            .unwrap_or(ReviewStatus::Pending),
         comments,
         created_at,
         resolved_at,
