@@ -49,7 +49,7 @@ enum Documents {
 const SELECT_COLUMNS: &str = "id, project, namespace, path, title, content, tags, version, embedding::text, embedding_model, embedding_dimensions, created_by, updated_by, created_at, updated_at";
 
 impl DocumentStore for PgBackend {
-    async fn save(&self, doc: &Document) -> Result<()> {
+    async fn save(&self, doc: &mut Document) -> Result<()> {
         let vec_binding = doc.embedding().map(|e| Vector::from(e.to_vec()));
         let tags_json = serde_json::to_value(doc.tags()).unwrap();
 

@@ -13,7 +13,7 @@ use crate::memory::Version;
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait DocumentStore: Send + Sync {
-    fn save(&self, doc: &Document) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, doc: &mut Document) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &DocumentId) -> impl Future<Output = Result<Option<Document>>> + Send;
     fn find_by_path(
         &self,

@@ -23,8 +23,8 @@ impl<S: ProjectLinkStore> ProjectLinkService<S> {
             self.store.delete(&existing.id()).await?;
         }
 
-        let link = ProjectLink::new(source, target, resource_types)?;
-        self.store.save(&link).await?;
+        let mut link = ProjectLink::new(source, target, resource_types)?;
+        self.store.save(&mut link).await?;
         Ok(link)
     }
 

@@ -32,7 +32,7 @@ macro_rules! delegate_trait {
 }
 
 impl TaskStore for StoreBackend {
-    async fn save(&self, task: &Task) -> Result<()> {
+    async fn save(&self, task: &mut Task) -> Result<()> {
         delegate_trait!(self, TaskStore::save(task))
     }
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
@@ -44,7 +44,7 @@ impl TaskStore for StoreBackend {
 }
 
 impl AgentStore for StoreBackend {
-    async fn save(&self, agent: &Agent) -> Result<()> {
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
         delegate_trait!(self, AgentStore::save(agent))
     }
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
@@ -59,7 +59,7 @@ impl AgentStore for StoreBackend {
 }
 
 impl MessageStore for StoreBackend {
-    async fn save(&self, message: &Message) -> Result<()> {
+    async fn save(&self, message: &mut Message) -> Result<()> {
         delegate_trait!(self, MessageStore::save(message))
     }
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
@@ -91,7 +91,7 @@ impl MessageStore for StoreBackend {
 }
 
 impl MemoryStore for StoreBackend {
-    async fn save(&self, entry: &MemoryEntry) -> Result<()> {
+    async fn save(&self, entry: &mut MemoryEntry) -> Result<()> {
         delegate_trait!(self, MemoryStore::save(entry))
     }
     async fn find_by_key(
@@ -123,7 +123,7 @@ impl MemoryStore for StoreBackend {
 }
 
 impl ContextStore for StoreBackend {
-    async fn save(&self, snapshot: &ContextSnapshot) -> Result<()> {
+    async fn save(&self, snapshot: &mut ContextSnapshot) -> Result<()> {
         delegate_trait!(self, ContextStore::save(snapshot))
     }
     async fn find_latest(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
@@ -152,7 +152,7 @@ impl ContextStore for StoreBackend {
 }
 
 impl SkillStore for StoreBackend {
-    async fn save(&self, skill: &Skill) -> Result<()> {
+    async fn save(&self, skill: &mut Skill) -> Result<()> {
         delegate_trait!(self, SkillStore::save(skill))
     }
     async fn find_by_name(
@@ -172,7 +172,7 @@ impl SkillStore for StoreBackend {
 }
 
 impl ProjectStore for StoreBackend {
-    async fn save(&self, project: &Project) -> Result<()> {
+    async fn save(&self, project: &mut Project) -> Result<()> {
         delegate_trait!(self, ProjectStore::save(project))
     }
     async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
@@ -181,7 +181,7 @@ impl ProjectStore for StoreBackend {
 }
 
 impl ProjectLinkStore for StoreBackend {
-    async fn save(&self, link: &ProjectLink) -> Result<()> {
+    async fn save(&self, link: &mut ProjectLink) -> Result<()> {
         delegate_trait!(self, ProjectLinkStore::save(link))
     }
     async fn delete(&self, id: &ProjectLinkId) -> Result<()> {
@@ -203,7 +203,7 @@ impl ProjectLinkStore for StoreBackend {
 }
 
 impl DocumentStore for StoreBackend {
-    async fn save(&self, doc: &Document) -> Result<()> {
+    async fn save(&self, doc: &mut Document) -> Result<()> {
         delegate_trait!(self, DocumentStore::save(doc))
     }
     async fn find_by_id(&self, id: &DocumentId) -> Result<Option<Document>> {
@@ -238,7 +238,7 @@ impl DocumentStore for StoreBackend {
 }
 
 impl LockStore for StoreBackend {
-    async fn save(&self, lock: &ResourceLock) -> Result<()> {
+    async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         delegate_trait!(self, LockStore::save(lock))
     }
     async fn find(
@@ -267,20 +267,14 @@ impl NamespaceStore for StoreBackend {
 }
 
 impl EventStore for StoreBackend {
-    async fn append(
-        &self,
-        events: &[SerializedEvent],
-    ) -> orchy_events::Result<()> {
+    async fn append(&self, events: &[SerializedEvent]) -> orchy_events::Result<()> {
         match self {
             StoreBackend::Memory(b) => EventStore::append(b, events).await,
             StoreBackend::Sqlite(b) => EventStore::append(b, events).await,
             StoreBackend::Postgres(b) => EventStore::append(b, events).await,
         }
     }
-    async fn list(
-        &self,
-        filter: EventFilter,
-    ) -> orchy_events::Result<Vec<SerializedEvent>> {
+    async fn list(&self, filter: EventFilter) -> orchy_events::Result<Vec<SerializedEvent>> {
         match self {
             StoreBackend::Memory(b) => EventStore::list(b, filter).await,
             StoreBackend::Sqlite(b) => EventStore::list(b, filter).await,

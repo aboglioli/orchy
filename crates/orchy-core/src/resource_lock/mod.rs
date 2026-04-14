@@ -9,7 +9,7 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
 pub trait LockStore: Send + Sync {
-    fn save(&self, lock: &ResourceLock) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, lock: &mut ResourceLock) -> impl Future<Output = Result<()>> + Send;
     fn find(
         &self,
         project: &ProjectId,

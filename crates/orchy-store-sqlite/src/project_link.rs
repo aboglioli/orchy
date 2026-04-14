@@ -10,7 +10,7 @@ use orchy_core::project_link::{
 use crate::SqliteBackend;
 
 impl ProjectLinkStore for SqliteBackend {
-    async fn save(&self, link: &ProjectLink) -> Result<()> {
+    async fn save(&self, link: &mut ProjectLink) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO project_links (id, source_project, target_project, resource_types, created_at)

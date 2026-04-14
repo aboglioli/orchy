@@ -20,7 +20,7 @@ pub struct MockStore {
 }
 
 impl TaskStore for MockStore {
-    async fn save(&self, _: &Task) -> Result<()> {
+    async fn save(&self, _: &mut Task) -> Result<()> {
         Ok(())
     }
     async fn find_by_id(&self, _: &TaskId) -> Result<Option<Task>> {
@@ -32,7 +32,7 @@ impl TaskStore for MockStore {
 }
 
 impl AgentStore for MockStore {
-    async fn save(&self, agent: &Agent) -> Result<()> {
+    async fn save(&self, agent: &mut Agent) -> Result<()> {
         self.agents
             .write()
             .unwrap()
@@ -51,7 +51,7 @@ impl AgentStore for MockStore {
 }
 
 impl MessageStore for MockStore {
-    async fn save(&self, message: &Message) -> Result<()> {
+    async fn save(&self, message: &mut Message) -> Result<()> {
         self.messages
             .write()
             .unwrap()
@@ -116,7 +116,7 @@ impl MessageStore for MockStore {
 }
 
 impl ProjectStore for MockStore {
-    async fn save(&self, _: &Project) -> Result<()> {
+    async fn save(&self, _: &mut Project) -> Result<()> {
         Ok(())
     }
     async fn find_by_id(&self, _: &ProjectId) -> Result<Option<Project>> {
@@ -125,7 +125,7 @@ impl ProjectStore for MockStore {
 }
 
 impl MemoryStore for MockStore {
-    async fn save(&self, _: &MemoryEntry) -> Result<()> {
+    async fn save(&self, _: &mut MemoryEntry) -> Result<()> {
         unimplemented!()
     }
     async fn find_by_key(
@@ -154,7 +154,7 @@ impl MemoryStore for MockStore {
 }
 
 impl ContextStore for MockStore {
-    async fn save(&self, _: &ContextSnapshot) -> Result<()> {
+    async fn save(&self, _: &mut ContextSnapshot) -> Result<()> {
         unimplemented!()
     }
     async fn find_latest(&self, _: &AgentId) -> Result<Option<ContextSnapshot>> {
@@ -185,7 +185,7 @@ impl NamespaceStore for MockStore {
 }
 
 impl ProjectLinkStore for MockStore {
-    async fn save(&self, _: &ProjectLink) -> Result<()> {
+    async fn save(&self, _: &mut ProjectLink) -> Result<()> {
         unimplemented!()
     }
     async fn delete(&self, _: &ProjectLinkId) -> Result<()> {
@@ -203,7 +203,7 @@ impl ProjectLinkStore for MockStore {
 }
 
 impl LockStore for MockStore {
-    async fn save(&self, _: &ResourceLock) -> Result<()> {
+    async fn save(&self, _: &mut ResourceLock) -> Result<()> {
         unimplemented!()
     }
     async fn find(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<ResourceLock>> {
@@ -218,7 +218,7 @@ impl LockStore for MockStore {
 }
 
 impl DocumentStore for MockStore {
-    async fn save(&self, _: &Document) -> Result<()> {
+    async fn save(&self, _: &mut Document) -> Result<()> {
         unimplemented!()
     }
     async fn find_by_id(&self, _: &DocumentId) -> Result<Option<Document>> {
@@ -250,7 +250,7 @@ impl DocumentStore for MockStore {
 }
 
 impl SkillStore for MockStore {
-    async fn save(&self, _: &Skill) -> Result<()> {
+    async fn save(&self, _: &mut Skill) -> Result<()> {
         unimplemented!()
     }
     async fn find_by_name(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Skill>> {

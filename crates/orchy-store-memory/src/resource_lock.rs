@@ -5,7 +5,7 @@ use orchy_core::resource_lock::{LockStore, ResourceLock};
 use crate::MemoryBackend;
 
 impl LockStore for MemoryBackend {
-    async fn save(&self, lock: &ResourceLock) -> Result<()> {
+    async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         let mut locks = self
             .resource_locks
             .write()

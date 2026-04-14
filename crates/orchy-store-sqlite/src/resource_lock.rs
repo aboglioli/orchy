@@ -11,7 +11,7 @@ use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 use crate::SqliteBackend;
 
 impl LockStore for SqliteBackend {
-    async fn save(&self, lock: &ResourceLock) -> Result<()> {
+    async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO resource_locks (project, namespace, name, holder, acquired_at, expires_at)

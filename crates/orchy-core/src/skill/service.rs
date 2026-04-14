@@ -21,7 +21,7 @@ impl<S: SkillStore> SkillService<S> {
             ));
         }
 
-        let skill = if let Some(mut existing) = self
+        let mut skill = if let Some(mut existing) = self
             .store
             .find_by_name(&cmd.project, &cmd.namespace, &cmd.name)
             .await?
@@ -39,7 +39,7 @@ impl<S: SkillStore> SkillService<S> {
             )?
         };
 
-        self.store.save(&skill).await?;
+        self.store.save(&mut skill).await?;
         Ok(skill)
     }
 
@@ -117,7 +117,7 @@ impl<S: SkillStore> SkillService<S> {
         let old_namespace = skill.namespace().clone();
         let old_name = skill.name().to_string();
         skill.move_to(new_namespace);
-        self.store.save(&skill).await?;
+        self.store.save(&mut skill).await?;
         self.store
             .delete(project, &old_namespace, &old_name)
             .await?;

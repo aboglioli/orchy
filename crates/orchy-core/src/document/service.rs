@@ -57,7 +57,7 @@ impl<S: DocumentStore, E: EmbeddingsProvider> DocumentService<S, E> {
             doc.set_embedding(vector, emb.model().to_string(), emb.dimensions());
         }
 
-        self.store.save(&doc).await?;
+        self.store.save(&mut doc).await?;
         Ok(doc)
     }
 
@@ -105,28 +105,28 @@ impl<S: DocumentStore, E: EmbeddingsProvider> DocumentService<S, E> {
     pub async fn move_doc(&self, id: &DocumentId, new_namespace: Namespace) -> Result<Document> {
         let mut doc = self.get(id).await?;
         doc.move_to(new_namespace);
-        self.store.save(&doc).await?;
+        self.store.save(&mut doc).await?;
         Ok(doc)
     }
 
     pub async fn rename(&self, id: &DocumentId, new_path: String) -> Result<Document> {
         let mut doc = self.get(id).await?;
         doc.rename(new_path)?;
-        self.store.save(&doc).await?;
+        self.store.save(&mut doc).await?;
         Ok(doc)
     }
 
     pub async fn tag(&self, id: &DocumentId, tag: String) -> Result<Document> {
         let mut doc = self.get(id).await?;
         doc.add_tag(tag);
-        self.store.save(&doc).await?;
+        self.store.save(&mut doc).await?;
         Ok(doc)
     }
 
     pub async fn untag(&self, id: &DocumentId, tag: &str) -> Result<Document> {
         let mut doc = self.get(id).await?;
         doc.remove_tag(tag);
-        self.store.save(&doc).await?;
+        self.store.save(&mut doc).await?;
         Ok(doc)
     }
 }

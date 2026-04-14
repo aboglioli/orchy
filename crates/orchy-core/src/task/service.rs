@@ -21,13 +21,13 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         }
     }
 
-    pub async fn create(&self, task: Task) -> Result<()> {
+    pub async fn create(&self, mut task: Task) -> Result<()> {
         for dep_id in task.depends_on() {
             if self.task_store.find_by_id(dep_id).await?.is_none() {
                 return Err(Error::NotFound(format!("dependency task {dep_id}")));
             }
         }
-        self.task_store.save(&task).await
+        self.task_store.save(&mut task).await
     }
 
     pub async fn get(&self, id: &TaskId) -> Result<Task> {
@@ -49,7 +49,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         }
 
         task.claim(*agent)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -81,7 +81,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             if self.all_deps_completed(task.depends_on()).await? {
                 match task.claim(*agent) {
                     Ok(()) => {
-                        self.task_store.save(&task).await?;
+                        self.task_store.save(&mut task).await?;
                         return Ok(Some(task));
                     }
                     Err(Error::InvalidTransition { .. }) => continue,
@@ -96,14 +96,14 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
     pub async fn start(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.start(agent)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn complete(&self, id: &TaskId, summary: Option<String>) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.complete(summary)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         self.resolve_dependents(task.id()).await?;
         Ok(task)
     }
@@ -111,7 +111,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
     pub async fn fail(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.fail(reason)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -123,28 +123,28 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
     ) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.add_note(author, body)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn tag(&self, id: &TaskId, tag: String) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.add_tag(tag)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn untag(&self, id: &TaskId, tag: &str) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.remove_tag(tag)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn move_task(&self, id: &TaskId, namespace: Namespace) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.move_to(namespace)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -156,14 +156,14 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
         let mut task = self.get(id).await?;
         task.assign(*new_agent)?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
     pub async fn release(&self, id: &TaskId) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.release()?;
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -203,7 +203,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut children = Vec::with_capacity(subtasks.len());
 
         for def in subtasks {
-            let task = Task::new(
+            let mut task = Task::new(
                 parent.project().clone(),
                 parent.namespace().clone(),
                 Some(*parent_id),
@@ -215,7 +215,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 created_by,
                 false,
             )?;
-            self.task_store.save(&task).await?;
+            self.task_store.save(&mut task).await?;
             children.push(task);
         }
 
@@ -223,7 +223,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             parent.add_dependency(child.id())?;
         }
         parent.block()?;
-        self.task_store.save(&parent).await?;
+        self.task_store.save(&mut parent).await?;
 
         Ok((parent, children))
     }
@@ -238,11 +238,11 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         let mut original = self.get(task_id).await?;
         let cancel_reason = reason.unwrap_or_else(|| "replaced by new tasks".to_string());
         original.cancel(Some(cancel_reason))?;
-        self.task_store.save(&original).await?;
+        self.task_store.save(&mut original).await?;
 
         let mut new_tasks = Vec::with_capacity(replacements.len());
         for def in replacements {
-            let task = Task::new(
+            let mut task = Task::new(
                 original.project().clone(),
                 original.namespace().clone(),
                 original.parent_id(),
@@ -254,7 +254,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 created_by,
                 false,
             )?;
-            self.task_store.save(&task).await?;
+            self.task_store.save(&mut task).await?;
             new_tasks.push(task);
         }
 
@@ -355,12 +355,12 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             }
         }
 
-        self.task_store.save(&merged).await?;
+        self.task_store.save(&mut merged).await?;
 
         let mut cancelled = Vec::with_capacity(sources.len());
         for mut task in sources {
             task.cancel(Some(format!("merged into {}", merged.id())))?;
-            self.task_store.save(&task).await?;
+            self.task_store.save(&mut task).await?;
             cancelled.push(task);
         }
 
@@ -375,7 +375,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
             for mut child in children {
                 child.set_parent_id(Some(merged.id()));
-                self.task_store.save(&child).await?;
+                self.task_store.save(&mut child).await?;
             }
         }
 
@@ -407,7 +407,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 }
 
                 if changed {
-                    self.task_store.save(&task).await?;
+                    self.task_store.save(&mut task).await?;
                 }
             }
         }
@@ -439,7 +439,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             }
         }
 
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -457,7 +457,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             task.unblock()?;
         }
 
-        self.task_store.save(&task).await?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -551,11 +551,11 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                     let summary = self.children_summaries(&task).await?;
                     let task_id = task.id();
                     task.auto_complete(summary)?;
-                    self.task_store.save(&task).await?;
+                    self.task_store.save(&mut task).await?;
                     self.resolve_dependents(task_id).await?;
                 } else {
                     task.unblock()?;
-                    self.task_store.save(&task).await?;
+                    self.task_store.save(&mut task).await?;
                 }
             }
         }

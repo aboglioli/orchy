@@ -5,7 +5,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use crate::{MemoryBackend, cosine_similarity};
 
 impl DocumentStore for MemoryBackend {
-    async fn save(&self, doc: &Document) -> Result<()> {
+    async fn save(&self, doc: &mut Document) -> Result<()> {
         let mut docs = self
             .documents
             .write()

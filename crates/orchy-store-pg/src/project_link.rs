@@ -11,7 +11,7 @@ use orchy_core::project_link::{
 use crate::PgBackend;
 
 impl ProjectLinkStore for PgBackend {
-    async fn save(&self, link: &ProjectLink) -> Result<()> {
+    async fn save(&self, link: &mut ProjectLink) -> Result<()> {
         let types_json = serde_json::to_value(link.resource_types()).unwrap();
 
         sqlx::query(

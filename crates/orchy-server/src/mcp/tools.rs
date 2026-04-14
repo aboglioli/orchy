@@ -2066,7 +2066,7 @@ impl OrchyHandler {
         entry.lock();
         self.container
             .store
-            .save(&entry)
+            .save(&mut entry)
             .await
             .map_err(|e| e.to_string())?;
         Ok(to_json(&entry))
@@ -2100,7 +2100,7 @@ impl OrchyHandler {
         entry.unlock();
         self.container
             .store
-            .save(&entry)
+            .save(&mut entry)
             .await
             .map_err(|e| e.to_string())?;
         Ok(to_json(&entry))

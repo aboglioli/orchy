@@ -10,7 +10,7 @@ use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 use crate::PgBackend;
 
 impl LockStore for PgBackend {
-    async fn save(&self, lock: &ResourceLock) -> Result<()> {
+    async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         sqlx::query(
             "INSERT INTO resource_locks (project, namespace, name, holder, acquired_at, expires_at)
              VALUES ($1, $2, $3, $4, $5, $6)

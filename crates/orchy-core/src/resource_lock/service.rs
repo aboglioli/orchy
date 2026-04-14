@@ -33,8 +33,8 @@ impl<S: LockStore> LockService<S> {
             self.store.delete(&project, &namespace, &name).await?;
         }
 
-        let lock = ResourceLock::acquire(project, namespace, name, holder, ttl_secs)?;
-        self.store.save(&lock).await?;
+        let mut lock = ResourceLock::acquire(project, namespace, name, holder, ttl_secs)?;
+        self.store.save(&mut lock).await?;
         Ok(lock)
     }
 

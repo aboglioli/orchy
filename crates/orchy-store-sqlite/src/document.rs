@@ -49,7 +49,7 @@ enum Documents {
 }
 
 impl DocumentStore for SqliteBackend {
-    async fn save(&self, doc: &Document) -> Result<()> {
+    async fn save(&self, doc: &mut Document) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let embedding_bytes = doc.embedding().map(embedding_to_bytes);

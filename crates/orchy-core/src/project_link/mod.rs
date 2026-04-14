@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 use crate::namespace::ProjectId;
 
 pub trait ProjectLinkStore: Send + Sync {
-    fn save(&self, link: &ProjectLink) -> impl Future<Output = Result<()>> + Send;
+    fn save(&self, link: &mut ProjectLink) -> impl Future<Output = Result<()>> + Send;
     fn delete(&self, id: &ProjectLinkId) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(
         &self,

@@ -5,7 +5,7 @@ use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use crate::MemoryBackend;
 
 impl ProjectLinkStore for MemoryBackend {
-    async fn save(&self, link: &ProjectLink) -> Result<()> {
+    async fn save(&self, link: &mut ProjectLink) -> Result<()> {
         let mut links = self
             .project_links
             .write()
