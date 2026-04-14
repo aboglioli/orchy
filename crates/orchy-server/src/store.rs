@@ -26,6 +26,31 @@ pub enum StoreBackend {
     Postgres(PgBackend),
 }
 
+impl StoreBackend {
+    pub async fn query_events(
+        &self,
+        organization: &str,
+        since: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> orchy_core::error::Result<Vec<orchy_events::SerializedEvent>> {
+        match self {
+            StoreBackend::Memory(b) => {
+                let events = b.list_events()?;
+                let mut filtered: Vec<_> = events
+                    .into_iter()
+                    .filter(|e| e.organization == organization && e.timestamp >= since)
+                    .collect();
+                filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+                filtered.truncate(limit);
+                filtered.reverse();
+                Ok(filtered)
+            }
+            StoreBackend::Sqlite(b) => b.query_events(organization, since, limit),
+            StoreBackend::Postgres(b) => b.query_events(organization, since, limit).await,
+        }
+    }
+}
+
 macro_rules! delegate_trait {
     ($self:expr, $Trait:ident :: $method:ident ( $($arg:expr),* )) => {
         match $self {
@@ -121,6 +146,9 @@ impl MemoryStore for StoreBackend {
             self,
             MemoryStore::search(query, embedding, namespace, limit)
         )
+    }
+    async fn find_locked_by(&self, agent: &AgentId) -> Result<Vec<MemoryEntry>> {
+        delegate_trait!(self, MemoryStore::find_locked_by(agent))
     }
     async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
         delegate_trait!(self, MemoryStore::delete(project, namespace, key))
@@ -256,6 +284,9 @@ impl LockStore for StoreBackend {
     }
     async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
         delegate_trait!(self, LockStore::delete(project, namespace, name))
+    }
+    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+        delegate_trait!(self, LockStore::find_by_holder(holder))
     }
     async fn delete_expired(&self) -> Result<u64> {
         delegate_trait!(self, LockStore::delete_expired())

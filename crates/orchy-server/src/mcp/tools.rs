@@ -2705,8 +2705,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Poll for recent task activity in the project since a timestamp. \
-        Returns tasks updated after the given time. Use alongside check_mailbox for full reactivity."
+        description = "Poll for recent events in the project since a timestamp. \
+        Returns domain events (task changes, messages, document updates, etc). \
+        Use alongside check_mailbox for full reactivity."
     )]
     async fn poll_updates(
         &self,
@@ -2726,34 +2727,29 @@ impl OrchyHandler {
 
         let limit = params.limit.unwrap_or(50) as usize;
 
-        let tasks = self
+        let events = self
             .container
-            .task_service
-            .list(TaskFilter {
-                project: Some(project.clone()),
-                ..Default::default()
-            })
+            .store
+            .query_events(project.as_ref(), since, limit)
             .await
             .map_err(|e| e.to_string())?;
 
-        let mut recent_tasks: Vec<_> = tasks
-            .into_iter()
-            .filter(|t| t.updated_at() >= since)
-            .map(|t| {
+        let updates: Vec<_> = events
+            .iter()
+            .map(|e| {
                 serde_json::json!({
-                    "type": "task",
-                    "id": t.id().to_string(),
-                    "title": t.title(),
-                    "status": t.status().to_string(),
-                    "updated_at": t.updated_at().to_rfc3339(),
+                    "topic": e.topic,
+                    "namespace": e.namespace,
+                    "payload": e.payload,
+                    "timestamp": e.timestamp.to_rfc3339(),
                 })
             })
             .collect();
-        recent_tasks.truncate(limit);
 
         let result = serde_json::json!({
             "since": since.to_rfc3339(),
-            "updates": recent_tasks,
+            "count": updates.len(),
+            "events": updates,
         });
 
         Ok(to_json(&result))

@@ -1,9 +1,36 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use sea_query::{Expr, Iden, Order, Query, SqliteQueryBuilder};
+use sea_query_rusqlite::RusqliteBinder;
 
+use orchy_core::error::{Error, Result};
 use orchy_events::io::Writer;
 use orchy_events::{Event, SerializedEvent};
 
 use crate::SqliteBackend;
+
+#[derive(Iden)]
+enum Events {
+    Table,
+    #[iden = "id"]
+    Id,
+    #[iden = "organization"]
+    Organization,
+    #[iden = "namespace"]
+    Namespace,
+    #[iden = "topic"]
+    Topic,
+    #[iden = "payload"]
+    Payload,
+    #[iden = "content_type"]
+    ContentType,
+    #[iden = "metadata"]
+    Metadata,
+    #[iden = "timestamp"]
+    Timestamp,
+    #[iden = "version"]
+    Version,
+}
 
 #[async_trait]
 impl Writer for SqliteBackend {
@@ -31,5 +58,67 @@ impl Writer for SqliteBackend {
         )
         .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
         Ok(())
+    }
+}
+
+impl SqliteBackend {
+    pub fn query_events(
+        &self,
+        organization: &str,
+        since: DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<SerializedEvent>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+
+        let (sql, values) = Query::select()
+            .columns([
+                Events::Id,
+                Events::Organization,
+                Events::Namespace,
+                Events::Topic,
+                Events::Payload,
+                Events::ContentType,
+                Events::Metadata,
+                Events::Timestamp,
+                Events::Version,
+            ])
+            .from(Events::Table)
+            .and_where(Expr::col(Events::Organization).eq(organization))
+            .and_where(Expr::col(Events::Timestamp).gte(since.to_rfc3339()))
+            .order_by(Events::Timestamp, Order::Desc)
+            .limit(limit as u64)
+            .build_rusqlite(SqliteQueryBuilder);
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(&*values.as_params(), |row| {
+                let payload_str: String = row.get(4)?;
+                let metadata_str: String = row.get(6)?;
+                let timestamp_str: String = row.get(7)?;
+                Ok(SerializedEvent {
+                    id: row.get(0)?,
+                    organization: row.get(1)?,
+                    namespace: row.get(2)?,
+                    topic: row.get(3)?,
+                    payload: serde_json::from_str(&payload_str).unwrap_or_default(),
+                    content_type: row.get(5)?,
+                    metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
+                    timestamp: DateTime::parse_from_rfc3339(&timestamp_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    version: row.get::<_, i64>(8)? as u64,
+                })
+            })
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let mut events = Vec::new();
+        for row in rows {
+            events.push(row.map_err(|e| Error::Store(e.to_string()))?);
+        }
+        events.reverse();
+        Ok(events)
     }
 }
