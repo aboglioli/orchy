@@ -4,6 +4,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
+use orchy_core::document::{DocumentFilter, WriteDocument};
 use orchy_core::memory::MemoryStore;
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
@@ -435,6 +436,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CompleteTaskParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -456,6 +462,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<FailTaskParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -2151,6 +2162,340 @@ impl OrchyHandler {
             .await
         {
             Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Check if a resource lock exists without acquiring it.")]
+    async fn check_lock(
+        &self,
+        Parameters(params): Parameters<CheckLockParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .lock_service
+            .check(&project, &namespace, &params.name)
+            .await
+        {
+            Ok(Some(lock)) => Ok(to_json(&lock)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Release a claimed or in-progress task back to pending.")]
+    async fn release_task(
+        &self,
+        Parameters(params): Parameters<ReleaseTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self.container.task_service.release(&task_id).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List all unique tags used across tasks in the project.")]
+    async fn list_tags(
+        &self,
+        Parameters(params): Parameters<ListTagsParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                project: Some(project),
+                namespace,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut tags: Vec<String> = tasks
+            .iter()
+            .flat_map(|t| t.tags().iter().cloned())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        tags.sort();
+
+        Ok(to_json(&tags))
+    }
+
+    #[tool(
+        description = "Create or update a document. Documents are markdown knowledge artifacts \
+        for specs, architecture decisions, and shared analysis. Use version for optimistic concurrency."
+    )]
+    async fn write_document(
+        &self,
+        Parameters(params): Parameters<WriteDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let cmd = WriteDocument {
+            project,
+            namespace,
+            path: params.path,
+            title: params.title,
+            content: params.content,
+            tags: params.tags.unwrap_or_default(),
+            expected_version: params.version.map(Version::from),
+            written_by: self.get_session_agent(),
+        };
+
+        match self.container.document_service.write(cmd).await {
+            Ok(doc) => Ok(to_json(&doc)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Read a document by its path.")]
+    async fn read_document(
+        &self,
+        Parameters(params): Parameters<ReadDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(doc)) => Ok(to_json(&doc)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List documents with optional filters by namespace, tag, or path prefix.")]
+    async fn list_documents(
+        &self,
+        Parameters(params): Parameters<ListDocumentsParams>,
+    ) -> Result<String, String> {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let filter = DocumentFilter {
+            project: if namespace.is_none() {
+                self.get_session_project()
+            } else {
+                None
+            },
+            namespace,
+            tag: params.tag,
+            path_prefix: params.path_prefix,
+        };
+
+        match self.container.document_service.list(filter).await {
+            Ok(docs) => Ok(to_json(&docs)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Search documents by semantic similarity.")]
+    async fn search_documents(
+        &self,
+        Parameters(params): Parameters<SearchDocumentsParams>,
+    ) -> Result<String, String> {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let limit = params.limit.unwrap_or(10) as usize;
+
+        match self
+            .container
+            .document_service
+            .search(&params.query, namespace.as_ref(), limit)
+            .await
+        {
+            Ok(docs) => Ok(to_json(&docs)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Delete a document by path.")]
+    async fn delete_document(
+        &self,
+        Parameters(params): Parameters<DeleteDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self.container.document_service.delete(&doc.id()).await {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Move a document to a different namespace.")]
+    async fn move_document(
+        &self,
+        Parameters(params): Parameters<MoveDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let new_namespace = parse_namespace(&format!("/{}", params.new_namespace))?;
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self
+            .container
+            .document_service
+            .move_doc(&doc.id(), new_namespace)
+            .await
+        {
+            Ok(doc) => Ok(to_json(&doc)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Rename a document (change its path).")]
+    async fn rename_document(
+        &self,
+        Parameters(params): Parameters<RenameDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self
+            .container
+            .document_service
+            .rename(&doc.id(), params.new_path)
+            .await
+        {
+            Ok(doc) => Ok(to_json(&doc)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Add a tag to a document.")]
+    async fn tag_document(
+        &self,
+        Parameters(params): Parameters<TagDocumentParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let doc = match self
+            .container
+            .document_service
+            .read_by_path(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(d)) => d,
+            Ok(None) => return Err(format!("document '{}' not found", params.path)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        match self
+            .container
+            .document_service
+            .tag(&doc.id(), params.tag)
+            .await
+        {
+            Ok(doc) => Ok(to_json(&doc)),
             Err(e) => Err(e.to_string()),
         }
     }

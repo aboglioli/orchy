@@ -394,3 +394,77 @@ pub struct UnlockResourceParams {
     pub name: String,
     pub namespace: Option<String>,
 }
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct CheckLockParams {
+    pub name: String,
+    pub namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ReleaseTaskParams {
+    pub task_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ListTagsParams {
+    pub namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct WriteDocumentParams {
+    /// Hierarchical path (e.g. "specs/auth-design").
+    pub path: String,
+    pub title: String,
+    pub content: String,
+    pub namespace: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub version: Option<u64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ReadDocumentParams {
+    pub path: String,
+    pub namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ListDocumentsParams {
+    pub namespace: Option<String>,
+    pub tag: Option<String>,
+    pub path_prefix: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SearchDocumentsParams {
+    pub query: String,
+    pub namespace: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct DeleteDocumentParams {
+    pub path: String,
+    pub namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MoveDocumentParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    pub new_namespace: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct RenameDocumentParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    pub new_path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct TagDocumentParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    pub tag: String,
+}
