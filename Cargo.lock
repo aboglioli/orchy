@@ -1290,6 +1290,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "orchy-events"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "orchy-server"
 version = "0.1.0"
 dependencies = [

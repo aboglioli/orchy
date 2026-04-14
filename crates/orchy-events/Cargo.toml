@@ -1,0 +1,11 @@
+[package]
+name = "orchy-events"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

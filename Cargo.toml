@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/orchy-events",
     "crates/orchy-core",
     "crates/orchy-store-memory",
     "crates/orchy-store-sqlite",
@@ -46,6 +47,7 @@ toml = "0.8"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Internal
+orchy-events = { path = "crates/orchy-events" }
 orchy-core = { path = "crates/orchy-core" }
 orchy-store-memory = { path = "crates/orchy-store-memory" }
 orchy-store-sqlite = { path = "crates/orchy-store-sqlite" }
