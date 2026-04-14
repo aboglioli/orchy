@@ -4,6 +4,7 @@ use std::sync::RwLock;
 use crate::agent::{Agent, AgentId, AgentStore};
 use crate::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use crate::error::Result;
+use crate::knowledge::{Entry, EntryFilter, EntryId, EntryStore};
 use crate::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
@@ -282,6 +283,33 @@ impl ReviewStore for MockStore {
     }
     async fn find_by_task(&self, _: &TaskId) -> Result<Vec<ReviewRequest>> {
         Ok(vec![])
+    }
+}
+
+impl EntryStore for MockStore {
+    async fn save(&self, _: &mut Entry) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_id(&self, _: &EntryId) -> Result<Option<Entry>> {
+        unimplemented!()
+    }
+    async fn find_by_path(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Entry>> {
+        unimplemented!()
+    }
+    async fn list(&self, _: EntryFilter) -> Result<Vec<Entry>> {
+        unimplemented!()
+    }
+    async fn search(
+        &self,
+        _: &str,
+        _: Option<&[f32]>,
+        _: Option<&Namespace>,
+        _: usize,
+    ) -> Result<Vec<Entry>> {
+        unimplemented!()
+    }
+    async fn delete(&self, _: &EntryId) -> Result<()> {
+        unimplemented!()
     }
 }
 

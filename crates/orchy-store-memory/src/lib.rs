@@ -4,6 +4,7 @@ mod agent;
 mod context;
 mod document;
 mod events;
+mod knowledge;
 mod memory;
 mod message;
 mod namespace;
@@ -22,6 +23,7 @@ use orchy_events::SerializedEvent;
 
 use orchy_core::agent::{Agent, AgentId};
 use orchy_core::document::{Document, DocumentId};
+use orchy_core::knowledge::{Entry, EntryId};
 use orchy_core::memory::{ContextSnapshot, MemoryEntry, SnapshotId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
@@ -43,6 +45,7 @@ pub struct MemoryBackend {
     pub(crate) documents: RwLock<HashMap<DocumentId, Document>>,
     pub(crate) watchers: RwLock<Vec<TaskWatcher>>,
     pub(crate) reviews: RwLock<HashMap<ReviewId, ReviewRequest>>,
+    pub(crate) entries: RwLock<HashMap<EntryId, Entry>>,
     pub(crate) resource_locks: RwLock<HashMap<(String, String, String), ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String)>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
@@ -62,6 +65,7 @@ impl MemoryBackend {
             documents: RwLock::new(HashMap::new()),
             watchers: RwLock::new(Vec::new()),
             reviews: RwLock::new(HashMap::new()),
+            entries: RwLock::new(HashMap::new()),
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
             events: RwLock::new(Vec::new()),

@@ -119,6 +119,28 @@ CREATE TABLE IF NOT EXISTS documents (
     UNIQUE(project, namespace, path)
 );
 
+CREATE TABLE IF NOT EXISTS entries (
+    id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    path TEXT NOT NULL,
+    entry_type TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    version INTEGER NOT NULL DEFAULT 1,
+    agent_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    embedding BLOB,
+    embedding_model TEXT,
+    embedding_dimensions INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(project, namespace, path)
+);
+CREATE INDEX IF NOT EXISTS entries_type_idx ON entries (entry_type);
+CREATE INDEX IF NOT EXISTS entries_agent_idx ON entries (agent_id);
+
 CREATE TABLE IF NOT EXISTS resource_locks (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',

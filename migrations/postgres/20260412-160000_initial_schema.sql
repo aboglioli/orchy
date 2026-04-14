@@ -128,6 +128,28 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE INDEX IF NOT EXISTS documents_fts_idx ON documents
     USING gin(to_tsvector('english', title || ' ' || content));
 
+CREATE TABLE IF NOT EXISTS entries (
+    id UUID PRIMARY KEY,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    path TEXT NOT NULL,
+    entry_type TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    tags JSONB NOT NULL DEFAULT '[]',
+    version BIGINT NOT NULL DEFAULT 1,
+    agent_id UUID REFERENCES agents(id),
+    metadata JSONB NOT NULL DEFAULT '{}',
+    embedding VECTOR,
+    embedding_model TEXT,
+    embedding_dimensions INTEGER,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(project, namespace, path)
+);
+CREATE INDEX IF NOT EXISTS entries_type_idx ON entries (entry_type);
+CREATE INDEX IF NOT EXISTS entries_agent_idx ON entries (agent_id);
+
 CREATE TABLE IF NOT EXISTS resource_locks (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',

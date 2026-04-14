@@ -4,6 +4,7 @@ mod agent;
 mod context;
 mod document;
 mod events;
+mod knowledge;
 mod memory;
 mod message;
 mod namespace;
