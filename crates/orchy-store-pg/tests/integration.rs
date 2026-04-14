@@ -240,10 +240,12 @@ async fn memory_save_updates_existing() {
 async fn memory_list_with_namespace_prefix() {
     let store = backend().await;
 
-    let entry_a = MemoryEntry::new(proj("app"), ns("/tasks"), "a".into(), "x".into(), None).unwrap();
+    let entry_a =
+        MemoryEntry::new(proj("app"), ns("/tasks"), "a".into(), "x".into(), None).unwrap();
     MemoryStore::save(&store, &entry_a).await.unwrap();
 
-    let entry_b = MemoryEntry::new(proj("app"), ns("/other"), "b".into(), "y".into(), None).unwrap();
+    let entry_b =
+        MemoryEntry::new(proj("app"), ns("/other"), "b".into(), "y".into(), None).unwrap();
     MemoryStore::save(&store, &entry_b).await.unwrap();
 
     let all = MemoryStore::list(
@@ -307,7 +309,8 @@ async fn memory_search_by_keyword() {
 async fn memory_delete() {
     let store = backend().await;
 
-    let entry = MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None).unwrap();
+    let entry =
+        MemoryEntry::new(proj("app"), Namespace::root(), "k".into(), "v".into(), None).unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
     MemoryStore::delete(&store, &Namespace::root(), "k")

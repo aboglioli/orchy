@@ -118,8 +118,8 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
 mod tests {
     use super::*;
     use crate::agent::{Agent, AgentStore};
-    use crate::namespace::{Namespace, ProjectId};
     use crate::infrastructure::MockStore;
+    use crate::namespace::{Namespace, ProjectId};
     use std::collections::HashMap;
 
     fn test_project() -> ProjectId {

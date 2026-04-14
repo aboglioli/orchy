@@ -98,8 +98,8 @@ impl<S: AgentStore> AgentService<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::namespace::{Namespace, ProjectId};
     use crate::infrastructure::MockStore;
+    use crate::namespace::{Namespace, ProjectId};
     use std::collections::HashMap;
 
     fn make_registration() -> RegisterAgent {

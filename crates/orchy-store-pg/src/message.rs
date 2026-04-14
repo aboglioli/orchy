@@ -203,12 +203,8 @@ impl MessageStore for PgBackend {
         );
 
         if let Some(n) = limit {
-            sql = format!(
-                "SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}"
-            );
-            sql = format!(
-                "SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC"
-            );
+            sql = format!("SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}");
+            sql = format!("SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC");
         }
 
         let rows = sqlx::query(&sql)
@@ -240,7 +236,9 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
         to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
         reply_to: reply_to.map(MessageId::from_uuid),
-        status: status.parse::<MessageStatus>().unwrap_or(MessageStatus::Pending),
+        status: status
+            .parse::<MessageStatus>()
+            .unwrap_or(MessageStatus::Pending),
         created_at,
     })
 }

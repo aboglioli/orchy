@@ -80,18 +80,16 @@ impl SkillStore for PgBackend {
 
     async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
         let mut select = Query::select();
-        select
-            .from(Skills::Table)
-            .columns([
-                Skills::Project,
-                Skills::Namespace,
-                Skills::Name,
-                Skills::Description,
-                Skills::Content,
-                Skills::WrittenBy,
-                Skills::CreatedAt,
-                Skills::UpdatedAt,
-            ]);
+        select.from(Skills::Table).columns([
+            Skills::Project,
+            Skills::Namespace,
+            Skills::Name,
+            Skills::Description,
+            Skills::Content,
+            Skills::WrittenBy,
+            Skills::CreatedAt,
+            Skills::UpdatedAt,
+        ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {

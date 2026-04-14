@@ -123,27 +123,25 @@ impl TaskStore for PgBackend {
 
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
         let mut select = Query::select();
-        select
-            .from(Tasks::Table)
-            .columns([
-                Tasks::Id,
-                Tasks::Project,
-                Tasks::Namespace,
-                Tasks::ParentId,
-                Tasks::Title,
-                Tasks::Description,
-                Tasks::Status,
-                Tasks::Priority,
-                Tasks::AssignedRoles,
-                Tasks::AssignedTo,
-                Tasks::AssignedAt,
-                Tasks::DependsOn,
-                Tasks::ResultSummary,
-                Tasks::Notes,
-                Tasks::CreatedBy,
-                Tasks::CreatedAt,
-                Tasks::UpdatedAt,
-            ]);
+        select.from(Tasks::Table).columns([
+            Tasks::Id,
+            Tasks::Project,
+            Tasks::Namespace,
+            Tasks::ParentId,
+            Tasks::Title,
+            Tasks::Description,
+            Tasks::Status,
+            Tasks::Priority,
+            Tasks::AssignedRoles,
+            Tasks::AssignedTo,
+            Tasks::AssignedAt,
+            Tasks::DependsOn,
+            Tasks::ResultSummary,
+            Tasks::Notes,
+            Tasks::CreatedBy,
+            Tasks::CreatedAt,
+            Tasks::UpdatedAt,
+        ]);
 
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {

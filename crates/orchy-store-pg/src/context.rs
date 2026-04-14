@@ -190,4 +190,3 @@ fn row_to_context(row: &sqlx::postgres::PgRow) -> ContextSnapshot {
         created_at,
     })
 }
-

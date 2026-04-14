@@ -204,4 +204,3 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> MemoryEntry {
         updated_at,
     })
 }
-

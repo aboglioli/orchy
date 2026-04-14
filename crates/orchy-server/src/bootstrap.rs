@@ -8,10 +8,15 @@ use orchy_core::project::service::ProjectService;
 use orchy_core::skill::Skill;
 use orchy_core::skill::SkillStore;
 use orchy_core::skill::service::SkillService;
-use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_core::task::service::TaskService;
+use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 
-pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore, AS: AgentStore, TS: TaskStore>(
+pub async fn generate_bootstrap_prompt<
+    SS: SkillStore,
+    PS: ProjectStore,
+    AS: AgentStore,
+    TS: TaskStore,
+>(
     project_id: &ProjectId,
     namespace: &Namespace,
     host: &str,
@@ -41,7 +46,12 @@ pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore, AS: Age
 
     let active_tasks: Vec<Task> = {
         let mut all = Vec::new();
-        for status in &[TaskStatus::Pending, TaskStatus::Claimed, TaskStatus::InProgress, TaskStatus::Blocked] {
+        for status in &[
+            TaskStatus::Pending,
+            TaskStatus::Claimed,
+            TaskStatus::InProgress,
+            TaskStatus::Blocked,
+        ] {
             let filter = TaskFilter {
                 project: Some(project_id.clone()),
                 status: Some(*status),
@@ -54,7 +64,15 @@ pub async fn generate_bootstrap_prompt<SS: SkillStore, PS: ProjectStore, AS: Age
         all
     };
 
-    Ok(render(namespace, host, port, &project, &skills, &agents, &active_tasks))
+    Ok(render(
+        namespace,
+        host,
+        port,
+        &project,
+        &skills,
+        &agents,
+        &active_tasks,
+    ))
 }
 
 fn render(
