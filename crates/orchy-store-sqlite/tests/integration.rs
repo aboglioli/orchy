@@ -174,6 +174,7 @@ async fn task_save_overwrites_existing() {
         assigned_to: None,
         assigned_at: None,
         depends_on: vec![],
+        tags: vec![],
         result_summary: Some("done".into()),
         notes: vec![],
         created_by: None,
@@ -309,7 +310,7 @@ async fn memory_save_updates_existing() {
     .unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
-    entry.update("v2".into(), None);
+    entry.update("v2".into(), None).unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
     let read = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "k")

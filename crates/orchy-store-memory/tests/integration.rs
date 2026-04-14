@@ -216,7 +216,7 @@ async fn memory_save_updates_existing() {
     .unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
-    entry.update("v2".into(), None);
+    entry.update("v2".into(), None).unwrap();
     MemoryStore::save(&store, &entry).await.unwrap();
 
     let read = MemoryStore::find_by_key(&store, &proj("app"), &Namespace::root(), "k")
