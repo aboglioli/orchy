@@ -187,19 +187,6 @@ pub struct ListConversationParams {
     pub limit: Option<u32>,
 }
 
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct SaveContextParams {
-    pub summary: String,
-    pub namespace: Option<String>,
-    /// JSON string of key-value pairs.
-    pub metadata: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct LoadContextParams {
-    /// Defaults to current agent.
-    pub agent_id: Option<String>,
-}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetBootstrapPromptParams {

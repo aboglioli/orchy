@@ -166,8 +166,8 @@ You bring the intelligence; orchy enforces the rules.
    Pass `agent_id` to resume a previous session.
 2. `get_project` + `get_project_summary` — load project context.
 3. `list_knowledge(kind: \"skill\")` — load conventions. Follow them.
-4. `load_context` — check if a previous agent left a context snapshot. \
-   Also `search_knowledge(query)` to find relevant handoff notes.
+4. `list_knowledge(kind: \"context\")` — check for handoff notes from previous agents. \
+   Also `search_knowledge` to find relevant decisions and discoveries.
 5. `check_mailbox` — check for messages from other agents.
 6. `get_next_task` — claim work. Tasks released by a disconnected agent \
    return to pending and can be re-claimed.
@@ -175,9 +175,9 @@ You bring the intelligence; orchy enforces the rules.
 
 ## Before Disconnecting
 
-Always call `save_context` with a structured summary: \
-what task you were working on, what you accomplished, what's left, \
-and any decisions made. This is the handoff note for the next agent.
+Always `write_knowledge(kind: \"context\", path: \"context/handoff\")` with a structured \
+summary: current task, progress, blockers, decisions. This is the handoff note \
+for the next agent.
 
 ## Namespaces
 
@@ -203,7 +203,7 @@ On disconnect, claimed tasks return to pending.
 - `watch_task` to get notified when a task status changes.
 - `request_review` to ask another agent to review your work.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
-- `save_context` before your session ends for continuity.
+- `write_knowledge(kind: \"context\")` before your session ends for continuity.
 - `link_project` + `import_knowledge` to share knowledge across projects.
 - Register without roles — orchy assigns them based on task demand.
 
@@ -215,8 +215,8 @@ You must externalize knowledge so future agents can benefit:
   (e.g. path: `decisions/auth-algorithm`, type: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned, \
   what the next agent should know. Never just 'done'.
-- Before disconnecting, `save_context` with structured handoff: current task, \
-  progress, blockers, decisions.
+- Before disconnecting, `write_knowledge(kind: \"context\", path: \"context/handoff\")` \
+  with structured summary: current task, progress, blockers, decisions.
 - When you discover something non-obvious (a gotcha, a pattern, a constraint), \
   write it to knowledge immediately — don't wait until task completion.
 - Use `search_knowledge` before starting work to check \

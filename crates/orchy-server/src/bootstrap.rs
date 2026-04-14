@@ -104,16 +104,16 @@ Project namespace: `{namespace}`
    Pass `agent_id` to resume a previous session.
 2. **Load context** — `get_project` for description and notes,
    then `list_knowledge(kind: "skill")` for conventions. Follow them.
-3. **Resume** — `load_context` to check for handoff notes from a previous
-   session. Also `search_knowledge(query)` to find relevant context from
-   other agents. Check `check_mailbox` for messages.
+3. **Resume** — `list_knowledge(kind: "context")` for handoff notes from
+   previous sessions. `search_knowledge` to find relevant decisions.
+   `check_mailbox` for messages.
 4. **Claim work** — `get_next_task` to claim a task. Tasks from disconnected
    agents return to pending automatically.
 5. **Heartbeat** — `heartbeat` every ~30s to stay alive.
 
 ## Before Disconnecting
 
-Always call `save_context` with a structured summary:
+Always `write_knowledge(kind: "context", path: "context/handoff")` with:
 - What task you were working on (task ID and title)
 - What you accomplished
 - What's left to do
@@ -150,7 +150,7 @@ namespace. Namespaces are auto-created on first use.
 - **request_review** / **resolve_review** — approval workflows between agents.
 - **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
 - **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
-- **save_context** — save session state before ending for continuity.
+- **write_knowledge(kind: "context")** — save session state before ending.
 - **link_project** — import knowledge from other projects.
 - **get_project_summary** / **get_agent_workload** — check project status.
 
@@ -162,8 +162,8 @@ You must externalize knowledge so future agents can benefit:
   (e.g. path: `decisions/auth-algorithm`, type: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned,
   what the next agent should know. Never just "done".
-- Before disconnecting, `save_context` with structured handoff: current task,
-  progress, blockers, decisions.
+- Before disconnecting, `write_knowledge(kind: "context", path: "context/handoff")`
+  with structured summary: current task, progress, blockers, decisions.
 - When you discover something non-obvious, write it to knowledge immediately.
 - Use `search_knowledge` before starting work to check
   if a previous agent already explored this area.
