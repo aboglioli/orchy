@@ -68,34 +68,128 @@ finding must be externalized or it's lost. Three layers:
 
 ## Architecture
 
-Rust. DDD + Hexagonal. Four crates:
+Rust. DDD + Hexagonal. Domain layer has zero external dependencies. Store
+traits defined in domain, implemented by infrastructure crates.
 
-- **orchy-events** — Reusable event sourcing library. No domain dependencies.
-- **orchy-core** — Domain types, traits, services. Zero external dependencies.
-- **orchy-store-{memory,sqlite,pg}** — Store implementations.
-- **orchy-server** — MCP server, HTTP transport, DI container.
+```
+crates/
+├── orchy-events/          # reusable event sourcing library (no domain deps)
+│   └── src/
+│       ├── event.rs       # Event, EventId, RestoreEvent
+│       ├── topic.rs       # Topic (dot-separated, validated)
+│       ├── namespace.rs   # EventNamespace (domain scope)
+│       ├── organization.rs # Organization (tenant scope)
+│       ├── payload.rs     # Payload with ContentType (JSON, text, binary)
+│       ├── metadata.rs    # Key-value metadata
+│       ├── collector.rs   # EventCollector for aggregates
+│       ├── serialization.rs # SerializedEvent for DB persistence
+│       └── io/            # Acker, Message<A>, Handler, Reader, Writer traits
+│
+├── orchy-core/            # domain types, traits, services
+│   └── src/
+│       ├── agent/         # Agent aggregate + AgentStore trait + events
+│       ├── task/          # Task + TaskWatcher + ReviewRequest + state machine
+│       ├── message/       # Message threading + delivery tracking
+│       ├── memory/        # Key-value memory + ContextSnapshot + versioning
+│       ├── document/      # Markdown documents + versioning + search
+│       ├── skill/         # Project conventions with namespace inheritance
+│       ├── project/       # Project metadata + notes
+│       ├── resource_lock/ # TTL-based distributed locking
+│       ├── project_link/  # Cross-project resource sharing
+│       ├── namespace.rs   # Namespace + ProjectId value objects
+│       ├── note.rs        # Note value object
+│       ├── error.rs       # Domain error types
+│       └── embeddings/    # EmbeddingsProvider trait
+│
+├── orchy-store-memory/    # in-memory HashMap backend (dev/test)
+├── orchy-store-sqlite/    # SQLite + sea-query backend (single-node)
+├── orchy-store-pg/        # PostgreSQL + pgvector backend (production)
+│
+└── orchy-server/          # MCP server binary
+    └── src/
+        ├── main.rs        # HTTP server + MCP routing
+        ├── container.rs   # DI container wiring all services
+        ├── config.rs      # config.toml structure
+        ├── store.rs       # StoreBackend enum delegation
+        ├── bootstrap.rs   # Dynamic bootstrap prompt generation
+        ├── heartbeat.rs   # Agent timeout monitor
+        └── mcp/
+            ├── handler.rs # Session state + ServerHandler + INSTRUCTIONS
+            ├── params.rs  # MCP tool parameter structs
+            └── tools.rs   # ~80 MCP tool implementations
+```
 
-Domain defines store traits. Infrastructure implements them. Services
-orchestrate domain logic. MCP tools map HTTP requests to service calls.
+### Layer Rules
 
-All aggregates collect domain events via `EventCollector`. Store `save()`
-methods drain events and persist them. Events are queryable for activity feeds.
+| Layer | Can Import | Cannot Import |
+|-------|-----------|---------------|
+| orchy-events | stdlib, serde, uuid, chrono | orchy-core, stores, server |
+| orchy-core | stdlib, orchy-events | stores, server |
+| orchy-store-* | stdlib, orchy-core, orchy-events | server, other stores |
+| orchy-server | everything | — |
 
 ## Key Patterns
 
-**Store traits with `&mut` save** — `save(&mut entity)` to drain collected events.
+### Event Sourcing
 
-**Constructor convention** — `Entity::new()` validates and creates (with events).
-`Entity::restore(RestoreX { ... })` reconstructs from DB (no validation, no events).
+Every aggregate has an `EventCollector`. Every mutation collects a semantic
+event. Every `save()` drains events and persists them via `io::Writer`.
 
-**Value objects** — Immutable, validated. `ProjectId`, `Namespace`, `TaskId`, etc.
-Never direct-cast. Always use constructors.
+```
+Aggregate mutation -> EventCollector.collect() -> save() -> drain_events() -> Writer::write()
+```
+
+Events go to an `events` table in the same database as projections. The event
+log is append-only. Projections (entity tables) are denormalized views.
+
+Delete operations go through the aggregate: `mark_deleted()` -> `save()` (persists
+event) -> `store.delete()` (removes projection).
+
+### Constructor Convention
+
+| Pattern | Purpose | Events? |
+|---------|---------|---------|
+| `Entity::new(...)` | First-time creation with validation | Yes |
+| `Entity::restore(RestoreX { ... })` | Reconstruct from DB, no validation | No |
+
+All `restore()` methods take a single struct with named fields (not positional
+params). The `RestoreX` struct has public fields.
+
+### Store Trait Pattern
+
+Domain defines traits. Each store crate implements them. `StoreBackend` enum
+in server delegates via macro. All `save()` methods take `&mut` to drain events.
+
+```rust
+pub trait TaskStore: Send + Sync {
+    fn save(&self, task: &mut Task) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_id(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
+    fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
+}
+```
+
+### Task State Machine
+
+```
+Pending -> Claimed -> InProgress -> Completed
+   |         |          |
+   v         v          v
+Blocked   Failed     Failed
+   |         |          |
+   v         v          v
+Cancelled Cancelled  Cancelled
+```
+
+Also: `Claimed -> Blocked`, `InProgress -> Blocked` (for split_task).
+`Blocked -> Pending` (unblock). Parent tasks auto-complete when all children finish.
+
+### Other Patterns
+
+**Value objects** — Immutable, validated on creation, never direct-cast.
+UUID v7 for all IDs (time-ordered).
 
 **Namespace hierarchy** — `/` (root), `/backend`, `/backend/auth`. Reads without
 namespace see everything. Writes default to agent's current namespace.
-
-**Task state machine** — `Pending -> Claimed -> InProgress -> Completed/Failed`.
-Also `Blocked` (for dependencies), `Cancelled`. Parent tasks auto-complete.
 
 **Optimistic concurrency** — Memory entries and documents use `Version` field.
 
@@ -103,6 +197,14 @@ Also `Blocked` (for dependencies), `Cancelled`. Parent tasks auto-complete.
 
 **Session continuity** — `save_context` before disconnect, `load_context` on
 startup. Falls back to most recent snapshot in namespace if no own context exists.
+
+### Agent Disconnect Cleanup
+
+When an agent disconnects (or times out via heartbeat monitor):
+1. Claimed/in-progress tasks -> released back to Pending
+2. Resource locks held by agent -> released
+3. Task watchers for agent -> removed
+4. Pending reviews assigned to agent -> unassigned
 
 ## Agent Lifecycle
 
@@ -162,29 +264,61 @@ A new agent joining the project should:
 
 A "janitor" agent can compact and reorganize:
 
-- **Compact memory** — `list_memory` -> merge related entries -> `write_memory` consolidated -> `delete_memory` old ones
-- **Compact documents** — Merge overlapping docs into a single comprehensive one
-- **Extract skills** — Read memory/documents for patterns, create skills from them
-- **Reorganize tasks** — `merge_tasks` related items, `move_task` to correct namespace
+- **Compact memory** — list related entries, merge into one, delete old ones
+- **Compact documents** — merge overlapping docs into a single comprehensive one
+- **Extract skills** — read memory/documents for recurring patterns, create skills
+- **Reorganize tasks** — merge related items, move to correct namespace
 - **Lock during compaction** — `lock_resource("compaction")` to prevent conflicts
 
 ## Decisions Log
 
-- Memory uses optimistic concurrency (Version field), not locks
-- EventLog trait replaced by io::Writer — stores implement Writer directly
-- sea-query for dynamic SQL in sqlite/pg stores
-- Restore structs over positional params for DB reconstruction
-- UUID v7 everywhere for time-ordered IDs
-- Embeddings provider lives in server crate, core only defines the trait
-- TaskService uses 2 generics: `TS: TaskStore` + `S: AgentStore + WatcherStore + MessageStore + ReviewStore`
-- poll_updates queries the events table, not task projections
-- All tools require session except register_agent
+- Memory uses optimistic concurrency (Version field), not locks. ResourceLock
+  handles external resource locking with TTL.
+- EventLog trait replaced by io::Writer — stores implement Writer directly.
+  Events persisted through: aggregate -> drain -> Writer::write.
+- sea-query for dynamic SQL in sqlite/pg stores. Recursive CTEs and FTS queries
+  remain as raw SQL (not expressible in sea-query's AST).
+- Restore structs over positional params for DB reconstruction.
+- UUID v7 everywhere for time-ordered identifiers.
+- Embeddings provider lives in server crate, core only defines the trait.
+- TaskService uses 2 generics: `TS: TaskStore` + `S: AgentStore + WatcherStore + MessageStore + ReviewStore`.
+- poll_updates queries the events table, not task projections.
+- All tools require session except register_agent.
+
+## Configuration
+
+```toml
+[server]
+host = "127.0.0.1"
+port = 3100
+heartbeat_timeout_secs = 300
+
+[store]
+backend = "sqlite"    # "sqlite", "postgres", or "memory"
+
+[store.sqlite]
+path = "orchy.db"
+
+# [store.postgres]
+# url = "postgres://orchy:orchy@localhost:5432/orchy"
+
+# [skills]
+# dir = "skills"
+
+# [embeddings]
+# provider = "openai"
+# [embeddings.openai]
+# url = "https://api.openai.com/v1/embeddings"
+# model = "text-embedding-3-small"
+# dimensions = 1536
+```
 
 ## Code Style
 
 - Rust edition 2024, DDD + Hexagonal
 - No comments unless essential. No helper/utils files.
 - Traits first in each file, then types, constructors, methods, getters
+- Return early / guard clauses, no else after return
 - `cargo fmt` before committing
 - Conventional commits: `type(scope): description`
 - No GPG signing, no Co-Authored-By, never push
@@ -194,6 +328,10 @@ A "janitor" agent can compact and reorganize:
 ```bash
 cargo run -p orchy-server          # start MCP server (default: config.toml)
 cargo test -p orchy-core           # domain tests
+cargo test -p orchy-events         # event library tests
 cargo test -p orchy-store-memory   # in-memory store tests
-cargo test -p orchy-store-sqlite   # SQLite tests
+cargo test -p orchy-store-sqlite   # SQLite tests (in-memory DB)
+cargo test -p orchy-store-pg       # PG tests (needs running postgres)
 ```
+
+For PostgreSQL: `podman compose up -d` (uses `compose.yml`).
