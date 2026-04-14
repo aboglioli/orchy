@@ -1,4 +1,5 @@
 use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use orchy_core::error::Result;
 use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
@@ -196,6 +197,41 @@ impl ProjectLinkStore for StoreBackend {
         target: &ProjectId,
     ) -> Result<Option<ProjectLink>> {
         delegate_trait!(self, ProjectLinkStore::find_link(source, target))
+    }
+}
+
+impl DocumentStore for StoreBackend {
+    async fn save(&self, doc: &Document) -> Result<()> {
+        delegate_trait!(self, DocumentStore::save(doc))
+    }
+    async fn find_by_id(&self, id: &DocumentId) -> Result<Option<Document>> {
+        delegate_trait!(self, DocumentStore::find_by_id(id))
+    }
+    async fn find_by_path(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        path: &str,
+    ) -> Result<Option<Document>> {
+        delegate_trait!(self, DocumentStore::find_by_path(project, namespace, path))
+    }
+    async fn list(&self, filter: DocumentFilter) -> Result<Vec<Document>> {
+        delegate_trait!(self, DocumentStore::list(filter))
+    }
+    async fn search(
+        &self,
+        query: &str,
+        embedding: Option<&[f32]>,
+        namespace: Option<&Namespace>,
+        limit: usize,
+    ) -> Result<Vec<Document>> {
+        delegate_trait!(
+            self,
+            DocumentStore::search(query, embedding, namespace, limit)
+        )
+    }
+    async fn delete(&self, id: &DocumentId) -> Result<()> {
+        delegate_trait!(self, DocumentStore::delete(id))
     }
 }
 

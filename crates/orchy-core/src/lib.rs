@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod document;
 pub mod embeddings;
 pub mod error;
 #[cfg(test)]

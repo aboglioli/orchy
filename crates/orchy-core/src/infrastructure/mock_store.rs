@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::agent::{Agent, AgentId, AgentStore};
+use crate::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use crate::error::Result;
 use crate::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
@@ -212,6 +213,38 @@ impl LockStore for MockStore {
         unimplemented!()
     }
     async fn delete_expired(&self) -> Result<u64> {
+        unimplemented!()
+    }
+}
+
+impl DocumentStore for MockStore {
+    async fn save(&self, _: &Document) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find_by_id(&self, _: &DocumentId) -> Result<Option<Document>> {
+        unimplemented!()
+    }
+    async fn find_by_path(
+        &self,
+        _: &ProjectId,
+        _: &Namespace,
+        _: &str,
+    ) -> Result<Option<Document>> {
+        unimplemented!()
+    }
+    async fn list(&self, _: DocumentFilter) -> Result<Vec<Document>> {
+        unimplemented!()
+    }
+    async fn search(
+        &self,
+        _: &str,
+        _: Option<&[f32]>,
+        _: Option<&Namespace>,
+        _: usize,
+    ) -> Result<Vec<Document>> {
+        unimplemented!()
+    }
+    async fn delete(&self, _: &DocumentId) -> Result<()> {
         unimplemented!()
     }
 }

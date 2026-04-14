@@ -101,6 +101,25 @@ CREATE TABLE IF NOT EXISTS namespaces (
     PRIMARY KEY (project, namespace)
 );
 
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    path TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',
+    version INTEGER NOT NULL DEFAULT 1,
+    embedding BLOB,
+    embedding_model TEXT,
+    embedding_dimensions INTEGER,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(project, namespace, path)
+);
+
 CREATE TABLE IF NOT EXISTS resource_locks (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',

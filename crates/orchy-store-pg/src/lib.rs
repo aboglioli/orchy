@@ -1,5 +1,6 @@
 mod agent;
 mod context;
+mod document;
 mod memory;
 mod message;
 mod namespace;

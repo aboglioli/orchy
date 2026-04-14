@@ -107,6 +107,28 @@ CREATE TABLE IF NOT EXISTS namespaces (
     PRIMARY KEY (project, namespace)
 );
 
+CREATE TABLE IF NOT EXISTS documents (
+    id UUID PRIMARY KEY,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    path TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tags JSONB NOT NULL DEFAULT '[]',
+    version BIGINT NOT NULL DEFAULT 1,
+    embedding VECTOR,
+    embedding_model TEXT,
+    embedding_dimensions INTEGER,
+    created_by UUID REFERENCES agents(id),
+    updated_by UUID REFERENCES agents(id),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(project, namespace, path)
+);
+
+CREATE INDEX IF NOT EXISTS documents_fts_idx ON documents
+    USING gin(to_tsvector('english', title || ' ' || content));
+
 CREATE TABLE IF NOT EXISTS resource_locks (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',

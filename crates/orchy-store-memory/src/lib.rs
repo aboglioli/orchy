@@ -2,6 +2,7 @@
 
 mod agent;
 mod context;
+mod document;
 mod memory;
 mod message;
 mod namespace;
@@ -15,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 use orchy_core::agent::{Agent, AgentId};
+use orchy_core::document::{Document, DocumentId};
 use orchy_core::memory::{ContextSnapshot, MemoryEntry, SnapshotId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
@@ -33,6 +35,7 @@ pub struct MemoryBackend {
     pub(crate) skills: RwLock<HashMap<(String, String, String), Skill>>,
     pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
     pub(crate) project_links: RwLock<HashMap<ProjectLinkId, ProjectLink>>,
+    pub(crate) documents: RwLock<HashMap<DocumentId, Document>>,
     pub(crate) resource_locks: RwLock<HashMap<(String, String, String), ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String)>>,
 }
@@ -48,6 +51,7 @@ impl MemoryBackend {
             skills: RwLock::new(HashMap::new()),
             projects: RwLock::new(HashMap::new()),
             project_links: RwLock::new(HashMap::new()),
+            documents: RwLock::new(HashMap::new()),
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
         }
