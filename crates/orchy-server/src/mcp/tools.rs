@@ -335,6 +335,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTasksParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -552,7 +557,7 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Read a memory entry by key. Namespace defaults to session namespace.")]
+    #[tool(description = "Read a memory entry by key. Namespace defaults to root.")]
     async fn read_memory(
         &self,
         Parameters(params): Parameters<ReadMemoryParams>,
@@ -586,6 +591,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListMemoryParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -614,6 +624,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchMemoryParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -632,7 +647,7 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Delete a memory entry by key. Namespace defaults to session namespace.")]
+    #[tool(description = "Delete a memory entry by key. Namespace defaults to root.")]
     async fn delete_memory(
         &self,
         Parameters(params): Parameters<DeleteMemoryParams>,
@@ -916,6 +931,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<LoadContextParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let agent_id = match params.agent_id.as_deref() {
             Some(id_str) => match parse_agent_id(id_str) {
                 Ok(id) => id,
@@ -939,6 +959,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListContextsParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
             Some(Ok(id)) => Some(id),
             Some(Err(e)) => return Err(e),
@@ -963,12 +988,17 @@ impl OrchyHandler {
 
     #[tool(
         description = "Search context snapshots by semantic similarity. Namespace defaults \
-        to session namespace."
+        to root."
     )]
     async fn search_contexts(
         &self,
         Parameters(params): Parameters<SearchContextsParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
             None => Namespace::root(),
@@ -1112,6 +1142,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddTaskNoteParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let task_id = match parse_task_id(&params.task_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -2324,6 +2359,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListDocumentsParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
@@ -2351,6 +2391,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchDocumentsParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
             Ok(ns) => ns,
             Err(e) => return Err(e),
