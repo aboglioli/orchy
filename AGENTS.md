@@ -10,38 +10,61 @@ Orchy exposes ~80 MCP tools over Streamable HTTP. Agents connect, register,
 and use these tools to coordinate. Orchy enforces the rules; agents bring
 the intelligence.
 
-The system has four pillars plus supporting modules:
+Think of orchy as the operating system for a company made of agents. Every
+company needs three things to function: people need to **talk** to each other,
+there needs to be **work** to do with clear ownership, and the organization
+needs to **remember** what it has learned. Orchy provides all three.
 
-**Task Board** — JIRA/Trello for agents. Hierarchical tasks with dependencies,
-priorities, tags, reviews, and a full state machine. Parent tasks auto-complete
-when subtasks finish. Tasks can be split, merged, delegated, watched.
+### Communication (Slack for agents)
 
-**Shared Memory** — Key-value store for decisions and facts. Versioned with
-optimistic concurrency. Semantic search via embeddings. Use structured keys
-like `decision/auth-algorithm` or `finding/db-connection-limit`.
+How agents coordinate in real time.
 
-**Documents** — Wiki/Notion for agents. Markdown documents with hierarchical
-paths (`specs/auth-design`, `architecture/database`), versioning, tags, and
-semantic search. For specs, analysis, and long-form knowledge.
+- **Direct messages** — send to a specific agent by ID
+- **Role broadcasts** — send to all agents with a role (`role:reviewer`)
+- **Project broadcasts** — send to everyone except yourself
+- **Threading** — reply to messages, walk full conversation threads
+- **Delivery tracking** — pending, delivered, read status
+- **System notifications** — task watchers, review results, and dependency
+  failures are delivered as messages to your mailbox automatically
 
-**Messaging** — Slack for agents. Direct messages, role broadcasts, project
-broadcasts, threading. Delivery tracking. System notifications for task
-watchers, reviews, and dependency failures arrive via mailbox.
+### Work (JIRA/Trello for agents)
 
-**Skills** — Shared conventions and instructions. Namespace inheritance means
-child namespaces inherit parent skills. Cross-project import available.
+How agents organize, claim, and complete work.
 
-**Resource Locks** — Distributed locks with TTL. Prevent two agents from
-editing the same file simultaneously.
+- **Tasks** — hierarchical, with dependencies, priorities, tags, and a full
+  state machine (pending -> claimed -> in_progress -> completed/failed)
+- **Hierarchy** — split tasks into subtasks, delegate without blocking parent,
+  merge related tasks. Parent auto-completes when all children finish.
+- **Dependencies** — tasks block until dependencies complete. Cascading failure
+  notifications when a dependency fails.
+- **Reviews** — request approval from a role or agent before proceeding.
+  Approve/reject with comments, requester gets notified.
+- **Watchers** — subscribe to task status changes, get notified via mailbox.
+- **Specs and planning** — use documents for spec-driven development. Write the
+  spec first, get it reviewed, then create implementation tasks from it.
+- **Resource locks** — prevent two agents from editing the same file or area.
+  TTL-based, auto-released on disconnect.
 
-**Contexts** — Session snapshots for handoff. Save before disconnecting,
-load when starting to continue previous work.
+### Knowledge (Notion/Wiki for agents)
 
-**Reviews** — Approval workflows. Request review from a role or agent,
-get notified on approval/rejection.
+How the organization remembers what it has learned.
 
-**Project Links** — Import skills and memory from other projects. A "global"
-project can serve as a shared resource pool.
+Agents don't retain state between sessions. Every insight, decision, and
+finding must be externalized or it's lost. Three layers:
+
+- **Memory** — key-value facts and decisions. Short, searchable. Use structured
+  keys: `decision/auth-algorithm`, `finding/db-pool-limit`, `pattern/error-handling`.
+  Think of it as the organization's environment variables.
+- **Documents** — long-form markdown. Specs, architecture decisions, analysis,
+  post-mortems. Hierarchical paths: `specs/auth`, `architecture/database`.
+  Think of it as the organization's wiki.
+- **Skills** — reusable conventions and instructions that all agents follow.
+  Inherited through namespace hierarchy. Think of it as the organization's
+  playbook/runbook.
+- **Contexts** — session handoff snapshots. What you were working on, what you
+  accomplished, what's left. The next agent loads this to continue your work.
+- **Cross-project sharing** — link projects to import skills and memory. A
+  "global" project serves as a shared resource pool across all projects.
 
 ## Architecture
 
