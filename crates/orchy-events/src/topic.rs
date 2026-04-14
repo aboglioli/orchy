@@ -18,7 +18,10 @@ impl Topic {
             if part.is_empty() {
                 return Err(Error::InvalidTopic("empty segment".into()));
             }
-            if !part.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+            if !part
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+            {
                 return Err(Error::InvalidTopic(format!("invalid segment: {part}")));
             }
         }
@@ -38,11 +41,15 @@ impl fmt::Display for Topic {
 
 impl TryFrom<String> for Topic {
     type Error = Error;
-    fn try_from(s: String) -> Result<Self> { Self::new(s) }
+    fn try_from(s: String) -> Result<Self> {
+        Self::new(s)
+    }
 }
 
 impl From<Topic> for String {
-    fn from(t: Topic) -> Self { t.0 }
+    fn from(t: Topic) -> Self {
+        t.0
+    }
 }
 
 #[cfg(test)]

@@ -14,7 +14,10 @@ impl Organization {
         if s.is_empty() {
             return Err(Error::InvalidOrganization("must not be empty".into()));
         }
-        if !s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+        if !s
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+        {
             return Err(Error::InvalidOrganization(format!("invalid: {s}")));
         }
         Ok(Self(s))
@@ -33,9 +36,13 @@ impl fmt::Display for Organization {
 
 impl TryFrom<String> for Organization {
     type Error = Error;
-    fn try_from(s: String) -> Result<Self> { Self::new(s) }
+    fn try_from(s: String) -> Result<Self> {
+        Self::new(s)
+    }
 }
 
 impl From<Organization> for String {
-    fn from(o: Organization) -> Self { o.0 }
+    fn from(o: Organization) -> Self {
+        o.0
+    }
 }

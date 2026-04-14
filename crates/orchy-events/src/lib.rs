@@ -22,7 +22,10 @@ use std::future::Future;
 
 pub trait EventStore: Send + Sync {
     fn append(&self, events: &[SerializedEvent]) -> impl Future<Output = Result<()>> + Send;
-    fn list(&self, filter: EventFilter) -> impl Future<Output = Result<Vec<SerializedEvent>>> + Send;
+    fn list(
+        &self,
+        filter: EventFilter,
+    ) -> impl Future<Output = Result<Vec<SerializedEvent>>> + Send;
 }
 
 #[derive(Debug, Clone, Default)]

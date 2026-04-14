@@ -1,5 +1,6 @@
 use crate::event::Event;
 
+#[derive(Debug, Clone)]
 pub struct EventCollector {
     events: Vec<Event>,
 }

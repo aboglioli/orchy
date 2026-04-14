@@ -14,7 +14,10 @@ impl EventNamespace {
         if s.is_empty() {
             return Err(Error::InvalidNamespace("must not be empty".into()));
         }
-        if !s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
+        if !s
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+        {
             return Err(Error::InvalidNamespace(format!("invalid: {s}")));
         }
         Ok(Self(s))
@@ -33,9 +36,13 @@ impl fmt::Display for EventNamespace {
 
 impl TryFrom<String> for EventNamespace {
     type Error = Error;
-    fn try_from(s: String) -> Result<Self> { Self::new(s) }
+    fn try_from(s: String) -> Result<Self> {
+        Self::new(s)
+    }
 }
 
 impl From<EventNamespace> for String {
-    fn from(n: EventNamespace) -> Self { n.0 }
+    fn from(n: EventNamespace) -> Self {
+        n.0
+    }
 }

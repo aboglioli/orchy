@@ -1,3 +1,4 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -7,10 +8,14 @@ use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::note::Note;
+
+use self::events as task_events;
 
 pub trait TaskStore: Send + Sync {
     fn save(&self, task: &Task) -> impl Future<Output = Result<()>> + Send;
@@ -198,6 +203,8 @@ pub struct Task {
     created_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Task {
@@ -218,7 +225,7 @@ impl Task {
         }
 
         let now = Utc::now();
-        Ok(Self {
+        let mut task = Self {
             id: TaskId::new(),
             project,
             namespace,
@@ -241,7 +248,27 @@ impl Task {
             created_by,
             created_at: now,
             updated_at: now,
-        })
+            collector: EventCollector::new(),
+        };
+
+        task.collector.collect(
+            Event::create(
+                task.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_CREATED,
+                Payload::from_json(&task_events::TaskCreatedPayload {
+                    task_id: task.id.to_string(),
+                    project: task.project.to_string(),
+                    namespace: task.namespace.to_string(),
+                    title: task.title.clone(),
+                    parent_id: task.parent_id.map(|id| id.to_string()),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(task)
     }
 
     pub fn restore(r: RestoreTask) -> Self {
@@ -264,6 +291,7 @@ impl Task {
             created_by: r.created_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            collector: EventCollector::new(),
         }
     }
 
@@ -272,6 +300,21 @@ impl Task {
         self.assigned_to = Some(agent);
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_CLAIMED,
+                Payload::from_json(&task_events::TaskClaimedPayload {
+                    task_id: self.id.to_string(),
+                    agent_id: agent.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
@@ -284,26 +327,87 @@ impl Task {
         }
         self.status = self.status.transition_to(TaskStatus::InProgress)?;
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_STARTED,
+                Payload::from_json(&task_events::TaskStartedPayload {
+                    task_id: self.id.to_string(),
+                    agent_id: agent.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
     pub fn complete(&mut self, summary: Option<String>) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Completed)?;
-        self.result_summary = summary;
+        self.result_summary = summary.clone();
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_COMPLETED,
+                Payload::from_json(&task_events::TaskCompletedPayload {
+                    task_id: self.id.to_string(),
+                    summary,
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
-    pub fn auto_complete(&mut self, summary: String) {
+    pub fn auto_complete(&mut self, summary: String) -> Result<()> {
         self.status = TaskStatus::Completed;
-        self.result_summary = Some(summary);
+        self.result_summary = Some(summary.clone());
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_AUTO_COMPLETED,
+                Payload::from_json(&task_events::TaskCompletedPayload {
+                    task_id: self.id.to_string(),
+                    summary: Some(summary),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
 
     pub fn fail(&mut self, reason: Option<String>) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Failed)?;
-        self.result_summary = reason;
+        self.result_summary = reason.clone();
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_FAILED,
+                Payload::from_json(&task_events::TaskFailedPayload {
+                    task_id: self.id.to_string(),
+                    reason,
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
@@ -318,6 +422,20 @@ impl Task {
         self.assigned_to = None;
         self.assigned_at = None;
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_RELEASED,
+                Payload::from_json(&task_events::TaskReleasedPayload {
+                    task_id: self.id.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
@@ -332,6 +450,21 @@ impl Task {
         self.assigned_to = Some(new_agent);
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_ASSIGNED,
+                Payload::from_json(&task_events::TaskAssignedPayload {
+                    task_id: self.id.to_string(),
+                    agent_id: new_agent.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
@@ -341,33 +474,111 @@ impl Task {
         }
         self.status = self.status.transition_to(TaskStatus::Blocked)?;
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_BLOCKED,
+                Payload::from_json(&task_events::TaskBlockedPayload {
+                    task_id: self.id.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
-    pub fn unblock(&mut self) {
-        if self.status == TaskStatus::Blocked {
-            self.status = TaskStatus::Pending;
-            self.updated_at = Utc::now();
+    pub fn unblock(&mut self) -> Result<()> {
+        if self.status != TaskStatus::Blocked {
+            return Ok(());
         }
+        self.status = TaskStatus::Pending;
+        self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_UNBLOCKED,
+                Payload::from_json(&task_events::TaskUnblockedPayload {
+                    task_id: self.id.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
 
     pub fn cancel(&mut self, reason: Option<String>) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Cancelled)?;
-        self.result_summary = reason;
+        self.result_summary = reason.clone();
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_CANCELLED,
+                Payload::from_json(&task_events::TaskCancelledPayload {
+                    task_id: self.id.to_string(),
+                    reason,
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
         Ok(())
     }
 
-    pub fn add_dependency(&mut self, dep: TaskId) {
-        if !self.depends_on.contains(&dep) {
-            self.depends_on.push(dep);
-            self.updated_at = Utc::now();
+    pub fn add_dependency(&mut self, dep: TaskId) -> Result<()> {
+        if self.depends_on.contains(&dep) {
+            return Ok(());
         }
+        self.depends_on.push(dep);
+        self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_DEPENDENCY_ADDED,
+                Payload::from_json(&task_events::TaskDependencyAddedPayload {
+                    task_id: self.id.to_string(),
+                    dependency_id: dep.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
 
-    pub fn remove_dependency(&mut self, dep: &TaskId) {
+    pub fn remove_dependency(&mut self, dep: &TaskId) -> Result<()> {
         self.depends_on.retain(|d| d != dep);
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_DEPENDENCY_REMOVED,
+                Payload::from_json(&task_events::TaskDependencyRemovedPayload {
+                    task_id: self.id.to_string(),
+                    dependency_id: dep.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
 
     pub fn id(&self) -> TaskId {
@@ -409,17 +620,51 @@ impl Task {
     pub fn tags(&self) -> &[String] {
         &self.tags
     }
-    pub fn add_tag(&mut self, tag: String) {
-        if !self.tags.contains(&tag) {
-            self.tags.push(tag);
-            self.updated_at = Utc::now();
+    pub fn add_tag(&mut self, tag: String) -> Result<()> {
+        if self.tags.contains(&tag) {
+            return Ok(());
         }
+        self.tags.push(tag.clone());
+        self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_TAGGED,
+                Payload::from_json(&task_events::TaskTaggedPayload {
+                    task_id: self.id.to_string(),
+                    tag,
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
-    pub fn remove_tag(&mut self, tag: &str) {
-        if let Some(pos) = self.tags.iter().position(|t| t == tag) {
-            self.tags.remove(pos);
-            self.updated_at = Utc::now();
-        }
+    pub fn remove_tag(&mut self, tag: &str) -> Result<()> {
+        let Some(pos) = self.tags.iter().position(|t| t == tag) else {
+            return Ok(());
+        };
+        self.tags.remove(pos);
+        self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_TAG_REMOVED,
+                Payload::from_json(&task_events::TaskTagRemovedPayload {
+                    task_id: self.id.to_string(),
+                    tag: tag.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
     pub fn result_summary(&self) -> Option<&str> {
         self.result_summary.as_deref()
@@ -427,9 +672,25 @@ impl Task {
     pub fn notes(&self) -> &[Note] {
         &self.notes
     }
-    pub fn add_note(&mut self, author: Option<AgentId>, body: String) {
-        self.notes.push(Note::new(author, body));
+    pub fn add_note(&mut self, author: Option<AgentId>, body: String) -> Result<()> {
+        self.notes.push(Note::new(author, body.clone()));
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_NOTE_ADDED,
+                Payload::from_json(&task_events::TaskNoteAddedPayload {
+                    task_id: self.id.to_string(),
+                    body,
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
     pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) {
         self.parent_id = parent_id;
@@ -446,10 +707,32 @@ impl Task {
         self.updated_at = Utc::now();
     }
 
-    pub fn move_to(&mut self, namespace: Namespace) {
+    pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
+        let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
         self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_MOVED,
+                Payload::from_json(&task_events::TaskMovedPayload {
+                    task_id: self.id.to_string(),
+                    from_namespace,
+                    to_namespace: self.namespace.to_string(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
     }
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
+    }
+
     pub fn created_by(&self) -> Option<AgentId> {
         self.created_by
     }
@@ -663,14 +946,14 @@ mod tests {
     #[test]
     fn unblock_from_blocked() {
         let mut task = make_task(TaskStatus::Blocked, None);
-        task.unblock();
+        task.unblock().unwrap();
         assert_eq!(task.status(), TaskStatus::Pending);
     }
 
     #[test]
     fn unblock_noop_from_other_status() {
         let mut task = make_task(TaskStatus::Pending, None);
-        task.unblock();
+        task.unblock().unwrap();
         assert_eq!(task.status(), TaskStatus::Pending);
     }
 
@@ -702,7 +985,7 @@ mod tests {
         let old_dep = TaskId::new();
         let new_dep = TaskId::new();
         let mut task = make_task(TaskStatus::Pending, None);
-        task.add_dependency(old_dep);
+        task.add_dependency(old_dep).unwrap();
         task.replace_dependency(&old_dep, new_dep);
         assert!(!task.depends_on().contains(&old_dep));
         assert!(task.depends_on().contains(&new_dep));
@@ -713,8 +996,8 @@ mod tests {
         let dep_a = TaskId::new();
         let dep_b = TaskId::new();
         let mut task = make_task(TaskStatus::Pending, None);
-        task.add_dependency(dep_a);
-        task.add_dependency(dep_b);
+        task.add_dependency(dep_a).unwrap();
+        task.add_dependency(dep_b).unwrap();
         task.replace_dependency(&dep_a, dep_b);
         assert_eq!(task.depends_on().len(), 1);
         assert!(task.depends_on().contains(&dep_b));

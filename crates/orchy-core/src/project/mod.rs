@@ -1,3 +1,4 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -5,9 +6,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::future::Future;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
 use crate::error::Result;
 use crate::namespace::ProjectId;
+
+use self::events as project_events;
 use crate::note::Note;
 
 pub trait ProjectStore: Send + Sync {
@@ -23,19 +28,35 @@ pub struct Project {
     metadata: HashMap<String, String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Project {
     pub fn new(id: ProjectId, description: String) -> Self {
         let now = Utc::now();
-        Self {
+        let mut project = Self {
             id,
             description,
             notes: Vec::new(),
             metadata: HashMap::new(),
             created_at: now,
             updated_at: now,
-        }
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            project.id.as_ref(),
+            project_events::NAMESPACE,
+            project_events::TOPIC_CREATED,
+            Payload::from_json(&project_events::ProjectCreatedPayload {
+                project: project.id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| project.collector.collect(e));
+
+        project
     }
 
     pub fn restore(r: RestoreProject) -> Self {
@@ -46,22 +67,63 @@ impl Project {
             metadata: r.metadata,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            collector: EventCollector::new(),
         }
     }
 
     pub fn update_description(&mut self, description: String) {
         self.description = description;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.id.as_ref(),
+            project_events::NAMESPACE,
+            project_events::TOPIC_DESCRIPTION_UPDATED,
+            Payload::from_json(&project_events::ProjectDescriptionUpdatedPayload {
+                project: self.id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn add_note(&mut self, author: Option<AgentId>, body: String) {
-        self.notes.push(Note::new(author, body));
+        self.notes.push(Note::new(author, body.clone()));
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.id.as_ref(),
+            project_events::NAMESPACE,
+            project_events::TOPIC_NOTE_ADDED,
+            Payload::from_json(&project_events::ProjectNoteAddedPayload {
+                project: self.id.to_string(),
+                body,
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn set_metadata(&mut self, key: String, value: String) {
-        self.metadata.insert(key, value);
+        self.metadata.insert(key.clone(), value.clone());
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.id.as_ref(),
+            project_events::NAMESPACE,
+            project_events::TOPIC_METADATA_SET,
+            Payload::from_json(&project_events::ProjectMetadataSetPayload {
+                project: self.id.to_string(),
+                key,
+                value,
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> &ProjectId {

@@ -1,3 +1,4 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -8,8 +9,12 @@ use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
+
+use self::events as agent_events;
 
 pub trait AgentStore: Send + Sync {
     fn save(&self, agent: &Agent) -> impl Future<Output = Result<()>> + Send;
@@ -104,6 +109,8 @@ pub struct Agent {
     last_heartbeat: DateTime<Utc>,
     connected_at: DateTime<Utc>,
     metadata: HashMap<String, String>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Agent {
@@ -115,7 +122,7 @@ impl Agent {
         metadata: HashMap<String, String>,
     ) -> Self {
         let now = Utc::now();
-        Self {
+        let mut agent = Self {
             id: AgentId::new(),
             project,
             namespace,
@@ -126,7 +133,24 @@ impl Agent {
             last_heartbeat: now,
             connected_at: now,
             metadata,
-        }
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            agent.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_REGISTERED,
+            Payload::from_json(&agent_events::AgentRegisteredPayload {
+                agent_id: agent.id.to_string(),
+                project: agent.project.to_string(),
+                namespace: agent.namespace.to_string(),
+                roles: agent.roles.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| agent.collector.collect(e));
+
+        agent
     }
 
     pub fn from_parent(
@@ -136,7 +160,7 @@ impl Agent {
         description: String,
     ) -> Self {
         let now = Utc::now();
-        Self {
+        let mut agent = Self {
             id: AgentId::new(),
             project: parent.project.clone(),
             namespace,
@@ -147,7 +171,25 @@ impl Agent {
             last_heartbeat: now,
             connected_at: now,
             metadata: parent.metadata.clone(),
-        }
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            agent.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_SPAWNED,
+            Payload::from_json(&agent_events::AgentSpawnedPayload {
+                agent_id: agent.id.to_string(),
+                parent_id: parent.id.to_string(),
+                project: agent.project.to_string(),
+                namespace: agent.namespace.to_string(),
+                roles: agent.roles.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| agent.collector.collect(e));
+
+        agent
     }
 
     pub fn restore(r: RestoreAgent) -> Self {
@@ -162,6 +204,7 @@ impl Agent {
             last_heartbeat: r.last_heartbeat,
             connected_at: r.connected_at,
             metadata: r.metadata,
+            collector: EventCollector::new(),
         }
     }
 
@@ -174,6 +217,17 @@ impl Agent {
 
     pub fn disconnect(&mut self) {
         self.status = AgentStatus::Disconnected;
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_DISCONNECTED,
+            Payload::from_json(&agent_events::AgentDisconnectedPayload {
+                agent_id: self.id.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn update_status(&mut self, status: AgentStatus) {
@@ -182,6 +236,18 @@ impl Agent {
 
     pub fn change_roles(&mut self, roles: Vec<String>) {
         self.roles = roles;
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_ROLES_CHANGED,
+            Payload::from_json(&agent_events::AgentRolesChangedPayload {
+                agent_id: self.id.to_string(),
+                roles: self.roles.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn resume(&mut self, namespace: Namespace, roles: Vec<String>, description: String) {
@@ -190,15 +256,44 @@ impl Agent {
         self.description = description;
         self.status = AgentStatus::Online;
         self.last_heartbeat = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_RESUMED,
+            Payload::from_json(&agent_events::AgentResumedPayload {
+                agent_id: self.id.to_string(),
+                namespace: self.namespace.to_string(),
+                roles: self.roles.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn move_to(&mut self, namespace: Namespace) {
         self.namespace = namespace;
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_MOVED,
+            Payload::from_json(&agent_events::AgentMovedPayload {
+                agent_id: self.id.to_string(),
+                namespace: self.namespace.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
         self.status != AgentStatus::Disconnected
             && (Utc::now() - self.last_heartbeat) > chrono::Duration::seconds(timeout_secs as i64)
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> AgentId {

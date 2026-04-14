@@ -33,7 +33,9 @@ impl std::str::FromStr for ContentType {
             "application/json" => Ok(ContentType::Json),
             "text/plain" => Ok(ContentType::PlainText),
             "application/octet-stream" => Ok(ContentType::Binary),
-            other => Err(Error::InvalidPayload(format!("unknown content type: {other}"))),
+            other => Err(Error::InvalidPayload(format!(
+                "unknown content type: {other}"
+            ))),
         }
     }
 }

@@ -1281,6 +1281,7 @@ name = "orchy-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "orchy-events",
  "serde",
  "serde_json",
  "thiserror",

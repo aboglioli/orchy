@@ -1,3 +1,4 @@
+pub mod events;
 pub mod service;
 
 use chrono::{DateTime, Utc};
@@ -8,9 +9,13 @@ use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+
+use self::events as memory_events;
 
 pub trait MemoryStore: Send + Sync {
     fn save(&self, entry: &MemoryEntry) -> impl Future<Output = Result<()>> + Send;
@@ -139,6 +144,8 @@ pub struct MemoryEntry {
     written_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl MemoryEntry {
@@ -154,7 +161,7 @@ impl MemoryEntry {
         }
 
         let now = Utc::now();
-        Ok(Self {
+        let mut entry = Self {
             project,
             namespace,
             key,
@@ -167,7 +174,25 @@ impl MemoryEntry {
             written_by,
             created_at: now,
             updated_at: now,
-        })
+            collector: EventCollector::new(),
+        };
+
+        entry.collector.collect(
+            Event::create(
+                entry.project.as_ref(),
+                memory_events::NAMESPACE,
+                memory_events::TOPIC_CREATED,
+                Payload::from_json(&memory_events::MemoryCreatedPayload {
+                    project: entry.project.to_string(),
+                    namespace: entry.namespace.to_string(),
+                    key: entry.key.clone(),
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(entry)
     }
 
     pub fn restore(r: RestoreMemoryEntry) -> Self {
@@ -184,6 +209,7 @@ impl MemoryEntry {
             written_by: r.written_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            collector: EventCollector::new(),
         }
     }
 
@@ -200,17 +226,58 @@ impl MemoryEntry {
             self.written_by = Some(author);
         }
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            memory_events::NAMESPACE,
+            memory_events::TOPIC_UPDATED,
+            Payload::from_json(&memory_events::MemoryUpdatedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                key: self.key.clone(),
+                version: self.version.as_u64(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+
         Ok(())
     }
 
     pub fn lock(&mut self) {
         self.locked = true;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            memory_events::NAMESPACE,
+            memory_events::TOPIC_LOCKED,
+            Payload::from_json(&memory_events::MemoryLockedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                key: self.key.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn unlock(&mut self) {
         self.locked = false;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            memory_events::NAMESPACE,
+            memory_events::TOPIC_UNLOCKED,
+            Payload::from_json(&memory_events::MemoryUnlockedPayload {
+                project: self.project.to_string(),
+                namespace: self.namespace.to_string(),
+                key: self.key.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn is_locked(&self) -> bool {
@@ -218,14 +285,33 @@ impl MemoryEntry {
     }
 
     pub fn move_to(&mut self, namespace: Namespace) {
+        let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
         self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            memory_events::NAMESPACE,
+            memory_events::TOPIC_MOVED,
+            Payload::from_json(&memory_events::MemoryMovedPayload {
+                project: self.project.to_string(),
+                from_namespace,
+                to_namespace: self.namespace.to_string(),
+                key: self.key.clone(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn set_embedding(&mut self, embedding: Vec<f32>, model: String, dimensions: u32) {
         self.embedding = Some(embedding);
         self.embedding_model = Some(model);
         self.embedding_dimensions = Some(dimensions);
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn project(&self) -> &ProjectId {
@@ -306,6 +392,8 @@ pub struct ContextSnapshot {
     embedding_dimensions: Option<u32>,
     metadata: HashMap<String, String>,
     created_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl ContextSnapshot {
@@ -316,7 +404,7 @@ impl ContextSnapshot {
         summary: String,
         metadata: HashMap<String, String>,
     ) -> Self {
-        Self {
+        let mut snapshot = Self {
             id: SnapshotId::new(),
             project,
             agent_id,
@@ -327,7 +415,24 @@ impl ContextSnapshot {
             embedding_dimensions: None,
             metadata,
             created_at: Utc::now(),
-        }
+            collector: EventCollector::new(),
+        };
+
+        let _ = Event::create(
+            snapshot.project.as_ref(),
+            memory_events::NAMESPACE,
+            memory_events::TOPIC_CONTEXT_CAPTURED,
+            Payload::from_json(&memory_events::ContextCapturedPayload {
+                snapshot_id: snapshot.id.to_string(),
+                agent_id: snapshot.agent_id.to_string(),
+                project: snapshot.project.to_string(),
+                namespace: snapshot.namespace.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| snapshot.collector.collect(e));
+
+        snapshot
     }
 
     pub fn restore(r: RestoreContextSnapshot) -> Self {
@@ -342,6 +447,7 @@ impl ContextSnapshot {
             embedding_dimensions: r.embedding_dimensions,
             metadata: r.metadata,
             created_at: r.created_at,
+            collector: EventCollector::new(),
         }
     }
 
@@ -349,6 +455,10 @@ impl ContextSnapshot {
         self.embedding = Some(embedding);
         self.embedding_model = Some(model);
         self.embedding_dimensions = Some(dimensions);
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> SnapshotId {

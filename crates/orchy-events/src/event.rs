@@ -47,6 +47,7 @@ impl std::str::FromStr for EventId {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Event {
     id: EventId,
     organization: Organization,
@@ -95,14 +96,30 @@ impl Event {
         }
     }
 
-    pub fn id(&self) -> EventId { self.id }
-    pub fn organization(&self) -> &Organization { &self.organization }
-    pub fn namespace(&self) -> &EventNamespace { &self.namespace }
-    pub fn topic(&self) -> &Topic { &self.topic }
-    pub fn payload(&self) -> &Payload { &self.payload }
-    pub fn metadata(&self) -> &Metadata { &self.metadata }
-    pub fn timestamp(&self) -> DateTime<Utc> { self.timestamp }
-    pub fn version(&self) -> u64 { self.version }
+    pub fn id(&self) -> EventId {
+        self.id
+    }
+    pub fn organization(&self) -> &Organization {
+        &self.organization
+    }
+    pub fn namespace(&self) -> &EventNamespace {
+        &self.namespace
+    }
+    pub fn topic(&self) -> &Topic {
+        &self.topic
+    }
+    pub fn payload(&self) -> &Payload {
+        &self.payload
+    }
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
+    }
+    pub fn version(&self) -> u64 {
+        self.version
+    }
 }
 
 pub struct RestoreEvent {

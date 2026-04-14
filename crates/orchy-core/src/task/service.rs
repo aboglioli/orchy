@@ -122,28 +122,28 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         body: String,
     ) -> Result<Task> {
         let mut task = self.get(id).await?;
-        task.add_note(author, body);
+        task.add_note(author, body)?;
         self.task_store.save(&task).await?;
         Ok(task)
     }
 
     pub async fn tag(&self, id: &TaskId, tag: String) -> Result<Task> {
         let mut task = self.get(id).await?;
-        task.add_tag(tag);
+        task.add_tag(tag)?;
         self.task_store.save(&task).await?;
         Ok(task)
     }
 
     pub async fn untag(&self, id: &TaskId, tag: &str) -> Result<Task> {
         let mut task = self.get(id).await?;
-        task.remove_tag(tag);
+        task.remove_tag(tag)?;
         self.task_store.save(&task).await?;
         Ok(task)
     }
 
     pub async fn move_task(&self, id: &TaskId, namespace: Namespace) -> Result<Task> {
         let mut task = self.get(id).await?;
-        task.move_to(namespace);
+        task.move_to(namespace)?;
         self.task_store.save(&task).await?;
         Ok(task)
     }
@@ -220,7 +220,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         }
 
         for child in &children {
-            parent.add_dependency(child.id());
+            parent.add_dependency(child.id())?;
         }
         parent.block()?;
         self.task_store.save(&parent).await?;
@@ -351,7 +351,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
 
         for task in &sources {
             for note in task.notes() {
-                merged.add_note(note.author(), note.body().to_string());
+                merged.add_note(note.author(), note.body().to_string())?;
             }
         }
 
@@ -431,7 +431,7 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
             )));
         }
 
-        task.add_dependency(*dependency_id);
+        task.add_dependency(*dependency_id)?;
 
         if !self.all_deps_completed(task.depends_on()).await? {
             if task.status() == TaskStatus::Pending {
@@ -449,12 +449,12 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         dependency_id: &TaskId,
     ) -> Result<Task> {
         let mut task = self.get(task_id).await?;
-        task.remove_dependency(dependency_id);
+        task.remove_dependency(dependency_id)?;
 
         if task.status() == TaskStatus::Blocked
             && self.all_deps_completed(task.depends_on()).await?
         {
-            task.unblock();
+            task.unblock()?;
         }
 
         self.task_store.save(&task).await?;
@@ -550,11 +550,11 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
                 if self.has_children(&task).await? {
                     let summary = self.children_summaries(&task).await?;
                     let task_id = task.id();
-                    task.auto_complete(summary);
+                    task.auto_complete(summary)?;
                     self.task_store.save(&task).await?;
                     self.resolve_dependents(task_id).await?;
                 } else {
-                    task.unblock();
+                    task.unblock()?;
                     self.task_store.save(&task).await?;
                 }
             }

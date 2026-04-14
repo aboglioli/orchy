@@ -27,10 +27,8 @@ pub struct SerializedEvent {
 impl SerializedEvent {
     pub fn from_event(event: &Event) -> Result<Self> {
         let payload_value = match event.payload().content_type() {
-            ContentType::Json => {
-                serde_json::from_slice(event.payload().data())
-                    .map_err(|e| Error::Serialization(e.to_string()))?
-            }
+            ContentType::Json => serde_json::from_slice(event.payload().data())
+                .map_err(|e| Error::Serialization(e.to_string()))?,
             _ => serde_json::Value::String(
                 String::from_utf8_lossy(event.payload().data()).into_owned(),
             ),
@@ -50,25 +48,19 @@ impl SerializedEvent {
     }
 
     pub fn to_event(&self) -> Result<Event> {
-        let content_type: ContentType = self.content_type.parse()
+        let content_type: ContentType = self
+            .content_type
+            .parse()
             .map_err(|e: Error| Error::Serialization(e.to_string()))?;
 
         let data = match content_type {
-            ContentType::Json => {
-                serde_json::to_vec(&self.payload)
-                    .map_err(|e| Error::Serialization(e.to_string()))?
-            }
-            _ => {
-                self.payload.as_str()
-                    .unwrap_or("")
-                    .as_bytes()
-                    .to_vec()
-            }
+            ContentType::Json => serde_json::to_vec(&self.payload)
+                .map_err(|e| Error::Serialization(e.to_string()))?,
+            _ => self.payload.as_str().unwrap_or("").as_bytes().to_vec(),
         };
 
         Ok(Event::restore(RestoreEvent {
-            id: EventId::from_str(&self.id)
-                .map_err(|e| Error::Serialization(e.to_string()))?,
+            id: EventId::from_str(&self.id).map_err(|e| Error::Serialization(e.to_string()))?,
             organization: Organization::new(&self.organization)?,
             namespace: EventNamespace::new(&self.namespace)?,
             topic: Topic::new(&self.topic)?,
