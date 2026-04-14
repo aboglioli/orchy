@@ -785,6 +785,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MarkReadParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let ids: Vec<MessageId> = match params
             .message_ids
             .iter()
@@ -840,6 +845,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListConversationParams>,
     ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         let message_id = match parse_message_id(&params.message_id) {
             Ok(id) => id,
             Err(e) => return Err(e),

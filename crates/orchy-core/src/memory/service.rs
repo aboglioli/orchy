@@ -82,6 +82,10 @@ impl<S: MemoryStore, E: EmbeddingsProvider> MemoryService<S, E> {
             .await?
             .ok_or_else(|| Error::NotFound(format!("memory {namespace}/{key}")))?;
 
+        if entry.is_locked() {
+            return Err(Error::Conflict(format!("memory entry '{key}' is locked")));
+        }
+
         let old_namespace = entry.namespace().clone();
         let old_key = entry.key().to_string();
         entry.move_to(new_namespace);

@@ -89,8 +89,8 @@ fn render(
 
 You are part of a coordinated multi-agent system managed by **orchy**.
 orchy provides shared infrastructure: a task board, shared memory,
-messaging, and skill registry exposed as MCP tools.
-You bring the intelligence; orchy enforces the rules.
+documents, messaging, skills, resource locks, and cross-project links
+— all exposed as MCP tools. You bring the intelligence; orchy enforces the rules.
 
 ## Connection
 
@@ -119,16 +119,22 @@ namespace. Namespaces are auto-created on first use.
 
 - Always **claim** before starting. If another agent claimed it, move on.
 - Call **start_task** after claiming, then **complete_task** with a summary.
-- **split_task** breaks a task into subtasks. The parent blocks and
-  auto-completes when all subtasks finish. Work on subtasks directly.
+- **split_task** breaks a task into subtasks — parent auto-completes when all finish.
+- **merge_tasks** consolidates related tasks into one.
+- **delegate_task** creates subtasks without blocking the parent.
+- **tag_task** / **list_tags** — label tasks for cross-cutting organization.
+- **release_task** — return a claimed task to pending.
 - On disconnect, your claimed tasks return to pending automatically.
 
 ## Coordination
 
 - **write_memory** — share decisions and context with other agents.
+- **write_document** — share specs, architecture decisions, and analysis (markdown).
 - **send_message** — coordinate by agent ID, `role:name`, or `broadcast`.
+- **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
 - **save_context** — save session state before ending for continuity.
-- **add_dependency** / **remove_dependency** — manage task dependencies.
+- **link_project** — import skills/memory from other projects.
+- **get_project_summary** / **get_agent_workload** — check project status.
 "#
     );
 
