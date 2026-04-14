@@ -356,3 +356,41 @@ pub struct ImportMemoryParams {
     pub key: String,
     pub source_namespace: Option<String>,
 }
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct TagTaskParams {
+    pub task_id: String,
+    pub tag: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UntagTaskParams {
+    pub task_id: String,
+    pub tag: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LockMemoryParams {
+    pub namespace: Option<String>,
+    pub key: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UnlockMemoryParams {
+    pub namespace: Option<String>,
+    pub key: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LockResourceParams {
+    pub name: String,
+    pub namespace: Option<String>,
+    /// Seconds until auto-expiry. Default 300.
+    pub ttl_secs: Option<u64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UnlockResourceParams {
+    pub name: String,
+    pub namespace: Option<String>,
+}

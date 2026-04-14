@@ -4,6 +4,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
+use orchy_core::memory::MemoryStore;
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
@@ -1983,6 +1984,173 @@ impl OrchyHandler {
 
         match self.container.memory_service.write(cmd).await {
             Ok(imported) => Ok(to_json(&imported)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Add a tag to a task.")]
+    async fn tag_task(
+        &self,
+        Parameters(params): Parameters<TagTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self.container.task_service.tag(&task_id, params.tag).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Remove a tag from a task.")]
+    async fn untag_task(
+        &self,
+        Parameters(params): Parameters<UntagTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .untag(&task_id, &params.tag)
+            .await
+        {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Lock a memory entry to make it read-only.")]
+    async fn lock_memory(
+        &self,
+        Parameters(params): Parameters<LockMemoryParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let mut entry = match self
+            .container
+            .memory_service
+            .read(&project, &namespace, &params.key)
+            .await
+        {
+            Ok(Some(e)) => e,
+            Ok(None) => return Err(format!("memory '{}' not found", params.key)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        entry.lock();
+        self.container
+            .store
+            .save(&entry)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(to_json(&entry))
+    }
+
+    #[tool(description = "Unlock a memory entry to make it writable again.")]
+    async fn unlock_memory(
+        &self,
+        Parameters(params): Parameters<UnlockMemoryParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let mut entry = match self
+            .container
+            .memory_service
+            .read(&project, &namespace, &params.key)
+            .await
+        {
+            Ok(Some(e)) => e,
+            Ok(None) => return Err(format!("memory '{}' not found", params.key)),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        entry.unlock();
+        self.container
+            .store
+            .save(&entry)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(to_json(&entry))
+    }
+
+    #[tool(
+        description = "Acquire a named distributed lock. Fails if held by another agent. \
+        Locks auto-expire after ttl_secs (default 300)."
+    )]
+    async fn lock_resource(
+        &self,
+        Parameters(params): Parameters<LockResourceParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let ttl = params.ttl_secs.unwrap_or(300);
+
+        match self
+            .container
+            .lock_service
+            .acquire(project, namespace, params.name, agent_id, ttl)
+            .await
+        {
+            Ok(lock) => Ok(to_json(&lock)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Release a named distributed lock.")]
+    async fn unlock_resource(
+        &self,
+        Parameters(params): Parameters<UnlockResourceParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        match self
+            .container
+            .lock_service
+            .release(&project, &namespace, &params.name, &agent_id)
+            .await
+        {
+            Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(e.to_string()),
         }
     }
