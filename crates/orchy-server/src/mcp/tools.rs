@@ -19,11 +19,9 @@ use super::params::*;
 #[tool_router]
 impl OrchyHandler {
     #[tool(
-        description = "Register this session as an agent within a project namespace. \
-        All subsequent tool calls will be scoped to this project. \
-        If roles is empty, orchy assigns roles based on pending task demand. \
-        Use agent_id to resume a previous agent (same identity, comes back online). \
-        Use parent_id to create a new agent inheriting from a parent (lineage tracking)."
+        description = "Register as an agent. Required before any other tool. \
+        Roles are optional — orchy assigns them from pending task demand if omitted. \
+        Use agent_id to resume a previous session. Use parent_id for agent lineage."
     )]
     async fn register_agent(
         &self,
@@ -155,8 +153,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Disconnect the session agent. Releases all claimed tasks back to pending. \
-        Use this when your session is ending."
+        description = "Disconnect and release all claimed tasks back to pending. \
+        Call this when your session is ending."
     )]
     async fn disconnect(&self) -> Result<String, String> {
         let (agent_id, _, _) = match self.require_session() {
@@ -215,8 +213,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Create a new task. Namespace defaults to session namespace; \
-        if provided, the project prefix must match."
+        description = "Create a task. Use parent_id to create a subtask. \
+        Tasks with depends_on are auto-blocked until dependencies complete."
     )]
     async fn post_task(
         &self,
@@ -284,9 +282,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Get the next available task for the session agent, optionally filtered \
-        by namespace and role. Returns the task with full context: parent task \
-        (if this is a subtask) and children (if this task was split)."
+        description = "Claim the next available task matching your roles and return it. \
+        Returns full context: ancestor chain (if subtask) and children (if split). \
+        Skips tasks with incomplete dependencies."
     )]
     async fn get_next_task(
         &self,
@@ -405,9 +403,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Start working on a claimed task (transitions from claimed to in_progress). \
-        You must claim a task before starting it, and start it before completing it. \
-        Workflow: pending → claimed → in_progress → completed/failed."
+        description = "Start a claimed task (claimed → in_progress). \
+        Must be claimed by you first. Returns task with full context."
     )]
     async fn start_task(
         &self,
@@ -480,8 +477,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Assign a task to an agent. If the task is already assigned, \
-        it will be reassigned to the new agent."
+        description = "Assign a claimed or in-progress task to a different agent. \
+        The task must already be claimed."
     )]
     async fn assign_task(
         &self,
@@ -514,8 +511,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Write a key-value entry to shared memory. Namespace defaults to \
-        session namespace; if provided, the project prefix must match."
+        description = "Write a key-value entry to shared memory. Use version param for \
+        optimistic concurrency (fails if entry was modified since you read it)."
     )]
     async fn write_memory(
         &self,
@@ -651,8 +648,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Send a message to another agent (by ID), a role (role:name), or \
-        broadcast. Namespace defaults to session namespace."
+        description = "Send a message. Target: agent UUID, 'role:name' (all agents \
+        with that role), or 'broadcast' (all agents except you)."
     )]
     async fn send_message(
         &self,
@@ -928,9 +925,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Write a project skill — shared instructions/conventions that all \
-        agents in this project will receive. Skills are identified by namespace + name. \
-        Writing to an existing name updates it. Namespace defaults to session namespace."
+        description = "Write a project skill (shared instructions/conventions). \
+        All agents receive these via list_skills. Writing to an existing name updates it."
     )]
     async fn write_skill(
         &self,
@@ -990,9 +986,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "List skills for the project. If inherited=true, includes skills \
-        from parent namespaces with more specific ones taking precedence (requires namespace). \
-        If namespace is omitted, returns all skills in the project."
+        description = "List skills. Use inherited=true to include skills from parent \
+        namespaces (child overrides parent on name collision)."
     )]
     async fn list_skills(
         &self,
@@ -1468,10 +1463,9 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Generate a full bootstrap prompt for this project. Contains all \
-        orchy instructions, coordination patterns, and project skills in a single text block. \
-        Useful for agents that don't support MCP server instructions natively — copy-paste \
-        this into their system prompt. Also available as HTTP GET /bootstrap/<namespace>."
+        description = "Generate a full bootstrap prompt with all orchy instructions, \
+        project skills, connected agents, and active tasks. For clients that don't \
+        support MCP instructions natively."
     )]
     async fn get_bootstrap_prompt(
         &self,

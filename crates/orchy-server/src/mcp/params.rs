@@ -5,9 +5,12 @@ use serde::Deserialize;
 pub struct RegisterAgentParams {
     pub project: String,
     pub namespace: Option<String>,
+    /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
     pub description: String,
+    /// Resume a previous agent session.
     pub agent_id: Option<String>,
+    /// Create as a child of this parent agent.
     pub parent_id: Option<String>,
 }
 
@@ -27,23 +30,29 @@ pub struct MoveAgentParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct PostTaskParams {
     pub namespace: Option<String>,
+    /// Parent task ID to create a subtask.
     pub parent_id: Option<String>,
     pub title: String,
     pub description: String,
+    /// low, normal (default), high, critical.
     pub priority: Option<String>,
+    /// Roles that can claim this task. Empty = any role.
     pub assigned_roles: Option<Vec<String>>,
+    /// Task IDs that must complete before this task can be claimed.
     pub depends_on: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetNextTaskParams {
     pub namespace: Option<String>,
+    /// Defaults to all agent roles.
     pub role: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListTasksParams {
     pub namespace: Option<String>,
+    /// pending, blocked, claimed, in_progress, completed, failed, cancelled.
     pub status: Option<String>,
 }
 
@@ -55,6 +64,7 @@ pub struct ClaimTaskParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct CompleteTaskParams {
     pub task_id: String,
+    /// Visible to other agents and parent tasks.
     pub summary: Option<String>,
 }
 
@@ -91,6 +101,7 @@ pub struct SplitTaskParams {
 pub struct SubtaskParam {
     pub title: String,
     pub description: String,
+    /// low, normal (default), high, critical.
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
     pub depends_on: Option<Vec<String>>,
@@ -126,6 +137,7 @@ pub struct WriteMemoryParams {
     pub namespace: Option<String>,
     pub key: String,
     pub value: String,
+    /// Expected version for optimistic concurrency.
     pub version: Option<u64>,
 }
 
@@ -162,9 +174,11 @@ pub struct MoveMemoryParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct SendMessageParams {
+    /// Agent UUID, "role:name", or "broadcast".
     pub to: String,
     pub body: String,
     pub namespace: Option<String>,
+    /// Creates a thread.
     pub reply_to: Option<String>,
 }
 
@@ -186,6 +200,7 @@ pub struct CheckSentMessagesParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListConversationParams {
     pub message_id: String,
+    /// Most recent N messages.
     pub limit: Option<u32>,
 }
 
@@ -193,11 +208,13 @@ pub struct ListConversationParams {
 pub struct SaveContextParams {
     pub summary: String,
     pub namespace: Option<String>,
+    /// JSON string of key-value pairs.
     pub metadata: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct LoadContextParams {
+    /// Defaults to current agent.
     pub agent_id: Option<String>,
 }
 
@@ -219,6 +236,7 @@ pub struct SearchContextsParams {
 pub struct WriteSkillParams {
     pub name: String,
     pub description: String,
+    /// Full instruction text agents will follow.
     pub content: String,
     pub namespace: Option<String>,
 }
@@ -232,6 +250,7 @@ pub struct ReadSkillParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListSkillsParams {
     pub namespace: Option<String>,
+    /// Include skills from parent namespaces.
     pub inherited: Option<bool>,
 }
 

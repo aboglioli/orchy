@@ -156,44 +156,36 @@ const INSTRUCTIONS: &str = "\
 orchy — multi-agent coordination server.
 
 You are part of a coordinated multi-agent system. orchy provides shared \
-infrastructure: a task board, shared memory, messaging, skills, and \
-project context. You bring the intelligence; orchy enforces the rules.
+infrastructure: a task board, shared memory, messaging, and skills. \
+You bring the intelligence; orchy enforces the rules.
 
 ## On Session Start
 
-1. Call `register_agent` with your project, roles, and description.
-2. Call `list_skills(inherited=true)` and follow the project conventions.
-3. Call `get_project` to read the project description and notes.
-4. Call `get_next_task` to claim work, or `check_mailbox` for messages.
-5. Call `heartbeat` every ~30s to signal liveness.
+1. `register_agent` — project, roles (optional), description.
+2. `get_project` — read project description and notes.
+3. `list_skills(inherited: true)` — load project conventions. Follow them.
+4. `get_next_task` or `check_mailbox` — claim work or read messages.
+5. `heartbeat` — call every ~30s to stay alive.
 
-## Project & Namespace
+## Namespaces
 
-Each agent belongs to a project (e.g. `my-project`). Resources are \
-organized in namespaces within the project: `/` is root, `/backend`, \
-`/backend/auth` are scopes. Namespace is optional for reading — omit \
-it to see all project resources. Write operations default to your \
-current namespace. Use `move_agent` to switch namespaces. Use \
-`list_namespaces` to discover available scopes.
+Resources live in namespaces: `/` (root), `/backend`, `/backend/auth`. \
+Omit namespace on reads to see everything. Writes default to your current \
+namespace. Namespaces are auto-created on first use.
+
+## Task Workflow
+
+pending → claimed → in_progress → completed/failed. \
+Always claim before starting. If another agent claimed it, move on. \
+Split large tasks with `split_task` — parent auto-completes when all \
+subtasks finish. On disconnect, claimed tasks return to pending.
 
 ## Coordination
 
-- Claim tasks before working. Complete them with a summary when done.
-- Split large tasks with `split_task` — parent auto-completes when subtasks finish.
-- Replace tasks with `replace_task` to cancel and create new ones.
-- Manage dependencies with `add_dependency` and `remove_dependency`.
-- Use shared memory to store decisions and context for other agents.
-- Use messages to coordinate with teammates. Reply with `reply_to`.
-- Check delivery status with `check_sent_messages`.
-- Browse conversation threads with `list_conversation`.
-- Save context before your session ends for continuity.
-- Use `list_skills(inherited=true)` to get project conventions.
-- Register without roles to let orchy assign roles based on task demand.
-
-## Bootstrap Prompt
-
-If your client doesn't support MCP instructions, call `get_bootstrap_prompt` \
-to get a full copy-pasteable prompt with all orchy instructions and project skills.";
+- `write_memory` to share decisions with other agents.
+- `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
+- `save_context` before your session ends for continuity.
+- Register without roles — orchy assigns them based on task demand.";
 
 impl ServerHandler for OrchyHandler {
     fn get_info(&self) -> ServerInfo {

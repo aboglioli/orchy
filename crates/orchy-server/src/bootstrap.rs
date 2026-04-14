@@ -70,8 +70,8 @@ fn render(
         r#"# Multi-Agent Coordination — Project `{namespace}`
 
 You are part of a coordinated multi-agent system managed by **orchy**.
-orchy is NOT an orchestrator — it's shared infrastructure: a task board,
-shared memory, messaging bus, and skill registry exposed as MCP tools.
+orchy provides shared infrastructure: a task board, shared memory,
+messaging, and skill registry exposed as MCP tools.
 You bring the intelligence; orchy enforces the rules.
 
 ## Connection
@@ -79,61 +79,38 @@ You bring the intelligence; orchy enforces the rules.
 MCP server: `http://{host}:{port}/mcp`
 Project namespace: `{namespace}`
 
-## Bootstrap Protocol
+## On Session Start
 
-On every session start, execute these steps in order:
-
-1. **Register** — call `register_agent` with:
-   - `project`: your project identifier
-   - `roles`: your capabilities (e.g. `["coder", "reviewer"]`). Leave empty to let orchy assign roles based on pending task demand.
-   - `description`: what you are (e.g. "Claude Code backend agent")
-   - `namespace`: scope within the project (optional, e.g. "backend")
-
-2. **Load context** — call `get_project` for project description and notes.
-   Call `list_skills(inherited: true)` for project conventions.
-
-3. **Check for work** — call `get_next_task` to claim pending tasks,
+1. **Register** — `register_agent(project, description)`. Roles are optional;
+   orchy assigns them based on pending task demand if omitted.
+2. **Load context** — `get_project` for description and notes,
+   then `list_skills(inherited: true)` for conventions. Follow them.
+3. **Check for work** — `get_next_task` to claim a task,
    or `check_mailbox` for messages from other agents.
+4. **Heartbeat** — `heartbeat` every ~30s to stay alive.
 
-4. **Heartbeat** — call `heartbeat` periodically (every ~30s) to signal liveness.
+## Namespaces
 
-## Namespace Rules
+Resources live in namespaces: `/` (root), `/backend`, `/backend/auth`.
+Omit namespace on reads to see everything. Writes default to your current
+namespace. Namespaces are auto-created on first use.
 
-Resources are organized in namespaces within the project: `/` is root,
-`/backend` and `/backend/auth` are scopes. Namespace is optional for
-reading — omit it to see all project resources. Write operations default
-to your current namespace. Use `move_agent` to switch namespaces.
-Use `list_namespaces` to discover available scopes.
+## Task Workflow
 
-## Available Tools
+`pending → claimed → in_progress → completed/failed`
 
-| Category | Tools |
-|----------|-------|
-| Agent    | `register_agent`, `list_agents`, `change_roles`, `move_agent`, `heartbeat`, `disconnect` |
-| Tasks    | `post_task`, `get_next_task`, `list_tasks`, `claim_task`, `start_task`, `complete_task`, `fail_task`, `assign_task`, `add_task_note` |
-| Task Hierarchy | `split_task`, `replace_task`, `add_dependency`, `remove_dependency` |
-| Move     | `move_task`, `move_memory`, `move_skill` |
-| Memory   | `write_memory`, `read_memory`, `list_memory`, `search_memory`, `delete_memory` |
-| Messages | `send_message`, `check_mailbox`, `mark_read`, `check_sent_messages`, `list_conversation` |
-| Context  | `save_context`, `load_context`, `list_contexts`, `search_contexts` |
-| Skills   | `write_skill`, `read_skill`, `list_skills`, `delete_skill` |
-| Project  | `get_project`, `update_project`, `add_project_note` |
-| Discovery| `list_namespaces`, `get_bootstrap_prompt` |
+- Always **claim** before starting. If another agent claimed it, move on.
+- Call **start_task** after claiming, then **complete_task** with a summary.
+- **split_task** breaks a task into subtasks. The parent blocks and
+  auto-completes when all subtasks finish. Work on subtasks directly.
+- On disconnect, your claimed tasks return to pending automatically.
 
-## Coordination Patterns
+## Coordination
 
-- **Claim before working** — always claim a task before starting. If another
-  agent claimed it first, move on to the next one.
-- **Split large tasks** — use `split_task` to break a task into subtasks.
-  The parent blocks automatically and completes when all subtasks finish.
-  Work on subtasks directly, not the parent.
-- **Report results** — call `complete_task` with a summary when done.
-- **Share knowledge** — use `write_memory` to store decisions, discoveries,
-  or context that other agents need.
-- **Message teammates** — use `send_message` to coordinate directly with
-  other agents or broadcast to all.
-- **Save context** — before your session ends, call `save_context` so the
-  next agent picking up your work has continuity.
+- **write_memory** — share decisions and context with other agents.
+- **send_message** — coordinate by agent ID, `role:name`, or `broadcast`.
+- **save_context** — save session state before ending for continuity.
+- **add_dependency** / **remove_dependency** — manage task dependencies.
 "#
     );
 
