@@ -319,7 +319,7 @@ pub struct PollUpdatesParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct WriteKnowledgeParams {
     pub namespace: Option<String>,
-    /// Hierarchical path (e.g. "decisions/db-choice").
+    /// Hierarchical path (e.g. "db-choice" or "auth/jwt-strategy").
     pub path: String,
     /// Required: note, decision, discovery, pattern, context, document, config, reference, plan, log.
     pub kind: String,

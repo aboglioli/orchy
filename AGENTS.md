@@ -249,8 +249,9 @@ Use `list_knowledge_types` to discover available kinds.
 | `log` | activity or change log entries |
 | `skill` | instructions/conventions agents must follow |
 
-**Paths** are hierarchical: `decisions/auth-algorithm`, `specs/auth-design`,
-`patterns/error-handling`. Scoped by `(project, namespace, path)`.
+**Paths** identify the topic: `auth-algorithm`, `api-design`, `error-handling`.
+Use hierarchy for sub-topics: `auth/jwt-strategy`. Don't repeat the kind in
+the path — the kind already categorizes. Scoped by `(project, namespace, path)`.
 
 **Skills** (kind=skill) inherit through namespace hierarchy — child namespaces
 override parent skills with the same path.

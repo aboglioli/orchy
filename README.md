@@ -65,7 +65,7 @@ Each entry has a `kind`, `path`, `title`, `content`, `tags`, and `version`.
 | `log` | Activity or change log entry |
 | `skill` | Instruction or convention agents must follow |
 
-Paths are hierarchical: `decisions/db-choice`, `specs/auth-design`.
+Paths are hierarchical: `db-choice`, `auth/jwt-strategy`, `api-design`.
 Skills (kind=skill) inherit through namespace hierarchy.
 
 ### Tasks

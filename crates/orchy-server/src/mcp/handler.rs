@@ -212,7 +212,7 @@ On disconnect, claimed tasks return to pending.
 You must externalize knowledge so future agents can benefit:
 
 - After completing a task, `write_knowledge` for each key decision \
-  (e.g. path: `decisions/auth-algorithm`, type: `decision`).
+  (e.g. path: `auth-algorithm`, kind: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned, \
   what the next agent should know. Never just 'done'.
 - Before disconnecting, `write_knowledge(kind: \"context\", path: \"handoff\")` \
