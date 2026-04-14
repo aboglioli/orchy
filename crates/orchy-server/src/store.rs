@@ -4,6 +4,7 @@ use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilte
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
+use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 use orchy_store_memory::MemoryBackend;
@@ -172,6 +173,28 @@ impl ProjectStore for StoreBackend {
     }
     async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
         delegate_trait!(self, ProjectStore::find_by_id(id))
+    }
+}
+
+impl ProjectLinkStore for StoreBackend {
+    async fn save(&self, link: &ProjectLink) -> Result<()> {
+        delegate_trait!(self, ProjectLinkStore::save(link))
+    }
+    async fn delete(&self, id: &ProjectLinkId) -> Result<()> {
+        delegate_trait!(self, ProjectLinkStore::delete(id))
+    }
+    async fn find_by_id(&self, id: &ProjectLinkId) -> Result<Option<ProjectLink>> {
+        delegate_trait!(self, ProjectLinkStore::find_by_id(id))
+    }
+    async fn list_by_target(&self, target: &ProjectId) -> Result<Vec<ProjectLink>> {
+        delegate_trait!(self, ProjectLinkStore::list_by_target(target))
+    }
+    async fn find_link(
+        &self,
+        source: &ProjectId,
+        target: &ProjectId,
+    ) -> Result<Option<ProjectLink>> {
+        delegate_trait!(self, ProjectLinkStore::find_link(source, target))
     }
 }
 

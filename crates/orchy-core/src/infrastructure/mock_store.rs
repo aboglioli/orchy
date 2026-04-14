@@ -7,6 +7,7 @@ use crate::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, Me
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
 use crate::project::{Project, ProjectStore};
+use crate::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use crate::skill::{Skill, SkillFilter, SkillStore};
 use crate::task::{Task, TaskFilter, TaskId, TaskStore};
 
@@ -181,16 +182,29 @@ impl NamespaceStore for MockStore {
     }
 }
 
+impl ProjectLinkStore for MockStore {
+    async fn save(&self, _: &ProjectLink) -> Result<()> {
+        unimplemented!()
+    }
+    async fn delete(&self, _: &ProjectLinkId) -> Result<()> {
+        unimplemented!()
+    }
+    async fn find_by_id(&self, _: &ProjectLinkId) -> Result<Option<ProjectLink>> {
+        unimplemented!()
+    }
+    async fn list_by_target(&self, _: &ProjectId) -> Result<Vec<ProjectLink>> {
+        unimplemented!()
+    }
+    async fn find_link(&self, _: &ProjectId, _: &ProjectId) -> Result<Option<ProjectLink>> {
+        unimplemented!()
+    }
+}
+
 impl SkillStore for MockStore {
     async fn save(&self, _: &Skill) -> Result<()> {
         unimplemented!()
     }
-    async fn find_by_name(
-        &self,
-        _: &ProjectId,
-        _: &Namespace,
-        _: &str,
-    ) -> Result<Option<Skill>> {
+    async fn find_by_name(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Skill>> {
         unimplemented!()
     }
     async fn list(&self, _: SkillFilter) -> Result<Vec<Skill>> {

@@ -8,5 +8,6 @@ pub mod message;
 pub mod namespace;
 pub mod note;
 pub mod project;
+pub mod project_link;
 pub mod skill;
 pub mod task;

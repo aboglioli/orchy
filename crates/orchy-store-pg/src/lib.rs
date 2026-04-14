@@ -4,6 +4,7 @@ mod memory;
 mod message;
 mod namespace;
 mod project;
+mod project_link;
 mod skill;
 mod task;
 
@@ -114,7 +115,7 @@ impl PgBackend {
     }
 
     pub async fn truncate_all(&self) -> Result<()> {
-        sqlx::query("TRUNCATE contexts, messages, tasks, memory, skills, agents, projects CASCADE")
+        sqlx::query("TRUNCATE contexts, messages, tasks, memory, skills, agents, projects, project_links CASCADE")
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
