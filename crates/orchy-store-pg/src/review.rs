@@ -12,7 +12,7 @@ use orchy_core::task::{
 use crate::PgBackend;
 
 impl ReviewStore for PgBackend {
-    async fn save(&self, review: &ReviewRequest) -> Result<()> {
+    async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
         sqlx::query(
             "INSERT INTO reviews (id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -41,6 +41,11 @@ impl ReviewStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = review.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

@@ -256,7 +256,7 @@ impl DocumentStore for MockStore {
 }
 
 impl WatcherStore for MockStore {
-    async fn save(&self, _: &TaskWatcher) -> Result<()> {
+    async fn save(&self, _: &mut TaskWatcher) -> Result<()> {
         Ok(())
     }
     async fn delete(&self, _: &TaskId, _: &AgentId) -> Result<()> {
@@ -271,7 +271,7 @@ impl WatcherStore for MockStore {
 }
 
 impl ReviewStore for MockStore {
-    async fn save(&self, _: &ReviewRequest) -> Result<()> {
+    async fn save(&self, _: &mut ReviewRequest) -> Result<()> {
         Ok(())
     }
     async fn find_by_id(&self, _: &ReviewId) -> Result<Option<ReviewRequest>> {

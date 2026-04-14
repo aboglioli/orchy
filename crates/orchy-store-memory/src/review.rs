@@ -5,12 +5,20 @@ use orchy_core::task::{ReviewId, ReviewRequest, ReviewStatus, ReviewStore, TaskI
 use crate::MemoryBackend;
 
 impl ReviewStore for MemoryBackend {
-    async fn save(&self, review: &ReviewRequest) -> Result<()> {
-        let mut reviews = self
-            .reviews
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        reviews.insert(review.id(), review.clone());
+    async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
+        {
+            let mut reviews = self
+                .reviews
+                .write()
+                .map_err(|e| Error::Store(e.to_string()))?;
+            reviews.insert(review.id(), review.clone());
+        }
+
+        let events = review.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
+
         Ok(())
     }
 

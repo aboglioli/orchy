@@ -10,7 +10,7 @@ use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 use crate::PgBackend;
 
 impl WatcherStore for PgBackend {
-    async fn save(&self, watcher: &TaskWatcher) -> Result<()> {
+    async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
         sqlx::query(
             "INSERT INTO task_watchers (task_id, agent_id, project, namespace, created_at)
              VALUES ($1, $2, $3, $4, $5)
@@ -27,6 +27,11 @@ impl WatcherStore for PgBackend {
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = watcher.drain_events();
+        if !events.is_empty() {
+            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+        }
 
         Ok(())
     }

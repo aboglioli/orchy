@@ -212,6 +212,18 @@ impl Agent {
         self.last_heartbeat = Utc::now();
         if self.status == AgentStatus::Disconnected {
             self.status = AgentStatus::Online;
+
+            let _ = Event::create(
+                self.project.as_ref(),
+                agent_events::NAMESPACE,
+                agent_events::TOPIC_STATUS_CHANGED,
+                Payload::from_json(&agent_events::AgentStatusChangedPayload {
+                    agent_id: self.id.to_string(),
+                    status: self.status.to_string(),
+                })
+                .unwrap(),
+            )
+            .map(|e| self.collector.collect(e));
         }
     }
 

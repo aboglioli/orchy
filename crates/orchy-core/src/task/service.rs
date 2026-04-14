@@ -584,8 +584,8 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         namespace: Namespace,
     ) -> Result<TaskWatcher> {
         self.get(task_id).await?;
-        let watcher = TaskWatcher::new(*task_id, agent_id, project, namespace);
-        WatcherStore::save(&*self.store, &watcher).await?;
+        let mut watcher = TaskWatcher::new(*task_id, agent_id, project, namespace);
+        WatcherStore::save(&*self.store, &mut watcher).await?;
         Ok(watcher)
     }
 
@@ -603,7 +603,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         reviewer_role: Option<String>,
     ) -> Result<ReviewRequest> {
         self.get(task_id).await?;
-        let review = ReviewRequest::new(
+        let mut review = ReviewRequest::new(
             *task_id,
             project.clone(),
             namespace.clone(),
@@ -611,7 +611,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             reviewer,
             reviewer_role.clone(),
         );
-        ReviewStore::save(&*self.store, &review).await?;
+        ReviewStore::save(&*self.store, &mut review).await?;
 
         let body = format!(
             "Review requested for task {} (review {})",
@@ -647,7 +647,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         } else {
             review.reject(comments)?;
         }
-        ReviewStore::save(&*self.store, &review).await?;
+        ReviewStore::save(&*self.store, &mut review).await?;
 
         let body = format!(
             "Review {} for task {}: {}",
