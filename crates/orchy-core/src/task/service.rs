@@ -127,6 +127,20 @@ impl<TS: TaskStore, AS: AgentStore> TaskService<TS, AS> {
         Ok(task)
     }
 
+    pub async fn tag(&self, id: &TaskId, tag: String) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.add_tag(tag);
+        self.task_store.save(&task).await?;
+        Ok(task)
+    }
+
+    pub async fn untag(&self, id: &TaskId, tag: &str) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.remove_tag(tag);
+        self.task_store.save(&task).await?;
+        Ok(task)
+    }
+
     pub async fn move_task(&self, id: &TaskId, namespace: Namespace) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.move_to(namespace);

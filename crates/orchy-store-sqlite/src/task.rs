@@ -40,6 +40,8 @@ enum Tasks {
     AssignedAt,
     #[iden = "depends_on"]
     DependsOn,
+    #[iden = "tags"]
+    Tags,
     #[iden = "result_summary"]
     ResultSummary,
     #[iden = "notes"]
@@ -56,8 +58,8 @@ impl TaskStore for SqliteBackend {
     async fn save(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "INSERT OR REPLACE INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, result_summary, notes, created_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            "INSERT OR REPLACE INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             rusqlite::params![
                 task.id().to_string(),
                 task.project().to_string(),
@@ -71,6 +73,7 @@ impl TaskStore for SqliteBackend {
                 task.assigned_to().map(|a| a.to_string()),
                 task.assigned_at().map(|dt| dt.to_rfc3339()),
                 serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap(),
+                serde_json::to_string(task.tags()).unwrap(),
                 task.result_summary().map(|s| s.to_string()),
                 serde_json::to_string(&task.notes()).unwrap(),
                 task.created_by().map(|a| a.to_string()),
@@ -87,7 +90,7 @@ impl TaskStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, result_summary, notes, created_by, created_at, updated_at
+                "SELECT id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at
                  FROM tasks WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -117,6 +120,7 @@ impl TaskStore for SqliteBackend {
             Tasks::AssignedTo,
             Tasks::AssignedAt,
             Tasks::DependsOn,
+            Tasks::Tags,
             Tasks::ResultSummary,
             Tasks::Notes,
             Tasks::CreatedBy,
@@ -152,6 +156,9 @@ impl TaskStore for SqliteBackend {
         if let Some(ref pid) = filter.parent_id {
             query.and_where(Expr::col(Tasks::ParentId).eq(pid.to_string()));
         }
+        if let Some(ref tag) = filter.tag {
+            query.and_where(Expr::col(Tasks::Tags).like(format!("%{tag}%")));
+        }
 
         query.order_by_expr(
             Expr::cust("CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END"),
@@ -185,11 +192,12 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let assigned_to_str: Option<String> = row.get(9)?;
     let assigned_at_str: Option<String> = row.get(10)?;
     let depends_on_str: String = row.get(11)?;
-    let result_summary: Option<String> = row.get(12)?;
-    let notes_str: String = row.get(13)?;
-    let created_by_str: Option<String> = row.get(14)?;
-    let created_at_str: String = row.get(15)?;
-    let updated_at_str: String = row.get(16)?;
+    let tags_str: String = row.get(12)?;
+    let result_summary: Option<String> = row.get(13)?;
+    let notes_str: String = row.get(14)?;
+    let created_by_str: Option<String> = row.get(15)?;
+    let created_at_str: String = row.get(16)?;
+    let updated_at_str: String = row.get(17)?;
 
     let depends_on_strs: Vec<String> = serde_json::from_str(&depends_on_str).unwrap_or_default();
     let depends_on: Vec<TaskId> = depends_on_strs
@@ -197,6 +205,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         .filter_map(|s| TaskId::from_str(s).ok())
         .collect();
 
+    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
     let notes: Vec<Note> = serde_json::from_str(&notes_str).unwrap_or_default();
 
     let id = TaskId::from_str(&id_str).map_err(|e| {
@@ -230,12 +239,12 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(17, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Task::restore(RestoreTask {
@@ -251,6 +260,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         assigned_to,
         assigned_at,
         depends_on,
+        tags,
         result_summary,
         notes,
         created_by,

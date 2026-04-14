@@ -54,6 +54,11 @@ impl TaskStore for MemoryBackend {
                         return false;
                     }
                 }
+                if let Some(ref tag) = filter.tag {
+                    if !t.tags().contains(tag) {
+                        return false;
+                    }
+                }
                 true
             })
             .cloned()

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     assigned_to UUID REFERENCES agents(id),
     assigned_at TIMESTAMPTZ,
     depends_on JSONB NOT NULL DEFAULT '[]',
+    tags JSONB NOT NULL DEFAULT '[]',
     result_summary TEXT,
     notes JSONB NOT NULL DEFAULT '[]',
     created_by UUID REFERENCES agents(id),
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS memory (
     embedding VECTOR,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
+    locked BOOLEAN NOT NULL DEFAULT FALSE,
     written_by UUID REFERENCES agents(id),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
@@ -103,4 +105,14 @@ CREATE TABLE IF NOT EXISTS namespaces (
     namespace TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (project, namespace)
+);
+
+CREATE TABLE IF NOT EXISTS resource_locks (
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    name TEXT NOT NULL,
+    holder UUID NOT NULL REFERENCES agents(id),
+    acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (project, namespace, name)
 );

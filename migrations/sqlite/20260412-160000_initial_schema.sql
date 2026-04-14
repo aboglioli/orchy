@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     assigned_to TEXT,
     assigned_at TEXT,
     depends_on TEXT NOT NULL DEFAULT '[]',
+    tags TEXT NOT NULL DEFAULT '[]',
     result_summary TEXT,
     notes TEXT NOT NULL DEFAULT '[]',
     created_by TEXT,
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS memory (
     embedding BLOB,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
+    locked INTEGER NOT NULL DEFAULT 0,
     written_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -97,4 +99,14 @@ CREATE TABLE IF NOT EXISTS namespaces (
     namespace TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (project, namespace)
+);
+
+CREATE TABLE IF NOT EXISTS resource_locks (
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    name TEXT NOT NULL,
+    holder TEXT NOT NULL,
+    acquired_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    PRIMARY KEY (project, namespace, name)
 );

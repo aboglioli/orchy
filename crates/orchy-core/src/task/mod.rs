@@ -192,6 +192,7 @@ pub struct Task {
     assigned_to: Option<AgentId>,
     assigned_at: Option<DateTime<Utc>>,
     depends_on: Vec<TaskId>,
+    tags: Vec<String>,
     result_summary: Option<String>,
     notes: Vec<Note>,
     created_by: Option<AgentId>,
@@ -234,6 +235,7 @@ impl Task {
             assigned_to: None,
             assigned_at: None,
             depends_on,
+            tags: Vec::new(),
             result_summary: None,
             notes: Vec::new(),
             created_by,
@@ -256,6 +258,7 @@ impl Task {
             assigned_to: r.assigned_to,
             assigned_at: r.assigned_at,
             depends_on: r.depends_on,
+            tags: r.tags,
             result_summary: r.result_summary,
             notes: r.notes,
             created_by: r.created_by,
@@ -403,6 +406,21 @@ impl Task {
     pub fn depends_on(&self) -> &[TaskId] {
         &self.depends_on
     }
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
+    pub fn add_tag(&mut self, tag: String) {
+        if !self.tags.contains(&tag) {
+            self.tags.push(tag);
+            self.updated_at = Utc::now();
+        }
+    }
+    pub fn remove_tag(&mut self, tag: &str) {
+        if let Some(pos) = self.tags.iter().position(|t| t == tag) {
+            self.tags.remove(pos);
+            self.updated_at = Utc::now();
+        }
+    }
     pub fn result_summary(&self) -> Option<&str> {
         self.result_summary.as_deref()
     }
@@ -466,6 +484,7 @@ pub struct RestoreTask {
     pub assigned_to: Option<AgentId>,
     pub assigned_at: Option<DateTime<Utc>>,
     pub depends_on: Vec<TaskId>,
+    pub tags: Vec<String>,
     pub result_summary: Option<String>,
     pub notes: Vec<Note>,
     pub created_by: Option<AgentId>,
@@ -489,6 +508,7 @@ pub struct TaskFilter {
     pub assigned_role: Option<String>,
     pub assigned_to: Option<AgentId>,
     pub parent_id: Option<TaskId>,
+    pub tag: Option<String>,
 }
 
 #[cfg(test)]
@@ -509,6 +529,7 @@ mod tests {
             assigned_to,
             assigned_at: None,
             depends_on: vec![],
+            tags: vec![],
             result_summary: None,
             notes: Vec::new(),
             created_by: None,
