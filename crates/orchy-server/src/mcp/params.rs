@@ -498,3 +498,89 @@ pub struct PollUpdatesParams {
     pub since: Option<String>,
     pub limit: Option<u32>,
 }
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct WriteKnowledgeParams {
+    pub namespace: Option<String>,
+    /// Hierarchical path (e.g. "decisions/db-choice").
+    pub path: String,
+    /// Required: note, decision, discovery, pattern, context, document, config, reference, plan, log.
+    pub entry_type: String,
+    pub title: String,
+    pub content: String,
+    pub tags: Option<Vec<String>>,
+    /// Expected version for optimistic concurrency.
+    pub version: Option<u64>,
+    pub metadata: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ReadKnowledgeParams {
+    pub namespace: Option<String>,
+    pub path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ListKnowledgeParams {
+    pub namespace: Option<String>,
+    /// Filter: note, decision, discovery, pattern, context, document, config, reference, plan, log.
+    pub entry_type: Option<String>,
+    pub tag: Option<String>,
+    pub path_prefix: Option<String>,
+    pub agent_id: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SearchKnowledgeParams {
+    pub query: String,
+    pub namespace: Option<String>,
+    pub entry_type: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct DeleteKnowledgeParams {
+    pub namespace: Option<String>,
+    pub path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct AppendKnowledgeParams {
+    pub namespace: Option<String>,
+    pub path: String,
+    pub entry_type: String,
+    pub value: String,
+    /// Defaults to "\n".
+    pub separator: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MoveKnowledgeParams {
+    pub namespace: Option<String>,
+    pub path: String,
+    pub new_namespace: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct RenameKnowledgeParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    pub new_path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct TagKnowledgeParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    pub tag: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ListKnowledgeTypesParams {}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ImportKnowledgeParams {
+    pub source_project: String,
+    pub path: String,
+    pub source_namespace: Option<String>,
+}

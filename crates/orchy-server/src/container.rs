@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use orchy_core::agent::service::AgentService;
 use orchy_core::document::service::DocumentService;
+use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::memory::service::{ContextService, MemoryService};
 use orchy_core::message::service::MessageService;
 use orchy_core::project::service::ProjectService;
@@ -27,6 +28,7 @@ pub struct Container {
     pub skill_service: SkillService<StoreBackend>,
     pub project_service: ProjectService<StoreBackend>,
     pub project_link_service: ProjectLinkService<StoreBackend>,
+    pub knowledge_service: KnowledgeService<StoreBackend, EmbeddingsBackend>,
     pub document_service: DocumentService<StoreBackend, EmbeddingsBackend>,
     pub lock_service: LockService<StoreBackend>,
     pub config: Config,
@@ -46,6 +48,7 @@ impl Container {
         let message_service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
         let context_service = ContextService::new(Arc::clone(&store), embeddings.clone());
         let skill_service = SkillService::new(Arc::clone(&store));
+        let knowledge_service = KnowledgeService::new(Arc::clone(&store), embeddings.clone());
         let document_service = DocumentService::new(Arc::clone(&store), embeddings);
         let project_service = ProjectService::new(Arc::clone(&store));
         let project_link_service = ProjectLinkService::new(Arc::clone(&store));
@@ -60,6 +63,7 @@ impl Container {
             context_service,
             skill_service,
             project_service,
+            knowledge_service,
             document_service,
             project_link_service,
             lock_service,

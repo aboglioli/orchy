@@ -5,6 +5,7 @@ use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
 use orchy_core::document::{DocumentFilter, WriteDocument};
+use orchy_core::knowledge::{EntryFilter, EntryType, Version as KnowledgeVersion, WriteEntry};
 use orchy_core::memory::{MemoryFilter, Version, WriteMemory};
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
@@ -2724,5 +2725,394 @@ impl OrchyHandler {
         });
 
         Ok(to_json(&result))
+    }
+
+    #[tool(description = "List available knowledge entry types with descriptions.")]
+    async fn list_knowledge_types(
+        &self,
+        Parameters(_params): Parameters<ListKnowledgeTypesParams>,
+    ) -> Result<String, String> {
+        let types: Vec<serde_json::Value> = EntryType::all()
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": t.to_string(),
+                    "description": t.description(),
+                })
+            })
+            .collect();
+        Ok(to_json(&types))
+    }
+
+    #[tool(
+        description = "Write a knowledge entry. Creates or updates by path. \
+        Type is required: note, decision, discovery, pattern, context, document, \
+        config, reference, plan, log."
+    )]
+    async fn write_knowledge(
+        &self,
+        Parameters(params): Parameters<WriteKnowledgeParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let entry_type: EntryType = params
+            .entry_type
+            .parse()
+            .map_err(|e: String| e)?;
+
+        let metadata: HashMap<String, String> = match params.metadata.as_deref() {
+            Some(json_str) => match serde_json::from_str(json_str) {
+                Ok(m) => m,
+                Err(e) => return Err(format!("invalid metadata JSON: {e}")),
+            },
+            None => HashMap::new(),
+        };
+
+        let cmd = WriteEntry {
+            project,
+            namespace,
+            path: params.path,
+            entry_type,
+            title: params.title,
+            content: params.content,
+            tags: params.tags.unwrap_or_default(),
+            expected_version: params.version.map(KnowledgeVersion::from),
+            agent_id: self.get_session_agent(),
+            metadata,
+        };
+
+        match self.container.knowledge_service.write(cmd).await {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Read a knowledge entry by path.")]
+    async fn read_knowledge(
+        &self,
+        Parameters(params): Parameters<ReadKnowledgeParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered")?;
+
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s))?,
+            None => Namespace::root(),
+        };
+
+        match self
+            .container
+            .knowledge_service
+            .read(&project, &namespace, &params.path)
+            .await
+        {
+            Ok(Some(entry)) => Ok(to_json(&entry)),
+            Ok(None) => Ok("null".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "List knowledge entries with optional filters: type, tag, \
+        path_prefix, agent_id, namespace."
+    )]
+    async fn list_knowledge(
+        &self,
+        Parameters(params): Parameters<ListKnowledgeParams>,
+    ) -> Result<String, String> {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let entry_type = match params.entry_type.as_deref() {
+            Some(t) => Some(t.parse::<EntryType>().map_err(|e: String| e)?),
+            None => None,
+        };
+
+        let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
+            Some(Ok(id)) => Some(id),
+            Some(Err(e)) => return Err(e),
+            None => None,
+        };
+
+        let filter = EntryFilter {
+            project: if namespace.is_none() {
+                self.get_session_project()
+            } else {
+                None
+            },
+            namespace,
+            entry_type,
+            tag: params.tag,
+            path_prefix: params.path_prefix,
+            agent_id,
+        };
+
+        match self.container.knowledge_service.list(filter).await {
+            Ok(entries) => Ok(to_json(&entries)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Search knowledge entries by semantic similarity.")]
+    async fn search_knowledge(
+        &self,
+        Parameters(params): Parameters<SearchKnowledgeParams>,
+    ) -> Result<String, String> {
+        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let limit = params.limit.unwrap_or(10) as usize;
+
+        match self
+            .container
+            .knowledge_service
+            .search(&params.query, namespace.as_ref(), limit)
+            .await
+        {
+            Ok(entries) => Ok(to_json(&entries)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Delete a knowledge entry by path.")]
+    async fn delete_knowledge(
+        &self,
+        Parameters(params): Parameters<DeleteKnowledgeParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let entry = self
+            .container
+            .knowledge_service
+            .read(&project, &namespace, &params.path)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+
+        match self.container.knowledge_service.delete(&entry.id()).await {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Append text to a knowledge entry. Creates if it doesn't exist.")]
+    async fn append_knowledge(
+        &self,
+        Parameters(params): Parameters<AppendKnowledgeParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let namespace = match self
+            .build_and_register_namespace(params.namespace.as_deref())
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let entry_type: EntryType = params
+            .entry_type
+            .parse()
+            .map_err(|e: String| e)?;
+
+        let separator = params.separator.as_deref().unwrap_or("\n");
+
+        match self
+            .container
+            .knowledge_service
+            .append(
+                &project,
+                &namespace,
+                &params.path,
+                entry_type,
+                params.value,
+                separator,
+                self.get_session_agent(),
+            )
+            .await
+        {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Move a knowledge entry to a different namespace.")]
+    async fn move_knowledge(
+        &self,
+        Parameters(params): Parameters<MoveKnowledgeParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered")?;
+
+        let namespace = match self.build_namespace(params.namespace.as_deref()) {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let new_namespace = match self
+            .build_and_register_namespace(Some(&params.new_namespace))
+            .await
+        {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let entry = self
+            .container
+            .knowledge_service
+            .read(&project, &namespace, &params.path)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+
+        match self
+            .container
+            .knowledge_service
+            .move_entry(&entry.id(), new_namespace)
+            .await
+        {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Rename a knowledge entry (change its path).")]
+    async fn rename_knowledge(
+        &self,
+        Parameters(params): Parameters<RenameKnowledgeParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered")?;
+
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s))?,
+            None => Namespace::root(),
+        };
+
+        let entry = self
+            .container
+            .knowledge_service
+            .read(&project, &namespace, &params.path)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+
+        match self
+            .container
+            .knowledge_service
+            .rename(&entry.id(), params.new_path)
+            .await
+        {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Add a tag to a knowledge entry.")]
+    async fn tag_knowledge(
+        &self,
+        Parameters(params): Parameters<TagKnowledgeParams>,
+    ) -> Result<String, String> {
+        let project = self
+            .get_session_project()
+            .ok_or("no agent registered")?;
+
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s))?,
+            None => Namespace::root(),
+        };
+
+        let entry = self
+            .container
+            .knowledge_service
+            .read(&project, &namespace, &params.path)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+
+        match self.container.knowledge_service.tag(&entry.id(), params.tag).await {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Import a knowledge entry from a linked project.")]
+    async fn import_knowledge(
+        &self,
+        Parameters(params): Parameters<ImportKnowledgeParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let source_project = match parse_project(&params.source_project) {
+            Ok(p) => p,
+            Err(e) => return Err(e),
+        };
+
+        let source_namespace = match params.source_namespace.as_deref() {
+            Some(s) => parse_namespace(&format!("/{s}"))?,
+            None => Namespace::root(),
+        };
+
+        let source_entry = self
+            .container
+            .knowledge_service
+            .read(&source_project, &source_namespace, &params.path)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("entry not found in source: {}", params.path))?;
+
+        let namespace = match self.build_and_register_namespace(None).await {
+            Ok(ns) => ns,
+            Err(e) => return Err(e),
+        };
+
+        let cmd = WriteEntry {
+            project,
+            namespace,
+            path: source_entry.path().to_string(),
+            entry_type: source_entry.entry_type(),
+            title: source_entry.title().to_string(),
+            content: source_entry.content().to_string(),
+            tags: source_entry.tags().to_vec(),
+            expected_version: None,
+            agent_id: self.get_session_agent(),
+            metadata: source_entry.metadata().clone(),
+        };
+
+        match self.container.knowledge_service.write(cmd).await {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
