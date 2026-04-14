@@ -252,6 +252,36 @@ impl DocumentStore for MockStore {
     }
 }
 
+impl WatcherStore for MockStore {
+    async fn save(&self, _: &TaskWatcher) -> Result<()> {
+        Ok(())
+    }
+    async fn delete(&self, _: &TaskId, _: &AgentId) -> Result<()> {
+        Ok(())
+    }
+    async fn find_watchers(&self, _: &TaskId) -> Result<Vec<TaskWatcher>> {
+        Ok(vec![])
+    }
+    async fn find_by_agent(&self, _: &AgentId) -> Result<Vec<TaskWatcher>> {
+        Ok(vec![])
+    }
+}
+
+impl ReviewStore for MockStore {
+    async fn save(&self, _: &ReviewRequest) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_id(&self, _: &ReviewId) -> Result<Option<ReviewRequest>> {
+        unimplemented!()
+    }
+    async fn find_pending_for_agent(&self, _: &AgentId) -> Result<Vec<ReviewRequest>> {
+        Ok(vec![])
+    }
+    async fn find_by_task(&self, _: &TaskId) -> Result<Vec<ReviewRequest>> {
+        Ok(vec![])
+    }
+}
+
 impl SkillStore for MockStore {
     async fn save(&self, _: &mut Skill) -> Result<()> {
         unimplemented!()

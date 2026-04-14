@@ -130,6 +130,31 @@ CREATE TABLE IF NOT EXISTS resource_locks (
     PRIMARY KEY (project, namespace, name)
 );
 
+CREATE TABLE IF NOT EXISTS task_watchers (
+    task_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (task_id, agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    project TEXT NOT NULL,
+    namespace TEXT NOT NULL DEFAULT '/',
+    requester TEXT NOT NULL,
+    reviewer TEXT,
+    reviewer_role TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    comments TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS reviews_task_idx ON reviews (task_id);
+CREATE INDEX IF NOT EXISTS reviews_status_idx ON reviews (status);
+
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     organization TEXT NOT NULL,

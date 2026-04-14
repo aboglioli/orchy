@@ -846,7 +846,12 @@ pub struct TaskWatcher {
 }
 
 impl TaskWatcher {
-    pub fn new(task_id: TaskId, agent_id: AgentId, project: ProjectId, namespace: Namespace) -> Self {
+    pub fn new(
+        task_id: TaskId,
+        agent_id: AgentId,
+        project: ProjectId,
+        namespace: Namespace,
+    ) -> Self {
         Self {
             task_id,
             agent_id,

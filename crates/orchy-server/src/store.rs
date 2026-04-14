@@ -10,7 +10,10 @@ use orchy_core::project::{Project, ProjectStore};
 use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::skill::{Skill, SkillFilter, SkillStore};
-use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
+use orchy_core::task::{
+    ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
+    WatcherStore,
+};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
@@ -254,6 +257,36 @@ impl LockStore for StoreBackend {
     }
     async fn delete_expired(&self) -> Result<u64> {
         delegate_trait!(self, LockStore::delete_expired())
+    }
+}
+
+impl WatcherStore for StoreBackend {
+    async fn save(&self, watcher: &TaskWatcher) -> Result<()> {
+        delegate_trait!(self, WatcherStore::save(watcher))
+    }
+    async fn delete(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()> {
+        delegate_trait!(self, WatcherStore::delete(task_id, agent_id))
+    }
+    async fn find_watchers(&self, task_id: &TaskId) -> Result<Vec<TaskWatcher>> {
+        delegate_trait!(self, WatcherStore::find_watchers(task_id))
+    }
+    async fn find_by_agent(&self, agent_id: &AgentId) -> Result<Vec<TaskWatcher>> {
+        delegate_trait!(self, WatcherStore::find_by_agent(agent_id))
+    }
+}
+
+impl ReviewStore for StoreBackend {
+    async fn save(&self, review: &ReviewRequest) -> Result<()> {
+        delegate_trait!(self, ReviewStore::save(review))
+    }
+    async fn find_by_id(&self, id: &ReviewId) -> Result<Option<ReviewRequest>> {
+        delegate_trait!(self, ReviewStore::find_by_id(id))
+    }
+    async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
+        delegate_trait!(self, ReviewStore::find_pending_for_agent(agent_id))
+    }
+    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
+        delegate_trait!(self, ReviewStore::find_by_task(task_id))
     }
 }
 

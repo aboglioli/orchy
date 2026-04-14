@@ -10,8 +10,13 @@ use crate::error::{Error, Result};
 use crate::message::{Message, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, ProjectId};
 
-pub struct TaskService<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: ReviewStore>
-{
+pub struct TaskService<
+    TS: TaskStore,
+    AS: AgentStore,
+    WS: WatcherStore,
+    MS: MessageStore,
+    RS: ReviewStore,
+> {
     task_store: Arc<TS>,
     agent_store: Arc<AS>,
     watcher_store: Arc<WS>,
@@ -703,12 +708,7 @@ impl<TS: TaskStore, AS: AgentStore, WS: WatcherStore, MS: MessageStore, RS: Revi
         let watchers = self.watcher_store.find_watchers(&task.id()).await;
         if let Ok(watchers) = watchers {
             for watcher in watchers {
-                let body = format!(
-                    "[watch] task {} ({}): {}",
-                    task.id(),
-                    task.title(),
-                    event
-                );
+                let body = format!("[watch] task {} ({}): {}", task.id(), task.title(), event);
                 let mut msg = Message::new(
                     watcher.project().clone(),
                     watcher.namespace().clone(),

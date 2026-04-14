@@ -2554,4 +2554,208 @@ impl OrchyHandler {
             Err(e) => Err(e.to_string()),
         }
     }
+
+    #[tool(description = "Get a task by its ID with full context (ancestors and children).")]
+    async fn get_task(
+        &self,
+        Parameters(params): Parameters<GetTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self.container.task_service.get_with_context(&task_id).await {
+            Ok(ctx) => Ok(to_json(&ctx)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Watch a task for status changes. You'll receive mailbox notifications \
+        when the task is started, completed, failed, or has a dependency failure."
+    )]
+    async fn watch_task(
+        &self,
+        Parameters(params): Parameters<WatchTaskParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .watch(&task_id, agent_id, project, namespace)
+            .await
+        {
+            Ok(watcher) => Ok(to_json(&watcher)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Stop watching a task.")]
+    async fn unwatch_task(
+        &self,
+        Parameters(params): Parameters<UnwatchTaskParams>,
+    ) -> Result<String, String> {
+        let (agent_id, _, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .unwatch(&task_id, &agent_id)
+            .await
+        {
+            Ok(()) => Ok("ok".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Request a review for a task. Sends a notification to the target reviewer \
+        (by agent ID or role). Use list_reviews to check status."
+    )]
+    async fn request_review(
+        &self,
+        Parameters(params): Parameters<RequestReviewParams>,
+    ) -> Result<String, String> {
+        let (agent_id, project, namespace) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        let reviewer = match params.reviewer_agent.as_deref() {
+            Some(s) => Some(parse_agent_id(s)?),
+            None => None,
+        };
+
+        match self
+            .container
+            .task_service
+            .request_review(
+                &task_id,
+                project,
+                namespace,
+                agent_id,
+                reviewer,
+                params.reviewer_role,
+            )
+            .await
+        {
+            Ok(review) => Ok(to_json(&review)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Approve or reject a review request.")]
+    async fn resolve_review(
+        &self,
+        Parameters(params): Parameters<ResolveReviewParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let review_id = params
+            .review_id
+            .parse()
+            .map_err(|e| format!("invalid review_id: {e}"))?;
+
+        match self
+            .container
+            .task_service
+            .resolve_review(&review_id, params.approved, params.comments)
+            .await
+        {
+            Ok(review) => Ok(to_json(&review)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "List review requests for a task.")]
+    async fn list_reviews(
+        &self,
+        Parameters(params): Parameters<ListReviewsParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+        match self
+            .container
+            .task_service
+            .list_reviews_for_task(&task_id)
+            .await
+        {
+            Ok(reviews) => Ok(to_json(&reviews)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Poll for recent activity across the project. Returns task changes, \
+        messages, and document updates since a timestamp. Use with heartbeat for reactive coordination."
+    )]
+    async fn poll_updates(
+        &self,
+        Parameters(params): Parameters<PollUpdatesParams>,
+    ) -> Result<String, String> {
+        let (_, project, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let since = match params.since.as_deref() {
+            Some(s) => chrono::DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .map_err(|e| format!("invalid timestamp: {e}"))?,
+            None => chrono::Utc::now() - chrono::Duration::minutes(5),
+        };
+
+        let limit = params.limit.unwrap_or(50) as usize;
+
+        let tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                project: Some(project.clone()),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut recent_tasks: Vec<_> = tasks
+            .into_iter()
+            .filter(|t| t.updated_at() >= since)
+            .map(|t| {
+                serde_json::json!({
+                    "type": "task",
+                    "id": t.id().to_string(),
+                    "title": t.title(),
+                    "status": t.status().to_string(),
+                    "updated_at": t.updated_at().to_rfc3339(),
+                })
+            })
+            .collect();
+        recent_tasks.truncate(limit);
+
+        let result = serde_json::json!({
+            "since": since.to_rfc3339(),
+            "updates": recent_tasks,
+        });
+
+        Ok(to_json(&result))
+    }
 }
