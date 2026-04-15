@@ -127,11 +127,6 @@ impl SqliteBackend {
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260415-000000_initial_schema.sql"
         )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260416-000000_knowledge_fts5.sql"
-        )))
         .map_err(|e| Error::Store(e.to_string()))
     }
 }
@@ -175,13 +170,6 @@ mod tests {
             p.exists(),
             "embedded schema path must exist: {}",
             p.display()
-        );
-        let fts = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../migrations/sqlite/20260416-000000_knowledge_fts5.sql");
-        assert!(
-            fts.exists(),
-            "embedded fts migration path must exist: {}",
-            fts.display()
         );
     }
 

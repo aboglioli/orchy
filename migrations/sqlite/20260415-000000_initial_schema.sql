@@ -1,5 +1,4 @@
 -- Consolidated initial schema for SQLite
--- Date: 2026-04-15
 
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
@@ -85,6 +84,29 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
 );
 CREATE INDEX IF NOT EXISTS knowledge_entries_type_idx ON knowledge_entries (kind);
 CREATE INDEX IF NOT EXISTS knowledge_entries_agent_idx ON knowledge_entries (agent_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_entries_fts USING fts5(
+    knowledge_id UNINDEXED,
+    path,
+    title,
+    content,
+    tokenize = 'porter'
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_entries_ai AFTER INSERT ON knowledge_entries BEGIN
+    INSERT INTO knowledge_entries_fts(knowledge_id, path, title, content)
+    VALUES (new.id, new.path, new.title, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_entries_ad AFTER DELETE ON knowledge_entries BEGIN
+    DELETE FROM knowledge_entries_fts WHERE knowledge_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_entries_au AFTER UPDATE ON knowledge_entries BEGIN
+    UPDATE knowledge_entries_fts
+    SET path = new.path, title = new.title, content = new.content
+    WHERE knowledge_id = old.id;
+END;
 
 CREATE TABLE IF NOT EXISTS resource_locks (
     project TEXT NOT NULL,
