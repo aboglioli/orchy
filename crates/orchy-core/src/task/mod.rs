@@ -208,6 +208,7 @@ pub struct Task {
 }
 
 impl Task {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         project: ProjectId,
         namespace: Namespace,

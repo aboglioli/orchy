@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::{
-    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, Version, WriteKnowledge,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, WriteKnowledge,
 };
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsProvider;
@@ -145,6 +145,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         Ok(entry)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn append(
         &self,
         project: &ProjectId,

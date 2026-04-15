@@ -95,7 +95,7 @@ impl KnowledgeStore for MemoryBackend {
     async fn search(
         &self,
         query: &str,
-        _embedding: Option<&[f32]>,
+        embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<Knowledge>> {
@@ -105,7 +105,7 @@ impl KnowledgeStore for MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let query_lower = query.to_lowercase();
-        let mut results: Vec<Knowledge> = entries
+        let mut scored: Vec<(f32, &Knowledge)> = entries
             .values()
             .filter(|e| {
                 if let Some(ns) = namespace {
@@ -113,16 +113,26 @@ impl KnowledgeStore for MemoryBackend {
                         return false;
                     }
                 }
-                e.title().to_lowercase().contains(&query_lower)
-                    || e.content().to_lowercase().contains(&query_lower)
-                    || e.path().to_lowercase().contains(&query_lower)
+                true
             })
-            .cloned()
+            .filter_map(|e| {
+                if let (Some(qe), Some(ee)) = (embedding, e.embedding()) {
+                    let score = crate::cosine_similarity(qe, ee);
+                    if score > 0.0 {
+                        return Some((score, e));
+                    }
+                }
+                let text = format!("{} {} {}", e.title(), e.content(), e.path()).to_lowercase();
+                if text.contains(&query_lower) {
+                    return Some((0.5, e));
+                }
+                None
+            })
             .collect();
 
-        results.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
-        results.truncate(limit);
-        Ok(results)
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        Ok(scored.into_iter().map(|(_, e)| e.clone()).collect())
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {

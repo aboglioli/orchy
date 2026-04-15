@@ -250,6 +250,7 @@ pub struct Knowledge {
 }
 
 impl Knowledge {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         project: ProjectId,
         namespace: Namespace,

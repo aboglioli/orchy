@@ -5,7 +5,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures::Stream;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::event::Event;
 
 #[async_trait]
@@ -56,6 +56,7 @@ pub trait Handler: Send + Sync {
 pub trait Reader: Send + Sync {
     type Acker: Acker;
 
+    #[allow(clippy::type_complexity)]
     fn read(&self) -> Result<Pin<Box<dyn Stream<Item = Result<Message<Self::Acker>>> + Send>>>;
 }
 

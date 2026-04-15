@@ -489,10 +489,10 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
 
         task.add_dependency(*dependency_id)?;
 
-        if !self.all_deps_completed(task.depends_on()).await? {
-            if task.status() == TaskStatus::Pending {
-                task.block()?;
-            }
+        if !self.all_deps_completed(task.depends_on()).await?
+            && task.status() == TaskStatus::Pending
+        {
+            task.block()?;
         }
 
         self.task_store.save(&mut task).await?;

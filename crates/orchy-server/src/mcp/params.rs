@@ -59,6 +59,8 @@ pub struct ListTasksParams {
     pub namespace: Option<String>,
     /// pending, blocked, claimed, in_progress, completed, failed, cancelled.
     pub status: Option<String>,
+    /// Filter by parent task ID to list subtasks.
+    pub parent_id: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -162,11 +164,6 @@ pub struct MergeTasksParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct ListSubtasksParams {
-    pub task_id: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct DelegateTaskParams {
     /// Parent task to delegate from (stays claimed).
     pub task_id: String,
@@ -193,10 +190,13 @@ pub struct SendMessageParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct ListMessagesParams {
+pub struct CheckMailboxParams {
     pub namespace: Option<String>,
-    /// "inbound" (default) or "outbound".
-    pub direction: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct CheckSentMessagesParams {
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -212,7 +212,7 @@ pub struct ListConversationParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetBootstrapPromptParams {
+pub struct GetProjectOverviewParams {
     pub namespace: Option<String>,
 }
 
