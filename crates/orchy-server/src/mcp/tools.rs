@@ -2311,6 +2311,7 @@ impl ServerHandler for OrchyHandler {
         if let Some(session_id) = extract_session_id(&context) {
             self.set_mcp_session_id(session_id);
         }
+        self.touch_heartbeat();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         Self::tool_router().call(tcc).await
     }
@@ -2323,6 +2324,7 @@ impl ServerHandler for OrchyHandler {
         if let Some(session_id) = extract_session_id(&context) {
             self.set_mcp_session_id(session_id);
         }
+        self.touch_heartbeat();
         Ok(rmcp::model::ListToolsResult {
             tools: Self::tool_router().list_all(),
             meta: None,
@@ -2338,6 +2340,7 @@ impl ServerHandler for OrchyHandler {
         if let Some(session_id) = extract_session_id(&context) {
             self.set_mcp_session_id(session_id);
         }
+        self.touch_heartbeat();
         let (project, namespace) = match (self.get_session_project(), self.get_session_namespace())
         {
             (Some(p), Some(ns)) => (p, ns),
@@ -2377,6 +2380,7 @@ impl ServerHandler for OrchyHandler {
         if let Some(session_id) = extract_session_id(&context) {
             self.set_mcp_session_id(session_id);
         }
+        self.touch_heartbeat();
         let project = self
             .get_session_project()
             .ok_or_else(|| ErrorData::internal_error("no session project", None))?;
