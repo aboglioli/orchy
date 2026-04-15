@@ -8,6 +8,7 @@ members = [
     "crates/orchy-store-pg",
     "crates/orchy-server",
     "crates/orchy-runner",
+    "crates/orchy-swarm",
 ]
 
 [workspace.package]

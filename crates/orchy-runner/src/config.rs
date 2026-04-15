@@ -77,7 +77,7 @@ impl RunnerConfig {
                     .map(String::from)
                     .collect()
             })
-            .unwrap_or_else(|| default_idle_patterns(&cli.agent_type));
+            .unwrap_or_else(|| default_idle_patterns_for(&cli.agent_type));
         let roles = cli
             .roles
             .map(|s| {
@@ -121,9 +121,7 @@ impl RunnerConfig {
     }
 }
 
-/// Known idle prompt patterns per agent type.
-/// Override with `--idle-patterns` / `ORCHY_IDLE_PATTERNS` if these don't match.
-fn default_idle_patterns(agent_type: &str) -> Vec<String> {
+pub fn default_idle_patterns_for(agent_type: &str) -> Vec<String> {
     match agent_type {
         // Claude Code (Ink TUI) — waits at ❯
         "claude" => vec!["❯ ".to_string()],

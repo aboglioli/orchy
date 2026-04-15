@@ -9,11 +9,14 @@ use rmcp::service::{Peer, RoleClient, RunningService};
 use rmcp::transport::StreamableHttpClientTransport;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::task::JoinHandle;
 use tokio::time::{self, Duration, sleep};
 
 use crate::config::RunnerConfig;
 use crate::error::{Error, Result};
 use crate::process::spawn_pty_raw;
+use crate::session::AgentSession;
 
 pub struct AgentDriver {
     writer: Arc<Mutex<OwnedWritePty>>,
@@ -28,7 +31,10 @@ pub struct AgentDriver {
 }
 
 impl AgentDriver {
-    async fn connect(config: RunnerConfig) -> Result<Self> {
+    async fn connect(
+        config: RunnerConfig,
+        output_tx: UnboundedSender<Vec<u8>>,
+    ) -> Result<Self> {
         let transport = StreamableHttpClientTransport::from_uri(config.url.as_str());
 
         let service: RunningService<RoleClient, ()> =
@@ -45,6 +51,7 @@ impl AgentDriver {
             parts.reader,
             config.idle_patterns.clone(),
             Arc::clone(&is_idle),
+            output_tx,
         );
 
         Ok(Self {
@@ -60,10 +67,38 @@ impl AgentDriver {
     }
 
     pub async fn run(config: RunnerConfig) -> Result<()> {
-        let mut driver = Self::connect(config).await?;
+        let (session, handle) = Self::start(config).await?;
+        drop(session);
+        handle.await.map_err(|e| Error::Io(format!("join: {e}")))?
+    }
+
+    pub async fn start(
+        config: RunnerConfig,
+    ) -> Result<(AgentSession, JoinHandle<Result<()>>)> {
+        let (output_tx, output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (input_tx, input_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
+        let mut driver = Self::connect(config, output_tx).await?;
         driver.register().await?;
         driver.inject_bootstrap().await?;
-        driver.main_loop().await
+
+        let alias = driver.config.alias.clone();
+        let agent_id = driver.agent_id.clone();
+        let agent_type = driver.config.agent_type.clone();
+        let is_idle = Arc::clone(&driver.is_idle);
+
+        let handle = tokio::spawn(async move { driver.main_loop_inner(input_rx).await });
+
+        let session = AgentSession {
+            alias,
+            agent_id,
+            agent_type,
+            is_idle,
+            output_rx,
+            input_tx,
+        };
+
+        Ok((session, handle))
     }
 
     async fn register(&mut self) -> Result<()> {
@@ -125,7 +160,12 @@ impl AgentDriver {
         self.inject(&prompt).await
     }
 
-    async fn main_loop(&mut self) -> Result<()> {
+    pub async fn main_loop(&mut self) -> Result<()> {
+        let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        self.main_loop_inner(rx).await
+    }
+
+    async fn main_loop_inner(&mut self, mut input_rx: UnboundedReceiver<Vec<u8>>) -> Result<()> {
         let heartbeat_interval = self.config.heartbeat_interval;
         let mut heartbeat_timer = time::interval(heartbeat_interval);
         let mut last_was_idle = false;
@@ -181,6 +221,11 @@ impl AgentDriver {
                     tracing::info!(alias = %self.config.alias, "ctrl-c received, shutting down");
                     self.shutting_down = true;
                 }
+                Some(bytes) = input_rx.recv() => {
+                    let mut w = self.writer.lock().await;
+                    let _ = w.write_all(&bytes).await;
+                    let _ = w.flush().await;
+                }
                 _ = sleep(Duration::from_secs(1)) => {}
             }
         }
@@ -194,8 +239,6 @@ impl AgentDriver {
     }
 
     async fn inject(&self, text: &str) -> Result<()> {
-        // Collapse newlines to spaces — in raw PTY mode (Ink, Bubble Tea), `\n` is
-        // interpreted as Enter and would submit the text prematurely line by line.
         let normalized: String = text
             .lines()
             .map(str::trim)
@@ -261,6 +304,7 @@ fn spawn_output_reader(
     mut reader: pty_process::OwnedReadPty,
     idle_patterns: Vec<String>,
     is_idle: Arc<AtomicBool>,
+    output_tx: UnboundedSender<Vec<u8>>,
 ) {
     let patterns: Vec<Vec<u8>> = idle_patterns.into_iter().map(String::into_bytes).collect();
     tokio::spawn(async move {
@@ -270,6 +314,9 @@ fn spawn_output_reader(
             match reader.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
+                    let raw = buf[..n].to_vec();
+                    let _ = output_tx.send(raw);
+
                     let stripped = strip_ansi_escapes::strip(&buf[..n]);
                     tail.extend_from_slice(&stripped);
                     if tail.len() > 512 {

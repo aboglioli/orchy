@@ -1,0 +1,24 @@
+[package]
+name = "orchy-swarm"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "orchy-swarm"
+path = "src/main.rs"
+
+[dependencies]
+orchy-runner = { path = "../orchy-runner" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = "1"
+
+ratatui = "0.30"
+crossterm = "0.29"
+clap = { version = "4", features = ["derive", "env"] }
+ansi-to-tui = "8"
+tokio-util = { version = "0.7", features = ["codec"] }
