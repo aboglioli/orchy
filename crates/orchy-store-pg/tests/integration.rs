@@ -14,10 +14,6 @@ async fn backend() -> PgBackend {
     b
 }
 
-fn ns(s: &str) -> Namespace {
-    Namespace::try_from(s).unwrap()
-}
-
 fn proj(s: &str) -> ProjectId {
     ProjectId::try_from(s).unwrap()
 }

@@ -11,7 +11,7 @@ use orchy_core::message::{
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 
-use crate::PgBackend;
+use crate::{PgBackend, parse_namespace, parse_project_id};
 
 #[derive(Iden)]
 enum Messages {
@@ -85,7 +85,7 @@ impl MessageStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_message(&r)))
+        row.map(|r| row_to_message(&r)).transpose()
     }
 
     async fn find_pending(
@@ -131,7 +131,7 @@ impl MessageStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_message).collect())
+        rows.iter().map(row_to_message).collect()
     }
 
     async fn find_sent(
@@ -174,7 +174,7 @@ impl MessageStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_message).collect())
+        rows.iter().map(row_to_message).collect()
     }
 
     async fn find_thread(
@@ -216,11 +216,11 @@ impl MessageStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_message).collect())
+        rows.iter().map(row_to_message).collect()
     }
 }
 
-fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
+fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
     let id: Uuid = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
@@ -231,10 +231,10 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
     let created_at: DateTime<Utc> = row.get("created_at");
     let reply_to: Option<Uuid> = row.get("reply_to");
 
-    Message::restore(RestoreMessage {
+    Ok(Message::restore(RestoreMessage {
         id: MessageId::from_uuid(id),
-        project: ProjectId::try_from(project).expect("invalid project in database"),
-        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
+        project: parse_project_id(project, "messages", "project")?,
+        namespace: parse_namespace(namespace, "messages", "namespace")?,
         from: AgentId::from_uuid(from_agent),
         to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
@@ -243,5 +243,5 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Message {
             .parse::<MessageStatus>()
             .unwrap_or(MessageStatus::Pending),
         created_at,
-    })
+    }))
 }

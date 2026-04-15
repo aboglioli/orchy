@@ -12,12 +12,15 @@ mod watcher;
 
 use std::path::Path;
 
+use serde::de::DeserializeOwned;
 use sqlx::PgPool;
 
 use orchy_core::error::{Error, Result};
+use orchy_core::namespace::{Namespace, ProjectId};
 
 pub struct PgBackend {
     pool: PgPool,
+    embedding_dimensions: Option<u32>,
 }
 
 impl PgBackend {
@@ -26,9 +29,10 @@ impl PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Self::init_vector_indexes(&pool, embedding_dimensions).await?;
-
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            embedding_dimensions,
+        })
     }
 
     pub async fn run_migrations(&self, dir: &Path) -> Result<()> {
@@ -88,6 +92,8 @@ impl PgBackend {
                 .map_err(|e| Error::Store(e.to_string()))?;
         }
 
+        self.init_vector_indexes().await?;
+
         sqlx::query("SELECT pg_advisory_unlock(42)")
             .execute(&self.pool)
             .await
@@ -96,19 +102,13 @@ impl PgBackend {
         Ok(())
     }
 
-    async fn init_vector_indexes(pool: &PgPool, embedding_dimensions: Option<u32>) -> Result<()> {
-        if embedding_dimensions.is_some() {
+    async fn init_vector_indexes(&self) -> Result<()> {
+        if self.embedding_dimensions.is_some() {
             sqlx::query(
-                "CREATE INDEX IF NOT EXISTS memory_vec_idx ON memory USING hnsw (embedding vector_cosine_ops)",
+                "CREATE INDEX IF NOT EXISTS knowledge_entries_embedding_hnsw_idx
+                 ON knowledge_entries USING hnsw (embedding vector_cosine_ops)",
             )
-            .execute(pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-            sqlx::query(
-                "CREATE INDEX IF NOT EXISTS contexts_vec_idx ON contexts USING hnsw (embedding vector_cosine_ops)",
-            )
-            .execute(pool)
+            .execute(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
         }
@@ -117,12 +117,33 @@ impl PgBackend {
     }
 
     pub async fn truncate_all(&self) -> Result<()> {
-        sqlx::query("TRUNCATE contexts, messages, tasks, memory, skills, agents, projects, project_links CASCADE")
+        sqlx::query(
+            "TRUNCATE task_watchers, reviews, resource_locks, messages, tasks, knowledge_entries, events, namespaces, agents, projects, project_links CASCADE",
+        )
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
+}
+
+pub(crate) fn decode_json_value<T: DeserializeOwned>(
+    value: serde_json::Value,
+    table: &str,
+    column: &str,
+) -> Result<T> {
+    serde_json::from_value(value)
+        .map_err(|e| Error::Store(format!("invalid {table}.{column} JSON: {e}")))
+}
+
+pub(crate) fn parse_project_id(value: String, table: &str, column: &str) -> Result<ProjectId> {
+    ProjectId::try_from(value.clone())
+        .map_err(|e| Error::Store(format!("invalid {table}.{column} value `{value}`: {e}")))
+}
+
+pub(crate) fn parse_namespace(value: String, table: &str, column: &str) -> Result<Namespace> {
+    Namespace::try_from(value.clone())
+        .map_err(|e| Error::Store(format!("invalid {table}.{column} value `{value}`: {e}")))
 }
 
 pub(crate) fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {

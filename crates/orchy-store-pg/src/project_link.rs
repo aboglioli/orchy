@@ -8,11 +8,15 @@ use orchy_core::project_link::{
     ProjectLink, ProjectLinkId, ProjectLinkStore, RestoreProjectLink, SharedResourceType,
 };
 
-use crate::PgBackend;
+use crate::{PgBackend, decode_json_value, parse_project_id};
 
 impl ProjectLinkStore for PgBackend {
     async fn save(&self, link: &mut ProjectLink) -> Result<()> {
-        let types_json = serde_json::to_value(link.resource_types()).unwrap();
+        let types_json = serde_json::to_value(link.resource_types()).map_err(|e| {
+            Error::Store(format!(
+                "failed to serialize project_links.resource_types: {e}"
+            ))
+        })?;
 
         sqlx::query(
             "INSERT INTO project_links (id, source_project, target_project, resource_types, created_at)
@@ -56,7 +60,7 @@ impl ProjectLinkStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_link(&r)))
+        row.map(|r| row_to_link(&r)).transpose()
     }
 
     async fn list_by_target(&self, target: &ProjectId) -> Result<Vec<ProjectLink>> {
@@ -69,7 +73,7 @@ impl ProjectLinkStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_link).collect())
+        rows.iter().map(row_to_link).collect()
     }
 
     async fn find_link(
@@ -87,11 +91,11 @@ impl ProjectLinkStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_link(&r)))
+        row.map(|r| row_to_link(&r)).transpose()
     }
 }
 
-fn row_to_link(row: &sqlx::postgres::PgRow) -> ProjectLink {
+fn row_to_link(row: &sqlx::postgres::PgRow) -> Result<ProjectLink> {
     let id: Uuid = row.get("id");
     let source: String = row.get("source_project");
     let target: String = row.get("target_project");
@@ -99,13 +103,13 @@ fn row_to_link(row: &sqlx::postgres::PgRow) -> ProjectLink {
     let created_at: DateTime<Utc> = row.get("created_at");
 
     let resource_types: Vec<SharedResourceType> =
-        serde_json::from_value(types_json).unwrap_or_default();
+        decode_json_value(types_json, "project_links", "resource_types")?;
 
-    ProjectLink::restore(RestoreProjectLink {
+    Ok(ProjectLink::restore(RestoreProjectLink {
         id: ProjectLinkId::from_uuid(id),
-        source_project: ProjectId::try_from(source).expect("invalid project in database"),
-        target_project: ProjectId::try_from(target).expect("invalid project in database"),
+        source_project: parse_project_id(source, "project_links", "source_project")?,
+        target_project: parse_project_id(target, "project_links", "target_project")?,
         resource_types,
         created_at,
-    })
+    }))
 }

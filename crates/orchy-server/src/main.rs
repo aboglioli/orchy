@@ -6,7 +6,7 @@ use rmcp::transport::{
     StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
 };
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use orchy_server::bootstrap;
@@ -18,8 +18,15 @@ use orchy_server::skill_loader;
 
 #[tokio::main]
 async fn main() {
+    if let Err(e) = run().await {
+        error!(error = %e, "orchy server failed");
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("orchy=info".parse().unwrap()))
+        .with_env_filter(EnvFilter::from_default_env().add_directive("orchy=info".parse()?))
         .init();
 
     let config_path = std::env::args()
@@ -27,22 +34,23 @@ async fn main() {
         .unwrap_or_else(|| "config.toml".to_string());
 
     let config_content = std::fs::read_to_string(&config_path)
-        .unwrap_or_else(|e| panic!("failed to read config file {config_path}: {e}"));
+        .map_err(|e| format!("failed to read config file {config_path}: {e}"))?;
 
-    let config: Config = toml::from_str(&config_content).expect("failed to parse config file");
+    let config: Config =
+        toml::from_str(&config_content).map_err(|e| format!("failed to parse config file: {e}"))?;
 
     let host = config.server.host.clone();
     let port = config.server.port;
 
     let container = Container::from_config(config)
         .await
-        .expect("failed to build container");
+        .map_err(|e| format!("failed to build container: {e}"))?;
 
     if let Some(ref skills_config) = container.config.skills {
         let dir = std::path::Path::new(&skills_config.dir);
         skill_loader::load_skills_from_dir(dir, &container.knowledge_service)
             .await
-            .expect("failed to load skills from disk");
+            .map_err(|e| format!("failed to load skills from disk: {e}"))?;
     }
 
     let heartbeat_container = Arc::clone(&container);
@@ -78,11 +86,15 @@ async fn main() {
     let addr = format!("{host}:{port}");
     let listener = TcpListener::bind(&addr)
         .await
-        .unwrap_or_else(|e| panic!("failed to bind to {addr}: {e}"));
+        .map_err(|e| format!("failed to bind to {addr}: {e}"))?;
 
     info!(%addr, "orchy server listening");
 
-    axum::serve(listener, router).await.expect("server error");
+    axum::serve(listener, router)
+        .await
+        .map_err(|e| format!("server error: {e}"))?;
+
+    Ok(())
 }
 
 async fn heartbeat_middleware(

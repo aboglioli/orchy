@@ -7,7 +7,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
-use crate::PgBackend;
+use crate::{PgBackend, parse_namespace, parse_project_id};
 
 impl LockStore for PgBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
@@ -54,7 +54,7 @@ impl LockStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_resource_lock(&r)))
+        row.map(|r| row_to_resource_lock(&r)).transpose()
     }
 
     async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
@@ -81,7 +81,7 @@ impl LockStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_resource_lock).collect())
+        rows.iter().map(row_to_resource_lock).collect()
     }
 
     async fn delete_expired(&self) -> Result<u64> {
@@ -94,7 +94,7 @@ impl LockStore for PgBackend {
     }
 }
 
-fn row_to_resource_lock(row: &sqlx::postgres::PgRow) -> ResourceLock {
+fn row_to_resource_lock(row: &sqlx::postgres::PgRow) -> Result<ResourceLock> {
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let name: String = row.get("name");
@@ -102,12 +102,12 @@ fn row_to_resource_lock(row: &sqlx::postgres::PgRow) -> ResourceLock {
     let acquired_at: DateTime<Utc> = row.get("acquired_at");
     let expires_at: DateTime<Utc> = row.get("expires_at");
 
-    ResourceLock::restore(RestoreResourceLock {
-        project: ProjectId::try_from(project).expect("invalid project in database"),
-        namespace: Namespace::try_from(namespace).unwrap(),
+    Ok(ResourceLock::restore(RestoreResourceLock {
+        project: parse_project_id(project, "resource_locks", "project")?,
+        namespace: parse_namespace(namespace, "resource_locks", "namespace")?,
         name,
         holder: AgentId::from_uuid(holder),
         acquired_at,
         expires_at,
-    })
+    }))
 }

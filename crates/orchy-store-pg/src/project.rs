@@ -7,11 +7,12 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
-use crate::PgBackend;
+use crate::{PgBackend, decode_json_value, parse_project_id};
 
 impl ProjectStore for PgBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
-        let metadata_json = serde_json::to_value(project.metadata()).unwrap();
+        let metadata_json = serde_json::to_value(project.metadata())
+            .map_err(|e| Error::Store(format!("failed to serialize projects.metadata: {e}")))?;
 
         sqlx::query(
             "INSERT INTO projects (name, description, metadata, created_at, updated_at)
@@ -48,26 +49,26 @@ impl ProjectStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_project(&r)))
+        row.map(|r| row_to_project(&r)).transpose()
     }
 }
 
-fn row_to_project(row: &sqlx::postgres::PgRow) -> Project {
+fn row_to_project(row: &sqlx::postgres::PgRow) -> Result<Project> {
     let name: String = row.get("name");
     let description: String = row.get("description");
     let metadata_json: serde_json::Value = row.get("metadata");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    let id = ProjectId::try_from(name).expect("invalid project name in database");
+    let id = parse_project_id(name, "projects", "name")?;
     let metadata: HashMap<String, String> =
-        serde_json::from_value(metadata_json).unwrap_or_default();
+        decode_json_value(metadata_json, "projects", "metadata")?;
 
-    Project::restore(RestoreProject {
+    Ok(Project::restore(RestoreProject {
         id,
         description,
         metadata,
         created_at,
         updated_at,
-    })
+    }))
 }

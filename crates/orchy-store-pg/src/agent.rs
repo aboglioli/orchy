@@ -6,16 +6,17 @@ use uuid::Uuid;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::{Namespace, ProjectId};
 
-use crate::PgBackend;
+use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
 const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for PgBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
-        let roles_json = serde_json::to_value(agent.roles()).unwrap();
-        let metadata_json = serde_json::to_value(agent.metadata()).unwrap();
+        let roles_json = serde_json::to_value(agent.roles())
+            .map_err(|e| Error::Store(format!("failed to serialize agents.roles: {e}")))?;
+        let metadata_json = serde_json::to_value(agent.metadata())
+            .map_err(|e| Error::Store(format!("failed to serialize agents.metadata: {e}")))?;
 
         sqlx::query(
             "INSERT INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
@@ -61,7 +62,7 @@ impl AgentStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_agent(&r)))
+        row.map(|r| row_to_agent(&r)).transpose()
     }
 
     async fn list(&self) -> Result<Vec<Agent>> {
@@ -71,7 +72,7 @@ impl AgentStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_agent).collect())
+        rows.iter().map(row_to_agent).collect()
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
@@ -86,11 +87,11 @@ impl AgentStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_agent).collect())
+        rows.iter().map(row_to_agent).collect()
     }
 }
 
-fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
+fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let id: Uuid = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
@@ -102,16 +103,16 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Agent {
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
 
-    Agent::restore(RestoreAgent {
+    Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_uuid(id),
-        project: ProjectId::try_from(project).expect("invalid project in database"),
-        namespace: Namespace::try_from(namespace).expect("invalid namespace in database"),
+        project: parse_project_id(project, "agents", "project")?,
+        namespace: parse_namespace(namespace, "agents", "namespace")?,
         parent_id: parent_id.map(AgentId::from_uuid),
-        roles: serde_json::from_value(roles).unwrap_or_default(),
+        roles: decode_json_value(roles, "agents", "roles")?,
         description,
         status: status.parse::<AgentStatus>().unwrap_or_default(),
         last_heartbeat,
         connected_at,
-        metadata: serde_json::from_value(metadata).unwrap_or_else(|_| HashMap::new()),
-    })
+        metadata: decode_json_value::<HashMap<String, String>>(metadata, "agents", "metadata")?,
+    }))
 }

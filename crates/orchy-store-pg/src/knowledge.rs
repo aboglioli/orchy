@@ -15,7 +15,9 @@ use orchy_core::knowledge::{
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 
-use crate::{PgBackend, parse_pg_vector_text};
+use crate::{
+    PgBackend, decode_json_value, parse_namespace, parse_pg_vector_text, parse_project_id,
+};
 
 #[derive(Iden)]
 #[allow(dead_code)]
@@ -58,8 +60,14 @@ const SELECT_COLUMNS: &str = "id, project, namespace, path, kind, title, content
 impl KnowledgeStore for PgBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
-        let tags_json = serde_json::to_value(entry.tags()).unwrap();
-        let metadata_json = serde_json::to_value(entry.metadata()).unwrap();
+        let tags_json = serde_json::to_value(entry.tags()).map_err(|e| {
+            Error::Store(format!("failed to serialize knowledge_entries.tags: {e}"))
+        })?;
+        let metadata_json = serde_json::to_value(entry.metadata()).map_err(|e| {
+            Error::Store(format!(
+                "failed to serialize knowledge_entries.metadata: {e}"
+            ))
+        })?;
 
         sqlx::query(
             "INSERT INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
@@ -117,7 +125,7 @@ impl KnowledgeStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_entry(&r)))
+        row.map(|r| row_to_entry(&r)).transpose()
     }
 
     async fn find_by_path(
@@ -136,7 +144,7 @@ impl KnowledgeStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_entry(&r)))
+        row.map(|r| row_to_entry(&r)).transpose()
     }
 
     async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
@@ -180,7 +188,7 @@ impl KnowledgeStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_entry).collect())
+        rows.iter().map(row_to_entry).collect()
     }
 
     async fn search(
@@ -224,7 +232,7 @@ impl KnowledgeStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_entry).collect())
+        rows.iter().map(row_to_entry).collect()
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
@@ -238,7 +246,7 @@ impl KnowledgeStore for PgBackend {
     }
 }
 
-fn row_to_entry(row: &sqlx::postgres::PgRow) -> Knowledge {
+fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     let id: Uuid = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
@@ -256,22 +264,28 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Knowledge {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    Knowledge::restore(RestoreKnowledge {
+    let kind = KnowledgeKind::from_str(&kind_str).map_err(|e| {
+        Error::Store(format!(
+            "invalid knowledge_entries.kind value `{kind_str}`: {e}"
+        ))
+    })?;
+
+    Ok(Knowledge::restore(RestoreKnowledge {
         id: KnowledgeId::from_uuid(id),
-        project: ProjectId::try_from(project).expect("invalid project in database"),
-        namespace: Namespace::try_from(namespace).unwrap(),
+        project: parse_project_id(project, "knowledge_entries", "project")?,
+        namespace: parse_namespace(namespace, "knowledge_entries", "namespace")?,
         path,
-        kind: KnowledgeKind::from_str(&kind_str).expect("invalid kind in database"),
+        kind,
         title,
         content,
-        tags: serde_json::from_value(tags).unwrap_or_default(),
+        tags: decode_json_value(tags, "knowledge_entries", "tags")?,
         version: Version::from(version as u64),
         agent_id: agent_id.map(AgentId::from_uuid),
-        metadata: serde_json::from_value(metadata).unwrap_or_default(),
+        metadata: decode_json_value(metadata, "knowledge_entries", "metadata")?,
         embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
         created_at,
         updated_at,
-    })
+    }))
 }

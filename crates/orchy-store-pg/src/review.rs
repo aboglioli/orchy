@@ -4,12 +4,11 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::task::{
     RestoreReviewRequest, ReviewId, ReviewRequest, ReviewStatus, ReviewStore, TaskId,
 };
 
-use crate::PgBackend;
+use crate::{PgBackend, parse_namespace, parse_project_id};
 
 impl ReviewStore for PgBackend {
     async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
@@ -60,7 +59,7 @@ impl ReviewStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_review(&r)))
+        row.map(|r| row_to_review(&r)).transpose()
     }
 
     async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
@@ -73,7 +72,7 @@ impl ReviewStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_review).collect())
+        rows.iter().map(row_to_review).collect()
     }
 
     async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
@@ -86,11 +85,11 @@ impl ReviewStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_review).collect())
+        rows.iter().map(row_to_review).collect()
     }
 }
 
-fn row_to_review(row: &sqlx::postgres::PgRow) -> ReviewRequest {
+fn row_to_review(row: &sqlx::postgres::PgRow) -> Result<ReviewRequest> {
     let id: Uuid = row.get("id");
     let task_id: Uuid = row.get("task_id");
     let project: String = row.get("project");
@@ -103,11 +102,11 @@ fn row_to_review(row: &sqlx::postgres::PgRow) -> ReviewRequest {
     let created_at: DateTime<Utc> = row.get("created_at");
     let resolved_at: Option<DateTime<Utc>> = row.get("resolved_at");
 
-    ReviewRequest::restore(RestoreReviewRequest {
+    Ok(ReviewRequest::restore(RestoreReviewRequest {
         id: ReviewId::from_uuid(id),
         task_id: TaskId::from_uuid(task_id),
-        project: ProjectId::try_from(project).expect("invalid project in database"),
-        namespace: Namespace::try_from(namespace).unwrap(),
+        project: parse_project_id(project, "reviews", "project")?,
+        namespace: parse_namespace(namespace, "reviews", "namespace")?,
         requester: AgentId::from_uuid(requester),
         reviewer: reviewer.map(AgentId::from_uuid),
         reviewer_role,
@@ -117,5 +116,5 @@ fn row_to_review(row: &sqlx::postgres::PgRow) -> ReviewRequest {
         comments,
         created_at,
         resolved_at,
-    })
+    }))
 }

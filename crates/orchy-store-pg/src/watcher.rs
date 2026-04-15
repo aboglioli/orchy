@@ -4,10 +4,9 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 
-use crate::PgBackend;
+use crate::{PgBackend, parse_namespace, parse_project_id};
 
 impl WatcherStore for PgBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
@@ -57,7 +56,7 @@ impl WatcherStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_watcher).collect())
+        rows.iter().map(row_to_watcher).collect()
     }
 
     async fn find_by_agent(&self, agent_id: &AgentId) -> Result<Vec<TaskWatcher>> {
@@ -70,22 +69,22 @@ impl WatcherStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_watcher).collect())
+        rows.iter().map(row_to_watcher).collect()
     }
 }
 
-fn row_to_watcher(row: &sqlx::postgres::PgRow) -> TaskWatcher {
+fn row_to_watcher(row: &sqlx::postgres::PgRow) -> Result<TaskWatcher> {
     let task_id: Uuid = row.get("task_id");
     let agent_id: Uuid = row.get("agent_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let created_at: DateTime<Utc> = row.get("created_at");
 
-    TaskWatcher::restore(
+    Ok(TaskWatcher::restore(
         TaskId::from_uuid(task_id),
         AgentId::from_uuid(agent_id),
-        ProjectId::try_from(project).expect("invalid project in database"),
-        Namespace::try_from(namespace).unwrap(),
+        parse_project_id(project, "task_watchers", "project")?,
+        parse_namespace(namespace, "task_watchers", "namespace")?,
         created_at,
-    )
+    ))
 }

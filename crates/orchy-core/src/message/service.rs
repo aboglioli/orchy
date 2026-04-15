@@ -37,6 +37,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 let agents = self.agent_store.list().await?;
                 agents
                     .into_iter()
+                    .filter(|a| a.project() == &project)
                     .filter(|a| a.roles().iter().any(|r| r == role))
                     .map(|a| a.id())
                     .collect::<Vec<_>>()
@@ -45,6 +46,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 let agents = self.agent_store.list().await?;
                 agents
                     .into_iter()
+                    .filter(|a| a.project() == &project)
                     .filter(|a| a.id() != from)
                     .map(|a| a.id())
                     .collect::<Vec<_>>()
@@ -127,8 +129,16 @@ mod tests {
     }
 
     fn make_agent(roles: Vec<&str>) -> Agent {
+        make_agent_for_project(test_project(), roles)
+    }
+
+    fn other_project() -> ProjectId {
+        ProjectId::try_from("other").unwrap()
+    }
+
+    fn make_agent_for_project(project: ProjectId, roles: Vec<&str>) -> Agent {
         Agent::register(
-            test_project(),
+            project,
             Namespace::root(),
             roles.into_iter().map(String::from).collect(),
             "test".to_string(),
@@ -220,5 +230,57 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_to_role_skips_agents_from_other_projects() {
+        let store = Arc::new(MockStore::default());
+        let mut local = make_agent(vec!["reviewer"]);
+        let mut foreign = make_agent_for_project(other_project(), vec!["reviewer"]);
+        save_agent(&store, &mut local).await;
+        save_agent(&store, &mut foreign).await;
+        let service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
+
+        let result = service
+            .send(
+                test_project(),
+                Namespace::root(),
+                AgentId::new(),
+                MessageTarget::Role("reviewer".to_string()),
+                "hi".into(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id()));
+    }
+
+    #[tokio::test]
+    async fn broadcast_skips_agents_from_other_projects() {
+        let store = Arc::new(MockStore::default());
+        let mut sender = make_agent(vec!["tester"]);
+        let mut local = make_agent(vec!["tester"]);
+        let mut foreign = make_agent_for_project(other_project(), vec!["tester"]);
+        save_agent(&store, &mut sender).await;
+        save_agent(&store, &mut local).await;
+        save_agent(&store, &mut foreign).await;
+        let service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
+
+        let result = service
+            .send(
+                test_project(),
+                Namespace::root(),
+                sender.id(),
+                MessageTarget::Broadcast,
+                "hi".into(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id()));
     }
 }

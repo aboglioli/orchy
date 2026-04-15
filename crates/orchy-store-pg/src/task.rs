@@ -6,11 +6,10 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
-use crate::PgBackend;
+use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
 #[derive(Iden)]
 enum Tasks {
@@ -55,16 +54,19 @@ enum Tasks {
 
 impl TaskStore for PgBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        let roles_json = serde_json::to_value(task.assigned_roles()).unwrap();
+        let roles_json = serde_json::to_value(task.assigned_roles())
+            .map_err(|e| Error::Store(format!("failed to serialize tasks.assigned_roles: {e}")))?;
         let depends_json = serde_json::to_value(
             task.depends_on()
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
         )
-        .unwrap();
-        let tags_json = serde_json::to_value(task.tags()).unwrap();
-        let notes_json = serde_json::to_value(task.notes()).unwrap();
+        .map_err(|e| Error::Store(format!("failed to serialize tasks.depends_on: {e}")))?;
+        let tags_json = serde_json::to_value(task.tags())
+            .map_err(|e| Error::Store(format!("failed to serialize tasks.tags: {e}")))?;
+        let notes_json = serde_json::to_value(task.notes())
+            .map_err(|e| Error::Store(format!("failed to serialize tasks.notes: {e}")))?;
 
         sqlx::query(
             "INSERT INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
@@ -126,7 +128,7 @@ impl TaskStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_task(&r)))
+        row.map(|r| row_to_task(&r)).transpose()
     }
 
     async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
@@ -200,11 +202,11 @@ impl TaskStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_task).collect())
+        rows.iter().map(row_to_task).collect()
     }
 }
 
-fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
+fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
     let id: Uuid = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
@@ -224,31 +226,31 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Task {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    let depends_on_strs: Vec<String> = serde_json::from_value(depends_on).unwrap_or_default();
+    let depends_on_strs: Vec<String> = decode_json_value(depends_on, "tasks", "depends_on")?;
     let depends_on_ids: Vec<TaskId> = depends_on_strs
         .iter()
         .filter_map(|s| s.parse().ok())
         .collect();
-    let notes: Vec<Note> = serde_json::from_value(notes_json).unwrap_or_default();
+    let notes: Vec<Note> = decode_json_value(notes_json, "tasks", "notes")?;
 
-    Task::restore(RestoreTask {
+    Ok(Task::restore(RestoreTask {
         id: TaskId::from_uuid(id),
-        project: ProjectId::try_from(project).expect("invalid project in database"),
-        namespace: Namespace::try_from(namespace).unwrap(),
+        project: parse_project_id(project, "tasks", "project")?,
+        namespace: parse_namespace(namespace, "tasks", "namespace")?,
         parent_id: parent_id.map(TaskId::from_uuid),
         title,
         description,
         status: status.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending),
         priority: priority.parse::<Priority>().unwrap_or_default(),
-        assigned_roles: serde_json::from_value(assigned_roles).unwrap_or_default(),
+        assigned_roles: decode_json_value(assigned_roles, "tasks", "assigned_roles")?,
         assigned_to: assigned_to.map(AgentId::from_uuid),
         assigned_at,
         depends_on: depends_on_ids,
-        tags: serde_json::from_value(tags).unwrap_or_default(),
+        tags: decode_json_value(tags, "tasks", "tags")?,
         result_summary,
         notes,
         created_by: created_by.map(AgentId::from_uuid),
         created_at,
         updated_at,
-    })
+    }))
 }

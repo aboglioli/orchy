@@ -37,7 +37,9 @@ impl Container {
         let embeddings: Option<Arc<EmbeddingsBackend>> = config
             .embeddings
             .as_ref()
-            .map(|e| Arc::new(Self::build_embeddings(e)));
+            .map(Self::build_embeddings)
+            .transpose()?
+            .map(Arc::new);
 
         let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
         let agent_service = AgentService::new(Arc::clone(&store));
@@ -75,7 +77,7 @@ impl Container {
                     .store
                     .sqlite
                     .as_ref()
-                    .expect("store.sqlite config required when backend = \"sqlite\"");
+                    .ok_or("store.sqlite config required when backend = \"sqlite\"")?;
                 let backend = SqliteBackend::new(&store_config.path, embedding_dims)?;
                 backend.run_migrations(std::path::Path::new("migrations/sqlite"))?;
                 Ok(StoreBackend::Sqlite(backend))
@@ -85,7 +87,7 @@ impl Container {
                     .store
                     .postgres
                     .as_ref()
-                    .expect("store.postgres config required when backend = \"postgres\"");
+                    .ok_or("store.postgres config required when backend = \"postgres\"")?;
                 let backend = PgBackend::new(&store_config.url, embedding_dims).await?;
                 backend
                     .run_migrations(std::path::Path::new("migrations/postgres"))
@@ -96,20 +98,22 @@ impl Container {
         }
     }
 
-    fn build_embeddings(config: &EmbeddingsConfig) -> EmbeddingsBackend {
+    fn build_embeddings(
+        config: &EmbeddingsConfig,
+    ) -> Result<EmbeddingsBackend, Box<dyn std::error::Error>> {
         match config.provider.as_str() {
             "openai" => {
                 let openai = config
                     .openai
                     .as_ref()
-                    .expect("embeddings.openai config required when provider = \"openai\"");
-                EmbeddingsBackend::OpenAi(OpenAiEmbeddingsProvider::new(
+                    .ok_or("embeddings.openai config required when provider = \"openai\"")?;
+                Ok(EmbeddingsBackend::OpenAi(OpenAiEmbeddingsProvider::new(
                     openai.url.clone(),
                     openai.model.clone(),
                     openai.dimensions,
-                ))
+                )))
             }
-            other => panic!("unsupported embeddings provider: {other}"),
+            other => Err(format!("unsupported embeddings provider: {other}").into()),
         }
     }
 }
