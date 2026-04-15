@@ -1388,7 +1388,6 @@ dependencies = [
 name = "orchy-runner"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "crossterm",
  "pty-process",
  "rmcp",
@@ -1397,10 +1396,8 @@ dependencies = [
  "strip-ansi-escapes",
  "thiserror",
  "tokio",
- "toml",
  "tracing",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

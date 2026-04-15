@@ -10,14 +10,10 @@ async fn main() {
         )
         .init();
 
-    let config_path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "runner.toml".to_string());
-
-    let config = match RunnerConfig::from_file(&config_path) {
+    let config = match RunnerConfig::from_env() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("failed to load config from {config_path}: {e}");
+            eprintln!("{e}");
             std::process::exit(1);
         }
     };
