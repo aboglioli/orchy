@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use pgvector::Vector;
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
@@ -6,15 +8,17 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
-use orchy_core::document::{Document, DocumentFilter, DocumentId, DocumentStore, RestoreDocument};
 use orchy_core::error::{Error, Result};
-use orchy_core::memory::Version;
+use orchy_core::knowledge::{
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, RestoreKnowledge,
+    Version,
+};
 use orchy_core::namespace::{Namespace, ProjectId};
 
 use crate::{PgBackend, parse_pg_vector_text};
 
 #[derive(Iden)]
-enum Documents {
+enum KnowledgeEntries {
     Table,
     #[iden = "id"]
     Id,
@@ -24,6 +28,8 @@ enum Documents {
     Namespace,
     #[iden = "path"]
     Path,
+    #[iden = "kind"]
+    KnowledgeKind,
     #[iden = "title"]
     Title,
     #[iden = "content"]
@@ -32,64 +38,68 @@ enum Documents {
     Tags,
     #[iden = "version"]
     Version,
+    #[iden = "agent_id"]
+    AgentId,
+    #[iden = "metadata"]
+    Metadata,
     #[iden = "embedding_model"]
     EmbeddingModel,
     #[iden = "embedding_dimensions"]
     EmbeddingDimensions,
-    #[iden = "created_by"]
-    CreatedBy,
-    #[iden = "updated_by"]
-    UpdatedBy,
     #[iden = "created_at"]
     CreatedAt,
     #[iden = "updated_at"]
     UpdatedAt,
 }
 
-const SELECT_COLUMNS: &str = "id, project, namespace, path, title, content, tags, version, embedding::text, embedding_model, embedding_dimensions, created_by, updated_by, created_at, updated_at";
+const SELECT_COLUMNS: &str = "id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
 
-impl DocumentStore for PgBackend {
-    async fn save(&self, doc: &mut Document) -> Result<()> {
-        let vec_binding = doc.embedding().map(|e| Vector::from(e.to_vec()));
-        let tags_json = serde_json::to_value(doc.tags()).unwrap();
+impl KnowledgeStore for PgBackend {
+    async fn save(&self, entry: &mut Knowledge) -> Result<()> {
+        let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
+        let tags_json = serde_json::to_value(entry.tags()).unwrap();
+        let metadata_json = serde_json::to_value(entry.metadata()).unwrap();
 
         sqlx::query(
-            "INSERT INTO documents (id, project, namespace, path, title, content, tags, version, embedding, embedding_model, embedding_dimensions, created_by, updated_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            "INSERT INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
              ON CONFLICT (id) DO UPDATE SET
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 path = EXCLUDED.path,
+                kind = EXCLUDED.kind,
                 title = EXCLUDED.title,
                 content = EXCLUDED.content,
                 tags = EXCLUDED.tags,
                 version = EXCLUDED.version,
+                agent_id = EXCLUDED.agent_id,
+                metadata = EXCLUDED.metadata,
                 embedding = EXCLUDED.embedding,
                 embedding_model = EXCLUDED.embedding_model,
                 embedding_dimensions = EXCLUDED.embedding_dimensions,
-                updated_by = EXCLUDED.updated_by,
                 updated_at = EXCLUDED.updated_at",
         )
-        .bind(doc.id().as_uuid())
-        .bind(doc.project().to_string())
-        .bind(doc.namespace().to_string())
-        .bind(doc.path())
-        .bind(doc.title())
-        .bind(doc.content())
+        .bind(entry.id().as_uuid())
+        .bind(entry.project().to_string())
+        .bind(entry.namespace().to_string())
+        .bind(entry.path())
+        .bind(entry.kind().to_string())
+        .bind(entry.title())
+        .bind(entry.content())
         .bind(&tags_json)
-        .bind(doc.version().as_u64() as i64)
+        .bind(entry.version().as_u64() as i64)
+        .bind(entry.agent_id().map(|a| *a.as_uuid()))
+        .bind(&metadata_json)
         .bind(vec_binding.as_ref())
-        .bind(doc.embedding_model())
-        .bind(doc.embedding_dimensions().map(|d| d as i32))
-        .bind(doc.created_by().map(|a| *a.as_uuid()))
-        .bind(doc.updated_by().map(|a| *a.as_uuid()))
-        .bind(doc.created_at())
-        .bind(doc.updated_at())
+        .bind(entry.embedding_model())
+        .bind(entry.embedding_dimensions().map(|d| d as i32))
+        .bind(entry.created_at())
+        .bind(entry.updated_at())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        let events = doc.drain_events();
+        let events = entry.drain_events();
         if !events.is_empty() {
             let _ = orchy_events::io::Writer::write_all(self, &events).await;
         }
@@ -97,16 +107,16 @@ impl DocumentStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &DocumentId) -> Result<Option<Document>> {
+    async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
         let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM documents WHERE id = $1"
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE id = $1"
         ))
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_document(&r)))
+        Ok(row.map(|r| row_to_entry(&r)))
     }
 
     async fn find_by_path(
@@ -114,9 +124,9 @@ impl DocumentStore for PgBackend {
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> Result<Option<Document>> {
+    ) -> Result<Option<Knowledge>> {
         let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM documents WHERE project = $1 AND namespace = $2 AND path = $3"
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE project = $1 AND namespace = $2 AND path = $3"
         ))
         .bind(project.to_string())
         .bind(namespace.to_string())
@@ -125,35 +135,41 @@ impl DocumentStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(row.map(|r| row_to_document(&r)))
+        Ok(row.map(|r| row_to_entry(&r)))
     }
 
-    async fn list(&self, filter: DocumentFilter) -> Result<Vec<Document>> {
+    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         let mut select = Query::select();
         select
-            .from(Documents::Table)
+            .from(KnowledgeEntries::Table)
             .expr(Expr::cust(SELECT_COLUMNS));
 
         if let Some(ref project) = filter.project {
-            select.and_where(Expr::col(Documents::Project).eq(project.to_string()));
+            select.and_where(Expr::col(KnowledgeEntries::Project).eq(project.to_string()));
         }
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
                 select.cond_where(
                     Cond::any()
-                        .add(Expr::col(Documents::Namespace).eq(ns.to_string()))
-                        .add(Expr::col(Documents::Namespace).like(format!("{}/%", ns))),
+                        .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
+                        .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
                 );
             }
+        }
+        if let Some(ref kind) = filter.kind {
+            select.and_where(Expr::col(KnowledgeEntries::KnowledgeKind).eq(kind.to_string()));
         }
         if let Some(ref tag) = filter.tag {
             select.and_where(Expr::cust_with_values(
                 "tags @> to_jsonb(?::text)",
-                [tag.clone().into()],
+                [sea_query::Value::String(Some(Box::new(tag.clone())))],
             ));
         }
         if let Some(ref prefix) = filter.path_prefix {
-            select.and_where(Expr::col(Documents::Path).like(format!("{prefix}%")));
+            select.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{prefix}%")));
+        }
+        if let Some(ref agent_id) = filter.agent_id {
+            select.and_where(Expr::col(KnowledgeEntries::AgentId).eq(agent_id.to_string()));
         }
 
         let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
@@ -163,7 +179,7 @@ impl DocumentStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_document).collect())
+        Ok(rows.iter().map(row_to_entry).collect())
     }
 
     async fn search(
@@ -172,21 +188,21 @@ impl DocumentStore for PgBackend {
         _embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Document>> {
+    ) -> Result<Vec<Knowledge>> {
         let mut select = Query::select();
         select
-            .from(Documents::Table)
+            .from(KnowledgeEntries::Table)
             .expr(Expr::cust(SELECT_COLUMNS))
             .and_where(Expr::cust_with_values(
                 "to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', ?)",
-                [query.into()],
+                [sea_query::Value::String(Some(Box::new(query.to_string())))],
             ));
 
         if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
             select.cond_where(
                 Cond::any()
-                    .add(Expr::col(Documents::Namespace).eq(ns.to_string()))
-                    .add(Expr::col(Documents::Namespace).like(format!("{}/%", ns))),
+                    .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
+                    .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
             );
         }
 
@@ -194,7 +210,7 @@ impl DocumentStore for PgBackend {
             .order_by_expr(
                 Expr::cust_with_values(
                     "ts_rank(to_tsvector('english', title || ' ' || content), plainto_tsquery('english', ?))",
-                    [query.into()],
+                    [sea_query::Value::String(Some(Box::new(query.to_string())))],
                 ),
                 sea_query::Order::Desc,
             )
@@ -207,11 +223,11 @@ impl DocumentStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(rows.iter().map(row_to_document).collect())
+        Ok(rows.iter().map(row_to_entry).collect())
     }
 
-    async fn delete(&self, id: &DocumentId) -> Result<()> {
-        sqlx::query("DELETE FROM documents WHERE id = $1")
+    async fn delete(&self, id: &KnowledgeId) -> Result<()> {
+        sqlx::query("DELETE FROM knowledge_entries WHERE id = $1")
             .bind(id.as_uuid())
             .execute(&self.pool)
             .await
@@ -221,37 +237,39 @@ impl DocumentStore for PgBackend {
     }
 }
 
-fn row_to_document(row: &sqlx::postgres::PgRow) -> Document {
+fn row_to_entry(row: &sqlx::postgres::PgRow) -> Knowledge {
     let id: Uuid = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let path: String = row.get("path");
+    let kind_str: String = row.get("kind");
     let title: String = row.get("title");
     let content: String = row.get("content");
     let tags: serde_json::Value = row.get("tags");
     let version: i64 = row.get("version");
+    let agent_id: Option<Uuid> = row.get("agent_id");
+    let metadata: serde_json::Value = row.get("metadata");
     let embedding_str: Option<String> = row.get("embedding");
     let embedding_model: Option<String> = row.get("embedding_model");
     let embedding_dimensions: Option<i32> = row.get("embedding_dimensions");
-    let created_by: Option<Uuid> = row.get("created_by");
-    let updated_by: Option<Uuid> = row.get("updated_by");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    Document::restore(RestoreDocument {
-        id: DocumentId::from_uuid(id),
+    Knowledge::restore(RestoreKnowledge {
+        id: KnowledgeId::from_uuid(id),
         project: ProjectId::try_from(project).expect("invalid project in database"),
         namespace: Namespace::try_from(namespace).unwrap(),
         path,
+        kind: KnowledgeKind::from_str(&kind_str).expect("invalid kind in database"),
         title,
         content,
         tags: serde_json::from_value(tags).unwrap_or_default(),
         version: Version::from(version as u64),
+        agent_id: agent_id.map(AgentId::from_uuid),
+        metadata: serde_json::from_value(metadata).unwrap_or_default(),
         embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
-        created_by: created_by.map(AgentId::from_uuid),
-        updated_by: updated_by.map(AgentId::from_uuid),
         created_at,
         updated_at,
     })

@@ -51,6 +51,7 @@ impl Project {
             project_events::TOPIC_CREATED,
             Payload::from_json(&project_events::ProjectCreatedPayload {
                 project: project.id.to_string(),
+                description: project.description.clone(),
             })
             .unwrap(),
         )
@@ -81,6 +82,7 @@ impl Project {
             project_events::TOPIC_DESCRIPTION_UPDATED,
             Payload::from_json(&project_events::ProjectDescriptionUpdatedPayload {
                 project: self.id.to_string(),
+                description: self.description.clone(),
             })
             .unwrap(),
         )

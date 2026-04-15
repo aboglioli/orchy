@@ -94,7 +94,7 @@ impl MessageStore for MemoryBackend {
             .cloned()
             .collect();
 
-        results.sort_by(|a, b| b.created_at().cmp(&a.created_at()));
+        results.sort_by_key(|m| std::cmp::Reverse(m.created_at()));
         Ok(results)
     }
 
@@ -144,7 +144,7 @@ impl MessageStore for MemoryBackend {
             frontier = next_frontier;
         }
 
-        thread.sort_by(|a, b| a.created_at().cmp(&b.created_at()));
+        thread.sort_by_key(|a| a.created_at());
 
         if let Some(n) = limit {
             let len = thread.len();

@@ -32,21 +32,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS memory (
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    key TEXT NOT NULL,
-    value TEXT NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1,
-    embedding BLOB,
-    embedding_model TEXT,
-    embedding_dimensions INTEGER,
-    written_by TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (project, namespace, key)
-);
-
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     project TEXT NOT NULL,
@@ -57,31 +42,6 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS contexts (
-    id TEXT PRIMARY KEY,
-    project TEXT NOT NULL,
-    agent_id TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    summary TEXT NOT NULL,
-    embedding BLOB,
-    embedding_model TEXT,
-    embedding_dimensions INTEGER,
-    metadata TEXT NOT NULL DEFAULT '{}',
-    created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS skills (
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    name TEXT NOT NULL,
-    description TEXT NOT NULL,
-    content TEXT NOT NULL,
-    written_by TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (project, namespace, name)
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -100,24 +60,27 @@ CREATE TABLE IF NOT EXISTS namespaces (
     PRIMARY KEY (project, namespace)
 );
 
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE IF NOT EXISTS knowledge_entries (
     id TEXT PRIMARY KEY,
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     path TEXT NOT NULL,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     version INTEGER NOT NULL DEFAULT 1,
+    agent_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
     embedding BLOB,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
-    created_by TEXT,
-    updated_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(project, namespace, path)
 );
+CREATE INDEX IF NOT EXISTS knowledge_entries_type_idx ON knowledge_entries (kind);
+CREATE INDEX IF NOT EXISTS knowledge_entries_agent_idx ON knowledge_entries (agent_id);
 
 CREATE TABLE IF NOT EXISTS resource_locks (
     project TEXT NOT NULL,

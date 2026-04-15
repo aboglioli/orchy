@@ -1,17 +1,14 @@
 #![allow(clippy::collapsible_if)]
 
 mod agent;
-mod context;
-mod document;
 mod events;
-mod memory;
+mod knowledge;
 mod message;
 mod namespace;
 mod project;
 mod project_link;
 mod resource_lock;
 mod review;
-mod skill;
 mod task;
 mod watcher;
 
@@ -28,6 +25,7 @@ pub struct SqliteBackend {
 
 impl SqliteBackend {
     pub fn new(path: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
+        #[allow(clippy::missing_transmute_annotations)]
         unsafe {
             rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
                 sqlite_vec::sqlite3_vec_init as *const (),

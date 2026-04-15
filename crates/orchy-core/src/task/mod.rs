@@ -208,6 +208,7 @@ pub struct Task {
 }
 
 impl Task {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         project: ProjectId,
         namespace: Namespace,
@@ -261,6 +262,10 @@ impl Task {
                     project: task.project.to_string(),
                     namespace: task.namespace.to_string(),
                     title: task.title.clone(),
+                    description: task.description.clone(),
+                    priority: task.priority.to_string(),
+                    assigned_roles: task.assigned_roles.clone(),
+                    depends_on: task.depends_on.iter().map(|id| id.to_string()).collect(),
                     parent_id: task.parent_id.map(|id| id.to_string()),
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,
@@ -527,6 +532,63 @@ impl Task {
                 Payload::from_json(&task_events::TaskCancelledPayload {
                     task_id: self.id.to_string(),
                     reason,
+                })
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            )
+            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+        );
+
+        Ok(())
+    }
+
+    pub fn update_details(
+        &mut self,
+        title: Option<String>,
+        description: Option<String>,
+        priority: Option<Priority>,
+    ) -> Result<()> {
+        if title.is_none() && description.is_none() && priority.is_none() {
+            return Err(Error::InvalidInput("no task fields to update".into()));
+        }
+        if matches!(
+            self.status,
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+        ) {
+            return Err(Error::InvalidInput(format!(
+                "cannot update task in status {}",
+                self.status
+            )));
+        }
+        let mut new_title = None;
+        let mut new_description = None;
+        let mut new_priority = None;
+        if let Some(t) = title {
+            if t.trim().is_empty() {
+                return Err(Error::InvalidInput("task title must not be empty".into()));
+            }
+            new_title = Some(t.clone());
+            self.title = t;
+        }
+        if let Some(d) = description {
+            new_description = Some(d.clone());
+            self.description = d;
+        }
+        if let Some(p) = priority {
+            new_priority = Some(p.to_string());
+            self.priority = p;
+        }
+        self.updated_at = Utc::now();
+
+        self.collector.collect(
+            Event::create(
+                self.project.as_ref(),
+                task_events::NAMESPACE,
+                task_events::TOPIC_UPDATED,
+                Payload::from_json(&task_events::TaskUpdatedPayload {
+                    task_id: self.id.to_string(),
+                    title: new_title,
+                    description: new_description,
+                    priority: new_priority,
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,
             )

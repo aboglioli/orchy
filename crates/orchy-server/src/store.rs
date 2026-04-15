@@ -3,15 +3,13 @@ use orchy_events::Event;
 use orchy_events::io::Writer as EventWriter;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore};
-use orchy_core::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use orchy_core::error::Result;
-use orchy_core::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
-use orchy_core::skill::{Skill, SkillFilter, SkillStore};
 use orchy_core::task::{
     ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
     WatcherStore,
@@ -120,87 +118,6 @@ impl MessageStore for StoreBackend {
     }
 }
 
-impl MemoryStore for StoreBackend {
-    async fn save(&self, entry: &mut MemoryEntry) -> Result<()> {
-        delegate_trait!(self, MemoryStore::save(entry))
-    }
-    async fn find_by_key(
-        &self,
-        project: &ProjectId,
-        namespace: &Namespace,
-        key: &str,
-    ) -> Result<Option<MemoryEntry>> {
-        delegate_trait!(self, MemoryStore::find_by_key(project, namespace, key))
-    }
-    async fn list(&self, filter: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-        delegate_trait!(self, MemoryStore::list(filter))
-    }
-    async fn search(
-        &self,
-        query: &str,
-        embedding: Option<&[f32]>,
-        namespace: Option<&Namespace>,
-        limit: usize,
-    ) -> Result<Vec<MemoryEntry>> {
-        delegate_trait!(
-            self,
-            MemoryStore::search(query, embedding, namespace, limit)
-        )
-    }
-    async fn delete(&self, project: &ProjectId, namespace: &Namespace, key: &str) -> Result<()> {
-        delegate_trait!(self, MemoryStore::delete(project, namespace, key))
-    }
-}
-
-impl ContextStore for StoreBackend {
-    async fn save(&self, snapshot: &mut ContextSnapshot) -> Result<()> {
-        delegate_trait!(self, ContextStore::save(snapshot))
-    }
-    async fn find_latest(&self, agent: &AgentId) -> Result<Option<ContextSnapshot>> {
-        delegate_trait!(self, ContextStore::find_latest(agent))
-    }
-    async fn list(
-        &self,
-        agent: Option<&AgentId>,
-        namespace: &Namespace,
-    ) -> Result<Vec<ContextSnapshot>> {
-        delegate_trait!(self, ContextStore::list(agent, namespace))
-    }
-    async fn search(
-        &self,
-        query: &str,
-        embedding: Option<&[f32]>,
-        namespace: &Namespace,
-        agent_id: Option<&AgentId>,
-        limit: usize,
-    ) -> Result<Vec<ContextSnapshot>> {
-        delegate_trait!(
-            self,
-            ContextStore::search(query, embedding, namespace, agent_id, limit)
-        )
-    }
-}
-
-impl SkillStore for StoreBackend {
-    async fn save(&self, skill: &mut Skill) -> Result<()> {
-        delegate_trait!(self, SkillStore::save(skill))
-    }
-    async fn find_by_name(
-        &self,
-        project: &ProjectId,
-        namespace: &Namespace,
-        name: &str,
-    ) -> Result<Option<Skill>> {
-        delegate_trait!(self, SkillStore::find_by_name(project, namespace, name))
-    }
-    async fn list(&self, filter: SkillFilter) -> Result<Vec<Skill>> {
-        delegate_trait!(self, SkillStore::list(filter))
-    }
-    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
-        delegate_trait!(self, SkillStore::delete(project, namespace, name))
-    }
-}
-
 impl ProjectStore for StoreBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
         delegate_trait!(self, ProjectStore::save(project))
@@ -232,23 +149,23 @@ impl ProjectLinkStore for StoreBackend {
     }
 }
 
-impl DocumentStore for StoreBackend {
-    async fn save(&self, doc: &mut Document) -> Result<()> {
-        delegate_trait!(self, DocumentStore::save(doc))
+impl KnowledgeStore for StoreBackend {
+    async fn save(&self, entry: &mut Knowledge) -> Result<()> {
+        delegate_trait!(self, KnowledgeStore::save(entry))
     }
-    async fn find_by_id(&self, id: &DocumentId) -> Result<Option<Document>> {
-        delegate_trait!(self, DocumentStore::find_by_id(id))
+    async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::find_by_id(id))
     }
     async fn find_by_path(
         &self,
         project: &ProjectId,
         namespace: &Namespace,
         path: &str,
-    ) -> Result<Option<Document>> {
-        delegate_trait!(self, DocumentStore::find_by_path(project, namespace, path))
+    ) -> Result<Option<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::find_by_path(project, namespace, path))
     }
-    async fn list(&self, filter: DocumentFilter) -> Result<Vec<Document>> {
-        delegate_trait!(self, DocumentStore::list(filter))
+    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::list(filter))
     }
     async fn search(
         &self,
@@ -256,14 +173,14 @@ impl DocumentStore for StoreBackend {
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Document>> {
+    ) -> Result<Vec<Knowledge>> {
         delegate_trait!(
             self,
-            DocumentStore::search(query, embedding, namespace, limit)
+            KnowledgeStore::search(query, embedding, namespace, limit)
         )
     }
-    async fn delete(&self, id: &DocumentId) -> Result<()> {
-        delegate_trait!(self, DocumentStore::delete(id))
+    async fn delete(&self, id: &KnowledgeId) -> Result<()> {
+        delegate_trait!(self, KnowledgeStore::delete(id))
     }
 }
 

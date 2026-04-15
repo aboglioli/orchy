@@ -10,11 +10,13 @@ pub const TOPIC_METADATA_SET: &str = "project.metadata_set";
 #[derive(Serialize)]
 pub struct ProjectCreatedPayload {
     pub project: String,
+    pub description: String,
 }
 
 #[derive(Serialize)]
 pub struct ProjectDescriptionUpdatedPayload {
     pub project: String,
+    pub description: String,
 }
 
 #[derive(Serialize)]

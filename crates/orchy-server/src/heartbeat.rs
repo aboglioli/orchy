@@ -59,7 +59,7 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
                                     .unwrap_or_default();
                             for mut r in reviews {
                                 r.unassign_reviewer();
-                                let _ = ReviewStore::save(&*container.store, &r).await;
+                                let _ = ReviewStore::save(&*container.store, &mut r).await;
                             }
                         }
                         AgentStatus::Disconnected => {}

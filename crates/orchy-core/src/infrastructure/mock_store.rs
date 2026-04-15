@@ -2,15 +2,13 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::agent::{Agent, AgentId, AgentStore};
-use crate::document::{Document, DocumentFilter, DocumentId, DocumentStore};
 use crate::error::Result;
-use crate::memory::{ContextSnapshot, ContextStore, MemoryEntry, MemoryFilter, MemoryStore};
+use crate::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
 use crate::project::{Project, ProjectStore};
 use crate::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use crate::resource_lock::{LockStore, ResourceLock};
-use crate::skill::{Skill, SkillFilter, SkillStore};
 use crate::task::{
     ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
     WatcherStore,
@@ -127,57 +125,6 @@ impl ProjectStore for MockStore {
     }
 }
 
-impl MemoryStore for MockStore {
-    async fn save(&self, _: &mut MemoryEntry) -> Result<()> {
-        unimplemented!()
-    }
-    async fn find_by_key(
-        &self,
-        _: &ProjectId,
-        _: &Namespace,
-        _: &str,
-    ) -> Result<Option<MemoryEntry>> {
-        unimplemented!()
-    }
-    async fn list(&self, _: MemoryFilter) -> Result<Vec<MemoryEntry>> {
-        unimplemented!()
-    }
-    async fn search(
-        &self,
-        _: &str,
-        _: Option<&[f32]>,
-        _: Option<&Namespace>,
-        _: usize,
-    ) -> Result<Vec<MemoryEntry>> {
-        unimplemented!()
-    }
-    async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
-        unimplemented!()
-    }
-}
-
-impl ContextStore for MockStore {
-    async fn save(&self, _: &mut ContextSnapshot) -> Result<()> {
-        unimplemented!()
-    }
-    async fn find_latest(&self, _: &AgentId) -> Result<Option<ContextSnapshot>> {
-        unimplemented!()
-    }
-    async fn list(&self, _: Option<&AgentId>, _: &Namespace) -> Result<Vec<ContextSnapshot>> {
-        unimplemented!()
-    }
-    async fn search(
-        &self,
-        _: &str,
-        _: Option<&[f32]>,
-        _: &Namespace,
-        _: Option<&AgentId>,
-        _: usize,
-    ) -> Result<Vec<ContextSnapshot>> {
-        unimplemented!()
-    }
-}
-
 impl NamespaceStore for MockStore {
     async fn register(&self, _: &ProjectId, _: &Namespace) -> Result<()> {
         Ok(())
@@ -223,38 +170,6 @@ impl LockStore for MockStore {
     }
 }
 
-impl DocumentStore for MockStore {
-    async fn save(&self, _: &mut Document) -> Result<()> {
-        unimplemented!()
-    }
-    async fn find_by_id(&self, _: &DocumentId) -> Result<Option<Document>> {
-        unimplemented!()
-    }
-    async fn find_by_path(
-        &self,
-        _: &ProjectId,
-        _: &Namespace,
-        _: &str,
-    ) -> Result<Option<Document>> {
-        unimplemented!()
-    }
-    async fn list(&self, _: DocumentFilter) -> Result<Vec<Document>> {
-        unimplemented!()
-    }
-    async fn search(
-        &self,
-        _: &str,
-        _: Option<&[f32]>,
-        _: Option<&Namespace>,
-        _: usize,
-    ) -> Result<Vec<Document>> {
-        unimplemented!()
-    }
-    async fn delete(&self, _: &DocumentId) -> Result<()> {
-        unimplemented!()
-    }
-}
-
 impl WatcherStore for MockStore {
     async fn save(&self, _: &mut TaskWatcher) -> Result<()> {
         Ok(())
@@ -285,17 +200,34 @@ impl ReviewStore for MockStore {
     }
 }
 
-impl SkillStore for MockStore {
-    async fn save(&self, _: &mut Skill) -> Result<()> {
+impl KnowledgeStore for MockStore {
+    async fn save(&self, _: &mut Knowledge) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_id(&self, _: &KnowledgeId) -> Result<Option<Knowledge>> {
         unimplemented!()
     }
-    async fn find_by_name(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<Skill>> {
+    async fn find_by_path(
+        &self,
+        _: &ProjectId,
+        _: &Namespace,
+        _: &str,
+    ) -> Result<Option<Knowledge>> {
         unimplemented!()
     }
-    async fn list(&self, _: SkillFilter) -> Result<Vec<Skill>> {
+    async fn list(&self, _: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         unimplemented!()
     }
-    async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
+    async fn search(
+        &self,
+        _: &str,
+        _: Option<&[f32]>,
+        _: Option<&Namespace>,
+        _: usize,
+    ) -> Result<Vec<Knowledge>> {
+        unimplemented!()
+    }
+    async fn delete(&self, _: &KnowledgeId) -> Result<()> {
         unimplemented!()
     }
 }

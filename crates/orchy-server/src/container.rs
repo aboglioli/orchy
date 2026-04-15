@@ -1,13 +1,14 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
+use orchy_core::agent::AgentId;
 use orchy_core::agent::service::AgentService;
-use orchy_core::document::service::DocumentService;
-use orchy_core::memory::service::{ContextService, MemoryService};
+use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::message::service::MessageService;
 use orchy_core::project::service::ProjectService;
 use orchy_core::project_link::service::ProjectLinkService;
 use orchy_core::resource_lock::service::LockService;
-use orchy_core::skill::service::SkillService;
 use orchy_core::task::service::TaskService;
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
@@ -20,15 +21,13 @@ use crate::store::StoreBackend;
 pub struct Container {
     pub store: Arc<StoreBackend>,
     pub task_service: TaskService<StoreBackend, StoreBackend>,
-    pub memory_service: MemoryService<StoreBackend, EmbeddingsBackend>,
     pub agent_service: AgentService<StoreBackend>,
     pub message_service: MessageService<StoreBackend, StoreBackend>,
-    pub context_service: ContextService<StoreBackend, EmbeddingsBackend>,
-    pub skill_service: SkillService<StoreBackend>,
     pub project_service: ProjectService<StoreBackend>,
     pub project_link_service: ProjectLinkService<StoreBackend>,
-    pub document_service: DocumentService<StoreBackend, EmbeddingsBackend>,
+    pub knowledge_service: KnowledgeService<StoreBackend, EmbeddingsBackend>,
     pub lock_service: LockService<StoreBackend>,
+    pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
 }
 
@@ -41,12 +40,9 @@ impl Container {
             .map(|e| Arc::new(Self::build_embeddings(e)));
 
         let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
-        let memory_service = MemoryService::new(Arc::clone(&store), embeddings.clone());
         let agent_service = AgentService::new(Arc::clone(&store));
         let message_service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
-        let context_service = ContextService::new(Arc::clone(&store), embeddings.clone());
-        let skill_service = SkillService::new(Arc::clone(&store));
-        let document_service = DocumentService::new(Arc::clone(&store), embeddings);
+        let knowledge_service = KnowledgeService::new(Arc::clone(&store), embeddings);
         let project_service = ProjectService::new(Arc::clone(&store));
         let project_link_service = ProjectLinkService::new(Arc::clone(&store));
         let lock_service = LockService::new(Arc::clone(&store));
@@ -54,15 +50,13 @@ impl Container {
         Ok(Arc::new(Self {
             store,
             task_service,
-            memory_service,
             agent_service,
             message_service,
-            context_service,
-            skill_service,
             project_service,
-            document_service,
+            knowledge_service,
             project_link_service,
             lock_service,
+            session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
         }))
     }

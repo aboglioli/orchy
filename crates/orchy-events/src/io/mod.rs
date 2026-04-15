@@ -1,17 +1,16 @@
 pub mod ackers;
 
-use std::pin::Pin;
+use std::future::Future;
 
 use async_trait::async_trait;
 use futures::Stream;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::event::Event;
 
-#[async_trait]
 pub trait Acker: Send + Sync + Clone {
-    async fn ack(&self) -> Result<()>;
-    async fn nack(&self) -> Result<()>;
+    fn ack(&self) -> impl Future<Output = Result<()>> + Send;
+    fn nack(&self) -> impl Future<Output = Result<()>> + Send;
 }
 
 pub struct Message<A: Acker> {
@@ -45,18 +44,18 @@ impl<A: Acker> Message<A> {
     }
 }
 
-#[async_trait]
 pub trait Handler: Send + Sync {
     type Acker: Acker;
 
     fn id(&self) -> &str;
-    async fn handle(&self, message: Message<Self::Acker>) -> Result<()>;
+    fn handle(&self, message: Message<Self::Acker>) -> impl Future<Output = Result<()>> + Send;
 }
 
 pub trait Reader: Send + Sync {
     type Acker: Acker;
+    type Stream: Stream<Item = Result<Message<Self::Acker>>> + Send;
 
-    fn read(&self) -> Result<Pin<Box<dyn Stream<Item = Result<Message<Self::Acker>>> + Send>>>;
+    fn read(&self) -> Result<Self::Stream>;
 }
 
 #[async_trait]

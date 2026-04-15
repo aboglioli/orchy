@@ -6,7 +6,7 @@ together on complex goals — like a company operating system for agents.
 
 ## What Orchy Does
 
-Orchy exposes ~80 MCP tools over Streamable HTTP. Agents connect, register,
+Orchy exposes ~63 MCP tools over Streamable HTTP. Agents connect, register,
 and use these tools to coordinate. Orchy enforces the rules; agents bring
 the intelligence.
 
@@ -50,21 +50,26 @@ How agents organize, claim, and complete work.
 How the organization remembers what it has learned.
 
 Agents don't retain state between sessions. Every insight, decision, and
-finding must be externalized or it's lost. Three layers:
+finding must be externalized or it's lost. All knowledge lives in a **unified
+module** with typed entries (`kind`). Each entry has a `path` for hierarchical
+organization and `tags` for cross-cutting labels.
 
-- **Memory** — key-value facts and decisions. Short, searchable. Use structured
-  keys: `decision/auth-algorithm`, `finding/db-pool-limit`, `pattern/error-handling`.
-  Think of it as the organization's environment variables.
-- **Documents** — long-form markdown. Specs, architecture decisions, analysis,
-  post-mortems. Hierarchical paths: `specs/auth`, `architecture/database`.
-  Think of it as the organization's wiki.
-- **Skills** — reusable conventions and instructions that all agents follow.
-  Inherited through namespace hierarchy. Think of it as the organization's
-  playbook/runbook.
-- **Contexts** — session handoff snapshots. What you were working on, what you
-  accomplished, what's left. The next agent loads this to continue your work.
-- **Cross-project sharing** — link projects to import skills and memory. A
+- **Decisions** (`kind: decision`) — choices made with rationale. "We chose
+  RS256 over HS256 for key rotation support."
+- **Discoveries** (`kind: discovery`) — things found or learned during work.
+  Gotchas, constraints, performance findings.
+- **Documents** (`kind: document`) — long-form specs, architecture decisions,
+  analysis, post-mortems.
+- **Skills** (`kind: skill`) — reusable conventions and instructions that all
+  agents must follow. Inherited through namespace hierarchy.
+- **Contexts** (`kind: context`) — session handoff snapshots. What you were
+  working on, what's left. The next agent loads this to continue your work.
+- **Patterns**, **plans**, **configs**, **references**, **notes**, **logs** — see
+  `list_knowledge_types` for the full set.
+- **Cross-project sharing** — link projects to import knowledge entries. A
   "global" project serves as a shared resource pool across all projects.
+- **Semantic search** — `search_knowledge` finds relevant entries by meaning,
+  not just exact match. Powered by embeddings when configured.
 
 ## Architecture
 
@@ -90,9 +95,7 @@ crates/
 │       ├── agent/         # Agent aggregate + AgentStore trait + events
 │       ├── task/          # Task + TaskWatcher + ReviewRequest + state machine
 │       ├── message/       # Message threading + delivery tracking
-│       ├── memory/        # Key-value memory + ContextSnapshot + versioning
-│       ├── document/      # Markdown documents + versioning + search
-│       ├── skill/         # Project conventions with namespace inheritance
+│       ├── knowledge/     # Unified knowledge: notes, decisions, skills, context, docs
 │       ├── project/       # Project metadata + notes
 │       ├── resource_lock/ # TTL-based distributed locking
 │       ├── project_link/  # Cross-project resource sharing
@@ -116,7 +119,7 @@ crates/
         └── mcp/
             ├── handler.rs # Session state + ServerHandler + INSTRUCTIONS
             ├── params.rs  # MCP tool parameter structs
-            └── tools.rs   # ~80 MCP tool implementations
+            └── tools.rs   # MCP tool implementations
 ```
 
 ### Layer Rules
@@ -191,11 +194,11 @@ UUID v7 for all IDs (time-ordered).
 **Namespace hierarchy** — `/` (root), `/backend`, `/backend/auth`. Reads without
 namespace see everything. Writes default to agent's current namespace.
 
-**Optimistic concurrency** — Memory entries and documents use `Version` field.
+**Optimistic concurrency** — Knowledge entries use `Version` field.
 
 **Resource locking** — TTL-based. Released on disconnect. Use for files, not data.
 
-**Session continuity** — `save_context` before disconnect, `load_context` on
+**Session continuity** — `write_knowledge(kind: "context")` before disconnect, `list_knowledge(kind: "context")` on
 startup. Falls back to most recent snapshot in namespace if no own context exists.
 
 ### Agent Disconnect Cleanup
@@ -210,63 +213,66 @@ When an agent disconnects (or times out via heartbeat monitor):
 
 **Startup:**
 1. `register_agent(project, description)` — roles auto-assigned from task demand
-2. `get_project` + `get_project_summary` — understand project state
-3. `list_skills(inherited: true)` — load conventions
-4. `load_context` — find handoff notes from previous sessions
-5. `search_memory` / `search_documents` — check existing knowledge
-6. `check_mailbox` — read pending messages
-7. `get_next_task` — claim work
+2. `get_project` — metadata; use `include_summary` for task/agent overview
+3. `list_knowledge(kind: "skill")` — load conventions
+4. `list_knowledge(kind: "context")` — find handoff notes from previous sessions
+5. `search_knowledge` — check existing decisions and discoveries
+6. `list_messages` — inbound mailbox or `direction: "outbound"` for sent mail
+7. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
 
 **Working:**
 - `heartbeat` every ~30s
-- `poll_updates` + `check_mailbox` for reactivity
+- `poll_updates` + `list_messages` for reactivity
 - `watch_task` to track dependencies
 - `lock_resource` before editing shared files
-- `write_memory` for decisions, `write_document` for analysis
+- `write_knowledge` for decisions, discoveries, patterns
 
 **Completing:**
 - `complete_task` with actionable summary (never just "done")
-- `write_memory` for each key decision
-- `write_document` for analysis/specs
+- `write_knowledge` for each key decision or discovery
 
 **Disconnecting:**
-- `save_context` with structured handoff: task ID, progress, blockers, decisions
+- `write_knowledge(kind: "context", path: "handoff")` with: task ID, progress, blockers, decisions
 - `disconnect` — tasks released to pending, locks freed, watchers removed
 
-## Knowledge Capture
+## Knowledge Module
 
-Knowledge must be externalized — agents don't retain state between sessions.
+All persistent knowledge lives in a single unified module with typed entries.
+Use `list_knowledge_types` to discover available kinds.
 
-**Memory** (`write_memory`) — Short facts and decisions. Structured keys:
-`decision/auth-algorithm`, `finding/db-pool-limit`, `pattern/error-handling`.
-Searchable via `search_memory`.
+| Kind | Use for |
+|------|---------|
+| `note` | general observations and records |
+| `decision` | choices made with rationale |
+| `discovery` | things found or learned |
+| `pattern` | recurring approaches or conventions |
+| `context` | session summaries / agent state snapshots |
+| `document` | long-form specs, analysis, architecture |
+| `config` | configuration or setup information |
+| `reference` | external references or links |
+| `plan` | strategies, roadmaps, approaches |
+| `log` | activity or change log entries |
+| `skill` | instructions/conventions agents must follow |
 
-**Documents** (`write_document`) — Long-form analysis, specs, architecture
-decisions. Hierarchical paths: `specs/auth`, `architecture/database-design`.
-Searchable via `search_documents`.
+**Paths** identify the topic: `auth-algorithm`, `api-design`, `error-handling`.
+Use hierarchy for sub-topics: `auth/jwt-strategy`. Don't repeat the kind in
+the path — the kind already categorizes. Scoped by `(project, namespace, path)`.
 
-**Task notes** (`add_task_note`) — Progress notes on specific tasks. Persist
-across agent sessions (not cleared on release).
-
-**Context snapshots** (`save_context`) — Session handoff notes. Include current
-task, progress, blockers, decisions.
-
-**Skills** (`write_skill`) — Reusable conventions and patterns. Inherited through
-namespace hierarchy. Agents should follow them.
+**Skills** (kind=skill) inherit through namespace hierarchy — child namespaces
+override parent skills with the same path.
 
 A new agent joining the project should:
-1. Read skills to understand conventions
-2. Search memory/documents to understand decisions already made
-3. Load context to find the latest handoff note
+1. `list_knowledge(kind: "skill")` to understand conventions
+2. `search_knowledge` to find decisions and discoveries
+3. `list_knowledge(kind: "context")` for the latest handoff note
 4. Check task notes for progress on specific work
 
 ## Maintenance Patterns
 
 A "janitor" agent can compact and reorganize:
 
-- **Compact memory** — list related entries, merge into one, delete old ones
-- **Compact documents** — merge overlapping docs into a single comprehensive one
-- **Extract skills** — read memory/documents for recurring patterns, create skills
+- **Compact knowledge** — list related entries, merge into one, delete old ones
+- **Extract skills** — find recurring patterns in knowledge, create kind=skill entries
 - **Reorganize tasks** — merge related items, move to correct namespace
 - **Lock during compaction** — `lock_resource("compaction")` to prevent conflicts
 

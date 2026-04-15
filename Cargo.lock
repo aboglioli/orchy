@@ -1310,6 +1310,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "chrono",
+ "http",
  "orchy-core",
  "orchy-events",
  "orchy-store-memory",
@@ -1366,8 +1368,6 @@ dependencies = [
  "orchy-core",
  "orchy-events",
  "rusqlite",
- "sea-query",
- "sea-query-rusqlite",
  "serde_json",
  "sqlite-vec",
  "tokio",
@@ -1982,16 +1982,6 @@ dependencies = [
  "quote",
  "syn",
  "thiserror",
-]
-
-[[package]]
-name = "sea-query-rusqlite"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3743bbdfb24b1a84cc1a6fbf4b1188e6851f6e00ea20944b44c56bf03a585bb4"
-dependencies = [
- "rusqlite",
- "sea-query",
 ]
 
 [[package]]

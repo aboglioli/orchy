@@ -1,20 +1,11 @@
 use std::sync::Arc;
 
-use rmcp::model::{
-    GetPromptRequestParams, GetPromptResult, PaginatedRequestParams, Prompt, PromptMessage,
-    PromptMessageRole, ServerCapabilities, ServerInfo,
-};
-use rmcp::service::RequestContext;
-use rmcp::{ErrorData, RoleServer, ServerHandler};
-
 use orchy_core::agent::AgentId;
 use orchy_core::message::MessageId;
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::task::TaskId;
+use orchy_core::task::{ReviewId, TaskId};
 
 use crate::container::Container;
-
-type ListPromptsResult = rmcp::model::ListPromptsResult;
 
 struct SessionState {
     agent_id: AgentId,
@@ -26,6 +17,7 @@ struct SessionState {
 pub struct OrchyHandler {
     pub(crate) container: Arc<Container>,
     session: Arc<std::sync::RwLock<Option<SessionState>>>,
+    mcp_session_id: Arc<std::sync::RwLock<Option<String>>>,
 }
 
 impl OrchyHandler {
@@ -33,7 +25,12 @@ impl OrchyHandler {
         Self {
             container,
             session: Arc::new(std::sync::RwLock::new(None)),
+            mcp_session_id: Arc::new(std::sync::RwLock::new(None)),
         }
+    }
+
+    pub(crate) fn set_mcp_session_id(&self, session_id: String) {
+        *self.mcp_session_id.write().unwrap() = Some(session_id);
     }
 
     pub(crate) fn get_session_agent(&self) -> Option<AgentId> {
@@ -72,6 +69,14 @@ impl OrchyHandler {
             project,
             namespace,
         });
+
+        if let Some(session_id) = self.mcp_session_id.read().unwrap().as_ref() {
+            let session_agents = self.container.session_agents.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                session_agents.write().await.insert(session_id, agent_id);
+            });
+        }
     }
 
     pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
@@ -138,6 +143,11 @@ pub(crate) fn parse_task_id(s: &str) -> Result<TaskId, String> {
         .map_err(|e| format!("invalid task_id: {e}"))
 }
 
+pub(crate) fn parse_review_id(s: &str) -> Result<ReviewId, String> {
+    s.parse::<ReviewId>()
+        .map_err(|e| format!("invalid review_id: {e}"))
+}
+
 pub(crate) fn parse_agent_id(s: &str) -> Result<AgentId, String> {
     s.parse::<AgentId>()
         .map_err(|e| format!("invalid agent_id: {e}"))
@@ -152,32 +162,34 @@ pub(crate) fn to_json<T: serde::Serialize>(val: &T) -> String {
     serde_json::to_string_pretty(val).unwrap_or_else(|e| format!("serialization error: {e}"))
 }
 
-const INSTRUCTIONS: &str = "\
+pub(crate) const INSTRUCTIONS: &str = "\
 orchy — multi-agent coordination server.
 
 You are part of a coordinated multi-agent system. orchy provides shared \
-infrastructure: a task board, shared memory, documents, messaging, skills, \
+infrastructure: a task board, knowledge base, messaging, \
 resource locks, and cross-project links. \
 You bring the intelligence; orchy enforces the rules.
 
 ## On Session Start
 
 1. `register_agent` — project, roles (optional), description. \
-   Pass `agent_id` to resume a previous session.
-2. `get_project` + `get_project_summary` — load project context.
-3. `list_skills(inherited: true)` — load conventions. Follow them.
-4. `load_context` — check if a previous agent left a context snapshot. \
-   Also `search_contexts(query)` to find relevant handoff notes.
-5. `check_mailbox` — check for messages from other agents.
-6. `get_next_task` — claim work. Tasks released by a disconnected agent \
-   return to pending and can be re-claimed.
+   Pass `agent_id` on the same tool to resume a prior session. \
+   `list_agents` accepts optional `project` before you register.
+2. `get_project` — metadata; set `include_summary: true` for task/agent overview.
+3. `list_knowledge(kind: \"skill\")` — load conventions. Follow them.
+4. `list_knowledge(kind: \"context\")` — check for handoff notes from previous agents. \
+   Also `search_knowledge` to find relevant decisions and discoveries.
+5. `check_mailbox` — read incoming messages. `check_sent_messages` for sent mail.
+6. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek only.
 7. `heartbeat` — call every ~30s to stay alive.
+
+`mark_read` and `list_conversation` do not require a registered session.
 
 ## Before Disconnecting
 
-Always call `save_context` with a structured summary: \
-what task you were working on, what you accomplished, what's left, \
-and any decisions made. This is the handoff note for the next agent.
+Always `write_knowledge(kind: \"context\", path: \"handoff\")` with a structured \
+summary: current task, progress, blockers, decisions. This is the handoff note \
+for the next agent.
 
 ## Namespaces
 
@@ -191,158 +203,34 @@ pending → claimed → in_progress → completed/failed. \
 Always claim before starting. If another agent claimed it, move on. \
 `split_task` breaks a task into subtasks — parent auto-completes when all finish. \
 `merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
-without blocking the parent. Use `tag_task` for cross-cutting labels. \
+without blocking the parent. Use `tag_task` / `untag_task` for labels. \
 On disconnect, claimed tasks return to pending.
 
 ## Coordination
 
-- `write_memory` / `write_document` — share decisions and specs.
+- `write_knowledge` — persist decisions, discoveries, patterns. \
+  Always `search_knowledge` first to avoid duplicating existing entries. \
+  Call `list_knowledge_types` to see available types.
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.
 - `watch_task` to get notified when a task status changes.
 - `request_review` to ask another agent to review your work.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
-- `save_context` before your session ends for continuity.
-- `link_project` to import skills/memory from other projects.
+- `write_knowledge(kind: \"context\")` before your session ends for continuity.
+- `link_project` + `import_knowledge` to share knowledge across projects.
 - Register without roles — orchy assigns them based on task demand.
 
 ## Knowledge Capture
 
 You must externalize knowledge so future agents can benefit:
 
-- After completing a task, `write_memory` for each key decision \
-  (e.g. key: `decision/auth-algorithm`, value: `RS256 over HS256 for key rotation`).
-- Write longer analysis, specs, or architecture notes with `write_document`.
+- After completing a task, `write_knowledge` for each key decision \
+  (e.g. path: `auth-algorithm`, kind: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned, \
   what the next agent should know. Never just 'done'.
-- Before disconnecting, `save_context` with structured handoff: current task, \
-  progress, blockers, decisions.
+- Before disconnecting, `write_knowledge(kind: \"context\", path: \"handoff\")` \
+  with structured summary: current task, progress, blockers, decisions.
 - When you discover something non-obvious (a gotcha, a pattern, a constraint), \
-  write it to memory immediately — don't wait until task completion.
-- Use `search_memory` and `search_documents` before starting work to check \
+  write it to knowledge immediately — don't wait until task completion.
+- Use `search_knowledge` before starting work to check \
   if a previous agent already explored this area.";
-
-impl ServerHandler for OrchyHandler {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .enable_prompts()
-                .build(),
-        )
-        .with_instructions(INSTRUCTIONS.to_string())
-    }
-
-    async fn call_tool(
-        &self,
-        request: rmcp::model::CallToolRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::CallToolResult, ErrorData> {
-        self.touch_heartbeat();
-        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        Self::tool_router().call(tcc).await
-    }
-
-    async fn list_tools(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::ListToolsResult, ErrorData> {
-        Ok(rmcp::model::ListToolsResult {
-            tools: Self::tool_router().list_all(),
-            meta: None,
-            next_cursor: None,
-        })
-    }
-
-    async fn list_prompts(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ListPromptsResult, ErrorData> {
-        let (project, namespace) = match (self.get_session_project(), self.get_session_namespace())
-        {
-            (Some(p), Some(ns)) => (p, ns),
-            _ => {
-                return Ok(ListPromptsResult {
-                    prompts: vec![],
-                    meta: None,
-                    next_cursor: None,
-                });
-            }
-        };
-
-        let skills = self
-            .container
-            .skill_service
-            .list_with_inherited(&project, &namespace)
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-        let prompts = skills
-            .into_iter()
-            .map(|s| {
-                Prompt::new(
-                    s.name().to_string(),
-                    Some(s.description().to_string()),
-                    None,
-                )
-            })
-            .collect();
-
-        Ok(ListPromptsResult {
-            prompts,
-            meta: None,
-            next_cursor: None,
-        })
-    }
-
-    async fn get_prompt(
-        &self,
-        request: GetPromptRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<GetPromptResult, ErrorData> {
-        let project = self
-            .get_session_project()
-            .ok_or_else(|| ErrorData::internal_error("no session project", None))?;
-        let namespace = self
-            .get_session_namespace()
-            .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
-
-        let skill = self
-            .container
-            .skill_service
-            .read(&project, &namespace, &request.name)
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-        let skill = match skill {
-            Some(s) => s,
-            None => {
-                let inherited = self
-                    .container
-                    .skill_service
-                    .list_with_inherited(&project, &namespace)
-                    .await
-                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-                inherited
-                    .into_iter()
-                    .find(|s| s.name() == request.name)
-                    .ok_or_else(|| {
-                        ErrorData::invalid_params(
-                            format!("skill '{}' not found", request.name),
-                            None,
-                        )
-                    })?
-            }
-        };
-
-        let mut result = GetPromptResult::new(vec![PromptMessage::new_text(
-            PromptMessageRole::User,
-            skill.content().to_string(),
-        )]);
-        result.description = Some(skill.description().to_string());
-        Ok(result)
-    }
-}

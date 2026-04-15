@@ -1,28 +1,13 @@
 use std::path::Path;
 
+use orchy_core::knowledge::service::KnowledgeService;
+use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore, WriteKnowledge};
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::skill::SkillStore;
-use orchy_core::skill::WriteSkill;
-use orchy_core::skill::service::SkillService;
 use tracing::{info, warn};
 
-/// Loads skill files from a directory into the store.
-///
-/// Directory structure maps to namespaces:
-///   skills/my-project/commit-conventions.md  → namespace="my-project", name="commit-conventions"
-///   skills/my-project/backend/coding-style.md → namespace="my-project/backend", name="coding-style"
-///
-/// Files support optional frontmatter:
-///   ---
-///   description: Short description
-///   ---
-///   Skill content here...
-///
-/// If no frontmatter, the filename (without extension) is the name and
-/// description defaults to the name.
-pub async fn load_skills_from_dir<S: SkillStore>(
+pub async fn load_skills_from_dir<S: KnowledgeStore>(
     dir: &Path,
-    service: &SkillService<S>,
+    service: &KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     if !dir.exists() {
         warn!(path = %dir.display(), "skills directory does not exist, skipping");
@@ -35,10 +20,10 @@ pub async fn load_skills_from_dir<S: SkillStore>(
     Ok(count)
 }
 
-fn load_recursive<'a, S: SkillStore>(
+fn load_recursive<'a, S: KnowledgeStore>(
     base: &'a Path,
     current: &'a Path,
-    service: &'a SkillService<S>,
+    service: &'a KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
     count: &'a mut usize,
 ) -> std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>,
@@ -46,10 +31,10 @@ fn load_recursive<'a, S: SkillStore>(
     Box::pin(async move { load_recursive_inner(base, current, service, count).await })
 }
 
-async fn load_recursive_inner<S: SkillStore>(
+async fn load_recursive_inner<S: KnowledgeStore>(
     base: &Path,
     current: &Path,
-    service: &SkillService<S>,
+    service: &KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
     count: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
@@ -112,13 +97,17 @@ async fn load_recursive_inner<S: SkillStore>(
         let raw = std::fs::read_to_string(&path)?;
         let (description, content) = parse_frontmatter(&raw, &name);
 
-        let cmd = WriteSkill {
+        let cmd = WriteKnowledge {
             project: project.clone(),
             namespace: namespace.clone(),
-            name: name.clone(),
-            description,
+            path: format!("skills/{name}"),
+            kind: KnowledgeKind::Skill,
+            title: description,
             content,
-            written_by: None,
+            tags: vec![],
+            expected_version: None,
+            agent_id: None,
+            metadata: std::collections::HashMap::new(),
         };
 
         service

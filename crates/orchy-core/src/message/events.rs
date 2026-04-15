@@ -11,6 +11,8 @@ pub struct MessageSentPayload {
     pub message_id: String,
     pub from: String,
     pub to: String,
+    pub body: String,
+    pub reply_to: Option<String>,
 }
 
 #[derive(Serialize)]

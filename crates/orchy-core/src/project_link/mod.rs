@@ -74,15 +74,15 @@ impl FromStr for ProjectLinkId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SharedResourceType {
-    Skills,
-    Memory,
+    Knowledge,
+    Tasks,
 }
 
 impl fmt::Display for SharedResourceType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SharedResourceType::Skills => write!(f, "skills"),
-            SharedResourceType::Memory => write!(f, "memory"),
+            SharedResourceType::Knowledge => write!(f, "knowledge"),
+            SharedResourceType::Tasks => write!(f, "tasks"),
         }
     }
 }
@@ -92,8 +92,8 @@ impl FromStr for SharedResourceType {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "skills" => Ok(SharedResourceType::Skills),
-            "memory" => Ok(SharedResourceType::Memory),
+            "knowledge" => Ok(SharedResourceType::Knowledge),
+            "tasks" => Ok(SharedResourceType::Tasks),
             other => Err(format!("unknown resource type: {other}")),
         }
     }
@@ -227,7 +227,7 @@ mod tests {
         let link = ProjectLink::new(
             project("source"),
             project("target"),
-            vec![SharedResourceType::Skills],
+            vec![SharedResourceType::Knowledge],
         );
         assert!(link.is_ok());
     }
@@ -237,7 +237,7 @@ mod tests {
         let link = ProjectLink::new(
             project("same"),
             project("same"),
-            vec![SharedResourceType::Skills],
+            vec![SharedResourceType::Knowledge],
         );
         assert!(link.is_err());
     }
@@ -250,21 +250,25 @@ mod tests {
 
     #[test]
     fn has_resource_type_checks() {
-        let link =
-            ProjectLink::new(project("a"), project("b"), vec![SharedResourceType::Skills]).unwrap();
-        assert!(link.has_resource_type(SharedResourceType::Skills));
-        assert!(!link.has_resource_type(SharedResourceType::Memory));
+        let link = ProjectLink::new(
+            project("a"),
+            project("b"),
+            vec![SharedResourceType::Knowledge],
+        )
+        .unwrap();
+        assert!(link.has_resource_type(SharedResourceType::Knowledge));
+        assert!(!link.has_resource_type(SharedResourceType::Tasks));
     }
 
     #[test]
     fn parse_resource_type() {
         assert_eq!(
-            "skills".parse::<SharedResourceType>().unwrap(),
-            SharedResourceType::Skills
+            "knowledge".parse::<SharedResourceType>().unwrap(),
+            SharedResourceType::Knowledge
         );
         assert_eq!(
-            "memory".parse::<SharedResourceType>().unwrap(),
-            SharedResourceType::Memory
+            "tasks".parse::<SharedResourceType>().unwrap(),
+            SharedResourceType::Tasks
         );
         assert!("invalid".parse::<SharedResourceType>().is_err());
     }

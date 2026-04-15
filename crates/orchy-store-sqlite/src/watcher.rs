@@ -11,19 +11,21 @@ use crate::SqliteBackend;
 
 impl WatcherStore for SqliteBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO task_watchers (task_id, agent_id, project, namespace, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![
-                watcher.task_id().to_string(),
-                watcher.agent_id().to_string(),
-                watcher.project().to_string(),
-                watcher.namespace().to_string(),
-                watcher.created_at().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        {
+            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT OR REPLACE INTO task_watchers (task_id, agent_id, project, namespace, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    watcher.task_id().to_string(),
+                    watcher.agent_id().to_string(),
+                    watcher.project().to_string(),
+                    watcher.namespace().to_string(),
+                    watcher.created_at().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
 
         let events = watcher.drain_events();
         if !events.is_empty() {
