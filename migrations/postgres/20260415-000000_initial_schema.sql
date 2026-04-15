@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS agents (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id UUID REFERENCES agents(id),
+    alias TEXT,
     roles JSONB NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
@@ -15,6 +16,7 @@ CREATE TABLE IF NOT EXISTS agents (
     connected_at TIMESTAMPTZ NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'
 );
+CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (project, alias) WHERE alias IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID PRIMARY KEY,

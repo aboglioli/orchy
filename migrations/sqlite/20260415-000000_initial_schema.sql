@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS agents (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id TEXT,
+    alias TEXT,
     roles TEXT NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS agents (
     connected_at TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}'
 );
+CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (project, alias) WHERE alias IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,

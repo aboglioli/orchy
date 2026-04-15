@@ -53,6 +53,7 @@ async fn agent_save_and_find() {
         Namespace::root(),
         vec!["coder".into()],
         "test agent".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -75,6 +76,7 @@ async fn agent_save_updates_existing() {
         Namespace::root(),
         vec!["dev".into()],
         "original".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -99,6 +101,7 @@ async fn agent_disconnect_sets_status() {
         Namespace::root(),
         vec![],
         "".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -121,6 +124,7 @@ async fn agent_find_timed_out() {
         Namespace::root(),
         vec![],
         "".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
