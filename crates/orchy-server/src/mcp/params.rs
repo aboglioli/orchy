@@ -8,7 +8,8 @@ pub struct RegisterAgentParams {
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
     pub description: String,
-    /// Resume a previous agent session.
+    /// Resume this orchy agent after a new MCP session (e.g. orchy or client restarted).
+    /// Use the `id` from your last successful `register_agent` response or handoff knowledge.
     pub agent_id: Option<String>,
     /// Create as a child of this parent agent.
     pub parent_id: Option<String>,
@@ -225,7 +226,15 @@ pub struct GetProjectParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct UpdateProjectParams {
-    pub description: String,
+    pub description: Option<String>,
+    /// Expected version for optimistic concurrency.
+    pub version: Option<u64>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SetProjectMetadataParams {
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

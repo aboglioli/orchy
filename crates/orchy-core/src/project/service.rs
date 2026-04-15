@@ -34,4 +34,16 @@ impl<S: ProjectStore> ProjectService<S> {
         self.store.save(&mut project).await?;
         Ok(project)
     }
+
+    pub async fn set_metadata(
+        &self,
+        id: &ProjectId,
+        key: String,
+        value: String,
+    ) -> Result<Project> {
+        let mut project = self.get_or_create(id).await?;
+        project.set_metadata(key, value);
+        self.store.save(&mut project).await?;
+        Ok(project)
+    }
 }

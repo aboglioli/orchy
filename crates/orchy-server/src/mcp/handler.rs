@@ -173,7 +173,9 @@ You bring the intelligence; orchy enforces the rules.
 ## On Session Start
 
 1. `register_agent` — project, roles (optional), description. \
-   Pass `agent_id` on the same tool to resume a prior session. \
+   Pass `agent_id` to resume the same orchy agent after a **new MCP session** (orchy or client \
+   restarted). Persist that UUID from the last registration or from `kind: \"context\"` handoff. \
+   `session_status` explains reconnect if unsure. \
    `list_agents` accepts optional `project` before you register.
 2. `get_project` — metadata; set `include_summary: true` for task/agent overview.
 3. `list_knowledge(kind: \"skill\")` — load conventions; `kind: \"overview\"` for bootstrap summaries. Follow skills.
@@ -183,7 +185,17 @@ You bring the intelligence; orchy enforces the rules.
 6. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek only.
 7. `heartbeat` — call every ~30s to stay alive.
 
-`mark_read` and `list_conversation` do not require a registered session.
+## After orchy or MCP transport restart
+
+MCP session ids are **in-memory** and do not survive a restart. The client must run a fresh MCP \
+handshake; you may see **Session not found** until it does.
+
+Your **orchy agent** (`agent_id`) lives in the database — it is **not** auto-attached to a new MCP \
+session. After reconnect, call **`register_agent` again with the same `agent_id`** you used before \
+(save it in the workspace or a handoff note). Tasks and knowledge remain under that id.
+
+`session_status` and `mark_read` / `list_conversation` do not require a registered orchy session; \
+most other tools do.
 
 ## Before Disconnecting
 

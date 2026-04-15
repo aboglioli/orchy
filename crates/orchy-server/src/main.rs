@@ -54,7 +54,8 @@ async fn main() {
     let mcp_container = container;
 
     let mut session_manager = LocalSessionManager::default();
-    session_manager.session_config.keep_alive = None;
+    session_manager.session_config.keep_alive =
+        mcp_container.config.server.mcp_session_keep_alive();
 
     let service = StreamableHttpService::new(
         move || Ok(OrchyHandler::new(mcp_container.clone())),

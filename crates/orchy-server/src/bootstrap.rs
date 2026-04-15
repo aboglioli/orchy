@@ -107,11 +107,14 @@ messaging, resource locks, and cross-project links
 MCP server: `http://{host}:{port}/mcp`
 Project namespace: `{namespace}`
 
+If orchy or the MCP client restarts, you get a new MCP session. Call `register_agent` again with
+the **same** `agent_id` from your last registration or handoff (`session_status` summarizes this).
+
 ## On Session Start
 
 1. **Register** — `register_agent(project, description)`. Roles are optional;
    orchy assigns them based on pending task demand if omitted.
-   Pass `agent_id` to resume a previous session.
+   Pass `agent_id` to resume the same orchy agent after an MCP/orchy restart.
 2. **Load context** — `get_project` (set `include_summary: true` for overview),
    then `list_knowledge(kind: "skill")` for conventions and `list_knowledge(kind: "overview")`
    for bootstrap-style project summaries. Follow skills.

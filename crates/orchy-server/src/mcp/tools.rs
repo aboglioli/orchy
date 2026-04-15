@@ -23,7 +23,9 @@ impl OrchyHandler {
     #[tool(
         description = "Register as an agent. Required before almost every other tool. \
         Roles are optional — orchy assigns them from pending task demand if omitted. \
-        Pass agent_id to resume a previous session. Use parent_id for agent lineage."
+        Pass agent_id to resume the same orchy agent after a new MCP session (orchy or client \
+        restarted); persist that UUID from the last register_agent JSON or handoff knowledge. \
+        Use parent_id for agent lineage."
     )]
     async fn register_agent(
         &self,
@@ -100,6 +102,29 @@ impl OrchyHandler {
             }
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    #[tool(
+        description = "Whether this MCP session is bound to an orchy agent, and how to resume \
+        after an orchy or MCP transport restart. Does not require registration. Call after the \
+        client has reconnected (new MCP initialize) if tools failed with session errors or you \
+        are unsure whether you still need register_agent."
+    )]
+    async fn session_status(&self) -> Result<String, String> {
+        let payload = serde_json::json!({
+            "mcp_session_registered_with_orchy": self.get_session_agent().is_some(),
+            "agent_id": self.get_session_agent().map(|id| id.to_string()),
+            "project": self.get_session_project().map(|p| p.to_string()),
+            "namespace": self.get_session_namespace().map(|n| n.to_string()),
+            "after_orchy_or_mcp_restart": concat!(
+                "MCP Streamable HTTP session state is ephemeral. After orchy or the MCP client ",
+                "restarts, you get a new MCP session. Persist your orchy agent UUID from the last ",
+                "register_agent response (or handoff knowledge), then call register_agent again ",
+                "with the same project, description, namespace, and agent_id. That re-binds this ",
+                "MCP session to the existing agent; tasks, mailbox, and knowledge stay tied to that id."
+            ),
+        });
+        Ok(to_json(&payload))
     }
 
     #[tool(
@@ -1260,7 +1285,9 @@ impl OrchyHandler {
         })))
     }
 
-    #[tool(description = "Update the project description for the current session's project.")]
+    #[tool(
+        description = "Update the project description and/or metadata for the current session's project."
+    )]
     async fn update_project(
         &self,
         Parameters(params): Parameters<UpdateProjectParams>,
@@ -1269,10 +1296,51 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
+        let project = self
+            .container
+            .project_service
+            .get_or_create(&project_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if let Some(expected) = params.version {
+            let updated = project.updated_at().timestamp() as u64;
+            if expected != updated {
+                return Err(format!(
+                    "version mismatch: expected {}, got {}",
+                    expected, updated
+                ));
+            }
+        }
+
+        let description = params
+            .description
+            .unwrap_or_else(|| project.description().to_string());
+
         match self
             .container
             .project_service
-            .update_description(&project_id, params.description)
+            .update_description(&project_id, description)
+            .await
+        {
+            Ok(project) => Ok(to_json(&project)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Set a metadata key-value pair on the current session's project.")]
+    async fn set_project_metadata(
+        &self,
+        Parameters(params): Parameters<SetProjectMetadataParams>,
+    ) -> Result<String, String> {
+        let project_id = self
+            .get_session_project()
+            .ok_or("no agent registered for this session; call register_agent first")?;
+
+        match self
+            .container
+            .project_service
+            .set_metadata(&project_id, params.key, params.value)
             .await
         {
             Ok(project) => Ok(to_json(&project)),
