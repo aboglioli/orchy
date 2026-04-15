@@ -2,7 +2,7 @@
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
 board, unified knowledge base, messaging, resource locking, and project
-context — exposed as 63 MCP tools over Streamable HTTP.
+context — exposed as **65** MCP tools over Streamable HTTP.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides
 the coordination layer and enforces the rules.
@@ -80,7 +80,7 @@ and reviews. Parent tasks auto-complete when all subtasks finish.
 ### Agent lifecycle
 
 1. Register with `register_agent` (roles auto-assigned if omitted)
-2. `heartbeat` every ~30s (all tool calls also count as heartbeats)
+2. `heartbeat` every ~30s; after registration, MCP tool invocations refresh liveness
 3. On disconnect: tasks released, locks freed, watchers removed
 
 ### Resource locking
@@ -99,7 +99,16 @@ Every state change is recorded as a semantic domain event. Query with
 
 ## MCP Tools
 
-Tools marked **Session** require `register_agent` first.
+Authoritative definitions: `crates/orchy-server/src/mcp/tools.rs` and
+`crates/orchy-server/src/mcp/params.rs`. A running server exposes the current
+set via MCP `list_tools`.
+
+**Session** — `yes` means call `register_agent` first for that MCP session.
+**no** — callable without registration. **partial** — `list_agents` only: pass
+`project`, or register to use the session project.
+
+Tools without registration: `register_agent`, `list_knowledge_types`,
+`mark_read`, `list_conversation`, and `list_agents` when `project` is set.
 
 ---
 
@@ -107,8 +116,8 @@ Tools marked **Session** require `register_agent` first.
 
 | Tool | Session | Parameters |
 |------|---------|-----------|
-| `register_agent` | | `project` (req), `description` (req), `namespace`, `roles`, `agent_id`, `parent_id` |
-| `list_agents` | if no `project` | `project` |
+| `register_agent` | no | `project` (req), `description` (req), `namespace`, `roles`, `agent_id`, `parent_id`, `metadata` |
+| `list_agents` | partial | `project` |
 | `change_roles` | yes | `roles` (req) |
 | `move_agent` | yes | `namespace` (req) |
 | `heartbeat` | yes | |
@@ -121,7 +130,7 @@ Tools marked **Session** require `register_agent` first.
 | `post_task` | yes | `title` (req), `description` (req), `namespace`, `parent_id`, `priority`, `assigned_roles`, `depends_on` |
 | `get_task` | yes | `task_id` (req) |
 | `get_next_task` | yes | `namespace`, `role`, `claim` |
-| `list_tasks` | yes | `namespace`, `status` |
+| `list_tasks` | yes | `namespace`, `status`, `parent_id` |
 | `claim_task` | yes | `task_id` (req), `start` |
 | `start_task` | yes | `task_id` (req) |
 | `complete_task` | yes | `task_id` (req), `summary` |
@@ -136,10 +145,10 @@ Tools marked **Session** require `register_agent` first.
 | `split_task` | yes | `task_id` (req), `subtasks` (req) |
 | `replace_task` | yes | `task_id` (req), `replacements` (req), `reason` |
 | `merge_tasks` | yes | `task_ids` (req), `title` (req), `description` (req) |
-| `list_subtasks` | yes | `task_id` (req) |
 | `add_dependency` | yes | `task_id` (req), `dependency_id` (req) |
 | `remove_dependency` | yes | `task_id` (req), `dependency_id` (req) |
-| `mutate_task_tags` | yes | `task_id` (req), `tag` (req), `action` (req, add/remove) |
+| `tag_task` | yes | `task_id` (req), `tag` (req) |
+| `untag_task` | yes | `task_id` (req), `tag` (req) |
 | `list_tags` | yes | `namespace` |
 | `move_task` | yes | `task_id` (req), `new_namespace` (req) |
 | `watch_task` | yes | `task_id` (req) |
@@ -153,15 +162,17 @@ Tools marked **Session** require `register_agent` first.
 
 | Tool | Session | Parameters |
 |------|---------|-----------|
-| `list_knowledge_types` | yes | |
+| `list_knowledge_types` | no | |
 | `write_knowledge` | yes | `path` (req), `kind` (req), `title` (req), `content` (req), `namespace`, `tags`, `version`, `metadata` |
 | `read_knowledge` | yes | `path` (req), `namespace` |
 | `list_knowledge` | yes | `namespace`, `kind`, `tag`, `path_prefix`, `agent_id` |
 | `search_knowledge` | yes | `query` (req), `namespace`, `kind`, `limit` |
 | `delete_knowledge` | yes | `path` (req), `namespace` |
 | `append_knowledge` | yes | `path` (req), `kind` (req), `value` (req), `namespace`, `separator` |
-| `relocate_knowledge` | yes | `path` (req), `namespace`, `new_namespace`, `new_path` (one of ns/path) |
-| `mutate_knowledge_tags` | yes | `path` (req), `tag` (req), `action` (req, add/remove), `namespace` |
+| `move_knowledge` | yes | `path` (req), `new_namespace` (req), `namespace` |
+| `rename_knowledge` | yes | `path` (req), `new_path` (req), `namespace` |
+| `tag_knowledge` | yes | `path` (req), `tag` (req), `namespace` |
+| `untag_knowledge` | yes | `path` (req), `tag` (req), `namespace` |
 | `import_knowledge` | yes | `source_project` (req), `path` (req), `source_namespace` |
 
 ### Messages
@@ -169,11 +180,12 @@ Tools marked **Session** require `register_agent` first.
 | Tool | Session | Parameters |
 |------|---------|-----------|
 | `send_message` | yes | `to` (req), `body` (req), `namespace`, `reply_to` |
-| `list_messages` | yes | `namespace`, `direction` (inbound/outbound) |
-| `mark_read` | | `message_ids` (req) |
-| `list_conversation` | | `message_id` (req), `limit` |
+| `check_mailbox` | yes | `namespace` |
+| `check_sent_messages` | yes | `namespace` |
+| `mark_read` | no | `message_ids` (req) |
+| `list_conversation` | no | `message_id` (req), `limit` |
 
-### Resource Locking
+### Resource locking
 
 | Tool | Session | Parameters |
 |------|---------|-----------|
@@ -188,23 +200,17 @@ Tools marked **Session** require `register_agent` first.
 | `get_project` | yes | `include_summary` |
 | `update_project` | yes | `description` (req) |
 | `add_project_note` | yes | `body` (req) |
-| `get_agent_workload` | yes | `agent_id` |
+| `get_project_overview` | yes | `namespace` |
+| `list_namespaces` | yes | |
+| `poll_updates` | yes | `since`, `limit` |
 
-### Project Links
+### Project links
 
 | Tool | Session | Parameters |
 |------|---------|-----------|
 | `link_project` | yes | `source_project` (req), `resource_types` (req) |
 | `unlink_project` | yes | `source_project` (req) |
 | `list_project_links` | yes | |
-
-### Discovery
-
-| Tool | Session | Parameters |
-|------|---------|-----------|
-| `list_namespaces` | yes | |
-| `get_bootstrap_prompt` | yes | `namespace` |
-| `poll_updates` | yes | `since`, `limit` |
 
 ## License
 

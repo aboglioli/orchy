@@ -1,6 +1,10 @@
 # orchy MCP Tools Reference
 
-63 tools. Tools marked **Session** require `register_agent` first.
+**65** tools (counted from `crates/orchy-server/src/mcp/tools.rs`). This file
+is not auto-generated; for an accurate per-tool list and parameters see
+**README.md** (`## MCP Tools`) and `crates/orchy-server/src/mcp/params.rs`.
+
+Tools marked **Session** require `register_agent` first (exceptions: same as README).
 
 ## Agent
 

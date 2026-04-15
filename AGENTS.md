@@ -6,7 +6,7 @@ together on complex goals — like a company operating system for agents.
 
 ## What Orchy Does
 
-Orchy exposes ~63 MCP tools over Streamable HTTP. Agents connect, register,
+Orchy exposes **65** MCP tools over Streamable HTTP. Agents connect, register,
 and use these tools to coordinate. Orchy enforces the rules; agents bring
 the intelligence.
 
@@ -217,12 +217,12 @@ When an agent disconnects (or times out via heartbeat monitor):
 3. `list_knowledge(kind: "skill")` — load conventions
 4. `list_knowledge(kind: "context")` — find handoff notes from previous sessions
 5. `search_knowledge` — check existing decisions and discoveries
-6. `list_messages` — inbound mailbox or `direction: "outbound"` for sent mail
+6. `check_mailbox` — inbound; `check_sent_messages` for outbound
 7. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
 
 **Working:**
 - `heartbeat` every ~30s
-- `poll_updates` + `list_messages` for reactivity
+- `poll_updates` + `check_mailbox` for reactivity
 - `watch_task` to track dependencies
 - `lock_resource` before editing shared files
 - `write_knowledge` for decisions, discoveries, patterns
@@ -289,7 +289,9 @@ A "janitor" agent can compact and reorganize:
 - Embeddings provider lives in server crate, core only defines the trait.
 - TaskService uses 2 generics: `TS: TaskStore` + `S: AgentStore + WatcherStore + MessageStore + ReviewStore`.
 - poll_updates queries the events table, not task projections.
-- All tools require session except register_agent.
+- All tools require a registered session except `register_agent`,
+  `list_agents` (when `project` is passed), `list_knowledge_types`, `mark_read`,
+  and `list_conversation`.
 
 ## Configuration
 
