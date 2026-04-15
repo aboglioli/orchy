@@ -6,7 +6,7 @@ together on complex goals — like a company operating system for agents.
 
 ## What Orchy Does
 
-Orchy exposes **65** MCP tools over Streamable HTTP. Agents connect, register,
+Orchy exposes **69** MCP tools over Streamable HTTP. Agents connect, register,
 and use these tools to coordinate. Orchy enforces the rules; agents bring
 the intelligence.
 

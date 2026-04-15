@@ -33,17 +33,7 @@ impl StoreBackend {
         limit: usize,
     ) -> orchy_core::error::Result<Vec<orchy_events::SerializedEvent>> {
         match self {
-            StoreBackend::Memory(b) => {
-                let events = b.list_events()?;
-                let mut filtered: Vec<_> = events
-                    .into_iter()
-                    .filter(|e| e.organization == organization && e.timestamp >= since)
-                    .collect();
-                filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-                filtered.truncate(limit);
-                filtered.reverse();
-                Ok(filtered)
-            }
+            StoreBackend::Memory(b) => b.query_events(organization, since, limit),
             StoreBackend::Sqlite(b) => b.query_events(organization, since, limit),
             StoreBackend::Postgres(b) => b.query_events(organization, since, limit).await,
         }

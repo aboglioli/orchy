@@ -28,4 +28,25 @@ impl MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(store.clone())
     }
+
+    pub fn query_events(
+        &self,
+        organization: &str,
+        since: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> Result<Vec<SerializedEvent>> {
+        let store = self
+            .events
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut filtered: Vec<_> = store
+            .iter()
+            .filter(|e| e.organization == organization && e.timestamp >= since)
+            .cloned()
+            .collect();
+        filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        filtered.truncate(limit);
+        filtered.reverse();
+        Ok(filtered)
+    }
 }

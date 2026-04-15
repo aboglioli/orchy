@@ -2,7 +2,7 @@
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
 board, unified knowledge base, messaging, resource locking, and project
-context — exposed as **65** MCP tools over Streamable HTTP.
+context — exposed as **69** MCP tools over Streamable HTTP.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides
 the coordination layer and enforces the rules.

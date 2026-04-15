@@ -188,10 +188,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ChangeRolesParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
         match self
             .container
@@ -212,10 +209,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SetAliasParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
         let alias = params
             .alias
@@ -236,10 +230,7 @@ impl OrchyHandler {
 
     #[tool(description = "Send a heartbeat for the session agent to signal liveness.")]
     async fn heartbeat(&self) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
         match self.container.agent_service.heartbeat(&agent_id).await {
             Ok(()) => Ok("ok".to_string()),
@@ -252,10 +243,7 @@ impl OrchyHandler {
         Call this when your session is ending."
     )]
     async fn disconnect(&self) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
         if let Err(e) = self
             .container
@@ -301,18 +289,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveAgentParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
-        let namespace = match self
+        let namespace = self
             .build_and_register_namespace(Some(&params.namespace))
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
         match self
             .container
@@ -334,18 +315,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PostTaskParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
-        let namespace = match self
+        let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
         let priority = match params.priority.as_deref() {
             Some(p) => match p.parse::<Priority>() {
@@ -355,16 +329,12 @@ impl OrchyHandler {
             None => Priority::default(),
         };
 
-        let depends_on: Vec<TaskId> = match params
+        let depends_on: Vec<TaskId> = params
             .depends_on
             .unwrap_or_default()
             .iter()
             .map(|s| parse_task_id(s))
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(ids) => ids,
-            Err(e) => return Err(e),
-        };
+            .collect::<Result<Vec<_>, _>>()?;
 
         let parent_id = match params.parent_id.as_deref() {
             Some(s) => Some(parse_task_id(s)?),
@@ -403,15 +373,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetNextTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
-        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
         let roles = match params.role {
             Some(r) => vec![r],
@@ -473,15 +437,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTasksParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
         let status = params.status.as_deref().map(|s| match s {
             "pending" => Some(orchy_core::task::TaskStatus::Pending),
@@ -512,10 +470,12 @@ impl OrchyHandler {
             ..Default::default()
         };
 
-        match self.container.task_service.list(filter).await {
-            Ok(tasks) => Ok(to_json(&tasks)),
-            Err(e) => Err(e.to_string()),
-        }
+        self.container
+            .task_service
+            .list(filter)
+            .await
+            .map(|tasks| to_json(&tasks))
+            .map_err(|e| e.to_string())
     }
 
     #[tool(description = "Claim a specific task for the session agent. \
@@ -524,15 +484,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ClaimTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         let mut task = match self.container.task_service.claim(&task_id, &agent_id).await {
             Ok(t) => t,
@@ -561,15 +515,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<StartTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         match self.container.task_service.start(&task_id, &agent_id).await {
             Ok(task) => {
@@ -593,15 +541,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CompleteTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         match self
             .container
@@ -619,15 +561,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<FailTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         match self
             .container
@@ -648,10 +584,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CancelTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
 
@@ -672,10 +605,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UpdateTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
 
@@ -705,10 +635,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnblockTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
 
@@ -726,15 +653,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AssignTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         let agent_id = self.resolve_agent_id(&params.agent_id).await?;
 
@@ -757,10 +678,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SendMessageParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, project, _) = self.require_session()?;
 
         let target = match MessageTarget::parse(&params.to) {
             Ok(t) => t,
@@ -775,13 +693,9 @@ impl OrchyHandler {
             },
         };
 
-        let namespace = match self
+        let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
         let reply_to = match params.reply_to {
             Some(s) => match s.parse::<MessageId>() {
@@ -810,10 +724,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckMailboxParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, session_ns) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, project, session_ns) = self.require_session()?;
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
@@ -836,10 +747,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckSentMessagesParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, session_ns) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, project, session_ns) = self.require_session()?;
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
@@ -864,15 +772,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MarkReadParams>,
     ) -> Result<String, String> {
-        let ids: Vec<MessageId> = match params
+        let ids: Vec<MessageId> = params
             .message_ids
             .iter()
             .map(|s| parse_message_id(s))
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(ids) => ids,
-            Err(e) => return Err(e),
-        };
+            .collect::<Result<Vec<_>, _>>()?;
 
         match self.container.message_service.mark_read(&ids).await {
             Ok(()) => Ok("ok".to_string()),
@@ -890,10 +794,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListConversationParams>,
     ) -> Result<String, String> {
-        let message_id = match parse_message_id(&params.message_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let message_id = parse_message_id(&params.message_id)?;
 
         let limit = params.limit.map(|n| n as usize);
 
@@ -915,15 +816,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddTaskNoteParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         let author = self.get_session_agent();
 
@@ -947,15 +842,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SplitTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         let created_by = self.get_session_agent();
 
@@ -968,16 +857,12 @@ impl OrchyHandler {
                 },
                 None => Priority::default(),
             };
-            let depends_on: Vec<TaskId> = match sp
+            let depends_on: Vec<TaskId> = sp
                 .depends_on
                 .unwrap_or_default()
                 .iter()
                 .map(|s| parse_task_id(s))
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(ids) => ids,
-                Err(e) => return Err(e),
-            };
+                .collect::<Result<Vec<_>, _>>()?;
             subtasks.push(orchy_core::task::SubtaskDef {
                 title: sp.title,
                 description: sp.description,
@@ -1012,15 +897,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReplaceTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
         let created_by = self.get_session_agent();
 
@@ -1033,16 +912,12 @@ impl OrchyHandler {
                 },
                 None => Priority::default(),
             };
-            let depends_on: Vec<TaskId> = match sp
+            let depends_on: Vec<TaskId> = sp
                 .depends_on
                 .unwrap_or_default()
                 .iter()
                 .map(|s| parse_task_id(s))
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(ids) => ids,
-                Err(e) => return Err(e),
-            };
+                .collect::<Result<Vec<_>, _>>()?;
             replacements.push(orchy_core::task::SubtaskDef {
                 title: sp.title,
                 description: sp.description,
@@ -1079,20 +954,13 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MergeTasksParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_ids: Vec<TaskId> = match params
+        let task_ids: Vec<TaskId> = params
             .task_ids
             .iter()
             .map(|s| parse_task_id(s))
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(ids) => ids,
-            Err(e) => return Err(e),
-        };
+            .collect::<Result<Vec<_>, _>>()?;
 
         match self
             .container
@@ -1124,10 +992,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DelegateTaskParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
         let parent_id = parse_task_id(&params.task_id)?;
         let parent = self
@@ -1176,19 +1041,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddDependencyParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
-        let dep_id = match parse_task_id(&params.dependency_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
+        let dep_id = parse_task_id(&params.dependency_id)?;
 
         match self
             .container
@@ -1209,19 +1065,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RemoveDependencyParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
-        let dep_id = match parse_task_id(&params.dependency_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
+        let dep_id = parse_task_id(&params.dependency_id)?;
 
         match self
             .container
@@ -1433,33 +1280,20 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
-        let task_id = match parse_task_id(&params.task_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let task_id = parse_task_id(&params.task_id)?;
 
-        let namespace = match self
+        let namespace = self
             .build_and_register_namespace(Some(&params.new_namespace))
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
-        match self
-            .container
+        self.container
             .task_service
             .move_task(&task_id, namespace)
             .await
-        {
-            Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
-        }
+            .map(|task| to_json(&task))
+            .map_err(|e| e.to_string())
     }
 
     #[tool(
@@ -1507,22 +1341,15 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<LinkProjectParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
         let source = parse_project(&params.source_project)?;
 
-        let resource_types: Vec<SharedResourceType> = match params
+        let resource_types: Vec<SharedResourceType> = params
             .resource_types
             .iter()
             .map(|s| s.parse::<SharedResourceType>().map_err(|e| e.to_string()))
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(types) => types,
-            Err(e) => return Err(e),
-        };
+            .collect::<Result<Vec<_>, _>>()?;
 
         match self
             .container
@@ -1540,10 +1367,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnlinkProjectParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
         let source = parse_project(&params.source_project)?;
 
@@ -1583,10 +1407,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<TagTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self.container.task_service.tag(&task_id, params.tag).await {
@@ -1600,10 +1421,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UntagTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self
@@ -1625,18 +1443,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<LockResourceParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, project, _) = self.require_session()?;
 
-        let namespace = match self
+        let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
         let ttl = params.ttl_secs.unwrap_or(300);
 
@@ -1656,15 +1467,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnlockResourceParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, project, _) = self.require_session()?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_namespace(params.namespace.as_deref())?;
 
         match self
             .container
@@ -1682,15 +1487,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckLockParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_namespace(params.namespace.as_deref())?;
 
         match self
             .container
@@ -1709,10 +1508,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReleaseTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self.container.task_service.release(&task_id).await {
@@ -1730,10 +1526,7 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
         let tasks = self
             .container
@@ -1762,10 +1555,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetTaskParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self.container.task_service.get_with_context(&task_id).await {
@@ -1782,10 +1572,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WatchTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, namespace) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, project, namespace) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self
@@ -1804,10 +1591,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnwatchTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self
@@ -1829,10 +1613,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RequestReviewParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, namespace) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, project, namespace) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         let reviewer = match params.reviewer_agent.as_deref() {
@@ -1863,10 +1644,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ResolveReviewParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (agent_id, _, _) = self.require_session()?;
 
         let review_id = parse_review_id(&params.review_id)?;
 
@@ -1886,10 +1664,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListReviewsParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self
@@ -1908,10 +1683,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetReviewParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let _ = self.require_session()?;
 
         let review_id = parse_review_id(&params.review_id)?;
         match self.container.task_service.get_review(&review_id).await {
@@ -1929,10 +1701,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PollUpdatesParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
         let since = match params.since.as_deref() {
             Some(s) => chrono::DateTime::parse_from_rfc3339(s)
@@ -1995,26 +1764,15 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WriteKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
-        let namespace = match self
+        let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
         let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
 
-        let metadata =
-            match knowledge_metadata_from_json_str(params.metadata.as_deref(), "metadata") {
-                Ok(m) => m,
-                Err(e) => return Err(e),
-            };
+        let metadata = knowledge_metadata_from_json_str(params.metadata.as_deref(), "metadata")?;
         let metadata_remove = params.metadata_remove.unwrap_or_default();
 
         let cmd = WriteKnowledge {
@@ -2105,10 +1863,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListKnowledgeParams>,
     ) -> Result<String, String> {
-        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
         let kind = match params.kind.as_deref() {
             Some(t) => Some(t.parse::<KnowledgeKind>().map_err(|e: String| e)?),
@@ -2144,10 +1899,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchKnowledgeParams>,
     ) -> Result<String, String> {
-        let namespace = match self.build_optional_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
         let limit = params.limit.unwrap_or(10) as usize;
 
@@ -2176,10 +1928,7 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_namespace(params.namespace.as_deref())?;
 
         let entry = self
             .container
@@ -2200,18 +1949,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AppendKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
-        let namespace = match self
+        let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
         let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
 
@@ -2261,13 +2003,9 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
-        let new_namespace = match self
+        let new_namespace = self
             .build_and_register_namespace(Some(&params.new_namespace))
-            .await
-        {
-            Ok(n) => n,
-            Err(e) => return Err(e),
-        };
+            .await?;
 
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
         let meta_remove = params.metadata_remove;
@@ -2429,15 +2167,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ImportKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        let (_, project, _) = self.require_session()?;
 
-        let source_project = match parse_project(&params.source_project) {
-            Ok(p) => p,
-            Err(e) => return Err(e),
-        };
+        let source_project = parse_project(&params.source_project)?;
 
         let source_namespace = match params.source_namespace.as_deref() {
             Some(s) => parse_namespace(&format!("/{s}"))?,
@@ -2452,10 +2184,7 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found in source: {}", params.path))?;
 
-        let namespace = match self.build_and_register_namespace(None).await {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
+        let namespace = self.build_and_register_namespace(None).await?;
 
         let mut md = source_entry.metadata().clone();
         if let Some(keys) = params.metadata_remove {

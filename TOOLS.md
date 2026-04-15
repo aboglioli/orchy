@@ -1,6 +1,6 @@
 # orchy MCP Tools Reference
 
-**65** tools (counted from `crates/orchy-server/src/mcp/tools.rs`). This file
+**69** tools (counted from `crates/orchy-server/src/mcp/tools.rs`). This file
 is not auto-generated; for an accurate per-tool list and parameters see
 **README.md** (`## MCP Tools`) and `crates/orchy-server/src/mcp/params.rs`.
 
