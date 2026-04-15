@@ -16,7 +16,7 @@ use orchy_runner::input::{is_focus_in_out, is_mouse_sgr_prefix, map_enter, unesc
 use orchy_runner::process::spawn_pty_raw;
 use pty_process::OwnedWritePty;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, oneshot};
 use tokio::time::sleep;
 
 struct RawModeGuard;
@@ -76,9 +76,17 @@ async fn main() -> Result<()> {
         spawn_ghost(text, ghost_delay, Arc::clone(&writer));
     }
 
-    spawn_stdin_to_pty(Arc::clone(&writer));
+    let stdin_done = spawn_stdin_to_pty(Arc::clone(&writer));
 
-    wait_for_child(&mut child).await
+    tokio::select! {
+        _ = stdin_done => {
+            // Ctrl+C or stdin closed — kill child and exit
+            let _ = child.kill().await;
+        }
+        _ = child.wait() => {}
+    }
+
+    Ok(())
 }
 
 fn spawn_pty_to_stdout(mut reader: pty_process::OwnedReadPty) {
@@ -116,7 +124,8 @@ fn spawn_ghost(text: String, delay_secs: u64, writer: Arc<Mutex<OwnedWritePty>>)
     });
 }
 
-fn spawn_stdin_to_pty(writer: Arc<Mutex<OwnedWritePty>>) {
+fn spawn_stdin_to_pty(writer: Arc<Mutex<OwnedWritePty>>) -> oneshot::Receiver<()> {
+    let (tx, rx) = oneshot::channel();
     let rt = tokio::runtime::Handle::current();
     std::thread::spawn(move || {
         let mut stdin = io::stdin();
@@ -149,15 +158,8 @@ fn spawn_stdin_to_pty(writer: Arc<Mutex<OwnedWritePty>>) {
                 Err(_) => break,
             }
         }
+        let _ = tx.send(());
     });
+    rx
 }
 
-async fn wait_for_child(child: &mut tokio::process::Child) -> Result<()> {
-    loop {
-        match child.try_wait().map_err(|e| Error::Io(format!("wait: {e}")))? {
-            Some(_) => break,
-            None => sleep(Duration::from_millis(100)).await,
-        }
-    }
-    Ok(())
-}
