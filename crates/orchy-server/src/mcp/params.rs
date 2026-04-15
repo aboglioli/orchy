@@ -8,6 +8,8 @@ pub struct RegisterAgentParams {
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
     pub description: String,
+    /// Short human-readable name for the agent (e.g. "backend-coder").
+    pub alias: Option<String>,
     /// Resume this orchy agent after a new MCP session (e.g. orchy or client restarted).
     /// Use the `id` from your last successful `register_agent` response or handoff knowledge.
     pub agent_id: Option<String>,
@@ -25,6 +27,12 @@ pub struct ChangeRolesParams {
 pub struct ListAgentsParams {
     /// Required if not registered yet.
     pub project: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct SetAliasParams {
+    /// Alias to set. Omit or null to clear.
+    pub alias: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

@@ -30,17 +30,19 @@ impl OrchyHandler {
     }
 
     pub(crate) fn set_mcp_session_id(&self, session_id: String) {
-        *self.mcp_session_id.write().unwrap() = Some(session_id);
+        if let Ok(mut guard) = self.mcp_session_id.write() {
+            *guard = Some(session_id);
+        }
     }
 
     pub(crate) fn get_session_agent(&self) -> Option<AgentId> {
-        self.session.read().unwrap().as_ref().map(|s| s.agent_id)
+        self.session.read().ok()?.as_ref().map(|s| s.agent_id)
     }
 
     pub(crate) fn get_session_project(&self) -> Option<ProjectId> {
         self.session
             .read()
-            .unwrap()
+            .ok()?
             .as_ref()
             .map(|s| s.project.clone())
     }
@@ -48,13 +50,16 @@ impl OrchyHandler {
     pub(crate) fn get_session_namespace(&self) -> Option<Namespace> {
         self.session
             .read()
-            .unwrap()
+            .ok()?
             .as_ref()
             .map(|s| s.namespace.clone())
     }
 
     pub(crate) fn require_session(&self) -> Result<(AgentId, ProjectId, Namespace), String> {
-        let guard = self.session.read().unwrap();
+        let guard = self
+            .session
+            .read()
+            .map_err(|_| "session lock poisoned".to_string())?;
         match guard.as_ref() {
             Some(s) => Ok((s.agent_id, s.project.clone(), s.namespace.clone())),
             None => {
@@ -64,15 +69,21 @@ impl OrchyHandler {
     }
 
     pub(crate) fn set_session(&self, agent_id: AgentId, project: ProjectId, namespace: Namespace) {
-        *self.session.write().unwrap() = Some(SessionState {
-            agent_id,
-            project,
-            namespace,
-        });
+        if let Ok(mut guard) = self.session.write() {
+            *guard = Some(SessionState {
+                agent_id,
+                project,
+                namespace,
+            });
+        }
 
-        if let Some(session_id) = self.mcp_session_id.read().unwrap().as_ref() {
+        if let Some(session_id) = self
+            .mcp_session_id
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().cloned())
+        {
             let session_agents = self.container.session_agents.clone();
-            let session_id = session_id.clone();
             tokio::spawn(async move {
                 session_agents.write().await.insert(session_id, agent_id);
             });
@@ -80,8 +91,10 @@ impl OrchyHandler {
     }
 
     pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
-        if let Some(state) = self.session.write().unwrap().as_mut() {
-            state.namespace = namespace;
+        if let Ok(mut guard) = self.session.write() {
+            if let Some(state) = guard.as_mut() {
+                state.namespace = namespace;
+            }
         }
     }
 
@@ -117,6 +130,31 @@ impl OrchyHandler {
             let _ = NamespaceStore::register(&*self.container.store, &project, &ns).await;
         }
         Ok(ns)
+    }
+
+    pub(crate) async fn resolve_agent_id(&self, s: &str) -> Result<AgentId, String> {
+        if let Ok(id) = s.parse::<AgentId>() {
+            return Ok(id);
+        }
+
+        let project = self
+            .get_session_project()
+            .ok_or("no session project for alias resolution")?;
+
+        let alias = orchy_core::agent::Alias::new(s).map_err(|e| e.to_string())?;
+
+        match self
+            .container
+            .agent_service
+            .find_by_alias(&project, &alias)
+            .await
+        {
+            Ok(Some(agent)) => Ok(agent.id()),
+            Ok(None) => Err(format!(
+                "agent not found: '{s}' (not a UUID or known alias)"
+            )),
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     pub(crate) fn build_optional_namespace(

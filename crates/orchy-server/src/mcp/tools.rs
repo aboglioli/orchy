@@ -113,6 +113,11 @@ impl OrchyHandler {
             namespace: namespace.clone(),
             roles,
             description: params.description,
+            alias: params
+                .alias
+                .map(|s| orchy_core::agent::Alias::new(s))
+                .transpose()
+                .map_err(|e| e.to_string())?,
             parent_id,
             metadata: params.metadata.unwrap_or_default(),
         };
@@ -192,6 +197,36 @@ impl OrchyHandler {
             .container
             .agent_service
             .change_roles(&agent_id, params.roles)
+            .await
+        {
+            Ok(agent) => Ok(to_json(&agent)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Set or clear the agent's alias. Alias must be unique within the project. \
+        Other agents can use your alias instead of UUID in send_message, assign_task, etc."
+    )]
+    async fn set_alias(
+        &self,
+        Parameters(params): Parameters<SetAliasParams>,
+    ) -> Result<String, String> {
+        let (agent_id, _, _) = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let alias = params
+            .alias
+            .map(|s| orchy_core::agent::Alias::new(s))
+            .transpose()
+            .map_err(|e| e.to_string())?;
+
+        match self
+            .container
+            .agent_service
+            .set_alias(&agent_id, alias)
             .await
         {
             Ok(agent) => Ok(to_json(&agent)),
@@ -701,10 +736,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let agent_id = match parse_agent_id(&params.agent_id) {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let agent_id = self.resolve_agent_id(&params.agent_id).await?;
 
         match self
             .container
@@ -732,7 +764,15 @@ impl OrchyHandler {
 
         let target = match MessageTarget::parse(&params.to) {
             Ok(t) => t,
-            Err(e) => return Err(format!("invalid target: {e}")),
+            Err(_) => match self.resolve_agent_id(&params.to).await {
+                Ok(id) => MessageTarget::Agent(id),
+                Err(_) => {
+                    return Err(format!(
+                        "invalid target: '{}' (not a UUID, role:name, broadcast, or known alias)",
+                        params.to
+                    ));
+                }
+            },
         };
 
         let namespace = match self
@@ -1796,7 +1836,7 @@ impl OrchyHandler {
 
         let task_id = parse_task_id(&params.task_id)?;
         let reviewer = match params.reviewer_agent.as_deref() {
-            Some(s) => Some(parse_agent_id(s)?),
+            Some(s) => Some(self.resolve_agent_id(s).await?),
             None => None,
         };
 
@@ -2075,9 +2115,8 @@ impl OrchyHandler {
             None => None,
         };
 
-        let agent_id = match params.agent_id.as_deref().map(parse_agent_id) {
-            Some(Ok(id)) => Some(id),
-            Some(Err(e)) => return Err(e),
+        let agent_id = match params.agent_id.as_deref() {
+            Some(s) => Some(self.resolve_agent_id(s).await?),
             None => None,
         };
 
