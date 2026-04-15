@@ -1280,28 +1280,6 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Add a note to the current session's project.")]
-    async fn add_project_note(
-        &self,
-        Parameters(params): Parameters<AddProjectNoteParams>,
-    ) -> Result<String, String> {
-        let project_id = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
-
-        let author = self.get_session_agent();
-
-        match self
-            .container
-            .project_service
-            .add_note(&project_id, author, params.body)
-            .await
-        {
-            Ok(project) => Ok(to_json(&project)),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
     #[tool(
         description = "List all registered namespaces for the current session's project. \
         Namespaces are auto-registered when agents connect or tasks are created."
@@ -2155,6 +2133,35 @@ impl OrchyHandler {
             .container
             .knowledge_service
             .rename(&entry.id(), params.new_path)
+            .await
+        {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Change the kind of an existing knowledge entry. \
+        Does not run on `write_knowledge` updates — use this tool explicitly. \
+        Bumps version when the kind actually changes.")]
+    async fn change_knowledge_kind(
+        &self,
+        Parameters(params): Parameters<ChangeKnowledgeKindParams>,
+    ) -> Result<String, String> {
+        let project = self.get_session_project().ok_or("no agent registered")?;
+
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s))?,
+            None => Namespace::root(),
+        };
+
+        let new_kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
+
+        let expected = params.version.map(KnowledgeVersion::from);
+
+        match self
+            .container
+            .knowledge_service
+            .change_kind(&project, &namespace, &params.path, new_kind, expected)
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),

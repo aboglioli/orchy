@@ -8,12 +8,10 @@ use std::future::Future;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::agent::AgentId;
 use crate::error::Result;
 use crate::namespace::ProjectId;
 
 use self::events as project_events;
-use crate::note::Note;
 
 pub trait ProjectStore: Send + Sync {
     fn save(&self, project: &mut Project) -> impl Future<Output = Result<()>> + Send;
@@ -24,7 +22,6 @@ pub trait ProjectStore: Send + Sync {
 pub struct Project {
     id: ProjectId,
     description: String,
-    notes: Vec<Note>,
     metadata: HashMap<String, String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -38,7 +35,6 @@ impl Project {
         let mut project = Self {
             id,
             description,
-            notes: Vec::new(),
             metadata: HashMap::new(),
             created_at: now,
             updated_at: now,
@@ -64,7 +60,6 @@ impl Project {
         Self {
             id: r.id,
             description: r.description,
-            notes: r.notes,
             metadata: r.metadata,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -83,23 +78,6 @@ impl Project {
             Payload::from_json(&project_events::ProjectDescriptionUpdatedPayload {
                 project: self.id.to_string(),
                 description: self.description.clone(),
-            })
-            .unwrap(),
-        )
-        .map(|e| self.collector.collect(e));
-    }
-
-    pub fn add_note(&mut self, author: Option<AgentId>, body: String) {
-        self.notes.push(Note::new(author, body.clone()));
-        self.updated_at = Utc::now();
-
-        let _ = Event::create(
-            self.id.as_ref(),
-            project_events::NAMESPACE,
-            project_events::TOPIC_NOTE_ADDED,
-            Payload::from_json(&project_events::ProjectNoteAddedPayload {
-                project: self.id.to_string(),
-                body,
             })
             .unwrap(),
         )
@@ -134,9 +112,6 @@ impl Project {
     pub fn description(&self) -> &str {
         &self.description
     }
-    pub fn notes(&self) -> &[Note] {
-        &self.notes
-    }
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }
@@ -151,7 +126,6 @@ impl Project {
 pub struct RestoreProject {
     pub id: ProjectId,
     pub description: String,
-    pub notes: Vec<Note>,
     pub metadata: HashMap<String, String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -164,19 +138,6 @@ mod tests {
     fn test_project() -> Project {
         let id = ProjectId::try_from("test-project".to_string()).unwrap();
         Project::new(id, "a test project".to_string())
-    }
-
-    #[test]
-    fn new_project_empty_notes() {
-        let project = test_project();
-        assert!(project.notes().is_empty());
-    }
-
-    #[test]
-    fn add_note_appends() {
-        let mut project = test_project();
-        project.add_note(None, "first note".to_string());
-        assert_eq!(project.notes().len(), 1);
     }
 
     #[test]

@@ -229,11 +229,6 @@ pub struct UpdateProjectParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct AddProjectNoteParams {
-    pub body: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListNamespacesParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -407,6 +402,16 @@ pub struct RenameKnowledgeParams {
     pub path: String,
     pub namespace: Option<String>,
     pub new_path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ChangeKnowledgeKindParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    /// Target kind; use list_knowledge_types for valid values.
+    pub kind: String,
+    /// Expected version for optimistic concurrency (after change, version increments).
+    pub version: Option<u64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

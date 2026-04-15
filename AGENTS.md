@@ -253,6 +253,7 @@ Use `list_knowledge_types` to discover available kinds.
 | `plan` | strategies, roadmaps, approaches |
 | `log` | activity or change log entries |
 | `skill` | instructions/conventions agents must follow |
+| `overview` | project summaries surfaced in bootstrap / `get_project_overview` |
 
 **Paths** identify the topic: `auth-algorithm`, `api-design`, `error-handling`.
 Use hierarchy for sub-topics: `auth/jwt-strategy`. Don't repeat the kind in

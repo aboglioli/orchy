@@ -34,6 +34,11 @@ pub async fn generate_bootstrap_prompt<
         .await
         .map_err(|e| e.to_string())?;
 
+    let overviews = knowledge_service
+        .list_overviews(project_id, namespace)
+        .await
+        .map_err(|e| e.to_string())?;
+
     let project = project_service
         .get_or_create(project_id)
         .await
@@ -72,6 +77,7 @@ pub async fn generate_bootstrap_prompt<
         host,
         port,
         &project,
+        &overviews,
         &skills,
         &agents,
         &active_tasks,
@@ -83,6 +89,7 @@ fn render(
     host: &str,
     port: u16,
     project: &Project,
+    overviews: &[Knowledge],
     skills: &[Knowledge],
     agents: &[Agent],
     tasks: &[Task],
@@ -106,7 +113,8 @@ Project namespace: `{namespace}`
    orchy assigns them based on pending task demand if omitted.
    Pass `agent_id` to resume a previous session.
 2. **Load context** — `get_project` (set `include_summary: true` for overview),
-   then `list_knowledge(kind: "skill")` for conventions. Follow them.
+   then `list_knowledge(kind: "skill")` for conventions and `list_knowledge(kind: "overview")`
+   for bootstrap-style project summaries. Follow skills.
 3. **Resume** — `list_knowledge(kind: "context")` for handoff notes from
    previous sessions. `search_knowledge` to find relevant decisions.
    `check_mailbox` for incoming messages. `check_sent_messages` for sent mail.
@@ -181,13 +189,20 @@ You must externalize knowledge so future agents can benefit:
         out.push_str("\n\n");
     }
 
-    let notes = project.notes();
-    if !notes.is_empty() {
-        out.push_str("## Project Notes\n\n");
-        for note in notes {
-            out.push_str(&format!("- {}\n", note.body()));
+    if !overviews.is_empty() {
+        out.push_str("## Project overview (knowledge)\n\n");
+        out.push_str(
+            "Entries with kind `overview` (namespace inheritance applies). \
+             Use `write_knowledge(kind: \"overview\", ...)` for durable summaries.\n\n",
+        );
+        for entry in overviews {
+            out.push_str(&format!(
+                "### {} (`{}`)\n\n{}\n\n",
+                entry.title(),
+                entry.namespace(),
+                entry.content()
+            ));
         }
-        out.push('\n');
     }
 
     if !agents.is_empty() {

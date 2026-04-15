@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use super::{Project, ProjectStore};
-use crate::agent::AgentId;
 use crate::error::Result;
 use crate::namespace::ProjectId;
 
@@ -32,18 +31,6 @@ impl<S: ProjectStore> ProjectService<S> {
     pub async fn update_description(&self, id: &ProjectId, description: String) -> Result<Project> {
         let mut project = self.get_or_create(id).await?;
         project.update_description(description);
-        self.store.save(&mut project).await?;
-        Ok(project)
-    }
-
-    pub async fn add_note(
-        &self,
-        id: &ProjectId,
-        author: Option<AgentId>,
-        body: String,
-    ) -> Result<Project> {
-        let mut project = self.get_or_create(id).await?;
-        project.add_note(author, body);
         self.store.save(&mut project).await?;
         Ok(project)
     }

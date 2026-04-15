@@ -176,7 +176,7 @@ You bring the intelligence; orchy enforces the rules.
    Pass `agent_id` on the same tool to resume a prior session. \
    `list_agents` accepts optional `project` before you register.
 2. `get_project` — metadata; set `include_summary: true` for task/agent overview.
-3. `list_knowledge(kind: \"skill\")` — load conventions. Follow them.
+3. `list_knowledge(kind: \"skill\")` — load conventions; `kind: \"overview\"` for bootstrap summaries. Follow skills.
 4. `list_knowledge(kind: \"context\")` — check for handoff notes from previous agents. \
    Also `search_knowledge` to find relevant decisions and discoveries.
 5. `check_mailbox` — read incoming messages. `check_sent_messages` for sent mail.
@@ -210,7 +210,8 @@ On disconnect, claimed tasks return to pending.
 
 - `write_knowledge` — persist decisions, discoveries, patterns. \
   Always `search_knowledge` first to avoid duplicating existing entries. \
-  Call `list_knowledge_types` to see available types.
+  Call `list_knowledge_types` to see available types. \
+  Use `change_knowledge_kind` to change an entry's kind (not via `write_knowledge` updates).
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.
 - `watch_task` to get notified when a task status changes.

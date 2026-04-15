@@ -64,6 +64,7 @@ Each entry has a `kind`, `path`, `title`, `content`, `tags`, and `version`.
 | `plan` | Strategy, roadmap, or approach |
 | `log` | Activity or change log entry |
 | `skill` | Instruction or convention agents must follow |
+| `overview` | Project summary included in HTTP/bootstrap prompts |
 
 Paths are hierarchical: `db-choice`, `auth/jwt-strategy`, `api-design`.
 Skills (kind=skill) inherit through namespace hierarchy.
@@ -171,6 +172,7 @@ Tools without registration: `register_agent`, `list_knowledge_types`,
 | `append_knowledge` | yes | `path` (req), `kind` (req), `value` (req), `namespace`, `separator` |
 | `move_knowledge` | yes | `path` (req), `new_namespace` (req), `namespace` |
 | `rename_knowledge` | yes | `path` (req), `new_path` (req), `namespace` |
+| `change_knowledge_kind` | yes | `path` (req), `kind` (req), `namespace`, `version` |
 | `tag_knowledge` | yes | `path` (req), `tag` (req), `namespace` |
 | `untag_knowledge` | yes | `path` (req), `tag` (req), `namespace` |
 | `import_knowledge` | yes | `source_project` (req), `path` (req), `source_namespace` |
@@ -199,7 +201,6 @@ Tools without registration: `register_agent`, `list_knowledge_types`,
 |------|---------|-----------|
 | `get_project` | yes | `include_summary` |
 | `update_project` | yes | `description` (req) |
-| `add_project_note` | yes | `body` (req) |
 | `get_project_overview` | yes | `namespace` |
 | `list_namespaces` | yes | |
 | `poll_updates` | yes | `since`, `limit` |

@@ -93,6 +93,7 @@ pub enum KnowledgeKind {
     Plan,
     Log,
     Skill,
+    Overview,
 }
 
 impl KnowledgeKind {
@@ -109,6 +110,7 @@ impl KnowledgeKind {
             KnowledgeKind::Plan => "strategy, roadmap, or approach",
             KnowledgeKind::Log => "activity or change log entry",
             KnowledgeKind::Skill => "instruction or convention agents must follow",
+            KnowledgeKind::Overview => "project overview text included in bootstrap prompts",
         }
     }
 
@@ -125,6 +127,7 @@ impl KnowledgeKind {
             KnowledgeKind::Plan,
             KnowledgeKind::Log,
             KnowledgeKind::Skill,
+            KnowledgeKind::Overview,
         ]
     }
 }
@@ -143,6 +146,7 @@ impl fmt::Display for KnowledgeKind {
             KnowledgeKind::Plan => "plan",
             KnowledgeKind::Log => "log",
             KnowledgeKind::Skill => "skill",
+            KnowledgeKind::Overview => "overview",
         };
         write!(f, "{s}")
     }
@@ -164,6 +168,7 @@ impl FromStr for KnowledgeKind {
             "plan" => Ok(KnowledgeKind::Plan),
             "log" => Ok(KnowledgeKind::Log),
             "skill" => Ok(KnowledgeKind::Skill),
+            "overview" => Ok(KnowledgeKind::Overview),
             other => Err(format!("unknown knowledge kind: {other}")),
         }
     }
@@ -355,6 +360,31 @@ impl Knowledge {
                 content: self.content.clone(),
                 version: self.version.as_u64(),
                 agent_id: self.agent_id.map(|a| a.to_string()),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+    }
+
+    pub fn change_kind(&mut self, new_kind: KnowledgeKind) {
+        if self.kind == new_kind {
+            return;
+        }
+        let old_kind = self.kind;
+        self.kind = new_kind;
+        self.version = self.version.next();
+        self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            knowledge_events::NAMESPACE,
+            knowledge_events::TOPIC_KIND_CHANGED,
+            Payload::from_json(&knowledge_events::KnowledgeKindChangedPayload {
+                entry_id: self.id.to_string(),
+                path: self.path.clone(),
+                old_kind: old_kind.to_string(),
+                new_kind: self.kind.to_string(),
+                version: self.version.as_u64(),
             })
             .unwrap(),
         )
@@ -663,5 +693,27 @@ mod tests {
         entry.update("title".into(), "v2".into(), None);
         assert_eq!(entry.version().as_u64(), 2);
         assert_eq!(entry.content(), "v2");
+    }
+
+    #[test]
+    fn change_kind_updates_kind_and_version() {
+        let mut entry = Knowledge::new(
+            proj("test"),
+            Namespace::root(),
+            "key".into(),
+            KnowledgeKind::Note,
+            "title".into(),
+            "body".into(),
+            vec![],
+            None,
+            HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(entry.version().as_u64(), 1);
+        entry.change_kind(KnowledgeKind::Overview);
+        assert_eq!(entry.kind(), KnowledgeKind::Overview);
+        assert_eq!(entry.version().as_u64(), 2);
+        entry.change_kind(KnowledgeKind::Overview);
+        assert_eq!(entry.version().as_u64(), 2);
     }
 }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::{
-    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, WriteKnowledge,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, Version, WriteKnowledge,
 };
 use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsProvider;
@@ -32,6 +32,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                     actual: existing.version().as_u64(),
                 });
             }
+            // `kind` applies only when creating; updates keep the existing kind (use change_kind).
             existing.update(cmd.title, cmd.content, cmd.agent_id);
             for tag in &cmd.tags {
                 existing.add_tag(tag.clone());
@@ -131,6 +132,45 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         Ok(entry)
     }
 
+    pub async fn change_kind(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        path: &str,
+        new_kind: KnowledgeKind,
+        expected_version: Option<Version>,
+    ) -> Result<Knowledge> {
+        let mut entry = self
+            .store
+            .find_by_path(project, namespace, path)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("knowledge entry not found: {path}")))?;
+
+        if let Some(expected) = expected_version {
+            if entry.version() != expected {
+                return Err(Error::VersionMismatch {
+                    expected: expected.as_u64(),
+                    actual: entry.version().as_u64(),
+                });
+            }
+        }
+
+        if entry.kind() == new_kind {
+            return Ok(entry);
+        }
+
+        entry.change_kind(new_kind);
+
+        if let Some(emb) = &self.embeddings {
+            let text = format!("{} {}", entry.title(), entry.content());
+            let vector = emb.embed(&text).await?;
+            entry.set_embedding(vector, emb.model().to_string(), emb.dimensions());
+        }
+
+        self.store.save(&mut entry).await?;
+        Ok(entry)
+    }
+
     pub async fn tag(&self, id: &KnowledgeId, tag: String) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
         entry.add_tag(tag);
@@ -194,6 +234,20 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         let filter = KnowledgeFilter {
             project: Some(project.clone()),
             kind: Some(KnowledgeKind::Skill),
+            ..Default::default()
+        };
+        let all = self.store.list(filter).await?;
+        Ok(Self::filter_with_inheritance(all, namespace))
+    }
+
+    pub async fn list_overviews(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Knowledge>> {
+        let filter = KnowledgeFilter {
+            project: Some(project.clone()),
+            kind: Some(KnowledgeKind::Overview),
             ..Default::default()
         };
         let all = self.store.list(filter).await?;
