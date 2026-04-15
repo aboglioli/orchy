@@ -191,7 +191,7 @@ async fn task_list_sorted_by_priority() {
 async fn message_save_and_find_pending() {
     let store = backend().await;
 
-    let from_agent = Agent::register(
+    let mut from_agent = Agent::register(
         proj("test-project"),
         Namespace::root(),
         vec![],
@@ -200,7 +200,7 @@ async fn message_save_and_find_pending() {
     );
     AgentStore::save(&store, &mut from_agent).await.unwrap();
 
-    let to_agent = Agent::register(
+    let mut to_agent = Agent::register(
         proj("test-project"),
         Namespace::root(),
         vec![],
@@ -243,7 +243,7 @@ async fn message_save_and_find_pending() {
 async fn message_find_by_id_and_mark_read() {
     let store = backend().await;
 
-    let from_agent = Agent::register(
+    let mut from_agent = Agent::register(
         proj("test-project"),
         Namespace::root(),
         vec![],
@@ -252,7 +252,7 @@ async fn message_find_by_id_and_mark_read() {
     );
     AgentStore::save(&store, &mut from_agent).await.unwrap();
 
-    let to_agent = Agent::register(
+    let mut to_agent = Agent::register(
         proj("test-project"),
         Namespace::root(),
         vec![],

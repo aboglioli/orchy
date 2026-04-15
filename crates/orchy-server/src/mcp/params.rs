@@ -20,7 +20,10 @@ pub struct ChangeRolesParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct ListAgentsParams {}
+pub struct ListAgentsParams {
+    /// Required if not registered yet.
+    pub project: Option<String>,
+}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct MoveAgentParams {
@@ -47,6 +50,8 @@ pub struct GetNextTaskParams {
     pub namespace: Option<String>,
     /// Defaults to all agent roles.
     pub role: Option<String>,
+    /// When true (default), claims the task. When false, returns the top candidate without claiming.
+    pub claim: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -59,6 +64,8 @@ pub struct ListTasksParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ClaimTaskParams {
     pub task_id: String,
+    /// When true, moves claimed → in_progress in the same call.
+    pub start: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -77,6 +84,26 @@ pub struct StartTaskParams {
 pub struct FailTaskParams {
     pub task_id: String,
     pub reason: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct CancelTaskParams {
+    pub task_id: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UpdateTaskParams {
+    pub task_id: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    /// low, normal, high, critical.
+    pub priority: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UnblockTaskParams {
+    pub task_id: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -166,18 +193,15 @@ pub struct SendMessageParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct CheckMailboxParams {
+pub struct ListMessagesParams {
     pub namespace: Option<String>,
+    /// "inbound" (default) or "outbound".
+    pub direction: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct MarkReadParams {
     pub message_ids: Vec<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct CheckSentMessagesParams {
-    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -193,7 +217,10 @@ pub struct GetBootstrapPromptParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetProjectParams {}
+pub struct GetProjectParams {
+    /// When true, adds summary: agent count, tasks by status, recent completions.
+    pub include_summary: Option<bool>,
+}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct UpdateProjectParams {
@@ -207,9 +234,6 @@ pub struct AddProjectNoteParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListNamespacesParams {}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetProjectSummaryParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetAgentWorkloadParams {
@@ -232,15 +256,11 @@ pub struct UnlinkProjectParams {
 pub struct ListProjectLinksParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct TagTaskParams {
+pub struct MutateTaskTagsParams {
     pub task_id: String,
     pub tag: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct UntagTaskParams {
-    pub task_id: String,
-    pub tag: String,
+    /// "add" or "remove".
+    pub action: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -309,6 +329,11 @@ pub struct ListReviewsParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct GetReviewParams {
+    pub review_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct PollUpdatesParams {
     /// ISO 8601 timestamp. Returns events after this time.
     pub since: Option<String>,
@@ -320,7 +345,7 @@ pub struct WriteKnowledgeParams {
     pub namespace: Option<String>,
     /// Hierarchical path (e.g. "db-choice" or "auth/jwt-strategy").
     pub path: String,
-    /// Required: note, decision, discovery, pattern, context, document, config, reference, plan, log.
+    /// Kind string; use list_knowledge_types for the full set (includes skill).
     pub kind: String,
     pub title: String,
     pub content: String,
@@ -339,7 +364,7 @@ pub struct ReadKnowledgeParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListKnowledgeParams {
     pub namespace: Option<String>,
-    /// Filter: note, decision, discovery, pattern, context, document, config, reference, plan, log.
+    /// Filter by kind; see list_knowledge_types (includes skill).
     pub kind: Option<String>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
@@ -371,24 +396,22 @@ pub struct AppendKnowledgeParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct MoveKnowledgeParams {
-    pub namespace: Option<String>,
+pub struct RelocateKnowledgeParams {
     pub path: String,
-    pub new_namespace: String,
+    pub namespace: Option<String>,
+    /// New namespace segment (move). Mutually exclusive with new_path.
+    pub new_namespace: Option<String>,
+    /// New path (rename). Mutually exclusive with new_namespace.
+    pub new_path: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct RenameKnowledgeParams {
-    pub path: String,
-    pub namespace: Option<String>,
-    pub new_path: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct TagKnowledgeParams {
+pub struct MutateKnowledgeTagsParams {
     pub path: String,
     pub namespace: Option<String>,
     pub tag: String,
+    /// "add" or "remove".
+    pub action: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

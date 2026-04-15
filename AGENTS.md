@@ -6,7 +6,7 @@ together on complex goals — like a company operating system for agents.
 
 ## What Orchy Does
 
-Orchy exposes ~80 MCP tools over Streamable HTTP. Agents connect, register,
+Orchy exposes ~63 MCP tools over Streamable HTTP. Agents connect, register,
 and use these tools to coordinate. Orchy enforces the rules; agents bring
 the intelligence.
 
@@ -50,21 +50,26 @@ How agents organize, claim, and complete work.
 How the organization remembers what it has learned.
 
 Agents don't retain state between sessions. Every insight, decision, and
-finding must be externalized or it's lost. Three layers:
+finding must be externalized or it's lost. All knowledge lives in a **unified
+module** with typed entries (`kind`). Each entry has a `path` for hierarchical
+organization and `tags` for cross-cutting labels.
 
-- **Memory** — key-value facts and decisions. Short, searchable. Use structured
-  keys: `decision/auth-algorithm`, `finding/db-pool-limit`, `pattern/error-handling`.
-  Think of it as the organization's environment variables.
-- **Documents** — long-form markdown. Specs, architecture decisions, analysis,
-  post-mortems. Hierarchical paths: `specs/auth`, `architecture/database`.
-  Think of it as the organization's wiki.
-- **Skills** — reusable conventions and instructions that all agents follow.
-  Inherited through namespace hierarchy. Think of it as the organization's
-  playbook/runbook.
-- **Contexts** — session handoff snapshots. What you were working on, what you
-  accomplished, what's left. The next agent loads this to continue your work.
-- **Cross-project sharing** — link projects to import skills and memory. A
+- **Decisions** (`kind: decision`) — choices made with rationale. "We chose
+  RS256 over HS256 for key rotation support."
+- **Discoveries** (`kind: discovery`) — things found or learned during work.
+  Gotchas, constraints, performance findings.
+- **Documents** (`kind: document`) — long-form specs, architecture decisions,
+  analysis, post-mortems.
+- **Skills** (`kind: skill`) — reusable conventions and instructions that all
+  agents must follow. Inherited through namespace hierarchy.
+- **Contexts** (`kind: context`) — session handoff snapshots. What you were
+  working on, what's left. The next agent loads this to continue your work.
+- **Patterns**, **plans**, **configs**, **references**, **notes**, **logs** — see
+  `list_knowledge_types` for the full set.
+- **Cross-project sharing** — link projects to import knowledge entries. A
   "global" project serves as a shared resource pool across all projects.
+- **Semantic search** — `search_knowledge` finds relevant entries by meaning,
+  not just exact match. Powered by embeddings when configured.
 
 ## Architecture
 
@@ -114,7 +119,7 @@ crates/
         └── mcp/
             ├── handler.rs # Session state + ServerHandler + INSTRUCTIONS
             ├── params.rs  # MCP tool parameter structs
-            └── tools.rs   # ~80 MCP tool implementations
+            └── tools.rs   # MCP tool implementations
 ```
 
 ### Layer Rules
@@ -208,16 +213,16 @@ When an agent disconnects (or times out via heartbeat monitor):
 
 **Startup:**
 1. `register_agent(project, description)` — roles auto-assigned from task demand
-2. `get_project` + `get_project_summary` — understand project state
+2. `get_project` — metadata; use `include_summary` for task/agent overview
 3. `list_knowledge(kind: "skill")` — load conventions
 4. `list_knowledge(kind: "context")` — find handoff notes from previous sessions
 5. `search_knowledge` — check existing decisions and discoveries
-6. `check_mailbox` — read pending messages
-7. `get_next_task` — claim work
+6. `list_messages` — inbound mailbox or `direction: "outbound"` for sent mail
+7. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
 
 **Working:**
 - `heartbeat` every ~30s
-- `poll_updates` + `check_mailbox` for reactivity
+- `poll_updates` + `list_messages` for reactivity
 - `watch_task` to track dependencies
 - `lock_resource` before editing shared files
 - `write_knowledge` for decisions, discoveries, patterns

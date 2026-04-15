@@ -1311,6 +1311,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "http",
  "orchy-core",
  "orchy-events",
  "orchy-store-memory",

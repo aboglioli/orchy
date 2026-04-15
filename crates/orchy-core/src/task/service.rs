@@ -52,12 +52,11 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         Ok(task)
     }
 
-    pub async fn get_next(
+    async fn sorted_pending_for_roles(
         &self,
-        agent: &AgentId,
         roles: &[String],
         namespace: Option<Namespace>,
-    ) -> Result<Option<Task>> {
+    ) -> Result<Vec<Task>> {
         let mut candidates: Vec<Task> = Vec::new();
 
         for role in roles {
@@ -75,6 +74,30 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         let mut seen = HashSet::new();
         candidates.retain(|t| seen.insert(t.id()));
         candidates.sort_by_key(|t| std::cmp::Reverse(t.priority()));
+        Ok(candidates)
+    }
+
+    pub async fn peek_next(
+        &self,
+        roles: &[String],
+        namespace: Option<Namespace>,
+    ) -> Result<Option<Task>> {
+        let candidates = self.sorted_pending_for_roles(roles, namespace).await?;
+        for task in candidates {
+            if self.all_deps_completed(task.depends_on()).await? {
+                return Ok(Some(task));
+            }
+        }
+        Ok(None)
+    }
+
+    pub async fn get_next(
+        &self,
+        agent: &AgentId,
+        roles: &[String],
+        namespace: Option<Namespace>,
+    ) -> Result<Option<Task>> {
+        let candidates = self.sorted_pending_for_roles(roles, namespace).await?;
 
         for mut task in candidates {
             if self.all_deps_completed(task.depends_on()).await? {
@@ -114,7 +137,38 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         task.fail(reason)?;
         self.task_store.save(&mut task).await?;
         self.notify_watchers(&task, "failed").await;
-        self.notify_blocked_dependents_of_failure(&task).await;
+        self.notify_blocked_dependents_terminated(&task, "failed")
+            .await;
+        Ok(task)
+    }
+
+    pub async fn cancel(&self, id: &TaskId, reason: Option<String>) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.cancel(reason)?;
+        self.task_store.save(&mut task).await?;
+        self.notify_watchers(&task, "cancelled").await;
+        self.notify_blocked_dependents_terminated(&task, "cancelled")
+            .await;
+        Ok(task)
+    }
+
+    pub async fn update_details(
+        &self,
+        id: &TaskId,
+        title: Option<String>,
+        description: Option<String>,
+        priority: Option<Priority>,
+    ) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.update_details(title, description, priority)?;
+        self.task_store.save(&mut task).await?;
+        Ok(task)
+    }
+
+    pub async fn unblock_manual(&self, id: &TaskId) -> Result<Task> {
+        let mut task = self.get(id).await?;
+        task.unblock()?;
+        self.task_store.save(&mut task).await?;
         Ok(task)
     }
 
@@ -703,7 +757,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         }
     }
 
-    async fn notify_blocked_dependents_of_failure(&self, failed_task: &Task) {
+    async fn notify_blocked_dependents_terminated(&self, failed_task: &Task, event: &str) {
         let blocked = self
             .task_store
             .list(TaskFilter {
@@ -718,9 +772,11 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                 if task.depends_on().contains(&failed_task.id()) {
                     if let Some(agent) = task.assigned_to() {
                         let body = format!(
-                            "[dependency-failed] task {} ({}) depends on failed task {} ({})",
+                            "[dependency-{}] task {} ({}) depends on {} task {} ({})",
+                            event,
                             task.id(),
                             task.title(),
+                            event,
                             failed_task.id(),
                             failed_task.title(),
                         );
@@ -734,7 +790,8 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                         );
                         let _ = MessageStore::save(&*self.store, &mut msg).await;
                     }
-                    self.notify_watchers(&task, "dependency failed").await;
+                    self.notify_watchers(&task, &format!("dependency {}", event))
+                        .await;
                 }
             }
         }

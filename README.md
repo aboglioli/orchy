@@ -108,7 +108,7 @@ Tools marked **Session** require `register_agent` first.
 | Tool | Session | Parameters |
 |------|---------|-----------|
 | `register_agent` | | `project` (req), `description` (req), `namespace`, `roles`, `agent_id`, `parent_id` |
-| `list_agents` | yes | |
+| `list_agents` | if no `project` | `project` |
 | `change_roles` | yes | `roles` (req) |
 | `move_agent` | yes | `namespace` (req) |
 | `heartbeat` | yes | |
@@ -120,12 +120,15 @@ Tools marked **Session** require `register_agent` first.
 |------|---------|-----------|
 | `post_task` | yes | `title` (req), `description` (req), `namespace`, `parent_id`, `priority`, `assigned_roles`, `depends_on` |
 | `get_task` | yes | `task_id` (req) |
-| `get_next_task` | yes | `namespace`, `role` |
+| `get_next_task` | yes | `namespace`, `role`, `claim` |
 | `list_tasks` | yes | `namespace`, `status` |
-| `claim_task` | yes | `task_id` (req) |
+| `claim_task` | yes | `task_id` (req), `start` |
 | `start_task` | yes | `task_id` (req) |
 | `complete_task` | yes | `task_id` (req), `summary` |
 | `fail_task` | yes | `task_id` (req), `reason` |
+| `cancel_task` | yes | `task_id` (req), `reason` |
+| `update_task` | yes | `task_id` (req), `title`, `description`, `priority` |
+| `unblock_task` | yes | `task_id` (req) |
 | `release_task` | yes | `task_id` (req) |
 | `assign_task` | yes | `task_id` (req), `agent_id` (req) |
 | `delegate_task` | yes | `task_id` (req), `title` (req), `description` (req), `priority`, `assigned_roles` |
@@ -136,8 +139,7 @@ Tools marked **Session** require `register_agent` first.
 | `list_subtasks` | yes | `task_id` (req) |
 | `add_dependency` | yes | `task_id` (req), `dependency_id` (req) |
 | `remove_dependency` | yes | `task_id` (req), `dependency_id` (req) |
-| `tag_task` | yes | `task_id` (req), `tag` (req) |
-| `untag_task` | yes | `task_id` (req), `tag` (req) |
+| `mutate_task_tags` | yes | `task_id` (req), `tag` (req), `action` (req, add/remove) |
 | `list_tags` | yes | `namespace` |
 | `move_task` | yes | `task_id` (req), `new_namespace` (req) |
 | `watch_task` | yes | `task_id` (req) |
@@ -145,6 +147,7 @@ Tools marked **Session** require `register_agent` first.
 | `request_review` | yes | `task_id` (req), `reviewer_agent`, `reviewer_role` |
 | `resolve_review` | yes | `review_id` (req), `approved` (req), `comments` |
 | `list_reviews` | yes | `task_id` (req) |
+| `get_review` | yes | `review_id` (req) |
 
 ### Knowledge
 
@@ -157,9 +160,8 @@ Tools marked **Session** require `register_agent` first.
 | `search_knowledge` | yes | `query` (req), `namespace`, `kind`, `limit` |
 | `delete_knowledge` | yes | `path` (req), `namespace` |
 | `append_knowledge` | yes | `path` (req), `kind` (req), `value` (req), `namespace`, `separator` |
-| `move_knowledge` | yes | `path` (req), `new_namespace` (req), `namespace` |
-| `rename_knowledge` | yes | `path` (req), `new_path` (req), `namespace` |
-| `tag_knowledge` | yes | `path` (req), `tag` (req), `namespace` |
+| `relocate_knowledge` | yes | `path` (req), `namespace`, `new_namespace`, `new_path` (one of ns/path) |
+| `mutate_knowledge_tags` | yes | `path` (req), `tag` (req), `action` (req, add/remove), `namespace` |
 | `import_knowledge` | yes | `source_project` (req), `path` (req), `source_namespace` |
 
 ### Messages
@@ -167,9 +169,8 @@ Tools marked **Session** require `register_agent` first.
 | Tool | Session | Parameters |
 |------|---------|-----------|
 | `send_message` | yes | `to` (req), `body` (req), `namespace`, `reply_to` |
-| `check_mailbox` | yes | `namespace` |
+| `list_messages` | yes | `namespace`, `direction` (inbound/outbound) |
 | `mark_read` | | `message_ids` (req) |
-| `check_sent_messages` | yes | `namespace` |
 | `list_conversation` | | `message_id` (req), `limit` |
 
 ### Resource Locking
@@ -184,10 +185,9 @@ Tools marked **Session** require `register_agent` first.
 
 | Tool | Session | Parameters |
 |------|---------|-----------|
-| `get_project` | yes | |
+| `get_project` | yes | `include_summary` |
 | `update_project` | yes | `description` (req) |
 | `add_project_note` | yes | `body` (req) |
-| `get_project_summary` | yes | |
 | `get_agent_workload` | yes | `agent_id` |
 
 ### Project Links

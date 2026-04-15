@@ -13,16 +13,18 @@ use orchy_core::project_link::SharedResourceType;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
-    OrchyHandler, parse_agent_id, parse_message_id, parse_namespace, parse_project, parse_task_id,
-    to_json,
+    OrchyHandler, parse_agent_id, parse_message_id, parse_namespace, parse_project,
+    parse_review_id, parse_task_id, to_json,
 };
 use super::params::*;
 
 #[tool_router]
 impl OrchyHandler {
-    #[tool(description = "Register as an agent. Required before any other tool. \
+    #[tool(
+        description = "Register as an agent. Required before almost every other tool. \
         Roles are optional — orchy assigns them from pending task demand if omitted. \
-        Use agent_id to resume a previous session. Use parent_id for agent lineage.")]
+        Pass agent_id to resume a previous session. Use parent_id for agent lineage."
+    )]
     async fn register_agent(
         &self,
         Parameters(params): Parameters<RegisterAgentParams>,
@@ -94,14 +96,19 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List connected agents in the current project.")]
+    #[tool(
+        description = "List agents in a project. Works before registration if project is passed."
+    )]
     async fn list_agents(
         &self,
-        Parameters(_params): Parameters<ListAgentsParams>,
+        Parameters(params): Parameters<ListAgentsParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
+        let project = match params.project.as_deref() {
+            Some(p) => parse_project(p)?,
+            None => self
+                .get_session_project()
+                .ok_or("pass project or register first")?,
+        };
 
         match self.container.agent_service.list().await {
             Ok(agents) => {
@@ -300,11 +307,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(
-        description = "Claim the next available task matching your roles and return it. \
-        Returns full context: ancestor chain (if subtask) and children (if split). \
-        Skips tasks with incomplete dependencies."
-    )]
+    #[tool(description = "Get the next available task matching your roles. \
+        When claim is true (default), claims the task and returns full context (ancestors, children). \
+        When claim is false, returns the top candidate without claiming (peek). \
+        Skips tasks with incomplete dependencies.")]
     async fn get_next_task(
         &self,
         Parameters(params): Parameters<GetNextTaskParams>,
@@ -327,23 +333,46 @@ impl OrchyHandler {
             },
         };
 
-        match self
-            .container
-            .task_service
-            .get_next(&agent_id, &roles, namespace)
-            .await
-        {
-            Ok(Some(task)) => {
-                let ctx = self
-                    .container
-                    .task_service
-                    .get_with_context(&task.id())
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(to_json(&ctx))
+        let claim = params.claim.unwrap_or(true);
+
+        if claim {
+            match self
+                .container
+                .task_service
+                .get_next(&agent_id, &roles, namespace)
+                .await
+            {
+                Ok(Some(task)) => {
+                    let ctx = self
+                        .container
+                        .task_service
+                        .get_with_context(&task.id())
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(to_json(&ctx))
+                }
+                Ok(None) => Ok("no tasks available".to_string()),
+                Err(e) => Err(e.to_string()),
             }
-            Ok(None) => Ok("null".to_string()),
-            Err(e) => Err(e.to_string()),
+        } else {
+            match self
+                .container
+                .task_service
+                .peek_next(&roles, namespace)
+                .await
+            {
+                Ok(Some(task)) => {
+                    let ctx = self
+                        .container
+                        .task_service
+                        .get_with_context(&task.id())
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Ok(to_json(&ctx))
+                }
+                Ok(None) => Ok("no tasks available".to_string()),
+                Err(e) => Err(e.to_string()),
+            }
         }
     }
 
@@ -397,7 +426,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Claim a specific task for the session agent.")]
+    #[tool(description = "Claim a specific task for the session agent. \
+        When start is true, moves claimed → in_progress in the same call.")]
     async fn claim_task(
         &self,
         Parameters(params): Parameters<ClaimTaskParams>,
@@ -412,18 +442,25 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        match self.container.task_service.claim(&task_id, &agent_id).await {
-            Ok(task) => {
-                let ctx = self
-                    .container
-                    .task_service
-                    .get_with_context(&task.id())
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(to_json(&ctx))
-            }
-            Err(e) => Err(e.to_string()),
+        let mut task = match self.container.task_service.claim(&task_id, &agent_id).await {
+            Ok(t) => t,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        if params.start.unwrap_or(false) {
+            task = match self.container.task_service.start(&task_id, &agent_id).await {
+                Ok(t) => t,
+                Err(e) => return Err(e.to_string()),
+            };
         }
+
+        let ctx = self
+            .container
+            .task_service
+            .get_with_context(&task.id())
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(to_json(&ctx))
     }
 
     #[tool(description = "Start a claimed task (claimed → in_progress). \
@@ -512,6 +549,84 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Cancel a task (pending, claimed, in_progress, or blocked). \
+        Dependent tasks that were blocked on it are notified."
+    )]
+    async fn cancel_task(
+        &self,
+        Parameters(params): Parameters<CancelTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+
+        match self
+            .container
+            .task_service
+            .cancel(&task_id, params.reason)
+            .await
+        {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Update task title, description, and/or priority. \
+        Must be pending, claimed, in_progress, or blocked.")]
+    async fn update_task(
+        &self,
+        Parameters(params): Parameters<UpdateTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+
+        let priority = match params.priority.as_deref() {
+            Some(p) => Some(
+                p.parse::<Priority>()
+                    .map_err(|e| format!("invalid priority: {e}"))?,
+            ),
+            None => None,
+        };
+
+        match self
+            .container
+            .task_service
+            .update_details(&task_id, params.title, params.description, priority)
+            .await
+        {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Manually unblock a blocked task (e.g. after resolving an external dependency)."
+    )]
+    async fn unblock_task(
+        &self,
+        Parameters(params): Parameters<UnblockTaskParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let task_id = parse_task_id(&params.task_id)?;
+
+        match self.container.task_service.unblock_manual(&task_id).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
         description = "Assign a claimed or in-progress task to a different agent. \
         The task must already be claimed."
     )]
@@ -591,44 +706,55 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Check the mailbox for pending messages. Namespace defaults to session \
-        namespace."
+        description = "List messages for the session agent. direction \"inbound\" (default) is the mailbox; \
+        \"outbound\" lists sent messages with delivery/read status. Namespace defaults to the session namespace."
     )]
-    async fn check_mailbox(
+    async fn list_messages(
         &self,
-        Parameters(params): Parameters<CheckMailboxParams>,
+        Parameters(params): Parameters<ListMessagesParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, _) = match self.require_session() {
+        let (agent_id, project, session_ns) = match self.require_session() {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
-            None => Namespace::root(),
+            None => session_ns,
         };
 
-        match self
-            .container
-            .message_service
-            .check(&agent_id, &project, &namespace)
-            .await
-        {
-            Ok(messages) => Ok(to_json(&messages)),
-            Err(e) => Err(e.to_string()),
+        let outbound = matches!(params.direction.as_deref(), Some("outbound" | "sent"));
+
+        if outbound {
+            match self
+                .container
+                .message_service
+                .sent(&agent_id, &project, &namespace)
+                .await
+            {
+                Ok(messages) => Ok(to_json(&messages)),
+                Err(e) => Err(e.to_string()),
+            }
+        } else {
+            match self
+                .container
+                .message_service
+                .check(&agent_id, &project, &namespace)
+                .await
+            {
+                Ok(messages) => Ok(to_json(&messages)),
+                Err(e) => Err(e.to_string()),
+            }
         }
     }
 
-    #[tool(description = "Mark messages as read by their IDs.")]
+    #[tool(
+        description = "Mark messages as read by their IDs. Does not require a registered session."
+    )]
     async fn mark_read(
         &self,
         Parameters(params): Parameters<MarkReadParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
         let ids: Vec<MessageId> = match params
             .message_ids
             .iter()
@@ -646,49 +772,15 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Check the delivery/read status of messages you have sent. \
-        Namespace defaults to root."
-    )]
-    async fn check_sent_messages(
-        &self,
-        Parameters(params): Parameters<CheckSentMessagesParams>,
-    ) -> Result<String, String> {
-        let (agent_id, project, _) = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
-            None => Namespace::root(),
-        };
-
-        match self
-            .container
-            .message_service
-            .sent(&agent_id, &project, &namespace)
-            .await
-        {
-            Ok(messages) => Ok(to_json(&messages)),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    #[tool(
         description = "List the full conversation thread for a given message ID. \
         Walks the reply_to chain to find the root, then returns all messages in \
         the thread in chronological order. Use limit to cap the number of messages \
-        returned (most recent N)."
+        returned (most recent N). Does not require a registered session."
     )]
     async fn list_conversation(
         &self,
         Parameters(params): Parameters<ListConversationParams>,
     ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
         let message_id = match parse_message_id(&params.message_id) {
             Ok(id) => id,
             Err(e) => return Err(e),
@@ -1059,24 +1151,93 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Get the project metadata for the current session's project.")]
+    #[tool(
+        description = "Get the project metadata for the current session's project. \
+        Set include_summary to add agent/task overview (same data as the former get_project_summary)."
+    )]
     async fn get_project(
         &self,
-        Parameters(_params): Parameters<GetProjectParams>,
+        Parameters(params): Parameters<GetProjectParams>,
     ) -> Result<String, String> {
         let project_id = self
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        match self
+        let project = self
             .container
             .project_service
             .get_or_create(&project_id)
             .await
-        {
-            Ok(project) => Ok(to_json(&project)),
-            Err(e) => Err(e.to_string()),
+            .map_err(|e| e.to_string())?;
+
+        if !params.include_summary.unwrap_or(false) {
+            return Ok(to_json(&project));
         }
+
+        let agents = self
+            .container
+            .agent_service
+            .list()
+            .await
+            .map_err(|e| e.to_string())?;
+        let project_agents: Vec<_> = agents
+            .into_iter()
+            .filter(|a| {
+                *a.project() == project_id
+                    && a.status() != orchy_core::agent::AgentStatus::Disconnected
+            })
+            .collect();
+
+        let all_tasks = self
+            .container
+            .task_service
+            .list(TaskFilter {
+                project: Some(project_id.clone()),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut by_status = std::collections::HashMap::new();
+        for task in &all_tasks {
+            *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
+        }
+
+        let mut recent: Vec<_> = all_tasks
+            .iter()
+            .filter(|t| {
+                matches!(
+                    t.status(),
+                    orchy_core::task::TaskStatus::Completed | orchy_core::task::TaskStatus::Failed
+                )
+            })
+            .collect();
+        recent.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
+        recent.truncate(10);
+
+        let recent_items: Vec<_> = recent
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "id": t.id().to_string(),
+                    "title": t.title(),
+                    "status": t.status().to_string(),
+                    "summary": t.result_summary(),
+                })
+            })
+            .collect();
+
+        let summary = serde_json::json!({
+            "agents_online": project_agents.len(),
+            "tasks_by_status": by_status,
+            "total_tasks": all_tasks.len(),
+            "recent_completions": recent_items,
+        });
+
+        Ok(to_json(&serde_json::json!({
+            "project": project,
+            "summary": summary,
+        })))
     }
 
     #[tool(description = "Update the project description for the current session's project.")]
@@ -1137,78 +1298,6 @@ impl OrchyHandler {
             Ok(namespaces) => Ok(to_json(&namespaces)),
             Err(e) => Err(e.to_string()),
         }
-    }
-
-    #[tool(
-        description = "Get an aggregated project overview: agent count, task counts by status, \
-        and recent completions."
-    )]
-    async fn get_project_summary(
-        &self,
-        Parameters(_params): Parameters<GetProjectSummaryParams>,
-    ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
-
-        let agents = self
-            .container
-            .agent_service
-            .list()
-            .await
-            .map_err(|e| e.to_string())?;
-        let project_agents: Vec<_> = agents
-            .into_iter()
-            .filter(|a| *a.project() == project)
-            .collect();
-
-        let all_tasks = self
-            .container
-            .task_service
-            .list(TaskFilter {
-                project: Some(project.clone()),
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let mut by_status = std::collections::HashMap::new();
-        for task in &all_tasks {
-            *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
-        }
-
-        let mut recent: Vec<_> = all_tasks
-            .iter()
-            .filter(|t| {
-                matches!(
-                    t.status(),
-                    orchy_core::task::TaskStatus::Completed | orchy_core::task::TaskStatus::Failed
-                )
-            })
-            .collect();
-        recent.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
-        recent.truncate(10);
-
-        let recent_items: Vec<_> = recent
-            .iter()
-            .map(|t| {
-                serde_json::json!({
-                    "id": t.id().to_string(),
-                    "title": t.title(),
-                    "status": t.status().to_string(),
-                    "summary": t.result_summary(),
-                })
-            })
-            .collect();
-
-        let result = serde_json::json!({
-            "agents_online": project_agents.len(),
-            "tasks_by_status": by_status,
-            "total_tasks": all_tasks.len(),
-            "recent_completions": recent_items,
-        });
-
-        Ok(to_json(&result))
     }
 
     #[tool(description = "Get tasks assigned to an agent grouped by status. \
@@ -1331,8 +1420,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Link another project as a resource source. Linked skills appear \
-        in list_skills(inherited: true). Resource types: 'skills', 'memory'."
+        description = "Link another project as a resource source. Linked knowledge (e.g. skills) \
+        is visible via list_knowledge and search. Resource types: 'knowledge', 'tasks'."
     )]
     async fn link_project(
         &self,
@@ -1409,10 +1498,10 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Add a tag to a task.")]
-    async fn tag_task(
+    #[tool(description = "Add or remove a tag on a task. action is \"add\" or \"remove\".")]
+    async fn mutate_task_tags(
         &self,
-        Parameters(params): Parameters<TagTaskParams>,
+        Parameters(params): Parameters<MutateTaskTagsParams>,
     ) -> Result<String, String> {
         let _ = match self.require_session() {
             Ok(s) => s,
@@ -1420,31 +1509,21 @@ impl OrchyHandler {
         };
 
         let task_id = parse_task_id(&params.task_id)?;
-        match self.container.task_service.tag(&task_id, params.tag).await {
-            Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    #[tool(description = "Remove a tag from a task.")]
-    async fn untag_task(
-        &self,
-        Parameters(params): Parameters<UntagTaskParams>,
-    ) -> Result<String, String> {
-        let _ = match self.require_session() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-
-        let task_id = parse_task_id(&params.task_id)?;
-        match self
-            .container
-            .task_service
-            .untag(&task_id, &params.tag)
-            .await
-        {
-            Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+        match params.action.as_str() {
+            "add" => match self.container.task_service.tag(&task_id, params.tag).await {
+                Ok(task) => Ok(to_json(&task)),
+                Err(e) => Err(e.to_string()),
+            },
+            "remove" => match self
+                .container
+                .task_service
+                .untag(&task_id, &params.tag)
+                .await
+            {
+                Ok(task) => Ok(to_json(&task)),
+                Err(e) => Err(e.to_string()),
+            },
+            _ => Err("action must be \"add\" or \"remove\"".to_string()),
         }
     }
 
@@ -1699,10 +1778,7 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
-        let review_id = params
-            .review_id
-            .parse()
-            .map_err(|e| format!("invalid review_id: {e}"))?;
+        let review_id = parse_review_id(&params.review_id)?;
 
         match self
             .container
@@ -1737,10 +1813,27 @@ impl OrchyHandler {
         }
     }
 
+    #[tool(description = "Get a single review request by ID.")]
+    async fn get_review(
+        &self,
+        Parameters(params): Parameters<GetReviewParams>,
+    ) -> Result<String, String> {
+        let _ = match self.require_session() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        let review_id = parse_review_id(&params.review_id)?;
+        match self.container.task_service.get_review(&review_id).await {
+            Ok(review) => Ok(to_json(&review)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     #[tool(
         description = "Poll for recent events in the project since a timestamp. \
         Returns domain events (task changes, messages, document updates, etc). \
-        Use alongside check_mailbox for full reactivity."
+        Use alongside list_messages for full reactivity."
     )]
     async fn poll_updates(
         &self,
@@ -1806,8 +1899,7 @@ impl OrchyHandler {
     }
 
     #[tool(description = "Write a knowledge entry. Creates or updates by path. \
-        Type is required: note, decision, discovery, pattern, context, document, \
-        config, reference, plan, log.")]
+        kind is required — use list_knowledge_types for valid values (includes skill).")]
     async fn write_knowledge(
         &self,
         Parameters(params): Parameters<WriteKnowledgeParams>,
@@ -1933,15 +2025,22 @@ impl OrchyHandler {
 
         let limit = params.limit.unwrap_or(10) as usize;
 
-        match self
+        let mut entries = match self
             .container
             .knowledge_service
             .search(&params.query, namespace.as_ref(), limit)
             .await
         {
-            Ok(entries) => Ok(to_json(&entries)),
-            Err(e) => Err(e.to_string()),
+            Ok(e) => e,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        if let Some(k) = params.kind.as_deref() {
+            let kind: KnowledgeKind = k.parse().map_err(|e: String| e)?;
+            entries.retain(|e| e.kind() == kind);
         }
+
+        Ok(to_json(&entries))
     }
 
     #[tool(description = "Delete a knowledge entry by path.")]
@@ -2011,49 +2110,13 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Move a knowledge entry to a different namespace.")]
-    async fn move_knowledge(
+    #[tool(
+        description = "Move a knowledge entry to another namespace or rename its path. \
+        Specify exactly one of new_namespace or new_path."
+    )]
+    async fn relocate_knowledge(
         &self,
-        Parameters(params): Parameters<MoveKnowledgeParams>,
-    ) -> Result<String, String> {
-        let project = self.get_session_project().ok_or("no agent registered")?;
-
-        let namespace = match self.build_namespace(params.namespace.as_deref()) {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
-
-        let new_namespace = match self
-            .build_and_register_namespace(Some(&params.new_namespace))
-            .await
-        {
-            Ok(ns) => ns,
-            Err(e) => return Err(e),
-        };
-
-        let entry = self
-            .container
-            .knowledge_service
-            .read(&project, &namespace, &params.path)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("entry not found: {}", params.path))?;
-
-        match self
-            .container
-            .knowledge_service
-            .move_entry(&entry.id(), new_namespace)
-            .await
-        {
-            Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    #[tool(description = "Rename a knowledge entry (change its path).")]
-    async fn rename_knowledge(
-        &self,
-        Parameters(params): Parameters<RenameKnowledgeParams>,
+        Parameters(params): Parameters<RelocateKnowledgeParams>,
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
@@ -2070,21 +2133,41 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
-        match self
-            .container
-            .knowledge_service
-            .rename(&entry.id(), params.new_path)
-            .await
-        {
-            Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+        match (&params.new_namespace, &params.new_path) {
+            (Some(ns), None) => {
+                let new_namespace = match self.build_and_register_namespace(Some(ns)).await {
+                    Ok(n) => n,
+                    Err(e) => return Err(e),
+                };
+                match self
+                    .container
+                    .knowledge_service
+                    .move_entry(&entry.id(), new_namespace)
+                    .await
+                {
+                    Ok(entry) => Ok(to_json(&entry)),
+                    Err(e) => Err(e.to_string()),
+                }
+            }
+            (None, Some(path)) => match self
+                .container
+                .knowledge_service
+                .rename(&entry.id(), path.clone())
+                .await
+            {
+                Ok(entry) => Ok(to_json(&entry)),
+                Err(e) => Err(e.to_string()),
+            },
+            _ => Err("specify exactly one of new_namespace or new_path".to_string()),
         }
     }
 
-    #[tool(description = "Add a tag to a knowledge entry.")]
-    async fn tag_knowledge(
+    #[tool(
+        description = "Add or remove a tag on a knowledge entry. action is \"add\" or \"remove\"."
+    )]
+    async fn mutate_knowledge_tags(
         &self,
-        Parameters(params): Parameters<TagKnowledgeParams>,
+        Parameters(params): Parameters<MutateKnowledgeTagsParams>,
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
@@ -2101,14 +2184,26 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
-        match self
-            .container
-            .knowledge_service
-            .tag(&entry.id(), params.tag)
-            .await
-        {
-            Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+        match params.action.as_str() {
+            "add" => match self
+                .container
+                .knowledge_service
+                .tag(&entry.id(), params.tag)
+                .await
+            {
+                Ok(entry) => Ok(to_json(&entry)),
+                Err(e) => Err(e.to_string()),
+            },
+            "remove" => match self
+                .container
+                .knowledge_service
+                .untag(&entry.id(), &params.tag)
+                .await
+            {
+                Ok(entry) => Ok(to_json(&entry)),
+                Err(e) => Err(e.to_string()),
+            },
+            _ => Err("action must be \"add\" or \"remove\"".to_string()),
         }
     }
 
@@ -2184,12 +2279,27 @@ impl ServerHandler for OrchyHandler {
         .with_instructions(super::handler::INSTRUCTIONS.to_string())
     }
 
+    async fn initialize(
+        &self,
+        _request: rmcp::model::InitializeRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::InitializeResult, ErrorData> {
+        if let Some(session_id) = extract_session_id(&context) {
+            self.set_mcp_session_id(session_id);
+        }
+        Ok(rmcp::model::InitializeResult::new(
+            self.get_info().capabilities,
+        ))
+    }
+
     async fn call_tool(
         &self,
         request: rmcp::model::CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, ErrorData> {
-        self.touch_heartbeat();
+        if let Some(session_id) = extract_session_id(&context) {
+            self.set_mcp_session_id(session_id);
+        }
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         Self::tool_router().call(tcc).await
     }
@@ -2197,8 +2307,11 @@ impl ServerHandler for OrchyHandler {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, ErrorData> {
+        if let Some(session_id) = extract_session_id(&context) {
+            self.set_mcp_session_id(session_id);
+        }
         Ok(rmcp::model::ListToolsResult {
             tools: Self::tool_router().list_all(),
             meta: None,
@@ -2209,8 +2322,11 @@ impl ServerHandler for OrchyHandler {
     async fn list_prompts(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, ErrorData> {
+        if let Some(session_id) = extract_session_id(&context) {
+            self.set_mcp_session_id(session_id);
+        }
         let (project, namespace) = match (self.get_session_project(), self.get_session_namespace())
         {
             (Some(p), Some(ns)) => (p, ns),
@@ -2245,8 +2361,11 @@ impl ServerHandler for OrchyHandler {
     async fn get_prompt(
         &self,
         request: GetPromptRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, ErrorData> {
+        if let Some(session_id) = extract_session_id(&context) {
+            self.set_mcp_session_id(session_id);
+        }
         let project = self
             .get_session_project()
             .ok_or_else(|| ErrorData::internal_error("no session project", None))?;
@@ -2275,4 +2394,18 @@ impl ServerHandler for OrchyHandler {
         result.description = Some(entry.title().to_string());
         Ok(result)
     }
+}
+
+fn extract_session_id(context: &RequestContext<RoleServer>) -> Option<String> {
+    context
+        .extensions
+        .get::<http::request::Parts>()
+        .and_then(|parts: &http::request::Parts| {
+            parts.uri.query().and_then(|query: &str| {
+                query
+                    .split('&')
+                    .find(|s: &&str| s.starts_with("sessionId="))
+                    .map(|s: &str| s["sessionId=".len()..].to_string())
+            })
+        })
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::agent::AgentId;
 use orchy_core::message::MessageId;
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::task::TaskId;
+use orchy_core::task::{ReviewId, TaskId};
 
 use crate::container::Container;
 
@@ -17,6 +17,7 @@ struct SessionState {
 pub struct OrchyHandler {
     pub(crate) container: Arc<Container>,
     session: Arc<std::sync::RwLock<Option<SessionState>>>,
+    mcp_session_id: Arc<std::sync::RwLock<Option<String>>>,
 }
 
 impl OrchyHandler {
@@ -24,7 +25,12 @@ impl OrchyHandler {
         Self {
             container,
             session: Arc::new(std::sync::RwLock::new(None)),
+            mcp_session_id: Arc::new(std::sync::RwLock::new(None)),
         }
+    }
+
+    pub(crate) fn set_mcp_session_id(&self, session_id: String) {
+        *self.mcp_session_id.write().unwrap() = Some(session_id);
     }
 
     pub(crate) fn get_session_agent(&self) -> Option<AgentId> {
@@ -63,6 +69,14 @@ impl OrchyHandler {
             project,
             namespace,
         });
+
+        if let Some(session_id) = self.mcp_session_id.read().unwrap().as_ref() {
+            let session_agents = self.container.session_agents.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                session_agents.write().await.insert(session_id, agent_id);
+            });
+        }
     }
 
     pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
@@ -129,6 +143,11 @@ pub(crate) fn parse_task_id(s: &str) -> Result<TaskId, String> {
         .map_err(|e| format!("invalid task_id: {e}"))
 }
 
+pub(crate) fn parse_review_id(s: &str) -> Result<ReviewId, String> {
+    s.parse::<ReviewId>()
+        .map_err(|e| format!("invalid review_id: {e}"))
+}
+
 pub(crate) fn parse_agent_id(s: &str) -> Result<AgentId, String> {
     s.parse::<AgentId>()
         .map_err(|e| format!("invalid agent_id: {e}"))
@@ -154,15 +173,17 @@ You bring the intelligence; orchy enforces the rules.
 ## On Session Start
 
 1. `register_agent` — project, roles (optional), description. \
-   Pass `agent_id` to resume a previous session.
-2. `get_project` + `get_project_summary` — load project context.
+   Pass `agent_id` on the same tool to resume a prior session. \
+   `list_agents` accepts optional `project` before you register.
+2. `get_project` — metadata; set `include_summary: true` for task/agent overview.
 3. `list_knowledge(kind: \"skill\")` — load conventions. Follow them.
 4. `list_knowledge(kind: \"context\")` — check for handoff notes from previous agents. \
    Also `search_knowledge` to find relevant decisions and discoveries.
-5. `check_mailbox` — check for messages from other agents.
-6. `get_next_task` — claim work. Tasks released by a disconnected agent \
-   return to pending and can be re-claimed.
+5. `list_messages` — inbound (default) or `direction: \"outbound\"` for sent mail.
+6. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek only.
 7. `heartbeat` — call every ~30s to stay alive.
+
+`mark_read` and `list_conversation` do not require a registered session.
 
 ## Before Disconnecting
 
@@ -182,18 +203,19 @@ pending → claimed → in_progress → completed/failed. \
 Always claim before starting. If another agent claimed it, move on. \
 `split_task` breaks a task into subtasks — parent auto-completes when all finish. \
 `merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
-without blocking the parent. Use `tag_task` for cross-cutting labels. \
+without blocking the parent. Use `mutate_task_tags` (action add/remove) for labels. \
 On disconnect, claimed tasks return to pending.
 
 ## Coordination
 
-- `write_knowledge` — persist decisions, discoveries, patterns, configs, plans. \
+- `write_knowledge` — persist decisions, discoveries, patterns. \
+  Always `search_knowledge` first to avoid duplicating existing entries. \
   Call `list_knowledge_types` to see available types.
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.
 - `watch_task` to get notified when a task status changes.
 - `request_review` to ask another agent to review your work.
-- `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
+- `poll_updates` + `list_messages` on each heartbeat cycle for reactivity.
 - `write_knowledge(kind: \"context\")` before your session ends for continuity.
 - `link_project` + `import_knowledge` to share knowledge across projects.
 - Register without roles — orchy assigns them based on task demand.

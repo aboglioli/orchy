@@ -21,6 +21,7 @@ pub const TOPIC_NOTE_ADDED: &str = "task.note_added";
 pub const TOPIC_PARENT_CHANGED: &str = "task.parent_changed";
 pub const TOPIC_DEPENDENCY_REPLACED: &str = "task.dependency_replaced";
 pub const TOPIC_MOVED: &str = "task.moved";
+pub const TOPIC_UPDATED: &str = "task.updated";
 
 #[derive(Serialize)]
 pub struct TaskCreatedPayload {
@@ -134,6 +135,14 @@ pub struct TaskMovedPayload {
     pub task_id: String,
     pub from_namespace: String,
     pub to_namespace: String,
+}
+
+#[derive(Serialize)]
+pub struct TaskUpdatedPayload {
+    pub task_id: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub priority: Option<String>,
 }
 
 pub const TOPIC_WATCHER_ADDED: &str = "task.watcher_added";

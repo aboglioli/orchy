@@ -68,6 +68,10 @@ async fn main() {
             "/bootstrap/{namespace}",
             axum::routing::get(bootstrap_handler),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&bootstrap_container),
+            heartbeat_middleware,
+        ))
         .with_state(bootstrap_container);
 
     let addr = format!("{host}:{port}");
@@ -78,6 +82,30 @@ async fn main() {
     info!(%addr, "orchy server listening");
 
     axum::serve(listener, router).await.expect("server error");
+}
+
+async fn heartbeat_middleware(
+    State(container): State<Arc<Container>>,
+    req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use std::collections::HashMap;
+
+    let query: axum::extract::Query<HashMap<String, String>> =
+        axum::extract::Query::try_from_uri(req.uri()).unwrap_or_default();
+
+    if let Some(session_id) = query.get("sessionId") {
+        let session_agents = container.session_agents.read().await;
+        if let Some(agent_id) = session_agents.get(session_id) {
+            let container = Arc::clone(&container);
+            let agent_id = agent_id.clone();
+            tokio::spawn(async move {
+                let _ = container.agent_service.heartbeat(&agent_id).await;
+            });
+        }
+    }
+
+    next.run(req).await
 }
 
 async fn bootstrap_handler(

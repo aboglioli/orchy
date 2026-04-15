@@ -1,5 +1,8 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
+use orchy_core::agent::AgentId;
 use orchy_core::agent::service::AgentService;
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::message::service::MessageService;
@@ -24,6 +27,7 @@ pub struct Container {
     pub project_link_service: ProjectLinkService<StoreBackend>,
     pub knowledge_service: KnowledgeService<StoreBackend, EmbeddingsBackend>,
     pub lock_service: LockService<StoreBackend>,
+    pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
 }
 
@@ -52,6 +56,7 @@ impl Container {
             knowledge_service,
             project_link_service,
             lock_service,
+            session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
         }))
     }
