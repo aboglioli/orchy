@@ -156,14 +156,14 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let created_at_str: String = row.get(16)?;
     let updated_at_str: String = row.get(17)?;
 
-    let depends_on_strs: Vec<String> = serde_json::from_str(&depends_on_str).unwrap_or_default();
+    let depends_on_strs: Vec<String> = crate::decode_json(&depends_on_str, "depends_on")?;
     let depends_on: Vec<TaskId> = depends_on_strs
         .iter()
         .filter_map(|s| TaskId::from_str(s).ok())
         .collect();
 
-    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-    let notes: Vec<Note> = serde_json::from_str(&notes_str).unwrap_or_default();
+    let tags: Vec<String> = crate::decode_json(&tags_str, "tags")?;
+    let notes: Vec<Note> = crate::decode_json(&notes_str, "notes")?;
 
     let id = TaskId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -186,7 +186,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         .parse::<TaskStatus>()
         .unwrap_or(TaskStatus::Pending);
     let priority = priority_str.parse::<Priority>().unwrap_or_default();
-    let assigned_roles: Vec<String> = serde_json::from_str(&roles_str).unwrap_or_default();
+    let assigned_roles: Vec<String> = crate::decode_json(&roles_str, "assigned_roles")?;
     let parent_id = parent_id_str.and_then(|s| TaskId::from_str(&s).ok());
     let assigned_to = assigned_to_str.and_then(|s| AgentId::from_str(&s).ok());
     let assigned_at = assigned_at_str

@@ -61,9 +61,9 @@ impl SqliteBackend {
                         organization: row.get(1)?,
                         namespace: row.get(2)?,
                         topic: row.get(3)?,
-                        payload: serde_json::from_str(&payload_str).unwrap_or_default(),
+                        payload: crate::decode_json(&payload_str, "payload")?,
                         content_type: row.get(5)?,
-                        metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
+                        metadata: crate::decode_json(&metadata_str, "metadata")?,
                         timestamp: DateTime::parse_from_rfc3339(&timestamp_str)
                             .map(|dt| dt.with_timezone(&Utc))
                             .unwrap_or_else(|_| Utc::now()),

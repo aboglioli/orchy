@@ -136,6 +136,22 @@ impl SqliteBackend {
     }
 }
 
+pub(crate) fn decode_json<T: serde::de::DeserializeOwned>(
+    raw: &str,
+    col: &str,
+) -> std::result::Result<T, rusqlite::Error> {
+    serde_json::from_str(raw).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("column {col}: {e}"),
+            )),
+        )
+    })
+}
+
 pub(crate) fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
     embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
 }

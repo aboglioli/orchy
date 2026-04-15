@@ -9,6 +9,8 @@ pub const TOPIC_READ: &str = "message.read";
 #[derive(Serialize)]
 pub struct MessageSentPayload {
     pub message_id: String,
+    pub project: String,
+    pub namespace: String,
     pub from: String,
     pub to: String,
     pub body: String,
@@ -18,9 +20,15 @@ pub struct MessageSentPayload {
 #[derive(Serialize)]
 pub struct MessageDeliveredPayload {
     pub message_id: String,
+    pub from: String,
+    pub to: String,
+    pub status: String,
 }
 
 #[derive(Serialize)]
 pub struct MessageReadPayload {
     pub message_id: String,
+    pub from: String,
+    pub to: String,
+    pub status: String,
 }

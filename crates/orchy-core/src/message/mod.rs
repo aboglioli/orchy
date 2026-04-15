@@ -194,6 +194,8 @@ impl Message {
             message_events::TOPIC_SENT,
             Payload::from_json(&message_events::MessageSentPayload {
                 message_id: msg.id.to_string(),
+                project: msg.project.to_string(),
+                namespace: msg.namespace.to_string(),
                 from: msg.from.to_string(),
                 to: msg.to.to_string(),
                 body: msg.body.clone(),
@@ -242,6 +244,9 @@ impl Message {
                 message_events::TOPIC_DELIVERED,
                 Payload::from_json(&message_events::MessageDeliveredPayload {
                     message_id: self.id.to_string(),
+                    from: self.from.to_string(),
+                    to: self.to.to_string(),
+                    status: "delivered".to_string(),
                 })
                 .unwrap(),
             )
@@ -258,6 +263,9 @@ impl Message {
             message_events::TOPIC_READ,
             Payload::from_json(&message_events::MessageReadPayload {
                 message_id: self.id.to_string(),
+                from: self.from.to_string(),
+                to: self.to.to_string(),
+                status: "read".to_string(),
             })
             .unwrap(),
         )

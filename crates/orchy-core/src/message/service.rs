@@ -142,6 +142,7 @@ mod tests {
             Namespace::root(),
             roles.into_iter().map(String::from).collect(),
             "test".to_string(),
+            None,
             HashMap::new(),
         )
     }

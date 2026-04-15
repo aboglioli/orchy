@@ -132,8 +132,7 @@ fn row_to_link(row: &rusqlite::Row) -> rusqlite::Result<ProjectLink> {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
-    let resource_types: Vec<SharedResourceType> =
-        serde_json::from_str(&types_str).unwrap_or_default();
+    let resource_types: Vec<SharedResourceType> = crate::decode_json(&types_str, "resource_types")?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {

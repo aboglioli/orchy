@@ -207,6 +207,7 @@ impl Agent {
                 agent_id: agent.id.to_string(),
                 project: agent.project.to_string(),
                 namespace: agent.namespace.to_string(),
+                alias: agent.alias.as_ref().map(|a| a.to_string()),
                 roles: agent.roles.clone(),
             })
             .unwrap(),
@@ -248,6 +249,7 @@ impl Agent {
                 parent_id: parent.id.to_string(),
                 project: agent.project.to_string(),
                 namespace: agent.namespace.to_string(),
+                alias: agent.alias.as_ref().map(|a| a.to_string()),
                 roles: agent.roles.clone(),
             })
             .unwrap(),
@@ -358,6 +360,7 @@ impl Agent {
             Payload::from_json(&agent_events::AgentResumedPayload {
                 agent_id: self.id.to_string(),
                 namespace: self.namespace.to_string(),
+                alias: self.alias.as_ref().map(|a| a.to_string()),
                 roles: self.roles.clone(),
             })
             .unwrap(),
@@ -383,6 +386,18 @@ impl Agent {
 
     pub fn set_alias(&mut self, alias: Option<Alias>) {
         self.alias = alias;
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_ALIAS_CHANGED,
+            Payload::from_json(&agent_events::AgentAliasChangedPayload {
+                agent_id: self.id.to_string(),
+                alias: self.alias.as_ref().map(|a| a.to_string()),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
     }
 
     pub fn set_metadata(&mut self, metadata: HashMap<String, String>) {

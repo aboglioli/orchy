@@ -67,7 +67,7 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
-    let metadata: HashMap<String, String> = serde_json::from_str(&metadata_str).unwrap_or_default();
+    let metadata: HashMap<String, String> = crate::decode_json(&metadata_str, "metadata")?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
