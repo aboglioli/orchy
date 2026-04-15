@@ -5,9 +5,7 @@ use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::Result as OrchyResult;
 use orchy_core::knowledge::service::KnowledgeService;
-use orchy_core::knowledge::{
-    Knowledge, KnowledgeKind, KnowledgeStore, WriteKnowledge,
-};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore, WriteKnowledge};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore};

@@ -276,8 +276,12 @@ impl Agent {
 
     pub fn resume(&mut self, namespace: Namespace, roles: Vec<String>, description: String) {
         self.namespace = namespace;
-        self.roles = roles;
-        self.description = description;
+        if !roles.is_empty() {
+            self.roles = roles;
+        }
+        if !description.is_empty() {
+            self.description = description;
+        }
         self.status = AgentStatus::Online;
         self.last_heartbeat = Utc::now();
 
@@ -464,5 +468,29 @@ mod tests {
         agent.disconnect();
         sleep(Duration::from_millis(10));
         assert!(!agent.is_timed_out(0));
+    }
+
+    #[test]
+    fn resume_preserves_roles_when_empty() {
+        let mut agent = make_agent();
+        assert_eq!(agent.roles(), &["coder"]);
+        agent.disconnect();
+        agent.resume(Namespace::root(), vec![], String::new());
+        assert_eq!(agent.status(), AgentStatus::Online);
+        assert_eq!(agent.roles(), &["coder"]);
+        assert_eq!(agent.description(), "test agent");
+    }
+
+    #[test]
+    fn resume_overwrites_roles_when_provided() {
+        let mut agent = make_agent();
+        agent.disconnect();
+        agent.resume(
+            Namespace::root(),
+            vec!["reviewer".to_string()],
+            "updated".to_string(),
+        );
+        assert_eq!(agent.roles(), &["reviewer"]);
+        assert_eq!(agent.description(), "updated");
     }
 }
