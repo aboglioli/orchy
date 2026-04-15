@@ -21,4 +21,5 @@ toml = { workspace = true }
 
 pty-process = { version = "0.5", features = ["async"] }
 strip-ansi-escapes = "0.2"
+crossterm = "0.29"
 rmcp = { version = "1.4", features = ["client", "transport-streamable-http-client-reqwest"] }
