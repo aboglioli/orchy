@@ -236,11 +236,6 @@ pub struct AddProjectNoteParams {
 pub struct ListNamespacesParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetAgentWorkloadParams {
-    pub agent_id: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct LinkProjectParams {
     pub source_project: String,
     /// "knowledge", "tasks".
@@ -256,11 +251,15 @@ pub struct UnlinkProjectParams {
 pub struct ListProjectLinksParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct MutateTaskTagsParams {
+pub struct TagTaskParams {
     pub task_id: String,
     pub tag: String,
-    /// "add" or "remove".
-    pub action: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UntagTaskParams {
+    pub task_id: String,
+    pub tag: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -396,22 +395,31 @@ pub struct AppendKnowledgeParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct RelocateKnowledgeParams {
+pub struct MoveKnowledgeParams {
     pub path: String,
     pub namespace: Option<String>,
-    /// New namespace segment (move). Mutually exclusive with new_path.
-    pub new_namespace: Option<String>,
-    /// New path (rename). Mutually exclusive with new_namespace.
-    pub new_path: Option<String>,
+    pub new_namespace: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct MutateKnowledgeTagsParams {
+pub struct RenameKnowledgeParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    pub new_path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct TagKnowledgeParams {
     pub path: String,
     pub namespace: Option<String>,
     pub tag: String,
-    /// "add" or "remove".
-    pub action: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UntagKnowledgeParams {
+    pub path: String,
+    pub namespace: Option<String>,
+    pub tag: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

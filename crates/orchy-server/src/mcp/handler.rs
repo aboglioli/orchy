@@ -179,7 +179,7 @@ You bring the intelligence; orchy enforces the rules.
 3. `list_knowledge(kind: \"skill\")` — load conventions. Follow them.
 4. `list_knowledge(kind: \"context\")` — check for handoff notes from previous agents. \
    Also `search_knowledge` to find relevant decisions and discoveries.
-5. `list_messages` — inbound (default) or `direction: \"outbound\"` for sent mail.
+5. `check_mailbox` — read incoming messages. `check_sent_messages` for sent mail.
 6. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek only.
 7. `heartbeat` — call every ~30s to stay alive.
 
@@ -203,7 +203,7 @@ pending → claimed → in_progress → completed/failed. \
 Always claim before starting. If another agent claimed it, move on. \
 `split_task` breaks a task into subtasks — parent auto-completes when all finish. \
 `merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
-without blocking the parent. Use `mutate_task_tags` (action add/remove) for labels. \
+without blocking the parent. Use `tag_task` / `untag_task` for labels. \
 On disconnect, claimed tasks return to pending.
 
 ## Coordination
@@ -215,7 +215,7 @@ On disconnect, claimed tasks return to pending.
 - `lock_resource` before editing shared files to prevent conflicts.
 - `watch_task` to get notified when a task status changes.
 - `request_review` to ask another agent to review your work.
-- `poll_updates` + `list_messages` on each heartbeat cycle for reactivity.
+- `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
 - `write_knowledge(kind: \"context\")` before your session ends for continuity.
 - `link_project` + `import_knowledge` to share knowledge across projects.
 - Register without roles — orchy assigns them based on task demand.

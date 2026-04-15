@@ -109,7 +109,7 @@ Project namespace: `{namespace}`
    then `list_knowledge(kind: "skill")` for conventions. Follow them.
 3. **Resume** — `list_knowledge(kind: "context")` for handoff notes from
    previous sessions. `search_knowledge` to find relevant decisions.
-   `list_messages` for the mailbox (`direction: "outbound"` for sent mail).
+   `check_mailbox` for incoming messages. `check_sent_messages` for sent mail.
 4. **Claim work** — `get_next_task` (`claim: false` to peek only). Tasks from disconnected
    agents return to pending automatically.
 5. **Heartbeat** — `heartbeat` every ~30s to stay alive.
@@ -140,7 +140,7 @@ namespace. Namespaces are auto-created on first use.
 - **split_task** breaks a task into subtasks — parent auto-completes when all finish.
 - **merge_tasks** consolidates related tasks into one.
 - **delegate_task** creates subtasks without blocking the parent.
-- **mutate_task_tags** / **list_tags** — label tasks for cross-cutting organization.
+- **tag_task** / **untag_task** / **list_tags** — label tasks for cross-cutting organization.
 - **release_task** — return a claimed task to pending.
 - On disconnect, your claimed tasks return to pending automatically.
 
@@ -152,10 +152,10 @@ namespace. Namespaces are auto-created on first use.
 - **watch_task** — get notified when a task you depend on changes status.
 - **request_review** / **resolve_review** — approval workflows between agents.
 - **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
-- **poll_updates** + **list_messages** — poll on each heartbeat cycle for reactivity.
+- **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
 - **write_knowledge(kind: "context")** — save session state before ending.
 - **link_project** — import knowledge from other projects.
-- **get_project** (`include_summary`) / **get_agent_workload** — check project status.
+- **get_project** (`include_summary`) — check project status and your workload.
 
 ## Knowledge Capture
 
