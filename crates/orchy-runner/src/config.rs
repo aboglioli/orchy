@@ -19,6 +19,9 @@ pub struct AgentConfig {
     pub working_dir: Option<PathBuf>,
     pub pty_rows: u16,
     pub pty_cols: u16,
+    /// Stripped byte sequences that indicate the agent is idle and ready for input.
+    /// Matched against the tail of ANSI-stripped PTY output.
+    pub idle_patterns: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,13 +47,13 @@ impl RunnerConfig {
     /// Usage: `orchy-runner <command> [args...]`
     ///
     /// Env vars (all optional with defaults):
-    ///   ORCHY_URL           — orchy MCP endpoint (default: http://127.0.0.1:3100/mcp)
-    ///   ORCHY_PROJECT       — project name (default: current directory name)
-    ///   ORCHY_DESCRIPTION   — agent description (default: "{name} agent")
-    ///   ORCHY_AGENT_NAME    — agent name (default: command basename)
-    ///   ORCHY_NAMESPACE     — namespace (optional)
-    ///   ORCHY_ROLES         — comma-separated roles (optional)
-    ///   ORCHY_SPAWN_MODE    — pty or pipe (default: pty)
+    ///   ORCHY_URL             — orchy MCP endpoint (default: http://127.0.0.1:3100/mcp)
+    ///   ORCHY_PROJECT         — project name (default: current directory name)
+    ///   ORCHY_DESCRIPTION     — agent description (default: "{name} agent")
+    ///   ORCHY_AGENT_NAME      — agent name (default: command basename)
+    ///   ORCHY_NAMESPACE       — namespace (optional)
+    ///   ORCHY_ROLES           — comma-separated roles (optional)
+    ///   ORCHY_IDLE_PATTERNS   — comma-separated idle prompt patterns (default: "❯ ,$ ")
     pub fn from_env() -> Result<Self, String> {
         let mut cli_args = std::env::args().skip(1);
         let command = cli_args.next().ok_or_else(|| {
@@ -64,14 +67,6 @@ impl RunnerConfig {
         let name = std::env::var("ORCHY_AGENT_NAME")
             .unwrap_or_else(|_| basename(&command).to_string());
 
-        let spawn_mode = match std::env::var("ORCHY_SPAWN_MODE")
-            .unwrap_or_default()
-            .as_str()
-        {
-            "pipe" => SpawnMode::Pipe,
-            _ => SpawnMode::Pty,
-        };
-
         let (pty_rows, pty_cols) = crossterm::terminal::size().unwrap_or((24, 120));
 
         let mut env = HashMap::new();
@@ -79,6 +74,16 @@ impl RunnerConfig {
             "TERM".to_string(),
             std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
         );
+
+        let idle_patterns = std::env::var("ORCHY_IDLE_PATTERNS")
+            .map(|s| {
+                s.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_else(|_| vec!["❯ ".to_string(), "$ ".to_string()]);
 
         let url = std::env::var("ORCHY_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:3100/mcp".to_string());
@@ -105,11 +110,12 @@ impl RunnerConfig {
                 name,
                 command,
                 args,
-                spawn_mode,
+                spawn_mode: SpawnMode::Pty,
                 env,
                 working_dir: None,
                 pty_rows,
                 pty_cols,
+                idle_patterns,
             },
             orchy: OrchyConfig {
                 url,

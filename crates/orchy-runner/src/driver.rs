@@ -1,63 +1,62 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use pty_process::OwnedWritePty;
 use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParams, CallToolResult, RawContent};
 use rmcp::service::{Peer, RoleClient, RunningService};
 use rmcp::transport::StreamableHttpClientTransport;
-use tokio::time;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::Mutex;
+use tokio::time::{self, Duration, sleep};
 
 use crate::config::RunnerConfig;
 use crate::error::{Error, Result};
-use crate::output::{OutputParser, ParsedOutput};
-use crate::process::AgentProcess;
-
-#[derive(Debug, Clone, PartialEq)]
-enum DriverState {
-    Idle,
-    Working { task_id: String, title: String },
-    ShuttingDown,
-}
+use crate::process::spawn_pty_raw;
 
 pub struct AgentDriver {
-    process: AgentProcess,
+    writer: Arc<Mutex<OwnedWritePty>>,
+    child: tokio::process::Child,
+    /// Set to true when an idle prompt pattern is detected in ANSI-stripped PTY output.
+    /// Guards task/message injection — never inject while agent is processing.
+    is_idle: Arc<AtomicBool>,
     config: RunnerConfig,
     peer: Arc<Peer<RoleClient>>,
     #[allow(dead_code)]
     service: RunningService<RoleClient, ()>,
-    parser: OutputParser,
-    state: DriverState,
+    shutting_down: bool,
     agent_id: Option<String>,
-    session_id: Option<String>,
 }
 
 impl AgentDriver {
     pub async fn connect(config: RunnerConfig) -> Result<Self> {
         let transport = StreamableHttpClientTransport::from_uri(config.orchy.url.as_str());
 
-        let service: RunningService<RoleClient, ()> = ().serve(transport).await.map_err(|e| {
-            Error::Mcp(format!(
-                "failed to connect to orchy at {}: {e}",
-                config.orchy.url
-            ))
-        })?;
+        let service: RunningService<RoleClient, ()> =
+            ().serve(transport).await.map_err(|e| {
+                Error::Mcp(format!("connect to {}: {e}", config.orchy.url))
+            })?;
 
-        let peer = service.peer().clone();
+        let peer = Arc::new(service.peer().clone());
+        let parts = spawn_pty_raw(&config.agent)?;
+        let writer = Arc::new(Mutex::new(parts.writer));
+        let is_idle = Arc::new(AtomicBool::new(false));
 
-        let is_json_mode = config
-            .agent
-            .args
-            .iter()
-            .any(|a| a.contains("stream-json") || a.contains("json"));
+        spawn_output_reader(
+            parts.reader,
+            config.agent.idle_patterns.clone(),
+            Arc::clone(&is_idle),
+        );
 
         Ok(Self {
-            process: AgentProcess::spawn(&config.agent).await?,
+            writer,
+            child: parts.child,
+            is_idle,
             config,
-            peer: Arc::new(peer),
+            peer,
             service,
-            parser: OutputParser::new(is_json_mode),
-            state: DriverState::Idle,
+            shutting_down: false,
             agent_id: None,
-            session_id: None,
         })
     }
 
@@ -69,29 +68,18 @@ impl AgentDriver {
 
     async fn register(&mut self) -> Result<()> {
         let mut args = serde_json::Map::new();
-        args.insert(
-            "project".into(),
-            serde_json::Value::String(self.config.orchy.project.clone()),
-        );
-        args.insert(
-            "description".into(),
-            serde_json::Value::String(self.config.orchy.description.clone()),
-        );
+        args.insert("project".into(), self.config.orchy.project.clone().into());
+        args.insert("description".into(), self.config.orchy.description.clone().into());
 
         if let Some(ns) = &self.config.orchy.namespace {
-            args.insert("namespace".into(), serde_json::Value::String(ns.clone()));
+            args.insert("namespace".into(), ns.clone().into());
         }
 
         if !self.config.orchy.roles.is_empty() {
             args.insert(
                 "roles".into(),
                 serde_json::Value::Array(
-                    self.config
-                        .orchy
-                        .roles
-                        .iter()
-                        .map(|r| serde_json::Value::String(r.clone()))
-                        .collect(),
+                    self.config.orchy.roles.iter().map(|r| r.clone().into()).collect(),
                 ),
             );
         }
@@ -103,7 +91,7 @@ impl AgentDriver {
             tracing::info!(agent_id = %id, "registered with orchy");
             self.agent_id = Some(id);
         } else {
-            tracing::info!("registered with orchy (no agent_id in response)");
+            tracing::info!("registered with orchy");
         }
 
         Ok(())
@@ -116,7 +104,6 @@ impl AgentDriver {
         let mut poll_timer = time::interval(poll_interval);
         let mut heartbeat_timer = time::interval(heartbeat_interval);
 
-        // skip first immediate tick
         poll_timer.tick().await;
         heartbeat_timer.tick().await;
 
@@ -128,34 +115,24 @@ impl AgentDriver {
         );
 
         loop {
-            if self.state == DriverState::ShuttingDown {
+            if self.shutting_down {
                 break;
             }
 
-            if !self.process.is_running() {
-                tracing::warn!(agent = %self.config.agent.name, "process exited");
+            if let Some(status) = self
+                .child
+                .try_wait()
+                .map_err(|e| Error::Io(format!("wait: {e}")))?
+            {
+                tracing::warn!(agent = %self.config.agent.name, ?status, "process exited");
                 return Err(Error::ProcessExited);
             }
 
             tokio::select! {
-                line = self.process.read_line() => {
-                    match line {
-                        Ok(Some(raw)) => self.handle_output(&raw).await?,
-                        Ok(None) => {
-                            tracing::warn!("process output stream closed");
-                            return Err(Error::ProcessExited);
-                        }
-                        Err(e) => {
-                            tracing::error!(error = %e, "read error");
-                        }
-                    }
-                }
                 _ = poll_timer.tick() => {
-                    if self.state == DriverState::Idle
-                        && let Err(e) = self.poll_for_work().await {
-                            tracing::warn!(error = %e, "poll_for_work failed");
-                        }
-
+                    if let Err(e) = self.poll_for_work().await {
+                        tracing::warn!(error = %e, "poll_for_work failed");
+                    }
                     if let Err(e) = self.check_mailbox().await {
                         tracing::warn!(error = %e, "check_mailbox failed");
                     }
@@ -171,44 +148,14 @@ impl AgentDriver {
         self.shutdown().await
     }
 
-    async fn handle_output(&mut self, raw: &str) -> Result<()> {
-        let parsed = self.parser.parse(raw);
-
-        match &parsed {
-            ParsedOutput::Empty => {}
-            ParsedOutput::Text(text) => {
-                tracing::debug!(agent = %self.config.agent.name, text = %text, "output");
-            }
-            ParsedOutput::JsonEvent(event) => {
-                tracing::debug!(agent = %self.config.agent.name, event = ?event, "json output");
-            }
-        }
-
-        if let Some(sid) = self.parser.extract_session_id(&parsed) {
-            self.session_id = Some(sid);
-        }
-
-        if self.parser.is_completion_signal(&parsed)
-            && let DriverState::Working { task_id, .. } = &self.state
-        {
-            let summary = self
-                .parser
-                .extract_text(&parsed)
-                .unwrap_or_else(|| "completed".to_string());
-
-            tracing::info!(task_id = %task_id, "agent completed task");
-
-            let tid = task_id.clone();
-            self.complete_task(&tid, &summary).await?;
-            self.state = DriverState::Idle;
-        }
-
-        Ok(())
-    }
-
     async fn poll_for_work(&mut self) -> Result<()> {
+        if !self.is_idle.load(Ordering::Relaxed) {
+            tracing::debug!(agent = %self.config.agent.name, "agent busy, skipping poll");
+            return Ok(());
+        }
+
         let mut args = serde_json::Map::new();
-        args.insert("claim".into(), serde_json::Value::Bool(true));
+        args.insert("claim".into(), true.into());
 
         let result = self.call_tool("get_next_task", args).await?;
         let text = extract_text(&result);
@@ -226,44 +173,33 @@ impl AgentDriver {
             return Ok(());
         }
 
-        tracing::info!(task_id = %task_id, title = %title, "claimed task");
+        tracing::info!(task_id = %task_id, title = %title, "claimed task, injecting prompt");
 
-        self.state = DriverState::Working {
-            task_id: task_id.clone(),
-            title: title.clone(),
-        };
-
-        // start task
         let mut start_args = serde_json::Map::new();
-        start_args.insert("task_id".into(), serde_json::Value::String(task_id.clone()));
+        start_args.insert("task_id".into(), task_id.clone().into());
         let _ = self.call_tool("start_task", start_args).await;
 
-        // inject task into agent process
         let prompt = format!(
             "You have been assigned task {task_id}: {title}\n\
-             Please complete this task. When done, provide a summary of what you did."
+             Please complete this task. When done, call complete_task with a summary."
         );
-        self.process.write_line(&prompt).await?;
-
-        Ok(())
+        self.inject(&prompt).await
     }
 
     async fn check_mailbox(&mut self) -> Result<()> {
-        let result = self
-            .call_tool("check_mailbox", serde_json::Map::new())
-            .await?;
+        if !self.is_idle.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        let result = self.call_tool("check_mailbox", serde_json::Map::new()).await?;
         let text = extract_text(&result);
 
         if text.contains("no message") || text.contains("No message") || text.is_empty() {
             return Ok(());
         }
 
-        tracing::info!(agent = %self.config.agent.name, "received messages");
-
-        let prompt = format!("[SYSTEM MESSAGE]: {text}");
-        self.process.write_line(&prompt).await?;
-
-        Ok(())
+        tracing::info!(agent = %self.config.agent.name, "received messages, injecting");
+        self.inject(&format!("[SYSTEM MESSAGE]: {text}")).await
     }
 
     async fn heartbeat(&mut self) -> Result<()> {
@@ -271,31 +207,42 @@ impl AgentDriver {
         Ok(())
     }
 
-    async fn complete_task(&mut self, task_id: &str, summary: &str) -> Result<()> {
-        let mut args = serde_json::Map::new();
-        args.insert(
-            "task_id".into(),
-            serde_json::Value::String(task_id.to_string()),
-        );
-        args.insert(
-            "summary".into(),
-            serde_json::Value::String(summary.to_string()),
-        );
-
-        self.call_tool("complete_task", args).await?;
-        tracing::info!(task_id = %task_id, "task completed in orchy");
+    /// Write text into the PTY and send Enter. Marks the agent as busy immediately.
+    async fn inject(&self, text: &str) -> Result<()> {
+        {
+            let mut w = self.writer.lock().await;
+            w.write_all(text.as_bytes())
+                .await
+                .map_err(|e| Error::Io(format!("inject: {e}")))?;
+            w.flush()
+                .await
+                .map_err(|e| Error::Io(format!("inject flush: {e}")))?;
+        }
+        sleep(Duration::from_millis(100)).await;
+        {
+            let mut w = self.writer.lock().await;
+            w.write_all(b"\r")
+                .await
+                .map_err(|e| Error::Io(format!("inject enter: {e}")))?;
+            w.flush()
+                .await
+                .map_err(|e| Error::Io(format!("inject enter flush: {e}")))?;
+        }
+        self.is_idle.store(false, Ordering::Relaxed);
+        tracing::debug!(agent = %self.config.agent.name, bytes = text.len(), "injected prompt");
         Ok(())
     }
 
     async fn shutdown(&mut self) -> Result<()> {
         tracing::info!(agent = %self.config.agent.name, "shutting down");
-
-        // disconnect from orchy
         let _ = self.call_tool("disconnect", serde_json::Map::new()).await;
-
-        // kill the process
-        let _ = self.process.kill().await;
-
+        {
+            let mut w = self.writer.lock().await;
+            let _ = w.write_all(b"/exit\r").await;
+            let _ = w.flush().await;
+        }
+        sleep(Duration::from_millis(500)).await;
+        let _ = self.child.kill().await;
         Ok(())
     }
 
@@ -305,7 +252,6 @@ impl AgentDriver {
         args: serde_json::Map<String, serde_json::Value>,
     ) -> Result<CallToolResult> {
         let params = CallToolRequestParams::new(name.to_string()).with_arguments(args);
-
         self.peer
             .call_tool(params)
             .await
@@ -313,8 +259,37 @@ impl AgentDriver {
     }
 
     pub fn request_shutdown(&mut self) {
-        self.state = DriverState::ShuttingDown;
+        self.shutting_down = true;
     }
+}
+
+/// Reads raw PTY bytes, strips ANSI, keeps a rolling tail, and sets `is_idle` when
+/// the tail ends with one of the configured idle prompt patterns.
+fn spawn_output_reader(
+    mut reader: pty_process::OwnedReadPty,
+    idle_patterns: Vec<String>,
+    is_idle: Arc<AtomicBool>,
+) {
+    let patterns: Vec<Vec<u8>> = idle_patterns.into_iter().map(String::into_bytes).collect();
+    tokio::spawn(async move {
+        let mut tail: Vec<u8> = Vec::with_capacity(512);
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let stripped = strip_ansi_escapes::strip(&buf[..n]);
+                    tail.extend_from_slice(&stripped);
+                    if tail.len() > 512 {
+                        let excess = tail.len() - 512;
+                        tail.drain(..excess);
+                    }
+                    let idle = patterns.iter().any(|p| tail.ends_with(p.as_slice()));
+                    is_idle.store(idle, Ordering::Relaxed);
+                }
+            }
+        }
+    });
 }
 
 fn extract_text(result: &CallToolResult) -> String {
@@ -331,14 +306,12 @@ fn extract_text(result: &CallToolResult) -> String {
 }
 
 fn extract_field(text: &str, field: &str) -> Option<String> {
-    // try JSON parse first
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(text)
         && let Some(val) = v.get(field)
     {
         return Some(val.as_str().unwrap_or(&val.to_string()).to_string());
     }
 
-    // fallback: look for "field: value" or "field": "value" patterns
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with(field)

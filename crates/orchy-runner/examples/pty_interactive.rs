@@ -3,15 +3,16 @@
 /// Usage:
 ///   cargo run --example pty_interactive -p orchy-runner -- <command> [args...]
 ///
-/// Ghost injection (optional initial prompt):
-///   GHOST_TEXT="say hello" GHOST_DELAY_SECS=2 cargo run --example pty_interactive -- claude
+/// Env vars:
+///   GHOST_TEXT="say hello"   — inject this prompt after the agent starts
+///   GHOST_DELAY_SECS=3       — seconds to wait before injecting (default: 3)
 use std::io::{self, ErrorKind, Read};
 use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use orchy_runner::error::{Error, Result};
 use orchy_runner::config::{AgentConfig, SpawnMode};
+use orchy_runner::error::{Error, Result};
 use orchy_runner::input::{is_focus_in_out, is_mouse_sgr_prefix, map_enter, unescape};
 use orchy_runner::process::spawn_pty_raw;
 use pty_process::OwnedWritePty;
@@ -55,6 +56,7 @@ async fn main() -> Result<()> {
         working_dir: None,
         pty_rows: rows,
         pty_cols: cols,
+        idle_patterns: vec![],
     };
 
     let ghost_text = std::env::var("GHOST_TEXT").ok();
@@ -79,10 +81,7 @@ async fn main() -> Result<()> {
     let stdin_done = spawn_stdin_to_pty(Arc::clone(&writer));
 
     tokio::select! {
-        _ = stdin_done => {
-            // Ctrl+C or stdin closed — kill child and exit
-            let _ = child.kill().await;
-        }
+        _ = stdin_done => { let _ = child.kill().await; }
         _ = child.wait() => {}
     }
 
@@ -162,4 +161,3 @@ fn spawn_stdin_to_pty(writer: Arc<Mutex<OwnedWritePty>>) -> oneshot::Receiver<()
     });
     rx
 }
-
