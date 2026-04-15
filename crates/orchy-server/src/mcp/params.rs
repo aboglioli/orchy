@@ -12,6 +12,7 @@ pub struct RegisterAgentParams {
     pub agent_id: Option<String>,
     /// Create as a child of this parent agent.
     pub parent_id: Option<String>,
+    pub metadata: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

@@ -311,6 +311,10 @@ impl Agent {
         .map(|e| self.collector.collect(e));
     }
 
+    pub fn set_metadata(&mut self, metadata: HashMap<String, String>) {
+        self.metadata = metadata;
+    }
+
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
         self.status != AgentStatus::Disconnected
             && (Utc::now() - self.last_heartbeat) > chrono::Duration::seconds(timeout_secs as i64)

@@ -40,7 +40,7 @@ impl OrchyHandler {
             let agent_id = parse_agent_id(id_str)?;
             let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
 
-            match self
+            let mut agent = self
                 .container
                 .agent_service
                 .resume(
@@ -50,13 +50,19 @@ impl OrchyHandler {
                     params.description.clone(),
                 )
                 .await
-            {
-                Ok(agent) => {
-                    self.set_session(agent.id(), project, namespace);
-                    return Ok(to_json(&agent));
-                }
-                Err(e) => return Err(e.to_string()),
+                .map_err(|e| e.to_string())?;
+
+            if let Some(metadata) = params.metadata {
+                agent = self
+                    .container
+                    .agent_service
+                    .update_metadata(&agent_id, metadata)
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
+
+            self.set_session(agent.id(), project, namespace);
+            return Ok(to_json(&agent));
         }
 
         let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
@@ -84,7 +90,7 @@ impl OrchyHandler {
             roles,
             description: params.description,
             parent_id,
-            metadata: HashMap::new(),
+            metadata: params.metadata.unwrap_or_default(),
         };
 
         match self.container.agent_service.register(cmd).await {

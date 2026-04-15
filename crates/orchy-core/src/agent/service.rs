@@ -84,6 +84,17 @@ impl<S: AgentStore> AgentService<S> {
         Ok(agent)
     }
 
+    pub async fn update_metadata(
+        &self,
+        id: &AgentId,
+        metadata: std::collections::HashMap<String, String>,
+    ) -> Result<Agent> {
+        let mut agent = self.get(id).await?;
+        agent.set_metadata(metadata);
+        self.store.save(&mut agent).await?;
+        Ok(agent)
+    }
+
     pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
         let mut agent = self.get(id).await?;
         agent.disconnect();
