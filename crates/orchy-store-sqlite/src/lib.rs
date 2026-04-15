@@ -6,7 +6,6 @@ mod knowledge;
 mod message;
 mod namespace;
 mod project;
-mod project_link;
 mod resource_lock;
 mod review;
 mod task;

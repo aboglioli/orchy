@@ -8,7 +8,6 @@ use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeSt
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::project::{Project, ProjectStore};
-use orchy_core::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::task::{
     ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
@@ -122,28 +121,6 @@ impl ProjectStore for StoreBackend {
     }
     async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
         delegate_trait!(self, ProjectStore::find_by_id(id))
-    }
-}
-
-impl ProjectLinkStore for StoreBackend {
-    async fn save(&self, link: &mut ProjectLink) -> Result<()> {
-        delegate_trait!(self, ProjectLinkStore::save(link))
-    }
-    async fn delete(&self, id: &ProjectLinkId) -> Result<()> {
-        delegate_trait!(self, ProjectLinkStore::delete(id))
-    }
-    async fn find_by_id(&self, id: &ProjectLinkId) -> Result<Option<ProjectLink>> {
-        delegate_trait!(self, ProjectLinkStore::find_by_id(id))
-    }
-    async fn list_by_target(&self, target: &ProjectId) -> Result<Vec<ProjectLink>> {
-        delegate_trait!(self, ProjectLinkStore::list_by_target(target))
-    }
-    async fn find_link(
-        &self,
-        source: &ProjectId,
-        target: &ProjectId,
-    ) -> Result<Option<ProjectLink>> {
-        delegate_trait!(self, ProjectLinkStore::find_link(source, target))
     }
 }
 

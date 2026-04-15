@@ -270,7 +270,6 @@ On disconnect, claimed tasks return to pending.
 - `request_review` to ask another agent to review your work.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
 - `write_knowledge(kind: \"context\")` before your session ends for continuity.
-- `link_project` + `import_knowledge` to share knowledge across projects.
 - Register without roles — orchy assigns them based on task demand.
 
 ## Knowledge Capture

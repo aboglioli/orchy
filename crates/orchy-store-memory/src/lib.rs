@@ -6,7 +6,6 @@ mod knowledge;
 mod message;
 mod namespace;
 mod project;
-mod project_link;
 mod resource_lock;
 mod review;
 mod task;
@@ -22,7 +21,6 @@ use orchy_core::knowledge::{Knowledge, KnowledgeId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
 use orchy_core::project::Project;
-use orchy_core::project_link::{ProjectLink, ProjectLinkId};
 use orchy_core::resource_lock::ResourceLock;
 use orchy_core::task::{ReviewId, ReviewRequest, Task, TaskId, TaskWatcher};
 
@@ -31,7 +29,6 @@ pub struct MemoryBackend {
     pub(crate) tasks: RwLock<HashMap<TaskId, Task>>,
     pub(crate) messages: RwLock<HashMap<MessageId, Message>>,
     pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
-    pub(crate) project_links: RwLock<HashMap<ProjectLinkId, ProjectLink>>,
     pub(crate) watchers: RwLock<Vec<TaskWatcher>>,
     pub(crate) reviews: RwLock<HashMap<ReviewId, ReviewRequest>>,
     pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
@@ -47,7 +44,6 @@ impl MemoryBackend {
             tasks: RwLock::new(HashMap::new()),
             messages: RwLock::new(HashMap::new()),
             projects: RwLock::new(HashMap::new()),
-            project_links: RwLock::new(HashMap::new()),
             watchers: RwLock::new(Vec::new()),
             reviews: RwLock::new(HashMap::new()),
             knowledge_entries: RwLock::new(HashMap::new()),

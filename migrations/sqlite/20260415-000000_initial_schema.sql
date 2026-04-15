@@ -158,12 +158,3 @@ CREATE INDEX IF NOT EXISTS events_topic_idx ON events (topic);
 CREATE INDEX IF NOT EXISTS events_namespace_idx ON events (namespace);
 CREATE INDEX IF NOT EXISTS events_timestamp_idx ON events (timestamp);
 CREATE INDEX IF NOT EXISTS events_organization_idx ON events (organization);
-
-CREATE TABLE IF NOT EXISTS project_links (
-    id TEXT PRIMARY KEY,
-    source_project TEXT NOT NULL,
-    target_project TEXT NOT NULL,
-    resource_types TEXT NOT NULL DEFAULT '[]',
-    created_at TEXT NOT NULL,
-    UNIQUE(source_project, target_project)
-);

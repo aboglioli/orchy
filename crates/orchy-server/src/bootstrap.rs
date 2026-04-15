@@ -167,7 +167,6 @@ namespace. Namespaces are auto-created on first use.
 - **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
 - **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
 - **write_knowledge(kind: "context")** — save session state before ending.
-- **link_project** — import knowledge from other projects.
 - **get_project** (`include_summary`) — check project status and your workload.
 
 ## Knowledge Capture

@@ -4,7 +4,6 @@ mod knowledge;
 mod message;
 mod namespace;
 mod project;
-mod project_link;
 mod resource_lock;
 mod review;
 mod task;
@@ -118,7 +117,7 @@ impl PgBackend {
 
     pub async fn truncate_all(&self) -> Result<()> {
         sqlx::query(
-            "TRUNCATE task_watchers, reviews, resource_locks, messages, tasks, knowledge_entries, events, namespaces, agents, projects, project_links CASCADE",
+            "TRUNCATE task_watchers, reviews, resource_locks, messages, tasks, knowledge_entries, events, namespaces, agents, projects CASCADE",
         )
             .execute(&self.pool)
             .await

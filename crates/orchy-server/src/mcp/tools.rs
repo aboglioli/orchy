@@ -9,7 +9,6 @@ use orchy_core::knowledge::{
 };
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
-use orchy_core::project_link::SharedResourceType;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
@@ -1329,75 +1328,6 @@ impl OrchyHandler {
         .await
         {
             Ok(prompt) => Ok(prompt),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    #[tool(
-        description = "Link another project as a resource source. Linked knowledge (e.g. skills) \
-        is visible via list_knowledge and search. Resource types: 'knowledge', 'tasks'."
-    )]
-    async fn link_project(
-        &self,
-        Parameters(params): Parameters<LinkProjectParams>,
-    ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
-
-        let source = parse_project(&params.source_project)?;
-
-        let resource_types: Vec<SharedResourceType> = params
-            .resource_types
-            .iter()
-            .map(|s| s.parse::<SharedResourceType>().map_err(|e| e.to_string()))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        match self
-            .container
-            .project_link_service
-            .link(source, project, resource_types)
-            .await
-        {
-            Ok(link) => Ok(to_json(&link)),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    #[tool(description = "Remove a project link.")]
-    async fn unlink_project(
-        &self,
-        Parameters(params): Parameters<UnlinkProjectParams>,
-    ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
-
-        let source = parse_project(&params.source_project)?;
-
-        match self
-            .container
-            .project_link_service
-            .unlink(&source, &project)
-            .await
-        {
-            Ok(()) => Ok("ok".to_string()),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    #[tool(description = "List all project links for the current project.")]
-    async fn list_project_links(
-        &self,
-        Parameters(_params): Parameters<ListProjectLinksParams>,
-    ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
-
-        match self
-            .container
-            .project_link_service
-            .list_links(&project)
-            .await
-        {
-            Ok(links) => Ok(to_json(&links)),
             Err(e) => Err(e.to_string()),
         }
     }

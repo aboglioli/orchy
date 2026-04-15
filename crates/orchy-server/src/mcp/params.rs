@@ -249,21 +249,6 @@ pub struct SetProjectMetadataParams {
 pub struct ListNamespacesParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct LinkProjectParams {
-    pub source_project: String,
-    /// "knowledge", "tasks".
-    pub resource_types: Vec<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct UnlinkProjectParams {
-    pub source_project: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct ListProjectLinksParams {}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct TagTaskParams {
     pub task_id: String,
     pub tag: String,

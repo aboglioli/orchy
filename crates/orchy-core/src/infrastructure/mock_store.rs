@@ -7,7 +7,6 @@ use crate::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
 use crate::project::{Project, ProjectStore};
-use crate::project_link::{ProjectLink, ProjectLinkId, ProjectLinkStore};
 use crate::resource_lock::{LockStore, ResourceLock};
 use crate::task::{
     ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
@@ -144,24 +143,6 @@ impl NamespaceStore for MockStore {
     }
     async fn list(&self, _: &ProjectId) -> Result<Vec<Namespace>> {
         Ok(vec![])
-    }
-}
-
-impl ProjectLinkStore for MockStore {
-    async fn save(&self, _: &mut ProjectLink) -> Result<()> {
-        unimplemented!()
-    }
-    async fn delete(&self, _: &ProjectLinkId) -> Result<()> {
-        unimplemented!()
-    }
-    async fn find_by_id(&self, _: &ProjectLinkId) -> Result<Option<ProjectLink>> {
-        unimplemented!()
-    }
-    async fn list_by_target(&self, _: &ProjectId) -> Result<Vec<ProjectLink>> {
-        unimplemented!()
-    }
-    async fn find_link(&self, _: &ProjectId, _: &ProjectId) -> Result<Option<ProjectLink>> {
-        unimplemented!()
     }
 }
 
