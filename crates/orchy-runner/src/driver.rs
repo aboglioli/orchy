@@ -15,6 +15,7 @@ use tokio::time::{self, Duration, sleep};
 
 use crate::config::RunnerConfig;
 use crate::error::{Error, Result};
+use crate::mcp_config;
 use crate::process::spawn_pty_raw;
 use crate::session::AgentSession;
 
@@ -28,6 +29,8 @@ pub struct AgentDriver {
     service: RunningService<RoleClient, ()>,
     agent_id: String,
     shutting_down: bool,
+    /// True if we wrote the orchy entry into .mcp.json and must clean it up.
+    mcp_injected: bool,
 }
 
 impl AgentDriver {
@@ -63,6 +66,7 @@ impl AgentDriver {
             service,
             agent_id: String::new(),
             shutting_down: false,
+            mcp_injected: false,
         })
     }
 
@@ -78,7 +82,30 @@ impl AgentDriver {
         let (output_tx, output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (input_tx, input_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
+        let mcp_injected = if mcp_config::supports_mcp_json(&config.agent_type) {
+            let dir = config
+                .working_dir
+                .clone()
+                .or_else(|| std::env::current_dir().ok())
+                .unwrap_or_default();
+            match mcp_config::inject(&dir, &config.url) {
+                Ok(injected) => {
+                    if injected {
+                        tracing::info!(dir = %dir.display(), "injected orchy into .mcp.json");
+                    }
+                    injected
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to inject .mcp.json, continuing");
+                    false
+                }
+            }
+        } else {
+            false
+        };
+
         let mut driver = Self::connect(config, output_tx).await?;
+        driver.mcp_injected = mcp_injected;
         driver.register().await?;
         driver.inject_bootstrap().await?;
 
@@ -280,6 +307,16 @@ impl AgentDriver {
         }
         sleep(Duration::from_millis(500)).await;
         let _ = self.child.kill().await;
+        if self.mcp_injected {
+            let dir = self
+                .config
+                .working_dir
+                .clone()
+                .or_else(|| std::env::current_dir().ok())
+                .unwrap_or_default();
+            mcp_config::remove(&dir);
+            tracing::info!(dir = %dir.display(), "removed orchy from .mcp.json");
+        }
         Ok(())
     }
 
