@@ -1,7 +1,5 @@
 pub mod ackers;
 
-use std::pin::Pin;
-
 use async_trait::async_trait;
 use futures::Stream;
 
@@ -55,9 +53,9 @@ pub trait Handler: Send + Sync {
 
 pub trait Reader: Send + Sync {
     type Acker: Acker;
+    type Stream: Stream<Item = Result<Message<Self::Acker>>> + Send;
 
-    #[allow(clippy::type_complexity)]
-    fn read(&self) -> Result<Pin<Box<dyn Stream<Item = Result<Message<Self::Acker>>> + Send>>>;
+    fn read(&self) -> Result<Self::Stream>;
 }
 
 #[async_trait]
