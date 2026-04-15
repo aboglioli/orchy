@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore};
@@ -515,4 +516,28 @@ async fn task_list_filters_by_assigned_to() {
     .unwrap();
     assert_eq!(assigned.len(), 1);
     assert_eq!(assigned[0].title(), "assigned");
+}
+
+#[tokio::test]
+async fn knowledge_search_fts_finds_content() {
+    let store = backend();
+    let mut entry = Knowledge::new(
+        proj("p"),
+        Namespace::root(),
+        "auth/jwt".into(),
+        KnowledgeKind::Note,
+        "JWT notes".into(),
+        "Use RS256 for asymmetric cryptography verification.".into(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    let hits = KnowledgeStore::search(&store, "cryptography", None, None, 10)
+        .await
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].path(), "auth/jwt");
 }

@@ -18,6 +18,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use crate::{PgBackend, parse_pg_vector_text};
 
 #[derive(Iden)]
+#[allow(dead_code)]
 enum KnowledgeEntries {
     Table,
     #[iden = "id"]
@@ -147,14 +148,14 @@ impl KnowledgeStore for PgBackend {
         if let Some(ref project) = filter.project {
             select.and_where(Expr::col(KnowledgeEntries::Project).eq(project.to_string()));
         }
-        if let Some(ref ns) = filter.namespace {
-            if !ns.is_root() {
-                select.cond_where(
-                    Cond::any()
-                        .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
-                        .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
-                );
-            }
+        if let Some(ref ns) = filter.namespace
+            && !ns.is_root()
+        {
+            select.cond_where(
+                Cond::any()
+                    .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
+                    .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
+            );
         }
         if let Some(ref kind) = filter.kind {
             select.and_where(Expr::col(KnowledgeEntries::KnowledgeKind).eq(kind.to_string()));

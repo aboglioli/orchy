@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use chrono::{DateTime, Utc};
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
@@ -154,14 +152,14 @@ impl TaskStore for PgBackend {
             Tasks::UpdatedAt,
         ]);
 
-        if let Some(ref ns) = filter.namespace {
-            if !ns.is_root() {
-                select.cond_where(
-                    Cond::any()
-                        .add(Expr::col(Tasks::Namespace).eq(ns.to_string()))
-                        .add(Expr::col(Tasks::Namespace).like(format!("{}/%", ns))),
-                );
-            }
+        if let Some(ref ns) = filter.namespace
+            && !ns.is_root()
+        {
+            select.cond_where(
+                Cond::any()
+                    .add(Expr::col(Tasks::Namespace).eq(ns.to_string()))
+                    .add(Expr::col(Tasks::Namespace).like(format!("{}/%", ns))),
+            );
         }
         if let Some(ref project) = filter.project {
             select.and_where(Expr::col(Tasks::Project).eq(project.to_string()));

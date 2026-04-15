@@ -146,13 +146,13 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             .await?
             .ok_or_else(|| Error::NotFound(format!("knowledge entry not found: {path}")))?;
 
-        if let Some(expected) = expected_version {
-            if entry.version() != expected {
-                return Err(Error::VersionMismatch {
-                    expected: expected.as_u64(),
-                    actual: entry.version().as_u64(),
-                });
-            }
+        if let Some(expected) = expected_version
+            && entry.version() != expected
+        {
+            return Err(Error::VersionMismatch {
+                expected: expected.as_u64(),
+                actual: entry.version().as_u64(),
+            });
         }
 
         if entry.kind() == new_kind {

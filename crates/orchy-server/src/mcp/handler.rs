@@ -194,8 +194,8 @@ Your **orchy agent** (`agent_id`) lives in the database — it is **not** auto-a
 session. After reconnect, call **`register_agent` again with the same `agent_id`** you used before \
 (save it in the workspace or a handoff note). Tasks and knowledge remain under that id.
 
-`session_status` and `mark_read` / `list_conversation` do not require a registered orchy session; \
-most other tools do.
+`register_agent`, `session_status`, `mark_read`, `list_conversation`, and `list_agents` (when \
+`project` is passed) do not require a registered orchy session; most other tools do.
 
 ## Before Disconnecting
 

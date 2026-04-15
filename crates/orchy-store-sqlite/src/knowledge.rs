@@ -168,42 +168,25 @@ impl KnowledgeStore for SqliteBackend {
     ) -> Result<Vec<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut sql = String::from(
-            "SELECT e.id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
-             FROM knowledge_entries e
-             WHERE (e.title LIKE ?1 OR e.content LIKE ?1 OR e.path LIKE ?1)",
-        );
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let like_query = format!("%{}%", query);
-        params.push(Box::new(like_query));
-        let mut idx = 2;
-
-        if let Some(ns) = namespace {
-            if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (e.namespace = ?{idx} OR e.namespace LIKE ?{idx} || '/%')"
-                ));
-                params.push(Box::new(ns.to_string()));
-                idx += 1;
-            }
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
         }
 
-        sql.push_str(&format!(" LIMIT ?{idx}"));
-        params.push(Box::new(limit as i64));
-
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
-
-        let entries = stmt
-            .query_map(param_refs.as_slice(), row_to_entry)
+        let fts_ready = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_entries_fts' LIMIT 1",
+                [],
+                |_| Ok(()),
+            )
+            .optional()
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .is_some();
 
-        Ok(entries)
+        if fts_ready {
+            search_knowledge_fts(&conn, query, namespace, limit)
+        } else {
+            search_knowledge_like(&conn, query, namespace, limit)
+        }
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
@@ -217,6 +200,94 @@ impl KnowledgeStore for SqliteBackend {
 
         Ok(())
     }
+}
+
+fn search_knowledge_fts(
+    conn: &rusqlite::Connection,
+    query: &str,
+    namespace: Option<&Namespace>,
+    limit: usize,
+) -> Result<Vec<Knowledge>> {
+    let mut sql = String::from(
+        "SELECT e.id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+         FROM knowledge_entries_fts
+         JOIN knowledge_entries AS e ON e.id = knowledge_entries_fts.knowledge_id
+         WHERE knowledge_entries_fts MATCH ?1",
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    params.push(Box::new(query.to_string()));
+    let mut idx = 2;
+
+    if let Some(ns) = namespace {
+        if !ns.is_root() {
+            sql.push_str(&format!(
+                " AND (e.namespace = ?{idx} OR e.namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(ns.to_string()));
+            idx += 1;
+        }
+    }
+
+    sql.push_str(&format!(
+        " ORDER BY bm25(knowledge_entries_fts) LIMIT ?{idx}"
+    ));
+    params.push(Box::new(limit as i64));
+
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| Error::Store(e.to_string()))?;
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let entries = stmt
+        .query_map(param_refs.as_slice(), row_to_entry)
+        .map_err(|e| Error::Store(e.to_string()))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+    Ok(entries)
+}
+
+fn search_knowledge_like(
+    conn: &rusqlite::Connection,
+    query: &str,
+    namespace: Option<&Namespace>,
+    limit: usize,
+) -> Result<Vec<Knowledge>> {
+    let mut sql = String::from(
+        "SELECT e.id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+         FROM knowledge_entries e
+         WHERE (e.title LIKE ?1 OR e.content LIKE ?1 OR e.path LIKE ?1)",
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let like_query = format!("%{query}%");
+    params.push(Box::new(like_query));
+    let mut idx = 2;
+
+    if let Some(ns) = namespace {
+        if !ns.is_root() {
+            sql.push_str(&format!(
+                " AND (e.namespace = ?{idx} OR e.namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(ns.to_string()));
+            idx += 1;
+        }
+    }
+
+    sql.push_str(&format!(" LIMIT ?{idx}"));
+    params.push(Box::new(limit as i64));
+
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| Error::Store(e.to_string()))?;
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let entries = stmt
+        .query_map(param_refs.as_slice(), row_to_entry)
+        .map_err(|e| Error::Store(e.to_string()))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+    Ok(entries)
 }
 
 fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {

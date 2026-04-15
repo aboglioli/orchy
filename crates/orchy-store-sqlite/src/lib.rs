@@ -19,6 +19,12 @@ use std::sync::Mutex;
 
 use orchy_core::error::{Error, Result};
 
+/// SQLite persistence. Install schema in one of two ways:
+/// - **`run_migrations`** — apply ordered `*.sql` files from a directory and record them in `schema_migrations` (typical `orchy-server` startup).
+/// - **`apply_schema`** — execute bundled SQL (initial + knowledge FTS5) once (tests, in-memory setups) without the migrations table.
+///
+/// Text search uses FTS5 on `knowledge_entries_fts` after migrations or `apply_schema`. Embeddings are stored as BLOBs on `knowledge_entries`;
+/// optional `knowledge_vec` (sqlite-vec `vec0`) is created when `embedding_dimensions` is set for future ANN; Postgres remains the primary vector backend.
 pub struct SqliteBackend {
     conn: Mutex<Connection>,
 }
@@ -43,11 +49,22 @@ impl SqliteBackend {
             .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Self::init_virtual_tables(&conn, embedding_dimensions)?;
+        Self::init_vec0_table(&conn, embedding_dimensions)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    fn init_vec0_table(conn: &Connection, embedding_dimensions: Option<u32>) -> Result<()> {
+        let Some(dims) = embedding_dimensions else {
+            return Ok(());
+        };
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_vec USING vec0(embedding float[{dims}])"
+        ))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(())
     }
 
     pub fn run_migrations(&self, dir: &Path) -> Result<()> {
@@ -106,41 +123,16 @@ impl SqliteBackend {
 
     pub fn apply_schema(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(
-            "../../../migrations/sqlite/20260412-160000_initial_schema.sql"
-        ))
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260415-000000_initial_schema.sql"
+        )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260416-000000_knowledge_fts5.sql"
+        )))
         .map_err(|e| Error::Store(e.to_string()))
-    }
-
-    fn init_virtual_tables(conn: &Connection, embedding_dimensions: Option<u32>) -> Result<()> {
-        let fts_statements = [
-            "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(namespace, key, value, content='memory', content_rowid='rowid')",
-            "CREATE VIRTUAL TABLE IF NOT EXISTS contexts_fts USING fts5(namespace, summary, content='contexts', content_rowid='rowid')",
-        ];
-        for fts in &fts_statements {
-            let mut stmt = conn.prepare(fts).map_err(|e| Error::Store(e.to_string()))?;
-            let _ = stmt.raw_execute();
-        }
-
-        if let Some(dims) = embedding_dimensions {
-            conn.execute_batch(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(
-                    rowid INTEGER PRIMARY KEY,
-                    embedding FLOAT[{dims}]
-                )"
-            ))
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-            conn.execute_batch(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS contexts_vec USING vec0(
-                    rowid INTEGER PRIMARY KEY,
-                    embedding FLOAT[{dims}]
-                )"
-            ))
-            .map_err(|e| Error::Store(e.to_string()))?;
-        }
-
-        Ok(())
     }
 }
 
@@ -153,4 +145,33 @@ pub(crate) fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlite_initial_migration_file_exists() {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../migrations/sqlite/20260415-000000_initial_schema.sql");
+        assert!(
+            p.exists(),
+            "embedded schema path must exist: {}",
+            p.display()
+        );
+        let fts = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../migrations/sqlite/20260416-000000_knowledge_fts5.sql");
+        assert!(
+            fts.exists(),
+            "embedded fts migration path must exist: {}",
+            fts.display()
+        );
+    }
+
+    #[test]
+    fn apply_schema_runs() {
+        let backend = SqliteBackend::new(":memory:", None).unwrap();
+        backend.apply_schema().unwrap();
+    }
 }
