@@ -43,6 +43,19 @@ impl AgentStore for MockStore {
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         Ok(self.agents.read().unwrap().get(id).cloned())
     }
+    async fn find_by_alias(
+        &self,
+        project: &ProjectId,
+        alias: &crate::agent::Alias,
+    ) -> Result<Option<Agent>> {
+        Ok(self
+            .agents
+            .read()
+            .unwrap()
+            .values()
+            .find(|a| a.project() == project && a.alias() == Some(alias))
+            .cloned())
+    }
     async fn list(&self) -> Result<Vec<Agent>> {
         Ok(self.agents.read().unwrap().values().cloned().collect())
     }

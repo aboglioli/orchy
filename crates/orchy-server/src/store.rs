@@ -79,6 +79,13 @@ impl AgentStore for StoreBackend {
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         delegate_trait!(self, AgentStore::find_by_id(id))
     }
+    async fn find_by_alias(
+        &self,
+        project: &ProjectId,
+        alias: &orchy_core::agent::Alias,
+    ) -> Result<Option<Agent>> {
+        delegate_trait!(self, AgentStore::find_by_alias(project, alias))
+    }
     async fn list(&self) -> Result<Vec<Agent>> {
         delegate_trait!(self, AgentStore::list())
     }

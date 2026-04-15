@@ -1,5 +1,6 @@
-use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
+use orchy_core::namespace::ProjectId;
 
 use crate::MemoryBackend;
 
@@ -27,6 +28,17 @@ impl AgentStore for MemoryBackend {
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(agents.get(id).cloned())
+    }
+
+    async fn find_by_alias(&self, project: &ProjectId, alias: &Alias) -> Result<Option<Agent>> {
+        let agents = self
+            .agents
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(agents
+            .values()
+            .find(|a| a.project() == project && a.alias() == Some(alias))
+            .cloned())
     }
 
     async fn list(&self) -> Result<Vec<Agent>> {

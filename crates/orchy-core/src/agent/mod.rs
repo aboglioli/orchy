@@ -11,14 +11,74 @@ use uuid::Uuid;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 
 use self::events as agent_events;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Alias(String);
+
+impl Alias {
+    pub fn new(s: impl Into<String>) -> Result<Self> {
+        let s = s.into();
+        if s.is_empty() {
+            return Err(Error::InvalidInput("alias must not be empty".into()));
+        }
+        for ch in s.chars() {
+            if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
+                return Err(Error::InvalidInput(format!(
+                    "invalid character '{ch}' in alias"
+                )));
+            }
+        }
+        Ok(Self(s))
+    }
+}
+
+impl TryFrom<String> for Alias {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<Self> {
+        Self::new(s)
+    }
+}
+
+impl From<Alias> for String {
+    fn from(a: Alias) -> Self {
+        a.0
+    }
+}
+
+impl fmt::Display for Alias {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for Alias {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::str::FromStr for Alias {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Self::new(s)
+    }
+}
+
 pub trait AgentStore: Send + Sync {
     fn save(&self, agent: &mut Agent) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
+    fn find_by_alias(
+        &self,
+        project: &ProjectId,
+        alias: &Alias,
+    ) -> impl Future<Output = Result<Option<Agent>>> + Send;
     fn list(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
     fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 }
@@ -103,6 +163,7 @@ pub struct Agent {
     project: ProjectId,
     namespace: Namespace,
     parent_id: Option<AgentId>,
+    alias: Option<Alias>,
     roles: Vec<String>,
     description: String,
     status: AgentStatus,
@@ -119,6 +180,7 @@ impl Agent {
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
+        alias: Option<Alias>,
         metadata: HashMap<String, String>,
     ) -> Self {
         let now = Utc::now();
@@ -127,6 +189,7 @@ impl Agent {
             project,
             namespace,
             parent_id: None,
+            alias,
             roles,
             description,
             status: AgentStatus::Online,
@@ -158,6 +221,7 @@ impl Agent {
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
+        alias: Option<Alias>,
     ) -> Self {
         let now = Utc::now();
         let mut agent = Self {
@@ -165,6 +229,7 @@ impl Agent {
             project: parent.project.clone(),
             namespace,
             parent_id: Some(parent.id),
+            alias,
             roles,
             description,
             status: AgentStatus::Online,
@@ -198,6 +263,7 @@ impl Agent {
             project: r.project,
             namespace: r.namespace,
             parent_id: r.parent_id,
+            alias: r.alias,
             roles: r.roles,
             description: r.description,
             status: r.status,
@@ -315,6 +381,10 @@ impl Agent {
         .map(|e| self.collector.collect(e));
     }
 
+    pub fn set_alias(&mut self, alias: Option<Alias>) {
+        self.alias = alias;
+    }
+
     pub fn set_metadata(&mut self, metadata: HashMap<String, String>) {
         self.metadata = metadata;
     }
@@ -339,6 +409,9 @@ impl Agent {
     }
     pub fn parent_id(&self) -> Option<AgentId> {
         self.parent_id
+    }
+    pub fn alias(&self) -> Option<&Alias> {
+        self.alias.as_ref()
     }
     pub fn roles(&self) -> &[String] {
         &self.roles
@@ -365,6 +438,7 @@ pub struct RestoreAgent {
     pub project: ProjectId,
     pub namespace: Namespace,
     pub parent_id: Option<AgentId>,
+    pub alias: Option<Alias>,
     pub roles: Vec<String>,
     pub description: String,
     pub status: AgentStatus,
@@ -379,6 +453,7 @@ pub struct RegisterAgent {
     pub namespace: Namespace,
     pub roles: Vec<String>,
     pub description: String,
+    pub alias: Option<Alias>,
     pub parent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
 }
@@ -403,6 +478,7 @@ mod tests {
             test_namespace(),
             vec!["coder".to_string()],
             "test agent".to_string(),
+            None,
             HashMap::new(),
         )
     }
@@ -423,6 +499,7 @@ mod tests {
             test_namespace(),
             vec!["reviewer".to_string()],
             "child agent".to_string(),
+            None,
         );
         assert_eq!(child.project(), parent.project());
         assert_eq!(child.parent_id(), Some(parent.id()));

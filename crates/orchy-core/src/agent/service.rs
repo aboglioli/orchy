@@ -16,13 +16,20 @@ impl<S: AgentStore> AgentService<S> {
     pub async fn register(&self, cmd: RegisterAgent) -> Result<Agent> {
         let mut agent = if let Some(parent_id) = cmd.parent_id {
             let parent = self.get(&parent_id).await?;
-            Agent::from_parent(&parent, cmd.namespace, cmd.roles, cmd.description)
+            Agent::from_parent(
+                &parent,
+                cmd.namespace,
+                cmd.roles,
+                cmd.description,
+                cmd.alias,
+            )
         } else {
             Agent::register(
                 cmd.project,
                 cmd.namespace,
                 cmd.roles,
                 cmd.description,
+                cmd.alias,
                 cmd.metadata,
             )
         };
@@ -84,6 +91,32 @@ impl<S: AgentStore> AgentService<S> {
         Ok(agent)
     }
 
+    pub async fn set_alias(&self, id: &AgentId, alias: Option<super::Alias>) -> Result<Agent> {
+        let mut agent = self.get(id).await?;
+        if let Some(ref a) = alias {
+            if let Some(existing) = self.store.find_by_alias(agent.project(), a).await? {
+                if existing.id() != *id {
+                    return Err(crate::error::Error::Conflict(format!(
+                        "alias '{}' already taken by agent {}",
+                        a,
+                        existing.id()
+                    )));
+                }
+            }
+        }
+        agent.set_alias(alias);
+        self.store.save(&mut agent).await?;
+        Ok(agent)
+    }
+
+    pub async fn find_by_alias(
+        &self,
+        project: &super::super::namespace::ProjectId,
+        alias: &super::Alias,
+    ) -> Result<Option<Agent>> {
+        self.store.find_by_alias(project, alias).await
+    }
+
     pub async fn update_metadata(
         &self,
         id: &AgentId,
@@ -119,6 +152,7 @@ mod tests {
             namespace: Namespace::root(),
             roles: vec!["tester".to_string()],
             description: "test agent".to_string(),
+            alias: None,
             parent_id: None,
             metadata: HashMap::new(),
         }
@@ -144,6 +178,7 @@ mod tests {
             namespace: Namespace::try_from("/backend".to_string()).unwrap(),
             roles: vec!["reviewer".to_string()],
             description: "child agent".to_string(),
+            alias: None,
             parent_id: Some(parent.id()),
             metadata: HashMap::new(),
         };
