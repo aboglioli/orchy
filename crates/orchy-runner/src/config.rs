@@ -19,6 +19,8 @@ pub struct Cli {
     #[arg(long, env = "ORCHY_DESCRIPTION")]
     pub description: Option<String>,
 
+    /// Agent type controls idle prompt detection and .mcp.json injection.
+    /// Known values: claude, cursor, opencode, gemini, aider.
     #[arg(long, env = "ORCHY_AGENT_TYPE", default_value = "unknown")]
     pub agent_type: String,
 

@@ -27,6 +27,7 @@ pub struct Container {
     pub lock_service: LockService<StoreBackend>,
     pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
+    pub start_time: std::time::Instant,
 }
 
 impl Container {

@@ -70,10 +70,54 @@ impl AgentDriver {
         })
     }
 
+    /// Standalone entry point: transparent PTY passthrough.
+    /// Puts the terminal in raw mode, pipes PTY output to stdout and stdin to
+    /// the PTY, so the agent's UI is fully visible and interactive.
     pub async fn run(config: RunnerConfig) -> Result<()> {
-        let (session, handle) = Self::start(config).await?;
-        drop(session);
-        handle.await.map_err(|e| Error::Io(format!("join: {e}")))?
+        let (mut session, handle) = Self::start(config).await?;
+
+        crossterm::terminal::enable_raw_mode()
+            .map_err(|e| Error::Io(format!("enable raw mode: {e}")))?;
+
+        // PTY output → stdout
+        let output_fwd = tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let mut stdout = tokio::io::stdout();
+            while let Some(bytes) = session.output_rx.recv().await {
+                if stdout.write_all(&bytes).await.is_err() {
+                    break;
+                }
+                let _ = stdout.flush().await;
+            }
+        });
+
+        // stdin → PTY (raw bytes, no processing)
+        let input_tx = session.input_tx;
+        let stdin_fwd = tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut stdin = tokio::io::stdin();
+            let mut buf = [0u8; 256];
+            loop {
+                match stdin.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if input_tx.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        let result = handle.await.map_err(|e| Error::Io(format!("join: {e}")))?;
+
+        crossterm::terminal::disable_raw_mode()
+            .map_err(|e| Error::Io(format!("disable raw mode: {e}")))?;
+
+        output_fwd.abort();
+        stdin_fwd.abort();
+
+        result
     }
 
     pub async fn start(
