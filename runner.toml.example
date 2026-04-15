@@ -1,0 +1,24 @@
+# orchy-runner configuration
+# Copy to runner.toml and adjust for your setup
+
+[agent]
+name = "claude-worker"
+command = "claude"
+args = ["-p", "--output-format", "stream-json", "--verbose"]
+spawn_mode = "pipe"        # "pty" for interactive CLIs, "pipe" for structured output
+# working_dir = "/path/to/project"
+# pty_rows = 24
+# pty_cols = 120
+
+# Environment variables for the agent process
+# [agent.env]
+# ANTHROPIC_API_KEY = "sk-..."
+
+[orchy]
+url = "http://127.0.0.1:3100/mcp"
+project = "my-project"
+description = "Autonomous Claude worker managed by orchy-runner"
+# namespace = "/backend"
+roles = ["developer"]
+poll_interval_secs = 10
+heartbeat_interval_secs = 30
