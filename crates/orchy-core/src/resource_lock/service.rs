@@ -4,6 +4,7 @@ use super::{LockStore, ResourceLock};
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+use crate::organization::OrganizationId;
 
 pub struct LockService<S: LockStore> {
     store: Arc<S>,
@@ -16,13 +17,14 @@ impl<S: LockStore> LockService<S> {
 
     pub async fn acquire(
         &self,
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         name: String,
         holder: AgentId,
         ttl_secs: u64,
     ) -> Result<ResourceLock> {
-        if let Some(existing) = self.store.find(&project, &namespace, &name).await? {
+        if let Some(existing) = self.store.find(&org_id, &project, &namespace, &name).await? {
             if !existing.is_expired() && !existing.is_held_by(&holder) {
                 return Err(Error::Conflict(format!(
                     "resource '{}' is locked by agent {}",
@@ -30,16 +32,17 @@ impl<S: LockStore> LockService<S> {
                     existing.holder()
                 )));
             }
-            self.store.delete(&project, &namespace, &name).await?;
+            self.store.delete(&org_id, &project, &namespace, &name).await?;
         }
 
-        let mut lock = ResourceLock::acquire(project, namespace, name, holder, ttl_secs)?;
+        let mut lock = ResourceLock::acquire(org_id, project, namespace, name, holder, ttl_secs)?;
         self.store.save(&mut lock).await?;
         Ok(lock)
     }
 
     pub async fn release(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
@@ -47,7 +50,7 @@ impl<S: LockStore> LockService<S> {
     ) -> Result<()> {
         let mut lock = self
             .store
-            .find(project, namespace, name)
+            .find(org, project, namespace, name)
             .await?
             .ok_or_else(|| Error::NotFound(format!("lock '{name}'")))?;
 
@@ -60,7 +63,7 @@ impl<S: LockStore> LockService<S> {
 
         lock.mark_released();
         self.store.save(&mut lock).await?;
-        self.store.delete(project, namespace, name).await
+        self.store.delete(org, project, namespace, name).await
     }
 
     pub async fn release_agent_locks(&self, holder: &AgentId) -> Result<()> {
@@ -69,7 +72,7 @@ impl<S: LockStore> LockService<S> {
             lock.mark_released();
             self.store.save(&mut lock).await?;
             self.store
-                .delete(lock.project(), lock.namespace(), lock.name())
+                .delete(lock.org_id(), lock.project(), lock.namespace(), lock.name())
                 .await?;
         }
         Ok(())
@@ -77,14 +80,15 @@ impl<S: LockStore> LockService<S> {
 
     pub async fn check(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
     ) -> Result<Option<ResourceLock>> {
-        let lock = self.store.find(project, namespace, name).await?;
+        let lock = self.store.find(org, project, namespace, name).await?;
         match lock {
             Some(l) if l.is_expired() => {
-                self.store.delete(project, namespace, name).await?;
+                self.store.delete(org, project, namespace, name).await?;
                 Ok(None)
             }
             other => Ok(other),

@@ -1,6 +1,7 @@
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
+use orchy_core::organization::OrganizationId;
 
 use crate::MemoryBackend;
 
@@ -30,23 +31,30 @@ impl AgentStore for MemoryBackend {
         Ok(agents.get(id).cloned())
     }
 
-    async fn find_by_alias(&self, project: &ProjectId, alias: &Alias) -> Result<Option<Agent>> {
+    async fn find_by_alias(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        alias: &Alias,
+    ) -> Result<Option<Agent>> {
         let agents = self
             .agents
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(agents
             .values()
-            .find(|a| a.project() == project && a.alias() == Some(alias))
+            .find(|a| {
+                a.org_id() == org && a.project() == project && a.alias() == Some(alias)
+            })
             .cloned())
     }
 
-    async fn list(&self) -> Result<Vec<Agent>> {
+    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
         let agents = self
             .agents
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(agents.values().cloned().collect())
+        Ok(agents.values().filter(|a| a.org_id() == org).cloned().collect())
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {

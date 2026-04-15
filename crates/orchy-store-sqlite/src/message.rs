@@ -8,6 +8,7 @@ use orchy_core::message::{
     Message, MessageId, MessageStatus, MessageStore, MessageTarget, RestoreMessage,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::SqliteBackend;
 
@@ -16,10 +17,11 @@ impl MessageStore for SqliteBackend {
         {
             let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
             conn.execute(
-                "INSERT OR REPLACE INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT OR REPLACE INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 rusqlite::params![
                     message.id().to_string(),
+                    message.org_id().to_string(),
                     message.project().to_string(),
                     message.namespace().to_string(),
                     message.from().to_string(),
@@ -49,7 +51,7 @@ impl MessageStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -66,19 +68,21 @@ impl MessageStore for SqliteBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE status = ?1 AND (to_target = ?2 OR to_target = 'broadcast') AND project = ?3",
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE status = ?1 AND (to_target = ?2 OR to_target = 'broadcast') AND organization_id = ?3 AND project = ?4",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         params.push(Box::new("pending".to_string()));
         params.push(Box::new(agent.to_string()));
+        params.push(Box::new(org.to_string()));
         params.push(Box::new(project.to_string()));
-        let mut idx = 4;
+        let mut idx = 5;
 
         if !namespace.is_root() {
             sql.push_str(&format!(
@@ -106,18 +110,20 @@ impl MessageStore for SqliteBackend {
     async fn find_sent(
         &self,
         sender: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE from_agent = ?1 AND project = ?2",
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE from_agent = ?1 AND organization_id = ?2 AND project = ?3",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         params.push(Box::new(sender.to_string()));
+        params.push(Box::new(org.to_string()));
         params.push(Box::new(project.to_string()));
-        let mut idx = 3;
+        let mut idx = 4;
 
         if !namespace.is_root() {
             sql.push_str(&format!(
@@ -154,10 +160,10 @@ impl MessageStore for SqliteBackend {
         let mut sql = String::from(
             "WITH RECURSIVE
              ancestors AS (
-                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages WHERE id = ?1
                  UNION ALL
-                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
                  FROM messages m JOIN ancestors a ON m.id = a.reply_to
              ),
              root AS (
@@ -166,20 +172,18 @@ impl MessageStore for SqliteBackend {
                  SELECT a.id FROM ancestors a WHERE NOT EXISTS (SELECT 1 FROM messages m2 WHERE m2.id = a.reply_to)
              ),
              thread AS (
-                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages WHERE id = (SELECT id FROM root LIMIT 1)
                  UNION ALL
-                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
                  FROM messages m JOIN thread t ON m.reply_to = t.id
              )
-             SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM thread ORDER BY created_at ASC",
         );
 
         if let Some(n) = limit {
-            // Wrap in subquery to get the most recent N messages in chronological order
             sql = format!("SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}");
-            // Re-order chronologically
             sql = format!("SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC");
         }
 
@@ -199,20 +203,21 @@ impl MessageStore for SqliteBackend {
 
 fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
     let id_str: String = row.get(0)?;
-    let project_str: String = row.get(1)?;
-    let namespace_str: String = row.get(2)?;
-    let from_str: String = row.get(3)?;
-    let to_str: String = row.get(4)?;
-    let body: String = row.get(5)?;
-    let status_str: String = row.get(6)?;
-    let created_at_str: String = row.get(7)?;
-    let reply_to_str: Option<String> = row.get(8)?;
+    let org_id_str: String = row.get(1)?;
+    let project_str: String = row.get(2)?;
+    let namespace_str: String = row.get(3)?;
+    let from_str: String = row.get(4)?;
+    let to_str: String = row.get(5)?;
+    let body: String = row.get(6)?;
+    let status_str: String = row.get(7)?;
+    let created_at_str: String = row.get(8)?;
+    let reply_to_str: Option<String> = row.get(9)?;
 
     let reply_to = reply_to_str
         .map(|s| {
             MessageId::from_str(&s).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    8,
+                    9,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
@@ -224,26 +229,36 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
         id: MessageId::from_str(&id_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?,
-        project: ProjectId::try_from(project_str).map_err(|e| {
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(
                 1,
                 rusqlite::types::Type::Text,
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    e.to_string(),
+                )),
             )
         })?,
-        namespace: Namespace::try_from(namespace_str).map_err(|e| {
+        project: ProjectId::try_from(project_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(
                 2,
                 rusqlite::types::Type::Text,
                 Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
             )
         })?,
+        namespace: Namespace::try_from(namespace_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            )
+        })?,
         from: AgentId::from_str(&from_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?,
         to: MessageTarget::parse(&to_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(
-                4,
+                5,
                 rusqlite::types::Type::Text,
                 Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -260,7 +275,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    7,
+                    8,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )

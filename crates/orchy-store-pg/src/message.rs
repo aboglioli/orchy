@@ -10,6 +10,7 @@ use orchy_core::message::{
     Message, MessageId, MessageStatus, MessageStore, MessageTarget, RestoreMessage,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::{PgBackend, parse_namespace, parse_project_id};
 
@@ -91,6 +92,7 @@ impl MessageStore for PgBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -137,6 +139,7 @@ impl MessageStore for PgBackend {
     async fn find_sent(
         &self,
         sender: &AgentId,
+        _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -233,6 +236,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
 
     Ok(Message::restore(RestoreMessage {
         id: MessageId::from_uuid(id),
+        org_id: OrganizationId::new("default").unwrap(),
         project: parse_project_id(project, "messages", "project")?,
         namespace: parse_namespace(namespace, "messages", "namespace")?,
         from: AgentId::from_uuid(from_agent),

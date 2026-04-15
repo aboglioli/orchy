@@ -1,7 +1,25 @@
 -- Consolidated initial schema for SQLite
 
+CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    name TEXT NOT NULL DEFAULT '',
+    key TEXT NOT NULL UNIQUE,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS api_keys_organization_idx ON api_keys (organization_id);
+
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id TEXT,
@@ -13,10 +31,11 @@ CREATE TABLE IF NOT EXISTS agents (
     connected_at TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}'
 );
-CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (project, alias) WHERE alias IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (organization_id, project, alias) WHERE alias IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id TEXT,
@@ -38,6 +57,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     from_agent TEXT NOT NULL,
@@ -49,23 +69,27 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE TABLE IF NOT EXISTS projects (
-    name TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
+    name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     metadata TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (organization_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS namespaces (
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    PRIMARY KEY (project, namespace)
+    PRIMARY KEY (organization_id, project, namespace)
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_entries (
     id TEXT PRIMARY KEY,
-    project TEXT NOT NULL,
+    organization_id TEXT NOT NULL DEFAULT 'default',
+    project TEXT,
     namespace TEXT NOT NULL DEFAULT '/',
     path TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -79,9 +103,14 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     embedding_model TEXT,
     embedding_dimensions INTEGER,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE(project, namespace, path)
+    updated_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_project_path_idx
+    ON knowledge_entries (organization_id, project, namespace, path)
+    WHERE project IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_org_path_idx
+    ON knowledge_entries (organization_id, namespace, path)
+    WHERE project IS NULL;
 CREATE INDEX IF NOT EXISTS knowledge_entries_type_idx ON knowledge_entries (kind);
 CREATE INDEX IF NOT EXISTS knowledge_entries_agent_idx ON knowledge_entries (agent_id);
 
@@ -109,13 +138,14 @@ CREATE TRIGGER IF NOT EXISTS trg_knowledge_entries_au AFTER UPDATE ON knowledge_
 END;
 
 CREATE TABLE IF NOT EXISTS resource_locks (
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     name TEXT NOT NULL,
     holder TEXT NOT NULL,
     acquired_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
-    PRIMARY KEY (project, namespace, name)
+    PRIMARY KEY (organization_id, project, namespace, name)
 );
 
 CREATE TABLE IF NOT EXISTS task_watchers (

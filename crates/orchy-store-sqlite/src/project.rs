@@ -5,6 +5,7 @@ use rusqlite::OptionalExtension;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
+use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
 use crate::SqliteBackend;
@@ -35,7 +36,7 @@ impl ProjectStore for SqliteBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, _org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
@@ -81,6 +82,7 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
 
     Ok(Project::restore(RestoreProject {
         id,
+        org_id: OrganizationId::new("default").unwrap(),
         description,
         metadata,
         created_at,

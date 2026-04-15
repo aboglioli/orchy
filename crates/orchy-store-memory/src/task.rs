@@ -32,6 +32,11 @@ impl TaskStore for MemoryBackend {
         let mut results: Vec<Task> = tasks
             .values()
             .filter(|t| {
+                if let Some(ref org_id) = filter.org_id {
+                    if t.org_id() != org_id {
+                        return false;
+                    }
+                }
                 if let Some(ref ns) = filter.namespace {
                     if !t.namespace().starts_with(ns) {
                         return false;

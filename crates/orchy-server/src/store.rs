@@ -7,6 +7,7 @@ use orchy_core::error::Result;
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::task::{
@@ -70,13 +71,14 @@ impl AgentStore for StoreBackend {
     }
     async fn find_by_alias(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         alias: &orchy_core::agent::Alias,
     ) -> Result<Option<Agent>> {
-        delegate_trait!(self, AgentStore::find_by_alias(project, alias))
+        delegate_trait!(self, AgentStore::find_by_alias(org, project, alias))
     }
-    async fn list(&self) -> Result<Vec<Agent>> {
-        delegate_trait!(self, AgentStore::list())
+    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
+        delegate_trait!(self, AgentStore::list(org))
     }
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         delegate_trait!(self, AgentStore::find_timed_out(timeout_secs))
@@ -93,18 +95,20 @@ impl MessageStore for StoreBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
-        delegate_trait!(self, MessageStore::find_pending(agent, project, namespace))
+        delegate_trait!(self, MessageStore::find_pending(agent, org, project, namespace))
     }
     async fn find_sent(
         &self,
         sender: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
-        delegate_trait!(self, MessageStore::find_sent(sender, project, namespace))
+        delegate_trait!(self, MessageStore::find_sent(sender, org, project, namespace))
     }
     async fn find_thread(
         &self,
@@ -119,8 +123,8 @@ impl ProjectStore for StoreBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
         delegate_trait!(self, ProjectStore::save(project))
     }
-    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
-        delegate_trait!(self, ProjectStore::find_by_id(id))
+    async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
+        delegate_trait!(self, ProjectStore::find_by_id(org, id))
     }
 }
 
@@ -133,17 +137,19 @@ impl KnowledgeStore for StoreBackend {
     }
     async fn find_by_path(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
-        delegate_trait!(self, KnowledgeStore::find_by_path(project, namespace, path))
+        delegate_trait!(self, KnowledgeStore::find_by_path(org, project, namespace, path))
     }
     async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         delegate_trait!(self, KnowledgeStore::list(filter))
     }
     async fn search(
         &self,
+        org: &OrganizationId,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
@@ -151,7 +157,7 @@ impl KnowledgeStore for StoreBackend {
     ) -> Result<Vec<Knowledge>> {
         delegate_trait!(
             self,
-            KnowledgeStore::search(query, embedding, namespace, limit)
+            KnowledgeStore::search(org, query, embedding, namespace, limit)
         )
     }
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
@@ -165,14 +171,15 @@ impl LockStore for StoreBackend {
     }
     async fn find(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
     ) -> Result<Option<ResourceLock>> {
-        delegate_trait!(self, LockStore::find(project, namespace, name))
+        delegate_trait!(self, LockStore::find(org, project, namespace, name))
     }
-    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
-        delegate_trait!(self, LockStore::delete(project, namespace, name))
+    async fn delete(&self, org: &OrganizationId, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+        delegate_trait!(self, LockStore::delete(org, project, namespace, name))
     }
     async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
         delegate_trait!(self, LockStore::find_by_holder(holder))
@@ -213,11 +220,11 @@ impl ReviewStore for StoreBackend {
 }
 
 impl NamespaceStore for StoreBackend {
-    async fn register(&self, project: &ProjectId, namespace: &Namespace) -> Result<()> {
-        delegate_trait!(self, NamespaceStore::register(project, namespace))
+    async fn register(&self, org: &OrganizationId, project: &ProjectId, namespace: &Namespace) -> Result<()> {
+        delegate_trait!(self, NamespaceStore::register(org, project, namespace))
     }
-    async fn list(&self, project: &ProjectId) -> Result<Vec<Namespace>> {
-        delegate_trait!(self, NamespaceStore::list(project))
+    async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
+        delegate_trait!(self, NamespaceStore::list(org, project))
     }
 }
 

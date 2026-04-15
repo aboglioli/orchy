@@ -7,6 +7,7 @@ use uuid::Uuid;
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
+use orchy_core::organization::OrganizationId;
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
@@ -57,7 +58,7 @@ impl AgentStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_alias(&self, project: &ProjectId, alias: &Alias) -> Result<Option<Agent>> {
+    async fn find_by_alias(&self, _org: &OrganizationId, project: &ProjectId, alias: &Alias) -> Result<Option<Agent>> {
         let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE project = $1 AND alias = $2");
         let row = sqlx::query(&sql)
             .bind(project.to_string())
@@ -80,7 +81,7 @@ impl AgentStore for PgBackend {
         row.map(|r| row_to_agent(&r)).transpose()
     }
 
-    async fn list(&self) -> Result<Vec<Agent>> {
+    async fn list(&self, _org: &OrganizationId) -> Result<Vec<Agent>> {
         let sql = format!("SELECT {SELECT_COLS} FROM agents");
         let rows = sqlx::query(&sql)
             .fetch_all(&self.pool)
@@ -121,6 +122,7 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_uuid(id),
+        org_id: OrganizationId::new("default").unwrap(),
         project: parse_project_id(project, "agents", "project")?,
         namespace: parse_namespace(namespace, "agents", "namespace")?,
         parent_id: parent_id.map(AgentId::from_uuid),

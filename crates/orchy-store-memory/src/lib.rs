@@ -5,6 +5,7 @@ mod events;
 mod knowledge;
 mod message;
 mod namespace;
+mod organization;
 mod project;
 mod resource_lock;
 mod review;
@@ -20,6 +21,7 @@ use orchy_core::agent::{Agent, AgentId};
 use orchy_core::knowledge::{Knowledge, KnowledgeId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
+use orchy_core::organization::{Organization, OrganizationId};
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
 use orchy_core::task::{ReviewId, ReviewRequest, Task, TaskId, TaskWatcher};
@@ -32,8 +34,9 @@ pub struct MemoryBackend {
     pub(crate) watchers: RwLock<Vec<TaskWatcher>>,
     pub(crate) reviews: RwLock<HashMap<ReviewId, ReviewRequest>>,
     pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
-    pub(crate) resource_locks: RwLock<HashMap<(String, String, String), ResourceLock>>,
-    pub(crate) namespaces: RwLock<HashSet<(String, String)>>,
+    pub(crate) resource_locks: RwLock<HashMap<(String, String, String, String), ResourceLock>>,
+    pub(crate) namespaces: RwLock<HashSet<(String, String, String)>>,
+    pub(crate) organizations: RwLock<HashMap<OrganizationId, Organization>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
 }
 
@@ -49,6 +52,7 @@ impl MemoryBackend {
             knowledge_entries: RwLock::new(HashMap::new()),
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
+            organizations: RwLock::new(HashMap::new()),
             events: RwLock::new(Vec::new()),
         }
     }

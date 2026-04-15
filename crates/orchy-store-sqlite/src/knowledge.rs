@@ -11,6 +11,7 @@ use orchy_core::knowledge::{
     Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 
@@ -26,11 +27,12 @@ impl KnowledgeStore for SqliteBackend {
                 serde_json::to_string(entry.metadata()).map_err(|e| Error::Store(e.to_string()))?;
 
             conn.execute(
-                "INSERT OR REPLACE INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                "INSERT OR REPLACE INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 rusqlite::params![
                     entry.id().to_string(),
-                    entry.project().to_string(),
+                    entry.org_id().to_string(),
+                    entry.project().map(|p| p.to_string()),
                     entry.namespace().to_string(),
                     entry.path(),
                     entry.kind().to_string(),
@@ -62,7 +64,7 @@ impl KnowledgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
                  FROM knowledge_entries WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -77,25 +79,42 @@ impl KnowledgeStore for SqliteBackend {
 
     async fn find_by_path(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
-                 FROM knowledge_entries WHERE project = ?1 AND namespace = ?2 AND path = ?3",
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
 
-        let result = stmt
-            .query_row(
-                rusqlite::params![project.to_string(), namespace.to_string(), path],
+        let result = if let Some(proj) = project {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                     FROM knowledge_entries WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND path = ?4",
+                )
+                .map_err(|e| Error::Store(e.to_string()))?;
+
+            stmt.query_row(
+                rusqlite::params![org.to_string(), proj.to_string(), namespace.to_string(), path],
                 row_to_entry,
             )
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(|e| Error::Store(e.to_string()))?
+        } else {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                     FROM knowledge_entries WHERE organization_id = ?1 AND project IS NULL AND namespace = ?2 AND path = ?3",
+                )
+                .map_err(|e| Error::Store(e.to_string()))?;
+
+            stmt.query_row(
+                rusqlite::params![org.to_string(), namespace.to_string(), path],
+                row_to_entry,
+            )
+            .optional()
+            .map_err(|e| Error::Store(e.to_string()))?
+        };
 
         Ok(result)
     }
@@ -104,13 +123,22 @@ impl KnowledgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at FROM knowledge_entries WHERE 1=1",
+            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at FROM knowledge_entries WHERE 1=1",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
 
+        if let Some(ref org_id) = filter.org_id {
+            sql.push_str(&format!(" AND organization_id = ?{idx}"));
+            params.push(Box::new(org_id.to_string()));
+            idx += 1;
+        }
         if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ?{idx}"));
+            if filter.include_org_level {
+                sql.push_str(&format!(" AND (project = ?{idx} OR project IS NULL)"));
+            } else {
+                sql.push_str(&format!(" AND project = ?{idx}"));
+            }
             params.push(Box::new(project.to_string()));
             idx += 1;
         }
@@ -161,6 +189,7 @@ impl KnowledgeStore for SqliteBackend {
 
     async fn search(
         &self,
+        org: &OrganizationId,
         query: &str,
         _embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
@@ -183,9 +212,9 @@ impl KnowledgeStore for SqliteBackend {
             .is_some();
 
         if fts_ready {
-            search_knowledge_fts(&conn, query, namespace, limit)
+            search_knowledge_fts(&conn, org, query, namespace, limit)
         } else {
-            search_knowledge_like(&conn, query, namespace, limit)
+            search_knowledge_like(&conn, org, query, namespace, limit)
         }
     }
 
@@ -204,19 +233,21 @@ impl KnowledgeStore for SqliteBackend {
 
 fn search_knowledge_fts(
     conn: &rusqlite::Connection,
+    org: &OrganizationId,
     query: &str,
     namespace: Option<&Namespace>,
     limit: usize,
 ) -> Result<Vec<Knowledge>> {
     let mut sql = String::from(
-        "SELECT e.id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
          FROM knowledge_entries_fts
          JOIN knowledge_entries AS e ON e.id = knowledge_entries_fts.knowledge_id
-         WHERE knowledge_entries_fts MATCH ?1",
+         WHERE knowledge_entries_fts MATCH ?1 AND e.organization_id = ?2",
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     params.push(Box::new(query.to_string()));
-    let mut idx = 2;
+    params.push(Box::new(org.to_string()));
+    let mut idx = 3;
 
     if let Some(ns) = namespace {
         if !ns.is_root() {
@@ -249,19 +280,21 @@ fn search_knowledge_fts(
 
 fn search_knowledge_like(
     conn: &rusqlite::Connection,
+    org: &OrganizationId,
     query: &str,
     namespace: Option<&Namespace>,
     limit: usize,
 ) -> Result<Vec<Knowledge>> {
     let mut sql = String::from(
-        "SELECT e.id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
          FROM knowledge_entries e
-         WHERE (e.title LIKE ?1 OR e.content LIKE ?1 OR e.path LIKE ?1)",
+         WHERE e.organization_id = ?1 AND (e.title LIKE ?2 OR e.content LIKE ?2 OR e.path LIKE ?2)",
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    params.push(Box::new(org.to_string()));
     let like_query = format!("%{query}%");
     params.push(Box::new(like_query));
-    let mut idx = 2;
+    let mut idx = 3;
 
     if let Some(ns) = namespace {
         if !ns.is_root() {
@@ -292,65 +325,80 @@ fn search_knowledge_like(
 
 fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
     let id_str: String = row.get(0)?;
-    let project_str: String = row.get(1)?;
-    let namespace_str: String = row.get(2)?;
-    let path: String = row.get(3)?;
-    let kind_str: String = row.get(4)?;
-    let title: String = row.get(5)?;
-    let content: String = row.get(6)?;
-    let tags_json: String = row.get(7)?;
-    let version: i64 = row.get(8)?;
-    let agent_id_str: Option<String> = row.get(9)?;
-    let metadata_json: String = row.get(10)?;
-    let embedding_bytes: Option<Vec<u8>> = row.get(11)?;
-    let embedding_model: Option<String> = row.get(12)?;
-    let embedding_dimensions: Option<i64> = row.get(13)?;
-    let created_at_str: String = row.get(14)?;
-    let updated_at_str: String = row.get(15)?;
+    let org_id_str: String = row.get(1)?;
+    let project_str: Option<String> = row.get(2)?;
+    let namespace_str: String = row.get(3)?;
+    let path: String = row.get(4)?;
+    let kind_str: String = row.get(5)?;
+    let title: String = row.get(6)?;
+    let content: String = row.get(7)?;
+    let tags_json: String = row.get(8)?;
+    let version: i64 = row.get(9)?;
+    let agent_id_str: Option<String> = row.get(10)?;
+    let metadata_json: String = row.get(11)?;
+    let embedding_bytes: Option<Vec<u8>> = row.get(12)?;
+    let embedding_model: Option<String> = row.get(13)?;
+    let embedding_dimensions: Option<i64> = row.get(14)?;
+    let created_at_str: String = row.get(15)?;
+    let updated_at_str: String = row.get(16)?;
 
     let id = KnowledgeId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })?;
-    let project = ProjectId::try_from(project_str).map_err(|e| {
+    let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             1,
             rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
         )
     })?;
+    let project = project_str
+        .map(|s| ProjectId::try_from(s))
+        .transpose()
+        .map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            )
+        })?;
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
-            2,
+            3,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
     let kind = KnowledgeKind::from_str(&kind_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
-            4,
+            5,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
     let tags: Vec<String> = serde_json::from_str(&tags_json).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e))
     })?;
     let metadata: HashMap<String, String> = serde_json::from_str(&metadata_json).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e))
     })?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(14, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Knowledge::restore(RestoreKnowledge {
         id,
+        org_id,
         project,
         namespace,
         path,

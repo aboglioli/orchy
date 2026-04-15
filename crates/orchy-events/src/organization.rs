@@ -6,9 +6,9 @@ use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct Organization(String);
+pub struct OrganizationId(String);
 
-impl Organization {
+impl OrganizationId {
     pub fn new(s: impl Into<String>) -> Result<Self> {
         let s = s.into();
         if s.is_empty() {
@@ -28,21 +28,21 @@ impl Organization {
     }
 }
 
-impl fmt::Display for Organization {
+impl fmt::Display for OrganizationId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl TryFrom<String> for Organization {
+impl TryFrom<String> for OrganizationId {
     type Error = Error;
     fn try_from(s: String) -> Result<Self> {
         Self::new(s)
     }
 }
 
-impl From<Organization> for String {
-    fn from(o: Organization) -> Self {
+impl From<OrganizationId> for String {
+    fn from(o: OrganizationId) -> Self {
         o.0
     }
 }

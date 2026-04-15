@@ -14,7 +14,7 @@ pub use error::{Error, Result};
 pub use event::{Event, EventId, RestoreEvent};
 pub use metadata::Metadata;
 pub use namespace::EventNamespace;
-pub use organization::Organization;
+pub use organization::OrganizationId;
 pub use payload::{ContentType, Payload};
 pub use serialization::SerializedEvent;
 pub use topic::Topic;

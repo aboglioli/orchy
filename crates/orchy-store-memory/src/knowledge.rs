@@ -1,6 +1,7 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::MemoryBackend;
 
@@ -31,7 +32,8 @@ impl KnowledgeStore for MemoryBackend {
 
     async fn find_by_path(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
@@ -41,7 +43,12 @@ impl KnowledgeStore for MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(entries
             .values()
-            .find(|e| e.project() == project && e.namespace() == namespace && e.path() == path)
+            .find(|e| {
+                e.org_id() == org
+                    && e.project() == project
+                    && e.namespace() == namespace
+                    && e.path() == path
+            })
             .cloned())
     }
 
@@ -54,8 +61,15 @@ impl KnowledgeStore for MemoryBackend {
         let results: Vec<Knowledge> = entries
             .values()
             .filter(|e| {
+                if let Some(ref org_id) = filter.org_id {
+                    if e.org_id() != org_id {
+                        return false;
+                    }
+                }
                 if let Some(ref project) = filter.project {
-                    if e.project() != project {
+                    let project_matches = e.project() == Some(project);
+                    let org_level = e.project().is_none();
+                    if !project_matches && !(filter.include_org_level && org_level) {
                         return false;
                     }
                 }
@@ -94,6 +108,7 @@ impl KnowledgeStore for MemoryBackend {
 
     async fn search(
         &self,
+        org: &OrganizationId,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
@@ -108,6 +123,9 @@ impl KnowledgeStore for MemoryBackend {
         let mut scored: Vec<(f32, &Knowledge)> = entries
             .values()
             .filter(|e| {
+                if e.org_id() != org {
+                    return false;
+                }
                 if let Some(ns) = namespace {
                     if !e.namespace().starts_with(ns) {
                         return false;

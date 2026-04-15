@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_memory::MemoryBackend;
 
@@ -18,10 +19,15 @@ fn proj(s: &str) -> ProjectId {
     ProjectId::try_from(s).unwrap()
 }
 
+fn org() -> OrganizationId {
+    OrganizationId::new("default").unwrap()
+}
+
 #[tokio::test]
 async fn agent_save_and_find() {
     let store = backend();
     let mut agent = Agent::register(
+        org(),
         proj("myapp"),
         Namespace::root(),
         vec!["coder".into()],
@@ -45,6 +51,7 @@ async fn agent_save_and_find() {
 async fn agent_save_updates_existing() {
     let store = backend();
     let mut agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec!["dev".into()],
@@ -70,6 +77,7 @@ async fn agent_save_updates_existing() {
 async fn agent_disconnect_sets_status() {
     let store = backend();
     let mut agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
@@ -93,6 +101,7 @@ async fn agent_disconnect_sets_status() {
 async fn agent_find_timed_out() {
     let store = backend();
     let mut agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
@@ -116,6 +125,7 @@ async fn agent_find_timed_out() {
 async fn task_save_and_get() {
     let store = backend();
     let mut task = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,
@@ -147,6 +157,7 @@ async fn task_list_sorted_by_priority() {
     let store = backend();
 
     let mut low = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,
@@ -162,6 +173,7 @@ async fn task_list_sorted_by_priority() {
     TaskStore::save(&store, &mut low).await.unwrap();
 
     let mut critical = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,
@@ -193,6 +205,7 @@ async fn message_save_and_find_pending() {
     let p = proj("test-project");
 
     let mut msg = Message::new(
+        org(),
         p.clone(),
         Namespace::root(),
         from,
@@ -203,7 +216,8 @@ async fn message_save_and_find_pending() {
     MessageStore::save(&store, &mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
-    let messages = MessageStore::find_pending(&store, &to, &p, &Namespace::root())
+    let o = org();
+    let messages = MessageStore::find_pending(&store, &to, &o, &p, &Namespace::root())
         .await
         .unwrap();
     assert_eq!(messages.len(), 1);
@@ -214,7 +228,7 @@ async fn message_save_and_find_pending() {
     delivered.deliver();
     MessageStore::save(&store, &mut delivered).await.unwrap();
 
-    let messages = MessageStore::find_pending(&store, &to, &p, &Namespace::root())
+    let messages = MessageStore::find_pending(&store, &to, &o, &p, &Namespace::root())
         .await
         .unwrap();
     assert!(messages.is_empty());
@@ -230,6 +244,7 @@ async fn message_find_by_id_and_mark_read() {
     let p = proj("test-project");
 
     let mut msg = Message::new(
+        org(),
         p.clone(),
         Namespace::root(),
         from,
@@ -261,6 +276,7 @@ async fn message_find_sent() {
     let p = proj("proj");
 
     let mut msg = Message::new(
+        org(),
         p.clone(),
         ns("/backend"),
         sender,
@@ -270,13 +286,14 @@ async fn message_find_sent() {
     );
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let sent = MessageStore::find_sent(&store, &sender, &p, &Namespace::root())
+    let o = org();
+    let sent = MessageStore::find_sent(&store, &sender, &o, &p, &Namespace::root())
         .await
         .unwrap();
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].body(), "hello");
 
-    let sent_other = MessageStore::find_sent(&store, &receiver, &p, &Namespace::root())
+    let sent_other = MessageStore::find_sent(&store, &receiver, &o, &p, &Namespace::root())
         .await
         .unwrap();
     assert!(sent_other.is_empty());
@@ -290,6 +307,7 @@ async fn message_find_thread() {
     let p = proj("proj");
 
     let mut msg1 = Message::new(
+        org(),
         p.clone(),
         Namespace::root(),
         a,
@@ -329,6 +347,7 @@ async fn message_find_pending_includes_broadcast() {
     let p = proj("proj");
 
     let mut msg = Message::new(
+        org(),
         p.clone(),
         Namespace::root(),
         sender,
@@ -338,7 +357,8 @@ async fn message_find_pending_includes_broadcast() {
     );
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let pending = MessageStore::find_pending(&store, &receiver, &p, &Namespace::root())
+    let o = org();
+    let pending = MessageStore::find_pending(&store, &receiver, &o, &p, &Namespace::root())
         .await
         .unwrap();
     assert_eq!(pending.len(), 1);
@@ -351,6 +371,7 @@ async fn task_list_filters_by_parent_id() {
     let p = proj("proj");
 
     let mut parent = Task::new(
+        org(),
         p.clone(),
         Namespace::root(),
         None,
@@ -366,6 +387,7 @@ async fn task_list_filters_by_parent_id() {
     TaskStore::save(&store, &mut parent).await.unwrap();
 
     let mut child = Task::new(
+        org(),
         p.clone(),
         Namespace::root(),
         Some(parent.id()),
@@ -381,6 +403,7 @@ async fn task_list_filters_by_parent_id() {
     TaskStore::save(&store, &mut child).await.unwrap();
 
     let mut unrelated = Task::new(
+        org(),
         p.clone(),
         Namespace::root(),
         None,
@@ -414,6 +437,7 @@ async fn task_list_filters_by_assigned_to() {
     let agent = AgentId::new();
 
     let mut task = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,
@@ -430,6 +454,7 @@ async fn task_list_filters_by_assigned_to() {
     TaskStore::save(&store, &mut task).await.unwrap();
 
     let mut other = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,

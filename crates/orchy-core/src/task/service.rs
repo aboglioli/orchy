@@ -9,6 +9,7 @@ use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
 use crate::message::{Message, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, ProjectId};
+use crate::organization::OrganizationId;
 
 pub struct TaskService<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> {
     task_store: Arc<TS>,
@@ -260,6 +261,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
 
         for def in subtasks {
             let mut task = Task::new(
+                parent.org_id().clone(),
                 parent.project().clone(),
                 parent.namespace().clone(),
                 Some(*parent_id),
@@ -299,6 +301,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         let mut new_tasks = Vec::with_capacity(replacements.len());
         for def in replacements {
             let mut task = Task::new(
+                original.org_id().clone(),
                 original.project().clone(),
                 original.namespace().clone(),
                 original.parent_id(),
@@ -335,6 +338,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             sources.push(self.get(id).await?);
         }
 
+        let org_id = sources[0].org_id().clone();
         let project = sources[0].project().clone();
         for task in &sources {
             if *task.project() != project {
@@ -393,6 +397,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         let is_blocked = !depends_on.is_empty() && !self.all_deps_completed(&depends_on).await?;
 
         let mut merged = Task::new(
+            org_id,
             project,
             namespace,
             parent_id,
@@ -641,11 +646,12 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         &self,
         task_id: &TaskId,
         agent_id: AgentId,
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
     ) -> Result<TaskWatcher> {
         self.get(task_id).await?;
-        let mut watcher = TaskWatcher::new(*task_id, agent_id, project, namespace);
+        let mut watcher = TaskWatcher::new(*task_id, agent_id, org_id, project, namespace);
         WatcherStore::save(&*self.store, &mut watcher).await?;
         Ok(watcher)
     }
@@ -657,6 +663,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
     pub async fn request_review(
         &self,
         task_id: &TaskId,
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         requester: AgentId,
@@ -666,6 +673,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         self.get(task_id).await?;
         let mut review = ReviewRequest::new(
             *task_id,
+            org_id.clone(),
             project.clone(),
             namespace.clone(),
             requester,
@@ -686,7 +694,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         } else {
             MessageTarget::Broadcast
         };
-        let mut msg = Message::new(project, namespace, requester, target, body, None);
+        let mut msg = Message::new(org_id, project, namespace, requester, target, body, None);
         let _ = MessageStore::save(&*self.store, &mut msg).await;
 
         Ok(review)
@@ -717,6 +725,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             review.status()
         );
         let mut msg = Message::new(
+            review.org_id().clone(),
             review.project().clone(),
             review.namespace().clone(),
             resolver,
@@ -745,6 +754,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             for watcher in watchers {
                 let body = format!("[watch] task {} ({}): {}", task.id(), task.title(), event);
                 let mut msg = Message::new(
+                    watcher.org_id().clone(),
                     watcher.project().clone(),
                     watcher.namespace().clone(),
                     watcher.agent_id(),
@@ -781,6 +791,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                             failed_task.title(),
                         );
                         let mut msg = Message::new(
+                            task.org_id().clone(),
                             task.project().clone(),
                             task.namespace().clone(),
                             agent,

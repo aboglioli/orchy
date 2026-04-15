@@ -5,6 +5,7 @@ use orchy_core::knowledge::Knowledge;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::project::Project;
 use orchy_core::project::ProjectStore;
 use orchy_core::project::service::ProjectService;
@@ -30,23 +31,25 @@ pub async fn generate_bootstrap_prompt<
     agent_service: &AgentService<AS>,
     task_service: &TaskService<TS, AS>,
 ) -> Result<String, String> {
+    let default_org = OrganizationId::new("default").unwrap();
+
     let skills = knowledge_service
-        .list_skills(project_id, namespace)
+        .list_skills(&default_org, project_id, namespace)
         .await
         .map_err(|e| e.to_string())?;
 
     let overviews = knowledge_service
-        .list_overviews(project_id, namespace)
+        .list_overviews(&default_org, project_id, namespace)
         .await
         .map_err(|e| e.to_string())?;
 
     let project = project_service
-        .get_or_create(project_id)
+        .get_or_create(&default_org, project_id)
         .await
         .map_err(|e| e.to_string())?;
 
     let agents: Vec<Agent> = agent_service
-        .list()
+        .list(&default_org)
         .await
         .map_err(|e| e.to_string())?
         .into_iter()

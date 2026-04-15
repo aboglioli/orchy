@@ -17,8 +17,9 @@ pub const TOPIC_KIND_CHANGED: &str = "knowledge.kind_changed";
 
 #[derive(Serialize)]
 pub struct KnowledgeCreatedPayload {
+    pub org_id: String,
     pub entry_id: String,
-    pub project: String,
+    pub project: Option<String>,
     pub namespace: String,
     pub path: String,
     pub kind: String,

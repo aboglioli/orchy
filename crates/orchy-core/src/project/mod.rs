@@ -10,16 +10,22 @@ use orchy_events::{Event, EventCollector, Payload};
 
 use crate::error::Result;
 use crate::namespace::ProjectId;
+use crate::organization::OrganizationId;
 
 use self::events as project_events;
 
 pub trait ProjectStore: Send + Sync {
     fn save(&self, project: &mut Project) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &ProjectId) -> impl Future<Output = Result<Option<Project>>> + Send;
+    fn find_by_id(
+        &self,
+        org: &OrganizationId,
+        id: &ProjectId,
+    ) -> impl Future<Output = Result<Option<Project>>> + Send;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
+    org_id: OrganizationId,
     id: ProjectId,
     description: String,
     metadata: HashMap<String, String>,
@@ -30,9 +36,10 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(id: ProjectId, description: String) -> Self {
+    pub fn new(org_id: OrganizationId, id: ProjectId, description: String) -> Self {
         let now = Utc::now();
         let mut project = Self {
+            org_id,
             id,
             description,
             metadata: HashMap::new(),
@@ -42,10 +49,11 @@ impl Project {
         };
 
         let _ = Event::create(
-            project.id.as_ref(),
+            project.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_CREATED,
             Payload::from_json(&project_events::ProjectCreatedPayload {
+                org_id: project.org_id.to_string(),
                 project: project.id.to_string(),
                 description: project.description.clone(),
             })
@@ -58,6 +66,7 @@ impl Project {
 
     pub fn restore(r: RestoreProject) -> Self {
         Self {
+            org_id: r.org_id,
             id: r.id,
             description: r.description,
             metadata: r.metadata,
@@ -72,10 +81,11 @@ impl Project {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.id.as_ref(),
+            self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_DESCRIPTION_UPDATED,
             Payload::from_json(&project_events::ProjectDescriptionUpdatedPayload {
+                org_id: self.org_id.to_string(),
                 project: self.id.to_string(),
                 description: self.description.clone(),
             })
@@ -89,10 +99,11 @@ impl Project {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.id.as_ref(),
+            self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_METADATA_SET,
             Payload::from_json(&project_events::ProjectMetadataSetPayload {
+                org_id: self.org_id.to_string(),
                 project: self.id.to_string(),
                 key,
                 value,
@@ -106,6 +117,9 @@ impl Project {
         self.collector.drain()
     }
 
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
+    }
     pub fn id(&self) -> &ProjectId {
         &self.id
     }
@@ -124,6 +138,7 @@ impl Project {
 }
 
 pub struct RestoreProject {
+    pub org_id: OrganizationId,
     pub id: ProjectId,
     pub description: String,
     pub metadata: HashMap<String, String>,
@@ -136,8 +151,10 @@ mod tests {
     use super::*;
 
     fn test_project() -> Project {
+        use orchy_events::OrganizationId;
+        let org_id = OrganizationId::new("test").unwrap();
         let id = ProjectId::try_from("test-project".to_string()).unwrap();
-        Project::new(id, "a test project".to_string())
+        Project::new(org_id, id, "a test project".to_string())
     }
 
     #[test]

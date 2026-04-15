@@ -1,6 +1,7 @@
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 
 use crate::MemoryBackend;
@@ -13,6 +14,7 @@ impl LockStore for MemoryBackend {
                 .write()
                 .map_err(|e| Error::Store(e.to_string()))?;
             let key = (
+                lock.org_id().to_string(),
                 lock.project().to_string(),
                 lock.namespace().to_string(),
                 lock.name().to_string(),
@@ -29,6 +31,7 @@ impl LockStore for MemoryBackend {
 
     async fn find(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
@@ -37,16 +40,32 @@ impl LockStore for MemoryBackend {
             .resource_locks
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        let key = (project.to_string(), namespace.to_string(), name.to_string());
+        let key = (
+            org.to_string(),
+            project.to_string(),
+            namespace.to_string(),
+            name.to_string(),
+        );
         Ok(locks.get(&key).cloned())
     }
 
-    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+    async fn delete(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<()> {
         let mut locks = self
             .resource_locks
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
-        let key = (project.to_string(), namespace.to_string(), name.to_string());
+        let key = (
+            org.to_string(),
+            project.to_string(),
+            namespace.to_string(),
+            name.to_string(),
+        );
         locks.remove(&key);
         Ok(())
     }

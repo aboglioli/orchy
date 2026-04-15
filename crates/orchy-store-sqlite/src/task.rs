@@ -7,6 +7,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::SqliteBackend;
@@ -206,6 +207,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
 
     Ok(Task::restore(RestoreTask {
         id,
+        org_id: OrganizationId::new("default").unwrap(),
         project,
         namespace,
         parent_id,

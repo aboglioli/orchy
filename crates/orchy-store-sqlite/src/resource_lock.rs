@@ -6,6 +6,7 @@ use rusqlite::OptionalExtension;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
 use crate::SqliteBackend;
@@ -39,6 +40,7 @@ impl LockStore for SqliteBackend {
 
     async fn find(
         &self,
+        _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
@@ -62,7 +64,7 @@ impl LockStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+    async fn delete(&self, _org: &OrganizationId, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "DELETE FROM resource_locks WHERE project = ?1 AND namespace = ?2 AND name = ?3",
@@ -142,6 +144,7 @@ fn row_to_resource_lock(row: &rusqlite::Row) -> rusqlite::Result<ResourceLock> {
         })?;
 
     Ok(ResourceLock::restore(RestoreResourceLock {
+        org_id: OrganizationId::new("default").unwrap(),
         project,
         namespace,
         name,

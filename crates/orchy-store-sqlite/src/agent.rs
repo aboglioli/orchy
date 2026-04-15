@@ -6,20 +6,22 @@ use rusqlite::OptionalExtension;
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::SqliteBackend;
 
-const SELECT_COLS: &str = "id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for SqliteBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         {
             let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
             conn.execute(
-                "INSERT OR REPLACE INTO agents (id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                "INSERT OR REPLACE INTO agents (id, organization_id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 rusqlite::params![
                     agent.id().to_string(),
+                    agent.org_id().to_string(),
                     agent.project().to_string(),
                     agent.namespace().to_string(),
                     agent.parent_id().map(|id| id.to_string()),
@@ -43,16 +45,23 @@ impl AgentStore for SqliteBackend {
         Ok(())
     }
 
-    async fn find_by_alias(&self, project: &ProjectId, alias: &Alias) -> Result<Option<Agent>> {
+    async fn find_by_alias(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        alias: &Alias,
+    ) -> Result<Option<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE project = ?1 AND alias = ?2");
+        let sql = format!(
+            "SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1 AND project = ?2 AND alias = ?3"
+        );
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let result = stmt
             .query_row(
-                rusqlite::params![project.to_string(), alias.as_ref()],
+                rusqlite::params![org.to_string(), project.to_string(), alias.as_ref()],
                 row_to_agent,
             )
             .optional()
@@ -76,15 +85,15 @@ impl AgentStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn list(&self) -> Result<Vec<Agent>> {
+    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let sql = format!("SELECT {SELECT_COLS} FROM agents");
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1");
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let agents = stmt
-            .query_map([], row_to_agent)
+            .query_map(rusqlite::params![org.to_string()], row_to_agent)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -126,22 +135,23 @@ fn conversion_err(col: usize, msg: impl Into<String>) -> rusqlite::Error {
 
 fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let id_str: String = row.get(0)?;
-    let project_str: String = row.get(1)?;
-    let namespace_str: String = row.get(2)?;
-    let parent_id_str: Option<String> = row.get(3)?;
-    let alias_str: Option<String> = row.get(4)?;
-    let roles_str: String = row.get(5)?;
-    let description: String = row.get(6)?;
-    let status_str: String = row.get(7)?;
-    let heartbeat_str: String = row.get(8)?;
-    let connected_str: String = row.get(9)?;
-    let metadata_str: String = row.get(10)?;
+    let org_id_str: String = row.get(1)?;
+    let project_str: String = row.get(2)?;
+    let namespace_str: String = row.get(3)?;
+    let parent_id_str: Option<String> = row.get(4)?;
+    let alias_str: Option<String> = row.get(5)?;
+    let roles_str: String = row.get(6)?;
+    let description: String = row.get(7)?;
+    let status_str: String = row.get(8)?;
+    let heartbeat_str: String = row.get(9)?;
+    let connected_str: String = row.get(10)?;
+    let metadata_str: String = row.get(11)?;
 
     let parent_id = parent_id_str
         .map(|s| AgentId::from_str(&s))
         .transpose()
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     use orchy_core::agent::Alias;
@@ -151,8 +161,10 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
         id: AgentId::from_str(&id_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?,
-        project: ProjectId::try_from(project_str).map_err(|e| conversion_err(1, e))?,
-        namespace: Namespace::try_from(namespace_str).map_err(|e| conversion_err(2, e))?,
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| conversion_err(1, e.to_string()))?,
+        project: ProjectId::try_from(project_str).map_err(|e| conversion_err(2, e))?,
+        namespace: Namespace::try_from(namespace_str).map_err(|e| conversion_err(3, e))?,
         parent_id,
         alias,
         roles: crate::decode_json(&roles_str, "roles")?,
@@ -162,7 +174,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    8,
+                    9,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
@@ -171,7 +183,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    9,
+                    10,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )

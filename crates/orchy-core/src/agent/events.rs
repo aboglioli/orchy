@@ -13,6 +13,7 @@ pub const TOPIC_MOVED: &str = "agent.moved";
 
 #[derive(Serialize)]
 pub struct AgentRegisteredPayload {
+    pub org_id: String,
     pub agent_id: String,
     pub project: String,
     pub namespace: String,
@@ -22,6 +23,7 @@ pub struct AgentRegisteredPayload {
 
 #[derive(Serialize)]
 pub struct AgentSpawnedPayload {
+    pub org_id: String,
     pub agent_id: String,
     pub parent_id: String,
     pub project: String,
@@ -32,23 +34,27 @@ pub struct AgentSpawnedPayload {
 
 #[derive(Serialize)]
 pub struct AgentDisconnectedPayload {
+    pub org_id: String,
     pub agent_id: String,
 }
 
 #[derive(Serialize)]
 pub struct AgentRolesChangedPayload {
+    pub org_id: String,
     pub agent_id: String,
     pub roles: Vec<String>,
 }
 
 #[derive(Serialize)]
 pub struct AgentAliasChangedPayload {
+    pub org_id: String,
     pub agent_id: String,
     pub alias: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct AgentResumedPayload {
+    pub org_id: String,
     pub agent_id: String,
     pub namespace: String,
     pub alias: Option<String>,
@@ -57,12 +63,14 @@ pub struct AgentResumedPayload {
 
 #[derive(Serialize)]
 pub struct AgentMovedPayload {
+    pub org_id: String,
     pub agent_id: String,
     pub namespace: String,
 }
 
 #[derive(Serialize)]
 pub struct AgentStatusChangedPayload {
+    pub org_id: String,
     pub agent_id: String,
     pub status: String,
 }

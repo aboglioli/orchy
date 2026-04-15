@@ -25,6 +25,7 @@ pub const TOPIC_UPDATED: &str = "task.updated";
 
 #[derive(Serialize)]
 pub struct TaskCreatedPayload {
+    pub org_id: String,
     pub task_id: String,
     pub project: String,
     pub namespace: String,

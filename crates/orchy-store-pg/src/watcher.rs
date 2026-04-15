@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 
 use crate::{PgBackend, parse_namespace, parse_project_id};
@@ -83,6 +84,7 @@ fn row_to_watcher(row: &sqlx::postgres::PgRow) -> Result<TaskWatcher> {
     Ok(TaskWatcher::restore(
         TaskId::from_uuid(task_id),
         AgentId::from_uuid(agent_id),
+        OrganizationId::new("default").unwrap(),
         parse_project_id(project, "task_watchers", "project")?,
         parse_namespace(namespace, "task_watchers", "namespace")?,
         created_at,

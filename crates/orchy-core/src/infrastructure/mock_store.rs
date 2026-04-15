@@ -6,6 +6,7 @@ use crate::error::Result;
 use crate::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
+use crate::organization::{Organization, OrganizationId, OrganizationStore};
 use crate::project::{Project, ProjectStore};
 use crate::resource_lock::{LockStore, ResourceLock};
 use crate::task::{
@@ -17,6 +18,21 @@ use crate::task::{
 pub struct MockStore {
     agents: RwLock<HashMap<AgentId, Agent>>,
     messages: RwLock<HashMap<MessageId, Message>>,
+}
+
+impl OrganizationStore for MockStore {
+    async fn save(&self, _: &mut Organization) -> Result<()> {
+        Ok(())
+    }
+    async fn find_by_id(&self, _: &OrganizationId) -> Result<Option<Organization>> {
+        Ok(None)
+    }
+    async fn find_by_api_key(&self, _: &str) -> Result<Option<Organization>> {
+        Ok(None)
+    }
+    async fn list(&self) -> Result<Vec<Organization>> {
+        Ok(vec![])
+    }
 }
 
 impl TaskStore for MockStore {
@@ -44,6 +60,7 @@ impl AgentStore for MockStore {
     }
     async fn find_by_alias(
         &self,
+        _org: &OrganizationId,
         project: &ProjectId,
         alias: &crate::agent::Alias,
     ) -> Result<Option<Agent>> {
@@ -55,7 +72,7 @@ impl AgentStore for MockStore {
             .find(|a| a.project() == project && a.alias() == Some(alias))
             .cloned())
     }
-    async fn list(&self) -> Result<Vec<Agent>> {
+    async fn list(&self, _org: &OrganizationId) -> Result<Vec<Agent>> {
         Ok(self.agents.read().unwrap().values().cloned().collect())
     }
     async fn find_timed_out(&self, _: u64) -> Result<Vec<Agent>> {
@@ -77,6 +94,7 @@ impl MessageStore for MockStore {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -102,6 +120,7 @@ impl MessageStore for MockStore {
     async fn find_sent(
         &self,
         sender: &AgentId,
+        _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -132,16 +151,16 @@ impl ProjectStore for MockStore {
     async fn save(&self, _: &mut Project) -> Result<()> {
         Ok(())
     }
-    async fn find_by_id(&self, _: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, _: &OrganizationId, _: &ProjectId) -> Result<Option<Project>> {
         Ok(None)
     }
 }
 
 impl NamespaceStore for MockStore {
-    async fn register(&self, _: &ProjectId, _: &Namespace) -> Result<()> {
+    async fn register(&self, _: &OrganizationId, _: &ProjectId, _: &Namespace) -> Result<()> {
         Ok(())
     }
-    async fn list(&self, _: &ProjectId) -> Result<Vec<Namespace>> {
+    async fn list(&self, _: &OrganizationId, _: &ProjectId) -> Result<Vec<Namespace>> {
         Ok(vec![])
     }
 }
@@ -150,10 +169,22 @@ impl LockStore for MockStore {
     async fn save(&self, _: &mut ResourceLock) -> Result<()> {
         unimplemented!()
     }
-    async fn find(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<Option<ResourceLock>> {
+    async fn find(
+        &self,
+        _: &OrganizationId,
+        _: &ProjectId,
+        _: &Namespace,
+        _: &str,
+    ) -> Result<Option<ResourceLock>> {
         unimplemented!()
     }
-    async fn delete(&self, _: &ProjectId, _: &Namespace, _: &str) -> Result<()> {
+    async fn delete(
+        &self,
+        _: &OrganizationId,
+        _: &ProjectId,
+        _: &Namespace,
+        _: &str,
+    ) -> Result<()> {
         unimplemented!()
     }
     async fn find_by_holder(&self, _: &AgentId) -> Result<Vec<ResourceLock>> {
@@ -203,7 +234,8 @@ impl KnowledgeStore for MockStore {
     }
     async fn find_by_path(
         &self,
-        _: &ProjectId,
+        _: &OrganizationId,
+        _: Option<&ProjectId>,
         _: &Namespace,
         _: &str,
     ) -> Result<Option<Knowledge>> {
@@ -214,6 +246,7 @@ impl KnowledgeStore for MockStore {
     }
     async fn search(
         &self,
+        _: &OrganizationId,
         _: &str,
         _: Option<&[f32]>,
         _: Option<&Namespace>,

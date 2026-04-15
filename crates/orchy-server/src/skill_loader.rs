@@ -3,6 +3,7 @@ use std::path::Path;
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore, WriteKnowledge};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use tracing::{info, warn};
 
 pub async fn load_skills_from_dir<S: KnowledgeStore>(
@@ -99,7 +100,8 @@ async fn load_recursive_inner<S: KnowledgeStore>(
         let (description, content) = parse_frontmatter(&raw, &name);
 
         let cmd = WriteKnowledge {
-            project: project.clone(),
+            org_id: OrganizationId::new("default").unwrap(),
+            project: Some(project.clone()),
             namespace: namespace.clone(),
             path: format!("skills/{name}"),
             kind: KnowledgeKind::Skill,

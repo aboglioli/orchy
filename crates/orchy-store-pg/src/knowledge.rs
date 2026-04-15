@@ -14,6 +14,7 @@ use orchy_core::knowledge::{
     Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::{
     PgBackend, decode_json_value, parse_namespace, parse_pg_vector_text, parse_project_id,
@@ -89,7 +90,7 @@ impl KnowledgeStore for PgBackend {
                 updated_at = EXCLUDED.updated_at",
         )
         .bind(entry.id().as_uuid())
-        .bind(entry.project().to_string())
+        .bind(entry.project().map(|p| p.to_string()))
         .bind(entry.namespace().to_string())
         .bind(entry.path())
         .bind(entry.kind().to_string())
@@ -130,14 +131,15 @@ impl KnowledgeStore for PgBackend {
 
     async fn find_by_path(
         &self,
-        project: &ProjectId,
+        _org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
         let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE project = $1 AND namespace = $2 AND path = $3"
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE project IS NOT DISTINCT FROM $1 AND namespace = $2 AND path = $3"
         ))
-        .bind(project.to_string())
+        .bind(project.map(|p| p.to_string()))
         .bind(namespace.to_string())
         .bind(path)
         .fetch_optional(&self.pool)
@@ -193,6 +195,7 @@ impl KnowledgeStore for PgBackend {
 
     async fn search(
         &self,
+        _org: &OrganizationId,
         query: &str,
         _embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
@@ -248,7 +251,7 @@ impl KnowledgeStore for PgBackend {
 
 fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     let id: Uuid = row.get("id");
-    let project: String = row.get("project");
+    let project: Option<String> = row.get("project");
     let namespace: String = row.get("namespace");
     let path: String = row.get("path");
     let kind_str: String = row.get("kind");
@@ -272,7 +275,8 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
 
     Ok(Knowledge::restore(RestoreKnowledge {
         id: KnowledgeId::from_uuid(id),
-        project: parse_project_id(project, "knowledge_entries", "project")?,
+        org_id: OrganizationId::new("default").unwrap(),
+        project: project.map(|p| parse_project_id(p, "knowledge_entries", "project")).transpose()?,
         namespace: parse_namespace(namespace, "knowledge_entries", "namespace")?,
         path,
         kind,

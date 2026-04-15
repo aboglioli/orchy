@@ -2,6 +2,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::MemoryBackend;
 
@@ -34,6 +35,7 @@ impl MessageStore for MemoryBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -59,6 +61,10 @@ impl MessageStore for MemoryBackend {
                 continue;
             }
 
+            if msg.org_id() != org {
+                continue;
+            }
+
             if msg.project() != project {
                 continue;
             }
@@ -76,6 +82,7 @@ impl MessageStore for MemoryBackend {
     async fn find_sent(
         &self,
         sender: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -88,6 +95,7 @@ impl MessageStore for MemoryBackend {
             .values()
             .filter(|msg| {
                 msg.from() == *sender
+                    && msg.org_id() == org
                     && msg.project() == project
                     && msg.namespace().starts_with(namespace)
             })

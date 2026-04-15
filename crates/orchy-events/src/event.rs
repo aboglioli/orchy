@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::error::Result;
 use crate::metadata::Metadata;
 use crate::namespace::EventNamespace;
-use crate::organization::Organization;
+use crate::organization::OrganizationId;
 use crate::payload::Payload;
 use crate::topic::Topic;
 
@@ -50,7 +50,7 @@ impl std::str::FromStr for EventId {
 #[derive(Debug, Clone)]
 pub struct Event {
     id: EventId,
-    organization: Organization,
+    organization: OrganizationId,
     namespace: EventNamespace,
     topic: Topic,
     payload: Payload,
@@ -68,7 +68,7 @@ impl Event {
     ) -> Result<Self> {
         Ok(Self {
             id: EventId::new(),
-            organization: Organization::new(organization)?,
+            organization: OrganizationId::new(organization)?,
             namespace: EventNamespace::new(namespace)?,
             topic: Topic::new(topic)?,
             payload,
@@ -99,7 +99,7 @@ impl Event {
     pub fn id(&self) -> EventId {
         self.id
     }
-    pub fn organization(&self) -> &Organization {
+    pub fn organization(&self) -> &OrganizationId {
         &self.organization
     }
     pub fn namespace(&self) -> &EventNamespace {
@@ -124,7 +124,7 @@ impl Event {
 
 pub struct RestoreEvent {
     pub id: EventId,
-    pub organization: Organization,
+    pub organization: OrganizationId,
     pub namespace: EventNamespace,
     pub topic: Topic,
     pub payload: Payload,

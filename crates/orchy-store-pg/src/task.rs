@@ -7,6 +7,7 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::note::Note;
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
@@ -235,6 +236,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
 
     Ok(Task::restore(RestoreTask {
         id: TaskId::from_uuid(id),
+        org_id: OrganizationId::new("default").unwrap(),
         project: parse_project_id(project, "tasks", "project")?,
         namespace: parse_namespace(namespace, "tasks", "namespace")?,
         parent_id: parent_id.map(TaskId::from_uuid),

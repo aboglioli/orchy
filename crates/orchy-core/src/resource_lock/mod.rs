@@ -10,6 +10,7 @@ use orchy_events::{Event, EventCollector, Payload};
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+use crate::organization::OrganizationId;
 
 use self::events as lock_events;
 
@@ -17,12 +18,14 @@ pub trait LockStore: Send + Sync {
     fn save(&self, lock: &mut ResourceLock) -> impl Future<Output = Result<()>> + Send;
     fn find(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
     ) -> impl Future<Output = Result<Option<ResourceLock>>> + Send;
     fn delete(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
@@ -36,6 +39,7 @@ pub trait LockStore: Send + Sync {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceLock {
+    org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
     name: String,
@@ -48,6 +52,7 @@ pub struct ResourceLock {
 
 impl ResourceLock {
     pub fn acquire(
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         name: String,
@@ -62,6 +67,7 @@ impl ResourceLock {
 
         let now = Utc::now();
         let mut lock = Self {
+            org_id,
             project,
             namespace,
             name,
@@ -72,10 +78,11 @@ impl ResourceLock {
         };
 
         let _ = Event::create(
-            lock.project.as_ref(),
+            lock.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_ACQUIRED,
             Payload::from_json(&lock_events::LockAcquiredPayload {
+                org_id: lock.org_id.to_string(),
                 project: lock.project.to_string(),
                 namespace: lock.namespace.to_string(),
                 name: lock.name.clone(),
@@ -91,6 +98,7 @@ impl ResourceLock {
 
     pub fn restore(r: RestoreResourceLock) -> Self {
         Self {
+            org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
             name: r.name,
@@ -103,10 +111,11 @@ impl ResourceLock {
 
     pub fn mark_released(&mut self) {
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_RELEASED,
             Payload::from_json(&lock_events::LockReleasedPayload {
+                org_id: self.org_id.to_string(),
                 project: self.project.to_string(),
                 namespace: self.namespace.to_string(),
                 name: self.name.clone(),
@@ -128,6 +137,9 @@ impl ResourceLock {
         self.holder == *agent
     }
 
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
+    }
     pub fn project(&self) -> &ProjectId {
         &self.project
     }
@@ -149,6 +161,7 @@ impl ResourceLock {
 }
 
 pub struct RestoreResourceLock {
+    pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
     pub name: String,
@@ -160,6 +173,11 @@ pub struct RestoreResourceLock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchy_events::OrganizationId;
+
+    fn test_org() -> OrganizationId {
+        OrganizationId::new("test").unwrap()
+    }
 
     fn project() -> ProjectId {
         ProjectId::try_from("test").unwrap()
@@ -168,6 +186,7 @@ mod tests {
     #[test]
     fn acquire_succeeds() {
         let lock = ResourceLock::acquire(
+            test_org(),
             project(),
             Namespace::root(),
             "file.rs".into(),
@@ -179,14 +198,21 @@ mod tests {
 
     #[test]
     fn empty_name_fails() {
-        let lock =
-            ResourceLock::acquire(project(), Namespace::root(), "".into(), AgentId::new(), 60);
+        let lock = ResourceLock::acquire(
+            test_org(),
+            project(),
+            Namespace::root(),
+            "".into(),
+            AgentId::new(),
+            60,
+        );
         assert!(lock.is_err());
     }
 
     #[test]
     fn not_expired_within_ttl() {
         let lock = ResourceLock::acquire(
+            test_org(),
             project(),
             Namespace::root(),
             "f".into(),
@@ -201,7 +227,8 @@ mod tests {
     fn is_held_by_holder() {
         let agent = AgentId::new();
         let lock =
-            ResourceLock::acquire(project(), Namespace::root(), "f".into(), agent, 60).unwrap();
+            ResourceLock::acquire(test_org(), project(), Namespace::root(), "f".into(), agent, 60)
+                .unwrap();
         assert!(lock.is_held_by(&agent));
         assert!(!lock.is_held_by(&AgentId::new()));
     }

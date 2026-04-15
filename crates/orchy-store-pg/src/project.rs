@@ -5,6 +5,7 @@ use sqlx::Row;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
+use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
 use crate::{PgBackend, decode_json_value, parse_project_id};
@@ -39,7 +40,7 @@ impl ProjectStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, _org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
         let row = sqlx::query(
             "SELECT name, description, metadata, created_at, updated_at
              FROM projects WHERE name = $1",
@@ -66,6 +67,7 @@ fn row_to_project(row: &sqlx::postgres::PgRow) -> Result<Project> {
 
     Ok(Project::restore(RestoreProject {
         id,
+        org_id: OrganizationId::new("default").unwrap(),
         description,
         metadata,
         created_at,

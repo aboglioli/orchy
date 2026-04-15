@@ -2,14 +2,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::future::Future;
 
+use crate::organization::OrganizationId;
+
 pub trait NamespaceStore: Send + Sync {
     fn register(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> impl Future<Output = crate::error::Result<()>> + Send;
     fn list(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
     ) -> impl Future<Output = crate::error::Result<Vec<Namespace>>> + Send;
 }

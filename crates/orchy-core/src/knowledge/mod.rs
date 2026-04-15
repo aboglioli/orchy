@@ -15,6 +15,7 @@ use orchy_events::{Event, EventCollector, Payload};
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+use crate::organization::OrganizationId;
 
 use self::events as knowledge_events;
 
@@ -26,13 +27,15 @@ pub trait KnowledgeStore: Send + Sync {
     ) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
     fn find_by_path(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
     ) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
     fn list(&self, filter: KnowledgeFilter) -> impl Future<Output = Result<Vec<Knowledge>>> + Send;
     fn search(
         &self,
+        org: &OrganizationId,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
@@ -235,7 +238,8 @@ fn validate_path(path: &str) -> Result<()> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Knowledge {
     id: KnowledgeId,
-    project: ProjectId,
+    org_id: OrganizationId,
+    project: Option<ProjectId>,
     namespace: Namespace,
     path: String,
     kind: KnowledgeKind,
@@ -257,7 +261,8 @@ pub struct Knowledge {
 impl Knowledge {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        project: ProjectId,
+        org_id: OrganizationId,
+        project: Option<ProjectId>,
         namespace: Namespace,
         path: String,
         kind: KnowledgeKind,
@@ -275,6 +280,7 @@ impl Knowledge {
         let now = Utc::now();
         let mut entry = Self {
             id: KnowledgeId::new(),
+            org_id,
             project,
             namespace,
             path,
@@ -295,12 +301,13 @@ impl Knowledge {
 
         entry.collector.collect(
             Event::create(
-                entry.project.as_ref(),
+                entry.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_CREATED,
                 Payload::from_json(&knowledge_events::KnowledgeCreatedPayload {
+                    org_id: entry.org_id.to_string(),
                     entry_id: entry.id.to_string(),
-                    project: entry.project.to_string(),
+                    project: entry.project.as_ref().map(|p| p.to_string()),
                     namespace: entry.namespace.to_string(),
                     path: entry.path.clone(),
                     kind: entry.kind.to_string(),
@@ -321,6 +328,7 @@ impl Knowledge {
     pub fn restore(r: RestoreKnowledge) -> Self {
         Self {
             id: r.id,
+            org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
             path: r.path,
@@ -350,7 +358,7 @@ impl Knowledge {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_UPDATED,
             Payload::from_json(&knowledge_events::KnowledgeUpdatedPayload {
@@ -376,7 +384,7 @@ impl Knowledge {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_KIND_CHANGED,
             Payload::from_json(&knowledge_events::KnowledgeKindChangedPayload {
@@ -397,7 +405,7 @@ impl Knowledge {
             self.updated_at = Utc::now();
 
             let _ = Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAGGED,
                 Payload::from_json(&knowledge_events::KnowledgeTaggedPayload {
@@ -416,7 +424,7 @@ impl Knowledge {
             self.updated_at = Utc::now();
 
             let _ = Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAG_REMOVED,
                 Payload::from_json(&knowledge_events::KnowledgeTagRemovedPayload {
@@ -435,7 +443,7 @@ impl Knowledge {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_MOVED,
             Payload::from_json(&knowledge_events::KnowledgeMovedPayload {
@@ -455,7 +463,7 @@ impl Knowledge {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_RENAMED,
             Payload::from_json(&knowledge_events::KnowledgeRenamedPayload {
@@ -475,7 +483,7 @@ impl Knowledge {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_SET,
             Payload::from_json(&knowledge_events::KnowledgeMetadataSetPayload {
@@ -495,7 +503,7 @@ impl Knowledge {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_REMOVED,
             Payload::from_json(&knowledge_events::KnowledgeMetadataRemovedPayload {
@@ -510,7 +518,7 @@ impl Knowledge {
 
     pub fn mark_deleted(&mut self) {
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_DELETED,
             Payload::from_json(&knowledge_events::KnowledgeDeletedPayload {
@@ -535,8 +543,11 @@ impl Knowledge {
     pub fn id(&self) -> KnowledgeId {
         self.id
     }
-    pub fn project(&self) -> &ProjectId {
-        &self.project
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
+    }
+    pub fn project(&self) -> Option<&ProjectId> {
+        self.project.as_ref()
     }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
@@ -584,7 +595,8 @@ impl Knowledge {
 
 pub struct RestoreKnowledge {
     pub id: KnowledgeId,
-    pub project: ProjectId,
+    pub org_id: OrganizationId,
+    pub project: Option<ProjectId>,
     pub namespace: Namespace,
     pub path: String,
     pub kind: KnowledgeKind,
@@ -602,7 +614,8 @@ pub struct RestoreKnowledge {
 }
 
 pub struct WriteKnowledge {
-    pub project: ProjectId,
+    pub org_id: OrganizationId,
+    pub project: Option<ProjectId>,
     pub namespace: Namespace,
     pub path: String,
     pub kind: KnowledgeKind,
@@ -615,9 +628,11 @@ pub struct WriteKnowledge {
     pub metadata_remove: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct KnowledgeFilter {
+    pub org_id: Option<OrganizationId>,
     pub project: Option<ProjectId>,
+    pub include_org_level: bool,
     pub namespace: Option<Namespace>,
     pub kind: Option<KnowledgeKind>,
     pub tag: Option<String>,
@@ -625,9 +640,29 @@ pub struct KnowledgeFilter {
     pub agent_id: Option<AgentId>,
 }
 
+impl Default for KnowledgeFilter {
+    fn default() -> Self {
+        Self {
+            org_id: None,
+            project: None,
+            include_org_level: false,
+            namespace: None,
+            kind: None,
+            tag: None,
+            path_prefix: None,
+            agent_id: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchy_events::OrganizationId;
+
+    fn test_org() -> OrganizationId {
+        OrganizationId::new("test").unwrap()
+    }
 
     fn proj(s: &str) -> ProjectId {
         ProjectId::try_from(s).unwrap()
@@ -655,7 +690,8 @@ mod tests {
     #[test]
     fn create_entry() {
         let entry = Knowledge::new(
-            proj("test"),
+            test_org(),
+            Some(proj("test")),
             Namespace::root(),
             "decisions/db".into(),
             KnowledgeKind::Decision,
@@ -675,7 +711,8 @@ mod tests {
     #[test]
     fn empty_title_fails() {
         let result = Knowledge::new(
-            proj("test"),
+            test_org(),
+            Some(proj("test")),
             Namespace::root(),
             "path".into(),
             KnowledgeKind::Note,
@@ -702,7 +739,8 @@ mod tests {
         let mut md = HashMap::new();
         md.insert("k".into(), "v".into());
         let mut entry = Knowledge::new(
-            proj("test"),
+            test_org(),
+            Some(proj("test")),
             Namespace::root(),
             "path".into(),
             KnowledgeKind::Note,
@@ -721,7 +759,8 @@ mod tests {
     #[test]
     fn update_increments_version() {
         let mut entry = Knowledge::new(
-            proj("test"),
+            test_org(),
+            Some(proj("test")),
             Namespace::root(),
             "key".into(),
             KnowledgeKind::Note,
@@ -740,7 +779,8 @@ mod tests {
     #[test]
     fn change_kind_updates_kind_and_version() {
         let mut entry = Knowledge::new(
-            proj("test"),
+            test_org(),
+            Some(proj("test")),
             Namespace::root(),
             "key".into(),
             KnowledgeKind::Note,

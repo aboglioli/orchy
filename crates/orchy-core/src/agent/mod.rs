@@ -13,6 +13,7 @@ use orchy_events::{Event, EventCollector, Payload};
 
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+use crate::organization::OrganizationId;
 
 use self::events as agent_events;
 
@@ -76,10 +77,11 @@ pub trait AgentStore: Send + Sync {
     fn find_by_id(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
     fn find_by_alias(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         alias: &Alias,
     ) -> impl Future<Output = Result<Option<Agent>>> + Send;
-    fn list(&self) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+    fn list(&self, org: &OrganizationId) -> impl Future<Output = Result<Vec<Agent>>> + Send;
     fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 }
 
@@ -160,6 +162,7 @@ impl FromStr for AgentStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     id: AgentId,
+    org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
     parent_id: Option<AgentId>,
@@ -176,6 +179,7 @@ pub struct Agent {
 
 impl Agent {
     pub fn register(
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         roles: Vec<String>,
@@ -186,6 +190,7 @@ impl Agent {
         let now = Utc::now();
         let mut agent = Self {
             id: AgentId::new(),
+            org_id,
             project,
             namespace,
             parent_id: None,
@@ -200,10 +205,11 @@ impl Agent {
         };
 
         let _ = Event::create(
-            agent.project.as_ref(),
+            agent.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_REGISTERED,
             Payload::from_json(&agent_events::AgentRegisteredPayload {
+                org_id: agent.org_id.to_string(),
                 agent_id: agent.id.to_string(),
                 project: agent.project.to_string(),
                 namespace: agent.namespace.to_string(),
@@ -227,6 +233,7 @@ impl Agent {
         let now = Utc::now();
         let mut agent = Self {
             id: AgentId::new(),
+            org_id: parent.org_id.clone(),
             project: parent.project.clone(),
             namespace,
             parent_id: Some(parent.id),
@@ -241,10 +248,11 @@ impl Agent {
         };
 
         let _ = Event::create(
-            agent.project.as_ref(),
+            agent.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_SPAWNED,
             Payload::from_json(&agent_events::AgentSpawnedPayload {
+                org_id: agent.org_id.to_string(),
                 agent_id: agent.id.to_string(),
                 parent_id: parent.id.to_string(),
                 project: agent.project.to_string(),
@@ -262,6 +270,7 @@ impl Agent {
     pub fn restore(r: RestoreAgent) -> Self {
         Self {
             id: r.id,
+            org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
             parent_id: r.parent_id,
@@ -282,10 +291,11 @@ impl Agent {
             self.status = AgentStatus::Online;
 
             let _ = Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 agent_events::NAMESPACE,
                 agent_events::TOPIC_STATUS_CHANGED,
                 Payload::from_json(&agent_events::AgentStatusChangedPayload {
+                    org_id: self.org_id.to_string(),
                     agent_id: self.id.to_string(),
                     status: self.status.to_string(),
                 })
@@ -299,10 +309,11 @@ impl Agent {
         self.status = AgentStatus::Disconnected;
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_DISCONNECTED,
             Payload::from_json(&agent_events::AgentDisconnectedPayload {
+                org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
             })
             .unwrap(),
@@ -314,10 +325,11 @@ impl Agent {
         self.status = status;
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_STATUS_CHANGED,
             Payload::from_json(&agent_events::AgentStatusChangedPayload {
+                org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
                 status: self.status.to_string(),
             })
@@ -330,10 +342,11 @@ impl Agent {
         self.roles = roles;
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_ROLES_CHANGED,
             Payload::from_json(&agent_events::AgentRolesChangedPayload {
+                org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
                 roles: self.roles.clone(),
             })
@@ -354,10 +367,11 @@ impl Agent {
         self.last_heartbeat = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_RESUMED,
             Payload::from_json(&agent_events::AgentResumedPayload {
+                org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
                 namespace: self.namespace.to_string(),
                 alias: self.alias.as_ref().map(|a| a.to_string()),
@@ -372,10 +386,11 @@ impl Agent {
         self.namespace = namespace;
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_MOVED,
             Payload::from_json(&agent_events::AgentMovedPayload {
+                org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
                 namespace: self.namespace.to_string(),
             })
@@ -388,10 +403,11 @@ impl Agent {
         self.alias = alias;
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_ALIAS_CHANGED,
             Payload::from_json(&agent_events::AgentAliasChangedPayload {
+                org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
                 alias: self.alias.as_ref().map(|a| a.to_string()),
             })
@@ -415,6 +431,9 @@ impl Agent {
 
     pub fn id(&self) -> AgentId {
         self.id
+    }
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
     }
     pub fn project(&self) -> &ProjectId {
         &self.project
@@ -450,6 +469,7 @@ impl Agent {
 
 pub struct RestoreAgent {
     pub id: AgentId,
+    pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
     pub parent_id: Option<AgentId>,
@@ -464,6 +484,7 @@ pub struct RestoreAgent {
 
 #[derive(Debug, Clone)]
 pub struct RegisterAgent {
+    pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
     pub roles: Vec<String>,
@@ -479,6 +500,10 @@ mod tests {
     use std::thread::sleep;
     use std::time::Duration;
 
+    fn test_org() -> OrganizationId {
+        OrganizationId::new("test").unwrap()
+    }
+
     fn test_project() -> ProjectId {
         ProjectId::try_from("test").unwrap()
     }
@@ -489,6 +514,7 @@ mod tests {
 
     fn make_agent() -> Agent {
         Agent::register(
+            test_org(),
             test_project(),
             test_namespace(),
             vec!["coder".to_string()],

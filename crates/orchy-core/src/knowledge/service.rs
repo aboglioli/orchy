@@ -8,6 +8,7 @@ use crate::agent::AgentId;
 use crate::embeddings::EmbeddingsProvider;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+use crate::organization::OrganizationId;
 
 pub struct KnowledgeService<S: KnowledgeStore, E: EmbeddingsProvider> {
     store: Arc<S>,
@@ -39,7 +40,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
     pub async fn write(&self, cmd: WriteKnowledge) -> Result<Knowledge> {
         let existing = self
             .store
-            .find_by_path(&cmd.project, &cmd.namespace, &cmd.path)
+            .find_by_path(&cmd.org_id, cmd.project.as_ref(), &cmd.namespace, &cmd.path)
             .await?;
 
         let mut entry = if let Some(mut existing) = existing {
@@ -69,6 +70,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                 });
             }
             let mut created = Knowledge::new(
+                cmd.org_id,
                 cmd.project,
                 cmd.namespace,
                 cmd.path,
@@ -97,11 +99,12 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
 
     pub async fn read(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
-        self.store.find_by_path(project, namespace, path).await
+        self.store.find_by_path(org, project, namespace, path).await
     }
 
     pub async fn get(&self, id: &KnowledgeId) -> Result<Knowledge> {
@@ -117,7 +120,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
 
     pub async fn patch_metadata(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
         set: HashMap<String, String>,
@@ -126,7 +130,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
     ) -> Result<Knowledge> {
         let mut entry = self
             .store
-            .find_by_path(project, namespace, path)
+            .find_by_path(org, project, namespace, path)
             .await?
             .ok_or_else(|| Error::NotFound(format!("knowledge entry not found: {path}")))?;
 
@@ -155,6 +159,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
 
     pub async fn search(
         &self,
+        org: &OrganizationId,
         query: &str,
         namespace: Option<&Namespace>,
         limit: usize,
@@ -165,7 +170,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             None
         };
         self.store
-            .search(query, embedding.as_deref(), namespace, limit)
+            .search(org, query, embedding.as_deref(), namespace, limit)
             .await
     }
 
@@ -207,7 +212,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
     #[allow(clippy::too_many_arguments)]
     pub async fn change_kind(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
         new_kind: KnowledgeKind,
@@ -217,7 +223,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
     ) -> Result<Knowledge> {
         let mut entry = self
             .store
-            .find_by_path(project, namespace, path)
+            .find_by_path(org, project, namespace, path)
             .await?
             .ok_or_else(|| Error::NotFound(format!("knowledge entry not found: {path}")))?;
 
@@ -280,7 +286,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
     #[allow(clippy::too_many_arguments)]
     pub async fn append(
         &self,
-        project: &ProjectId,
+        org: &OrganizationId,
+        project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
         kind: KnowledgeKind,
@@ -290,7 +297,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         metadata: Option<HashMap<String, String>>,
         metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
-        let existing = self.store.find_by_path(project, namespace, path).await?;
+        let existing = self.store.find_by_path(org, project, namespace, path).await?;
 
         let mut entry = if let Some(mut existing) = existing {
             let new_content = format!("{}{}{}", existing.content(), separator, value);
@@ -298,7 +305,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             existing
         } else {
             Knowledge::new(
-                project.clone(),
+                org.clone(),
+                project.cloned(),
                 namespace.clone(),
                 path.to_string(),
                 kind,
@@ -324,11 +332,14 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
 
     pub async fn list_skills(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Knowledge>> {
         let filter = KnowledgeFilter {
+            org_id: Some(org.clone()),
             project: Some(project.clone()),
+            include_org_level: true,
             kind: Some(KnowledgeKind::Skill),
             ..Default::default()
         };
@@ -338,11 +349,14 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
 
     pub async fn list_overviews(
         &self,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Knowledge>> {
         let filter = KnowledgeFilter {
+            org_id: Some(org.clone()),
             project: Some(project.clone()),
+            include_org_level: true,
             kind: Some(KnowledgeKind::Overview),
             ..Default::default()
         };

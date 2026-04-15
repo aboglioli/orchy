@@ -9,6 +9,7 @@ use orchy_core::knowledge::{
 };
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
@@ -59,9 +60,11 @@ impl OrchyHandler {
             _ => Namespace::root(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
+
         if let Some(ref id_str) = params.agent_id {
             let agent_id = parse_agent_id(id_str)?;
-            let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
+            let _ = NamespaceStore::register(&*self.container.store, &default_org, &project, &namespace).await;
 
             let mut agent = self
                 .container
@@ -88,7 +91,7 @@ impl OrchyHandler {
             return Ok(to_json(&agent));
         }
 
-        let _ = NamespaceStore::register(&*self.container.store, &project, &namespace).await;
+        let _ = NamespaceStore::register(&*self.container.store, &default_org, &project, &namespace).await;
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
@@ -108,6 +111,7 @@ impl OrchyHandler {
         };
 
         let cmd = RegisterAgent {
+            org_id: default_org,
             project: project.clone(),
             namespace: namespace.clone(),
             roles,
@@ -167,7 +171,8 @@ impl OrchyHandler {
                 .ok_or("pass project or register first")?,
         };
 
-        match self.container.agent_service.list().await {
+        let default_org = OrganizationId::new("default").unwrap();
+        match self.container.agent_service.list(&default_org).await {
             Ok(agents) => {
                 let filtered: Vec<_> = agents
                     .into_iter()
@@ -341,7 +346,9 @@ impl OrchyHandler {
         };
 
         let is_blocked = !depends_on.is_empty();
+        let default_org = OrganizationId::new("default").unwrap();
         let task = match Task::new(
+            default_org,
             project,
             namespace,
             parent_id,
@@ -704,10 +711,11 @@ impl OrchyHandler {
             None => None,
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .message_service
-            .send(project, namespace, agent_id, target, params.body, reply_to)
+            .send(default_org, project, namespace, agent_id, target, params.body, reply_to)
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
@@ -730,10 +738,11 @@ impl OrchyHandler {
             None => session_ns,
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .message_service
-            .check(&agent_id, &project, &namespace)
+            .check(&agent_id, &default_org, &project, &namespace)
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
@@ -753,10 +762,11 @@ impl OrchyHandler {
             None => session_ns,
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .message_service
-            .sent(&agent_id, &project, &namespace)
+            .sent(&agent_id, &default_org, &project, &namespace)
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
@@ -1009,7 +1019,9 @@ impl OrchyHandler {
             None => parent.priority(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         let task = match Task::new(
+            default_org,
             project,
             parent.namespace().clone(),
             Some(parent_id),
@@ -1092,10 +1104,11 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         let project = self
             .container
             .project_service
-            .get_or_create(&project_id)
+            .get_or_create(&default_org, &project_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -1106,7 +1119,7 @@ impl OrchyHandler {
         let agents = self
             .container
             .agent_service
-            .list()
+            .list(&default_org)
             .await
             .map_err(|e| e.to_string())?;
         let project_agents: Vec<_> = agents
@@ -1204,10 +1217,11 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         let project = self
             .container
             .project_service
-            .get_or_create(&project_id)
+            .get_or_create(&default_org, &project_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -1225,10 +1239,11 @@ impl OrchyHandler {
             .description
             .unwrap_or_else(|| project.description().to_string());
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .project_service
-            .update_description(&project_id, description)
+            .update_description(&default_org, &project_id, description)
             .await
         {
             Ok(project) => Ok(to_json(&project)),
@@ -1245,10 +1260,11 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .project_service
-            .set_metadata(&project_id, params.key, params.value)
+            .set_metadata(&default_org, &project_id, params.key, params.value)
             .await
         {
             Ok(project) => Ok(to_json(&project)),
@@ -1268,7 +1284,8 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        match NamespaceStore::list(&*self.container.store, &project).await {
+        let default_org = OrganizationId::new("default").unwrap();
+        match NamespaceStore::list(&*self.container.store, &default_org, &project).await {
             Ok(namespaces) => Ok(to_json(&namespaces)),
             Err(e) => Err(e.to_string()),
         }
@@ -1380,11 +1397,12 @@ impl OrchyHandler {
             .await?;
 
         let ttl = params.ttl_secs.unwrap_or(300);
+        let default_org = OrganizationId::new("default").unwrap();
 
         match self
             .container
             .lock_service
-            .acquire(project, namespace, params.name, agent_id, ttl)
+            .acquire(default_org, project, namespace, params.name, agent_id, ttl)
             .await
         {
             Ok(lock) => Ok(to_json(&lock)),
@@ -1401,10 +1419,11 @@ impl OrchyHandler {
 
         let namespace = self.build_namespace(params.namespace.as_deref())?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .lock_service
-            .release(&project, &namespace, &params.name, &agent_id)
+            .release(&default_org, &project, &namespace, &params.name, &agent_id)
             .await
         {
             Ok(()) => Ok("ok".to_string()),
@@ -1421,10 +1440,11 @@ impl OrchyHandler {
 
         let namespace = self.build_namespace(params.namespace.as_deref())?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .lock_service
-            .check(&project, &namespace, &params.name)
+            .check(&default_org, &project, &namespace, &params.name)
             .await
         {
             Ok(Some(lock)) => Ok(to_json(&lock)),
@@ -1505,10 +1525,11 @@ impl OrchyHandler {
         let (agent_id, project, namespace) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .task_service
-            .watch(&task_id, agent_id, project, namespace)
+            .watch(&task_id, agent_id, default_org, project, namespace)
             .await
         {
             Ok(watcher) => Ok(to_json(&watcher)),
@@ -1551,11 +1572,13 @@ impl OrchyHandler {
             None => None,
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .task_service
             .request_review(
                 &task_id,
+                default_org,
                 project,
                 namespace,
                 agent_id,
@@ -1706,7 +1729,8 @@ impl OrchyHandler {
         let metadata_remove = params.metadata_remove.unwrap_or_default();
 
         let cmd = WriteKnowledge {
-            project,
+            org_id: OrganizationId::new("default").unwrap(),
+            project: Some(project),
             namespace,
             path: params.path,
             kind,
@@ -1743,11 +1767,13 @@ impl OrchyHandler {
         let set = optional_knowledge_metadata(params.metadata, "metadata")?.unwrap_or_default();
         let remove = params.metadata_remove.unwrap_or_default();
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .knowledge_service
             .patch_metadata(
-                &project,
+                &default_org,
+                Some(&project),
                 &namespace,
                 &params.path,
                 set,
@@ -1773,10 +1799,11 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .knowledge_service
-            .read(&project, &namespace, &params.path)
+            .read(&default_org, Some(&project), &namespace, &params.path)
             .await
         {
             Ok(Some(entry)) => Ok(to_json(&entry)),
@@ -1816,6 +1843,7 @@ impl OrchyHandler {
             tag: params.tag,
             path_prefix: params.path_prefix,
             agent_id,
+            ..Default::default()
         };
 
         match self.container.knowledge_service.list(filter).await {
@@ -1833,10 +1861,11 @@ impl OrchyHandler {
 
         let limit = params.limit.unwrap_or(10) as usize;
 
+        let default_org = OrganizationId::new("default").unwrap();
         let mut entries = match self
             .container
             .knowledge_service
-            .search(&params.query, namespace.as_ref(), limit)
+            .search(&default_org, &params.query, namespace.as_ref(), limit)
             .await
         {
             Ok(e) => e,
@@ -1860,10 +1889,11 @@ impl OrchyHandler {
 
         let namespace = self.build_namespace(params.namespace.as_deref())?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         let entry = self
             .container
             .knowledge_service
-            .read(&project, &namespace, &params.path)
+            .read(&default_org, Some(&project), &namespace, &params.path)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
@@ -1892,11 +1922,13 @@ impl OrchyHandler {
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
         let meta_remove = params.metadata_remove;
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .knowledge_service
             .append(
-                &project,
+                &default_org,
+                Some(&project),
                 &namespace,
                 &params.path,
                 kind,
@@ -1925,10 +1957,11 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         let entry = self
             .container
             .knowledge_service
-            .read(&project, &namespace, &params.path)
+            .read(&default_org, Some(&project), &namespace, &params.path)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
@@ -1963,10 +1996,11 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         let entry = self
             .container
             .knowledge_service
-            .read(&project, &namespace, &params.path)
+            .read(&default_org, Some(&project), &namespace, &params.path)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
@@ -2005,11 +2039,13 @@ impl OrchyHandler {
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
         let meta_remove = params.metadata_remove;
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .knowledge_service
             .change_kind(
-                &project,
+                &default_org,
+                Some(&project),
                 &namespace,
                 &params.path,
                 new_kind,
@@ -2036,10 +2072,11 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         let entry = self
             .container
             .knowledge_service
-            .read(&project, &namespace, &params.path)
+            .read(&default_org, Some(&project), &namespace, &params.path)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
@@ -2070,10 +2107,11 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         let entry = self
             .container
             .knowledge_service
-            .read(&project, &namespace, &params.path)
+            .read(&default_org, Some(&project), &namespace, &params.path)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
@@ -2106,10 +2144,11 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         let source_entry = self
             .container
             .knowledge_service
-            .read(&source_project, &source_namespace, &params.path)
+            .read(&default_org, Some(&source_project), &source_namespace, &params.path)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found in source: {}", params.path))?;
@@ -2127,7 +2166,8 @@ impl OrchyHandler {
         }
 
         let cmd = WriteKnowledge {
-            project,
+            org_id: OrganizationId::new("default").unwrap(),
+            project: Some(project),
             namespace,
             path: source_entry.path().to_string(),
             kind: source_entry.kind(),
@@ -2229,10 +2269,11 @@ impl ServerHandler for OrchyHandler {
             }
         };
 
+        let default_org = OrganizationId::new("default").unwrap();
         let skills = self
             .container
             .knowledge_service
-            .list_skills(&project, &namespace)
+            .list_skills(&default_org, &project, &namespace)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -2264,10 +2305,11 @@ impl ServerHandler for OrchyHandler {
             .get_session_namespace()
             .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         let skills = self
             .container
             .knowledge_service
-            .list_skills(&project, &namespace)
+            .list_skills(&default_org, &project, &namespace)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 

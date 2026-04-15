@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 use crate::event::{Event, EventId, RestoreEvent};
 use crate::metadata::Metadata;
 use crate::namespace::EventNamespace;
-use crate::organization::Organization;
+use crate::organization::OrganizationId;
 use crate::payload::{ContentType, Payload};
 use crate::topic::Topic;
 
@@ -61,7 +61,7 @@ impl SerializedEvent {
 
         Ok(Event::restore(RestoreEvent {
             id: EventId::from_str(&self.id).map_err(|e| Error::Serialization(e.to_string()))?,
-            organization: Organization::new(&self.organization)?,
+            organization: OrganizationId::new(&self.organization)?,
             namespace: EventNamespace::new(&self.namespace)?,
             topic: Topic::new(&self.topic)?,
             payload: Payload::from_raw(data, content_type),

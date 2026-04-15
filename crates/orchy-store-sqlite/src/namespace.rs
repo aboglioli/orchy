@@ -1,10 +1,11 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
+use orchy_core::organization::OrganizationId;
 
 use crate::SqliteBackend;
 
 impl NamespaceStore for SqliteBackend {
-    async fn register(&self, project: &ProjectId, namespace: &Namespace) -> Result<()> {
+    async fn register(&self, _org: &OrganizationId, project: &ProjectId, namespace: &Namespace) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR IGNORE INTO namespaces (project, namespace, created_at) VALUES (?1, ?2, ?3)",
@@ -18,7 +19,7 @@ impl NamespaceStore for SqliteBackend {
         Ok(())
     }
 
-    async fn list(&self, project: &ProjectId) -> Result<Vec<Namespace>> {
+    async fn list(&self, _org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare("SELECT namespace FROM namespaces WHERE project = ?1 ORDER BY namespace")

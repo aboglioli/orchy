@@ -5,6 +5,7 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
 use crate::{PgBackend, parse_namespace, parse_project_id};
@@ -39,6 +40,7 @@ impl LockStore for PgBackend {
 
     async fn find(
         &self,
+        _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
@@ -57,7 +59,7 @@ impl LockStore for PgBackend {
         row.map(|r| row_to_resource_lock(&r)).transpose()
     }
 
-    async fn delete(&self, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+    async fn delete(&self, _org: &OrganizationId, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
         sqlx::query(
             "DELETE FROM resource_locks WHERE project = $1 AND namespace = $2 AND name = $3",
         )
@@ -103,6 +105,7 @@ fn row_to_resource_lock(row: &sqlx::postgres::PgRow) -> Result<ResourceLock> {
     let expires_at: DateTime<Utc> = row.get("expires_at");
 
     Ok(ResourceLock::restore(RestoreResourceLock {
+        org_id: OrganizationId::new("default").unwrap(),
         project: parse_project_id(project, "resource_locks", "project")?,
         namespace: parse_namespace(namespace, "resource_locks", "namespace")?,
         name,

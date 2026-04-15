@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
 use crate::error::{Error, Result};
 use crate::namespace::Namespace;
+use crate::organization::OrganizationId;
 
 pub struct AgentService<S: AgentStore> {
     store: Arc<S>,
@@ -25,6 +26,7 @@ impl<S: AgentStore> AgentService<S> {
             )
         } else {
             Agent::register(
+                cmd.org_id,
                 cmd.project,
                 cmd.namespace,
                 cmd.roles,
@@ -58,8 +60,8 @@ impl<S: AgentStore> AgentService<S> {
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))
     }
 
-    pub async fn list(&self) -> Result<Vec<Agent>> {
-        self.store.list().await
+    pub async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
+        self.store.list(org).await
     }
 
     pub async fn heartbeat(&self, id: &AgentId) -> Result<()> {
@@ -94,7 +96,11 @@ impl<S: AgentStore> AgentService<S> {
     pub async fn set_alias(&self, id: &AgentId, alias: Option<super::Alias>) -> Result<Agent> {
         let mut agent = self.get(id).await?;
         if let Some(ref a) = alias {
-            if let Some(existing) = self.store.find_by_alias(agent.project(), a).await? {
+            if let Some(existing) = self
+                .store
+                .find_by_alias(agent.org_id(), agent.project(), a)
+                .await?
+            {
                 if existing.id() != *id {
                     return Err(crate::error::Error::Conflict(format!(
                         "alias '{}' already taken by agent {}",
@@ -111,10 +117,11 @@ impl<S: AgentStore> AgentService<S> {
 
     pub async fn find_by_alias(
         &self,
+        org: &OrganizationId,
         project: &super::super::namespace::ProjectId,
         alias: &super::Alias,
     ) -> Result<Option<Agent>> {
-        self.store.find_by_alias(project, alias).await
+        self.store.find_by_alias(org, project, alias).await
     }
 
     pub async fn update_metadata(
@@ -147,7 +154,9 @@ mod tests {
     use std::collections::HashMap;
 
     fn make_registration() -> RegisterAgent {
+        use orchy_events::OrganizationId;
         RegisterAgent {
+            org_id: OrganizationId::new("orchy").unwrap(),
             project: ProjectId::try_from("orchy".to_string()).unwrap(),
             namespace: Namespace::root(),
             roles: vec!["tester".to_string()],
@@ -174,6 +183,7 @@ mod tests {
         let parent = service.register(make_registration()).await.unwrap();
 
         let child_cmd = RegisterAgent {
+            org_id: orchy_events::OrganizationId::new("orchy").unwrap(),
             project: ProjectId::try_from("orchy".to_string()).unwrap(),
             namespace: Namespace::try_from("/backend".to_string()).unwrap(),
             roles: vec!["reviewer".to_string()],

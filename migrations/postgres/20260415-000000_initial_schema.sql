@@ -3,8 +3,26 @@
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
+CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id UUID PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    name TEXT NOT NULL DEFAULT '',
+    key TEXT NOT NULL UNIQUE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS api_keys_organization_idx ON api_keys (organization_id);
+
 CREATE TABLE IF NOT EXISTS agents (
     id UUID PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id UUID REFERENCES agents(id),
@@ -16,10 +34,11 @@ CREATE TABLE IF NOT EXISTS agents (
     connected_at TIMESTAMPTZ NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'
 );
-CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (project, alias) WHERE alias IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (organization_id, project, alias) WHERE alias IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id UUID REFERENCES tasks(id),
@@ -41,6 +60,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     from_agent UUID NOT NULL REFERENCES agents(id),
@@ -52,23 +72,27 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE TABLE IF NOT EXISTS projects (
-    name TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
+    name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (organization_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS namespaces (
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (project, namespace)
+    PRIMARY KEY (organization_id, project, namespace)
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_entries (
     id UUID PRIMARY KEY,
-    project TEXT NOT NULL,
+    organization_id TEXT NOT NULL DEFAULT 'default',
+    project TEXT,
     namespace TEXT NOT NULL DEFAULT '/',
     path TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -82,20 +106,26 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     embedding_model TEXT,
     embedding_dimensions INTEGER,
     created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL,
-    UNIQUE(project, namespace, path)
+    updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_project_path_idx
+    ON knowledge_entries (organization_id, project, namespace, path)
+    WHERE project IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_org_path_idx
+    ON knowledge_entries (organization_id, namespace, path)
+    WHERE project IS NULL;
 CREATE INDEX IF NOT EXISTS knowledge_entries_type_idx ON knowledge_entries (kind);
 CREATE INDEX IF NOT EXISTS knowledge_entries_agent_idx ON knowledge_entries (agent_id);
 
 CREATE TABLE IF NOT EXISTS resource_locks (
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     name TEXT NOT NULL,
     holder UUID NOT NULL REFERENCES agents(id),
     acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (project, namespace, name)
+    PRIMARY KEY (organization_id, project, namespace, name)
 );
 
 CREATE TABLE IF NOT EXISTS task_watchers (

@@ -6,6 +6,7 @@ use rusqlite::OptionalExtension;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{
     RestoreReviewRequest, ReviewId, ReviewRequest, ReviewStatus, ReviewStore, TaskId,
 };
@@ -149,6 +150,7 @@ fn row_to_review(row: &rusqlite::Row) -> rusqlite::Result<ReviewRequest> {
 
     Ok(ReviewRequest::restore(RestoreReviewRequest {
         id,
+        org_id: OrganizationId::new("default").unwrap(),
         task_id,
         project,
         namespace,

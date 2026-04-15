@@ -13,6 +13,7 @@ use orchy_events::{Event, EventCollector, Payload};
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
+use crate::organization::OrganizationId;
 
 use self::events as message_events;
 
@@ -22,12 +23,14 @@ pub trait MessageStore: Send + Sync {
     fn find_pending(
         &self,
         agent: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> impl Future<Output = Result<Vec<Message>>> + Send;
     fn find_sent(
         &self,
         sender: &AgentId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> impl Future<Output = Result<Vec<Message>>> + Send;
@@ -154,6 +157,7 @@ impl FromStr for MessageStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     id: MessageId,
+    org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
     from: AgentId,
@@ -168,6 +172,7 @@ pub struct Message {
 
 impl Message {
     pub fn new(
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         from: AgentId,
@@ -177,6 +182,7 @@ impl Message {
     ) -> Self {
         let mut msg = Self {
             id: MessageId::new(),
+            org_id,
             project,
             namespace,
             from,
@@ -189,10 +195,11 @@ impl Message {
         };
 
         let _ = Event::create(
-            msg.project.as_ref(),
+            msg.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_SENT,
             Payload::from_json(&message_events::MessageSentPayload {
+                org_id: msg.org_id.to_string(),
                 message_id: msg.id.to_string(),
                 project: msg.project.to_string(),
                 namespace: msg.namespace.to_string(),
@@ -211,6 +218,7 @@ impl Message {
     pub fn restore(r: RestoreMessage) -> Self {
         Self {
             id: r.id,
+            org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
             from: r.from,
@@ -225,6 +233,7 @@ impl Message {
 
     pub fn reply(&self, from: AgentId, body: String) -> Self {
         Self::new(
+            self.org_id.clone(),
             self.project.clone(),
             self.namespace.clone(),
             from,
@@ -239,10 +248,11 @@ impl Message {
             self.status = MessageStatus::Delivered;
 
             let _ = Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 message_events::NAMESPACE,
                 message_events::TOPIC_DELIVERED,
                 Payload::from_json(&message_events::MessageDeliveredPayload {
+                    org_id: self.org_id.to_string(),
                     message_id: self.id.to_string(),
                     from: self.from.to_string(),
                     to: self.to.to_string(),
@@ -258,10 +268,11 @@ impl Message {
         self.status = MessageStatus::Read;
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_READ,
             Payload::from_json(&message_events::MessageReadPayload {
+                org_id: self.org_id.to_string(),
                 message_id: self.id.to_string(),
                 from: self.from.to_string(),
                 to: self.to.to_string(),
@@ -278,6 +289,9 @@ impl Message {
 
     pub fn id(&self) -> MessageId {
         self.id
+    }
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
     }
     pub fn project(&self) -> &ProjectId {
         &self.project
@@ -307,6 +321,7 @@ impl Message {
 
 pub struct RestoreMessage {
     pub id: MessageId,
+    pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
     pub from: AgentId,
@@ -320,6 +335,11 @@ pub struct RestoreMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchy_events::OrganizationId;
+
+    fn test_org() -> OrganizationId {
+        OrganizationId::new("test").unwrap()
+    }
 
     fn test_project() -> ProjectId {
         ProjectId::try_from("test").unwrap()
@@ -354,6 +374,7 @@ mod tests {
     #[test]
     fn new_message_is_pending() {
         let msg = Message::new(
+            test_org(),
             test_project(),
             Namespace::root(),
             AgentId::new(),
@@ -367,6 +388,7 @@ mod tests {
     #[test]
     fn deliver_transitions_to_delivered() {
         let mut msg = Message::new(
+            test_org(),
             test_project(),
             Namespace::root(),
             AgentId::new(),
@@ -381,6 +403,7 @@ mod tests {
     #[test]
     fn mark_read_transitions() {
         let mut msg = Message::new(
+            test_org(),
             test_project(),
             Namespace::root(),
             AgentId::new(),
@@ -397,6 +420,7 @@ mod tests {
         let sender = AgentId::new();
         let receiver = AgentId::new();
         let original = Message::new(
+            test_org(),
             test_project(),
             Namespace::root(),
             sender,

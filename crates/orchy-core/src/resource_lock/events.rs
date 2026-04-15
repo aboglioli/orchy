@@ -7,6 +7,7 @@ pub const TOPIC_RELEASED: &str = "lock.released";
 
 #[derive(Serialize)]
 pub struct LockAcquiredPayload {
+    pub org_id: String,
     pub project: String,
     pub namespace: String,
     pub name: String,
@@ -16,6 +17,7 @@ pub struct LockAcquiredPayload {
 
 #[derive(Serialize)]
 pub struct LockReleasedPayload {
+    pub org_id: String,
     pub project: String,
     pub namespace: String,
     pub name: String,

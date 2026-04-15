@@ -3,6 +3,7 @@ use std::sync::Arc;
 use orchy_core::agent::AgentId;
 use orchy_core::message::MessageId;
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{ReviewId, TaskId};
 
 use crate::container::Container;
@@ -127,7 +128,8 @@ impl OrchyHandler {
         let ns = self.build_namespace(scope)?;
         if let Some(project) = self.get_session_project() {
             use orchy_core::namespace::NamespaceStore;
-            let _ = NamespaceStore::register(&*self.container.store, &project, &ns).await;
+            let default_org = OrganizationId::new("default").unwrap();
+            let _ = NamespaceStore::register(&*self.container.store, &default_org, &project, &ns).await;
         }
         Ok(ns)
     }
@@ -143,10 +145,11 @@ impl OrchyHandler {
 
         let alias = orchy_core::agent::Alias::new(s).map_err(|e| e.to_string())?;
 
+        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .agent_service
-            .find_by_alias(&project, &alias)
+            .find_by_alias(&default_org, &project, &alias)
             .await
         {
             Ok(Some(agent)) => Ok(agent.id()),

@@ -14,6 +14,7 @@ use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::note::Note;
+use crate::organization::OrganizationId;
 
 use self::events as task_events;
 
@@ -186,6 +187,7 @@ impl FromStr for Priority {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     id: TaskId,
+    org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
     parent_id: Option<TaskId>,
@@ -210,6 +212,7 @@ pub struct Task {
 impl Task {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         parent_id: Option<TaskId>,
@@ -228,6 +231,7 @@ impl Task {
         let now = Utc::now();
         let mut task = Self {
             id: TaskId::new(),
+            org_id,
             project,
             namespace,
             parent_id,
@@ -254,10 +258,11 @@ impl Task {
 
         task.collector.collect(
             Event::create(
-                task.project.as_ref(),
+                task.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_CREATED,
                 Payload::from_json(&task_events::TaskCreatedPayload {
+                    org_id: task.org_id.to_string(),
                     task_id: task.id.to_string(),
                     project: task.project.to_string(),
                     namespace: task.namespace.to_string(),
@@ -279,6 +284,7 @@ impl Task {
     pub fn restore(r: RestoreTask) -> Self {
         Self {
             id: r.id,
+            org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
             parent_id: r.parent_id,
@@ -308,7 +314,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_CLAIMED,
                 Payload::from_json(&task_events::TaskClaimedPayload {
@@ -335,7 +341,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_STARTED,
                 Payload::from_json(&task_events::TaskStartedPayload {
@@ -357,7 +363,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_COMPLETED,
                 Payload::from_json(&task_events::TaskCompletedPayload {
@@ -379,7 +385,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_AUTO_COMPLETED,
                 Payload::from_json(&task_events::TaskCompletedPayload {
@@ -401,7 +407,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_FAILED,
                 Payload::from_json(&task_events::TaskFailedPayload {
@@ -430,7 +436,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_RELEASED,
                 Payload::from_json(&task_events::TaskReleasedPayload {
@@ -458,7 +464,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_ASSIGNED,
                 Payload::from_json(&task_events::TaskAssignedPayload {
@@ -482,7 +488,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_BLOCKED,
                 Payload::from_json(&task_events::TaskBlockedPayload {
@@ -505,7 +511,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_UNBLOCKED,
                 Payload::from_json(&task_events::TaskUnblockedPayload {
@@ -526,7 +532,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_CANCELLED,
                 Payload::from_json(&task_events::TaskCancelledPayload {
@@ -581,7 +587,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_UPDATED,
                 Payload::from_json(&task_events::TaskUpdatedPayload {
@@ -607,7 +613,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_DEPENDENCY_ADDED,
                 Payload::from_json(&task_events::TaskDependencyAddedPayload {
@@ -628,7 +634,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_DEPENDENCY_REMOVED,
                 Payload::from_json(&task_events::TaskDependencyRemovedPayload {
@@ -645,6 +651,9 @@ impl Task {
 
     pub fn id(&self) -> TaskId {
         self.id
+    }
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
     }
     pub fn project(&self) -> &ProjectId {
         &self.project
@@ -691,7 +700,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_TAGGED,
                 Payload::from_json(&task_events::TaskTaggedPayload {
@@ -714,7 +723,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_TAG_REMOVED,
                 Payload::from_json(&task_events::TaskTagRemovedPayload {
@@ -740,7 +749,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_NOTE_ADDED,
                 Payload::from_json(&task_events::TaskNoteAddedPayload {
@@ -759,7 +768,7 @@ impl Task {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_PARENT_CHANGED,
             Payload::from_json(&task_events::TaskParentChangedPayload {
@@ -781,7 +790,7 @@ impl Task {
         self.updated_at = Utc::now();
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_DEPENDENCY_REPLACED,
             Payload::from_json(&task_events::TaskDependencyReplacedPayload {
@@ -801,7 +810,7 @@ impl Task {
 
         self.collector.collect(
             Event::create(
-                self.project.as_ref(),
+                self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_MOVED,
                 Payload::from_json(&task_events::TaskMovedPayload {
@@ -843,6 +852,7 @@ pub struct TaskWithContext {
 
 pub struct RestoreTask {
     pub id: TaskId,
+    pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
     pub parent_id: Option<TaskId>,
@@ -872,6 +882,7 @@ pub struct SubtaskDef {
 
 #[derive(Debug, Clone, Default)]
 pub struct TaskFilter {
+    pub org_id: Option<OrganizationId>,
     pub namespace: Option<Namespace>,
     pub project: Option<ProjectId>,
     pub status: Option<TaskStatus>,
@@ -902,6 +913,7 @@ pub trait WatcherStore: Send + Sync {
 pub struct TaskWatcher {
     task_id: TaskId,
     agent_id: AgentId,
+    org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
     created_at: DateTime<Utc>,
@@ -913,12 +925,14 @@ impl TaskWatcher {
     pub fn new(
         task_id: TaskId,
         agent_id: AgentId,
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
     ) -> Self {
         let mut watcher = Self {
             task_id,
             agent_id,
+            org_id,
             project,
             namespace,
             created_at: Utc::now(),
@@ -926,7 +940,7 @@ impl TaskWatcher {
         };
 
         let _ = Event::create(
-            watcher.project.as_ref(),
+            watcher.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_WATCHER_ADDED,
             Payload::from_json(&task_events::TaskWatcherAddedPayload {
@@ -943,6 +957,7 @@ impl TaskWatcher {
     pub fn restore(
         task_id: TaskId,
         agent_id: AgentId,
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         created_at: DateTime<Utc>,
@@ -950,6 +965,7 @@ impl TaskWatcher {
         Self {
             task_id,
             agent_id,
+            org_id,
             project,
             namespace,
             created_at,
@@ -966,6 +982,9 @@ impl TaskWatcher {
     }
     pub fn agent_id(&self) -> AgentId {
         self.agent_id
+    }
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
     }
     pub fn project(&self) -> &ProjectId {
         &self.project
@@ -1067,6 +1086,7 @@ impl FromStr for ReviewId {
 pub struct ReviewRequest {
     id: ReviewId,
     task_id: TaskId,
+    org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
     requester: AgentId,
@@ -1083,6 +1103,7 @@ pub struct ReviewRequest {
 impl ReviewRequest {
     pub fn new(
         task_id: TaskId,
+        org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
         requester: AgentId,
@@ -1092,6 +1113,7 @@ impl ReviewRequest {
         let mut review = Self {
             id: ReviewId::new(),
             task_id,
+            org_id,
             project,
             namespace,
             requester,
@@ -1105,7 +1127,7 @@ impl ReviewRequest {
         };
 
         let _ = Event::create(
-            review.project.as_ref(),
+            review.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_REVIEW_REQUESTED,
             Payload::from_json(&task_events::ReviewRequestedPayload {
@@ -1124,6 +1146,7 @@ impl ReviewRequest {
         Self {
             id: r.id,
             task_id: r.task_id,
+            org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
             requester: r.requester,
@@ -1149,7 +1172,7 @@ impl ReviewRequest {
         self.resolved_at = Some(Utc::now());
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_REVIEW_APPROVED,
             Payload::from_json(&task_events::ReviewApprovedPayload {
@@ -1179,7 +1202,7 @@ impl ReviewRequest {
         self.resolved_at = Some(Utc::now());
 
         let _ = Event::create(
-            self.project.as_ref(),
+            self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_REVIEW_REJECTED,
             Payload::from_json(&task_events::ReviewRejectedPayload {
@@ -1202,6 +1225,9 @@ impl ReviewRequest {
     }
     pub fn task_id(&self) -> TaskId {
         self.task_id
+    }
+    pub fn org_id(&self) -> &OrganizationId {
+        &self.org_id
     }
     pub fn project(&self) -> &ProjectId {
         &self.project
@@ -1235,6 +1261,7 @@ impl ReviewRequest {
 pub struct RestoreReviewRequest {
     pub id: ReviewId,
     pub task_id: TaskId,
+    pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
     pub requester: AgentId,
@@ -1251,8 +1278,10 @@ mod tests {
     use super::*;
 
     fn make_task(status: TaskStatus, assigned_to: Option<AgentId>) -> Task {
+        use orchy_events::OrganizationId;
         Task::restore(RestoreTask {
             id: TaskId::new(),
+            org_id: OrganizationId::new("test").unwrap(),
             project: ProjectId::try_from("test").unwrap(),
             namespace: Namespace::root(),
             parent_id: None,
@@ -1458,6 +1487,7 @@ mod tests {
     #[test]
     fn new_creates_pending_task() {
         let task = Task::new(
+            OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
             None,
@@ -1476,6 +1506,7 @@ mod tests {
     #[test]
     fn new_creates_blocked_task() {
         let task = Task::new(
+            OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
             None,

@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 
 use crate::SqliteBackend;
@@ -117,6 +118,11 @@ fn row_to_watcher(row: &rusqlite::Row) -> rusqlite::Result<TaskWatcher> {
         })?;
 
     Ok(TaskWatcher::restore(
-        task_id, agent_id, project, namespace, created_at,
+        task_id,
+        agent_id,
+        OrganizationId::new("default").unwrap(),
+        project,
+        namespace,
+        created_at,
     ))
 }

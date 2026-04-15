@@ -1,5 +1,6 @@
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
+use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore};
 
 use crate::MemoryBackend;
@@ -22,11 +23,14 @@ impl ProjectStore for MemoryBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
         let projects = self
             .projects
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(projects.get(id).cloned())
+        Ok(projects
+            .get(id)
+            .filter(|p| p.org_id() == org)
+            .cloned())
     }
 }
