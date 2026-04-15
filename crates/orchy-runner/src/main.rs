@@ -1,4 +1,5 @@
-use orchy_runner::config::RunnerConfig;
+use clap::Parser;
+use orchy_runner::config::{Cli, RunnerConfig};
 use orchy_runner::driver::AgentDriver;
 
 #[tokio::main]
@@ -10,19 +11,15 @@ async fn main() {
         )
         .init();
 
-    let config = match RunnerConfig::from_env() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    };
+    let cli = Cli::parse();
+    let config = RunnerConfig::from_cli(cli);
 
     tracing::info!(
-        agent = %config.agent.name,
-        command = %config.agent.command,
-        orchy_url = %config.orchy.url,
-        project = %config.orchy.project,
+        alias = %config.alias,
+        agent_type = %config.agent_type,
+        command = %config.command,
+        url = %config.url,
+        project = %config.project,
         "starting orchy-runner"
     );
 

@@ -2,80 +2,74 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[derive(Debug, Clone, Default)]
-pub enum SpawnMode {
-    #[default]
-    Pty,
-    Pipe,
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(name = "orchy-runner", about = "Process manager for CLI agents")]
+pub struct Cli {
+    #[arg(long, env = "ORCHY_ALIAS")]
+    pub alias: String,
+
+    #[arg(long, env = "ORCHY_URL", default_value = "http://127.0.0.1:3100/mcp")]
+    pub url: String,
+
+    #[arg(long, env = "ORCHY_PROJECT")]
+    pub project: Option<String>,
+
+    #[arg(long, env = "ORCHY_DESCRIPTION")]
+    pub description: Option<String>,
+
+    #[arg(long, env = "ORCHY_AGENT_TYPE", default_value = "unknown")]
+    pub agent_type: String,
+
+    #[arg(long, env = "ORCHY_NAMESPACE")]
+    pub namespace: Option<String>,
+
+    #[arg(long, env = "ORCHY_ROLES")]
+    pub roles: Option<String>,
+
+    #[arg(long, env = "ORCHY_IDLE_PATTERNS")]
+    pub idle_patterns: Option<String>,
+
+    #[arg(long, env = "ORCHY_IDLE_WAKE_SECS", default_value_t = 120)]
+    pub idle_wake_secs: u64,
+
+    #[arg(long, env = "ORCHY_HEARTBEAT_SECS", default_value_t = 30)]
+    pub heartbeat_secs: u64,
+
+    #[arg(required = true, trailing_var_arg = true)]
+    pub command: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct AgentConfig {
-    pub name: String,
+pub struct RunnerConfig {
+    pub alias: String,
+    pub agent_type: String,
+    pub description: String,
+    pub url: String,
+    pub project: String,
+    pub namespace: Option<String>,
+    pub roles: Vec<String>,
     pub command: String,
     pub args: Vec<String>,
-    pub spawn_mode: SpawnMode,
     pub env: HashMap<String, String>,
     pub working_dir: Option<PathBuf>,
     pub pty_rows: u16,
     pub pty_cols: u16,
-    /// Stripped byte sequences that indicate the agent is idle and ready for input.
-    /// Matched against the tail of ANSI-stripped PTY output.
     pub idle_patterns: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct OrchyConfig {
-    pub url: String,
-    pub project: String,
-    pub description: String,
-    pub namespace: Option<String>,
-    pub roles: Vec<String>,
-    pub poll_interval_secs: u64,
-    pub heartbeat_interval_secs: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct RunnerConfig {
-    pub agent: AgentConfig,
-    pub orchy: OrchyConfig,
+    pub idle_wake: Duration,
+    pub heartbeat_interval: Duration,
 }
 
 impl RunnerConfig {
-    /// Build config from CLI args + environment variables.
-    ///
-    /// Usage: `orchy-runner <command> [args...]`
-    ///
-    /// Env vars (all optional with defaults):
-    ///   ORCHY_URL             — orchy MCP endpoint (default: http://127.0.0.1:3100/mcp)
-    ///   ORCHY_PROJECT         — project name (default: current directory name)
-    ///   ORCHY_DESCRIPTION     — agent description (default: "{name} agent")
-    ///   ORCHY_AGENT_NAME      — agent name (default: command basename)
-    ///   ORCHY_NAMESPACE       — namespace (optional)
-    ///   ORCHY_ROLES           — comma-separated roles (optional)
-    ///   ORCHY_IDLE_PATTERNS   — comma-separated idle prompt patterns (default: "❯ ,$ ")
-    pub fn from_env() -> Result<Self, String> {
-        let mut cli_args = std::env::args().skip(1);
-        let command = cli_args.next().ok_or_else(|| {
-            "usage: orchy-runner <command> [args...]\n\
-             example: orchy-runner claude\n\
-             example: orchy-runner opencode run --format json"
-                .to_string()
-        })?;
-        let args: Vec<String> = cli_args.collect();
-
-        let name = std::env::var("ORCHY_AGENT_NAME")
-            .unwrap_or_else(|_| basename(&command).to_string());
-
-        let (pty_rows, pty_cols) = crossterm::terminal::size().unwrap_or((24, 120));
-
-        let mut env = HashMap::new();
-        env.insert(
-            "TERM".to_string(),
-            std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
-        );
-
-        let idle_patterns = std::env::var("ORCHY_IDLE_PATTERNS")
+    pub fn from_cli(cli: Cli) -> Self {
+        let project = cli
+            .project
+            .unwrap_or_else(current_dir_name);
+        let description = cli
+            .description
+            .unwrap_or_else(|| format!("{} agent", cli.alias));
+        let idle_patterns = cli
+            .idle_patterns
             .map(|s| {
                 s.split(',')
                     .map(str::trim)
@@ -83,19 +77,9 @@ impl RunnerConfig {
                     .map(String::from)
                     .collect()
             })
-            .unwrap_or_else(|_| vec!["❯ ".to_string(), "$ ".to_string()]);
-
-        let url = std::env::var("ORCHY_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:3100/mcp".to_string());
-
-        let project = std::env::var("ORCHY_PROJECT").unwrap_or_else(|_| current_dir_name());
-
-        let description = std::env::var("ORCHY_DESCRIPTION")
-            .unwrap_or_else(|_| format!("{name} agent"));
-
-        let namespace = std::env::var("ORCHY_NAMESPACE").ok();
-
-        let roles = std::env::var("ORCHY_ROLES")
+            .unwrap_or_else(|| default_idle_patterns(&cli.agent_type));
+        let roles = cli
+            .roles
             .map(|s| {
                 s.split(',')
                     .map(str::trim)
@@ -104,45 +88,56 @@ impl RunnerConfig {
                     .collect()
             })
             .unwrap_or_default();
+        let (pty_rows, pty_cols) = crossterm::terminal::size().unwrap_or((24, 120));
 
-        Ok(Self {
-            agent: AgentConfig {
-                name,
-                command,
-                args,
-                spawn_mode: SpawnMode::Pty,
-                env,
-                working_dir: None,
-                pty_rows,
-                pty_cols,
-                idle_patterns,
-            },
-            orchy: OrchyConfig {
-                url,
-                project,
-                description,
-                namespace,
-                roles,
-                poll_interval_secs: 10,
-                heartbeat_interval_secs: 30,
-            },
-        })
-    }
+        let mut env = HashMap::new();
+        env.insert(
+            "TERM".to_string(),
+            std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
+        );
 
-    pub fn poll_interval(&self) -> Duration {
-        Duration::from_secs(self.orchy.poll_interval_secs)
-    }
+        let mut command_parts = cli.command.into_iter();
+        let command = command_parts.next().unwrap_or_default();
+        let args: Vec<String> = command_parts.collect();
 
-    pub fn heartbeat_interval(&self) -> Duration {
-        Duration::from_secs(self.orchy.heartbeat_interval_secs)
+        Self {
+            alias: cli.alias,
+            agent_type: cli.agent_type,
+            description,
+            url: cli.url,
+            project,
+            namespace: cli.namespace,
+            roles,
+            command,
+            args,
+            env,
+            working_dir: None,
+            pty_rows,
+            pty_cols,
+            idle_patterns,
+            idle_wake: Duration::from_secs(cli.idle_wake_secs),
+            heartbeat_interval: Duration::from_secs(cli.heartbeat_secs),
+        }
     }
 }
 
-fn basename(command: &str) -> &str {
-    std::path::Path::new(command)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(command)
+/// Known idle prompt patterns per agent type.
+/// Override with `--idle-patterns` / `ORCHY_IDLE_PATTERNS` if these don't match.
+fn default_idle_patterns(agent_type: &str) -> Vec<String> {
+    match agent_type {
+        // Claude Code (Ink TUI) — waits at ❯
+        "claude" => vec!["❯ ".to_string()],
+        // Cursor CLI agent (`agent` binary, Ink TUI) — same pattern as Claude Code
+        "cursor" => vec!["❯ ".to_string()],
+        // OpenCode (Bubble Tea TUI) — waits at >
+        "opencode" => vec!["> ".to_string()],
+        // Gemini CLI — waits at >
+        "gemini" => vec!["> ".to_string()],
+        // Aider (line-mode chat) — waits at "> "
+        "aider" => vec!["> ".to_string()],
+        // Generic fallback covers most shells and unknown TUIs
+        _ => vec!["❯ ".to_string(), "$ ".to_string(), "> ".to_string()],
+    }
 }
 
 fn current_dir_name() -> String {

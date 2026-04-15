@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use pty_process::OwnedWritePty;
 use rmcp::ServiceExt;
@@ -17,34 +18,32 @@ use crate::process::spawn_pty_raw;
 pub struct AgentDriver {
     writer: Arc<Mutex<OwnedWritePty>>,
     child: tokio::process::Child,
-    /// Set to true when an idle prompt pattern is detected in ANSI-stripped PTY output.
-    /// Guards task/message injection — never inject while agent is processing.
     is_idle: Arc<AtomicBool>,
     config: RunnerConfig,
     peer: Arc<Peer<RoleClient>>,
     #[allow(dead_code)]
     service: RunningService<RoleClient, ()>,
+    agent_id: String,
     shutting_down: bool,
-    agent_id: Option<String>,
 }
 
 impl AgentDriver {
-    pub async fn connect(config: RunnerConfig) -> Result<Self> {
-        let transport = StreamableHttpClientTransport::from_uri(config.orchy.url.as_str());
+    async fn connect(config: RunnerConfig) -> Result<Self> {
+        let transport = StreamableHttpClientTransport::from_uri(config.url.as_str());
 
         let service: RunningService<RoleClient, ()> =
             ().serve(transport).await.map_err(|e| {
-                Error::Mcp(format!("connect to {}: {e}", config.orchy.url))
+                Error::Mcp(format!("connect to {}: {e}", config.url))
             })?;
 
         let peer = Arc::new(service.peer().clone());
-        let parts = spawn_pty_raw(&config.agent)?;
+        let parts = spawn_pty_raw(&config)?;
         let writer = Arc::new(Mutex::new(parts.writer));
         let is_idle = Arc::new(AtomicBool::new(false));
 
         spawn_output_reader(
             parts.reader,
-            config.agent.idle_patterns.clone(),
+            config.idle_patterns.clone(),
             Arc::clone(&is_idle),
         );
 
@@ -55,61 +54,87 @@ impl AgentDriver {
             config,
             peer,
             service,
+            agent_id: String::new(),
             shutting_down: false,
-            agent_id: None,
         })
     }
 
     pub async fn run(config: RunnerConfig) -> Result<()> {
         let mut driver = Self::connect(config).await?;
         driver.register().await?;
+        driver.inject_bootstrap().await?;
         driver.main_loop().await
     }
 
     async fn register(&mut self) -> Result<()> {
         let mut args = serde_json::Map::new();
-        args.insert("project".into(), self.config.orchy.project.clone().into());
-        args.insert("description".into(), self.config.orchy.description.clone().into());
+        args.insert("project".into(), self.config.project.clone().into());
+        args.insert("alias".into(), self.config.alias.clone().into());
+        args.insert("description".into(), self.config.description.clone().into());
 
-        if let Some(ns) = &self.config.orchy.namespace {
+        if let Some(ns) = &self.config.namespace {
             args.insert("namespace".into(), ns.clone().into());
         }
 
-        if !self.config.orchy.roles.is_empty() {
+        if !self.config.roles.is_empty() {
             args.insert(
                 "roles".into(),
                 serde_json::Value::Array(
-                    self.config.orchy.roles.iter().map(|r| r.clone().into()).collect(),
+                    self.config.roles.iter().map(|r| r.clone().into()).collect(),
                 ),
             );
         }
 
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("agent_type".into(), self.config.agent_type.clone().into());
+        metadata.insert("runner_managed".into(), "true".into());
+        args.insert("metadata".into(), serde_json::Value::Object(metadata));
+
         let result = self.call_tool("register_agent", args).await?;
         let text = extract_text(&result);
 
-        if let Some(id) = extract_field(&text, "agent_id") {
-            tracing::info!(agent_id = %id, "registered with orchy");
-            self.agent_id = Some(id);
-        } else {
-            tracing::info!("registered with orchy");
-        }
+        let agent_id = extract_field(&text, "id").unwrap_or_default();
+        tracing::info!(agent_id = %agent_id, alias = %self.config.alias, "registered with orchy");
+        self.agent_id = agent_id;
 
         Ok(())
     }
 
+    async fn inject_bootstrap(&mut self) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if self.is_idle.load(Ordering::Relaxed) {
+                break;
+            }
+            if Instant::now() >= deadline {
+                tracing::warn!("timed out waiting for agent idle before bootstrap");
+                break;
+            }
+            sleep(Duration::from_millis(500)).await;
+        }
+
+        let prompt = format!(
+            "You are agent '{}' (id: {}).\n\nConnect to orchy MCP at {}. On startup:\n1. register_agent(project: \"{}\", agent_id: \"{}\") — resumes your existing profile\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nYour heartbeat is managed by orchy-runner. Focus on completing tasks.",
+            self.config.alias,
+            self.agent_id,
+            self.config.url,
+            self.config.project,
+            self.agent_id,
+        );
+
+        self.inject(&prompt).await
+    }
+
     async fn main_loop(&mut self) -> Result<()> {
-        let poll_interval = self.config.poll_interval();
-        let heartbeat_interval = self.config.heartbeat_interval();
-
-        let mut poll_timer = time::interval(poll_interval);
+        let heartbeat_interval = self.config.heartbeat_interval;
         let mut heartbeat_timer = time::interval(heartbeat_interval);
+        let mut last_was_idle = false;
+        let mut idle_since: Option<Instant> = None;
 
-        poll_timer.tick().await;
         heartbeat_timer.tick().await;
 
         tracing::info!(
-            agent = %self.config.agent.name,
-            poll_secs = poll_interval.as_secs(),
+            alias = %self.config.alias,
             heartbeat_secs = heartbeat_interval.as_secs(),
             "entering main loop"
         );
@@ -124,94 +149,63 @@ impl AgentDriver {
                 .try_wait()
                 .map_err(|e| Error::Io(format!("wait: {e}")))?
             {
-                tracing::warn!(agent = %self.config.agent.name, ?status, "process exited");
+                tracing::warn!(alias = %self.config.alias, ?status, "process exited");
                 return Err(Error::ProcessExited);
             }
 
-            tokio::select! {
-                _ = poll_timer.tick() => {
-                    if let Err(e) = self.poll_for_work().await {
-                        tracing::warn!(error = %e, "poll_for_work failed");
-                    }
-                    if let Err(e) = self.check_mailbox().await {
-                        tracing::warn!(error = %e, "check_mailbox failed");
-                    }
+            let currently_idle = self.is_idle.load(Ordering::Relaxed);
+
+            if currently_idle && !last_was_idle {
+                idle_since = Some(Instant::now());
+            } else if !currently_idle && last_was_idle {
+                idle_since = None;
+            }
+            last_was_idle = currently_idle;
+
+            if let Some(since) = idle_since {
+                let elapsed = since.elapsed();
+                if elapsed > Duration::from_secs(5) && elapsed > self.config.idle_wake {
+                    tracing::info!(alias = %self.config.alias, "idle too long, injecting wake-up");
+                    self.inject("Check your mailbox and get your next task.").await?;
+                    idle_since = None;
                 }
+            }
+
+            tokio::select! {
                 _ = heartbeat_timer.tick() => {
                     if let Err(e) = self.heartbeat().await {
                         tracing::warn!(error = %e, "heartbeat failed");
                     }
                 }
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!(alias = %self.config.alias, "ctrl-c received, shutting down");
+                    self.shutting_down = true;
+                }
+                _ = sleep(Duration::from_secs(1)) => {}
             }
         }
 
         self.shutdown().await
     }
 
-    async fn poll_for_work(&mut self) -> Result<()> {
-        if !self.is_idle.load(Ordering::Relaxed) {
-            tracing::debug!(agent = %self.config.agent.name, "agent busy, skipping poll");
-            return Ok(());
-        }
-
-        let mut args = serde_json::Map::new();
-        args.insert("claim".into(), true.into());
-
-        let result = self.call_tool("get_next_task", args).await?;
-        let text = extract_text(&result);
-
-        if text.contains("no task") || text.contains("No task") || text.is_empty() {
-            return Ok(());
-        }
-
-        let task_id = extract_field(&text, "task_id")
-            .or_else(|| extract_field(&text, "id"))
-            .unwrap_or_default();
-        let title = extract_field(&text, "title").unwrap_or_default();
-
-        if task_id.is_empty() {
-            return Ok(());
-        }
-
-        tracing::info!(task_id = %task_id, title = %title, "claimed task, injecting prompt");
-
-        let mut start_args = serde_json::Map::new();
-        start_args.insert("task_id".into(), task_id.clone().into());
-        let _ = self.call_tool("start_task", start_args).await;
-
-        let prompt = format!(
-            "You have been assigned task {task_id}: {title}\n\
-             Please complete this task. When done, call complete_task with a summary."
-        );
-        self.inject(&prompt).await
-    }
-
-    async fn check_mailbox(&mut self) -> Result<()> {
-        if !self.is_idle.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
-        let result = self.call_tool("check_mailbox", serde_json::Map::new()).await?;
-        let text = extract_text(&result);
-
-        if text.contains("no message") || text.contains("No message") || text.is_empty() {
-            return Ok(());
-        }
-
-        tracing::info!(agent = %self.config.agent.name, "received messages, injecting");
-        self.inject(&format!("[SYSTEM MESSAGE]: {text}")).await
-    }
-
-    async fn heartbeat(&mut self) -> Result<()> {
+    async fn heartbeat(&self) -> Result<()> {
         self.call_tool("heartbeat", serde_json::Map::new()).await?;
         Ok(())
     }
 
-    /// Write text into the PTY and send Enter. Marks the agent as busy immediately.
     async fn inject(&self, text: &str) -> Result<()> {
+        // Collapse newlines to spaces — in raw PTY mode (Ink, Bubble Tea), `\n` is
+        // interpreted as Enter and would submit the text prematurely line by line.
+        let normalized: String = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+
         {
             let mut w = self.writer.lock().await;
-            w.write_all(text.as_bytes())
+            w.write_all(normalized.as_bytes())
                 .await
                 .map_err(|e| Error::Io(format!("inject: {e}")))?;
             w.flush()
@@ -229,12 +223,12 @@ impl AgentDriver {
                 .map_err(|e| Error::Io(format!("inject enter flush: {e}")))?;
         }
         self.is_idle.store(false, Ordering::Relaxed);
-        tracing::debug!(agent = %self.config.agent.name, bytes = text.len(), "injected prompt");
+        tracing::debug!(alias = %self.config.alias, bytes = normalized.len(), "injected prompt");
         Ok(())
     }
 
     async fn shutdown(&mut self) -> Result<()> {
-        tracing::info!(agent = %self.config.agent.name, "shutting down");
+        tracing::info!(alias = %self.config.alias, "shutting down");
         let _ = self.call_tool("disconnect", serde_json::Map::new()).await;
         {
             let mut w = self.writer.lock().await;
@@ -244,6 +238,10 @@ impl AgentDriver {
         sleep(Duration::from_millis(500)).await;
         let _ = self.child.kill().await;
         Ok(())
+    }
+
+    pub fn request_shutdown(&mut self) {
+        self.shutting_down = true;
     }
 
     async fn call_tool(
@@ -257,14 +255,8 @@ impl AgentDriver {
             .await
             .map_err(|e| Error::Mcp(format!("call_tool({name}): {e}")))
     }
-
-    pub fn request_shutdown(&mut self) {
-        self.shutting_down = true;
-    }
 }
 
-/// Reads raw PTY bytes, strips ANSI, keeps a rolling tail, and sets `is_idle` when
-/// the tail ends with one of the configured idle prompt patterns.
 fn spawn_output_reader(
     mut reader: pty_process::OwnedReadPty,
     idle_patterns: Vec<String>,
