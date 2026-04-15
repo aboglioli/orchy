@@ -19,6 +19,23 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         Self { store, embeddings }
     }
 
+    fn apply_metadata_updates(
+        entry: &mut Knowledge,
+        set: Option<HashMap<String, String>>,
+        remove_keys: Option<Vec<String>>,
+    ) {
+        if let Some(keys) = remove_keys {
+            for k in keys {
+                let _ = entry.remove_metadata(&k);
+            }
+        }
+        if let Some(map) = set {
+            for (k, v) in map {
+                entry.set_metadata(k, v);
+            }
+        }
+    }
+
     pub async fn write(&self, cmd: WriteKnowledge) -> Result<Knowledge> {
         let existing = self
             .store
@@ -37,6 +54,9 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             for tag in &cmd.tags {
                 existing.add_tag(tag.clone());
             }
+            for k in &cmd.metadata_remove {
+                let _ = existing.remove_metadata(k);
+            }
             for (k, v) in &cmd.metadata {
                 existing.set_metadata(k.clone(), v.clone());
             }
@@ -48,7 +68,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                     actual: 0,
                 });
             }
-            Knowledge::new(
+            let mut created = Knowledge::new(
                 cmd.project,
                 cmd.namespace,
                 cmd.path,
@@ -58,7 +78,11 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                 cmd.tags,
                 cmd.agent_id,
                 cmd.metadata,
-            )?
+            )?;
+            for k in &cmd.metadata_remove {
+                let _ = created.remove_metadata(k);
+            }
+            created
         };
 
         if let Some(emb) = &self.embeddings {
@@ -91,6 +115,44 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         self.store.list(filter).await
     }
 
+    pub async fn patch_metadata(
+        &self,
+        project: &ProjectId,
+        namespace: &Namespace,
+        path: &str,
+        set: HashMap<String, String>,
+        remove: Vec<String>,
+        expected_version: Option<Version>,
+    ) -> Result<Knowledge> {
+        let mut entry = self
+            .store
+            .find_by_path(project, namespace, path)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("knowledge entry not found: {path}")))?;
+
+        if let Some(expected) = expected_version
+            && entry.version() != expected
+        {
+            return Err(Error::VersionMismatch {
+                expected: expected.as_u64(),
+                actual: entry.version().as_u64(),
+            });
+        }
+
+        if set.is_empty() && remove.is_empty() {
+            return Ok(entry);
+        }
+
+        Self::apply_metadata_updates(
+            &mut entry,
+            Some(set).filter(|m| !m.is_empty()),
+            Some(remove).filter(|v| !v.is_empty()),
+        );
+
+        self.store.save(&mut entry).await?;
+        Ok(entry)
+    }
+
     pub async fn search(
         &self,
         query: &str,
@@ -118,20 +180,31 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         &self,
         id: &KnowledgeId,
         new_namespace: Namespace,
+        metadata: Option<HashMap<String, String>>,
+        metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
         entry.move_to(new_namespace);
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
 
-    pub async fn rename(&self, id: &KnowledgeId, new_path: String) -> Result<Knowledge> {
+    pub async fn rename(
+        &self,
+        id: &KnowledgeId,
+        new_path: String,
+        metadata: Option<HashMap<String, String>>,
+        metadata_remove: Option<Vec<String>>,
+    ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
         entry.rename(new_path)?;
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn change_kind(
         &self,
         project: &ProjectId,
@@ -139,6 +212,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         path: &str,
         new_kind: KnowledgeKind,
         expected_version: Option<Version>,
+        metadata: Option<HashMap<String, String>>,
+        metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
         let mut entry = self
             .store
@@ -155,7 +230,10 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             });
         }
 
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
+
         if entry.kind() == new_kind {
+            self.store.save(&mut entry).await?;
             return Ok(entry);
         }
 
@@ -171,15 +249,29 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         Ok(entry)
     }
 
-    pub async fn tag(&self, id: &KnowledgeId, tag: String) -> Result<Knowledge> {
+    pub async fn tag(
+        &self,
+        id: &KnowledgeId,
+        tag: String,
+        metadata: Option<HashMap<String, String>>,
+        metadata_remove: Option<Vec<String>>,
+    ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
         entry.add_tag(tag);
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
 
-    pub async fn untag(&self, id: &KnowledgeId, tag: &str) -> Result<Knowledge> {
+    pub async fn untag(
+        &self,
+        id: &KnowledgeId,
+        tag: &str,
+        metadata: Option<HashMap<String, String>>,
+        metadata_remove: Option<Vec<String>>,
+    ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
         entry.remove_tag(tag);
         self.store.save(&mut entry).await?;
         Ok(entry)
@@ -195,6 +287,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         value: String,
         separator: &str,
         agent_id: Option<AgentId>,
+        metadata: Option<HashMap<String, String>>,
+        metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
         let existing = self.store.find_by_path(project, namespace, path).await?;
 
@@ -215,6 +309,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                 HashMap::new(),
             )?
         };
+
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
 
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());

@@ -20,6 +20,7 @@ pub async fn load_skills_from_dir<S: KnowledgeStore>(
     Ok(count)
 }
 
+#[allow(clippy::type_complexity)]
 fn load_recursive<'a, S: KnowledgeStore>(
     base: &'a Path,
     current: &'a Path,
@@ -108,6 +109,7 @@ async fn load_recursive_inner<S: KnowledgeStore>(
             expected_version: None,
             agent_id: None,
             metadata: std::collections::HashMap::new(),
+            metadata_remove: vec![],
         };
 
         service

@@ -488,6 +488,26 @@ impl Knowledge {
         .map(|e| self.collector.collect(e));
     }
 
+    pub fn remove_metadata(&mut self, key: &str) -> bool {
+        if self.metadata.remove(key).is_none() {
+            return false;
+        }
+        self.updated_at = Utc::now();
+
+        let _ = Event::create(
+            self.project.as_ref(),
+            knowledge_events::NAMESPACE,
+            knowledge_events::TOPIC_METADATA_REMOVED,
+            Payload::from_json(&knowledge_events::KnowledgeMetadataRemovedPayload {
+                entry_id: self.id.to_string(),
+                key: key.to_string(),
+            })
+            .unwrap(),
+        )
+        .map(|e| self.collector.collect(e));
+        true
+    }
+
     pub fn mark_deleted(&mut self) {
         let _ = Event::create(
             self.project.as_ref(),
@@ -592,6 +612,7 @@ pub struct WriteKnowledge {
     pub expected_version: Option<Version>,
     pub agent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
+    pub metadata_remove: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -674,6 +695,27 @@ mod tests {
             let parsed: KnowledgeKind = s.parse().unwrap();
             assert_eq!(*t, parsed);
         }
+    }
+
+    #[test]
+    fn remove_metadata_only_when_key_exists() {
+        let mut md = HashMap::new();
+        md.insert("k".into(), "v".into());
+        let mut entry = Knowledge::new(
+            proj("test"),
+            Namespace::root(),
+            "path".into(),
+            KnowledgeKind::Note,
+            "title".into(),
+            "c".into(),
+            vec![],
+            None,
+            md,
+        )
+        .unwrap();
+        assert!(!entry.remove_metadata("missing"));
+        assert!(entry.remove_metadata("k"));
+        assert!(entry.metadata().is_empty());
     }
 
     #[test]

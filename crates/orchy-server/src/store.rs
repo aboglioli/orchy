@@ -18,6 +18,7 @@ use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
 
+#[allow(clippy::large_enum_variant)]
 pub enum StoreBackend {
     Memory(MemoryBackend),
     Sqlite(SqliteBackend),

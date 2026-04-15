@@ -12,6 +12,7 @@ pub const TOPIC_MOVED: &str = "knowledge.moved";
 pub const TOPIC_RENAMED: &str = "knowledge.renamed";
 pub const TOPIC_DELETED: &str = "knowledge.deleted";
 pub const TOPIC_METADATA_SET: &str = "knowledge.metadata_set";
+pub const TOPIC_METADATA_REMOVED: &str = "knowledge.metadata_removed";
 pub const TOPIC_KIND_CHANGED: &str = "knowledge.kind_changed";
 
 #[derive(Serialize)]
@@ -75,6 +76,12 @@ pub struct KnowledgeMetadataSetPayload {
     pub entry_id: String,
     pub key: String,
     pub value: String,
+}
+
+#[derive(Serialize)]
+pub struct KnowledgeMetadataRemovedPayload {
+    pub entry_id: String,
+    pub key: String,
 }
 
 #[derive(Serialize)]

@@ -223,6 +223,8 @@ On disconnect, claimed tasks return to pending.
 - `write_knowledge` — persist decisions, discoveries, patterns. \
   Always `search_knowledge` first to avoid duplicating existing entries. \
   Call `list_knowledge_types` to see available types. \
+  Optional `metadata` (JSON object string) merges; `metadata_remove` drops keys first. \
+  `patch_knowledge_metadata` updates metadata only. \
   Use `change_knowledge_kind` to change an entry's kind (not via `write_knowledge` updates).
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.

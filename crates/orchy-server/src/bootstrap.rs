@@ -11,6 +11,7 @@ use orchy_core::project::service::ProjectService;
 use orchy_core::task::service::TaskService;
 use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_bootstrap_prompt<
     KS: KnowledgeStore,
     PS: ProjectStore,
@@ -84,6 +85,7 @@ pub async fn generate_bootstrap_prompt<
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render(
     namespace: &Namespace,
     host: &str,

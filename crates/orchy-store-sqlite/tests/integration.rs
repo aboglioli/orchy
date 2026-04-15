@@ -1,11 +1,37 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
-use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
+use orchy_core::embeddings::EmbeddingsProvider;
+use orchy_core::error::Result as OrchyResult;
+use orchy_core::knowledge::service::KnowledgeService;
+use orchy_core::knowledge::{
+    Knowledge, KnowledgeKind, KnowledgeStore, WriteKnowledge,
+};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_sqlite::SqliteBackend;
+
+struct NoopEmbeddings;
+
+impl EmbeddingsProvider for NoopEmbeddings {
+    async fn embed(&self, _text: &str) -> OrchyResult<Vec<f32>> {
+        Ok(vec![])
+    }
+
+    async fn embed_batch(&self, _texts: &[&str]) -> OrchyResult<Vec<Vec<f32>>> {
+        Ok(vec![])
+    }
+
+    fn model(&self) -> &str {
+        "noop"
+    }
+
+    fn dimensions(&self) -> u32 {
+        0
+    }
+}
 
 fn backend() -> SqliteBackend {
     let store = SqliteBackend::new(":memory:", None).unwrap();
@@ -540,4 +566,65 @@ async fn knowledge_search_fts_finds_content() {
         .unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].path(), "auth/jwt");
+}
+
+#[tokio::test]
+async fn knowledge_service_metadata_merge_and_remove() {
+    let store = Arc::new(backend());
+    let svc: KnowledgeService<SqliteBackend, NoopEmbeddings> =
+        KnowledgeService::new(store, None::<Arc<NoopEmbeddings>>);
+
+    let mut md = HashMap::new();
+    md.insert("a".into(), "1".into());
+    svc.write(WriteKnowledge {
+        project: proj("p"),
+        namespace: Namespace::root(),
+        path: "meta-test".into(),
+        kind: KnowledgeKind::Note,
+        title: "t".into(),
+        content: "body".into(),
+        tags: vec![],
+        expected_version: None,
+        agent_id: None,
+        metadata: md,
+        metadata_remove: vec![],
+    })
+    .await
+    .unwrap();
+
+    let mut md2 = HashMap::new();
+    md2.insert("b".into(), "2".into());
+    let entry = svc
+        .write(WriteKnowledge {
+            project: proj("p"),
+            namespace: Namespace::root(),
+            path: "meta-test".into(),
+            kind: KnowledgeKind::Note,
+            title: "t".into(),
+            content: "body2".into(),
+            tags: vec![],
+            expected_version: None,
+            agent_id: None,
+            metadata: md2,
+            metadata_remove: vec!["a".into()],
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(entry.metadata().get("a"), None);
+    assert_eq!(entry.metadata().get("b").map(String::as_str), Some("2"));
+
+    let entry = svc
+        .patch_metadata(
+            &proj("p"),
+            &Namespace::root(),
+            "meta-test",
+            HashMap::from([("c".into(), "3".into())]),
+            vec!["b".into()],
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(entry.metadata().get("b"), None);
+    assert_eq!(entry.metadata().get("c").map(String::as_str), Some("3"));
 }

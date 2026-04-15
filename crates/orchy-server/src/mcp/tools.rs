@@ -18,6 +18,28 @@ use super::handler::{
 };
 use super::params::*;
 
+fn knowledge_metadata_from_json_str(
+    raw: Option<&str>,
+    label: &'static str,
+) -> Result<HashMap<String, String>, String> {
+    match raw {
+        None | Some("") => Ok(HashMap::new()),
+        Some(s) => serde_json::from_str(s).map_err(|e| format!("invalid {label} JSON: {e}")),
+    }
+}
+
+fn optional_knowledge_metadata(
+    raw: Option<String>,
+    label: &'static str,
+) -> Result<Option<HashMap<String, String>>, String> {
+    match raw.as_deref() {
+        None | Some("") => Ok(None),
+        Some(s) => serde_json::from_str(s)
+            .map(Some)
+            .map_err(|e| format!("invalid {label} JSON: {e}")),
+    }
+}
+
 #[tool_router]
 impl OrchyHandler {
     #[tool(
@@ -1233,7 +1255,7 @@ impl OrchyHandler {
                 )
             })
             .collect();
-        recent.sort_by(|a, b| b.updated_at().cmp(&a.updated_at()));
+        recent.sort_by_key(|b| std::cmp::Reverse(b.updated_at()));
         recent.truncate(10);
 
         let recent_items: Vec<_> = recent
@@ -1927,7 +1949,8 @@ impl OrchyHandler {
     }
 
     #[tool(description = "Write a knowledge entry. Creates or updates by path. \
-        kind is required — use list_knowledge_types for valid values (includes skill).")]
+        kind is required — use list_knowledge_types for valid values (includes skill). \
+        Optional `metadata` is a JSON object merged on update; `metadata_remove` drops keys first.")]
     async fn write_knowledge(
         &self,
         Parameters(params): Parameters<WriteKnowledgeParams>,
@@ -1947,13 +1970,12 @@ impl OrchyHandler {
 
         let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
 
-        let metadata: HashMap<String, String> = match params.metadata.as_deref() {
-            Some(json_str) => match serde_json::from_str(json_str) {
+        let metadata =
+            match knowledge_metadata_from_json_str(params.metadata.as_deref(), "metadata") {
                 Ok(m) => m,
-                Err(e) => return Err(format!("invalid metadata JSON: {e}")),
-            },
-            None => HashMap::new(),
-        };
+                Err(e) => return Err(e),
+            };
+        let metadata_remove = params.metadata_remove.unwrap_or_default();
 
         let cmd = WriteKnowledge {
             project,
@@ -1966,9 +1988,46 @@ impl OrchyHandler {
             expected_version: params.version.map(KnowledgeVersion::from),
             agent_id: self.get_session_agent(),
             metadata,
+            metadata_remove,
         };
 
         match self.container.knowledge_service.write(cmd).await {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[tool(
+        description = "Merge or remove knowledge entry metadata without changing title, content, or kind. \
+        `metadata` is a JSON object of string values; `metadata_remove` lists keys to delete first."
+    )]
+    async fn patch_knowledge_metadata(
+        &self,
+        Parameters(params): Parameters<PatchKnowledgeMetadataParams>,
+    ) -> Result<String, String> {
+        let project = self.get_session_project().ok_or("no agent registered")?;
+
+        let namespace = match params.namespace.as_deref() {
+            Some(s) => self.build_namespace(Some(s))?,
+            None => Namespace::root(),
+        };
+
+        let set = optional_knowledge_metadata(params.metadata, "metadata")?.unwrap_or_default();
+        let remove = params.metadata_remove.unwrap_or_default();
+
+        match self
+            .container
+            .knowledge_service
+            .patch_metadata(
+                &project,
+                &namespace,
+                &params.path,
+                set,
+                remove,
+                params.version.map(KnowledgeVersion::from),
+            )
+            .await
+        {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(e.to_string()),
         }
@@ -2119,6 +2178,9 @@ impl OrchyHandler {
 
         let separator = params.separator.as_deref().unwrap_or("\n");
 
+        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
+        let meta_remove = params.metadata_remove;
+
         match self
             .container
             .knowledge_service
@@ -2130,6 +2192,8 @@ impl OrchyHandler {
                 params.value,
                 separator,
                 self.get_session_agent(),
+                meta,
+                meta_remove,
             )
             .await
         {
@@ -2166,10 +2230,13 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
+        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
+        let meta_remove = params.metadata_remove;
+
         match self
             .container
             .knowledge_service
-            .move_entry(&entry.id(), new_namespace)
+            .move_entry(&entry.id(), new_namespace, meta, meta_remove)
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
@@ -2197,10 +2264,13 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
+        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
+        let meta_remove = params.metadata_remove;
+
         match self
             .container
             .knowledge_service
-            .rename(&entry.id(), params.new_path)
+            .rename(&entry.id(), params.new_path, meta, meta_remove)
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
@@ -2225,11 +2295,21 @@ impl OrchyHandler {
         let new_kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
 
         let expected = params.version.map(KnowledgeVersion::from);
+        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
+        let meta_remove = params.metadata_remove;
 
         match self
             .container
             .knowledge_service
-            .change_kind(&project, &namespace, &params.path, new_kind, expected)
+            .change_kind(
+                &project,
+                &namespace,
+                &params.path,
+                new_kind,
+                expected,
+                meta,
+                meta_remove,
+            )
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
@@ -2257,10 +2337,13 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
+        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
+        let meta_remove = params.metadata_remove;
+
         match self
             .container
             .knowledge_service
-            .tag(&entry.id(), params.tag)
+            .tag(&entry.id(), params.tag, meta, meta_remove)
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
@@ -2288,10 +2371,13 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
+        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
+        let meta_remove = params.metadata_remove;
+
         match self
             .container
             .knowledge_service
-            .untag(&entry.id(), &params.tag)
+            .untag(&entry.id(), &params.tag, meta, meta_remove)
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
@@ -2332,6 +2418,16 @@ impl OrchyHandler {
             Err(e) => return Err(e),
         };
 
+        let mut md = source_entry.metadata().clone();
+        if let Some(keys) = params.metadata_remove {
+            for k in keys {
+                md.remove(&k);
+            }
+        }
+        if let Some(overlay) = optional_knowledge_metadata(params.metadata, "metadata")? {
+            md.extend(overlay);
+        }
+
         let cmd = WriteKnowledge {
             project,
             namespace,
@@ -2342,7 +2438,8 @@ impl OrchyHandler {
             tags: source_entry.tags().to_vec(),
             expected_version: None,
             agent_id: self.get_session_agent(),
-            metadata: source_entry.metadata().clone(),
+            metadata: md,
+            metadata_remove: vec![],
         };
 
         match self.container.knowledge_service.write(cmd).await {

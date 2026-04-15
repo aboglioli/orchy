@@ -99,7 +99,7 @@ async fn heartbeat_middleware(
         let session_agents = container.session_agents.read().await;
         if let Some(agent_id) = session_agents.get(session_id) {
             let container = Arc::clone(&container);
-            let agent_id = agent_id.clone();
+            let agent_id = *agent_id;
             tokio::spawn(async move {
                 let _ = container.agent_service.heartbeat(&agent_id).await;
             });
