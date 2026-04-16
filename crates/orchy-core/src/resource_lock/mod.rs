@@ -226,9 +226,15 @@ mod tests {
     #[test]
     fn is_held_by_holder() {
         let agent = AgentId::new();
-        let lock =
-            ResourceLock::acquire(test_org(), project(), Namespace::root(), "f".into(), agent, 60)
-                .unwrap();
+        let lock = ResourceLock::acquire(
+            test_org(),
+            project(),
+            Namespace::root(),
+            "f".into(),
+            agent,
+            60,
+        )
+        .unwrap();
         assert!(lock.is_held_by(&agent));
         assert!(!lock.is_held_by(&AgentId::new()));
     }

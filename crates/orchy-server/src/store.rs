@@ -7,7 +7,7 @@ use orchy_core::error::Result;
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
-use orchy_core::organization::OrganizationId;
+use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::task::{
@@ -48,6 +48,21 @@ macro_rules! delegate_trait {
             StoreBackend::Postgres(b) => $Trait::$method(b, $($arg),*).await,
         }
     };
+}
+
+impl OrganizationStore for StoreBackend {
+    async fn save(&self, org: &mut Organization) -> Result<()> {
+        delegate_trait!(self, OrganizationStore::save(org))
+    }
+    async fn find_by_id(&self, id: &OrganizationId) -> Result<Option<Organization>> {
+        delegate_trait!(self, OrganizationStore::find_by_id(id))
+    }
+    async fn find_by_api_key(&self, key: &str) -> Result<Option<Organization>> {
+        delegate_trait!(self, OrganizationStore::find_by_api_key(key))
+    }
+    async fn list(&self) -> Result<Vec<Organization>> {
+        delegate_trait!(self, OrganizationStore::list())
+    }
 }
 
 impl TaskStore for StoreBackend {

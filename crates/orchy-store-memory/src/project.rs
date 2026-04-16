@@ -28,9 +28,6 @@ impl ProjectStore for MemoryBackend {
             .projects
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(projects
-            .get(id)
-            .filter(|p| p.org_id() == org)
-            .cloned())
+        Ok(projects.get(id).filter(|p| p.org_id() == org).cloned())
     }
 }

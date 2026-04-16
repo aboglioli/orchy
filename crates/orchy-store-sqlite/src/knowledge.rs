@@ -95,7 +95,12 @@ impl KnowledgeStore for SqliteBackend {
                 .map_err(|e| Error::Store(e.to_string()))?;
 
             stmt.query_row(
-                rusqlite::params![org.to_string(), proj.to_string(), namespace.to_string(), path],
+                rusqlite::params![
+                    org.to_string(),
+                    proj.to_string(),
+                    namespace.to_string(),
+                    path
+                ],
                 row_to_entry,
             )
             .optional()

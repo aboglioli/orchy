@@ -1,0 +1,76 @@
+use std::sync::Arc;
+
+use axum::http::StatusCode;
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
+use serde::Deserialize;
+
+use orchy_core::organization::OrganizationId;
+
+use crate::container::Container;
+
+use super::auth::OrgAuth;
+
+fn parse_org(s: &str) -> Result<OrganizationId, (StatusCode, String)> {
+    OrganizationId::new(s).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode, String)> {
+    if auth.0.id() != org_id {
+        Err((StatusCode::FORBIDDEN, "forbidden".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PollQuery {
+    pub since: Option<String>,
+    pub limit: Option<u32>,
+    pub ns: Option<String>,
+}
+
+pub async fn poll(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project)): Path<(String, String)>,
+    Query(query): Query<PollQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let since = match query.since.as_deref() {
+        Some(s) => chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid timestamp: {e}")))?,
+        None => chrono::Utc::now() - chrono::Duration::minutes(5),
+    };
+
+    let limit = query.limit.unwrap_or(50) as usize;
+
+    let events = container
+        .store
+        .query_events(&project, since, limit)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let updates: Vec<_> = events
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "topic": e.topic,
+                "namespace": e.namespace,
+                "payload": e.payload,
+                "timestamp": e.timestamp.to_rfc3339(),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "since": since.to_rfc3339(),
+        "count": updates.len(),
+        "events": updates,
+    })))
+}

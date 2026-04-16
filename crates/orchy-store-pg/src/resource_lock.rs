@@ -59,7 +59,13 @@ impl LockStore for PgBackend {
         row.map(|r| row_to_resource_lock(&r)).transpose()
     }
 
-    async fn delete(&self, _org: &OrganizationId, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+    async fn delete(
+        &self,
+        _org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<()> {
         sqlx::query(
             "DELETE FROM resource_locks WHERE project = $1 AND namespace = $2 AND name = $3",
         )

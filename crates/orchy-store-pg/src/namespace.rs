@@ -7,7 +7,12 @@ use orchy_core::organization::OrganizationId;
 use crate::PgBackend;
 
 impl NamespaceStore for PgBackend {
-    async fn register(&self, _org: &OrganizationId, project: &ProjectId, namespace: &Namespace) -> Result<()> {
+    async fn register(
+        &self,
+        _org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<()> {
         sqlx::query(
             "INSERT INTO namespaces (project, namespace, created_at) VALUES ($1, $2, $3) ON CONFLICT (project, namespace) DO NOTHING",
         )

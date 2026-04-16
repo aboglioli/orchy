@@ -297,7 +297,10 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         metadata: Option<HashMap<String, String>>,
         metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
-        let existing = self.store.find_by_path(org, project, namespace, path).await?;
+        let existing = self
+            .store
+            .find_by_path(org, project, namespace, path)
+            .await?;
 
         let mut entry = if let Some(mut existing) = existing {
             let new_content = format!("{}{}{}", existing.content(), separator, value);

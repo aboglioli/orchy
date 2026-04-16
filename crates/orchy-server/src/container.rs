@@ -6,6 +6,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::agent::service::AgentService;
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::message::service::MessageService;
+use orchy_core::organization::service::OrganizationService;
 use orchy_core::project::service::ProjectService;
 use orchy_core::resource_lock::service::LockService;
 use orchy_core::task::service::TaskService;
@@ -25,6 +26,7 @@ pub struct Container {
     pub project_service: ProjectService<StoreBackend>,
     pub knowledge_service: KnowledgeService<StoreBackend, EmbeddingsBackend>,
     pub lock_service: LockService<StoreBackend>,
+    pub org_service: OrganizationService<StoreBackend>,
     pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
     pub start_time: std::time::Instant,
@@ -46,6 +48,7 @@ impl Container {
         let knowledge_service = KnowledgeService::new(Arc::clone(&store), embeddings);
         let project_service = ProjectService::new(Arc::clone(&store));
         let lock_service = LockService::new(Arc::clone(&store));
+        let org_service = OrganizationService::new(Arc::clone(&store));
 
         Ok(Arc::new(Self {
             store,
@@ -55,6 +58,7 @@ impl Container {
             project_service,
             knowledge_service,
             lock_service,
+            org_service,
             session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
             start_time: std::time::Instant::now(),

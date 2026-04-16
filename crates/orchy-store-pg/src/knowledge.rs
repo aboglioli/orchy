@@ -276,7 +276,9 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     Ok(Knowledge::restore(RestoreKnowledge {
         id: KnowledgeId::from_uuid(id),
         org_id: OrganizationId::new("default").unwrap(),
-        project: project.map(|p| parse_project_id(p, "knowledge_entries", "project")).transpose()?,
+        project: project
+            .map(|p| parse_project_id(p, "knowledge_entries", "project"))
+            .transpose()?,
         namespace: parse_namespace(namespace, "knowledge_entries", "namespace")?,
         path,
         kind,

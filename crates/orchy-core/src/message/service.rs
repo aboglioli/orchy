@@ -31,8 +31,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
     ) -> Result<Vec<Message>> {
         let targets = match &to {
             MessageTarget::Agent(_) => {
-                let mut msg =
-                    Message::new(org_id, project, namespace, from, to, body, reply_to);
+                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to);
                 self.message_store.save(&mut msg).await?;
                 return Ok(vec![msg]);
             }

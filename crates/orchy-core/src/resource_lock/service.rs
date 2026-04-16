@@ -24,7 +24,11 @@ impl<S: LockStore> LockService<S> {
         holder: AgentId,
         ttl_secs: u64,
     ) -> Result<ResourceLock> {
-        if let Some(existing) = self.store.find(&org_id, &project, &namespace, &name).await? {
+        if let Some(existing) = self
+            .store
+            .find(&org_id, &project, &namespace, &name)
+            .await?
+        {
             if !existing.is_expired() && !existing.is_held_by(&holder) {
                 return Err(Error::Conflict(format!(
                     "resource '{}' is locked by agent {}",
@@ -32,7 +36,9 @@ impl<S: LockStore> LockService<S> {
                     existing.holder()
                 )));
             }
-            self.store.delete(&org_id, &project, &namespace, &name).await?;
+            self.store
+                .delete(&org_id, &project, &namespace, &name)
+                .await?;
         }
 
         let mut lock = ResourceLock::acquire(org_id, project, namespace, name, holder, ttl_secs)?;

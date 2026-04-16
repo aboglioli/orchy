@@ -13,7 +13,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
-    OrchyHandler, parse_agent_id, parse_message_id, parse_namespace, parse_project,
+    OrchyHandler, default_org, parse_agent_id, parse_message_id, parse_namespace, parse_project,
     parse_review_id, parse_task_id, to_json,
 };
 use super::params::*;
@@ -66,17 +66,15 @@ impl OrchyHandler {
             _ => Namespace::root(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let org_id = match params.organization.as_deref() {
+            Some(s) if !s.is_empty() => OrganizationId::new(s).map_err(|e| e.to_string())?,
+            _ => default_org(),
+        };
 
         if let Some(ref id_str) = params.agent_id {
             let agent_id = parse_agent_id(id_str)?;
-            let _ = NamespaceStore::register(
-                &*self.container.store,
-                &default_org,
-                &project,
-                &namespace,
-            )
-            .await;
+            let _ = NamespaceStore::register(&*self.container.store, &org_id, &project, &namespace)
+                .await;
 
             let mut agent = self
                 .container
@@ -99,13 +97,12 @@ impl OrchyHandler {
                     .map_err(|e| e.to_string())?;
             }
 
-            self.set_session(agent.id(), project, namespace);
+            self.set_session(agent.id(), org_id, project, namespace);
             return Ok(to_json(&agent));
         }
 
         let _ =
-            NamespaceStore::register(&*self.container.store, &default_org, &project, &namespace)
-                .await;
+            NamespaceStore::register(&*self.container.store, &org_id, &project, &namespace).await;
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
@@ -125,7 +122,7 @@ impl OrchyHandler {
         };
 
         let cmd = RegisterAgent {
-            org_id: default_org,
+            org_id: org_id.clone(),
             project: project.clone(),
             namespace: namespace.clone(),
             roles,
@@ -141,7 +138,7 @@ impl OrchyHandler {
 
         match self.container.agent_service.register(cmd).await {
             Ok(agent) => {
-                self.set_session(agent.id(), project, namespace);
+                self.set_session(agent.id(), org_id, project, namespace);
                 Ok(to_json(&agent))
             }
             Err(e) => Err(e.to_string()),
@@ -185,7 +182,7 @@ impl OrchyHandler {
                 .ok_or("pass project or register first")?,
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self.container.agent_service.list(&default_org).await {
             Ok(agents) => {
                 let filtered: Vec<_> = agents
@@ -206,7 +203,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ChangeRolesParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         match self
             .container
@@ -227,7 +224,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SetAliasParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let alias = params
             .alias
@@ -248,7 +245,7 @@ impl OrchyHandler {
 
     #[tool(description = "Send a heartbeat for the session agent to signal liveness.")]
     async fn heartbeat(&self) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         match self.container.agent_service.heartbeat(&agent_id).await {
             Ok(()) => Ok("ok".to_string()),
@@ -261,7 +258,7 @@ impl OrchyHandler {
         Call this when your session is ending."
     )]
     async fn disconnect(&self) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         if let Err(e) = self
             .container
@@ -307,7 +304,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveAgentParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let namespace = self
             .build_and_register_namespace(Some(&params.namespace))
@@ -333,7 +330,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PostTaskParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session()?;
 
         let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
@@ -360,9 +357,8 @@ impl OrchyHandler {
         };
 
         let is_blocked = !depends_on.is_empty();
-        let default_org = OrganizationId::new("default").unwrap();
         let task = match Task::new(
-            default_org,
+            org,
             project,
             namespace,
             parent_id,
@@ -393,7 +389,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetNextTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
@@ -504,7 +500,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ClaimTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
 
@@ -535,7 +531,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<StartTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
 
@@ -698,7 +694,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SendMessageParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, _) = self.require_session()?;
+        let (agent_id, _, project, _) = self.require_session()?;
 
         let target = match MessageTarget::parse(&params.to) {
             Ok(t) => t,
@@ -725,7 +721,7 @@ impl OrchyHandler {
             None => None,
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .message_service
@@ -753,14 +749,14 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckMailboxParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, session_ns) = self.require_session()?;
+        let (agent_id, _, project, session_ns) = self.require_session()?;
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
             None => session_ns,
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .message_service
@@ -777,14 +773,14 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckSentMessagesParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, session_ns) = self.require_session()?;
+        let (agent_id, _, project, session_ns) = self.require_session()?;
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
             None => session_ns,
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .message_service
@@ -1023,7 +1019,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DelegateTaskParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session()?;
 
         let parent_id = parse_task_id(&params.task_id)?;
         let parent = self
@@ -1041,9 +1037,8 @@ impl OrchyHandler {
             None => parent.priority(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
         let task = match Task::new(
-            default_org,
+            org,
             project,
             parent.namespace().clone(),
             Some(parent_id),
@@ -1126,7 +1121,7 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let project = self
             .container
             .project_service
@@ -1239,7 +1234,7 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let project = self
             .container
             .project_service
@@ -1261,7 +1256,6 @@ impl OrchyHandler {
             .description
             .unwrap_or_else(|| project.description().to_string());
 
-        let default_org = OrganizationId::new("default").unwrap();
         match self
             .container
             .project_service
@@ -1282,7 +1276,7 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .project_service
@@ -1306,7 +1300,7 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match NamespaceStore::list(&*self.container.store, &default_org, &project).await {
             Ok(namespaces) => Ok(to_json(&namespaces)),
             Err(e) => Err(e.to_string()),
@@ -1412,14 +1406,14 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<LockResourceParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, _) = self.require_session()?;
+        let (agent_id, _, project, _) = self.require_session()?;
 
         let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
             .await?;
 
         let ttl = params.ttl_secs.unwrap_or(300);
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
 
         match self
             .container
@@ -1437,11 +1431,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnlockResourceParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, _) = self.require_session()?;
+        let (agent_id, _, project, _) = self.require_session()?;
 
         let namespace = self.build_namespace(params.namespace.as_deref())?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .lock_service
@@ -1458,11 +1452,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckLockParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
+        let (_, _, project, _) = self.require_session()?;
 
         let namespace = self.build_namespace(params.namespace.as_deref())?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .lock_service
@@ -1544,10 +1538,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WatchTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, namespace) = self.require_session()?;
+        let (agent_id, _, project, namespace) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .task_service
@@ -1564,7 +1558,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnwatchTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         match self
@@ -1586,7 +1580,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RequestReviewParams>,
     ) -> Result<String, String> {
-        let (agent_id, project, namespace) = self.require_session()?;
+        let (agent_id, _, project, namespace) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
         let reviewer = match params.reviewer_agent.as_deref() {
@@ -1594,7 +1588,7 @@ impl OrchyHandler {
             None => None,
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .task_service
@@ -1619,7 +1613,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ResolveReviewParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let review_id = parse_review_id(&params.review_id)?;
 
@@ -1676,7 +1670,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PollUpdatesParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
+        let (_, _, project, _) = self.require_session()?;
 
         let since = match params.since.as_deref() {
             Some(s) => chrono::DateTime::parse_from_rfc3339(s)
@@ -1739,7 +1733,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WriteKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session()?;
 
         let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
@@ -1751,7 +1745,7 @@ impl OrchyHandler {
         let metadata_remove = params.metadata_remove.unwrap_or_default();
 
         let cmd = WriteKnowledge {
-            org_id: OrganizationId::new("default").unwrap(),
+            org_id: org,
             project: Some(project),
             namespace,
             path: params.path,
@@ -1789,7 +1783,7 @@ impl OrchyHandler {
         let set = optional_knowledge_metadata(params.metadata, "metadata")?.unwrap_or_default();
         let remove = params.metadata_remove.unwrap_or_default();
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .knowledge_service
@@ -1821,7 +1815,7 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .knowledge_service
@@ -1883,7 +1877,7 @@ impl OrchyHandler {
 
         let limit = params.limit.unwrap_or(10) as usize;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let mut entries = match self
             .container
             .knowledge_service
@@ -1911,7 +1905,7 @@ impl OrchyHandler {
 
         let namespace = self.build_namespace(params.namespace.as_deref())?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let entry = self
             .container
             .knowledge_service
@@ -1931,7 +1925,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AppendKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
+        let (_, _, project, _) = self.require_session()?;
 
         let namespace = self
             .build_and_register_namespace(params.namespace.as_deref())
@@ -1944,7 +1938,7 @@ impl OrchyHandler {
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
         let meta_remove = params.metadata_remove;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .knowledge_service
@@ -1979,7 +1973,7 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let entry = self
             .container
             .knowledge_service
@@ -2018,7 +2012,7 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let entry = self
             .container
             .knowledge_service
@@ -2061,7 +2055,7 @@ impl OrchyHandler {
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
         let meta_remove = params.metadata_remove;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         match self
             .container
             .knowledge_service
@@ -2094,7 +2088,7 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let entry = self
             .container
             .knowledge_service
@@ -2129,7 +2123,7 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let entry = self
             .container
             .knowledge_service
@@ -2157,7 +2151,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ImportKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session()?;
 
         let source_project = parse_project(&params.source_project)?;
 
@@ -2166,7 +2160,7 @@ impl OrchyHandler {
             None => Namespace::root(),
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let source_entry = self
             .container
             .knowledge_service
@@ -2193,7 +2187,7 @@ impl OrchyHandler {
         }
 
         let cmd = WriteKnowledge {
-            org_id: OrganizationId::new("default").unwrap(),
+            org_id: org,
             project: Some(project),
             namespace,
             path: source_entry.path().to_string(),
@@ -2304,7 +2298,7 @@ impl ServerHandler for OrchyHandler {
             }
         };
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let skills = self
             .container
             .knowledge_service
@@ -2340,7 +2334,7 @@ impl ServerHandler for OrchyHandler {
             .get_session_namespace()
             .ok_or_else(|| ErrorData::internal_error("no session namespace", None))?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let default_org = default_org();
         let skills = self
             .container
             .knowledge_service

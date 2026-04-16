@@ -3,7 +3,9 @@ use rusqlite::OptionalExtension;
 use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::organization::{ApiKey, ApiKeyId, Organization, OrganizationId, OrganizationStore, RestoreOrganization};
+use orchy_core::organization::{
+    ApiKey, ApiKeyId, Organization, OrganizationId, OrganizationStore, RestoreOrganization,
+};
 
 use crate::SqliteBackend;
 
@@ -78,7 +80,13 @@ impl OrganizationStore for SqliteBackend {
         };
 
         let api_keys = load_api_keys(&conn, &id_str)?;
-        Ok(Some(build_org(id_str, name, api_keys, created_at_str, updated_at_str)?))
+        Ok(Some(build_org(
+            id_str,
+            name,
+            api_keys,
+            created_at_str,
+            updated_at_str,
+        )?))
     }
 
     async fn find_by_api_key(&self, key: &str) -> Result<Option<Organization>> {
@@ -108,14 +116,22 @@ impl OrganizationStore for SqliteBackend {
         };
 
         let api_keys = load_api_keys(&conn, &id_str)?;
-        Ok(Some(build_org(id_str, name, api_keys, created_at_str, updated_at_str)?))
+        Ok(Some(build_org(
+            id_str,
+            name,
+            api_keys,
+            created_at_str,
+            updated_at_str,
+        )?))
     }
 
     async fn list(&self) -> Result<Vec<Organization>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut stmt = conn
-            .prepare("SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at")
+            .prepare(
+                "SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at",
+            )
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let rows: Vec<(String, String, String, String)> = stmt
@@ -166,14 +182,26 @@ fn load_api_keys(conn: &rusqlite::Connection, org_id: &str) -> Result<Vec<ApiKey
             let created_at = DateTime::parse_from_rfc3339(&created_at_str)
                 .map(|dt| dt.with_timezone(&Utc))
                 .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
-            Ok(build_api_key(ApiKeyId::from_uuid(uuid), name, key, is_active != 0, created_at))
+            Ok(build_api_key(
+                ApiKeyId::from_uuid(uuid),
+                name,
+                key,
+                is_active != 0,
+                created_at,
+            ))
         })
         .collect::<Result<Vec<_>>>()?;
 
     Ok(keys)
 }
 
-fn build_api_key(id: ApiKeyId, name: String, key: String, is_active: bool, created_at: DateTime<Utc>) -> ApiKey {
+fn build_api_key(
+    id: ApiKeyId,
+    name: String,
+    key: String,
+    is_active: bool,
+    created_at: DateTime<Utc>,
+) -> ApiKey {
     use serde_json::json;
     serde_json::from_value(json!({
         "id": id,

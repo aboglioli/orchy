@@ -78,8 +78,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "/bootstrap/{namespace}",
             axum::routing::get(bootstrap_handler),
         )
-        .route("/api/agents", axum::routing::get(api::list_agents))
-        .route("/api/pending", axum::routing::get(api::pending_work))
+        .nest("/api", api::router())
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&bootstrap_container),
             heartbeat_middleware,

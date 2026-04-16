@@ -58,7 +58,12 @@ impl AgentStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_alias(&self, _org: &OrganizationId, project: &ProjectId, alias: &Alias) -> Result<Option<Agent>> {
+    async fn find_by_alias(
+        &self,
+        _org: &OrganizationId,
+        project: &ProjectId,
+        alias: &Alias,
+    ) -> Result<Option<Agent>> {
         let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE project = $1 AND alias = $2");
         let row = sqlx::query(&sql)
             .bind(project.to_string())

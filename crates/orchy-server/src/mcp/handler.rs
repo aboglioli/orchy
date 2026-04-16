@@ -10,6 +10,7 @@ use crate::container::Container;
 
 struct SessionState {
     agent_id: AgentId,
+    org: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
 }
@@ -56,23 +57,37 @@ impl OrchyHandler {
             .map(|s| s.namespace.clone())
     }
 
-    pub(crate) fn require_session(&self) -> Result<(AgentId, ProjectId, Namespace), String> {
+    pub(crate) fn require_session(
+        &self,
+    ) -> Result<(AgentId, OrganizationId, ProjectId, Namespace), String> {
         let guard = self
             .session
             .read()
             .map_err(|_| "session lock poisoned".to_string())?;
         match guard.as_ref() {
-            Some(s) => Ok((s.agent_id, s.project.clone(), s.namespace.clone())),
+            Some(s) => Ok((
+                s.agent_id,
+                s.org.clone(),
+                s.project.clone(),
+                s.namespace.clone(),
+            )),
             None => {
                 Err("no agent registered for this session; call register_agent first".to_string())
             }
         }
     }
 
-    pub(crate) fn set_session(&self, agent_id: AgentId, project: ProjectId, namespace: Namespace) {
+    pub(crate) fn set_session(
+        &self,
+        agent_id: AgentId,
+        org: OrganizationId,
+        project: ProjectId,
+        namespace: Namespace,
+    ) {
         if let Ok(mut guard) = self.session.write() {
             *guard = Some(SessionState {
                 agent_id,
+                org,
                 project,
                 namespace,
             });
@@ -126,11 +141,15 @@ impl OrchyHandler {
         scope: Option<&str>,
     ) -> Result<Namespace, String> {
         let ns = self.build_namespace(scope)?;
-        if let Some(project) = self.get_session_project() {
+        if let (Some(project), Some(org)) = (
+            self.get_session_project(),
+            self.session
+                .read()
+                .ok()
+                .and_then(|g| g.as_ref().map(|s| s.org.clone())),
+        ) {
             use orchy_core::namespace::NamespaceStore;
-            let default_org = OrganizationId::new("default").unwrap();
-            let _ =
-                NamespaceStore::register(&*self.container.store, &default_org, &project, &ns).await;
+            let _ = NamespaceStore::register(&*self.container.store, &org, &project, &ns).await;
         }
         Ok(ns)
     }
@@ -146,11 +165,16 @@ impl OrchyHandler {
 
         let alias = orchy_core::agent::Alias::new(s).map_err(|e| e.to_string())?;
 
-        let default_org = OrganizationId::new("default").unwrap();
+        let org = self
+            .session
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|s| s.org.clone()))
+            .unwrap_or_else(default_org);
         match self
             .container
             .agent_service
-            .find_by_alias(&default_org, &project, &alias)
+            .find_by_alias(&org, &project, &alias)
             .await
         {
             Ok(Some(agent)) => Ok(agent.id()),
@@ -170,6 +194,10 @@ impl OrchyHandler {
             None => Ok(None),
         }
     }
+}
+
+pub(crate) fn default_org() -> OrganizationId {
+    OrganizationId::new("default").unwrap()
 }
 
 pub(crate) fn parse_project(s: &str) -> Result<ProjectId, String> {

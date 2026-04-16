@@ -5,6 +5,7 @@ use serde::Deserialize;
 pub struct RegisterAgentParams {
     pub project: String,
     pub namespace: Option<String>,
+    pub organization: Option<String>,
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
     pub description: Option<String>,

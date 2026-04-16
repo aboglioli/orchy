@@ -5,7 +5,12 @@ use orchy_core::organization::OrganizationId;
 use crate::SqliteBackend;
 
 impl NamespaceStore for SqliteBackend {
-    async fn register(&self, _org: &OrganizationId, project: &ProjectId, namespace: &Namespace) -> Result<()> {
+    async fn register(
+        &self,
+        _org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR IGNORE INTO namespaces (project, namespace, created_at) VALUES (?1, ?2, ?3)",

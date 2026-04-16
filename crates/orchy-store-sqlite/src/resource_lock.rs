@@ -64,7 +64,13 @@ impl LockStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn delete(&self, _org: &OrganizationId, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+    async fn delete(
+        &self,
+        _org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "DELETE FROM resource_locks WHERE project = ?1 AND namespace = ?2 AND name = ?3",

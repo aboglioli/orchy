@@ -86,7 +86,11 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         let tasks = self.sorted_pending_for_roles(roles, namespace).await?;
         let mut deps_met = Vec::new();
         for t in tasks {
-            if self.all_deps_completed(t.depends_on()).await.unwrap_or(false) {
+            if self
+                .all_deps_completed(t.depends_on())
+                .await
+                .unwrap_or(false)
+            {
                 deps_met.push(t);
             }
         }
@@ -763,7 +767,10 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         ReviewStore::find_by_task(&*self.store, task_id).await
     }
 
-    pub async fn pending_reviews_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
+    pub async fn pending_reviews_for_agent(
+        &self,
+        agent_id: &AgentId,
+    ) -> Result<Vec<ReviewRequest>> {
         ReviewStore::find_pending_for_agent(&*self.store, agent_id).await
     }
 

@@ -43,9 +43,7 @@ impl AgentStore for MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(agents
             .values()
-            .find(|a| {
-                a.org_id() == org && a.project() == project && a.alias() == Some(alias)
-            })
+            .find(|a| a.org_id() == org && a.project() == project && a.alias() == Some(alias))
             .cloned())
     }
 
@@ -54,7 +52,11 @@ impl AgentStore for MemoryBackend {
             .agents
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(agents.values().filter(|a| a.org_id() == org).cloned().collect())
+        Ok(agents
+            .values()
+            .filter(|a| a.org_id() == org)
+            .cloned()
+            .collect())
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
