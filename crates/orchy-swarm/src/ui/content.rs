@@ -73,7 +73,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
         if scroll > 0 {
             use ratatui::style::Color;
-            let hint = format!(" ↑ scrolled ({scroll} rows) — Shift+PgDn to return ");
+            let hint = format!(" ↑ scrolled ({scroll} rows) — F8 to scroll down, F7 to scroll up ");
             let hint_line = Line::from(Span::styled(
                 hint,
                 Style::default().fg(Color::Black).bg(Color::Yellow),

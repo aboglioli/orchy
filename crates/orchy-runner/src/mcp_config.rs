@@ -2,7 +2,7 @@ use std::path::Path;
 
 /// Agents that read `.mcp.json` from the working directory.
 pub fn supports_mcp_json(agent_type: &str) -> bool {
-    matches!(agent_type, "claude" | "cursor")
+    matches!(agent_type, "claude")
 }
 
 /// Write/merge the orchy server entry into `.mcp.json` in `dir` using raw JSON

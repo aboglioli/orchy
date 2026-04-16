@@ -47,7 +47,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     }
 
     spans.push(Span::styled(
-        "  [F2] new  [F4] close  [Alt+←→] switch",
+        "  [F2] new  [F4] close  [F7/F8] scroll  [Alt+←→] switch",
         Style::default().fg(Color::DarkGray),
     ));
 

@@ -75,15 +75,15 @@ impl AgentTab {
             .unwrap_or(0)
     }
 
-    /// Rebuild scroll cache when offset or raw buf content changed.
-    /// Call this before rendering whenever scroll_offset > 0.
+    /// Rebuild scroll cache when needed. Cache is reused for smaller offsets;
+    /// only rebuilt when scroll_offset exceeds cached capacity or new data arrives.
     pub fn maybe_rebuild_scroll(&mut self, rows: u16, cols: u16) {
         if self.scroll_offset == 0 {
             self.scroll_cache = None;
             return;
         }
         let stale = self.scroll_cache.as_ref().map_or(true, |c| {
-            c.offset != self.scroll_offset || c.buf_len != self.raw_buf.len()
+            c.offset < self.scroll_offset || c.buf_len != self.raw_buf.len()
         });
         if !stale {
             return;

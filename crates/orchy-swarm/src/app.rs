@@ -175,7 +175,7 @@ impl App {
                     self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
                 }
             }
-            (KeyModifiers::SHIFT, KeyCode::PageUp) => {
+            (_, KeyCode::F(7)) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
                     let pty_rows = rows.saturating_sub(4).max(10);
@@ -185,7 +185,7 @@ impl App {
                     tab.scroll_offset = tab.scroll_offset.min(max);
                 }
             }
-            (KeyModifiers::SHIFT, KeyCode::PageDown) => {
+            (_, KeyCode::F(8)) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.scroll_offset = tab.scroll_offset.saturating_sub(10);
                 }

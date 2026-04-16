@@ -53,6 +53,12 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RegisterAgentParams>,
     ) -> Result<String, String> {
+        if params.project.is_empty() {
+            return Err(
+                "project is required: call register_agent with project=\"<name>\" and description=\"<what this agent does>\""
+                    .to_string(),
+            );
+        }
         let project = parse_project(&params.project)?;
 
         let namespace = match params.namespace.as_deref() {

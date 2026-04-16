@@ -7,6 +7,7 @@ pub struct RegisterAgentParams {
     pub namespace: Option<String>,
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
+    #[serde(default)]
     pub description: String,
     /// Short human-readable name for the agent (e.g. "backend-coder").
     pub alias: Option<String>,
