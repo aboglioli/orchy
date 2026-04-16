@@ -186,13 +186,6 @@ impl AgentDriver {
 
             if currently_idle && !last_was_idle {
                 idle_since = Some(Instant::now());
-                if !self.bootstrap_staged {
-                    self.bootstrap_staged = true;
-                    let prompt = build_bootstrap_prompt(&self.config);
-                    let mut w = self.writer.lock().await;
-                    let _ = w.write_all(prompt.as_bytes()).await;
-                    let _ = w.flush().await;
-                }
             } else if !currently_idle && last_was_idle {
                 idle_since = None;
             }
@@ -200,6 +193,13 @@ impl AgentDriver {
 
             if let Some(since) = idle_since {
                 let elapsed = since.elapsed();
+                if !self.bootstrap_staged && elapsed > Duration::from_secs(1) {
+                    self.bootstrap_staged = true;
+                    let prompt = build_bootstrap_prompt(&self.config);
+                    let mut w = self.writer.lock().await;
+                    let _ = w.write_all(prompt.as_bytes()).await;
+                    let _ = w.flush().await;
+                }
                 if elapsed > self.config.idle_wake {
                     if let Some(prompt) = fetch_work_prompt(
                         &self.config.url,
