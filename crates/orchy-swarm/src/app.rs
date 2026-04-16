@@ -236,7 +236,7 @@ impl App {
             project: self.project.clone(),
             namespace: None,
             command: agent_type_opt.command.to_string(),
-            args: Vec::new(),
+            args: skip_permissions_args(agent_type_opt.agent_type),
             env,
             working_dir: None,
             pty_rows,
@@ -288,6 +288,14 @@ impl App {
         if self.active_tab >= self.tabs.len() && !self.tabs.is_empty() {
             self.active_tab = self.tabs.len() - 1;
         }
+    }
+}
+
+fn skip_permissions_args(agent_type: &str) -> Vec<String> {
+    match agent_type {
+        "claude" => vec!["--dangerously-skip-permissions".to_string()],
+        "gemini" | "cursor" => vec!["--yolo".to_string()],
+        _ => vec![],
     }
 }
 
