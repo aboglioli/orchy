@@ -72,36 +72,28 @@ impl App {
             match key.code {
                 KeyCode::Esc => self.modal = None,
                 KeyCode::Enter => {
-                    let selected = modal.agent_types[modal.selected].clone();
-                    if !selected.installed {
-                        return Ok(());
-                    }
-                    let alias = if modal.alias_input.is_empty() {
-                        selected.agent_type.to_string()
-                    } else {
-                        modal.alias_input.clone()
-                    };
-                    self.modal = None;
-                    self.launch_agent(alias, selected, ev_tx).await?;
-                }
-                KeyCode::Tab => {
-                    modal.alias_focused = !modal.alias_focused;
-                }
-                KeyCode::Up => {
-                    if !modal.alias_focused && modal.selected > 0 {
-                        modal.selected -= 1;
+                    if let Some(selected) = modal.selected_agent() {
+                        if selected.installed {
+                            let selected = selected.clone();
+                            let alias = selected.agent_type.to_string();
+                            self.modal = None;
+                            self.launch_agent(alias, selected, ev_tx).await?;
+                        }
                     }
                 }
-                KeyCode::Down => {
-                    if !modal.alias_focused && modal.selected + 1 < modal.agent_types.len() {
-                        modal.selected += 1;
+                KeyCode::Up => modal.move_up(),
+                KeyCode::Down => modal.move_down(),
+                KeyCode::Char(c) => {
+                    modal.filter.push(c);
+                    // keep selection valid after filter change
+                    if modal.selected_agent().is_none() {
+                        if let Some((i, _)) = modal.visible().first() {
+                            modal.selected = *i;
+                        }
                     }
                 }
-                KeyCode::Char(c) if modal.alias_focused => {
-                    modal.alias_input.push(c);
-                }
-                KeyCode::Backspace if modal.alias_focused => {
-                    modal.alias_input.pop();
+                KeyCode::Backspace => {
+                    modal.filter.pop();
                 }
                 _ => {}
             }

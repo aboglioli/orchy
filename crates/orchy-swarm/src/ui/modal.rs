@@ -23,8 +23,7 @@ impl Clone for AgentTypeOption {
 }
 
 pub struct ModalState {
-    pub alias_input: String,
-    pub alias_focused: bool,
+    pub filter: String,
     pub agent_types: Vec<AgentTypeOption>,
     pub selected: usize,
 }
@@ -34,11 +33,57 @@ impl ModalState {
         let agent_types = detect_installed_agents();
         let selected = agent_types.iter().position(|a| a.installed).unwrap_or(0);
         Self {
-            alias_input: String::new(),
-            alias_focused: true,
+            filter: String::new(),
             agent_types,
             selected,
         }
+    }
+
+    pub fn visible(&self) -> Vec<(usize, &AgentTypeOption)> {
+        let f = self.filter.to_lowercase();
+        self.agent_types
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| f.is_empty() || a.name.to_lowercase().contains(&f))
+            .collect()
+    }
+
+    pub fn selected_visible_idx(&self) -> usize {
+        let visible = self.visible();
+        visible
+            .iter()
+            .position(|(i, _)| *i == self.selected)
+            .unwrap_or(0)
+    }
+
+    pub fn move_up(&mut self) {
+        let visible = self.visible();
+        if visible.is_empty() {
+            return;
+        }
+        let cur = self.selected_visible_idx();
+        if cur > 0 {
+            self.selected = visible[cur - 1].0;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        let visible = self.visible();
+        if visible.is_empty() {
+            return;
+        }
+        let cur = self.selected_visible_idx();
+        if cur + 1 < visible.len() {
+            self.selected = visible[cur + 1].0;
+        }
+    }
+
+    pub fn selected_agent(&self) -> Option<&AgentTypeOption> {
+        let visible = self.visible();
+        visible
+            .iter()
+            .find(|(i, _)| *i == self.selected)
+            .map(|(_, a)| *a)
     }
 }
 
@@ -54,12 +99,7 @@ fn detect_installed_agents() -> Vec<AgentTypeOption> {
         .iter()
         .map(|(name, agent_type, command)| {
             let installed = which_installed(command);
-            AgentTypeOption {
-                name,
-                agent_type,
-                command,
-                installed,
-            }
+            AgentTypeOption { name, agent_type, command, installed }
         })
         .collect()
 }
@@ -73,8 +113,9 @@ fn which_installed(cmd: &str) -> bool {
 }
 
 pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
+    let visible = modal.visible();
     let modal_width = 52u16;
-    let modal_height = (modal.agent_types.len() as u16) + 8;
+    let modal_height = (visible.len() as u16).max(1) + 7;
 
     let x = area.x + area.width.saturating_sub(modal_width) / 2;
     let y = area.y + area.height.saturating_sub(modal_height) / 2;
@@ -103,78 +144,59 @@ pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
             Constraint::Length(1),
             Constraint::Min(0),
             Constraint::Length(1),
-            Constraint::Length(1),
         ])
         .split(inner);
 
-    let alias_style = if modal.alias_focused {
-        Style::default().fg(Color::White).bg(Color::DarkGray)
-    } else {
-        Style::default().fg(Color::Gray)
-    };
-    let alias_display = if modal.alias_input.is_empty() && modal.alias_focused {
-        format!("[{:<30}]", "type alias then Tab to list...")
-    } else {
-        format!("[{:<30}]", &modal.alias_input)
-    };
-    let alias_line = Line::from(vec![
-        Span::raw("  Alias  "),
-        Span::styled(alias_display, alias_style),
+    let filter_line = Line::from(vec![
+        Span::styled("  Filter  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("[{:<30}]", &modal.filter),
+            Style::default().fg(Color::White).bg(Color::DarkGray),
+        ),
     ]);
-    f.render_widget(Paragraph::new(alias_line), chunks[1]);
+    f.render_widget(Paragraph::new(filter_line), chunks[1]);
 
     let list_area = chunks[3];
-    let list_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(
-            modal
-                .agent_types
-                .iter()
-                .map(|_| Constraint::Length(1))
-                .collect::<Vec<_>>(),
-        )
-        .split(list_area);
+    if visible.is_empty() {
+        f.render_widget(
+            Paragraph::new("  no matches").style(Style::default().fg(Color::DarkGray)),
+            list_area,
+        );
+    } else {
+        let list_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(visible.iter().map(|_| Constraint::Length(1)).collect::<Vec<_>>())
+            .split(list_area);
 
-    for (i, (agent, &chunk)) in modal
-        .agent_types
-        .iter()
-        .zip(list_chunks.iter())
-        .enumerate()
-    {
-        let is_selected = i == modal.selected;
-        let prefix = if is_selected { "  ❯ " } else { "    " };
+        for ((orig_idx, agent), &chunk) in visible.iter().zip(list_chunks.iter()) {
+            let is_selected = *orig_idx == modal.selected;
+            let prefix = if is_selected { "  ❯ " } else { "    " };
 
-        let name_style = if agent.installed {
-            if is_selected {
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD)
+            let name_style = if agent.installed {
+                if is_selected {
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Gray)
+                }
             } else {
-                Style::default().fg(Color::Gray)
-            }
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+                Style::default().fg(Color::DarkGray)
+            };
 
-        let status_text = if agent.installed {
-            "✓ installed"
-        } else {
-            "✗ not found"
-        };
-        let status_style = if agent.installed {
-            Style::default().fg(Color::Green)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
+            let (status_text, status_style) = if agent.installed {
+                ("✓ installed", Style::default().fg(Color::Green))
+            } else {
+                ("✗ not found", Style::default().fg(Color::DarkGray))
+            };
 
-        let line = Line::from(vec![
-            Span::styled(format!("{}{:<20}", prefix, agent.name), name_style),
-            Span::styled(status_text, status_style),
-        ]);
-        f.render_widget(Paragraph::new(line), chunk);
+            let line = Line::from(vec![
+                Span::styled(format!("{}{:<20}", prefix, agent.name), name_style),
+                Span::styled(status_text, status_style),
+            ]);
+            f.render_widget(Paragraph::new(line), chunk);
+        }
     }
 
-    let hint = Paragraph::new("  Tab alias/list  ↑↓ select  Enter launch  Esc cancel  F2 new  F4 close")
+    let hint = Paragraph::new("  type to filter  ↑↓ select  Enter launch  Esc cancel")
         .style(Style::default().fg(Color::DarkGray));
-    f.render_widget(hint, chunks[5]);
+    f.render_widget(hint, chunks[4]);
 }
