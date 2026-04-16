@@ -187,18 +187,14 @@ impl App {
                     tab.send_input(b"\r".to_vec());
                 }
             }
-            (_, KeyCode::F(7))
-            | (KeyModifiers::SHIFT, KeyCode::PageUp)
-            | (KeyModifiers::CONTROL, KeyCode::PageUp) => {
+            (_, KeyCode::F(7)) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
                     let pty_rows = rows.saturating_sub(4).max(10);
                     tab.scroll_up(pty_rows, cols);
                 }
             }
-            (_, KeyCode::F(8))
-            | (KeyModifiers::SHIFT, KeyCode::PageDown)
-            | (KeyModifiers::CONTROL, KeyCode::PageDown) => {
+            (_, KeyCode::F(8)) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.scroll_down();
                 }
@@ -344,6 +340,24 @@ fn build_bootstrap_prompt(
     )
 }
 
+// CSI modifier number: 1=none, 2=shift, 3=alt, 4=shift+alt, 5=ctrl, 6=shift+ctrl
+fn csi_modifier(mods: KeyModifiers) -> u8 {
+    let s = u8::from(mods.contains(KeyModifiers::SHIFT));
+    let a = u8::from(mods.contains(KeyModifiers::ALT)) * 2;
+    let c = u8::from(mods.contains(KeyModifiers::CONTROL)) * 4;
+    1 + s + a + c
+}
+
+// \x1b[N~ with optional modifier: \x1b[N;M~ when M != 1
+fn csi_tilde_with_mods(n: u8, mods: KeyModifiers) -> Vec<u8> {
+    let m = csi_modifier(mods);
+    if m == 1 {
+        vec![0x1b, b'[', b'0' + n, b'~']
+    } else {
+        vec![0x1b, b'[', b'0' + n, b';', b'0' + m, b'~']
+    }
+}
+
 fn key_event_to_bytes(key: KeyEvent) -> Vec<u8> {
     match key.code {
         KeyCode::Char(c) => {
@@ -368,8 +382,8 @@ fn key_event_to_bytes(key: KeyEvent) -> Vec<u8> {
         KeyCode::Left => vec![0x1b, b'[', b'D'],
         KeyCode::Home => vec![0x1b, b'[', b'H'],
         KeyCode::End => vec![0x1b, b'[', b'F'],
-        KeyCode::PageUp => vec![0x1b, b'[', b'5', b'~'],
-        KeyCode::PageDown => vec![0x1b, b'[', b'6', b'~'],
+        KeyCode::PageUp => csi_tilde_with_mods(5, key.modifiers),
+        KeyCode::PageDown => csi_tilde_with_mods(6, key.modifiers),
         KeyCode::Tab => vec![b'\t'],
         KeyCode::Esc => vec![0x1b],
         KeyCode::F(n) => match n {

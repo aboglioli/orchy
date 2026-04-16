@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use orchy_core::task::ReviewStore;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -9,7 +10,7 @@ use orchy_core::agent::AgentStatus;
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::task::{TaskFilter, TaskStatus};
+use orchy_core::task::{TaskStatus, TaskStore};
 
 use crate::container::Container;
 
@@ -69,8 +70,30 @@ pub struct PendingWorkQuery {
 
 #[derive(Serialize)]
 pub struct PendingWorkDto {
-    pub has_messages: bool,
-    pub has_tasks: bool,
+    pub messages: Vec<PendingMessageDto>,
+    pub tasks: Vec<PendingTaskDto>,
+    pub reviews: Vec<PendingReviewDto>,
+}
+
+#[derive(Serialize)]
+pub struct PendingMessageDto {
+    pub id: String,
+    pub from: String,
+    pub body: String,
+}
+
+#[derive(Serialize)]
+pub struct PendingTaskDto {
+    pub id: String,
+    pub title: String,
+    pub priority: String,
+    pub assigned_roles: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct PendingReviewDto {
+    pub id: String,
+    pub task_id: String,
 }
 
 pub async fn pending_work(
@@ -84,7 +107,12 @@ pub async fn pending_work(
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
-    let agents = match container.agent_service.list(&org).await {
+    let agents = match container.agent_service.list(&org) {
+        Ok(a) => a,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    let agents = match agents.await {
         Ok(a) => a,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
@@ -94,27 +122,63 @@ pub async fn pending_work(
             && a.status() != AgentStatus::Disconnected
             && a.alias().map(|al| al.to_string()).as_deref() == Some(&params.alias)
     }) else {
-        return Json(PendingWorkDto { has_messages: false, has_tasks: false }).into_response();
+        return Json(PendingWorkDto {
+            messages: Vec::new(),
+            tasks: Vec::new(),
+            reviews: Vec::new(),
+        })
+        .into_response();
     };
 
-    let has_messages = container
+    let messages = container
         .store
         .find_pending(&agent.id(), &org, &project_id, agent.namespace())
         .await
-        .map(|msgs| !msgs.is_empty())
-        .unwrap_or(false);
-
-    let has_tasks = container
-        .task_service
-        .list(TaskFilter {
-            org_id: Some(org),
-            project: Some(project_id),
-            status: Some(TaskStatus::Pending),
-            ..Default::default()
+        .map(|msgs| {
+            msgs.into_iter()
+                .map(|m| PendingMessageDto {
+                    id: m.id().to_string(),
+                    from: m.from().to_string(),
+                    body: m.body().to_string(),
+                })
+                .collect()
         })
-        .await
-        .map(|tasks| !tasks.is_empty())
-        .unwrap_or(false);
+        .unwrap_or_default();
 
-    Json(PendingWorkDto { has_messages, has_tasks }).into_response()
+    let tasks = container
+        .task_service
+        .list_tasks_for_roles(
+            agent.roles(),
+            Some(agent.namespace().clone()),
+        )
+        .await
+        .map(|tasks| {
+            tasks.into_iter().take(5).map(|t| PendingTaskDto {
+                id: t.id().to_string(),
+                title: t.title().to_string(),
+                priority: t.priority().to_string(),
+                assigned_roles: t.assigned_roles().to_vec(),
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let reviews = ReviewStore::find_pending_for_agent(&*container.store, &agent.id())
+        .await
+        .map(|reviews| {
+            reviews
+                .into_iter()
+                .map(|r| PendingReviewDto {
+                    id: r.id().to_string(),
+                    task_id: r.task_id().to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Json(PendingWorkDto {
+        messages,
+        tasks,
+        reviews,
+    })
+    .into_response()
 }

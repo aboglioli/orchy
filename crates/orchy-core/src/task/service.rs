@@ -53,7 +53,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         Ok(task)
     }
 
-    async fn sorted_pending_for_roles(
+    pub async fn sorted_pending_for_roles(
         &self,
         roles: &[String],
         namespace: Option<Namespace>,

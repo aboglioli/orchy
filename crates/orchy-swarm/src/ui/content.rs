@@ -58,17 +58,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
         if scroll > 0 {
             use ratatui::style::Color;
-            let hint = if tab.is_snapshot_mode() {
-                format!(
-                    " ↑ snapshot {}/{} — Shift/Ctrl+PgUp back  Shift/Ctrl+PgDn forward  Esc exit ",
-                    scroll,
-                    tab.snapshot_count(),
-                )
-            } else {
-                format!(
-                    " ↑ scrolled ({scroll} rows) — Shift/Ctrl+PgUp up  Shift/Ctrl+PgDn down  Esc exit "
-                )
-            };
+            let hint = format!(
+                " ↑ scrolled ({scroll} rows) — F7 up  F8 down  Esc exit "
+            );
             let hint_line = Line::from(Span::styled(
                 hint,
                 Style::default().fg(Color::Black).bg(Color::Yellow),
