@@ -175,6 +175,18 @@ impl App {
                     self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
                 }
             }
+            (_, KeyCode::F(9)) => {
+                if let Some(tab) = self.tabs.get(self.active_tab) {
+                    let prompt = build_bootstrap_prompt(
+                        &tab.alias,
+                        &self.orchy_url,
+                        &self.project,
+                        &self.remote_agents,
+                    );
+                    tab.send_input(prompt.into_bytes());
+                    tab.send_input(b"\r".to_vec());
+                }
+            }
             (_, KeyCode::F(7)) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
@@ -277,6 +289,38 @@ impl App {
             self.active_tab = self.tabs.len() - 1;
         }
     }
+}
+
+fn build_bootstrap_prompt(
+    alias: &str,
+    url: &str,
+    project: &str,
+    agents: &[crate::client::AgentDto],
+) -> String {
+    let others: Vec<String> = agents
+        .iter()
+        .filter(|a| a.alias.as_deref() != Some(alias))
+        .filter_map(|a| {
+            let al = a.alias.as_ref()?;
+            Some(match &a.agent_type {
+                Some(t) => format!("{al} ({t})"),
+                None => al.clone(),
+            })
+        })
+        .collect();
+
+    let agents_ctx = if others.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Other active agents in this project: {}. You can reach them with send_message(alias: \"...\", ...).",
+            others.join(", ")
+        )
+    };
+
+    format!(
+        "You are agent '{alias}'.{agents_ctx} Connect to orchy MCP server at {url}. On startup: 1. register_agent(project: \"{project}\", alias: \"{alias}\", description: \"{alias} agent\") — establish your session 2. list_knowledge(kind: \"skill\") — load project conventions 3. check_mailbox — read incoming messages 4. get_next_task — claim your first task Call heartbeat every 30 seconds. Focus on completing tasks."
+    )
 }
 
 fn key_event_to_bytes(key: KeyEvent) -> Vec<u8> {

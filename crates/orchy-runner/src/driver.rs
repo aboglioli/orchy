@@ -150,8 +150,6 @@ impl AgentDriver {
     }
 
     async fn main_loop_inner(&mut self, mut input_rx: UnboundedReceiver<Vec<u8>>) -> Result<()> {
-        self.inject_bootstrap().await?;
-
         let mut last_was_idle = false;
         let mut idle_since: Option<Instant> = None;
 
@@ -192,8 +190,10 @@ impl AgentDriver {
             if let Some(since) = idle_since {
                 let elapsed = since.elapsed();
                 if elapsed > Duration::from_secs(5) && elapsed > self.config.idle_wake {
-                    tracing::info!(alias = %self.config.alias, "idle too long, injecting wake-up");
-                    self.inject("Check your mailbox and get your next task.").await?;
+                    if has_pending_work(&self.config.url, &self.config.project, &self.config.alias).await {
+                        tracing::info!(alias = %self.config.alias, "pending work detected, injecting wake-up");
+                        self.inject("Check your mailbox and get your next task.").await?;
+                    }
                     idle_since = None;
                 }
             }
@@ -213,51 +213,6 @@ impl AgentDriver {
         }
 
         self.shutdown().await
-    }
-
-    async fn inject_bootstrap(&mut self) -> Result<()> {
-        self.wait_for_silence(30).await;
-
-        {
-            let mut w = self.writer.lock().await;
-            let _ = w.write_all(b"\r").await;
-            let _ = w.flush().await;
-        }
-        self.is_idle.store(false, Ordering::Relaxed);
-
-        sleep(Duration::from_millis(500)).await;
-        self.wait_for_silence(20).await;
-
-        let agents_ctx =
-            fetch_agents(&self.config.url, &self.config.project, &self.config.alias).await;
-        let prompt = format!(
-            "You are agent '{alias}'.{agents_ctx}\n\nConnect to orchy MCP server at {url}. On startup:\n1. register_agent(project: \"{project}\", alias: \"{alias}\", description: \"{alias} agent\") — establish your session\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nCall heartbeat every 30 seconds. Focus on completing tasks.",
-            alias = self.config.alias,
-            agents_ctx = agents_ctx,
-            url = self.config.url,
-            project = self.config.project,
-        );
-
-        tracing::info!(alias = %self.config.alias, "injecting bootstrap prompt");
-        self.inject(&prompt).await
-    }
-
-    async fn wait_for_silence(&self, timeout_secs: u64) {
-        let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-        loop {
-            if self.is_idle.load(Ordering::Relaxed) {
-                break;
-            }
-            let last_ms = self.last_output_ms.load(Ordering::Relaxed);
-            if last_ms > 0 && now_ms().saturating_sub(last_ms) > 800 {
-                break;
-            }
-            if Instant::now() >= deadline {
-                tracing::warn!(alias = %self.config.alias, "timed out waiting for agent idle");
-                break;
-            }
-            sleep(Duration::from_millis(200)).await;
-        }
     }
 
     async fn inject(&self, text: &str) -> Result<()> {
@@ -354,48 +309,26 @@ fn spawn_output_reader(
     });
 }
 
-async fn fetch_agents(mcp_url: &str, project: &str, self_alias: &str) -> String {
+async fn has_pending_work(mcp_url: &str, project: &str, alias: &str) -> bool {
     let base = mcp_url
         .trim_end_matches('/')
         .strip_suffix("/mcp")
         .unwrap_or(mcp_url.trim_end_matches('/'));
-    let url = format!("{base}/api/agents?project={project}");
+    let url = format!("{base}/api/pending?project={project}&alias={alias}");
 
     #[derive(serde::Deserialize)]
-    struct AgentDto {
-        alias: Option<String>,
-        agent_type: Option<String>,
+    struct PendingDto {
+        has_messages: bool,
+        has_tasks: bool,
     }
 
     let Ok(resp) = HTTP_CLIENT.get(&url).send().await else {
-        return String::new();
+        return false;
     };
-    let Ok(agents) = resp.json::<Vec<AgentDto>>().await else {
-        return String::new();
+    let Ok(dto) = resp.json::<PendingDto>().await else {
+        return false;
     };
-
-    let others: Vec<String> = agents
-        .into_iter()
-        .filter_map(|a| {
-            let alias = a.alias?;
-            if alias == self_alias {
-                return None;
-            }
-            Some(match a.agent_type {
-                Some(t) => format!("{alias} ({t})"),
-                None => alias,
-            })
-        })
-        .collect();
-
-    if others.is_empty() {
-        return String::new();
-    }
-
-    format!(
-        " Other active agents in this project: {}. You can reach them with send_message(alias: \"...\", ...).",
-        others.join(", ")
-    )
+    dto.has_messages || dto.has_tasks
 }
 
 fn now_ms() -> u64 {

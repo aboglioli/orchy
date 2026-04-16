@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use orchy_core::agent::AgentStatus;
+use orchy_core::message::MessageStore;
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::task::{TaskFilter, TaskStatus};
 
 use crate::container::Container;
 
@@ -32,7 +35,7 @@ pub async fn list_agents(
 ) -> impl IntoResponse {
     let org = OrganizationId::new("default").unwrap();
 
-    let project_id = match orchy_core::namespace::ProjectId::try_from(params.project) {
+    let project_id = match ProjectId::try_from(params.project) {
         Ok(p) => p,
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
@@ -56,4 +59,62 @@ pub async fn list_agents(
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+#[derive(Deserialize)]
+pub struct PendingWorkQuery {
+    pub project: String,
+    pub alias: String,
+}
+
+#[derive(Serialize)]
+pub struct PendingWorkDto {
+    pub has_messages: bool,
+    pub has_tasks: bool,
+}
+
+pub async fn pending_work(
+    State(container): State<Arc<Container>>,
+    Query(params): Query<PendingWorkQuery>,
+) -> impl IntoResponse {
+    let org = OrganizationId::new("default").unwrap();
+
+    let project_id = match ProjectId::try_from(params.project) {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+
+    let agents = match container.agent_service.list(&org).await {
+        Ok(a) => a,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    };
+
+    let Some(agent) = agents.into_iter().find(|a| {
+        *a.project() == project_id
+            && a.status() != AgentStatus::Disconnected
+            && a.alias().map(|al| al.to_string()).as_deref() == Some(&params.alias)
+    }) else {
+        return Json(PendingWorkDto { has_messages: false, has_tasks: false }).into_response();
+    };
+
+    let has_messages = container
+        .store
+        .find_pending(&agent.id(), &org, &project_id, agent.namespace())
+        .await
+        .map(|msgs| !msgs.is_empty())
+        .unwrap_or(false);
+
+    let has_tasks = container
+        .task_service
+        .list(TaskFilter {
+            org_id: Some(org),
+            project: Some(project_id),
+            status: Some(TaskStatus::Pending),
+            ..Default::default()
+        })
+        .await
+        .map(|tasks| !tasks.is_empty())
+        .unwrap_or(false);
+
+    Json(PendingWorkDto { has_messages, has_tasks }).into_response()
 }
