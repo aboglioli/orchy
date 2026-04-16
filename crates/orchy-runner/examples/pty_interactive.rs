@@ -11,9 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use orchy_runner::config::{AgentConfig, SpawnMode};
+use orchy_runner::config::RunnerConfig;
 use orchy_runner::error::{Error, Result};
-use orchy_runner::input::{is_focus_in_out, is_mouse_sgr_prefix, map_enter, unescape};
 use orchy_runner::process::spawn_pty_raw;
 use pty_process::OwnedWritePty;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -47,16 +46,21 @@ async fn main() -> Result<()> {
         .map(|(c, r)| (r, c))
         .unwrap_or((24, 80));
 
-    let config = AgentConfig {
-        name: "interactive".to_string(),
+    let config = RunnerConfig {
+        alias: "interactive".to_string(),
+        agent_type: "unknown".to_string(),
+        description: "interactive agent".to_string(),
+        url: "http://127.0.0.1:3100/mcp".to_string(),
+        project: "default".to_string(),
+        namespace: None,
         command: command.clone(),
         args: cmd_args,
-        spawn_mode: SpawnMode::Pty,
         env,
         working_dir: None,
         pty_rows: rows,
         pty_cols: cols,
         idle_patterns: vec![],
+        idle_wake: Duration::from_secs(120),
     };
 
     let ghost_text = std::env::var("GHOST_TEXT").ok();
@@ -160,4 +164,44 @@ fn spawn_stdin_to_pty(writer: Arc<Mutex<OwnedWritePty>>) -> oneshot::Receiver<()
         let _ = tx.send(());
     });
     rx
+}
+
+fn is_focus_in_out(raw: &[u8]) -> bool {
+    raw == b"\x1b[I" || raw == b"\x1b[O"
+}
+
+fn is_mouse_sgr_prefix(raw: &[u8]) -> bool {
+    raw.starts_with(b"\x1b[<")
+}
+
+fn map_enter(raw: &[u8]) -> Vec<u8> {
+    raw.iter()
+        .map(|byte| if *byte == b'\n' { b'\r' } else { *byte })
+        .collect()
+}
+
+fn unescape(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            output.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            Some('n') => output.push('\n'),
+            Some('r') => output.push('\r'),
+            Some('t') => output.push('\t'),
+            Some('\\') => output.push('\\'),
+            Some(other) => {
+                output.push('\\');
+                output.push(other);
+            }
+            None => output.push('\\'),
+        }
+    }
+
+    output
 }

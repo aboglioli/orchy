@@ -29,12 +29,6 @@ pub struct ListAgentsParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct SetAliasParams {
-    /// Agent id to set. Must be unique within the project. Omit or null to clear.
-    pub id: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct MoveAgentParams {
     pub namespace: String,
 }

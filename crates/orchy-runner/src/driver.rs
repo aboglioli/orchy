@@ -342,23 +342,28 @@ async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<
 
     #[derive(serde::Deserialize)]
     struct InboxMessageDto {
-        id: String,
+        #[serde(rename = "id")]
+        _id: String,
         from: String,
         body: String,
     }
 
     #[derive(serde::Deserialize)]
     struct PendingTaskDto {
-        id: String,
+        #[serde(rename = "id")]
+        _id: String,
         title: String,
         priority: String,
-        assigned_roles: Vec<String>,
+        #[serde(rename = "assigned_roles")]
+        _assigned_roles: Vec<String>,
     }
 
     #[derive(serde::Deserialize)]
     struct PendingReviewDto {
-        id: String,
-        task_id: String,
+        #[serde(rename = "id")]
+        _id: String,
+        #[serde(rename = "task_id")]
+        _task_id: String,
     }
 
     let Ok(resp) = HTTP_CLIENT.get(&url).send().await else {

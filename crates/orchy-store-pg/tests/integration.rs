@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use orchy_core::agent::{Agent, AgentStatus, AgentStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_pg::PgBackend;
 
@@ -18,15 +19,21 @@ fn proj(s: &str) -> ProjectId {
     ProjectId::try_from(s).unwrap()
 }
 
+fn org() -> OrganizationId {
+    OrganizationId::new("default").unwrap()
+}
+
 #[tokio::test]
 #[ignore]
 async fn agent_save_and_find() {
     let store = backend().await;
     let mut agent = Agent::register(
+        org(),
         proj("myapp"),
         Namespace::root(),
         vec!["coder".into()],
         "test agent".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -34,7 +41,7 @@ async fn agent_save_and_find() {
     assert_eq!(agent.status(), AgentStatus::Online);
     assert_eq!(agent.roles(), &["coder".to_string()]);
 
-    let fetched = AgentStore::find_by_id(&store, &agent.id())
+    let fetched = AgentStore::find_by_id(&store, agent.id())
         .await
         .unwrap()
         .unwrap();
@@ -46,10 +53,12 @@ async fn agent_save_and_find() {
 async fn agent_save_updates_existing() {
     let store = backend().await;
     let mut agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec!["dev".into()],
         "original".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -59,7 +68,7 @@ async fn agent_save_updates_existing() {
     agent.heartbeat();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    let updated = AgentStore::find_by_id(&store, &agent.id())
+    let updated = AgentStore::find_by_id(&store, agent.id())
         .await
         .unwrap()
         .unwrap();
@@ -71,10 +80,12 @@ async fn agent_save_updates_existing() {
 async fn agent_disconnect_sets_status() {
     let store = backend().await;
     let mut agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
         "".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -82,7 +93,7 @@ async fn agent_disconnect_sets_status() {
     agent.disconnect();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    let fetched = AgentStore::find_by_id(&store, &agent.id())
+    let fetched = AgentStore::find_by_id(&store, agent.id())
         .await
         .unwrap()
         .unwrap();
@@ -94,10 +105,12 @@ async fn agent_disconnect_sets_status() {
 async fn agent_find_timed_out() {
     let store = backend().await;
     let mut agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
         "".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -118,6 +131,7 @@ async fn task_save_and_get() {
     let store = backend().await;
 
     let mut task = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,
@@ -146,6 +160,7 @@ async fn task_list_sorted_by_priority() {
     let store = backend().await;
 
     let mut low = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,
@@ -161,6 +176,7 @@ async fn task_list_sorted_by_priority() {
     TaskStore::save(&store, &mut low).await.unwrap();
 
     let mut critical = Task::new(
+        org(),
         proj("proj"),
         Namespace::root(),
         None,
@@ -188,28 +204,33 @@ async fn message_save_and_find_pending() {
     let store = backend().await;
 
     let mut from_agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
         "sender".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut from_agent).await.unwrap();
 
     let mut to_agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
         "receiver".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut to_agent).await.unwrap();
 
     let mut msg = Message::new(
+        org(),
         proj("test-project"),
         Namespace::root(),
-        from_agent.id(),
-        MessageTarget::Agent(to_agent.id()),
+        from_agent.id().clone(),
+        MessageTarget::Agent(to_agent.id().clone()),
         "hello".into(),
         None,
     );
@@ -217,9 +238,10 @@ async fn message_save_and_find_pending() {
     assert_eq!(msg.status(), MessageStatus::Pending);
 
     let p = proj("test-project");
-    let messages = MessageStore::find_pending(&store, &to_agent.id(), &p, &Namespace::root())
-        .await
-        .unwrap();
+    let messages =
+        MessageStore::find_pending(&store, to_agent.id(), &org(), &p, &Namespace::root())
+            .await
+            .unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].body(), "hello");
     assert_eq!(messages[0].status(), MessageStatus::Pending);
@@ -228,9 +250,10 @@ async fn message_save_and_find_pending() {
     delivered.deliver();
     MessageStore::save(&store, &mut delivered).await.unwrap();
 
-    let messages = MessageStore::find_pending(&store, &to_agent.id(), &p, &Namespace::root())
-        .await
-        .unwrap();
+    let messages =
+        MessageStore::find_pending(&store, to_agent.id(), &org(), &p, &Namespace::root())
+            .await
+            .unwrap();
     assert!(messages.is_empty());
 }
 
@@ -240,28 +263,33 @@ async fn message_find_by_id_and_mark_read() {
     let store = backend().await;
 
     let mut from_agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
         "".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut from_agent).await.unwrap();
 
     let mut to_agent = Agent::register(
+        org(),
         proj("test-project"),
         Namespace::root(),
         vec![],
         "".into(),
+        None,
         HashMap::new(),
     );
     AgentStore::save(&store, &mut to_agent).await.unwrap();
 
     let mut msg = Message::new(
+        org(),
         proj("test-project"),
         Namespace::root(),
-        from_agent.id(),
-        MessageTarget::Agent(to_agent.id()),
+        from_agent.id().clone(),
+        MessageTarget::Agent(to_agent.id().clone()),
         "hi".into(),
         None,
     );

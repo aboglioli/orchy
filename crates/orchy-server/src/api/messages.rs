@@ -8,6 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_core::agent::AgentId;
+use orchy_core::message::service::SendMessage;
 use orchy_core::message::{Message, MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -166,15 +167,15 @@ pub async fn send(
 
     let messages = container
         .message_service
-        .send(
+        .send(SendMessage {
             org_id,
-            project_id,
-            ns,
-            from_agent_id,
-            target,
-            body.body,
+            project: project_id,
+            namespace: ns,
+            from: from_agent_id,
+            to: target,
+            body: body.body,
             reply_to,
-        )
+        })
         .await
         .map_err(map_err)?;
 

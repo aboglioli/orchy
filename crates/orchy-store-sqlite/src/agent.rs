@@ -3,29 +3,28 @@ use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 
 use crate::SqliteBackend;
 
-const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for SqliteBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         {
             let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
             conn.execute(
-                "INSERT OR REPLACE INTO agents (id, organization_id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT OR REPLACE INTO agents (id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 rusqlite::params![
                     agent.id().to_string(),
                     agent.org_id().to_string(),
                     agent.project().to_string(),
                     agent.namespace().to_string(),
                     agent.parent_id().map(|id| id.to_string()),
-                    agent.alias().map(|a| a.as_ref().to_string()),
                     serde_json::to_string(agent.roles()).unwrap(),
                     agent.description(),
                     agent.status().to_string(),
@@ -43,31 +42,6 @@ impl AgentStore for SqliteBackend {
         }
 
         Ok(())
-    }
-
-    async fn find_by_alias(
-        &self,
-        org: &OrganizationId,
-        project: &ProjectId,
-        alias: &Alias,
-    ) -> Result<Option<Agent>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let sql = format!(
-            "SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1 AND project = ?2 AND alias = ?3"
-        );
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        let result = stmt
-            .query_row(
-                rusqlite::params![org.to_string(), project.to_string(), alias.as_ref()],
-                row_to_agent,
-            )
-            .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        Ok(result)
     }
 
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
@@ -139,33 +113,24 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let project_str: String = row.get(2)?;
     let namespace_str: String = row.get(3)?;
     let parent_id_str: Option<String> = row.get(4)?;
-    let alias_str: Option<String> = row.get(5)?;
-    let roles_str: String = row.get(6)?;
-    let description: String = row.get(7)?;
-    let status_str: String = row.get(8)?;
-    let heartbeat_str: String = row.get(9)?;
-    let connected_str: String = row.get(10)?;
-    let metadata_str: String = row.get(11)?;
+    let roles_str: String = row.get(5)?;
+    let description: String = row.get(6)?;
+    let status_str: String = row.get(7)?;
+    let heartbeat_str: String = row.get(8)?;
+    let connected_str: String = row.get(9)?;
+    let metadata_str: String = row.get(10)?;
 
     let parent_id = parent_id_str
         .map(|s| AgentId::from_str(&s))
         .transpose()
-        .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
-        })?;
-
-    use orchy_core::agent::Alias;
-    let alias = alias_str.and_then(|s| Alias::new(s).ok());
+        .map_err(|e| conversion_err(4, e))?;
 
     Ok(Agent::restore(RestoreAgent {
-        id: AgentId::from_str(&id_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        })?,
+        id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e))?,
         org_id: OrganizationId::new(&org_id_str).map_err(|e| conversion_err(1, e.to_string()))?,
         project: ProjectId::try_from(project_str).map_err(|e| conversion_err(2, e))?,
         namespace: Namespace::try_from(namespace_str).map_err(|e| conversion_err(3, e))?,
         parent_id,
-        alias,
         roles: crate::decode_json(&roles_str, "roles")?,
         description,
         status: status_str.parse::<AgentStatus>().unwrap_or_default(),

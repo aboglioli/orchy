@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use std::str::FromStr;
 use std::sync::Arc;
 
 use super::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
@@ -17,27 +19,20 @@ impl<S: AgentStore> AgentService<S> {
     pub async fn register(&self, cmd: RegisterAgent) -> Result<Agent> {
         if let Some(parent_id) = cmd.parent_id {
             let parent = self.get(&parent_id).await?;
-            let mut agent = Agent::from_parent(
-                &parent,
-                cmd.namespace,
-                cmd.roles,
-                cmd.description,
-                cmd.alias,
-            );
+            let mut agent =
+                Agent::from_parent(&parent, cmd.namespace, cmd.roles, cmd.description, cmd.id);
             self.store.save(&mut agent).await?;
             return Ok(agent);
         }
 
-        if let Some(ref alias) = cmd.alias {
-            if let Some(mut existing) = self
-                .store
-                .find_by_alias(&cmd.org_id, &cmd.project, alias)
-                .await?
-            {
-                existing.resume(cmd.namespace, cmd.roles, cmd.description);
-                self.store.save(&mut existing).await?;
-                return Ok(existing);
-            }
+        if let Some(ref id) = cmd.id
+            && let Some(mut existing) = self.store.find_by_id(id).await?
+            && *existing.org_id() == cmd.org_id
+            && *existing.project() == cmd.project
+        {
+            existing.resume(cmd.namespace, cmd.roles, cmd.description);
+            self.store.save(&mut existing).await?;
+            return Ok(existing);
         }
 
         let mut agent = Agent::register(
@@ -46,7 +41,7 @@ impl<S: AgentStore> AgentService<S> {
             cmd.namespace,
             cmd.roles,
             cmd.description,
-            cmd.alias,
+            cmd.id,
             cmd.metadata,
         );
         self.store.save(&mut agent).await?;
@@ -93,49 +88,6 @@ impl<S: AgentStore> AgentService<S> {
         Ok(agent)
     }
 
-    pub async fn set_alias(&self, id: &AgentId, alias: Option<super::Alias>) -> Result<Agent> {
-        let mut agent = self.get(id).await?;
-        if let Some(ref a) = alias {
-            if let Some(existing) = self
-                .store
-                .find_by_alias(agent.org_id(), agent.project(), a)
-                .await?
-            {
-                if existing.id() != *id {
-                    return Err(crate::error::Error::Conflict(format!(
-                        "alias '{}' already taken by agent {}",
-                        a,
-                        existing.id()
-                    )));
-                }
-            }
-        }
-        agent.set_alias(alias);
-        self.store.save(&mut agent).await?;
-        Ok(agent)
-    }
-
-    pub async fn find_by_alias(
-        &self,
-        org: &OrganizationId,
-        project: &crate::namespace::ProjectId,
-        alias: &super::Alias,
-    ) -> Result<Option<Agent>> {
-        self.store.find_by_alias(org, project, alias).await
-    }
-
-    pub async fn find_by_alias_str(
-        &self,
-        org: &OrganizationId,
-        project: &crate::namespace::ProjectId,
-        alias: &str,
-    ) -> Result<Option<Agent>> {
-        match super::Alias::try_from(alias.to_string()) {
-            Ok(a) => self.store.find_by_alias(org, project, &a).await,
-            Err(_) => Ok(None),
-        }
-    }
-
     pub async fn update_metadata(
         &self,
         id: &AgentId,
@@ -173,7 +125,7 @@ mod tests {
             namespace: Namespace::root(),
             roles: vec!["tester".to_string()],
             description: "test agent".to_string(),
-            alias: None,
+            id: None,
             parent_id: None,
             metadata: HashMap::new(),
         }
@@ -200,8 +152,8 @@ mod tests {
             namespace: Namespace::try_from("/backend".to_string()).unwrap(),
             roles: vec!["reviewer".to_string()],
             description: "child agent".to_string(),
-            alias: None,
-            parent_id: Some(parent.id()),
+            id: None,
+            parent_id: Some(parent.id().clone()),
             metadata: HashMap::new(),
         };
         let child = service.register(child_cmd).await.unwrap();
@@ -210,7 +162,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_resumes_by_alias() {
+    async fn register_resumes_by_id() {
         use orchy_events::OrganizationId;
         let store = Arc::new(MockStore::default());
         let service = AgentService::new(store);
@@ -221,7 +173,7 @@ mod tests {
             namespace: Namespace::root(),
             roles: vec!["coder".to_string()],
             description: "first session".to_string(),
-            alias: Some(super::super::Alias::new("my-coder").unwrap()),
+            id: Some(AgentId::from_str("0192f3e4-4a3b-7c8d-9e0f-1a2b3c4d5e6f").unwrap()),
             parent_id: None,
             metadata: HashMap::new(),
         };
@@ -253,7 +205,7 @@ mod tests {
         let service = AgentService::new(store);
         let agent = service.register(make_registration()).await.unwrap();
         let updated = service
-            .change_roles(&agent.id(), vec!["reviewer".to_string()])
+            .change_roles(agent.id(), vec!["reviewer".to_string()])
             .await
             .unwrap();
         assert_eq!(updated.roles(), &["reviewer"]);
@@ -264,6 +216,6 @@ mod tests {
         let store = Arc::new(MockStore::default());
         let service = AgentService::new(store);
         let agent = service.register(make_registration()).await.unwrap();
-        assert!(service.change_roles(&agent.id(), vec![]).await.is_err());
+        assert!(service.change_roles(agent.id(), vec![]).await.is_err());
     }
 }

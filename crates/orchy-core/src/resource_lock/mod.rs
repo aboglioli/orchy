@@ -149,8 +149,8 @@ impl ResourceLock {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn holder(&self) -> AgentId {
-        self.holder
+    pub fn holder(&self) -> &AgentId {
+        &self.holder
     }
     pub fn acquired_at(&self) -> DateTime<Utc> {
         self.acquired_at
@@ -231,7 +231,7 @@ mod tests {
             project(),
             Namespace::root(),
             "f".into(),
-            agent,
+            agent.clone(),
             60,
         )
         .unwrap();

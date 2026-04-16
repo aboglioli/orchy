@@ -368,7 +368,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
         )
     })?;
     let project = project_str
-        .map(|s| ProjectId::try_from(s))
+        .map(ProjectId::try_from)
         .transpose()
         .map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(

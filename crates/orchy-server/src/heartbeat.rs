@@ -24,37 +24,32 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
                             info!(agent_id = %agent.id(), "agent idle, marking as idle");
                             let _ = container
                                 .agent_service
-                                .update_status(&agent.id(), AgentStatus::Idle)
+                                .update_status(agent.id(), AgentStatus::Idle)
                                 .await;
                         }
                         AgentStatus::Idle => {
                             info!(agent_id = %agent.id(), "idle agent timed out, disconnecting");
-                            let _ = container.agent_service.disconnect(&agent.id()).await;
-                            if let Err(e) = container
-                                .task_service
-                                .release_agent_tasks(&agent.id())
-                                .await
+                            let _ = container.agent_service.disconnect(agent.id()).await;
+                            if let Err(e) =
+                                container.task_service.release_agent_tasks(agent.id()).await
                             {
                                 tracing::error!(agent_id = %agent.id(), error = %e, "failed to release agent tasks");
                             }
-                            let _ = container
-                                .lock_service
-                                .release_agent_locks(&agent.id())
-                                .await;
+                            let _ = container.lock_service.release_agent_locks(agent.id()).await;
                             let watchers =
-                                WatcherStore::find_by_agent(&*container.store, &agent.id())
+                                WatcherStore::find_by_agent(&*container.store, agent.id())
                                     .await
                                     .unwrap_or_default();
                             for w in &watchers {
                                 let _ = WatcherStore::delete(
                                     &*container.store,
                                     &w.task_id(),
-                                    &agent.id(),
+                                    agent.id(),
                                 )
                                 .await;
                             }
                             let reviews =
-                                ReviewStore::find_pending_for_agent(&*container.store, &agent.id())
+                                ReviewStore::find_pending_for_agent(&*container.store, agent.id())
                                     .await
                                     .unwrap_or_default();
                             for mut r in reviews {

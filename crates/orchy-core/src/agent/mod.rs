@@ -11,81 +11,13 @@ use uuid::Uuid;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 
 use self::events as agent_events;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct Alias(String);
-
-impl Alias {
-    pub fn new(s: impl Into<String>) -> Result<Self> {
-        let s = s.into();
-        if s.is_empty() {
-            return Err(Error::InvalidInput("alias must not be empty".into()));
-        }
-        for ch in s.chars() {
-            if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
-                return Err(Error::InvalidInput(format!(
-                    "invalid character '{ch}' in alias"
-                )));
-            }
-        }
-        Ok(Self(s))
-    }
-}
-
-impl TryFrom<String> for Alias {
-    type Error = Error;
-
-    fn try_from(s: String) -> Result<Self> {
-        Self::new(s)
-    }
-}
-
-impl From<Alias> for String {
-    fn from(a: Alias) -> Self {
-        a.0
-    }
-}
-
-impl fmt::Display for Alias {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl AsRef<str> for Alias {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::str::FromStr for Alias {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        Self::new(s)
-    }
-}
-
-pub trait AgentStore: Send + Sync {
-    fn save(&self, agent: &mut Agent) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
-    fn find_by_alias(
-        &self,
-        org: &OrganizationId,
-        project: &ProjectId,
-        alias: &Alias,
-    ) -> impl Future<Output = Result<Option<Agent>>> + Send;
-    fn list(&self, org: &OrganizationId) -> impl Future<Output = Result<Vec<Agent>>> + Send;
-    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct AgentId(Uuid);
 
@@ -96,6 +28,10 @@ impl AgentId {
 
     pub fn from_uuid(uuid: Uuid) -> Self {
         Self(uuid)
+    }
+
+    pub fn as_str(&self) -> String {
+        self.0.to_string()
     }
 
     pub fn as_uuid(&self) -> &Uuid {
@@ -116,11 +52,18 @@ impl fmt::Display for AgentId {
 }
 
 impl FromStr for AgentId {
-    type Err = uuid::Error;
+    type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(Self(Uuid::parse_str(s)?))
+        Uuid::parse_str(s).map(Self).map_err(|e| e.to_string())
     }
+}
+
+pub trait AgentStore: Send + Sync {
+    fn save(&self, agent: &mut Agent) -> impl Future<Output = Result<()>> + Send;
+    fn find_by_id(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
+    fn list(&self, org: &OrganizationId) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,7 +109,6 @@ pub struct Agent {
     project: ProjectId,
     namespace: Namespace,
     parent_id: Option<AgentId>,
-    alias: Option<Alias>,
     roles: Vec<String>,
     description: String,
     status: AgentStatus,
@@ -184,17 +126,17 @@ impl Agent {
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
-        alias: Option<Alias>,
+        id: Option<AgentId>,
         metadata: HashMap<String, String>,
     ) -> Self {
         let now = Utc::now();
+        let id = id.unwrap_or_default();
         let mut agent = Self {
-            id: AgentId::new(),
+            id,
             org_id,
             project,
             namespace,
             parent_id: None,
-            alias,
             roles,
             description,
             status: AgentStatus::Online,
@@ -213,7 +155,6 @@ impl Agent {
                 agent_id: agent.id.to_string(),
                 project: agent.project.to_string(),
                 namespace: agent.namespace.to_string(),
-                alias: agent.alias.as_ref().map(|a| a.to_string()),
                 roles: agent.roles.clone(),
             })
             .unwrap(),
@@ -228,16 +169,16 @@ impl Agent {
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
-        alias: Option<Alias>,
+        id: Option<AgentId>,
     ) -> Self {
         let now = Utc::now();
+        let id = id.unwrap_or_default();
         let mut agent = Self {
-            id: AgentId::new(),
+            id,
             org_id: parent.org_id.clone(),
             project: parent.project.clone(),
             namespace,
-            parent_id: Some(parent.id),
-            alias,
+            parent_id: Some(parent.id.clone()),
             roles,
             description,
             status: AgentStatus::Online,
@@ -257,7 +198,6 @@ impl Agent {
                 parent_id: parent.id.to_string(),
                 project: agent.project.to_string(),
                 namespace: agent.namespace.to_string(),
-                alias: agent.alias.as_ref().map(|a| a.to_string()),
                 roles: agent.roles.clone(),
             })
             .unwrap(),
@@ -274,7 +214,6 @@ impl Agent {
             project: r.project,
             namespace: r.namespace,
             parent_id: r.parent_id,
-            alias: r.alias,
             roles: r.roles,
             description: r.description,
             status: r.status,
@@ -374,7 +313,6 @@ impl Agent {
                 org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
                 namespace: self.namespace.to_string(),
-                alias: self.alias.as_ref().map(|a| a.to_string()),
                 roles: self.roles.clone(),
             })
             .unwrap(),
@@ -399,23 +337,6 @@ impl Agent {
         .map(|e| self.collector.collect(e));
     }
 
-    pub fn set_alias(&mut self, alias: Option<Alias>) {
-        self.alias = alias;
-
-        let _ = Event::create(
-            self.org_id.as_str(),
-            agent_events::NAMESPACE,
-            agent_events::TOPIC_ALIAS_CHANGED,
-            Payload::from_json(&agent_events::AgentAliasChangedPayload {
-                org_id: self.org_id.to_string(),
-                agent_id: self.id.to_string(),
-                alias: self.alias.as_ref().map(|a| a.to_string()),
-            })
-            .unwrap(),
-        )
-        .map(|e| self.collector.collect(e));
-    }
-
     pub fn set_metadata(&mut self, metadata: HashMap<String, String>) {
         self.metadata = metadata;
     }
@@ -429,8 +350,8 @@ impl Agent {
         self.collector.drain()
     }
 
-    pub fn id(&self) -> AgentId {
-        self.id
+    pub fn id(&self) -> &AgentId {
+        &self.id
     }
     pub fn org_id(&self) -> &OrganizationId {
         &self.org_id
@@ -441,11 +362,8 @@ impl Agent {
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
-    pub fn parent_id(&self) -> Option<AgentId> {
-        self.parent_id
-    }
-    pub fn alias(&self) -> Option<&Alias> {
-        self.alias.as_ref()
+    pub fn parent_id(&self) -> Option<&AgentId> {
+        self.parent_id.as_ref()
     }
     pub fn roles(&self) -> &[String] {
         &self.roles
@@ -473,7 +391,6 @@ pub struct RestoreAgent {
     pub project: ProjectId,
     pub namespace: Namespace,
     pub parent_id: Option<AgentId>,
-    pub alias: Option<Alias>,
     pub roles: Vec<String>,
     pub description: String,
     pub status: AgentStatus,
@@ -489,7 +406,7 @@ pub struct RegisterAgent {
     pub namespace: Namespace,
     pub roles: Vec<String>,
     pub description: String,
-    pub alias: Option<Alias>,
+    pub id: Option<AgentId>,
     pub parent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
 }

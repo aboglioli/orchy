@@ -13,6 +13,13 @@ use orchy_core::task::{
 
 use crate::SqliteBackend;
 
+fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        e.to_string(),
+    ))
+}
+
 impl ReviewStore for SqliteBackend {
     async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
         {
@@ -113,27 +120,19 @@ fn row_to_review(row: &rusqlite::Row) -> rusqlite::Result<ReviewRequest> {
     let resolved_at_str: Option<String> = row.get(10)?;
 
     let id = ReviewId::from_str(&id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
     })?;
     let task_id = TaskId::from_str(&task_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, str_err(e))
     })?;
     let project = ProjectId::try_from(project_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            2,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        )
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, str_err(e))
     })?;
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            3,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        )
+        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, str_err(e))
     })?;
     let requester = AgentId::from_str(&requester_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, str_err(e))
     })?;
     let reviewer = reviewer_str.and_then(|s| AgentId::from_str(&s).ok());
     let status = status_str
@@ -142,7 +141,7 @@ fn row_to_review(row: &rusqlite::Row) -> rusqlite::Result<ReviewRequest> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, str_err(e))
         })?;
     let resolved_at = resolved_at_str
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())

@@ -314,7 +314,7 @@ impl Knowledge {
                     title: entry.title.clone(),
                     content: entry.content.clone(),
                     tags: entry.tags.clone(),
-                    agent_id: entry.agent_id.map(|a| a.to_string()),
+                    agent_id: entry.agent_id.as_ref().map(|a| a.to_string()),
                     metadata: entry.metadata.clone(),
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,
@@ -367,7 +367,7 @@ impl Knowledge {
                 title: self.title.clone(),
                 content: self.content.clone(),
                 version: self.version.as_u64(),
-                agent_id: self.agent_id.map(|a| a.to_string()),
+                agent_id: self.agent_id.as_ref().map(|a| a.to_string()),
             })
             .unwrap(),
         )
@@ -570,8 +570,8 @@ impl Knowledge {
     pub fn version(&self) -> Version {
         self.version
     }
-    pub fn agent_id(&self) -> Option<AgentId> {
-        self.agent_id
+    pub fn agent_id(&self) -> Option<&AgentId> {
+        self.agent_id.as_ref()
     }
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
@@ -628,7 +628,7 @@ pub struct WriteKnowledge {
     pub metadata_remove: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct KnowledgeFilter {
     pub org_id: Option<OrganizationId>,
     pub project: Option<ProjectId>,
@@ -638,21 +638,6 @@ pub struct KnowledgeFilter {
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
     pub agent_id: Option<AgentId>,
-}
-
-impl Default for KnowledgeFilter {
-    fn default() -> Self {
-        Self {
-            org_id: None,
-            project: None,
-            include_org_level: false,
-            namespace: None,
-            kind: None,
-            tag: None,
-            path_prefix: None,
-            agent_id: None,
-        }
-    }
 }
 
 #[cfg(test)]

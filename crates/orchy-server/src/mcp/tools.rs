@@ -4,12 +4,15 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_core::agent::RegisterAgent;
+use orchy_core::knowledge::service::PatchKnowledgeMetadata;
 use orchy_core::knowledge::{
     KnowledgeFilter, KnowledgeKind, Version as KnowledgeVersion, WriteKnowledge,
 };
+use orchy_core::message::service::SendMessage;
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::organization::OrganizationId;
+use orchy_core::task::service::RequestReviewCommand;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
@@ -45,8 +48,7 @@ impl OrchyHandler {
     #[tool(
         description = "Register as an agent. Required before almost every other tool. \
         Roles are optional — orchy assigns them from pending task demand if omitted. \
-        Pass alias to resume the same agent after a new MCP session (orchy or client restarted): \
-        if an agent with that alias already exists in the project, the session is resumed. \
+        Pass id to resume the same agent after a new MCP session (orchy or client restarted). \
         Use parent_id for agent lineage."
     )]
     async fn register_agent(
@@ -76,11 +78,10 @@ impl OrchyHandler {
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
-        let alias_str = match params.id {
-            Some(s) if !s.is_empty() => s,
-            _ => format!("agent-{}", chrono::Utc::now().timestamp()),
+        let id = match params.id {
+            Some(s) if !s.is_empty() => Some(parse_agent_id(&s)?),
+            _ => None,
         };
-        let alias = orchy_core::agent::Alias::new(alias_str).map_err(|e| e.to_string())?;
 
         let input_roles = params.roles.unwrap_or_default();
         let roles = if input_roles.is_empty() {
@@ -103,14 +104,14 @@ impl OrchyHandler {
             namespace: namespace.clone(),
             roles,
             description: params.description.unwrap_or_default(),
-            alias: Some(alias),
+            id,
             parent_id,
             metadata: params.metadata.unwrap_or_default(),
         };
 
         match self.container.agent_service.register(cmd).await {
             Ok(agent) => {
-                self.set_session(agent.id(), org_id, project, namespace);
+                self.set_session(agent.id().clone(), org_id, project, namespace);
                 Ok(to_json(&agent))
             }
             Err(e) => Err(e.to_string()),
@@ -125,19 +126,10 @@ impl OrchyHandler {
     )]
     async fn session_status(&self) -> Result<String, String> {
         let agent_id = self.get_session_agent();
-        let agent_alias = if let Some(id) = agent_id {
-            self.container
-                .agent_service
-                .get(&id)
-                .await
-                .ok()
-                .and_then(|a| a.alias().map(|al| al.to_string()))
-        } else {
-            None
-        };
+        let agent_id_str = agent_id.as_ref().map(|id| id.to_string());
         let payload = serde_json::json!({
             "mcp_session_registered_with_orchy": agent_id.is_some(),
-            "id": agent_alias,
+            "id": agent_id_str,
             "project": self.get_session_project().map(|p| p.to_string()),
             "namespace": self.get_session_namespace().map(|n| n.to_string()),
             "after_orchy_or_mcp_restart": concat!(
@@ -192,33 +184,6 @@ impl OrchyHandler {
             .container
             .agent_service
             .change_roles(&agent_id, params.roles)
-            .await
-        {
-            Ok(agent) => Ok(to_json(&agent)),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
-    #[tool(
-        description = "Set or clear the agent's alias. Alias must be unique within the project. \
-        Other agents can use your alias instead of UUID in send_message, assign_task, etc."
-    )]
-    async fn set_alias(
-        &self,
-        Parameters(params): Parameters<SetAliasParams>,
-    ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
-
-        let alias = params
-            .id
-            .map(|s| orchy_core::agent::Alias::new(s))
-            .transpose()
-            .map_err(|e| e.to_string())?;
-
-        match self
-            .container
-            .agent_service
-            .set_alias(&agent_id, alias)
             .await
         {
             Ok(agent) => Ok(to_json(&agent)),
@@ -711,15 +676,15 @@ impl OrchyHandler {
         match self
             .container
             .message_service
-            .send(
-                default_org,
+            .send(SendMessage {
+                org_id: default_org,
                 project,
                 namespace,
-                agent_id,
-                target,
-                params.body,
+                from: agent_id,
+                to: target,
+                body: params.body,
                 reply_to,
-            )
+            })
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
@@ -1183,7 +1148,7 @@ impl OrchyHandler {
             std::collections::HashMap::new();
         if let Some(ref aid) = agent_id {
             for task in &all_tasks {
-                if task.assigned_to().as_ref() == Some(aid) {
+                if task.assigned_to() == Some(aid) {
                     my_workload_by_status
                         .entry(task.status().to_string())
                         .or_default()
@@ -1590,15 +1555,15 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .request_review(
-                &task_id,
-                default_org,
+            .request_review(RequestReviewCommand {
+                task_id,
+                org_id: default_org,
                 project,
                 namespace,
-                agent_id,
+                requester: agent_id,
                 reviewer,
-                params.reviewer_role,
-            )
+                reviewer_role: params.reviewer_role,
+            })
             .await
         {
             Ok(review) => Ok(to_json(&review)),
@@ -1790,15 +1755,15 @@ impl OrchyHandler {
         match self
             .container
             .knowledge_service
-            .patch_metadata(
-                &default_org,
-                Some(&project),
-                &namespace,
-                &params.path,
+            .patch_metadata(PatchKnowledgeMetadata {
+                org: default_org,
+                project: Some(project),
+                namespace,
+                path: params.path,
                 set,
                 remove,
-                params.version.map(KnowledgeVersion::from),
-            )
+                expected_version: params.version.map(KnowledgeVersion::from),
+            })
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),

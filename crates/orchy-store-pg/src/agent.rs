@@ -1,17 +1,16 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use sqlx::Row;
-use uuid::Uuid;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
-const SELECT_COLS: &str = "id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for PgBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
@@ -21,13 +20,12 @@ impl AgentStore for PgBackend {
             .map_err(|e| Error::Store(format!("failed to serialize agents.metadata: {e}")))?;
 
         sqlx::query(
-            "INSERT INTO agents (id, project, namespace, parent_id, alias, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "INSERT INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO UPDATE SET
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 parent_id = EXCLUDED.parent_id,
-                alias = EXCLUDED.alias,
                 roles = EXCLUDED.roles,
                 description = EXCLUDED.description,
                 status = EXCLUDED.status,
@@ -35,11 +33,10 @@ impl AgentStore for PgBackend {
                 connected_at = EXCLUDED.connected_at,
                 metadata = EXCLUDED.metadata",
         )
-        .bind(agent.id().as_uuid())
+        .bind(agent.id().to_string())
         .bind(agent.project().to_string())
         .bind(agent.namespace().to_string())
         .bind(agent.parent_id().map(|id| *id.as_uuid()))
-        .bind(agent.alias().map(|a| a.as_ref().to_string()))
         .bind(&roles_json)
         .bind(agent.description())
         .bind(agent.status().to_string())
@@ -58,27 +55,10 @@ impl AgentStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_alias(
-        &self,
-        _org: &OrganizationId,
-        project: &ProjectId,
-        alias: &Alias,
-    ) -> Result<Option<Agent>> {
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE project = $1 AND alias = $2");
-        let row = sqlx::query(&sql)
-            .bind(project.to_string())
-            .bind(alias.as_ref())
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        row.map(|r| row_to_agent(&r)).transpose()
-    }
-
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = $1");
         let row = sqlx::query(&sql)
-            .bind(id.as_uuid())
+            .bind(id.to_string())
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -113,11 +93,10 @@ impl AgentStore for PgBackend {
 }
 
 fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
-    let id: Uuid = row.get("id");
+    let id_str: String = row.get("id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
-    let parent_id: Option<Uuid> = row.get("parent_id");
-    let alias_str: Option<String> = row.get("alias");
+    let parent_id_str: Option<String> = row.get("parent_id");
     let roles: serde_json::Value = row.get("roles");
     let description: String = row.get("description");
     let status: String = row.get("status");
@@ -125,13 +104,16 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
 
+    let parent_id = parent_id_str
+        .map(|s| AgentId::from_str(&s).map_err(Error::Store))
+        .transpose()?;
+
     Ok(Agent::restore(RestoreAgent {
-        id: AgentId::from_uuid(id),
+        id: AgentId::from_str(&id_str).map_err(Error::Store)?,
         org_id: OrganizationId::new("default").unwrap(),
         project: parse_project_id(project, "agents", "project")?,
         namespace: parse_namespace(namespace, "agents", "namespace")?,
-        parent_id: parent_id.map(AgentId::from_uuid),
-        alias: alias_str.and_then(|s| Alias::new(s).ok()),
+        parent_id,
         roles: decode_json_value(roles, "agents", "roles")?,
         description,
         status: status.parse::<AgentStatus>().unwrap_or_default(),

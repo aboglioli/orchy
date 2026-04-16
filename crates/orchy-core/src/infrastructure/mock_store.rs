@@ -52,25 +52,11 @@ impl AgentStore for MockStore {
         self.agents
             .write()
             .unwrap()
-            .insert(agent.id(), agent.clone());
+            .insert(agent.id().clone(), agent.clone());
         Ok(())
     }
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         Ok(self.agents.read().unwrap().get(id).cloned())
-    }
-    async fn find_by_alias(
-        &self,
-        _org: &OrganizationId,
-        project: &ProjectId,
-        alias: &crate::agent::Alias,
-    ) -> Result<Option<Agent>> {
-        Ok(self
-            .agents
-            .read()
-            .unwrap()
-            .values()
-            .find(|a| a.project() == project && a.alias() == Some(alias))
-            .cloned())
     }
     async fn list(&self, _org: &OrganizationId) -> Result<Vec<Agent>> {
         Ok(self.agents.read().unwrap().values().cloned().collect())
@@ -130,9 +116,7 @@ impl MessageStore for MockStore {
             .unwrap()
             .values()
             .filter(|m| {
-                m.from() == *sender
-                    && m.project() == project
-                    && m.namespace().starts_with(namespace)
+                m.from() == sender && m.project() == project && m.namespace().starts_with(namespace)
             })
             .cloned()
             .collect())

@@ -69,7 +69,7 @@ impl KnowledgeStore for MemoryBackend {
                 if let Some(ref project) = filter.project {
                     let project_matches = e.project() == Some(project);
                     let org_level = e.project().is_none();
-                    if !project_matches && !(filter.include_org_level && org_level) {
+                    if !(project_matches || filter.include_org_level && org_level) {
                         return false;
                     }
                 }
@@ -94,7 +94,7 @@ impl KnowledgeStore for MemoryBackend {
                     }
                 }
                 if let Some(ref agent_id) = filter.agent_id {
-                    if e.agent_id().as_ref() != Some(agent_id) {
+                    if e.agent_id().map(|id| id.as_str()) != Some(agent_id.as_str()) {
                         return false;
                     }
                 }

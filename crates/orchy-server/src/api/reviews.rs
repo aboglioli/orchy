@@ -10,6 +10,7 @@ use serde::Deserialize;
 use orchy_core::agent::AgentId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::task::service::RequestReviewCommand;
 use orchy_core::task::{ReviewId, ReviewRequest, TaskId};
 
 use crate::container::Container;
@@ -131,15 +132,15 @@ pub async fn request(
 
     let review = container
         .task_service
-        .request_review(
-            &task_id,
+        .request_review(RequestReviewCommand {
+            task_id,
             org_id,
-            project_id,
-            Namespace::root(),
+            project: project_id,
+            namespace: Namespace::root(),
             requester,
             reviewer,
-            body.reviewer_role,
-        )
+            reviewer_role: body.reviewer_role,
+        })
         .await
         .map_err(map_err)?;
 

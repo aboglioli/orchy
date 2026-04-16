@@ -16,6 +16,16 @@ pub struct TaskService<TS: TaskStore, S: AgentStore + WatcherStore + MessageStor
     store: Arc<S>,
 }
 
+pub struct RequestReviewCommand {
+    pub task_id: TaskId,
+    pub org_id: OrganizationId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub requester: AgentId,
+    pub reviewer: Option<AgentId>,
+    pub reviewer_role: Option<String>,
+}
+
 impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> TaskService<TS, S> {
     pub fn new(task_store: Arc<TS>, store: Arc<S>) -> Self {
         Self { task_store, store }
@@ -48,7 +58,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             return Err(Error::DependencyNotMet(id.to_string()));
         }
 
-        task.claim(*agent)?;
+        task.claim(agent.clone())?;
         self.task_store.save(&mut task).await?;
         Ok(task)
     }
@@ -121,7 +131,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
 
         for mut task in candidates {
             if self.all_deps_completed(task.depends_on()).await? {
-                match task.claim(*agent) {
+                match task.claim(agent.clone()) {
                     Ok(()) => {
                         self.task_store.save(&mut task).await?;
                         return Ok(Some(task));
@@ -231,7 +241,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             .ok_or_else(|| Error::NotFound(format!("agent {new_agent}")))?;
 
         let mut task = self.get(id).await?;
-        task.assign(*new_agent)?;
+        task.assign(new_agent.clone())?;
         self.task_store.save(&mut task).await?;
         Ok(task)
     }
@@ -245,7 +255,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
 
     pub async fn release_agent_tasks(&self, agent: &AgentId) -> Result<Vec<TaskId>> {
         let filter = TaskFilter {
-            assigned_to: Some(*agent),
+            assigned_to: Some(agent.clone()),
             ..Default::default()
         };
         let tasks = self.task_store.list(filter).await?;
@@ -289,7 +299,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                 def.priority,
                 def.assigned_roles,
                 def.depends_on,
-                created_by,
+                created_by.clone(),
                 false,
             )?;
             self.task_store.save(&mut task).await?;
@@ -329,7 +339,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                 def.priority,
                 def.assigned_roles,
                 def.depends_on,
-                created_by,
+                created_by.clone(),
                 false,
             )?;
             self.task_store.save(&mut task).await?;
@@ -431,7 +441,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
 
         for task in &sources {
             for note in task.notes() {
-                merged.add_note(note.author(), note.body().to_string())?;
+                merged.add_note(note.author().cloned(), note.body().to_string())?;
             }
         }
 
@@ -679,34 +689,35 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         WatcherStore::delete(&*self.store, task_id, agent_id).await
     }
 
-    pub async fn request_review(
-        &self,
-        task_id: &TaskId,
-        org_id: OrganizationId,
-        project: ProjectId,
-        namespace: Namespace,
-        requester: AgentId,
-        reviewer: Option<AgentId>,
-        reviewer_role: Option<String>,
-    ) -> Result<ReviewRequest> {
-        self.get(task_id).await?;
+    pub async fn request_review(&self, cmd: RequestReviewCommand) -> Result<ReviewRequest> {
+        let RequestReviewCommand {
+            task_id,
+            org_id,
+            project,
+            namespace,
+            requester,
+            reviewer,
+            reviewer_role,
+        } = cmd;
+
+        self.get(&task_id).await?;
         let mut review = ReviewRequest::new(
-            *task_id,
+            task_id,
             org_id.clone(),
             project.clone(),
             namespace.clone(),
-            requester,
-            reviewer,
+            requester.clone(),
+            reviewer.clone(),
             reviewer_role.clone(),
         );
         ReviewStore::save(&*self.store, &mut review).await?;
 
         let body = format!(
             "Review requested for task {} (review {})",
-            task_id,
+            review.task_id(),
             review.id()
         );
-        let target = if let Some(agent) = reviewer {
+        let target = if let Some(agent) = reviewer.clone() {
             MessageTarget::Agent(agent)
         } else if let Some(role) = reviewer_role {
             MessageTarget::Role(role)
@@ -748,7 +759,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             review.project().clone(),
             review.namespace().clone(),
             resolver,
-            MessageTarget::Agent(review.requester()),
+            MessageTarget::Agent(review.requester().clone()),
             body,
             None,
         );
@@ -783,8 +794,8 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                     watcher.org_id().clone(),
                     watcher.project().clone(),
                     watcher.namespace().clone(),
-                    watcher.agent_id(),
-                    MessageTarget::Agent(watcher.agent_id()),
+                    watcher.agent_id().clone(),
+                    MessageTarget::Agent(watcher.agent_id().clone()),
                     body,
                     None,
                 );
@@ -820,8 +831,8 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                             task.org_id().clone(),
                             task.project().clone(),
                             task.namespace().clone(),
-                            agent,
-                            MessageTarget::Agent(agent),
+                            agent.clone(),
+                            MessageTarget::Agent(agent.clone()),
                             body,
                             None,
                         );

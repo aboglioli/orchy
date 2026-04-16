@@ -15,6 +15,16 @@ pub struct KnowledgeService<S: KnowledgeStore, E: EmbeddingsProvider> {
     embeddings: Option<Arc<E>>,
 }
 
+pub struct PatchKnowledgeMetadata {
+    pub org: OrganizationId,
+    pub project: Option<ProjectId>,
+    pub namespace: Namespace,
+    pub path: String,
+    pub set: HashMap<String, String>,
+    pub remove: Vec<String>,
+    pub expected_version: Option<Version>,
+}
+
 impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
     pub fn new(store: Arc<S>, embeddings: Option<Arc<E>>) -> Self {
         Self { store, embeddings }
@@ -118,19 +128,20 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         self.store.list(filter).await
     }
 
-    pub async fn patch_metadata(
-        &self,
-        org: &OrganizationId,
-        project: Option<&ProjectId>,
-        namespace: &Namespace,
-        path: &str,
-        set: HashMap<String, String>,
-        remove: Vec<String>,
-        expected_version: Option<Version>,
-    ) -> Result<Knowledge> {
+    pub async fn patch_metadata(&self, cmd: PatchKnowledgeMetadata) -> Result<Knowledge> {
+        let PatchKnowledgeMetadata {
+            org,
+            project,
+            namespace,
+            path,
+            set,
+            remove,
+            expected_version,
+        } = cmd;
+
         let mut entry = self
             .store
-            .find_by_path(org, project, namespace, path)
+            .find_by_path(&org, project.as_ref(), &namespace, &path)
             .await?
             .ok_or_else(|| Error::NotFound(format!("knowledge entry not found: {path}")))?;
 

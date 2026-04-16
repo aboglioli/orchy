@@ -11,6 +11,13 @@ use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
 use crate::SqliteBackend;
 
+fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        e.to_string(),
+    ))
+}
+
 impl LockStore for SqliteBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         {
@@ -122,31 +129,23 @@ fn row_to_resource_lock(row: &rusqlite::Row) -> rusqlite::Result<ResourceLock> {
     let expires_at_str: String = row.get(5)?;
 
     let project = ProjectId::try_from(project_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        )
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
     })?;
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            1,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        )
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, str_err(e))
     })?;
     let holder = AgentId::from_str(&holder_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, str_err(e))
     })?;
     let acquired_at = DateTime::parse_from_rfc3339(&acquired_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, str_err(e))
         })?;
     let expires_at = DateTime::parse_from_rfc3339(&expires_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, str_err(e))
         })?;
 
     Ok(ResourceLock::restore(RestoreResourceLock {

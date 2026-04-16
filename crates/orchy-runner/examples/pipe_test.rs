@@ -1,9 +1,9 @@
 use std::time::Duration;
+use std::{process::Stdio, string::String};
 
-use orchy_runner::config::{AgentConfig, SpawnMode};
 use orchy_runner::error::Result;
-use orchy_runner::output::OutputParser;
-use orchy_runner::process::AgentProcess;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,25 +26,24 @@ async fn main() -> Result<()> {
 
     let is_json = cmd_args.iter().any(|a| a == "json" || a.contains("json"));
 
-    let config = AgentConfig {
-        name: "test-agent".to_string(),
-        command: command.clone(),
-        args: cmd_args,
-        spawn_mode: SpawnMode::Pipe,
-        env: Default::default(),
-        working_dir: None,
-        pty_rows: 24,
-        pty_cols: 120,
-    };
-
     println!("=== Pipe Test ===");
     println!("command: {command}");
     println!("mode: Pipe (stdin/stdout)");
     println!("json output: {is_json}");
     println!();
 
-    let mut process = AgentProcess::spawn(&config).await?;
-    let parser = OutputParser::new(is_json);
+    let mut child = Command::new(&command)
+        .args(&cmd_args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            orchy_runner::error::Error::Spawn(format!("failed to spawn {command}: {e}"))
+        })?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| orchy_runner::error::Error::Io("child stdout not available".to_string()))?;
 
     println!("--- process spawned, reading output ---");
     println!();
@@ -58,30 +57,28 @@ async fn main() -> Result<()> {
             break;
         }
 
-        let line = tokio::time::timeout(Duration::from_secs(10), process.read_line()).await;
+        let mut buf = [0u8; 8192];
+        let read = tokio::time::timeout(Duration::from_secs(10), stdout.read(&mut buf)).await;
 
-        match line {
-            Ok(Ok(Some(raw))) => {
-                let parsed = parser.parse(&raw);
-
-                if let Some(text) = parser.extract_text(&parsed) {
-                    println!("[OUT] {text}");
-                }
-
-                if parser.is_completion_signal(&parsed) {
-                    println!("\n--- completion signal detected ---");
-                    break;
-                }
-            }
-            Ok(Ok(None)) => {
+        match read {
+            Ok(Ok(0)) => {
                 println!("\n--- process exited ---");
                 break;
+            }
+            Ok(Ok(n)) => {
+                let text = String::from_utf8_lossy(&buf[..n]);
+                print!("{text}");
+                std::io::Write::flush(&mut std::io::stdout()).ok();
             }
             Ok(Err(e)) => {
                 println!("[ERR] {e}");
             }
             Err(_) => {
-                if !process.is_running() {
+                if child
+                    .try_wait()
+                    .map_err(|e| orchy_runner::error::Error::Io(format!("wait: {e}")))?
+                    .is_some()
+                {
                     println!("\n--- process exited ---");
                     break;
                 }
@@ -92,7 +89,11 @@ async fn main() -> Result<()> {
     }
 
     println!("\ncleaning up...");
-    let _ = process.kill().await;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(&[0x03]).await;
+        let _ = stdin.flush().await;
+    }
+    let _ = child.kill().await;
 
     println!("done.");
     Ok(())

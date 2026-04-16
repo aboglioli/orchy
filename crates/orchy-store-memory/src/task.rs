@@ -58,8 +58,10 @@ impl TaskStore for MemoryBackend {
                     }
                 }
                 if let Some(ref assigned) = filter.assigned_to {
-                    if t.assigned_to().as_ref() != Some(assigned) {
-                        return false;
+                    match (t.assigned_to(), assigned) {
+                        (Some(a), b) if *a != *b => return false,
+                        (None, _) => return false,
+                        _ => {}
                     }
                 }
                 if let Some(ref pid) = filter.parent_id {

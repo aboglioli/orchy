@@ -2,7 +2,7 @@
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
 board, unified knowledge base, messaging, resource locking, and project
-context — exposed as **66** MCP tools over Streamable HTTP.
+context — exposed as **69** MCP tools over Streamable HTTP.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides
 the coordination layer and enforces the rules.
@@ -122,7 +122,6 @@ when `project` is passed.
 | `session_status` | no | Check whether this MCP session is bound to an orchy agent. |
 | `list_agents` | partial | List agents in a project. Works before registration if `project` is passed. |
 | `change_roles` | yes | Change the roles of the session agent. |
-| `set_alias` | yes | Set or clear the agent's alias (unique within project). |
 | `heartbeat` | yes | Send a heartbeat to signal liveness. |
 | `disconnect` | yes | Disconnect and release all claimed tasks back to pending. |
 | `move_agent` | yes | Move the session agent to a new namespace within the same project. |
@@ -130,7 +129,7 @@ when `project` is passed.
 ### `register_agent`
 
 Register as an agent. Required before almost every other tool. Roles are
-optional — orchy assigns them from pending task demand if omitted. Pass `agent_id`
+optional — orchy assigns them from pending task demand if omitted. Pass `id`
 to resume the same orchy agent after a new MCP session (orchy or client restarted);
 persist that UUID from the last `register_agent` JSON or handoff knowledge.
 Use `parent_id` for agent lineage.
@@ -139,10 +138,10 @@ Use `parent_id` for agent lineage.
 |-----------|----------|-------------|
 | `project` | yes | Project identifier |
 | `description` | yes | What this agent is |
+| `organization` | no | Organization identifier. Defaults to `default` |
 | `namespace` | no | Scope within project |
 | `roles` | no | Capabilities. Auto-assigned from task demand if omitted |
-| `alias` | no | Short human-readable name (e.g. "backend-coder") |
-| `agent_id` | no | Resume a previous agent session by UUID |
+| `id` | no | Resume a previous agent session by UUID. Auto-generated if omitted |
 | `parent_id` | no | Create as child of this parent agent |
 | `metadata` | no | Key-value pairs attached to the agent record |
 
@@ -164,12 +163,6 @@ session errors or you are unsure whether you still need `register_agent`.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `roles` | yes | New role list (replaces existing) |
-
-### `set_alias`
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `alias` | no | Alias to set. Omit or null to clear. |
 
 ### `move_agent`
 
@@ -328,7 +321,7 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `task_id` | yes | |
-| `agent_id` | yes | Target agent UUID |
+| `agent` | yes | Target agent UUID |
 
 ---
 
@@ -511,7 +504,7 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `kind` | no | Filter by kind |
 | `tag` | no | Filter by tag |
 | `path_prefix` | no | Filter by path prefix |
-| `agent_id` | no | Filter by author |
+| `agent` | no | Filter by author UUID |
 
 ### `search_knowledge`
 

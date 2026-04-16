@@ -308,7 +308,7 @@ impl Task {
 
     pub fn claim(&mut self, agent: AgentId) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Claimed)?;
-        self.assigned_to = Some(agent);
+        self.assigned_to = Some(agent.clone());
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
 
@@ -330,7 +330,7 @@ impl Task {
     }
 
     pub fn start(&mut self, agent: &AgentId) -> Result<()> {
-        if self.assigned_to != Some(*agent) {
+        if self.assigned_to.as_ref() != Some(agent) {
             return Err(Error::InvalidInput(format!(
                 "task {} is not claimed by agent {}",
                 self.id, agent
@@ -458,7 +458,7 @@ impl Task {
             )));
         }
         self.status = TaskStatus::Claimed;
-        self.assigned_to = Some(new_agent);
+        self.assigned_to = Some(new_agent.clone());
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
 
@@ -679,8 +679,8 @@ impl Task {
     pub fn assigned_roles(&self) -> &[String] {
         &self.assigned_roles
     }
-    pub fn assigned_to(&self) -> Option<AgentId> {
-        self.assigned_to
+    pub fn assigned_to(&self) -> Option<&AgentId> {
+        self.assigned_to.as_ref()
     }
     pub fn assigned_at(&self) -> Option<DateTime<Utc>> {
         self.assigned_at
@@ -829,8 +829,8 @@ impl Task {
         self.collector.drain()
     }
 
-    pub fn created_by(&self) -> Option<AgentId> {
-        self.created_by
+    pub fn created_by(&self) -> Option<&AgentId> {
+        self.created_by.as_ref()
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -980,8 +980,8 @@ impl TaskWatcher {
     pub fn task_id(&self) -> TaskId {
         self.task_id
     }
-    pub fn agent_id(&self) -> AgentId {
-        self.agent_id
+    pub fn agent_id(&self) -> &AgentId {
+        &self.agent_id
     }
     pub fn org_id(&self) -> &OrganizationId {
         &self.org_id
@@ -1235,11 +1235,11 @@ impl ReviewRequest {
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
-    pub fn requester(&self) -> AgentId {
-        self.requester
+    pub fn requester(&self) -> &AgentId {
+        &self.requester
     }
-    pub fn reviewer(&self) -> Option<AgentId> {
-        self.reviewer
+    pub fn reviewer(&self) -> Option<&AgentId> {
+        self.reviewer.as_ref()
     }
     pub fn reviewer_role(&self) -> Option<&str> {
         self.reviewer_role.as_deref()
@@ -1327,23 +1327,23 @@ mod tests {
     fn claim_succeeds_from_pending() {
         let agent = AgentId::new();
         let mut task = make_task(TaskStatus::Pending, None);
-        assert!(task.claim(agent).is_ok());
+        assert!(task.claim(agent.clone()).is_ok());
         assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.assigned_to(), Some(agent));
+        assert_eq!(task.assigned_to(), Some(agent).as_ref());
         assert!(task.assigned_at().is_some());
     }
 
     #[test]
     fn claim_fails_from_claimed() {
         let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent));
+        let mut task = make_task(TaskStatus::Claimed, Some(agent.clone()));
         assert!(task.claim(agent).is_err());
     }
 
     #[test]
     fn start_succeeds_when_claimed_by_agent() {
         let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent));
+        let mut task = make_task(TaskStatus::Claimed, Some(agent.clone()));
         assert!(task.start(&agent).is_ok());
         assert_eq!(task.status(), TaskStatus::InProgress);
     }
@@ -1352,7 +1352,7 @@ mod tests {
     fn start_fails_when_claimed_by_different_agent() {
         let agent1 = AgentId::new();
         let agent2 = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent1));
+        let mut task = make_task(TaskStatus::Claimed, Some(agent1.clone()));
         assert!(task.start(&agent2).is_err());
     }
 
@@ -1412,10 +1412,10 @@ mod tests {
     fn assign_succeeds_from_claimed() {
         let agent1 = AgentId::new();
         let agent2 = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent1));
-        assert!(task.assign(agent2).is_ok());
+        let mut task = make_task(TaskStatus::Claimed, Some(agent1.clone()));
+        assert!(task.assign(agent2.clone()).is_ok());
         assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.assigned_to(), Some(agent2));
+        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
     }
 
     #[test]

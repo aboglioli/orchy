@@ -23,7 +23,7 @@ impl LockStore for PgBackend {
         .bind(lock.project().to_string())
         .bind(lock.namespace().to_string())
         .bind(lock.name())
-        .bind(*lock.holder().as_uuid())
+        .bind(lock.holder().as_uuid())
         .bind(lock.acquired_at())
         .bind(lock.expires_at())
         .execute(&self.pool)
@@ -84,7 +84,7 @@ impl LockStore for PgBackend {
             "SELECT project, namespace, name, holder, acquired_at, expires_at
              FROM resource_locks WHERE holder = $1",
         )
-        .bind(*holder.as_uuid())
+        .bind(holder.as_uuid())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;

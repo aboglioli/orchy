@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStatus};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::task::{Priority, SubtaskDef, Task, TaskFilter, TaskId, TaskStatus};
@@ -43,25 +43,34 @@ async fn resolve_agent(
     project_id: &ProjectId,
     s: &str,
 ) -> Result<AgentId, ApiError> {
-    container
-        .agent_service
-        .find_by_alias_str(org_id, project_id, s)
-        .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                format!("agent not found: {s}"),
-            )
-        })
-        .map(|a| a.id())
+    let agent_id = s.parse::<AgentId>().map_err(|e| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            format!("invalid agent id: {e}"),
+        )
+    })?;
+
+    let agent = container.agent_service.get(&agent_id).await.map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+
+    if agent.org_id() != org_id
+        || agent.project() != project_id
+        || agent.status() == AgentStatus::Disconnected
+    {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            format!("agent not found: {s}"),
+        ));
+    }
+
+    Ok(agent_id)
 }
 
 fn parse_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {

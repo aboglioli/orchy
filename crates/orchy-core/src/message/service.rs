@@ -11,6 +11,16 @@ pub struct MessageService<MS: MessageStore, AS: AgentStore> {
     agent_store: Arc<AS>,
 }
 
+pub struct SendMessage {
+    pub org_id: OrganizationId,
+    pub project: ProjectId,
+    pub namespace: Namespace,
+    pub from: AgentId,
+    pub to: MessageTarget,
+    pub body: String,
+    pub reply_to: Option<MessageId>,
+}
+
 impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
     pub fn new(message_store: Arc<MS>, agent_store: Arc<AS>) -> Self {
         Self {
@@ -19,16 +29,17 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         }
     }
 
-    pub async fn send(
-        &self,
-        org_id: OrganizationId,
-        project: ProjectId,
-        namespace: Namespace,
-        from: AgentId,
-        to: MessageTarget,
-        body: String,
-        reply_to: Option<MessageId>,
-    ) -> Result<Vec<Message>> {
+    pub async fn send(&self, cmd: SendMessage) -> Result<Vec<Message>> {
+        let SendMessage {
+            org_id,
+            project,
+            namespace,
+            from,
+            to,
+            body,
+            reply_to,
+        } = cmd;
+
         let targets = match &to {
             MessageTarget::Agent(_) => {
                 let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to);
@@ -41,7 +52,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                     .into_iter()
                     .filter(|a| a.project() == &project)
                     .filter(|a| a.roles().iter().any(|r| r == role))
-                    .map(|a| a.id())
+                    .map(|a| a.id().clone())
                     .collect::<Vec<_>>()
             }
             MessageTarget::Broadcast => {
@@ -49,8 +60,8 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 agents
                     .into_iter()
                     .filter(|a| a.project() == &project)
-                    .filter(|a| a.id() != from)
-                    .map(|a| a.id())
+                    .filter(|a| *a.id() != from)
+                    .map(|a| a.id().clone())
                     .collect::<Vec<_>>()
             }
         };
@@ -61,7 +72,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 org_id.clone(),
                 project.clone(),
                 namespace.clone(),
-                from,
+                from.clone(),
                 MessageTarget::Agent(target_id),
                 body.clone(),
                 reply_to,
@@ -178,15 +189,15 @@ mod tests {
         let store = Arc::new(MockStore::default());
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(
-                test_org(),
-                test_project(),
-                Namespace::root(),
-                AgentId::new(),
-                MessageTarget::Agent(AgentId::new()),
-                "hi".into(),
-                None,
-            )
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: AgentId::new(),
+                to: MessageTarget::Agent(AgentId::new()),
+                body: "hi".into(),
+                reply_to: None,
+            })
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
@@ -201,15 +212,15 @@ mod tests {
         save_agent(&store, &mut a2).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(
-                test_org(),
-                test_project(),
-                Namespace::root(),
-                AgentId::new(),
-                MessageTarget::Role("tester".to_string()),
-                "hi".into(),
-                None,
-            )
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: AgentId::new(),
+                to: MessageTarget::Role("tester".to_string()),
+                body: "hi".into(),
+                reply_to: None,
+            })
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
@@ -222,15 +233,15 @@ mod tests {
         save_agent(&store, &mut a).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(
-                test_org(),
-                test_project(),
-                Namespace::root(),
-                AgentId::new(),
-                MessageTarget::Role("tester".to_string()),
-                "hi".into(),
-                None,
-            )
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: AgentId::new(),
+                to: MessageTarget::Role("tester".to_string()),
+                body: "hi".into(),
+                reply_to: None,
+            })
             .await
             .unwrap();
         assert!(result.is_empty());
@@ -245,15 +256,15 @@ mod tests {
         save_agent(&store, &mut other).await;
         let service = MessageService::new(Arc::clone(&store), store);
         let result = service
-            .send(
-                test_org(),
-                test_project(),
-                Namespace::root(),
-                sender.id(),
-                MessageTarget::Broadcast,
-                "hi".into(),
-                None,
-            )
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: sender.id().clone(),
+                to: MessageTarget::Broadcast,
+                body: "hi".into(),
+                reply_to: None,
+            })
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
@@ -269,20 +280,20 @@ mod tests {
         let service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
 
         let result = service
-            .send(
-                test_org(),
-                test_project(),
-                Namespace::root(),
-                AgentId::new(),
-                MessageTarget::Role("reviewer".to_string()),
-                "hi".into(),
-                None,
-            )
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: AgentId::new(),
+                to: MessageTarget::Role("reviewer".to_string()),
+                body: "hi".into(),
+                reply_to: None,
+            })
             .await
             .unwrap();
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id()));
+        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id().clone()));
     }
 
     #[tokio::test]
@@ -297,19 +308,19 @@ mod tests {
         let service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
 
         let result = service
-            .send(
-                test_org(),
-                test_project(),
-                Namespace::root(),
-                sender.id(),
-                MessageTarget::Broadcast,
-                "hi".into(),
-                None,
-            )
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: sender.id().clone(),
+                to: MessageTarget::Broadcast,
+                body: "hi".into(),
+                reply_to: None,
+            })
             .await
             .unwrap();
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id()));
+        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id().clone()));
     }
 }

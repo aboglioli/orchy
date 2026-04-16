@@ -12,7 +12,7 @@ impl WatcherStore for MemoryBackend {
                 .write()
                 .map_err(|e| Error::Store(e.to_string()))?;
             watchers.retain(|w| {
-                !(w.task_id() == watcher.task_id() && w.agent_id() == watcher.agent_id())
+                !(w.task_id() == watcher.task_id() && *w.agent_id() == *watcher.agent_id())
             });
             watchers.push(watcher.clone());
         }
@@ -30,7 +30,7 @@ impl WatcherStore for MemoryBackend {
             .watchers
             .write()
             .map_err(|e| Error::Store(e.to_string()))?;
-        watchers.retain(|w| !(w.task_id() == *task_id && w.agent_id() == *agent_id));
+        watchers.retain(|w| !(w.task_id() == *task_id && *w.agent_id() == *agent_id));
         Ok(())
     }
 
@@ -53,7 +53,7 @@ impl WatcherStore for MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(watchers
             .iter()
-            .filter(|w| w.agent_id() == *agent_id)
+            .filter(|w| *w.agent_id() == *agent_id)
             .cloned()
             .collect())
     }

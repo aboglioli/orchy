@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStatus};
 use orchy_core::message::MessageId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -38,7 +38,11 @@ impl OrchyHandler {
     }
 
     pub(crate) fn get_session_agent(&self) -> Option<AgentId> {
-        self.session.read().ok()?.as_ref().map(|s| s.agent_id)
+        self.session
+            .read()
+            .ok()?
+            .as_ref()
+            .map(|s| s.agent_id.clone())
     }
 
     pub(crate) fn get_session_project(&self) -> Option<ProjectId> {
@@ -66,7 +70,7 @@ impl OrchyHandler {
             .map_err(|_| "session lock poisoned".to_string())?;
         match guard.as_ref() {
             Some(s) => Ok((
-                s.agent_id,
+                s.agent_id.clone(),
                 s.org.clone(),
                 s.project.clone(),
                 s.namespace.clone(),
@@ -86,7 +90,7 @@ impl OrchyHandler {
     ) {
         if let Ok(mut guard) = self.session.write() {
             *guard = Some(SessionState {
-                agent_id,
+                agent_id: agent_id.clone(),
                 org,
                 project,
                 namespace,
@@ -107,10 +111,10 @@ impl OrchyHandler {
     }
 
     pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
-        if let Ok(mut guard) = self.session.write() {
-            if let Some(state) = guard.as_mut() {
-                state.namespace = namespace;
-            }
+        if let Ok(mut guard) = self.session.write()
+            && let Some(state) = guard.as_mut()
+        {
+            state.namespace = namespace;
         }
     }
 
@@ -155,15 +159,11 @@ impl OrchyHandler {
     }
 
     pub(crate) async fn resolve_agent_id(&self, s: &str) -> Result<AgentId, String> {
-        if let Ok(id) = s.parse::<AgentId>() {
-            return Ok(id);
-        }
+        let agent_id = parse_agent_id(s)?;
 
         let project = self
             .get_session_project()
-            .ok_or("no session project for alias resolution")?;
-
-        let alias = orchy_core::agent::Alias::new(s).map_err(|e| e.to_string())?;
+            .ok_or("no session project for agent lookup")?;
 
         let org = self
             .session
@@ -171,18 +171,23 @@ impl OrchyHandler {
             .ok()
             .and_then(|g| g.as_ref().map(|s| s.org.clone()))
             .unwrap_or_else(default_org);
-        match self
+
+        let agent = self
             .container
             .agent_service
-            .find_by_alias(&org, &project, &alias)
+            .get(&agent_id)
             .await
-        {
-            Ok(Some(agent)) => Ok(agent.id()),
-            Ok(None) => Err(format!(
-                "agent not found: '{s}' (not a UUID or known alias)"
-            )),
-            Err(e) => Err(e.to_string()),
+            .map_err(|e| e.to_string())?;
+
+        if agent.org_id() != &org || agent.project() != &project {
+            return Err(format!("agent not found in current project: '{s}'"));
         }
+
+        if agent.status() == AgentStatus::Disconnected {
+            return Err(format!("agent is disconnected: '{s}'"));
+        }
+
+        Ok(agent_id)
     }
 
     pub(crate) fn build_optional_namespace(

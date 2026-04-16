@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::Result as OrchyResult;
-use orchy_core::knowledge::service::KnowledgeService;
+use orchy_core::knowledge::service::{KnowledgeService, PatchKnowledgeMetadata};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore, WriteKnowledge};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -67,7 +67,7 @@ async fn agent_save_and_find() {
     assert_eq!(agent.status(), AgentStatus::Online);
     assert_eq!(agent.roles(), &["coder".to_string()]);
 
-    let fetched = AgentStore::find_by_id(&store, &agent.id())
+    let fetched = AgentStore::find_by_id(&store, agent.id())
         .await
         .unwrap()
         .unwrap();
@@ -93,7 +93,7 @@ async fn agent_save_updates_existing() {
     agent.heartbeat();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    let updated = AgentStore::find_by_id(&store, &agent.id())
+    let updated = AgentStore::find_by_id(&store, agent.id())
         .await
         .unwrap()
         .unwrap();
@@ -117,7 +117,7 @@ async fn agent_disconnect_sets_status() {
     agent.disconnect();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    let fetched = AgentStore::find_by_id(&store, &agent.id())
+    let fetched = AgentStore::find_by_id(&store, agent.id())
         .await
         .unwrap()
         .unwrap();
@@ -332,8 +332,8 @@ async fn message_save_and_find_pending() {
         o.clone(),
         p.clone(),
         Namespace::root(),
-        from,
-        MessageTarget::Agent(to),
+        from.clone(),
+        MessageTarget::Agent(to.clone()),
         "hello".into(),
         None,
     );
@@ -371,8 +371,8 @@ async fn message_find_by_id_and_mark_read() {
         o.clone(),
         p.clone(),
         Namespace::root(),
-        from,
-        MessageTarget::Agent(to),
+        from.clone(),
+        MessageTarget::Agent(to.clone()),
         "hi".into(),
         None,
     );
@@ -404,8 +404,8 @@ async fn message_find_sent() {
         o.clone(),
         p.clone(),
         ns("/backend"),
-        sender,
-        MessageTarget::Agent(receiver),
+        sender.clone(),
+        MessageTarget::Agent(receiver.clone()),
         "hello".into(),
         None,
     );
@@ -435,17 +435,17 @@ async fn message_find_thread() {
         o.clone(),
         p.clone(),
         Namespace::root(),
-        a,
-        MessageTarget::Agent(b),
+        a.clone(),
+        MessageTarget::Agent(b.clone()),
         "first".into(),
         None,
     );
     MessageStore::save(&store, &mut msg1).await.unwrap();
 
-    let mut msg2 = msg1.reply(b, "second".into());
+    let mut msg2 = msg1.reply(b.clone(), "second".into());
     MessageStore::save(&store, &mut msg2).await.unwrap();
 
-    let mut msg3 = msg2.reply(a, "third".into());
+    let mut msg3 = msg2.reply(a.clone(), "third".into());
     MessageStore::save(&store, &mut msg3).await.unwrap();
 
     let thread = MessageStore::find_thread(&store, &msg3.id(), None)
@@ -559,7 +559,7 @@ async fn task_list_filters_by_assigned_to() {
         false,
     )
     .unwrap();
-    task.claim(agent).unwrap();
+    task.claim(agent.clone()).unwrap();
     TaskStore::save(&store, &mut task).await.unwrap();
 
     let assigned = TaskStore::list(
@@ -652,15 +652,15 @@ async fn knowledge_service_metadata_merge_and_remove() {
     assert_eq!(entry.metadata().get("b").map(String::as_str), Some("2"));
 
     let entry = svc
-        .patch_metadata(
-            &o,
-            Some(&proj("p")),
-            &Namespace::root(),
-            "meta-test",
-            HashMap::from([("c".into(), "3".into())]),
-            vec!["b".into()],
-            None,
-        )
+        .patch_metadata(PatchKnowledgeMetadata {
+            org: o,
+            project: Some(proj("p")),
+            namespace: Namespace::root(),
+            path: "meta-test".into(),
+            set: HashMap::from([("c".into(), "3".into())]),
+            remove: vec!["b".into()],
+            expected_version: None,
+        })
         .await
         .unwrap();
     assert_eq!(entry.metadata().get("b"), None);

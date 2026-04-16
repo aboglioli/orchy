@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use orchy_core::agent::AgentStatus;
+use orchy_core::agent::{AgentId, AgentStatus};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -101,10 +101,7 @@ pub async fn list(
                 .unwrap_or(true)
         })
         .map(|a| AgentDto {
-            id: a
-                .alias()
-                .map(|al| al.to_string())
-                .unwrap_or_else(|| a.id().to_string()),
+            id: a.id().to_string(),
             description: a.description().to_string(),
             status: a.status().to_string(),
             agent_type: a.metadata().get("agent_type").cloned(),
@@ -119,7 +116,7 @@ pub async fn list(
 pub async fn get_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, alias)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
 ) -> Result<Json<AgentContextDto>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
@@ -132,30 +129,36 @@ pub async fn get_context(
     }
     let project_id = ProjectId::try_from(project)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let agent_id = id.parse::<AgentId>().map_err(|e| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            format!("invalid agent id: {e}"),
+        )
+    })?;
 
-    let agent = container
-        .agent_service
-        .find_by_alias_str(&org_id, &project_id, &alias)
-        .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?
-        .filter(|a| a.status() != AgentStatus::Disconnected)
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                "agent not found".to_string(),
-            )
-        })?;
+    let agent = container.agent_service.get(&agent_id).await.map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+
+    if agent.org_id() != &org_id
+        || agent.project() != &project_id
+        || agent.status() == AgentStatus::Disconnected
+    {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "agent not found".to_string(),
+        ));
+    }
 
     let inbox = container
         .message_service
-        .pending(&agent.id(), &org_id, agent.project(), agent.namespace())
+        .pending(agent.id(), &org_id, agent.project(), agent.namespace())
         .await
         .unwrap_or_default()
         .into_iter()
@@ -183,7 +186,7 @@ pub async fn get_context(
 
     let pending_reviews = container
         .task_service
-        .pending_reviews_for_agent(&agent.id())
+        .pending_reviews_for_agent(agent.id())
         .await
         .unwrap_or_default()
         .into_iter()
@@ -194,10 +197,7 @@ pub async fn get_context(
         .collect();
 
     let agent_dto = AgentDto {
-        id: agent
-            .alias()
-            .map(|al| al.to_string())
-            .unwrap_or_else(|| agent.id().to_string()),
+        id: agent.id().to_string(),
         description: agent.description().to_string(),
         status: agent.status().to_string(),
         agent_type: agent.metadata().get("agent_type").cloned(),

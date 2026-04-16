@@ -77,7 +77,7 @@ impl LockStore for MemoryBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(locks
             .values()
-            .filter(|lock| lock.holder() == *holder)
+            .filter(|lock| *lock.holder() == *holder)
             .cloned()
             .collect())
     }

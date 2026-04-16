@@ -12,6 +12,13 @@ use orchy_core::organization::OrganizationId;
 
 use crate::SqliteBackend;
 
+fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        e.to_string(),
+    ))
+}
+
 impl MessageStore for SqliteBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
         {
@@ -77,11 +84,12 @@ impl MessageStore for SqliteBackend {
         let mut sql = String::from(
             "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE status = ?1 AND (to_target = ?2 OR to_target = 'broadcast') AND organization_id = ?3 AND project = ?4",
         );
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        params.push(Box::new("pending".to_string()));
-        params.push(Box::new(agent.to_string()));
-        params.push(Box::new(org.to_string()));
-        params.push(Box::new(project.to_string()));
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+            Box::new("pending".to_string()),
+            Box::new(agent.to_string()),
+            Box::new(org.to_string()),
+            Box::new(project.to_string()),
+        ];
         let mut idx = 5;
 
         if !namespace.is_root() {
@@ -219,7 +227,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
                 rusqlite::Error::FromSqlConversionFailure(
                     9,
                     rusqlite::types::Type::Text,
-                    Box::new(e),
+                    str_err(e),
                 )
             })
         })
@@ -227,7 +235,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
 
     Ok(Message::restore(RestoreMessage {
         id: MessageId::from_str(&id_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
         })?,
         org_id: OrganizationId::new(&org_id_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(
@@ -254,7 +262,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
             )
         })?,
         from: AgentId::from_str(&from_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, str_err(e))
         })?,
         to: MessageTarget::parse(&to_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(

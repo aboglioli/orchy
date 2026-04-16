@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
-use orchy_runner::config::{AgentConfig, SpawnMode};
+use orchy_runner::config::RunnerConfig;
 use orchy_runner::error::Result;
-use orchy_runner::output::OutputParser;
-use orchy_runner::process::AgentProcess;
+use orchy_runner::process::spawn_pty_raw;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,15 +27,21 @@ async fn main() -> Result<()> {
 
     let is_json = cmd_args.iter().any(|a| a == "json" || a.contains("json"));
 
-    let config = AgentConfig {
-        name: "test-agent".to_string(),
+    let config = RunnerConfig {
+        alias: "test-agent".to_string(),
+        agent_type: "unknown".to_string(),
+        description: "test agent".to_string(),
+        url: "http://127.0.0.1:3100/mcp".to_string(),
+        project: "default".to_string(),
+        namespace: None,
         command: command.clone(),
         args: cmd_args,
-        spawn_mode: SpawnMode::Pty,
-        env: Default::default(),
+        env: HashMap::new(),
         working_dir: None,
         pty_rows: 24,
         pty_cols: 120,
+        idle_patterns: vec![],
+        idle_wake: Duration::from_secs(120),
     };
 
     println!("=== PTY Test ===");
@@ -43,8 +50,7 @@ async fn main() -> Result<()> {
     println!("json output: {is_json}");
     println!();
 
-    let mut process = AgentProcess::spawn(&config).await?;
-    let parser = OutputParser::new(is_json);
+    let mut parts = spawn_pty_raw(&config)?;
 
     println!("--- process spawned, reading output ---");
     println!();
@@ -59,35 +65,32 @@ async fn main() -> Result<()> {
             break;
         }
 
-        let line = tokio::time::timeout(Duration::from_secs(5), process.read_line()).await;
+        let mut buf = [0u8; 8192];
+        let read = tokio::time::timeout(Duration::from_secs(5), parts.reader.read(&mut buf)).await;
 
-        match line {
-            Ok(Ok(Some(raw))) => {
-                let parsed = parser.parse(&raw);
-
-                if let Some(text) = parser.extract_text(&parsed) {
-                    println!("[OUT] {text}");
-                }
-
-                if parser.is_completion_signal(&parsed) {
-                    println!("\n--- completion signal detected ---");
-                    break;
-                }
-            }
-            Ok(Ok(None)) => {
+        match read {
+            Ok(Ok(0)) => {
                 println!("\n--- process output stream closed ---");
                 break;
+            }
+            Ok(Ok(n)) => {
+                let text = String::from_utf8_lossy(&buf[..n]);
+                print!("{text}");
+                std::io::Write::flush(&mut std::io::stdout()).ok();
             }
             Ok(Err(e)) => {
                 println!("[ERR] {e}");
             }
             Err(_) => {
-                // 5s read timeout — check if process still alive
-                if !process.is_running() {
+                if parts
+                    .child
+                    .try_wait()
+                    .map_err(|e| orchy_runner::error::Error::Io(format!("wait: {e}")))?
+                    .is_some()
+                {
                     println!("\n--- process exited ---");
                     break;
                 }
-                // still running, just no output yet
                 print!(".");
                 std::io::Write::flush(&mut std::io::stdout()).ok();
             }
@@ -95,9 +98,10 @@ async fn main() -> Result<()> {
     }
 
     println!("\ncleaning up...");
-    let _ = process.send_ctrl_c().await;
+    let _ = parts.writer.write_all(&[0x03]).await;
+    let _ = parts.writer.flush().await;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let _ = process.kill().await;
+    let _ = parts.child.kill().await;
 
     println!("done.");
     Ok(())

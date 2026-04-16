@@ -10,6 +10,13 @@ use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 
 use crate::SqliteBackend;
 
+fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        e.to_string(),
+    ))
+}
+
 impl WatcherStore for SqliteBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
         {
@@ -92,29 +99,41 @@ fn row_to_watcher(row: &rusqlite::Row) -> rusqlite::Result<TaskWatcher> {
     let created_at_str: String = row.get(4)?;
 
     let task_id = TaskId::from_str(&task_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            str_err(e.to_string()),
+        )
     })?;
     let agent_id = AgentId::from_str(&agent_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
+            rusqlite::types::Type::Text,
+            str_err(e.to_string()),
+        )
     })?;
     let project = ProjectId::try_from(project_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             2,
             rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            str_err(e.to_string()),
         )
     })?;
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             3,
             rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            str_err(e.to_string()),
         )
     })?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(
+                4,
+                rusqlite::types::Type::Text,
+                str_err(e.to_string()),
+            )
         })?;
 
     Ok(TaskWatcher::restore(

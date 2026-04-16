@@ -39,7 +39,7 @@ impl ReviewStore for MemoryBackend {
             .values()
             .filter(|r| {
                 r.status() == ReviewStatus::Pending
-                    && (r.reviewer() == Some(*agent_id) || r.reviewer().is_none())
+                    && (r.reviewer() == Some(agent_id) || r.reviewer().is_none())
             })
             .cloned()
             .collect())

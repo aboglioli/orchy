@@ -9,6 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use orchy_core::agent::AgentId;
+use orchy_core::knowledge::service::PatchKnowledgeMetadata;
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeKind, Version as KnowledgeVersion, WriteKnowledge,
 };
@@ -551,15 +552,15 @@ pub async fn patch_metadata(
 
     let updated = container
         .knowledge_service
-        .patch_metadata(
-            &org_id,
-            Some(&project_id),
-            &ns,
-            &path,
-            body.set.unwrap_or_default(),
-            body.remove.unwrap_or_default(),
-            body.version.map(KnowledgeVersion::from),
-        )
+        .patch_metadata(PatchKnowledgeMetadata {
+            org: org_id,
+            project: Some(project_id),
+            namespace: ns,
+            path,
+            set: body.set.unwrap_or_default(),
+            remove: body.remove.unwrap_or_default(),
+            expected_version: body.version.map(KnowledgeVersion::from),
+        })
         .await
         .map_err(map_err)?;
 

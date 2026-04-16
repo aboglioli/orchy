@@ -94,7 +94,7 @@ impl MessageStore for MemoryBackend {
         let mut results: Vec<Message> = messages
             .values()
             .filter(|msg| {
-                msg.from() == *sender
+                msg.from() == sender
                     && msg.org_id() == org
                     && msg.project() == project
                     && msg.namespace().starts_with(namespace)

@@ -237,7 +237,7 @@ impl Message {
             self.project.clone(),
             self.namespace.clone(),
             from,
-            MessageTarget::Agent(self.from),
+            MessageTarget::Agent(self.from.clone()),
             body,
             Some(self.id),
         )
@@ -299,8 +299,8 @@ impl Message {
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
-    pub fn from(&self) -> AgentId {
-        self.from
+    pub fn from(&self) -> &AgentId {
+        &self.from
     }
     pub fn to(&self) -> &MessageTarget {
         &self.to
@@ -423,14 +423,14 @@ mod tests {
             test_org(),
             test_project(),
             Namespace::root(),
-            sender,
-            MessageTarget::Agent(receiver),
+            sender.clone(),
+            MessageTarget::Agent(receiver.clone()),
             "hello".into(),
             None,
         );
-        let reply = original.reply(receiver, "hey back".into());
+        let reply = original.reply(receiver.clone(), "hey back".into());
         assert_eq!(reply.reply_to(), Some(original.id()));
-        assert_eq!(reply.from(), receiver);
-        assert_eq!(reply.to(), &MessageTarget::Agent(sender));
+        assert_eq!(reply.from(), &receiver);
+        assert_eq!(reply.to(), &MessageTarget::Agent(sender.clone()));
     }
 }

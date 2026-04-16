@@ -27,8 +27,8 @@ impl Note {
         }
     }
 
-    pub fn author(&self) -> Option<AgentId> {
-        self.author
+    pub fn author(&self) -> Option<&AgentId> {
+        self.author.as_ref()
     }
 
     pub fn body(&self) -> &str {
