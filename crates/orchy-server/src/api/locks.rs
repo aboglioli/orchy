@@ -50,14 +50,14 @@ fn map_err(e: orchy_core::error::Error) -> (StatusCode, String) {
 }
 
 #[derive(Deserialize)]
-pub struct NsQuery {
-    pub ns: Option<String>,
+pub struct NamespaceQuery {
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct ReleaseQuery {
     pub agent_id: String,
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -72,12 +72,12 @@ pub async fn check(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, name)): Path<(String, String, String)>,
-    Query(query): Query<NsQuery>,
+    Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<Option<ResourceLock>>, (StatusCode, String)> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let lock = container
         .lock_service
@@ -124,7 +124,7 @@ pub async fn release(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let agent_id = query
         .agent_id

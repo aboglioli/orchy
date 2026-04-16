@@ -47,13 +47,13 @@ fn map_err(e: orchy_core::error::Error) -> (StatusCode, String) {
 #[derive(Deserialize)]
 pub struct InboxQuery {
     pub agent_id: String,
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct SentQuery {
     pub agent_id: String,
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -84,7 +84,7 @@ pub async fn inbox(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let agent_id = query
         .agent_id
@@ -109,7 +109,7 @@ pub async fn sent(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let agent_id = query
         .agent_id

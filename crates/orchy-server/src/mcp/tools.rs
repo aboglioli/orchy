@@ -45,8 +45,8 @@ impl OrchyHandler {
     #[tool(
         description = "Register as an agent. Required before almost every other tool. \
         Roles are optional — orchy assigns them from pending task demand if omitted. \
-        Pass agent_id to resume the same orchy agent after a new MCP session (orchy or client \
-        restarted); persist that UUID from the last register_agent JSON or handoff knowledge. \
+        Pass alias to resume the same agent after a new MCP session (orchy or client restarted): \
+        if an agent with that alias already exists in the project, the session is resumed. \
         Use parent_id for agent lineage."
     )]
     async fn register_agent(
@@ -71,40 +71,16 @@ impl OrchyHandler {
             _ => default_org(),
         };
 
-        if let Some(ref id_str) = params.agent_id {
-            let agent_id = parse_agent_id(id_str)?;
-            let _ = NamespaceStore::register(&*self.container.store, &org_id, &project, &namespace)
-                .await;
-
-            let mut agent = self
-                .container
-                .agent_service
-                .resume(
-                    &agent_id,
-                    namespace.clone(),
-                    params.roles.clone().unwrap_or_default(),
-                    params.description.clone().unwrap_or_default(),
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-
-            if let Some(metadata) = params.metadata {
-                agent = self
-                    .container
-                    .agent_service
-                    .update_metadata(&agent_id, metadata)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-
-            self.set_session(agent.id(), org_id, project, namespace);
-            return Ok(to_json(&agent));
-        }
-
         let _ =
             NamespaceStore::register(&*self.container.store, &org_id, &project, &namespace).await;
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
+
+        let alias_str = match params.alias {
+            Some(s) if !s.is_empty() => s,
+            _ => format!("agent-{}", chrono::Utc::now().timestamp()),
+        };
+        let alias = orchy_core::agent::Alias::new(alias_str).map_err(|e| e.to_string())?;
 
         let input_roles = params.roles.unwrap_or_default();
         let roles = if input_roles.is_empty() {
@@ -127,11 +103,7 @@ impl OrchyHandler {
             namespace: namespace.clone(),
             roles,
             description: params.description.unwrap_or_default(),
-            alias: params
-                .alias
-                .map(|s| orchy_core::agent::Alias::new(s))
-                .transpose()
-                .map_err(|e| e.to_string())?,
+            alias: Some(alias),
             parent_id,
             metadata: params.metadata.unwrap_or_default(),
         };
@@ -455,6 +427,13 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
+        let session_project = self.get_session_project();
+        let project = if let Some(p) = params.project {
+            Some(parse_project(&p)?)
+        } else {
+            session_project
+        };
+
         let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
         let status = params.status.as_deref().map(|s| match s {
@@ -475,11 +454,7 @@ impl OrchyHandler {
         let parent_id = params.parent_id.as_deref().map(parse_task_id).transpose()?;
 
         let filter = TaskFilter {
-            project: if namespace.is_none() {
-                self.get_session_project()
-            } else {
-                None
-            },
+            project,
             namespace,
             status: status.flatten(),
             parent_id,
@@ -749,7 +724,13 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckMailboxParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, project, session_ns) = self.require_session()?;
+        let (agent_id, _, session_project, session_ns) = self.require_session()?;
+
+        let project = if let Some(p) = params.project {
+            parse_project(&p)?
+        } else {
+            session_project
+        };
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
@@ -1294,11 +1275,14 @@ impl OrchyHandler {
     )]
     async fn list_namespaces(
         &self,
-        Parameters(_params): Parameters<ListNamespacesParams>,
+        Parameters(params): Parameters<ListNamespacesParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
+        let project = if let Some(p) = params.project {
+            parse_project(&p)?
+        } else {
+            self.get_session_project()
+                .ok_or("no agent registered for this session; call register_agent first")?
+        };
 
         let default_org = default_org();
         match NamespaceStore::list(&*self.container.store, &default_org, &project).await {
@@ -1336,9 +1320,12 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetProjectOverviewParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
+        let project = if let Some(p) = params.project {
+            parse_project(&p)?
+        } else {
+            self.get_session_project()
+                .ok_or("no agent registered for this session; call register_agent first")?
+        };
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
@@ -1670,7 +1657,12 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PollUpdatesParams>,
     ) -> Result<String, String> {
-        let (_, _, project, _) = self.require_session()?;
+        let (_, _, session_project, _) = self.require_session()?;
+        let project = if let Some(p) = params.project {
+            parse_project(&p)?
+        } else {
+            session_project
+        };
 
         let since = match params.since.as_deref() {
             Some(s) => chrono::DateTime::parse_from_rfc3339(s)
@@ -1808,7 +1800,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReadKnowledgeParams>,
     ) -> Result<String, String> {
-        let project = self.get_session_project().ok_or("no agent registered")?;
+        let project = if let Some(p) = params.project {
+            parse_project(&p)?
+        } else {
+            self.get_session_project().ok_or("no agent registered")?
+        };
 
         let namespace = match params.namespace.as_deref() {
             Some(s) => self.build_namespace(Some(s))?,
@@ -1836,6 +1832,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListKnowledgeParams>,
     ) -> Result<String, String> {
+        let explicit_project = params.project.as_deref().map(parse_project).transpose()?;
         let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
 
         let kind = match params.kind.as_deref() {
@@ -1848,12 +1845,16 @@ impl OrchyHandler {
             None => None,
         };
 
+        let project = if explicit_project.is_some() {
+            explicit_project
+        } else if namespace.is_none() {
+            self.get_session_project()
+        } else {
+            None
+        };
+
         let filter = KnowledgeFilter {
-            project: if namespace.is_none() {
-                self.get_session_project()
-            } else {
-                None
-            },
+            project,
             namespace,
             kind,
             tag: params.tag,
@@ -1891,6 +1892,11 @@ impl OrchyHandler {
         if let Some(k) = params.kind.as_deref() {
             let kind: KnowledgeKind = k.parse().map_err(|e: String| e)?;
             entries.retain(|e| e.kind() == kind);
+        }
+
+        if let Some(p) = params.project {
+            let project = parse_project(&p)?;
+            entries.retain(|e| e.project().map(|ep| *ep == project).unwrap_or(false));
         }
 
         Ok(to_json(&entries))

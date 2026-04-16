@@ -27,7 +27,7 @@ pub struct SetMetadataBody {
 
 #[derive(Deserialize)]
 pub struct NamespaceQuery {
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -189,7 +189,7 @@ pub async fn overview(
     check_org(&auth, &org_id)?;
     let project_id = parse_project_id(&project)?;
 
-    let ns = match query.ns.as_deref() {
+    let ns = match query.namespace.as_deref() {
         Some(s) => Namespace::try_from(format!("/{s}"))
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
         None => Namespace::root(),

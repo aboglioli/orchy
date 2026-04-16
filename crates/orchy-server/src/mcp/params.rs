@@ -9,11 +9,9 @@ pub struct RegisterAgentParams {
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
     pub description: Option<String>,
-    /// Short human-readable name for the agent (e.g. "backend-coder").
+    /// Short human-readable name for the agent. Used as stable reconnection key:
+    /// if an agent with this alias already exists in the project, the session resumes it.
     pub alias: Option<String>,
-    /// Resume this orchy agent after a new MCP session (e.g. orchy or client restarted).
-    /// Use the `id` from your last successful `register_agent` response or handoff knowledge.
-    pub agent_id: Option<String>,
     /// Create as a child of this parent agent.
     pub parent_id: Option<String>,
     pub metadata: Option<std::collections::HashMap<String, String>>,
@@ -72,6 +70,8 @@ pub struct ListTasksParams {
     pub status: Option<String>,
     /// Filter by parent task ID to list subtasks.
     pub parent_id: Option<String>,
+    /// Override the session project to query another project.
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -203,6 +203,7 @@ pub struct SendMessageParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct CheckMailboxParams {
     pub namespace: Option<String>,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -225,6 +226,7 @@ pub struct ListConversationParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetProjectOverviewParams {
     pub namespace: Option<String>,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -247,7 +249,9 @@ pub struct SetProjectMetadataParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct ListNamespacesParams {}
+pub struct ListNamespacesParams {
+    pub project: Option<String>,
+}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct TagTaskParams {
@@ -336,6 +340,7 @@ pub struct PollUpdatesParams {
     /// ISO 8601 timestamp. Returns events after this time.
     pub since: Option<String>,
     pub limit: Option<u32>,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -370,6 +375,7 @@ pub struct PatchKnowledgeMetadataParams {
 pub struct ReadKnowledgeParams {
     pub namespace: Option<String>,
     pub path: String,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -380,6 +386,7 @@ pub struct ListKnowledgeParams {
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
     pub agent_id: Option<String>,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -388,6 +395,7 @@ pub struct SearchKnowledgeParams {
     pub namespace: Option<String>,
     pub kind: Option<String>,
     pub limit: Option<u32>,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

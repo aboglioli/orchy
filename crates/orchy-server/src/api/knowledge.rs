@@ -65,14 +65,14 @@ fn map_err(e: orchy_core::error::Error) -> (StatusCode, String) {
 pub struct ListQuery {
     pub kind: Option<String>,
     pub tag: Option<String>,
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
     pub path_prefix: Option<String>,
     pub agent_id: Option<String>,
 }
 
 #[derive(Deserialize)]
-pub struct NsQuery {
-    pub ns: Option<String>,
+pub struct NamespaceQuery {
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -152,7 +152,7 @@ pub async fn list(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_optional_ns(query.ns.as_deref())?;
+    let ns = parse_optional_ns(query.namespace.as_deref())?;
 
     let kind = match query.kind.as_deref() {
         Some(k) => Some(
@@ -290,12 +290,12 @@ pub async fn read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
-    Query(query): Query<NsQuery>,
+    Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<Option<Knowledge>>, (StatusCode, String)> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let entry = container
         .knowledge_service
@@ -350,12 +350,12 @@ pub async fn delete(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
-    Query(query): Query<NsQuery>,
+    Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let entry = container
         .knowledge_service

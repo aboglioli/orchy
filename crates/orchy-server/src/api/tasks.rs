@@ -68,20 +68,20 @@ type OrgProject = (String, String);
 #[derive(Deserialize)]
 pub struct ListTasksQuery {
     pub status: Option<String>,
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
     pub parent_id: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct NextTaskQuery {
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
     pub role: Option<String>,
     pub claim: Option<bool>,
 }
 
 #[derive(Deserialize)]
-pub struct NsQuery {
-    pub ns: Option<String>,
+pub struct NamespaceQuery {
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -227,7 +227,7 @@ pub async fn list(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
 
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let status = match query.status.as_deref() {
         Some("pending") => Some(TaskStatus::Pending),
@@ -646,12 +646,12 @@ pub async fn list_tags(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project)): Path<OrgProject>,
-    Query(query): Query<NsQuery>,
+    Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<Vec<String>>, (StatusCode, String)> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
 
     let tasks = container
         .task_service
@@ -683,7 +683,7 @@ pub async fn next_task(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let ns = parse_ns(query.ns.as_deref())?;
+    let ns = parse_ns(query.namespace.as_deref())?;
     let roles = match query.role {
         Some(r) => vec![r],
         None => vec![],

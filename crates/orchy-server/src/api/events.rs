@@ -29,7 +29,7 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode,
 pub struct PollQuery {
     pub since: Option<String>,
     pub limit: Option<u32>,
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
 }
 
 pub async fn poll(

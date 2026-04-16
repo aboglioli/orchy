@@ -15,40 +15,40 @@ impl<S: AgentStore> AgentService<S> {
     }
 
     pub async fn register(&self, cmd: RegisterAgent) -> Result<Agent> {
-        let mut agent = if let Some(parent_id) = cmd.parent_id {
+        if let Some(parent_id) = cmd.parent_id {
             let parent = self.get(&parent_id).await?;
-            Agent::from_parent(
+            let mut agent = Agent::from_parent(
                 &parent,
                 cmd.namespace,
                 cmd.roles,
                 cmd.description,
                 cmd.alias,
-            )
-        } else {
-            Agent::register(
-                cmd.org_id,
-                cmd.project,
-                cmd.namespace,
-                cmd.roles,
-                cmd.description,
-                cmd.alias,
-                cmd.metadata,
-            )
-        };
+            );
+            self.store.save(&mut agent).await?;
+            return Ok(agent);
+        }
 
-        self.store.save(&mut agent).await?;
-        Ok(agent)
-    }
+        if let Some(ref alias) = cmd.alias {
+            if let Some(mut existing) = self
+                .store
+                .find_by_alias(&cmd.org_id, &cmd.project, alias)
+                .await?
+            {
+                existing.resume(cmd.namespace, cmd.roles, cmd.description);
+                self.store.save(&mut existing).await?;
+                return Ok(existing);
+            }
+        }
 
-    pub async fn resume(
-        &self,
-        id: &AgentId,
-        namespace: Namespace,
-        roles: Vec<String>,
-        description: String,
-    ) -> Result<Agent> {
-        let mut agent = self.get(id).await?;
-        agent.resume(namespace, roles, description);
+        let mut agent = Agent::register(
+            cmd.org_id,
+            cmd.project,
+            cmd.namespace,
+            cmd.roles,
+            cmd.description,
+            cmd.alias,
+            cmd.metadata,
+        );
         self.store.save(&mut agent).await?;
         Ok(agent)
     }
@@ -207,6 +207,37 @@ mod tests {
         let child = service.register(child_cmd).await.unwrap();
         assert_eq!(child.parent_id(), Some(parent.id()));
         assert_eq!(child.project().as_ref(), "orchy");
+    }
+
+    #[tokio::test]
+    async fn register_resumes_by_alias() {
+        use orchy_events::OrganizationId;
+        let store = Arc::new(MockStore::default());
+        let service = AgentService::new(store);
+
+        let cmd = RegisterAgent {
+            org_id: OrganizationId::new("orchy").unwrap(),
+            project: ProjectId::try_from("orchy".to_string()).unwrap(),
+            namespace: Namespace::root(),
+            roles: vec!["coder".to_string()],
+            description: "first session".to_string(),
+            alias: Some(super::super::Alias::new("my-coder").unwrap()),
+            parent_id: None,
+            metadata: HashMap::new(),
+        };
+        let first = service.register(cmd.clone()).await.unwrap();
+
+        let resume_cmd = RegisterAgent {
+            description: "second session".to_string(),
+            namespace: Namespace::try_from("/backend".to_string()).unwrap(),
+            ..cmd
+        };
+        let resumed = service.register(resume_cmd).await.unwrap();
+
+        assert_eq!(first.id(), resumed.id());
+        assert_eq!(resumed.description(), "second session");
+        assert_eq!(resumed.namespace().to_string(), "/backend");
+        assert_eq!(resumed.status(), AgentStatus::Online);
     }
 
     #[tokio::test]
