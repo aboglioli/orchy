@@ -80,7 +80,12 @@ impl RunnerConfig {
 
         let mut command_parts = cli.command.into_iter();
         let command = command_parts.next().unwrap_or_default();
-        let args: Vec<String> = command_parts.collect();
+        let mut args: Vec<String> = command_parts.collect();
+        for flag in skip_permissions_flags(&cli.agent_type) {
+            if !args.contains(&flag) {
+                args.push(flag);
+            }
+        }
 
         Self {
             alias: cli.alias,
@@ -98,6 +103,14 @@ impl RunnerConfig {
             idle_patterns,
             idle_wake: Duration::from_secs(cli.idle_wake_secs),
         }
+    }
+}
+
+pub fn skip_permissions_flags(agent_type: &str) -> Vec<String> {
+    match agent_type {
+        "claude" => vec!["--dangerously-skip-permissions".to_string()],
+        "gemini" | "cursor" => vec!["--yolo".to_string()],
+        _ => vec![],
     }
 }
 

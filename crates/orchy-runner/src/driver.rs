@@ -31,6 +31,7 @@ pub struct AgentDriver {
     config: RunnerConfig,
     shutting_down: bool,
     mcp_injected: bool,
+    bootstrap_staged: bool,
 }
 
 impl AgentDriver {
@@ -56,6 +57,7 @@ impl AgentDriver {
             config,
             shutting_down: false,
             mcp_injected: false,
+            bootstrap_staged: false,
         })
     }
 
@@ -184,6 +186,13 @@ impl AgentDriver {
 
             if currently_idle && !last_was_idle {
                 idle_since = Some(Instant::now());
+                if !self.bootstrap_staged {
+                    self.bootstrap_staged = true;
+                    let prompt = build_bootstrap_prompt(&self.config);
+                    let mut w = self.writer.lock().await;
+                    let _ = w.write_all(prompt.as_bytes()).await;
+                    let _ = w.flush().await;
+                }
             } else if !currently_idle && last_was_idle {
                 idle_since = None;
             }
@@ -403,6 +412,18 @@ async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<
     );
 
     Some(prompt)
+}
+
+fn build_bootstrap_prompt(config: &RunnerConfig) -> String {
+    format!(
+        "You are agent '{}'. Connect to orchy MCP server at {}. On startup: \
+1. register_agent(project: \"{}\", alias: \"{}\", description: \"{}\") \
+2. list_knowledge(kind: \"skill\") \
+3. check_mailbox \
+4. get_next_task \
+Call heartbeat every 30 seconds. Focus on completing tasks.",
+        config.alias, config.url, config.project, config.alias, config.description,
+    )
 }
 
 fn now_ms() -> u64 {
