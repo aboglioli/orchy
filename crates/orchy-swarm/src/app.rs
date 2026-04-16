@@ -72,7 +72,7 @@ impl App {
                 if tab.scroll_offset() > 0 {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
                     let pty_rows = rows.saturating_sub(4).max(10);
-                    tab.prepare_render(pty_rows, cols);
+                    tab.prepare_scroll(pty_rows, cols);
                 }
             }
 
@@ -187,16 +187,25 @@ impl App {
                     tab.send_input(b"\r".to_vec());
                 }
             }
-            (_, KeyCode::F(7)) => {
+            (_, KeyCode::F(7)) | (KeyModifiers::SHIFT, KeyCode::PageUp) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
                     let pty_rows = rows.saturating_sub(4).max(10);
                     tab.scroll_up(pty_rows, cols);
                 }
             }
-            (_, KeyCode::F(8)) => {
+            (_, KeyCode::F(8)) | (KeyModifiers::SHIFT, KeyCode::PageDown) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.scroll_down();
+                }
+            }
+            (_, KeyCode::Esc) => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    if tab.scroll_offset() > 0 {
+                        tab.scroll_to_bottom();
+                    } else {
+                        tab.send_input(vec![0x1b]);
+                    }
                 }
             }
             _ => {

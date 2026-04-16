@@ -17,22 +17,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     if let Some(tab) = app.tabs.get(app.active_tab) {
         let scroll = tab.scroll_offset();
-
-        // When scrolled: replay into a taller parser (cached). Row 0 of that
-        // parser is the oldest content; we show the top visible_rows rows.
-        // When at bottom (scroll=0): normal rendering of current screen.
-        let (screen, start_row) = if scroll > 0 {
-            if let Some(s) = tab.scroll_screen() {
-                let (total_rows, _) = s.size();
-                let (vis_rows, _) = tab.screen.screen().size();
-                let top = total_rows.saturating_sub(vis_rows).saturating_sub(scroll as u16);
-                (s, top)
-            } else {
-                (tab.screen.screen(), 0)
-            }
-        } else {
-            (tab.screen.screen(), 0)
-        };
+        let (screen, start_row) = tab.scroll_view();
 
         let (screen_rows, screen_cols) = screen.size();
         let visible_rows = area.height.min(screen_rows.saturating_sub(start_row));
@@ -73,7 +58,15 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
         if scroll > 0 {
             use ratatui::style::Color;
-            let hint = format!(" ↑ scrolled ({scroll} rows) — F8 to scroll down, F7 to scroll up ");
+            let hint = if tab.is_snapshot_mode() {
+                format!(
+                    " ↑ snapshot {}/{} — Shift+PgUp/F7 back  Shift+PgDn/F8 forward  Esc exit ",
+                    scroll,
+                    tab.snapshot_count(),
+                )
+            } else {
+                format!(" ↑ scrolled ({scroll} rows) — Shift+PgUp/F7 up  Shift+PgDn/F8 down  Esc exit ")
+            };
             let hint_line = Line::from(Span::styled(
                 hint,
                 Style::default().fg(Color::Black).bg(Color::Yellow),
