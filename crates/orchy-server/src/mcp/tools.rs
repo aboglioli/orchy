@@ -79,7 +79,7 @@ impl OrchyHandler {
                     &agent_id,
                     namespace.clone(),
                     params.roles.clone().unwrap_or_default(),
-                    params.description.clone(),
+                    params.description.clone().unwrap_or_default(),
                 )
                 .await
                 .map_err(|e| e.to_string())?;
@@ -121,7 +121,7 @@ impl OrchyHandler {
             project: project.clone(),
             namespace: namespace.clone(),
             roles,
-            description: params.description,
+            description: params.description.unwrap_or_default(),
             alias: params
                 .alias
                 .map(|s| orchy_core::agent::Alias::new(s))
@@ -2247,8 +2247,16 @@ impl ServerHandler for OrchyHandler {
             self.set_mcp_session_id(session_id);
         }
         self.touch_heartbeat();
+        let tools = Self::tool_router()
+            .list_all()
+            .into_iter()
+            .map(|mut t| {
+                t.input_schema = super::schema_compat::compat_tool_input_schema(t.input_schema);
+                t
+            })
+            .collect();
         Ok(rmcp::model::ListToolsResult {
-            tools: Self::tool_router().list_all(),
+            tools,
             meta: None,
             next_cursor: None,
         })

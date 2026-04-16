@@ -7,8 +7,7 @@ pub struct RegisterAgentParams {
     pub namespace: Option<String>,
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
-    #[serde(default)]
-    pub description: String,
+    pub description: Option<String>,
     /// Short human-readable name for the agent (e.g. "backend-coder").
     pub alias: Option<String>,
     /// Resume this orchy agent after a new MCP session (e.g. orchy or client restarted).
