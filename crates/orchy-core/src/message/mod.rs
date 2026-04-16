@@ -20,6 +20,11 @@ use self::events as message_events;
 pub trait MessageStore: Send + Sync {
     fn save(&self, message: &mut Message) -> impl Future<Output = Result<()>> + Send;
     fn find_by_id(&self, id: &MessageId) -> impl Future<Output = Result<Option<Message>>> + Send;
+    fn mark_read_for_agent(
+        &self,
+        message_id: &MessageId,
+        agent: &AgentId,
+    ) -> impl Future<Output = Result<()>> + Send;
     fn find_pending(
         &self,
         agent: &AgentId,
@@ -281,6 +286,17 @@ impl Message {
             .unwrap(),
         )
         .map(|e| self.collector.collect(e));
+    }
+
+    pub fn is_directed_to(&self, agent: &AgentId) -> bool {
+        match &self.to {
+            MessageTarget::Agent(id) => id == agent,
+            _ => false,
+        }
+    }
+
+    pub fn is_broadcast(&self) -> bool {
+        matches!(self.to, MessageTarget::Broadcast)
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {

@@ -71,6 +71,13 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS message_receipts (
+    message_id UUID NOT NULL REFERENCES messages(id),
+    agent_id UUID NOT NULL REFERENCES agents(id),
+    read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (message_id, agent_id)
+);
+
 CREATE TABLE IF NOT EXISTS projects (
     organization_id TEXT NOT NULL DEFAULT 'default',
     name TEXT NOT NULL,

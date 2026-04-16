@@ -32,6 +32,14 @@ impl MessageStore for MemoryBackend {
         Ok(messages.get(id).cloned())
     }
 
+    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
+        self.message_receipts
+            .write()
+            .map_err(|e| Error::Store(e.to_string()))?
+            .insert((*message_id, agent.clone()));
+        Ok(())
+    }
+
     async fn find_pending(
         &self,
         agent: &AgentId,
@@ -41,6 +49,10 @@ impl MessageStore for MemoryBackend {
     ) -> Result<Vec<Message>> {
         let messages = self
             .messages
+            .read()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let receipts = self
+            .message_receipts
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -53,7 +65,7 @@ impl MessageStore for MemoryBackend {
 
             let targets_agent = match msg.to() {
                 MessageTarget::Agent(id) => id == agent,
-                MessageTarget::Broadcast => true,
+                MessageTarget::Broadcast => msg.from() != agent,
                 MessageTarget::Role(_) => false,
             };
 
@@ -70,6 +82,10 @@ impl MessageStore for MemoryBackend {
             }
 
             if !msg.namespace().starts_with(namespace) {
+                continue;
+            }
+
+            if msg.is_broadcast() && receipts.contains(&(msg.id(), agent.clone())) {
                 continue;
             }
 

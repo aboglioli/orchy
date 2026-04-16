@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
 use crate::agent::{Agent, AgentId, AgentStore};
@@ -18,6 +18,7 @@ use crate::task::{
 pub struct MockStore {
     agents: RwLock<HashMap<AgentId, Agent>>,
     messages: RwLock<HashMap<MessageId, Message>>,
+    message_receipts: RwLock<HashSet<(MessageId, AgentId)>>,
 }
 
 impl OrganizationStore for MockStore {
@@ -77,6 +78,13 @@ impl MessageStore for MockStore {
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         Ok(self.messages.read().unwrap().get(id).cloned())
     }
+    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
+        self.message_receipts
+            .write()
+            .unwrap()
+            .insert((*message_id, agent.clone()));
+        Ok(())
+    }
     async fn find_pending(
         &self,
         agent: &AgentId,
@@ -84,6 +92,7 @@ impl MessageStore for MockStore {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
+        let receipts = self.message_receipts.read().unwrap();
         Ok(self
             .messages
             .read()
@@ -93,7 +102,9 @@ impl MessageStore for MockStore {
                 m.status() == MessageStatus::Pending
                     && match m.to() {
                         MessageTarget::Agent(id) => id == agent,
-                        MessageTarget::Broadcast => true,
+                        MessageTarget::Broadcast => {
+                            m.from() != agent && !receipts.contains(&(m.id(), agent.clone()))
+                        }
                         _ => false,
                     }
                     && m.project() == project

@@ -46,21 +46,17 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 self.message_store.save(&mut msg).await?;
                 return Ok(vec![msg]);
             }
+            MessageTarget::Broadcast => {
+                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to);
+                self.message_store.save(&mut msg).await?;
+                return Ok(vec![msg]);
+            }
             MessageTarget::Role(role) => {
                 let agents = self.agent_store.list(&org_id).await?;
                 agents
                     .into_iter()
                     .filter(|a| a.project() == &project)
                     .filter(|a| a.roles().iter().any(|r| r == role))
-                    .map(|a| a.id().clone())
-                    .collect::<Vec<_>>()
-            }
-            MessageTarget::Broadcast => {
-                let agents = self.agent_store.list(&org_id).await?;
-                agents
-                    .into_iter()
-                    .filter(|a| a.project() == &project)
-                    .filter(|a| *a.id() != from)
                     .map(|a| a.id().clone())
                     .collect::<Vec<_>>()
             }
@@ -107,8 +103,10 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
             .find_pending(agent, org, project, namespace)
             .await?;
         for msg in &mut messages {
-            msg.deliver();
-            self.message_store.save(msg).await?;
+            if msg.is_directed_to(agent) {
+                msg.deliver();
+                self.message_store.save(msg).await?;
+            }
         }
         Ok(messages)
     }
@@ -133,11 +131,18 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         self.message_store.find_thread(message_id, limit).await
     }
 
-    pub async fn mark_read(&self, ids: &[MessageId]) -> Result<()> {
+    pub async fn mark_read(&self, agent: &AgentId, ids: &[MessageId]) -> Result<()> {
         for id in ids {
             if let Some(mut msg) = self.message_store.find_by_id(id).await? {
-                msg.mark_read();
-                self.message_store.save(&mut msg).await?;
+                if msg.is_directed_to(agent) {
+                    msg.mark_read();
+                    self.message_store.save(&mut msg).await?;
+                    continue;
+                }
+
+                if msg.is_broadcast() {
+                    self.message_store.mark_read_for_agent(id, agent).await?;
+                }
             }
         }
         Ok(())
@@ -268,6 +273,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to(), &MessageTarget::Broadcast);
     }
 
     #[tokio::test]
@@ -297,14 +303,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broadcast_skips_agents_from_other_projects() {
+    async fn broadcast_preserves_broadcast_target() {
         let store = Arc::new(MockStore::default());
         let mut sender = make_agent(vec!["tester"]);
-        let mut local = make_agent(vec!["tester"]);
-        let mut foreign = make_agent_for_project(other_project(), vec!["tester"]);
         save_agent(&store, &mut sender).await;
-        save_agent(&store, &mut local).await;
-        save_agent(&store, &mut foreign).await;
         let service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
 
         let result = service
@@ -321,6 +323,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id().clone()));
+        assert_eq!(result[0].to(), &MessageTarget::Broadcast);
     }
 }

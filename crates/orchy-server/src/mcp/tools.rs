@@ -749,20 +749,24 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(
-        description = "Mark messages as read by their IDs. Does not require a registered session."
-    )]
+    #[tool(description = "Mark messages as read by their IDs for the session agent.")]
     async fn mark_read(
         &self,
         Parameters(params): Parameters<MarkReadParams>,
     ) -> Result<String, String> {
+        let (agent_id, _, _, _) = self.require_session()?;
         let ids: Vec<MessageId> = params
             .message_ids
             .iter()
             .map(|s| parse_message_id(s))
             .collect::<Result<Vec<_>, _>>()?;
 
-        match self.container.message_service.mark_read(&ids).await {
+        match self
+            .container
+            .message_service
+            .mark_read(&agent_id, &ids)
+            .await
+        {
             Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(e.to_string()),
         }

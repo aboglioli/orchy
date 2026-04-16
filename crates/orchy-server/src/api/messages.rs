@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStatus};
 use orchy_core::message::service::SendMessage;
 use orchy_core::message::{Message, MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -49,22 +49,19 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
 }
 
 fn map_err(e: orchy_core::error::Error) -> ApiError {
-    ApiError(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "INTERNAL_ERROR",
-        e.to_string(),
-    )
+    use orchy_core::error::Error;
+    match &e {
+        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
+        _ => ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        ),
+    }
 }
 
 #[derive(Deserialize)]
-pub struct InboxQuery {
-    pub agent_id: String,
-    pub namespace: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct SentQuery {
-    pub agent_id: String,
+pub struct AgentNamespaceQuery {
     pub namespace: Option<String>,
 }
 
@@ -87,50 +84,68 @@ pub struct ThreadQuery {
     pub limit: Option<u32>,
 }
 
-pub async fn inbox(
-    State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
-    Query(query): Query<InboxQuery>,
-) -> Result<Json<Vec<Message>>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.namespace.as_deref())?;
+async fn load_agent(
+    container: &Arc<Container>,
+    auth: &OrgAuth,
+    org: &str,
+    id: &str,
+) -> Result<orchy_core::agent::Agent, ApiError> {
+    let org_id = parse_org(org)?;
+    check_org(auth, &org_id)?;
 
-    let agent_id = query
-        .agent_id
+    let agent_id = id
         .parse::<AgentId>()
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
-    let messages = container
+    let agent = container
+        .agent_service
+        .get(&agent_id)
+        .await
+        .map_err(map_err)?;
+
+    if agent.org_id() != &org_id || agent.status() == AgentStatus::Disconnected {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "agent not found".to_string(),
+        ));
+    }
+
+    Ok(agent)
+}
+
+pub async fn inbox_for_agent(
+    state: State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, id)): Path<(String, String)>,
+    Query(query): Query<AgentNamespaceQuery>,
+) -> Result<Json<Vec<Message>>, ApiError> {
+    let agent = load_agent(&state.0, &auth, &org, &id).await?;
+    let ns = parse_ns(query.namespace.as_deref())?;
+
+    let messages = state
+        .0
         .message_service
-        .check(&agent_id, &org_id, &project_id, &ns)
+        .check(agent.id(), agent.org_id(), agent.project(), &ns)
         .await
         .map_err(map_err)?;
 
     Ok(Json(messages))
 }
 
-pub async fn sent(
-    State(container): State<Arc<Container>>,
+pub async fn sent_for_agent(
+    state: State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
-    Query(query): Query<SentQuery>,
+    Path((org, id)): Path<(String, String)>,
+    Query(query): Query<AgentNamespaceQuery>,
 ) -> Result<Json<Vec<Message>>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
+    let agent = load_agent(&state.0, &auth, &org, &id).await?;
     let ns = parse_ns(query.namespace.as_deref())?;
 
-    let agent_id = query
-        .agent_id
-        .parse::<AgentId>()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-
-    let messages = container
+    let messages = state
+        .0
         .message_service
-        .sent(&agent_id, &org_id, &project_id, &ns)
+        .sent(agent.id(), agent.org_id(), agent.project(), &ns)
         .await
         .map_err(map_err)?;
 
@@ -182,14 +197,13 @@ pub async fn send(
     Ok(Json(messages))
 }
 
-pub async fn mark_read(
-    State(container): State<Arc<Container>>,
+pub async fn mark_read_for_agent(
+    state: State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project)): Path<(String, String)>,
+    Path((org, id)): Path<(String, String)>,
     Json(body): Json<MarkReadBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let agent = load_agent(&state.0, &auth, &org, &id).await?;
 
     let ids: Vec<MessageId> = body
         .message_ids
@@ -200,9 +214,10 @@ pub async fn mark_read(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    container
+    state
+        .0
         .message_service
-        .mark_read(&ids)
+        .mark_read(agent.id(), &ids)
         .await
         .map_err(map_err)?;
 

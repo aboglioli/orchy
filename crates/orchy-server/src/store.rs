@@ -99,6 +99,9 @@ impl MessageStore for StoreBackend {
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         delegate_trait!(self, MessageStore::find_by_id(id))
     }
+    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
+        delegate_trait!(self, MessageStore::mark_read_for_agent(message_id, agent))
+    }
     async fn find_pending(
         &self,
         agent: &AgentId,

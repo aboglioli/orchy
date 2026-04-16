@@ -89,6 +89,20 @@ impl MessageStore for PgBackend {
         row.map(|r| row_to_message(&r)).transpose()
     }
 
+    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO message_receipts (message_id, agent_id, read_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (message_id, agent_id) DO UPDATE SET read_at = EXCLUDED.read_at",
+        )
+        .bind(message_id.as_uuid())
+        .bind(agent.as_uuid())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(())
+    }
+
     async fn find_pending(
         &self,
         agent: &AgentId,
@@ -96,42 +110,59 @@ impl MessageStore for PgBackend {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
-        let mut select = Query::select();
-        select
-            .from(Messages::Table)
-            .columns([
-                Messages::Id,
-                Messages::Project,
-                Messages::Namespace,
-                Messages::FromAgent,
-                Messages::ToTarget,
-                Messages::Body,
-                Messages::Status,
-                Messages::CreatedAt,
-                Messages::ReplyTo,
-            ])
-            .and_where(Expr::col(Messages::Status).eq("pending"))
-            .cond_where(
-                Cond::any()
-                    .add(Expr::col(Messages::ToTarget).eq(agent.to_string()))
-                    .add(Expr::col(Messages::ToTarget).eq("broadcast")),
+        let rows = if namespace.is_root() {
+            sqlx::query(
+                "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 FROM messages
+                 WHERE status = 'pending'
+                   AND project = $1
+                   AND (
+                        to_target = $2
+                        OR (
+                            to_target = 'broadcast'
+                            AND from_agent != $3
+                            AND NOT EXISTS (
+                                SELECT 1 FROM message_receipts
+                                WHERE message_receipts.message_id = messages.id
+                                  AND message_receipts.agent_id = $3
+                            )
+                        )
+                   )",
             )
-            .and_where(Expr::col(Messages::Project).eq(project.to_string()));
-
-        if !namespace.is_root() {
-            select.cond_where(
-                Cond::any()
-                    .add(Expr::col(Messages::Namespace).eq(namespace.to_string()))
-                    .add(Expr::col(Messages::Namespace).like(format!("{}/%", namespace))),
-            );
-        }
-
-        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
-
-        let rows = sqlx::query_with(&sql, values)
+            .bind(project.to_string())
+            .bind(agent.to_string())
+            .bind(agent.as_uuid())
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(|e| Error::Store(e.to_string()))?
+        } else {
+            sqlx::query(
+                "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 FROM messages
+                 WHERE status = 'pending'
+                   AND project = $1
+                   AND (namespace = $2 OR namespace LIKE $2 || '/%')
+                   AND (
+                        to_target = $3
+                        OR (
+                            to_target = 'broadcast'
+                            AND from_agent != $4
+                            AND NOT EXISTS (
+                                SELECT 1 FROM message_receipts
+                                WHERE message_receipts.message_id = messages.id
+                                  AND message_receipts.agent_id = $4
+                            )
+                        )
+                   )",
+            )
+            .bind(project.to_string())
+            .bind(namespace.to_string())
+            .bind(agent.to_string())
+            .bind(agent.as_uuid())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?
+        };
 
         rows.iter().map(row_to_message).collect()
     }

@@ -57,6 +57,22 @@ pub fn router() -> Router<Arc<Container>> {
         )
         .route("/organizations/:org/agents", get(agents::list))
         .route(
+            "/organizations/:org/agents/:id/context",
+            get(agents::get_context),
+        )
+        .route(
+            "/organizations/:org/agents/:id/inbox",
+            get(messages::inbox_for_agent),
+        )
+        .route(
+            "/organizations/:org/agents/:id/sent-messages",
+            get(messages::sent_for_agent),
+        )
+        .route(
+            "/organizations/:org/agents/:id/messages/read",
+            post(messages::mark_read_for_agent),
+        )
+        .route(
             "/organizations/:org/projects/:project",
             get(projects::get).put(projects::update),
         )
@@ -67,10 +83,6 @@ pub fn router() -> Router<Arc<Container>> {
         .route(
             "/organizations/:org/projects/:project/namespaces",
             get(projects::list_namespaces),
-        )
-        .route(
-            "/organizations/:org/projects/:project/agents/:id/context",
-            get(agents::get_context),
         )
         .route(
             "/organizations/:org/projects/:project/tasks",
@@ -165,20 +177,8 @@ pub fn router() -> Router<Arc<Container>> {
             get(reviews::get).put(reviews::resolve),
         )
         .route(
-            "/organizations/:org/projects/:project/messages/inbox",
-            get(messages::inbox),
-        )
-        .route(
-            "/organizations/:org/projects/:project/messages/sent",
-            get(messages::sent),
-        )
-        .route(
             "/organizations/:org/projects/:project/messages",
             post(messages::send),
-        )
-        .route(
-            "/organizations/:org/projects/:project/messages/read",
-            post(messages::mark_read),
         )
         .route(
             "/organizations/:org/projects/:project/messages/:id/thread",

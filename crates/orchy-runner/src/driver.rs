@@ -326,12 +326,12 @@ fn spawn_output_reader(
     });
 }
 
-async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<String> {
+async fn fetch_work_prompt(mcp_url: &str, _project: &str, alias: &str) -> Option<String> {
     let base = mcp_url
         .trim_end_matches('/')
         .strip_suffix("/mcp")
         .unwrap_or(mcp_url.trim_end_matches('/'));
-    let url = format!("{base}/api/organizations/default/projects/{project}/agents/{alias}/context");
+    let url = format!("{base}/api/organizations/default/agents/{alias}/context");
 
     #[derive(serde::Deserialize)]
     struct AgentContextDto {

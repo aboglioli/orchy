@@ -72,6 +72,20 @@ impl MessageStore for SqliteBackend {
         Ok(result)
     }
 
+    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO message_receipts (message_id, agent_id, read_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                message_id.to_string(),
+                agent.to_string(),
+                Utc::now().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(())
+    }
+
     async fn find_pending(
         &self,
         agent: &AgentId,
@@ -82,7 +96,23 @@ impl MessageStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE status = ?1 AND (to_target = ?2 OR to_target = 'broadcast') AND organization_id = ?3 AND project = ?4",
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             FROM messages
+             WHERE status = ?1
+               AND organization_id = ?3
+               AND project = ?4
+               AND (
+                    to_target = ?2
+                    OR (
+                        to_target = 'broadcast'
+                        AND from_agent != ?2
+                        AND NOT EXISTS (
+                            SELECT 1 FROM message_receipts
+                            WHERE message_receipts.message_id = messages.id
+                              AND message_receipts.agent_id = ?2
+                        )
+                    )
+               )",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
             Box::new("pending".to_string()),

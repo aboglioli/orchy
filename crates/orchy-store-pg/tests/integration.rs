@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orchy_core::agent::{Agent, AgentStatus, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -307,4 +307,44 @@ async fn message_find_by_id_and_mark_read() {
         .unwrap()
         .unwrap();
     assert_eq!(read.status(), MessageStatus::Read);
+}
+
+#[tokio::test]
+#[ignore]
+async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
+    let store = backend().await;
+    let sender = AgentId::new();
+    let receiver = AgentId::new();
+    let p = proj("proj");
+
+    let mut msg = Message::new(
+        org(),
+        p.clone(),
+        Namespace::root(),
+        sender.clone(),
+        MessageTarget::Broadcast,
+        "to all".into(),
+        None,
+    );
+    MessageStore::save(&store, &mut msg).await.unwrap();
+
+    let pending = MessageStore::find_pending(&store, &receiver, &org(), &p, &Namespace::root())
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 1);
+
+    let sender_pending =
+        MessageStore::find_pending(&store, &sender, &org(), &p, &Namespace::root())
+            .await
+            .unwrap();
+    assert!(sender_pending.is_empty());
+
+    MessageStore::mark_read_for_agent(&store, &msg.id(), &receiver)
+        .await
+        .unwrap();
+
+    let after_read = MessageStore::find_pending(&store, &receiver, &org(), &p, &Namespace::root())
+        .await
+        .unwrap();
+    assert!(after_read.is_empty());
 }

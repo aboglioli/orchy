@@ -76,7 +76,7 @@ fn map_err(e: orchy_core::error::Error) -> ApiError {
 #[derive(Deserialize)]
 pub struct RequestReviewBody {
     pub requester_agent_id: String,
-    pub reviewer_agent: Option<String>,
+    pub reviewer_agent_id: Option<String>,
     pub reviewer_role: Option<String>,
 }
 
@@ -122,7 +122,7 @@ pub async fn request(
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let reviewer = body
-        .reviewer_agent
+        .reviewer_agent_id
         .as_deref()
         .map(|s| {
             s.parse::<AgentId>()

@@ -79,7 +79,7 @@ pub struct ListQuery {
     pub tag: Option<String>,
     pub namespace: Option<String>,
     pub path_prefix: Option<String>,
-    pub agent_id: Option<String>,
+    pub author_agent_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -175,7 +175,7 @@ pub async fn list(
     };
 
     let agent_id = query
-        .agent_id
+        .author_agent_id
         .as_deref()
         .map(|s| {
             s.parse::<AgentId>()

@@ -116,7 +116,7 @@ pub async fn list(
 pub async fn get_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((org, id)): Path<(String, String)>,
 ) -> Result<Json<AgentContextDto>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
@@ -127,8 +127,6 @@ pub async fn get_context(
             "forbidden".to_string(),
         ));
     }
-    let project_id = ProjectId::try_from(project)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     let agent_id = id.parse::<AgentId>().map_err(|e| {
         ApiError(
             StatusCode::BAD_REQUEST,
@@ -145,10 +143,7 @@ pub async fn get_context(
         )
     })?;
 
-    if agent.org_id() != &org_id
-        || agent.project() != &project_id
-        || agent.status() == AgentStatus::Disconnected
-    {
+    if agent.org_id() != &org_id || agent.status() == AgentStatus::Disconnected {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",

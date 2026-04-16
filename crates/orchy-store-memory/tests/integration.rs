@@ -350,7 +350,7 @@ async fn message_find_pending_includes_broadcast() {
         org(),
         p.clone(),
         Namespace::root(),
-        sender,
+        sender.clone(),
         MessageTarget::Broadcast,
         "to all".into(),
         None,
@@ -363,6 +363,20 @@ async fn message_find_pending_includes_broadcast() {
         .unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].body(), "to all");
+
+    let sender_pending = MessageStore::find_pending(&store, &sender, &o, &p, &Namespace::root())
+        .await
+        .unwrap();
+    assert!(sender_pending.is_empty());
+
+    MessageStore::mark_read_for_agent(&store, &msg.id(), &receiver)
+        .await
+        .unwrap();
+
+    let after_read = MessageStore::find_pending(&store, &receiver, &o, &p, &Namespace::root())
+        .await
+        .unwrap();
+    assert!(after_read.is_empty());
 }
 
 #[tokio::test]
