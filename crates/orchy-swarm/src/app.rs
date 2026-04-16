@@ -68,6 +68,14 @@ impl App {
                 self.last_agents_refresh = Some(Instant::now());
             }
 
+            if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                if tab.scroll_offset > 0 {
+                    let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
+                    let pty_rows = rows.saturating_sub(4).max(10);
+                    tab.maybe_rebuild_scroll(pty_rows, cols);
+                }
+            }
+
             terminal.draw(|f| crate::ui::render(f, self))?;
 
             if event::poll(Duration::from_millis(16))?
@@ -165,6 +173,21 @@ impl App {
             (KeyModifiers::ALT, KeyCode::Left) | (_, KeyCode::F(5)) => {
                 if !self.tabs.is_empty() {
                     self.active_tab = (self.active_tab + self.tabs.len() - 1) % self.tabs.len();
+                }
+            }
+            (KeyModifiers::SHIFT, KeyCode::PageUp) => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
+                    let pty_rows = rows.saturating_sub(4).max(10);
+                    tab.scroll_offset = tab.scroll_offset.saturating_add(10);
+                    tab.maybe_rebuild_scroll(pty_rows, cols);
+                    let max = tab.max_scroll();
+                    tab.scroll_offset = tab.scroll_offset.min(max);
+                }
+            }
+            (KeyModifiers::SHIFT, KeyCode::PageDown) => {
+                if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                    tab.scroll_offset = tab.scroll_offset.saturating_sub(10);
                 }
             }
             _ => {

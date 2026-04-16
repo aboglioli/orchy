@@ -16,19 +16,37 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     }
 
     if let Some(tab) = app.tabs.get(app.active_tab) {
-        let screen = tab.screen.screen();
+        let scroll = tab.scroll_offset;
+
+        // When scrolled: replay into a taller parser (cached). Row 0 of that
+        // parser is the oldest content; we show the top visible_rows rows.
+        // When at bottom (scroll=0): normal rendering of current screen.
+        let (screen, start_row) = if scroll > 0 {
+            if let Some(s) = tab.scroll_screen() {
+                let (total_rows, _) = s.size();
+                let (vis_rows, _) = tab.screen.screen().size();
+                let top = total_rows.saturating_sub(vis_rows).saturating_sub(scroll as u16);
+                (s, top)
+            } else {
+                (tab.screen.screen(), 0)
+            }
+        } else {
+            (tab.screen.screen(), 0)
+        };
+
         let (screen_rows, screen_cols) = screen.size();
-        let visible_rows = area.height.min(screen_rows);
+        let visible_rows = area.height.min(screen_rows.saturating_sub(start_row));
 
         let mut lines: Vec<Line> = Vec::with_capacity(visible_rows as usize);
 
         for row in 0..visible_rows {
+            let vt_row = start_row + row;
             let mut spans: Vec<Span> = Vec::new();
             let mut current_text = String::new();
             let mut current_style = Style::default();
 
             for col in 0..screen_cols {
-                let cell = screen.cell(row, col);
+                let cell = screen.cell(vt_row, col);
                 let contents = cell.map(|c| c.contents()).unwrap_or_default();
                 let ch = if contents.is_empty() { " " } else { &contents };
                 let style = cell.map(cell_style).unwrap_or_default();
@@ -52,6 +70,22 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
         let paragraph = Paragraph::new(Text::from(lines));
         f.render_widget(paragraph, area);
+
+        if scroll > 0 {
+            use ratatui::style::Color;
+            let hint = format!(" ↑ scrolled ({scroll} rows) — Shift+PgDn to return ");
+            let hint_line = Line::from(Span::styled(
+                hint,
+                Style::default().fg(Color::Black).bg(Color::Yellow),
+            ));
+            let hint_area = Rect {
+                x: area.x,
+                y: area.y + area.height.saturating_sub(1),
+                width: area.width,
+                height: 1,
+            };
+            f.render_widget(Paragraph::new(hint_line), hint_area);
+        }
     }
 }
 
