@@ -748,6 +748,10 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         ReviewStore::find_by_task(&*self.store, task_id).await
     }
 
+    pub async fn pending_reviews_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
+        ReviewStore::find_pending_for_agent(&*self.store, agent_id).await
+    }
+
     async fn notify_watchers(&self, task: &Task, event: &str) {
         let watchers = WatcherStore::find_watchers(&*self.store, &task.id()).await;
         if let Ok(watchers) = watchers {

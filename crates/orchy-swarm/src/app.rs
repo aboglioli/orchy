@@ -196,7 +196,9 @@ impl App {
             }
             (_, KeyCode::F(8)) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                    tab.scroll_down();
+                    let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
+                    let pty_rows = rows.saturating_sub(4).max(10);
+                    tab.scroll_down(pty_rows, cols);
                 }
             }
             (_, KeyCode::Esc) => {

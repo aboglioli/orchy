@@ -73,6 +73,18 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         Ok(sent)
     }
 
+    pub async fn pending(
+        &self,
+        agent: &AgentId,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<Vec<Message>> {
+        self.message_store
+            .find_pending(agent, org, project, namespace)
+            .await
+    }
+
     pub async fn check(
         &self,
         agent: &AgentId,
