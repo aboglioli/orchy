@@ -24,7 +24,6 @@ pub struct ListAgentsQuery {
 #[derive(Serialize)]
 pub struct AgentDto {
     pub id: String,
-    pub alias: Option<String>,
     pub description: String,
     pub status: String,
     pub agent_type: Option<String>,
@@ -102,8 +101,10 @@ pub async fn list(
                 .unwrap_or(true)
         })
         .map(|a| AgentDto {
-            id: a.id().to_string(),
-            alias: a.alias().map(|al| al.to_string()),
+            id: a
+                .alias()
+                .map(|al| al.to_string())
+                .unwrap_or_else(|| a.id().to_string()),
             description: a.description().to_string(),
             status: a.status().to_string(),
             agent_type: a.metadata().get("agent_type").cloned(),
@@ -193,8 +194,10 @@ pub async fn get_context(
         .collect();
 
     let agent_dto = AgentDto {
-        id: agent.id().to_string(),
-        alias: agent.alias().map(|al| al.to_string()),
+        id: agent
+            .alias()
+            .map(|al| al.to_string())
+            .unwrap_or_else(|| agent.id().to_string()),
         description: agent.description().to_string(),
         status: agent.status().to_string(),
         agent_type: agent.metadata().get("agent_type").cloned(),

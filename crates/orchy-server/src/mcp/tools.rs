@@ -76,7 +76,7 @@ impl OrchyHandler {
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
-        let alias_str = match params.alias {
+        let alias_str = match params.id {
             Some(s) if !s.is_empty() => s,
             _ => format!("agent-{}", chrono::Utc::now().timestamp()),
         };
@@ -124,16 +124,27 @@ impl OrchyHandler {
         are unsure whether you still need register_agent."
     )]
     async fn session_status(&self) -> Result<String, String> {
+        let agent_id = self.get_session_agent();
+        let agent_alias = if let Some(id) = agent_id {
+            self.container
+                .agent_service
+                .get(&id)
+                .await
+                .ok()
+                .and_then(|a| a.alias().map(|al| al.to_string()))
+        } else {
+            None
+        };
         let payload = serde_json::json!({
-            "mcp_session_registered_with_orchy": self.get_session_agent().is_some(),
-            "agent_id": self.get_session_agent().map(|id| id.to_string()),
+            "mcp_session_registered_with_orchy": agent_id.is_some(),
+            "id": agent_alias,
             "project": self.get_session_project().map(|p| p.to_string()),
             "namespace": self.get_session_namespace().map(|n| n.to_string()),
             "after_orchy_or_mcp_restart": concat!(
                 "MCP Streamable HTTP session state is ephemeral. After orchy or the MCP client ",
-                "restarts, you get a new MCP session. Persist your orchy agent UUID from the last ",
+                "restarts, you get a new MCP session. Persist your agent id from the last ",
                 "register_agent response (or handoff knowledge), then call register_agent again ",
-                "with the same project, description, namespace, and agent_id. That re-binds this ",
+                "with the same project, description, namespace, and id. That re-binds this ",
                 "MCP session to the existing agent; tasks, mailbox, and knowledge stay tied to that id."
             ),
         });
@@ -199,7 +210,7 @@ impl OrchyHandler {
         let (agent_id, _, _, _) = self.require_session()?;
 
         let alias = params
-            .alias
+            .id
             .map(|s| orchy_core::agent::Alias::new(s))
             .transpose()
             .map_err(|e| e.to_string())?;
@@ -648,7 +659,7 @@ impl OrchyHandler {
 
         let task_id = parse_task_id(&params.task_id)?;
 
-        let agent_id = self.resolve_agent_id(&params.agent_id).await?;
+        let agent_id = self.resolve_agent_id(&params.agent).await?;
 
         match self
             .container
@@ -1840,7 +1851,7 @@ impl OrchyHandler {
             None => None,
         };
 
-        let agent_id = match params.agent_id.as_deref() {
+        let agent_id = match params.agent.as_deref() {
             Some(s) => Some(self.resolve_agent_id(s).await?),
             None => None,
         };

@@ -9,9 +9,9 @@ pub struct RegisterAgentParams {
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
     pub description: Option<String>,
-    /// Short human-readable name for the agent. Used as stable reconnection key:
-    /// if an agent with this alias already exists in the project, the session resumes it.
-    pub alias: Option<String>,
+    /// Human-readable agent id. Stable reconnection key: if an agent with this id already exists
+    /// in the project, the session resumes it. Auto-generated if omitted.
+    pub id: Option<String>,
     /// Create as a child of this parent agent.
     pub parent_id: Option<String>,
     pub metadata: Option<std::collections::HashMap<String, String>>,
@@ -30,8 +30,8 @@ pub struct ListAgentsParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct SetAliasParams {
-    /// Alias to set. Omit or null to clear.
-    pub alias: Option<String>,
+    /// Agent id to set. Must be unique within the project. Omit or null to clear.
+    pub id: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -122,7 +122,7 @@ pub struct UnblockTaskParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct AssignTaskParams {
     pub task_id: String,
-    pub agent_id: String,
+    pub agent: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -385,7 +385,7 @@ pub struct ListKnowledgeParams {
     pub kind: Option<String>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
-    pub agent_id: Option<String>,
+    pub agent: Option<String>,
     pub project: Option<String>,
 }
 

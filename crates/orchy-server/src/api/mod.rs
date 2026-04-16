@@ -69,7 +69,7 @@ pub fn router() -> Router<Arc<Container>> {
             get(projects::list_namespaces),
         )
         .route(
-            "/organizations/:org/projects/:project/agents/:alias/context",
+            "/organizations/:org/projects/:project/agents/:id/context",
             get(agents::get_context),
         )
         .route(

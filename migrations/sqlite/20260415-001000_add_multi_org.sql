@@ -23,13 +23,6 @@ CREATE INDEX IF NOT EXISTS api_keys_organization_idx ON api_keys (organization_i
 INSERT OR IGNORE INTO organizations (id, name, created_at, updated_at)
 VALUES ('default', 'Default', datetime('now'), datetime('now'));
 
--- Add organization_id to simple tables (ALTER ADD COLUMN is safe in SQLite)
-ALTER TABLE agents ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE tasks ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE messages ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE task_watchers ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE reviews ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default';
-
 -- Drop old unique index on agents; recreate with org scope
 DROP INDEX IF EXISTS agents_project_alias_idx;
 CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (organization_id, project, alias) WHERE alias IS NOT NULL;

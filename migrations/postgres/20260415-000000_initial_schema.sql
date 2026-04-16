@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS resource_locks (
 CREATE TABLE IF NOT EXISTS task_watchers (
     task_id UUID NOT NULL REFERENCES tasks(id),
     agent_id UUID NOT NULL REFERENCES agents(id),
+    organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -139,6 +140,7 @@ CREATE TABLE IF NOT EXISTS task_watchers (
 
 CREATE TABLE IF NOT EXISTS reviews (
     id UUID PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     task_id UUID NOT NULL REFERENCES tasks(id),
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',

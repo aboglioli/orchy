@@ -421,7 +421,7 @@ async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<
 fn build_bootstrap_prompt(config: &RunnerConfig) -> String {
     format!(
         "You are agent '{}'. Connect to orchy MCP server at {}. On startup: \
-1. register_agent(project: \"{}\", alias: \"{}\", description: \"{}\") \
+1. register_agent(project: \"{}\", id: \"{}\", description: \"{}\") \
 2. list_knowledge(kind: \"skill\") \
 3. check_mailbox \
 4. get_next_task \

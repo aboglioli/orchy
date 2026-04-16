@@ -37,14 +37,31 @@ fn parse_task_id(s: &str) -> Result<TaskId, ApiError> {
     })
 }
 
-fn parse_agent_id(s: &str) -> Result<AgentId, ApiError> {
-    s.parse::<AgentId>().map_err(|e| {
-        ApiError(
-            StatusCode::BAD_REQUEST,
-            "INVALID_PARAM",
-            format!("invalid agent id: {e}"),
-        )
-    })
+async fn resolve_agent(
+    container: &Arc<Container>,
+    org_id: &OrganizationId,
+    project_id: &ProjectId,
+    s: &str,
+) -> Result<AgentId, ApiError> {
+    container
+        .agent_service
+        .find_by_alias_str(org_id, project_id, s)
+        .await
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                format!("agent not found: {s}"),
+            )
+        })
+        .map(|a| a.id())
 }
 
 fn parse_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {
@@ -129,24 +146,24 @@ pub struct UpdateTaskBody {
 
 #[derive(Deserialize)]
 pub struct ClaimBody {
-    pub agent_id: String,
+    pub agent: String,
     pub start: Option<bool>,
 }
 
 #[derive(Deserialize)]
 pub struct AgentBody {
-    pub agent_id: String,
+    pub agent: String,
 }
 
 #[derive(Deserialize)]
 pub struct CompleteBody {
-    pub agent_id: Option<String>,
+    pub agent: Option<String>,
     pub summary: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct FailBody {
-    pub agent_id: Option<String>,
+    pub agent: Option<String>,
     pub reason: Option<String>,
 }
 
@@ -156,13 +173,8 @@ pub struct CancelBody {
 }
 
 #[derive(Deserialize)]
-pub struct ReleaseBody {
-    pub agent_id: Option<String>,
-}
-
-#[derive(Deserialize)]
 pub struct AddNoteBody {
-    pub agent_id: Option<String>,
+    pub agent: Option<String>,
     pub body: String,
 }
 
@@ -173,12 +185,12 @@ pub struct AddDepBody {
 
 #[derive(Deserialize)]
 pub struct UnwatchQuery {
-    pub agent_id: String,
+    pub agent: String,
 }
 
 #[derive(Deserialize)]
 pub struct AgentQuery {
-    pub agent_id: String,
+    pub agent: String,
 }
 
 #[derive(Deserialize)]
@@ -411,13 +423,14 @@ pub async fn update_task(
 pub async fn claim(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<ClaimBody>,
 ) -> Result<Json<orchy_core::task::TaskWithContext>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
-    let agent_id = parse_agent_id(&body.agent_id)?;
+    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
 
     container
         .task_service
@@ -445,13 +458,14 @@ pub async fn claim(
 pub async fn start(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
-    let agent_id = parse_agent_id(&body.agent_id)?;
+    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
     let task = container
         .task_service
         .start(&task_id, &agent_id)
@@ -547,13 +561,14 @@ pub async fn unblock(
 pub async fn assign(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
-    let agent_id = parse_agent_id(&body.agent_id)?;
+    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
     let task = container
         .task_service
         .assign(&task_id, &agent_id)
@@ -572,7 +587,7 @@ pub async fn watch(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
-    let agent_id = parse_agent_id(&body.agent_id)?;
+    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
 
     let watcher = container
         .task_service
@@ -586,13 +601,14 @@ pub async fn watch(
 pub async fn unwatch(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Query(query): Query<UnwatchQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
-    let agent_id = parse_agent_id(&query.agent_id)?;
+    let agent_id = resolve_agent(&container, &org_id, &project_id, &query.agent).await?;
 
     container
         .task_service
@@ -606,13 +622,18 @@ pub async fn unwatch(
 pub async fn add_note(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AddNoteBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
-    let agent_id = body.agent_id.as_deref().map(parse_agent_id).transpose()?;
+    let agent_id = if let Some(s) = body.agent.as_deref() {
+        Some(resolve_agent(&container, &org_id, &project_id, s).await?)
+    } else {
+        None
+    };
 
     let task = container
         .task_service
@@ -751,7 +772,7 @@ pub async fn next_task(
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
             "INVALID_PARAM",
-            "claim requires agent_id; use POST /tasks/:id/claim".to_string(),
+            "claim requires agent; use POST /tasks/:id/claim".to_string(),
         ));
     }
 
