@@ -57,6 +57,7 @@ impl Container {
             lock_service,
             session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
+            start_time: std::time::Instant::now(),
         }))
     }
 

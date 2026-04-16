@@ -231,6 +231,13 @@ impl KnowledgeStore for SqliteBackend {
     }
 }
 
+fn sanitize_fts5_query(q: &str) -> String {
+    q.split_whitespace()
+        .map(|w| format!("\"{}\"", w.replace('"', "")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn search_knowledge_fts(
     conn: &rusqlite::Connection,
     org: &OrganizationId,
@@ -245,7 +252,7 @@ fn search_knowledge_fts(
          WHERE knowledge_entries_fts MATCH ?1 AND e.organization_id = ?2",
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    params.push(Box::new(query.to_string()));
+    params.push(Box::new(sanitize_fts5_query(query)));
     params.push(Box::new(org.to_string()));
     let mut idx = 3;
 
