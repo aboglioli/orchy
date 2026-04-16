@@ -187,14 +187,18 @@ impl App {
                     tab.send_input(b"\r".to_vec());
                 }
             }
-            (_, KeyCode::F(7)) | (KeyModifiers::SHIFT, KeyCode::PageUp) => {
+            (_, KeyCode::F(7))
+            | (KeyModifiers::SHIFT, KeyCode::PageUp)
+            | (KeyModifiers::CONTROL, KeyCode::PageUp) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
                     let pty_rows = rows.saturating_sub(4).max(10);
                     tab.scroll_up(pty_rows, cols);
                 }
             }
-            (_, KeyCode::F(8)) | (KeyModifiers::SHIFT, KeyCode::PageDown) => {
+            (_, KeyCode::F(8))
+            | (KeyModifiers::SHIFT, KeyCode::PageDown)
+            | (KeyModifiers::CONTROL, KeyCode::PageDown) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     tab.scroll_down();
                 }

@@ -60,12 +60,14 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             use ratatui::style::Color;
             let hint = if tab.is_snapshot_mode() {
                 format!(
-                    " ↑ snapshot {}/{} — Shift+PgUp/F7 back  Shift+PgDn/F8 forward  Esc exit ",
+                    " ↑ snapshot {}/{} — Shift/Ctrl+PgUp back  Shift/Ctrl+PgDn forward  Esc exit ",
                     scroll,
                     tab.snapshot_count(),
                 )
             } else {
-                format!(" ↑ scrolled ({scroll} rows) — Shift+PgUp/F7 up  Shift+PgDn/F8 down  Esc exit ")
+                format!(
+                    " ↑ scrolled ({scroll} rows) — Shift/Ctrl+PgUp up  Shift/Ctrl+PgDn down  Esc exit "
+                )
             };
             let hint_line = Line::from(Span::styled(
                 hint,
