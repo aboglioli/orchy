@@ -160,6 +160,10 @@ impl App {
             std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
         );
 
+        let (term_cols, term_rows) = crossterm::terminal::size().unwrap_or((120, 24));
+        let pty_rows = term_rows.saturating_sub(4).max(10);
+        let pty_cols = term_cols;
+
         let config = RunnerConfig {
             alias: alias.clone(),
             agent_type: agent_type_opt.agent_type.to_string(),
@@ -172,8 +176,8 @@ impl App {
             args: Vec::new(),
             env,
             working_dir: None,
-            pty_rows: 24,
-            pty_cols: 120,
+            pty_rows,
+            pty_cols,
             idle_patterns: orchy_runner::config::default_idle_patterns_for(
                 agent_type_opt.agent_type,
             ),
@@ -196,16 +200,16 @@ impl App {
             }
         });
 
-        self.tabs.push(AgentTab {
+        self.tabs.push(AgentTab::new(
             alias,
-            agent_id: session.agent_id,
-            agent_type: agent_type_opt.agent_type.to_string(),
-            is_idle: session.is_idle,
-            output_buf: std::collections::VecDeque::new(),
-            scroll_offset: 0,
-            input_tx: session.input_tx,
-            driver_handle: handle,
-        });
+            session.agent_id,
+            agent_type_opt.agent_type.to_string(),
+            session.is_idle,
+            pty_rows,
+            pty_cols,
+            session.input_tx,
+            handle,
+        ));
 
         self.active_tab = self.tabs.len() - 1;
         Ok(())

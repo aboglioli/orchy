@@ -155,7 +155,6 @@ impl AgentDriver {
         let mut driver = Self::connect(config, output_tx).await?;
         driver.mcp_injected = mcp_injected;
         driver.register().await?;
-        driver.inject_bootstrap().await?;
 
         let alias = driver.config.alias.clone();
         let agent_id = driver.agent_id.clone();
@@ -218,11 +217,16 @@ impl AgentDriver {
             if self.is_idle.load(Ordering::Relaxed) {
                 break;
             }
+            let last_ms = self.last_output_ms.load(Ordering::Relaxed);
+            if last_ms > 0 && now_ms().saturating_sub(last_ms) > 800 {
+                tracing::debug!(alias = %self.config.alias, "agent silent 800ms, injecting bootstrap");
+                break;
+            }
             if Instant::now() >= deadline {
                 tracing::warn!("timed out waiting for agent idle before bootstrap");
                 break;
             }
-            sleep(Duration::from_millis(500)).await;
+            sleep(Duration::from_millis(200)).await;
         }
 
         let prompt = format!(
@@ -243,6 +247,8 @@ impl AgentDriver {
     }
 
     async fn main_loop_inner(&mut self, mut input_rx: UnboundedReceiver<Vec<u8>>) -> Result<()> {
+        self.inject_bootstrap().await?;
+
         let heartbeat_interval = self.config.heartbeat_interval;
         let mut heartbeat_timer = time::interval(heartbeat_interval);
         let mut last_was_idle = false;

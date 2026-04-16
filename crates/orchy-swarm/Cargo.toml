@@ -20,5 +20,5 @@ anyhow = "1"
 ratatui = "0.30"
 crossterm = "0.29"
 clap = { version = "4", features = ["derive", "env"] }
-ansi-to-tui = "8"
+vt100 = "0.15"
 tokio-util = { version = "0.7", features = ["codec"] }

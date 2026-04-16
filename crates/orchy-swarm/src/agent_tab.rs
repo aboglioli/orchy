@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -14,29 +13,42 @@ pub struct AgentTab {
     #[allow(dead_code)]
     pub agent_type: String,
     pub is_idle: Arc<AtomicBool>,
-    pub output_buf: VecDeque<Vec<u8>>,
-    pub scroll_offset: usize,
+    pub screen: vt100::Parser,
     pub input_tx: UnboundedSender<Vec<u8>>,
     pub driver_handle: JoinHandle<Result<()>>,
 }
 
 impl AgentTab {
+    pub fn new(
+        alias: String,
+        agent_id: String,
+        agent_type: String,
+        is_idle: Arc<AtomicBool>,
+        rows: u16,
+        cols: u16,
+        input_tx: UnboundedSender<Vec<u8>>,
+        driver_handle: JoinHandle<Result<()>>,
+    ) -> Self {
+        Self {
+            alias,
+            agent_id,
+            agent_type,
+            is_idle,
+            screen: vt100::Parser::new(rows, cols, 1000),
+            input_tx,
+            driver_handle,
+        }
+    }
+
     pub fn is_idle(&self) -> bool {
         self.is_idle.load(Ordering::Relaxed)
     }
 
     pub fn push_output(&mut self, bytes: Vec<u8>) {
-        self.output_buf.push_back(bytes);
-        while self.output_buf.len() > 10_000 {
-            self.output_buf.pop_front();
-        }
+        self.screen.process(&bytes);
     }
 
     pub fn send_input(&self, bytes: Vec<u8>) {
         let _ = self.input_tx.send(bytes);
-    }
-
-    pub fn all_output(&self) -> Vec<u8> {
-        self.output_buf.iter().flatten().copied().collect()
     }
 }
