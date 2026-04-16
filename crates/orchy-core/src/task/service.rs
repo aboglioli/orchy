@@ -78,6 +78,21 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         Ok(candidates)
     }
 
+    pub async fn pending_tasks_for_roles(
+        &self,
+        roles: &[String],
+        namespace: Option<Namespace>,
+    ) -> Result<Vec<Task>> {
+        let tasks = self.sorted_pending_for_roles(roles, namespace).await?;
+        let mut deps_met = Vec::new();
+        for t in tasks {
+            if self.all_deps_completed(t.depends_on()).await.unwrap_or(false) {
+                deps_met.push(t);
+            }
+        }
+        Ok(deps_met)
+    }
+
     pub async fn peek_next(
         &self,
         roles: &[String],

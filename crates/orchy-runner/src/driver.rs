@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use pty_process::OwnedWritePty;
@@ -190,9 +190,15 @@ impl AgentDriver {
             if let Some(since) = idle_since {
                 let elapsed = since.elapsed();
                 if elapsed > self.config.idle_wake {
-                    if has_pending_work(&self.config.url, &self.config.project, &self.config.alias).await {
+                    if let Some(prompt) = fetch_work_prompt(
+                        &self.config.url,
+                        &self.config.project,
+                        &self.config.alias,
+                    )
+                    .await
+                    {
                         tracing::info!(alias = %self.config.alias, "pending work detected, injecting wake-up");
-                        self.inject("Check your mailbox and get your next task.").await?;
+                        self.inject(&prompt).await?;
                     }
                     idle_since = None;
                 }
@@ -309,7 +315,7 @@ fn spawn_output_reader(
     });
 }
 
-async fn has_pending_work(mcp_url: &str, project: &str, alias: &str) -> bool {
+async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<String> {
     let base = mcp_url
         .trim_end_matches('/')
         .strip_suffix("/mcp")
@@ -317,18 +323,84 @@ async fn has_pending_work(mcp_url: &str, project: &str, alias: &str) -> bool {
     let url = format!("{base}/api/pending?project={project}&alias={alias}");
 
     #[derive(serde::Deserialize)]
-    struct PendingDto {
-        has_messages: bool,
-        has_tasks: bool,
+    struct PendingWorkDto {
+        messages: Vec<PendingMessageDto>,
+        tasks: Vec<PendingTaskDto>,
+        reviews: Vec<PendingReviewDto>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct PendingMessageDto {
+        id: String,
+        from: String,
+        body: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct PendingTaskDto {
+        id: String,
+        title: String,
+        priority: String,
+        assigned_roles: Vec<String>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct PendingReviewDto {
+        id: String,
+        task_id: String,
     }
 
     let Ok(resp) = HTTP_CLIENT.get(&url).send().await else {
-        return false;
+        tracing::warn!("failed to fetch pending work: HTTP request failed");
+        return None;
     };
-    let Ok(dto) = resp.json::<PendingDto>().await else {
-        return false;
+    let Ok(dto) = resp.json::<PendingWorkDto>().await else {
+        tracing::warn!("failed to parse pending work response");
+        return None;
     };
-    dto.has_messages || dto.has_tasks
+
+    let mut parts = Vec::new();
+
+    if !dto.messages.is_empty() {
+        let count = dto.messages.len();
+        let preview = dto
+            .messages
+            .first()
+            .map(|m| {
+                let body = if m.body.len() > 80 {
+                    &m.body[..80]
+                } else {
+                    &m.body
+                };
+                format!("[message from {}: \"{}...\"]", m.from, body)
+            })
+            .unwrap_or_default();
+        parts.push(format!("{count} new message(s). {preview}"));
+    }
+
+    if !dto.tasks.is_empty() {
+        let top = dto
+            .tasks
+            .first()
+            .map(|t| format!("\"{}\" ({} priority)", t.title, t.priority))
+            .unwrap_or_default();
+        parts.push(format!("{} pending task(s). Top: {}", dto.tasks.len(), top));
+    }
+
+    if !dto.reviews.is_empty() {
+        parts.push(format!("{} pending review(s)", dto.reviews.len()));
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    let prompt = format!(
+        "Check your mailbox and get your next task. You have: {}.",
+        parts.join("; ")
+    );
+
+    Some(prompt)
 }
 
 fn now_ms() -> u64 {

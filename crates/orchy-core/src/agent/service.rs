@@ -118,10 +118,22 @@ impl<S: AgentStore> AgentService<S> {
     pub async fn find_by_alias(
         &self,
         org: &OrganizationId,
-        project: &super::super::namespace::ProjectId,
+        project: &crate::namespace::ProjectId,
         alias: &super::Alias,
     ) -> Result<Option<Agent>> {
         self.store.find_by_alias(org, project, alias).await
+    }
+
+    pub async fn find_by_alias_str(
+        &self,
+        org: &OrganizationId,
+        project: &crate::namespace::ProjectId,
+        alias: &str,
+    ) -> Result<Option<Agent>> {
+        match super::Alias::try_from(alias.to_string()) {
+            Ok(a) => self.store.find_by_alias(org, project, &a).await,
+            Err(_) => Ok(None),
+        }
     }
 
     pub async fn update_metadata(
