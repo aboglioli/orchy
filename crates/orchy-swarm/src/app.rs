@@ -69,33 +69,52 @@ impl App {
         ev_tx: &mpsc::UnboundedSender<(usize, Vec<u8>)>,
     ) -> anyhow::Result<()> {
         if let Some(modal) = &mut self.modal {
-            match key.code {
-                KeyCode::Esc => self.modal = None,
-                KeyCode::Enter => {
-                    if let Some(selected) = modal.selected_agent() {
-                        if selected.installed {
-                            let selected = selected.clone();
-                            let alias = selected.agent_type.to_string();
+            use crate::ui::modal::ModalStep;
+            match &modal.step {
+                ModalStep::SelectAgent => match key.code {
+                    KeyCode::Esc => self.modal = None,
+                    KeyCode::Enter => {
+                        if let Some(selected) = modal.selected_agent() {
+                            if selected.installed {
+                                let agent = selected.clone();
+                                modal.step = ModalStep::EnterAlias { agent };
+                                modal.alias_input.clear();
+                            }
+                        }
+                    }
+                    KeyCode::Up => modal.move_up(),
+                    KeyCode::Down => modal.move_down(),
+                    KeyCode::Char(c) => {
+                        modal.filter.push(c);
+                        if modal.selected_agent().is_none() {
+                            if let Some((i, _)) = modal.visible().first() {
+                                modal.selected = *i;
+                            }
+                        }
+                    }
+                    KeyCode::Backspace => { modal.filter.pop(); }
+                    _ => {}
+                },
+                ModalStep::EnterAlias { .. } => match key.code {
+                    KeyCode::Esc => {
+                        modal.step = ModalStep::SelectAgent;
+                    }
+                    KeyCode::Enter => {
+                        if let ModalStep::EnterAlias { agent } = &modal.step {
+                            let agent = agent.clone();
+                            let alias = if modal.alias_input.is_empty() {
+                                agent.agent_type.to_string()
+                            } else {
+                                modal.alias_input.clone()
+                            };
                             self.modal = None;
-                            self.launch_agent(alias, selected, ev_tx).await?;
+                            self.launch_agent(alias, agent, ev_tx).await?;
                         }
                     }
-                }
-                KeyCode::Up => modal.move_up(),
-                KeyCode::Down => modal.move_down(),
-                KeyCode::Char(c) => {
-                    modal.filter.push(c);
-                    // keep selection valid after filter change
-                    if modal.selected_agent().is_none() {
-                        if let Some((i, _)) = modal.visible().first() {
-                            modal.selected = *i;
-                        }
-                    }
-                }
-                KeyCode::Backspace => {
-                    modal.filter.pop();
-                }
-                _ => {}
+                    KeyCode::Char(c) => modal.alias_input.push(c),
+                    KeyCode::Backspace => { modal.alias_input.pop(); }
+                    _ => {}
+                },
             }
             return Ok(());
         }

@@ -22,10 +22,17 @@ impl Clone for AgentTypeOption {
     }
 }
 
+pub enum ModalStep {
+    SelectAgent,
+    EnterAlias { agent: AgentTypeOption },
+}
+
 pub struct ModalState {
     pub filter: String,
     pub agent_types: Vec<AgentTypeOption>,
     pub selected: usize,
+    pub step: ModalStep,
+    pub alias_input: String,
 }
 
 impl ModalState {
@@ -36,6 +43,8 @@ impl ModalState {
             filter: String::new(),
             agent_types,
             selected,
+            step: ModalStep::SelectAgent,
+            alias_input: String::new(),
         }
     }
 
@@ -113,23 +122,22 @@ fn which_installed(cmd: &str) -> bool {
 }
 
 pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
+    match &modal.step {
+        ModalStep::SelectAgent => render_select(f, modal, area),
+        ModalStep::EnterAlias { agent } => render_alias(f, modal, agent, area),
+    }
+}
+
+fn render_select(f: &mut Frame, modal: &ModalState, area: Rect) {
     let visible = modal.visible();
     let modal_width = 52u16;
     let modal_height = (visible.len() as u16).max(1) + 7;
 
-    let x = area.x + area.width.saturating_sub(modal_width) / 2;
-    let y = area.y + area.height.saturating_sub(modal_height) / 2;
-    let modal_area = Rect {
-        x,
-        y,
-        width: modal_width.min(area.width),
-        height: modal_height.min(area.height),
-    };
-
+    let modal_area = centered(modal_width, modal_height, area);
     f.render_widget(Clear, modal_area);
 
     let block = Block::default()
-        .title(" Launch Agent ")
+        .title(" Launch Agent — Select Type ")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
@@ -171,7 +179,6 @@ pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
         for ((orig_idx, agent), &chunk) in visible.iter().zip(list_chunks.iter()) {
             let is_selected = *orig_idx == modal.selected;
             let prefix = if is_selected { "  ❯ " } else { "    " };
-
             let name_style = if agent.installed {
                 if is_selected {
                     Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
@@ -181,13 +188,11 @@ pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
             } else {
                 Style::default().fg(Color::DarkGray)
             };
-
             let (status_text, status_style) = if agent.installed {
                 ("✓ installed", Style::default().fg(Color::Green))
             } else {
                 ("✗ not found", Style::default().fg(Color::DarkGray))
             };
-
             let line = Line::from(vec![
                 Span::styled(format!("{}{:<20}", prefix, agent.name), name_style),
                 Span::styled(status_text, status_style),
@@ -196,7 +201,57 @@ pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
         }
     }
 
-    let hint = Paragraph::new("  type to filter  ↑↓ select  Enter launch  Esc cancel")
+    let hint = Paragraph::new("  type to filter  ↑↓ select  Enter next  Esc cancel")
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(hint, chunks[4]);
+}
+
+fn render_alias(f: &mut Frame, modal: &ModalState, agent: &AgentTypeOption, area: Rect) {
+    let modal_width = 52u16;
+    let modal_height = 7u16;
+
+    let modal_area = centered(modal_width, modal_height, area);
+    f.render_widget(Clear, modal_area);
+
+    let block = Block::default()
+        .title(format!(" Launch {} — Enter Alias ", agent.name))
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(modal_area);
+    f.render_widget(block, modal_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let alias_line = Line::from(vec![
+        Span::styled("  Alias  ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("[{:<30}]", &modal.alias_input),
+            Style::default().fg(Color::White).bg(Color::DarkGray),
+        ),
+    ]);
+    f.render_widget(Paragraph::new(alias_line), chunks[1]);
+
+    let hint = Paragraph::new("  Enter launch  Esc back")
+        .style(Style::default().fg(Color::DarkGray));
+    f.render_widget(hint, chunks[3]);
+}
+
+fn centered(width: u16, height: u16, area: Rect) -> Rect {
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    Rect {
+        x,
+        y,
+        width: width.min(area.width),
+        height: height.min(area.height),
+    }
 }
