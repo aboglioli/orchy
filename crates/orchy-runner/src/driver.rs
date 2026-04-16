@@ -227,9 +227,11 @@ impl AgentDriver {
         sleep(Duration::from_millis(500)).await;
         self.wait_for_silence(20).await;
 
+        let agents_ctx = fetch_agents(&self.config.url, &self.config.project, &self.config.alias).await;
         let prompt = format!(
-            "You are agent '{alias}'.\n\nConnect to orchy MCP server at {url}. On startup:\n1. register_agent(project: \"{project}\", alias: \"{alias}\", description: \"{alias} agent\") — establish your session\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nCall heartbeat every 30 seconds. Focus on completing tasks.",
+            "You are agent '{alias}'.{agents_ctx}\n\nConnect to orchy MCP server at {url}. On startup:\n1. register_agent(project: \"{project}\", alias: \"{alias}\", description: \"{alias} agent\") — establish your session\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nCall heartbeat every 30 seconds. Focus on completing tasks.",
             alias = self.config.alias,
+            agents_ctx = agents_ctx,
             url = self.config.url,
             project = self.config.project,
         );
@@ -349,6 +351,51 @@ fn spawn_output_reader(
             }
         }
     });
+}
+
+async fn fetch_agents(mcp_url: &str, project: &str, self_alias: &str) -> String {
+    let base = mcp_url
+        .trim_end_matches('/')
+        .strip_suffix("/mcp")
+        .unwrap_or(mcp_url.trim_end_matches('/'));
+    let url = format!("{base}/api/agents?project={project}");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+    let Ok(client) = client else { return String::new() };
+
+    #[derive(serde::Deserialize)]
+    struct AgentDto {
+        alias: Option<String>,
+        agent_type: Option<String>,
+    }
+
+    let Ok(resp) = client.get(&url).send().await else { return String::new() };
+    let Ok(agents) = resp.json::<Vec<AgentDto>>().await else { return String::new() };
+
+    let others: Vec<String> = agents
+        .into_iter()
+        .filter_map(|a| {
+            let alias = a.alias?;
+            if alias == self_alias {
+                return None;
+            }
+            Some(match a.agent_type {
+                Some(t) => format!("{alias} ({t})"),
+                None => alias,
+            })
+        })
+        .collect();
+
+    if others.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        " Other active agents in this project: {}. You can reach them with send_message(alias: \"...\", ...).",
+        others.join(", ")
+    )
 }
 
 fn now_ms() -> u64 {

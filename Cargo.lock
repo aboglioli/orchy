@@ -1779,6 +1779,7 @@ dependencies = [
  "clap",
  "crossterm",
  "pty-process",
+ "reqwest",
  "serde",
  "serde_json",
  "strip-ansi-escapes",

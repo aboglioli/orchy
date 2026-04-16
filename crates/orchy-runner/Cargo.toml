@@ -16,6 +16,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 
+reqwest = { workspace = true }
+
 pty-process = { version = "0.5", features = ["async"] }
 strip-ansi-escapes = "0.2"
 crossterm = "0.29"
