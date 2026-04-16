@@ -14,52 +14,77 @@ use orchy_core::task::{Priority, SubtaskDef, Task, TaskFilter, TaskId, TaskStatu
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
 
-fn parse_org(s: &str) -> Result<OrganizationId, (StatusCode, String)> {
-    OrganizationId::new(s).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
+    OrganizationId::new(s)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_project(s: &str) -> Result<ProjectId, (StatusCode, String)> {
-    ProjectId::try_from(s.to_string()).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
+    ProjectId::try_from(s.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_task_id(s: &str) -> Result<TaskId, (StatusCode, String)> {
-    s.parse::<TaskId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid task id: {e}")))
+fn parse_task_id(s: &str) -> Result<TaskId, ApiError> {
+    s.parse::<TaskId>().map_err(|e| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            format!("invalid task id: {e}"),
+        )
+    })
 }
 
-fn parse_agent_id(s: &str) -> Result<AgentId, (StatusCode, String)> {
-    s.parse::<AgentId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid agent id: {e}")))
+fn parse_agent_id(s: &str) -> Result<AgentId, ApiError> {
+    s.parse::<AgentId>().map_err(|e| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            format!("invalid agent id: {e}"),
+        )
+    })
 }
 
-fn parse_ns(ns: Option<&str>) -> Result<Option<Namespace>, (StatusCode, String)> {
+fn parse_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {
     match ns {
         Some(s) => Namespace::try_from(format!("/{s}"))
             .map(Some)
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string())),
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
         None => Ok(None),
     }
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode, String)> {
+fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     if auth.0.id() != org_id {
-        Err((StatusCode::FORBIDDEN, "forbidden".to_string()))
+        Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ))
     } else {
         Ok(())
     }
 }
 
-fn map_err(e: orchy_core::error::Error) -> (StatusCode, String) {
+fn map_err(e: orchy_core::error::Error) -> ApiError {
     use orchy_core::error::Error;
     match &e {
-        Error::NotFound(_) => (StatusCode::NOT_FOUND, e.to_string()),
+        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
         Error::InvalidInput(_) | Error::InvalidTransition { .. } | Error::DependencyNotMet(_) => {
-            (StatusCode::UNPROCESSABLE_ENTITY, e.to_string())
+            ApiError(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVALID_INPUT",
+                e.to_string(),
+            )
         }
-        Error::Conflict(_) => (StatusCode::CONFLICT, e.to_string()),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Error::Conflict(_) => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
+        _ => ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        ),
     }
 }
 
@@ -191,13 +216,17 @@ pub struct DelegateBody {
     pub assigned_roles: Option<Vec<String>>,
 }
 
-fn parse_subtask_defs(defs: Vec<SubtaskDefBody>) -> Result<Vec<SubtaskDef>, (StatusCode, String)> {
+fn parse_subtask_defs(defs: Vec<SubtaskDefBody>) -> Result<Vec<SubtaskDef>, ApiError> {
     defs.into_iter()
         .map(|d| {
             let priority = match d.priority.as_deref() {
-                Some(p) => p
-                    .parse::<Priority>()
-                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid priority: {e}")))?,
+                Some(p) => p.parse::<Priority>().map_err(|e| {
+                    ApiError(
+                        StatusCode::BAD_REQUEST,
+                        "INVALID_PARAM",
+                        format!("invalid priority: {e}"),
+                    )
+                })?,
                 None => Priority::default(),
             };
             let depends_on = d
@@ -222,7 +251,7 @@ pub async fn list(
     auth: OrgAuth,
     Path((org, project)): Path<OrgProject>,
     Query(query): Query<ListTasksQuery>,
-) -> Result<Json<Vec<Task>>, (StatusCode, String)> {
+) -> Result<Json<Vec<Task>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -237,7 +266,13 @@ pub async fn list(
         Some("completed") => Some(TaskStatus::Completed),
         Some("failed") => Some(TaskStatus::Failed),
         Some("cancelled") => Some(TaskStatus::Cancelled),
-        Some(other) => return Err((StatusCode::BAD_REQUEST, format!("invalid status: {other}"))),
+        Some(other) => {
+            return Err(ApiError(
+                StatusCode::BAD_REQUEST,
+                "INVALID_PARAM",
+                format!("invalid status: {other}"),
+            ));
+        }
         None => None,
     };
 
@@ -261,21 +296,25 @@ pub async fn post(
     auth: OrgAuth,
     Path((org, project)): Path<OrgProject>,
     Json(body): Json<PostTaskBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
 
     let ns = match body.namespace.as_deref() {
         Some(s) => Namespace::try_from(format!("/{s}"))
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?,
         None => Namespace::root(),
     };
 
     let priority = match body.priority.as_deref() {
-        Some(p) => p
-            .parse::<Priority>()
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid priority: {e}")))?,
+        Some(p) => p.parse::<Priority>().map_err(|e| {
+            ApiError(
+                StatusCode::BAD_REQUEST,
+                "INVALID_PARAM",
+                format!("invalid priority: {e}"),
+            )
+        })?,
         None => Priority::default(),
     };
 
@@ -303,7 +342,13 @@ pub async fn post(
         None,
         is_blocked,
     )
-    .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    .map_err(|e| {
+        ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "INVALID_INPUT",
+            e.to_string(),
+        )
+    })?;
 
     let task_id = task.id();
     container.task_service.create(task).await.map_err(map_err)?;
@@ -321,7 +366,7 @@ pub async fn get_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
-) -> Result<Json<orchy_core::task::TaskWithContext>, (StatusCode, String)> {
+) -> Result<Json<orchy_core::task::TaskWithContext>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -338,16 +383,19 @@ pub async fn update_task(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<UpdateTaskBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
 
     let priority = match body.priority.as_deref() {
-        Some(p) => Some(
-            p.parse::<Priority>()
-                .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid priority: {e}")))?,
-        ),
+        Some(p) => Some(p.parse::<Priority>().map_err(|e| {
+            ApiError(
+                StatusCode::BAD_REQUEST,
+                "INVALID_PARAM",
+                format!("invalid priority: {e}"),
+            )
+        })?),
         None => None,
     };
 
@@ -365,7 +413,7 @@ pub async fn claim(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<ClaimBody>,
-) -> Result<Json<orchy_core::task::TaskWithContext>, (StatusCode, String)> {
+) -> Result<Json<orchy_core::task::TaskWithContext>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -399,7 +447,7 @@ pub async fn start(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -417,7 +465,7 @@ pub async fn complete(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<CompleteBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -434,7 +482,7 @@ pub async fn fail(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<FailBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -451,7 +499,7 @@ pub async fn cancel(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<CancelBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -468,7 +516,7 @@ pub async fn release(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(_body): Json<serde_json::Value>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -484,7 +532,7 @@ pub async fn unblock(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -501,7 +549,7 @@ pub async fn assign(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -519,7 +567,7 @@ pub async fn watch(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
-) -> Result<Json<orchy_core::task::TaskWatcher>, (StatusCode, String)> {
+) -> Result<Json<orchy_core::task::TaskWatcher>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -540,7 +588,7 @@ pub async fn unwatch(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Query(query): Query<UnwatchQuery>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -560,7 +608,7 @@ pub async fn add_note(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<AddNoteBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -580,7 +628,7 @@ pub async fn add_dep(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<AddDepBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -597,7 +645,7 @@ pub async fn remove_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, _project, id, dep_id)): Path<(String, String, String, String)>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -614,7 +662,7 @@ pub async fn tag_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, _project, id, tag)): Path<(String, String, String, String)>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -630,7 +678,7 @@ pub async fn untag_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, _project, id, tag)): Path<(String, String, String, String)>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -647,7 +695,7 @@ pub async fn list_tags(
     auth: OrgAuth,
     Path((org, project)): Path<OrgProject>,
     Query(query): Query<NamespaceQuery>,
-) -> Result<Json<Vec<String>>, (StatusCode, String)> {
+) -> Result<Json<Vec<String>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -679,7 +727,7 @@ pub async fn next_task(
     auth: OrgAuth,
     Path((org, _project)): Path<OrgProject>,
     Query(query): Query<NextTaskQuery>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
@@ -692,15 +740,17 @@ pub async fn next_task(
     let claim = query.claim.unwrap_or(false);
 
     if roles.is_empty() {
-        return Err((
+        return Err(ApiError(
             StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
             "role query param required".to_string(),
         ));
     }
 
     if claim {
-        return Err((
+        return Err(ApiError(
             StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
             "claim requires agent_id; use POST /tasks/:id/claim".to_string(),
         ));
     }
@@ -729,7 +779,7 @@ pub async fn split(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<SplitBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -751,7 +801,7 @@ pub async fn replace(
     auth: OrgAuth,
     Path((org, _project, id)): Path<(String, String, String)>,
     Json(body): Json<ReplaceBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&id)?;
@@ -773,7 +823,7 @@ pub async fn merge(
     auth: OrgAuth,
     Path((org, _project)): Path<OrgProject>,
     Json(body): Json<MergeBody>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
@@ -799,7 +849,7 @@ pub async fn delegate(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<DelegateBody>,
-) -> Result<Json<Task>, (StatusCode, String)> {
+) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -812,9 +862,13 @@ pub async fn delegate(
         .map_err(map_err)?;
 
     let priority = match body.priority.as_deref() {
-        Some(p) => p
-            .parse::<Priority>()
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid priority: {e}")))?,
+        Some(p) => p.parse::<Priority>().map_err(|e| {
+            ApiError(
+                StatusCode::BAD_REQUEST,
+                "INVALID_PARAM",
+                format!("invalid priority: {e}"),
+            )
+        })?,
         None => parent.priority(),
     };
 
@@ -831,7 +885,13 @@ pub async fn delegate(
         None,
         false,
     )
-    .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    .map_err(|e| {
+        ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "INVALID_INPUT",
+            e.to_string(),
+        )
+    })?;
 
     let task_id = task.id();
     container.task_service.create(task).await.map_err(map_err)?;

@@ -11,15 +11,21 @@ use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
 
-fn parse_org(s: &str) -> Result<OrganizationId, (StatusCode, String)> {
-    OrganizationId::new(s).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
+    OrganizationId::new(s)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode, String)> {
+fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     if auth.0.id() != org_id {
-        Err((StatusCode::FORBIDDEN, "forbidden".to_string()))
+        Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ))
     } else {
         Ok(())
     }
@@ -37,14 +43,20 @@ pub async fn poll(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Query(query): Query<PollQuery>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
     let since = match query.since.as_deref() {
         Some(s) => chrono::DateTime::parse_from_rfc3339(s)
             .map(|dt| dt.with_timezone(&chrono::Utc))
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid timestamp: {e}")))?,
+            .map_err(|e| {
+                ApiError(
+                    StatusCode::BAD_REQUEST,
+                    "INVALID_PARAM",
+                    format!("invalid timestamp: {e}"),
+                )
+            })?,
         None => chrono::Utc::now() - chrono::Duration::minutes(5),
     };
 
@@ -54,7 +66,13 @@ pub async fn poll(
         .store
         .query_events(&project, since, limit)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     let updates: Vec<_> = events
         .iter()

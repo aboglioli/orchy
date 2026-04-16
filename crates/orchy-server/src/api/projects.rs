@@ -7,11 +7,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
+use orchy_core::namespace::{NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
 
 #[derive(Deserialize)]
@@ -23,11 +24,6 @@ pub struct UpdateProjectBody {
 pub struct SetMetadataBody {
     pub key: String,
     pub value: String,
-}
-
-#[derive(Deserialize)]
-pub struct NamespaceQuery {
-    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -54,17 +50,23 @@ fn project_to_dto(p: orchy_core::project::Project) -> ProjectDto {
     }
 }
 
-fn parse_org_id(org: &str) -> Result<OrganizationId, (StatusCode, String)> {
-    OrganizationId::new(org).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_org_id(org: &str) -> Result<OrganizationId, ApiError> {
+    OrganizationId::new(org)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_project_id(project: &str) -> Result<ProjectId, (StatusCode, String)> {
-    ProjectId::try_from(project.to_string()).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_project_id(project: &str) -> Result<ProjectId, ApiError> {
+    ProjectId::try_from(project.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode, String)> {
+fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     if auth.0.id() != org_id {
-        Err((StatusCode::FORBIDDEN, "forbidden".to_string()))
+        Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ))
     } else {
         Ok(())
     }
@@ -75,7 +77,7 @@ pub async fn get(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Query(query): Query<IncludeSummaryQuery>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project_id(&project)?;
@@ -84,7 +86,13 @@ pub async fn get(
         .project_service
         .get_or_create(&org_id, &project_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     if !query.include_summary.unwrap_or(false) {
         return Ok(Json(serde_json::to_value(project_to_dto(project)).unwrap()));
@@ -129,7 +137,7 @@ pub async fn update(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Json(body): Json<UpdateProjectBody>,
-) -> Result<Json<ProjectDto>, (StatusCode, String)> {
+) -> Result<Json<ProjectDto>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project_id(&project)?;
@@ -139,7 +147,13 @@ pub async fn update(
         .project_service
         .update_description(&org_id, &project_id, description)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     Ok(Json(project_to_dto(project)))
 }
@@ -149,7 +163,7 @@ pub async fn set_metadata(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Json(body): Json<SetMetadataBody>,
-) -> Result<Json<ProjectDto>, (StatusCode, String)> {
+) -> Result<Json<ProjectDto>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project_id(&project)?;
@@ -158,7 +172,13 @@ pub async fn set_metadata(
         .project_service
         .set_metadata(&org_id, &project_id, body.key, body.value)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     Ok(Json(project_to_dto(project)))
 }
@@ -167,44 +187,20 @@ pub async fn list_namespaces(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
-) -> Result<Json<Vec<String>>, (StatusCode, String)> {
+) -> Result<Json<Vec<String>>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project_id(&project)?;
 
     let namespaces = NamespaceStore::list(&*container.store, &org_id, &project_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
 
     Ok(Json(namespaces.iter().map(|n| n.to_string()).collect()))
-}
-
-pub async fn overview(
-    State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
-    Query(query): Query<NamespaceQuery>,
-) -> Result<String, (StatusCode, String)> {
-    let org_id = parse_org_id(&org)?;
-    check_org(&auth, &org_id)?;
-    let project_id = parse_project_id(&project)?;
-
-    let ns = match query.namespace.as_deref() {
-        Some(s) => Namespace::try_from(format!("/{s}"))
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
-        None => Namespace::root(),
-    };
-
-    crate::bootstrap::generate_bootstrap_prompt(
-        &project_id,
-        &ns,
-        &container.config.server.host,
-        container.config.server.port,
-        &container.knowledge_service,
-        &container.project_service,
-        &container.agent_service,
-        &container.task_service,
-    )
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }

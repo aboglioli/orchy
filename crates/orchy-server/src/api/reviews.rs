@@ -14,40 +14,61 @@ use orchy_core::task::{ReviewId, ReviewRequest, TaskId};
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
 
-fn parse_org(s: &str) -> Result<OrganizationId, (StatusCode, String)> {
-    OrganizationId::new(s).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
+    OrganizationId::new(s)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_project(s: &str) -> Result<ProjectId, (StatusCode, String)> {
-    ProjectId::try_from(s.to_string()).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
+    ProjectId::try_from(s.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_task_id(s: &str) -> Result<TaskId, (StatusCode, String)> {
-    s.parse::<TaskId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid task id: {e}")))
+fn parse_task_id(s: &str) -> Result<TaskId, ApiError> {
+    s.parse::<TaskId>().map_err(|e| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            format!("invalid task id: {e}"),
+        )
+    })
 }
 
-fn parse_review_id(s: &str) -> Result<ReviewId, (StatusCode, String)> {
-    s.parse::<ReviewId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid review id: {e}")))
+fn parse_review_id(s: &str) -> Result<ReviewId, ApiError> {
+    s.parse::<ReviewId>().map_err(|e| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            format!("invalid review id: {e}"),
+        )
+    })
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode, String)> {
+fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     if auth.0.id() != org_id {
-        Err((StatusCode::FORBIDDEN, "forbidden".to_string()))
+        Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ))
     } else {
         Ok(())
     }
 }
 
-fn map_err(e: orchy_core::error::Error) -> (StatusCode, String) {
+fn map_err(e: orchy_core::error::Error) -> ApiError {
     use orchy_core::error::Error;
     match &e {
-        Error::NotFound(_) => (StatusCode::NOT_FOUND, e.to_string()),
-        Error::Conflict(_) => (StatusCode::CONFLICT, e.to_string()),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
+        Error::Conflict(_) => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
+        _ => ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        ),
     }
 }
 
@@ -69,7 +90,7 @@ pub async fn list_for_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, _project, task_id_str)): Path<(String, String, String)>,
-) -> Result<Json<Vec<ReviewRequest>>, (StatusCode, String)> {
+) -> Result<Json<Vec<ReviewRequest>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let task_id = parse_task_id(&task_id_str)?;
@@ -88,7 +109,7 @@ pub async fn request(
     auth: OrgAuth,
     Path((org, project, task_id_str)): Path<(String, String, String)>,
     Json(body): Json<RequestReviewBody>,
-) -> Result<Json<ReviewRequest>, (StatusCode, String)> {
+) -> Result<Json<ReviewRequest>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -97,14 +118,14 @@ pub async fn request(
     let requester = body
         .requester_agent_id
         .parse::<AgentId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let reviewer = body
         .reviewer_agent
         .as_deref()
         .map(|s| {
             s.parse::<AgentId>()
-                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+                .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
         })
         .transpose()?;
 
@@ -129,7 +150,7 @@ pub async fn get(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, _project, review_id_str)): Path<(String, String, String)>,
-) -> Result<Json<ReviewRequest>, (StatusCode, String)> {
+) -> Result<Json<ReviewRequest>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let review_id = parse_review_id(&review_id_str)?;
@@ -148,7 +169,7 @@ pub async fn resolve(
     auth: OrgAuth,
     Path((org, _project, review_id_str)): Path<(String, String, String)>,
     Json(body): Json<ResolveReviewBody>,
-) -> Result<Json<ReviewRequest>, (StatusCode, String)> {
+) -> Result<Json<ReviewRequest>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let review_id = parse_review_id(&review_id_str)?;
@@ -156,7 +177,7 @@ pub async fn resolve(
     let resolver = body
         .resolver_agent_id
         .parse::<AgentId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let review = container
         .task_service

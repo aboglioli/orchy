@@ -17,47 +17,58 @@ use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
 
-fn parse_org(s: &str) -> Result<OrganizationId, (StatusCode, String)> {
-    OrganizationId::new(s).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
+    OrganizationId::new(s)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_project(s: &str) -> Result<ProjectId, (StatusCode, String)> {
-    ProjectId::try_from(s.to_string()).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
+    ProjectId::try_from(s.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_ns(ns: Option<&str>) -> Result<Namespace, (StatusCode, String)> {
+fn parse_ns(ns: Option<&str>) -> Result<Namespace, ApiError> {
     match ns {
         Some(s) => Namespace::try_from(format!("/{s}"))
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string())),
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
         None => Ok(Namespace::root()),
     }
 }
 
-fn parse_optional_ns(ns: Option<&str>) -> Result<Option<Namespace>, (StatusCode, String)> {
+fn parse_optional_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {
     match ns {
         Some(s) => Namespace::try_from(format!("/{s}"))
             .map(Some)
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string())),
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
         None => Ok(None),
     }
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode, String)> {
+fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     if auth.0.id() != org_id {
-        Err((StatusCode::FORBIDDEN, "forbidden".to_string()))
+        Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ))
     } else {
         Ok(())
     }
 }
 
-fn map_err(e: orchy_core::error::Error) -> (StatusCode, String) {
+fn map_err(e: orchy_core::error::Error) -> ApiError {
     use orchy_core::error::Error;
     match &e {
-        Error::NotFound(_) => (StatusCode::NOT_FOUND, e.to_string()),
-        Error::VersionMismatch { .. } => (StatusCode::CONFLICT, e.to_string()),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
+        Error::VersionMismatch { .. } => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
+        _ => ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        ),
     }
 }
 
@@ -148,7 +159,7 @@ pub async fn list(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Query(query): Query<ListQuery>,
-) -> Result<Json<Vec<Knowledge>>, (StatusCode, String)> {
+) -> Result<Json<Vec<Knowledge>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -157,7 +168,7 @@ pub async fn list(
     let kind = match query.kind.as_deref() {
         Some(k) => Some(
             k.parse::<KnowledgeKind>()
-                .map_err(|e| (StatusCode::BAD_REQUEST, e))?,
+                .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?,
         ),
         None => None,
     };
@@ -167,7 +178,7 @@ pub async fn list(
         .as_deref()
         .map(|s| {
             s.parse::<AgentId>()
-                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+                .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
         })
         .transpose()?;
 
@@ -194,10 +205,14 @@ pub async fn list(
 pub async fn list_types(
     auth: OrgAuth,
     Path((org, _project)): Path<(String, String)>,
-) -> Result<Json<Vec<KnowledgeTypeDto>>, (StatusCode, String)> {
+) -> Result<Json<Vec<KnowledgeTypeDto>>, ApiError> {
     let org_id = parse_org(&org)?;
     if auth.0.id() != &org_id {
-        return Err((StatusCode::FORBIDDEN, "forbidden".to_string()));
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ));
     }
 
     let types = KnowledgeKind::all()
@@ -216,7 +231,7 @@ pub async fn search(
     auth: OrgAuth,
     Path((org, _project)): Path<(String, String)>,
     Json(body): Json<SearchBody>,
-) -> Result<Json<Vec<Knowledge>>, (StatusCode, String)> {
+) -> Result<Json<Vec<Knowledge>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
@@ -230,7 +245,9 @@ pub async fn search(
         .map_err(map_err)?;
 
     if let Some(k) = body.kind.as_deref() {
-        let kind: KnowledgeKind = k.parse().map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        let kind: KnowledgeKind = k
+            .parse()
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
         entries.retain(|e| e.kind() == kind);
     }
 
@@ -242,7 +259,7 @@ pub async fn import(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Json(body): Json<ImportBody>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -256,8 +273,9 @@ pub async fn import(
         .await
         .map_err(map_err)?
         .ok_or_else(|| {
-            (
+            ApiError(
                 StatusCode::NOT_FOUND,
+                "NOT_FOUND",
                 format!("entry not found: {}", body.path),
             )
         })?;
@@ -291,7 +309,7 @@ pub async fn read(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
-) -> Result<Json<Option<Knowledge>>, (StatusCode, String)> {
+) -> Result<Json<Option<Knowledge>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -311,7 +329,7 @@ pub async fn write(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<WriteBody>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -320,7 +338,7 @@ pub async fn write(
     let kind: KnowledgeKind = body
         .kind
         .parse()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
 
     let cmd = WriteKnowledge {
         org_id,
@@ -351,7 +369,7 @@ pub async fn delete(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -362,7 +380,13 @@ pub async fn delete(
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
         .map_err(map_err)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("entry not found: {path}")))?;
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                format!("entry not found: {path}"),
+            )
+        })?;
 
     container
         .knowledge_service
@@ -378,7 +402,7 @@ pub async fn append(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<AppendBody>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -387,7 +411,7 @@ pub async fn append(
     let kind: KnowledgeKind = body
         .kind
         .parse()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
 
     let separator = body.separator.as_deref().unwrap_or("\n");
 
@@ -416,7 +440,7 @@ pub async fn move_entry(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<MoveBody>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -427,10 +451,16 @@ pub async fn move_entry(
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
         .map_err(map_err)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("entry not found: {path}")))?;
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                format!("entry not found: {path}"),
+            )
+        })?;
 
     let new_ns = Namespace::try_from(format!("/{}", body.new_namespace))
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let updated = container
         .knowledge_service
@@ -446,7 +476,7 @@ pub async fn rename(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<RenameBody>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -457,7 +487,13 @@ pub async fn rename(
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
         .map_err(map_err)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("entry not found: {path}")))?;
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                format!("entry not found: {path}"),
+            )
+        })?;
 
     let updated = container
         .knowledge_service
@@ -473,7 +509,7 @@ pub async fn change_kind(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<ChangeKindBody>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -482,7 +518,7 @@ pub async fn change_kind(
     let kind: KnowledgeKind = body
         .kind
         .parse()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
 
     let updated = container
         .knowledge_service
@@ -507,7 +543,7 @@ pub async fn patch_metadata(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<PatchMetadataBody>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -534,7 +570,7 @@ pub async fn tag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -545,7 +581,13 @@ pub async fn tag(
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
         .map_err(map_err)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("entry not found: {path}")))?;
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                format!("entry not found: {path}"),
+            )
+        })?;
 
     let updated = container
         .knowledge_service
@@ -560,7 +602,7 @@ pub async fn untag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
-) -> Result<Json<Knowledge>, (StatusCode, String)> {
+) -> Result<Json<Knowledge>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -571,7 +613,13 @@ pub async fn untag(
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
         .map_err(map_err)?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("entry not found: {path}")))?;
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                format!("entry not found: {path}"),
+            )
+        })?;
 
     let updated = container
         .knowledge_service

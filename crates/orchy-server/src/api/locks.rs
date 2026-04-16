@@ -14,38 +14,49 @@ use orchy_core::resource_lock::ResourceLock;
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
 
-fn parse_org(s: &str) -> Result<OrganizationId, (StatusCode, String)> {
-    OrganizationId::new(s).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
+    OrganizationId::new(s)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_project(s: &str) -> Result<ProjectId, (StatusCode, String)> {
-    ProjectId::try_from(s.to_string()).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
+    ProjectId::try_from(s.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_ns(ns: Option<&str>) -> Result<Namespace, (StatusCode, String)> {
+fn parse_ns(ns: Option<&str>) -> Result<Namespace, ApiError> {
     match ns {
         Some(s) => Namespace::try_from(format!("/{s}"))
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string())),
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
         None => Ok(Namespace::root()),
     }
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), (StatusCode, String)> {
+fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     if auth.0.id() != org_id {
-        Err((StatusCode::FORBIDDEN, "forbidden".to_string()))
+        Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ))
     } else {
         Ok(())
     }
 }
 
-fn map_err(e: orchy_core::error::Error) -> (StatusCode, String) {
+fn map_err(e: orchy_core::error::Error) -> ApiError {
     use orchy_core::error::Error;
     match &e {
-        Error::NotFound(_) => (StatusCode::NOT_FOUND, e.to_string()),
-        Error::Conflict(_) => (StatusCode::CONFLICT, e.to_string()),
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
+        Error::Conflict(_) => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
+        _ => ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        ),
     }
 }
 
@@ -73,7 +84,7 @@ pub async fn check(
     auth: OrgAuth,
     Path((org, project, name)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
-) -> Result<Json<Option<ResourceLock>>, (StatusCode, String)> {
+) -> Result<Json<Option<ResourceLock>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -93,7 +104,7 @@ pub async fn acquire(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Json(body): Json<AcquireBody>,
-) -> Result<Json<ResourceLock>, (StatusCode, String)> {
+) -> Result<Json<ResourceLock>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -102,7 +113,7 @@ pub async fn acquire(
     let agent_id = body
         .agent_id
         .parse::<AgentId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let ttl = body.ttl_secs.unwrap_or(300);
 
@@ -120,7 +131,7 @@ pub async fn release(
     auth: OrgAuth,
     Path((org, project, name)): Path<(String, String, String)>,
     Query(query): Query<ReleaseQuery>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
@@ -129,7 +140,7 @@ pub async fn release(
     let agent_id = query
         .agent_id
         .parse::<AgentId>()
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     container
         .lock_service

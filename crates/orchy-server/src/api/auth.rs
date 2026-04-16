@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
-use axum::Json;
 use axum::extract::FromRequestParts;
 use axum::http::{StatusCode, request::Parts};
-use serde_json::json;
 
 use orchy_core::organization::Organization;
 
 use crate::container::Container;
 
+use super::ApiError;
+
 pub struct OrgAuth(pub Organization);
 
 impl FromRequestParts<Arc<Container>> for OrgAuth {
-    type Rejection = (StatusCode, Json<serde_json::Value>);
+    type Rejection = ApiError;
 
     async fn from_request_parts(
         parts: &mut Parts,
@@ -24,9 +24,10 @@ impl FromRequestParts<Arc<Container>> for OrgAuth {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or_else(|| {
-                (
+                ApiError(
                     StatusCode::UNAUTHORIZED,
-                    Json(json!({"error": "missing or invalid Authorization header"})),
+                    "UNAUTHORIZED",
+                    "missing or invalid Authorization header".to_string(),
                 )
             })?;
 
@@ -35,15 +36,17 @@ impl FromRequestParts<Arc<Container>> for OrgAuth {
             .resolve_api_key(key)
             .await
             .map_err(|e| {
-                (
+                ApiError(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e.to_string()})),
+                    "INTERNAL_ERROR",
+                    e.to_string(),
                 )
             })?
             .ok_or_else(|| {
-                (
+                ApiError(
                     StatusCode::UNAUTHORIZED,
-                    Json(json!({"error": "invalid API key"})),
+                    "UNAUTHORIZED",
+                    "invalid or expired API key".to_string(),
                 )
             })?;
 

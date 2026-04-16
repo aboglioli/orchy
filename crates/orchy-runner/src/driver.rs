@@ -331,17 +331,17 @@ async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<
         .trim_end_matches('/')
         .strip_suffix("/mcp")
         .unwrap_or(mcp_url.trim_end_matches('/'));
-    let url = format!("{base}/api/pending?project={project}&alias={alias}");
+    let url = format!("{base}/api/organizations/default/projects/{project}/agents/{alias}/context");
 
     #[derive(serde::Deserialize)]
-    struct PendingWorkDto {
-        messages: Vec<PendingMessageDto>,
-        tasks: Vec<PendingTaskDto>,
-        reviews: Vec<PendingReviewDto>,
+    struct AgentContextDto {
+        inbox: Vec<InboxMessageDto>,
+        pending_tasks: Vec<PendingTaskDto>,
+        pending_reviews: Vec<PendingReviewDto>,
     }
 
     #[derive(serde::Deserialize)]
-    struct PendingMessageDto {
+    struct InboxMessageDto {
         id: String,
         from: String,
         body: String,
@@ -365,17 +365,17 @@ async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<
         tracing::warn!("failed to fetch pending work: HTTP request failed");
         return None;
     };
-    let Ok(dto) = resp.json::<PendingWorkDto>().await else {
+    let Ok(dto) = resp.json::<AgentContextDto>().await else {
         tracing::warn!("failed to parse pending work response");
         return None;
     };
 
     let mut parts = Vec::new();
 
-    if !dto.messages.is_empty() {
-        let count = dto.messages.len();
+    if !dto.inbox.is_empty() {
+        let count = dto.inbox.len();
         let preview = dto
-            .messages
+            .inbox
             .first()
             .map(|m| {
                 let body = if m.body.len() > 80 {
@@ -389,17 +389,21 @@ async fn fetch_work_prompt(mcp_url: &str, project: &str, alias: &str) -> Option<
         parts.push(format!("{count} new message(s). {preview}"));
     }
 
-    if !dto.tasks.is_empty() {
+    if !dto.pending_tasks.is_empty() {
         let top = dto
-            .tasks
+            .pending_tasks
             .first()
             .map(|t| format!("\"{}\" ({} priority)", t.title, t.priority))
             .unwrap_or_default();
-        parts.push(format!("{} pending task(s). Top: {}", dto.tasks.len(), top));
+        parts.push(format!(
+            "{} pending task(s). Top: {}",
+            dto.pending_tasks.len(),
+            top
+        ));
     }
 
-    if !dto.reviews.is_empty() {
-        parts.push(format!("{} pending review(s)", dto.reviews.len()));
+    if !dto.pending_reviews.is_empty() {
+        parts.push(format!("{} pending review(s)", dto.pending_reviews.len()));
     }
 
     if parts.is_empty() {
