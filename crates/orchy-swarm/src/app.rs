@@ -244,7 +244,7 @@ impl App {
             idle_patterns: orchy_runner::config::default_idle_patterns_for(
                 agent_type_opt.agent_type,
             ),
-            idle_wake: Duration::from_secs(120),
+            idle_wake: Duration::from_secs(15),
         };
 
         let tab_id = self.next_tab_id;

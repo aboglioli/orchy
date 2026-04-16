@@ -189,7 +189,7 @@ impl AgentDriver {
 
             if let Some(since) = idle_since {
                 let elapsed = since.elapsed();
-                if elapsed > Duration::from_secs(5) && elapsed > self.config.idle_wake {
+                if elapsed > self.config.idle_wake {
                     if has_pending_work(&self.config.url, &self.config.project, &self.config.alias).await {
                         tracing::info!(alias = %self.config.alias, "pending work detected, injecting wake-up");
                         self.inject("Check your mailbox and get your next task.").await?;
