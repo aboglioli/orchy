@@ -108,10 +108,10 @@ impl App {
             | (KeyModifiers::CONTROL, KeyCode::Char('q')) => {
                 self.running = false;
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('n')) => {
+            (_, KeyCode::F(2)) => {
                 self.modal = Some(ModalState::new());
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
+            (_, KeyCode::F(4)) => {
                 self.kill_active_tab();
             }
             (KeyModifiers::ALT, KeyCode::Char(c)) if c.is_ascii_digit() => {

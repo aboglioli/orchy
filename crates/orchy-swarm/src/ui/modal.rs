@@ -172,7 +172,7 @@ pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
         f.render_widget(Paragraph::new(line), chunk);
     }
 
-    let hint = Paragraph::new("  Tab alias/list  ↑↓ select  Enter launch  Esc cancel")
+    let hint = Paragraph::new("  Tab alias/list  ↑↓ select  Enter launch  Esc cancel  F2 new  F4 close")
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(hint, chunks[5]);
 }

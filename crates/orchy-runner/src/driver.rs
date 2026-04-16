@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use pty_process::OwnedWritePty;
@@ -23,6 +23,7 @@ pub struct AgentDriver {
     writer: Arc<Mutex<OwnedWritePty>>,
     child: tokio::process::Child,
     is_idle: Arc<AtomicBool>,
+    last_output_ms: Arc<AtomicU64>,
     config: RunnerConfig,
     peer: Arc<Peer<RoleClient>>,
     #[allow(dead_code)]
@@ -49,11 +50,13 @@ impl AgentDriver {
         let parts = spawn_pty_raw(&config)?;
         let writer = Arc::new(Mutex::new(parts.writer));
         let is_idle = Arc::new(AtomicBool::new(false));
+        let last_output_ms = Arc::new(AtomicU64::new(0));
 
         spawn_output_reader(
             parts.reader,
             config.idle_patterns.clone(),
             Arc::clone(&is_idle),
+            Arc::clone(&last_output_ms),
             output_tx,
         );
 
@@ -61,6 +64,7 @@ impl AgentDriver {
             writer,
             child: parts.child,
             is_idle,
+            last_output_ms,
             config,
             peer,
             service,
@@ -157,6 +161,7 @@ impl AgentDriver {
         let agent_id = driver.agent_id.clone();
         let agent_type = driver.config.agent_type.clone();
         let is_idle = Arc::clone(&driver.is_idle);
+        let last_output_ms = Arc::clone(&driver.last_output_ms);
 
         let handle = tokio::spawn(async move { driver.main_loop_inner(input_rx).await });
 
@@ -165,6 +170,7 @@ impl AgentDriver {
             agent_id,
             agent_type,
             is_idle,
+            last_output_ms,
             output_rx,
             input_tx,
         };
@@ -266,6 +272,12 @@ impl AgentDriver {
                 }
                 tracing::warn!(alias = %self.config.alias, ?status, "process exited with error");
                 return Err(Error::ProcessExited);
+            }
+
+            // Silence-based idle: if no output for 800ms and we've received some output, mark idle.
+            let last_ms = self.last_output_ms.load(Ordering::Relaxed);
+            if last_ms > 0 && now_ms().saturating_sub(last_ms) > 800 {
+                self.is_idle.store(true, Ordering::Relaxed);
             }
 
             let currently_idle = self.is_idle.load(Ordering::Relaxed);
@@ -389,6 +401,7 @@ fn spawn_output_reader(
     mut reader: pty_process::OwnedReadPty,
     idle_patterns: Vec<String>,
     is_idle: Arc<AtomicBool>,
+    last_output_ms: Arc<AtomicU64>,
     output_tx: UnboundedSender<Vec<u8>>,
 ) {
     let patterns: Vec<Vec<u8>> = idle_patterns.into_iter().map(String::into_bytes).collect();
@@ -402,18 +415,30 @@ fn spawn_output_reader(
                     let raw = buf[..n].to_vec();
                     let _ = output_tx.send(raw);
 
+                    last_output_ms.store(now_ms(), Ordering::Relaxed);
+                    is_idle.store(false, Ordering::Relaxed);
+
                     let stripped = strip_ansi_escapes::strip(&buf[..n]);
                     tail.extend_from_slice(&stripped);
                     if tail.len() > 512 {
                         let excess = tail.len() - 512;
                         tail.drain(..excess);
                     }
-                    let idle = patterns.iter().any(|p| tail.ends_with(p.as_slice()));
-                    is_idle.store(idle, Ordering::Relaxed);
+                    // Pattern-based: quick signal for well-behaved prompts.
+                    if patterns.iter().any(|p| tail.ends_with(p.as_slice())) {
+                        is_idle.store(true, Ordering::Relaxed);
+                    }
                 }
             }
         }
     });
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn extract_text(result: &CallToolResult) -> String {
