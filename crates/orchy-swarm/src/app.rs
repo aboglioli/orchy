@@ -72,12 +72,17 @@ impl App {
             match key.code {
                 KeyCode::Esc => self.modal = None,
                 KeyCode::Enter => {
+                    if modal.alias_input.is_empty() {
+                        modal.alias_focused = true;
+                        return Ok(());
+                    }
+                    if !modal.agent_types[modal.selected].installed {
+                        return Ok(());
+                    }
                     let alias = modal.alias_input.clone();
                     let selected = modal.agent_types[modal.selected].clone();
                     self.modal = None;
-                    if !alias.is_empty() && selected.installed {
-                        self.launch_agent(alias, selected, ev_tx).await?;
-                    }
+                    self.launch_agent(alias, selected, ev_tx).await?;
                 }
                 KeyCode::Tab => {
                     modal.alias_focused = !modal.alias_focused;

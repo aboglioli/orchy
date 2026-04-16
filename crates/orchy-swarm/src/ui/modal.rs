@@ -112,12 +112,14 @@ pub fn render(f: &mut Frame, modal: &ModalState, area: Rect) {
     } else {
         Style::default().fg(Color::Gray)
     };
+    let alias_display = if modal.alias_input.is_empty() && modal.alias_focused {
+        format!("[{:<30}]", "type alias then Tab to list...")
+    } else {
+        format!("[{:<30}]", &modal.alias_input)
+    };
     let alias_line = Line::from(vec![
         Span::raw("  Alias  "),
-        Span::styled(
-            format!("[{:<30}]", &modal.alias_input),
-            alias_style,
-        ),
+        Span::styled(alias_display, alias_style),
     ]);
     f.render_widget(Paragraph::new(alias_line), chunks[1]);
 
