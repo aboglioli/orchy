@@ -90,7 +90,7 @@ impl RunnerConfig {
                     .collect()
             })
             .unwrap_or_default();
-        let (pty_rows, pty_cols) = crossterm::terminal::size().unwrap_or((24, 120));
+        let (pty_cols, pty_rows) = crossterm::terminal::size().unwrap_or((120, 24));
 
         let mut env = HashMap::new();
         env.insert(

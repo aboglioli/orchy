@@ -260,7 +260,11 @@ impl AgentDriver {
                 .try_wait()
                 .map_err(|e| Error::Io(format!("wait: {e}")))?
             {
-                tracing::warn!(alias = %self.config.alias, ?status, "process exited");
+                if status.success() {
+                    tracing::info!(alias = %self.config.alias, "agent process exited cleanly");
+                    return Ok(());
+                }
+                tracing::warn!(alias = %self.config.alias, ?status, "process exited with error");
                 return Err(Error::ProcessExited);
             }
 
