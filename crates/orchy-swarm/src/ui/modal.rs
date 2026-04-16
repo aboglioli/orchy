@@ -1,25 +1,17 @@
+use std::sync::OnceLock;
+
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+#[derive(Clone)]
 pub struct AgentTypeOption {
     pub name: &'static str,
     pub agent_type: &'static str,
     pub command: &'static str,
     pub installed: bool,
-}
-
-impl Clone for AgentTypeOption {
-    fn clone(&self) -> Self {
-        Self {
-            name: self.name,
-            agent_type: self.agent_type,
-            command: self.command,
-            installed: self.installed,
-        }
-    }
 }
 
 pub enum ModalStep {
@@ -35,9 +27,9 @@ pub struct ModalState {
     pub alias_input: String,
 }
 
-impl ModalState {
-    pub fn new() -> Self {
-        let agent_types = detect_installed_agents();
+impl Default for ModalState {
+    fn default() -> Self {
+        let agent_types = installed_agents().to_vec();
         let selected = agent_types.iter().position(|a| a.installed).unwrap_or(0);
         Self {
             filter: String::new(),
@@ -46,6 +38,12 @@ impl ModalState {
             step: ModalStep::SelectAgent,
             alias_input: String::new(),
         }
+    }
+}
+
+impl ModalState {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn visible(&self) -> Vec<(usize, &AgentTypeOption)> {
@@ -96,21 +94,25 @@ impl ModalState {
     }
 }
 
-fn detect_installed_agents() -> Vec<AgentTypeOption> {
-    let candidates = [
-        ("Claude Code", "claude", "claude"),
-        ("Cursor Agent", "cursor", "agent"),
-        ("OpenCode", "opencode", "opencode"),
-        ("Gemini CLI", "gemini", "gemini"),
-        ("Aider", "aider", "aider"),
-    ];
-    candidates
-        .iter()
-        .map(|(name, agent_type, command)| {
-            let installed = which_installed(command);
-            AgentTypeOption { name, agent_type, command, installed }
-        })
-        .collect()
+static INSTALLED_AGENTS: OnceLock<Vec<AgentTypeOption>> = OnceLock::new();
+
+fn installed_agents() -> &'static [AgentTypeOption] {
+    INSTALLED_AGENTS.get_or_init(|| {
+        let candidates = [
+            ("Claude Code", "claude", "claude"),
+            ("Cursor Agent", "cursor", "agent"),
+            ("OpenCode", "opencode", "opencode"),
+            ("Gemini CLI", "gemini", "gemini"),
+            ("Aider", "aider", "aider"),
+        ];
+        candidates
+            .iter()
+            .map(|(name, agent_type, command)| {
+                let installed = which_installed(command);
+                AgentTypeOption { name, agent_type, command, installed }
+            })
+            .collect()
+    })
 }
 
 fn which_installed(cmd: &str) -> bool {

@@ -3,7 +3,6 @@ use clap::Parser;
 mod agent_tab;
 mod app;
 mod client;
-mod config;
 mod tui;
 mod ui;
 

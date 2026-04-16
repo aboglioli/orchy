@@ -18,10 +18,13 @@ pub struct OrchyClient {
 
 impl OrchyClient {
     pub fn new(mcp_url: &str) -> Self {
-        let base_url = base_url(mcp_url);
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("failed to build HTTP client");
         Self {
-            base_url,
-            http: reqwest::Client::new(),
+            base_url: base_url(mcp_url),
+            http,
         }
     }
 
@@ -33,7 +36,6 @@ impl OrchyClient {
 }
 
 fn base_url(mcp_url: &str) -> String {
-    // Strip path: http://host:port/mcp -> http://host:port
     match reqwest::Url::parse(mcp_url) {
         Ok(mut u) => {
             u.set_path("");

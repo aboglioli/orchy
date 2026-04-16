@@ -22,4 +22,3 @@ ratatui = "0.30"
 crossterm = "0.29"
 clap = { version = "4", features = ["derive", "env"] }
 vt100 = "0.15"
-tokio-util = { version = "0.7", features = ["codec"] }

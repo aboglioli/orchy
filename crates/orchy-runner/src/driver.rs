@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use pty_process::OwnedWritePty;
@@ -15,6 +16,13 @@ use crate::mcp_config;
 use crate::process::spawn_pty_raw;
 use crate::session::AgentSession;
 
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .expect("failed to build HTTP client")
+});
+
 pub struct AgentDriver {
     writer: Arc<Mutex<OwnedWritePty>>,
     child: tokio::process::Child,
@@ -26,10 +34,7 @@ pub struct AgentDriver {
 }
 
 impl AgentDriver {
-    fn connect(
-        config: RunnerConfig,
-        output_tx: UnboundedSender<Vec<u8>>,
-    ) -> Result<Self> {
+    fn connect(config: RunnerConfig, output_tx: UnboundedSender<Vec<u8>>) -> Result<Self> {
         let parts = spawn_pty_raw(&config)?;
         let writer = Arc::new(Mutex::new(parts.writer));
         let is_idle = Arc::new(AtomicBool::new(false));
@@ -98,9 +103,7 @@ impl AgentDriver {
         result
     }
 
-    pub async fn start(
-        config: RunnerConfig,
-    ) -> Result<(AgentSession, JoinHandle<Result<()>>)> {
+    pub async fn start(config: RunnerConfig) -> Result<(AgentSession, JoinHandle<Result<()>>)> {
         let (output_tx, output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (input_tx, input_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
@@ -132,7 +135,6 @@ impl AgentDriver {
         let alias = driver.config.alias.clone();
         let agent_type = driver.config.agent_type.clone();
         let is_idle = Arc::clone(&driver.is_idle);
-        let last_output_ms = Arc::clone(&driver.last_output_ms);
 
         let handle = tokio::spawn(async move { driver.main_loop_inner(input_rx).await });
 
@@ -140,7 +142,6 @@ impl AgentDriver {
             alias,
             agent_type,
             is_idle,
-            last_output_ms,
             output_rx,
             input_tx,
         };
@@ -227,7 +228,8 @@ impl AgentDriver {
         sleep(Duration::from_millis(500)).await;
         self.wait_for_silence(20).await;
 
-        let agents_ctx = fetch_agents(&self.config.url, &self.config.project, &self.config.alias).await;
+        let agents_ctx =
+            fetch_agents(&self.config.url, &self.config.project, &self.config.alias).await;
         let prompt = format!(
             "You are agent '{alias}'.{agents_ctx}\n\nConnect to orchy MCP server at {url}. On startup:\n1. register_agent(project: \"{project}\", alias: \"{alias}\", description: \"{alias} agent\") — establish your session\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nCall heartbeat every 30 seconds. Focus on completing tasks.",
             alias = self.config.alias,
@@ -332,8 +334,7 @@ fn spawn_output_reader(
             match reader.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let raw = buf[..n].to_vec();
-                    let _ = output_tx.send(raw);
+                    let _ = output_tx.send(buf[..n].to_vec());
 
                     last_output_ms.store(now_ms(), Ordering::Relaxed);
                     is_idle.store(false, Ordering::Relaxed);
@@ -360,19 +361,18 @@ async fn fetch_agents(mcp_url: &str, project: &str, self_alias: &str) -> String 
         .unwrap_or(mcp_url.trim_end_matches('/'));
     let url = format!("{base}/api/agents?project={project}");
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build();
-    let Ok(client) = client else { return String::new() };
-
     #[derive(serde::Deserialize)]
     struct AgentDto {
         alias: Option<String>,
         agent_type: Option<String>,
     }
 
-    let Ok(resp) = client.get(&url).send().await else { return String::new() };
-    let Ok(agents) = resp.json::<Vec<AgentDto>>().await else { return String::new() };
+    let Ok(resp) = HTTP_CLIENT.get(&url).send().await else {
+        return String::new();
+    };
+    let Ok(agents) = resp.json::<Vec<AgentDto>>().await else {
+        return String::new();
+    };
 
     let others: Vec<String> = agents
         .into_iter()

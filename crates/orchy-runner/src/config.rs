@@ -27,17 +27,11 @@ pub struct Cli {
     #[arg(long, env = "ORCHY_NAMESPACE")]
     pub namespace: Option<String>,
 
-    #[arg(long, env = "ORCHY_ROLES")]
-    pub roles: Option<String>,
-
     #[arg(long, env = "ORCHY_IDLE_PATTERNS")]
     pub idle_patterns: Option<String>,
 
     #[arg(long, env = "ORCHY_IDLE_WAKE_SECS", default_value_t = 120)]
     pub idle_wake_secs: u64,
-
-    #[arg(long, env = "ORCHY_HEARTBEAT_SECS", default_value_t = 30)]
-    pub heartbeat_secs: u64,
 
     #[arg(required = true, trailing_var_arg = true)]
     pub command: Vec<String>,
@@ -50,7 +44,6 @@ pub struct RunnerConfig {
     pub url: String,
     pub project: String,
     pub namespace: Option<String>,
-    pub roles: Vec<String>,
     pub command: String,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
@@ -59,14 +52,11 @@ pub struct RunnerConfig {
     pub pty_cols: u16,
     pub idle_patterns: Vec<String>,
     pub idle_wake: Duration,
-    pub heartbeat_interval: Duration,
 }
 
 impl RunnerConfig {
     pub fn from_cli(cli: Cli) -> Self {
-        let project = cli
-            .project
-            .unwrap_or_else(current_dir_name);
+        let project = cli.project.unwrap_or_else(current_dir_name);
         let description = cli
             .description
             .unwrap_or_else(|| format!("{} agent", cli.alias));
@@ -80,16 +70,6 @@ impl RunnerConfig {
                     .collect()
             })
             .unwrap_or_else(|| default_idle_patterns_for(&cli.agent_type));
-        let roles = cli
-            .roles
-            .map(|s| {
-                s.split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-                    .collect()
-            })
-            .unwrap_or_default();
         let (pty_cols, pty_rows) = crossterm::terminal::size().unwrap_or((120, 24));
 
         let mut env = HashMap::new();
@@ -109,7 +89,6 @@ impl RunnerConfig {
             url: cli.url,
             project,
             namespace: cli.namespace,
-            roles,
             command,
             args,
             env,
@@ -118,24 +97,17 @@ impl RunnerConfig {
             pty_cols,
             idle_patterns,
             idle_wake: Duration::from_secs(cli.idle_wake_secs),
-            heartbeat_interval: Duration::from_secs(cli.heartbeat_secs),
         }
     }
 }
 
 pub fn default_idle_patterns_for(agent_type: &str) -> Vec<String> {
     match agent_type {
-        // Claude Code (Ink TUI) — waits at ❯
         "claude" => vec!["❯ ".to_string()],
-        // Cursor CLI agent (`agent` binary, Ink TUI) — same pattern as Claude Code
         "cursor" => vec!["❯ ".to_string()],
-        // OpenCode (Bubble Tea TUI) — waits at >
         "opencode" => vec!["> ".to_string()],
-        // Gemini CLI — waits at >
         "gemini" => vec!["> ".to_string()],
-        // Aider (line-mode chat) — waits at "> "
         "aider" => vec!["> ".to_string()],
-        // Generic fallback covers most shells and unknown TUIs
         _ => vec!["❯ ".to_string(), "$ ".to_string(), "> ".to_string()],
     }
 }

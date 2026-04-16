@@ -16,7 +16,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     }
 
     if let Some(tab) = app.tabs.get(app.active_tab) {
-        let scroll = tab.scroll_offset;
+        let scroll = tab.scroll_offset();
 
         // When scrolled: replay into a taller parser (cached). Row 0 of that
         // parser is the oldest content; we show the top visible_rows rows.

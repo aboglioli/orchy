@@ -69,10 +69,10 @@ impl App {
             }
 
             if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                if tab.scroll_offset > 0 {
+                if tab.scroll_offset() > 0 {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
                     let pty_rows = rows.saturating_sub(4).max(10);
-                    tab.maybe_rebuild_scroll(pty_rows, cols);
+                    tab.prepare_render(pty_rows, cols);
                 }
             }
 
@@ -179,15 +179,12 @@ impl App {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
                     let (cols, rows) = crossterm::terminal::size().unwrap_or((120, 24));
                     let pty_rows = rows.saturating_sub(4).max(10);
-                    tab.scroll_offset = tab.scroll_offset.saturating_add(10);
-                    tab.maybe_rebuild_scroll(pty_rows, cols);
-                    let max = tab.max_scroll();
-                    tab.scroll_offset = tab.scroll_offset.min(max);
+                    tab.scroll_up(pty_rows, cols);
                 }
             }
             (_, KeyCode::F(8)) => {
                 if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                    tab.scroll_offset = tab.scroll_offset.saturating_sub(10);
+                    tab.scroll_down();
                 }
             }
             _ => {
@@ -226,7 +223,6 @@ impl App {
             url: self.orchy_url.clone(),
             project: self.project.clone(),
             namespace: None,
-            roles: Vec::new(),
             command: agent_type_opt.command.to_string(),
             args: Vec::new(),
             env,
@@ -237,7 +233,6 @@ impl App {
                 agent_type_opt.agent_type,
             ),
             idle_wake: Duration::from_secs(120),
-            heartbeat_interval: Duration::from_secs(30),
         };
 
         let tab_id = self.next_tab_id;

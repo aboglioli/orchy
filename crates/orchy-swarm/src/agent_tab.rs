@@ -19,7 +19,7 @@ pub struct AgentTab {
     pub agent_type: String,
     pub is_idle: Arc<AtomicBool>,
     pub screen: vt100::Parser,
-    pub scroll_offset: usize,
+    scroll_offset: usize,
     raw_buf: Vec<u8>,
     scroll_cache: Option<ScrollCache>,
     pub input_tx: UnboundedSender<Vec<u8>>,
@@ -60,24 +60,59 @@ impl AgentTab {
         self.raw_buf.extend_from_slice(&bytes);
         const MAX: usize = 512 * 1024;
         if self.raw_buf.len() > MAX {
-            self.raw_buf.drain(..64 * 1024);
+            // Drain to the next newline after the 64KB mark so we never split
+            // a multi-byte UTF-8 sequence or an ANSI escape in the middle.
+            let trim_start = 64 * 1024;
+            let trim_at = self.raw_buf[trim_start..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map(|pos| trim_start + pos + 1)
+                .unwrap_or(trim_start);
+            self.raw_buf.drain(..trim_at);
         }
     }
 
-    pub fn max_scroll(&self) -> usize {
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
+    }
+
+    pub fn scroll_up(&mut self, rows: u16, cols: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_add(10);
+        self.maybe_rebuild_scroll(rows, cols);
+        let max = self.max_scroll();
+        self.scroll_offset = self.scroll_offset.min(max);
+    }
+
+    pub fn scroll_down(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(10);
+        if self.scroll_offset == 0 {
+            self.scroll_cache = None;
+        }
+    }
+
+    /// Call before rendering to ensure the scroll cache is fresh.
+    pub fn prepare_render(&mut self, rows: u16, cols: u16) {
+        if self.scroll_offset > 0 {
+            self.maybe_rebuild_scroll(rows, cols);
+        }
+    }
+
+    pub fn scroll_screen(&self) -> Option<&vt100::Screen> {
+        self.scroll_cache.as_ref().map(|c| c.parser.screen())
+    }
+
+    fn max_scroll(&self) -> usize {
         self.scroll_cache
             .as_ref()
             .map(|c| {
-                let (rows, _) = c.parser.screen().size();
-                let (vis_rows, _) = self.screen.screen().size();
-                rows.saturating_sub(vis_rows) as usize
+                let (total, _) = c.parser.screen().size();
+                let (vis, _) = self.screen.screen().size();
+                total.saturating_sub(vis) as usize
             })
             .unwrap_or(0)
     }
 
-    /// Rebuild scroll cache when needed. Cache is reused for smaller offsets;
-    /// only rebuilt when scroll_offset exceeds cached capacity or new data arrives.
-    pub fn maybe_rebuild_scroll(&mut self, rows: u16, cols: u16) {
+    fn maybe_rebuild_scroll(&mut self, rows: u16, cols: u16) {
         if self.scroll_offset == 0 {
             self.scroll_cache = None;
             return;
@@ -88,7 +123,8 @@ impl AgentTab {
         if !stale {
             return;
         }
-        let render_rows = (rows as usize + self.scroll_offset).min(rows as usize + 2000) as u16;
+        let render_rows =
+            (rows as usize + self.scroll_offset).min(rows as usize + 2000) as u16;
         let mut p = vt100::Parser::new(render_rows, cols, 0);
         p.process(&self.raw_buf);
         self.scroll_cache = Some(ScrollCache {
@@ -96,10 +132,6 @@ impl AgentTab {
             buf_len: self.raw_buf.len(),
             parser: p,
         });
-    }
-
-    pub fn scroll_screen(&self) -> Option<&vt100::Screen> {
-        self.scroll_cache.as_ref().map(|c| c.parser.screen())
     }
 
     pub fn send_input(&self, bytes: Vec<u8>) {

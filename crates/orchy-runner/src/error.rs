@@ -8,12 +8,6 @@ pub enum Error {
     #[error("I/O error: {0}")]
     Io(String),
 
-    #[error("MCP error: {0}")]
-    Mcp(String),
-
-    #[error("config error: {0}")]
-    Config(String),
-
     #[error("agent process exited unexpectedly")]
     ProcessExited,
 }
