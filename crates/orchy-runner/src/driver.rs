@@ -180,32 +180,26 @@ impl AgentDriver {
     async fn register(&mut self) -> Result<()> {
         let mut args = serde_json::Map::new();
         args.insert("project".into(), self.config.project.clone().into());
-        args.insert("alias".into(), self.config.alias.clone().into());
-        args.insert("description".into(), self.config.description.clone().into());
+        // No alias: the PTY agent owns the alias. Runner is a service process.
+        args.insert(
+            "description".into(),
+            format!("runner process for {}", self.config.alias).into(),
+        );
 
         if let Some(ns) = &self.config.namespace {
             args.insert("namespace".into(), ns.clone().into());
         }
 
-        if !self.config.roles.is_empty() {
-            args.insert(
-                "roles".into(),
-                serde_json::Value::Array(
-                    self.config.roles.iter().map(|r| r.clone().into()).collect(),
-                ),
-            );
-        }
-
         let mut metadata = serde_json::Map::new();
-        metadata.insert("agent_type".into(), self.config.agent_type.clone().into());
-        metadata.insert("runner_managed".into(), "true".into());
+        metadata.insert("agent_type".into(), "runner".into());
+        metadata.insert("managed_alias".into(), self.config.alias.clone().into());
         args.insert("metadata".into(), serde_json::Value::Object(metadata));
 
         let result = self.call_tool("register_agent", args).await?;
         let text = extract_text(&result);
 
         let agent_id = extract_field(&text, "id").unwrap_or_default();
-        tracing::info!(agent_id = %agent_id, alias = %self.config.alias, "registered with orchy");
+        tracing::info!(agent_id = %agent_id, alias = %self.config.alias, "runner registered with orchy");
         self.agent_id = agent_id;
 
         Ok(())
@@ -228,12 +222,10 @@ impl AgentDriver {
         self.wait_for_silence(20).await;
 
         let prompt = format!(
-            "You are agent '{}' (id: {}).\n\nConnect to orchy MCP at {}. On startup:\n1. register_agent(project: \"{}\", agent_id: \"{}\") — resumes your existing profile\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nYour heartbeat is managed by orchy-runner. Focus on completing tasks.",
-            self.config.alias,
-            self.agent_id,
-            self.config.url,
-            self.config.project,
-            self.agent_id,
+            "You are agent '{alias}'.\n\nConnect to orchy MCP server at {url}. On startup:\n1. register_agent(project: \"{project}\", alias: \"{alias}\", description: \"{alias} agent\") — establish your session\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nCall heartbeat every 30 seconds. Focus on completing tasks.",
+            alias = self.config.alias,
+            url = self.config.url,
+            project = self.config.project,
         );
 
         tracing::info!(alias = %self.config.alias, "injecting bootstrap prompt");

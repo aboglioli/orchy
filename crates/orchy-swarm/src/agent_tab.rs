@@ -7,6 +7,7 @@ use tokio::task::JoinHandle;
 use orchy_runner::error::Result;
 
 pub struct AgentTab {
+    pub id: usize,
     pub alias: String,
     #[allow(dead_code)]
     pub agent_id: String,
@@ -20,6 +21,7 @@ pub struct AgentTab {
 
 impl AgentTab {
     pub fn new(
+        id: usize,
         alias: String,
         agent_id: String,
         agent_type: String,
@@ -30,6 +32,7 @@ impl AgentTab {
         driver_handle: JoinHandle<Result<()>>,
     ) -> Self {
         Self {
+            id,
             alias,
             agent_id,
             agent_type,

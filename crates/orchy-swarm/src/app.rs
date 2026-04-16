@@ -20,6 +20,7 @@ pub struct App {
     pub orchy_url: String,
     pub project: String,
     running: bool,
+    next_tab_id: usize,
 }
 
 impl App {
@@ -31,6 +32,7 @@ impl App {
             orchy_url,
             project,
             running: true,
+            next_tab_id: 0,
         }
     }
 
@@ -41,8 +43,8 @@ impl App {
         let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<(usize, Vec<u8>)>();
 
         while self.running {
-            while let Ok((idx, bytes)) = ev_rx.try_recv() {
-                if let Some(tab) = self.tabs.get_mut(idx) {
+            while let Ok((tab_id, bytes)) = ev_rx.try_recv() {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                     tab.push_output(bytes);
                 }
             }
@@ -196,7 +198,8 @@ impl App {
             heartbeat_interval: Duration::from_secs(30),
         };
 
-        let tab_idx = self.tabs.len();
+        let tab_id = self.next_tab_id;
+        self.next_tab_id += 1;
         let ev_tx_clone = ev_tx.clone();
 
         let (mut session, handle) = AgentDriver::start(config)
@@ -205,13 +208,14 @@ impl App {
 
         tokio::spawn(async move {
             while let Some(bytes) = session.output_rx.recv().await {
-                if ev_tx_clone.send((tab_idx, bytes)).is_err() {
+                if ev_tx_clone.send((tab_id, bytes)).is_err() {
                     break;
                 }
             }
         });
 
         self.tabs.push(AgentTab::new(
+            tab_id,
             alias,
             session.agent_id,
             agent_type_opt.agent_type.to_string(),
