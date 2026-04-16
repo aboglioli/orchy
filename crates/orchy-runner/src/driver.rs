@@ -92,15 +92,17 @@ impl AgentDriver {
             }
         });
 
-        let result = handle.await.map_err(|e| Error::Io(format!("join: {e}")))?;
+        let result = handle.await.map_err(|e| Error::Io(format!("join: {e}")));
 
-        crossterm::terminal::disable_raw_mode()
-            .map_err(|e| Error::Io(format!("disable raw mode: {e}")))?;
-
+        crossterm::terminal::disable_raw_mode().ok();
         output_fwd.abort();
         stdin_fwd.abort();
 
-        result
+        let code = match result {
+            Ok(Ok(())) => 0,
+            _ => 1,
+        };
+        std::process::exit(code);
     }
 
     pub async fn start(config: RunnerConfig) -> Result<(AgentSession, JoinHandle<Result<()>>)> {
