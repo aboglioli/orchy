@@ -99,7 +99,10 @@ impl MessageStore for StoreBackend {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
-        delegate_trait!(self, MessageStore::find_pending(agent, org, project, namespace))
+        delegate_trait!(
+            self,
+            MessageStore::find_pending(agent, org, project, namespace)
+        )
     }
     async fn find_sent(
         &self,
@@ -108,7 +111,10 @@ impl MessageStore for StoreBackend {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
-        delegate_trait!(self, MessageStore::find_sent(sender, org, project, namespace))
+        delegate_trait!(
+            self,
+            MessageStore::find_sent(sender, org, project, namespace)
+        )
     }
     async fn find_thread(
         &self,
@@ -142,7 +148,10 @@ impl KnowledgeStore for StoreBackend {
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
-        delegate_trait!(self, KnowledgeStore::find_by_path(org, project, namespace, path))
+        delegate_trait!(
+            self,
+            KnowledgeStore::find_by_path(org, project, namespace, path)
+        )
     }
     async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
         delegate_trait!(self, KnowledgeStore::list(filter))
@@ -178,7 +187,13 @@ impl LockStore for StoreBackend {
     ) -> Result<Option<ResourceLock>> {
         delegate_trait!(self, LockStore::find(org, project, namespace, name))
     }
-    async fn delete(&self, org: &OrganizationId, project: &ProjectId, namespace: &Namespace, name: &str) -> Result<()> {
+    async fn delete(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+    ) -> Result<()> {
         delegate_trait!(self, LockStore::delete(org, project, namespace, name))
     }
     async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
@@ -220,7 +235,12 @@ impl ReviewStore for StoreBackend {
 }
 
 impl NamespaceStore for StoreBackend {
-    async fn register(&self, org: &OrganizationId, project: &ProjectId, namespace: &Namespace) -> Result<()> {
+    async fn register(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+    ) -> Result<()> {
         delegate_trait!(self, NamespaceStore::register(org, project, namespace))
     }
     async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {

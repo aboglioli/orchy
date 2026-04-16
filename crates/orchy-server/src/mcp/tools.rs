@@ -70,7 +70,13 @@ impl OrchyHandler {
 
         if let Some(ref id_str) = params.agent_id {
             let agent_id = parse_agent_id(id_str)?;
-            let _ = NamespaceStore::register(&*self.container.store, &default_org, &project, &namespace).await;
+            let _ = NamespaceStore::register(
+                &*self.container.store,
+                &default_org,
+                &project,
+                &namespace,
+            )
+            .await;
 
             let mut agent = self
                 .container
@@ -97,7 +103,9 @@ impl OrchyHandler {
             return Ok(to_json(&agent));
         }
 
-        let _ = NamespaceStore::register(&*self.container.store, &default_org, &project, &namespace).await;
+        let _ =
+            NamespaceStore::register(&*self.container.store, &default_org, &project, &namespace)
+                .await;
 
         let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
 
@@ -721,7 +729,15 @@ impl OrchyHandler {
         match self
             .container
             .message_service
-            .send(default_org, project, namespace, agent_id, target, params.body, reply_to)
+            .send(
+                default_org,
+                project,
+                namespace,
+                agent_id,
+                target,
+                params.body,
+                reply_to,
+            )
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
@@ -2154,7 +2170,12 @@ impl OrchyHandler {
         let source_entry = self
             .container
             .knowledge_service
-            .read(&default_org, Some(&source_project), &source_namespace, &params.path)
+            .read(
+                &default_org,
+                Some(&source_project),
+                &source_namespace,
+                &params.path,
+            )
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found in source: {}", params.path))?;

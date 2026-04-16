@@ -129,7 +129,8 @@ impl OrchyHandler {
         if let Some(project) = self.get_session_project() {
             use orchy_core::namespace::NamespaceStore;
             let default_org = OrganizationId::new("default").unwrap();
-            let _ = NamespaceStore::register(&*self.container.store, &default_org, &project, &ns).await;
+            let _ =
+                NamespaceStore::register(&*self.container.store, &default_org, &project, &ns).await;
         }
         Ok(ns)
     }
