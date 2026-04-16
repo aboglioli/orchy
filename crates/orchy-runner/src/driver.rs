@@ -212,22 +212,20 @@ impl AgentDriver {
     }
 
     async fn inject_bootstrap(&mut self) -> Result<()> {
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            if self.is_idle.load(Ordering::Relaxed) {
-                break;
-            }
-            let last_ms = self.last_output_ms.load(Ordering::Relaxed);
-            if last_ms > 0 && now_ms().saturating_sub(last_ms) > 800 {
-                tracing::debug!(alias = %self.config.alias, "agent silent 800ms, injecting bootstrap");
-                break;
-            }
-            if Instant::now() >= deadline {
-                tracing::warn!("timed out waiting for agent idle before bootstrap");
-                break;
-            }
-            sleep(Duration::from_millis(200)).await;
+        // Phase 1: wait for first idle (may be a session selector or splash screen).
+        self.wait_for_silence(30).await;
+
+        // Send a bare Enter to dismiss any session-selector / "press enter to continue" UI.
+        {
+            let mut w = self.writer.lock().await;
+            let _ = w.write_all(b"\r").await;
+            let _ = w.flush().await;
         }
+        self.is_idle.store(false, Ordering::Relaxed);
+
+        // Phase 2: wait for the agent to settle at its actual input prompt.
+        sleep(Duration::from_millis(500)).await;
+        self.wait_for_silence(20).await;
 
         let prompt = format!(
             "You are agent '{}' (id: {}).\n\nConnect to orchy MCP at {}. On startup:\n1. register_agent(project: \"{}\", agent_id: \"{}\") — resumes your existing profile\n2. list_knowledge(kind: \"skill\") — load project conventions\n3. check_mailbox — read incoming messages\n4. get_next_task — claim your first task\n\nYour heartbeat is managed by orchy-runner. Focus on completing tasks.",
@@ -238,7 +236,26 @@ impl AgentDriver {
             self.agent_id,
         );
 
+        tracing::info!(alias = %self.config.alias, "injecting bootstrap prompt");
         self.inject(&prompt).await
+    }
+
+    async fn wait_for_silence(&self, timeout_secs: u64) {
+        let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+        loop {
+            if self.is_idle.load(Ordering::Relaxed) {
+                break;
+            }
+            let last_ms = self.last_output_ms.load(Ordering::Relaxed);
+            if last_ms > 0 && now_ms().saturating_sub(last_ms) > 800 {
+                break;
+            }
+            if Instant::now() >= deadline {
+                tracing::warn!(alias = %self.config.alias, "timed out waiting for agent idle");
+                break;
+            }
+            sleep(Duration::from_millis(200)).await;
+        }
     }
 
     pub async fn main_loop(&mut self) -> Result<()> {

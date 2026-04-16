@@ -12,7 +12,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     if app.tabs.is_empty() {
-        let hint = Paragraph::new("  [Ctrl+N] new agent  [Ctrl+Q] quit")
+        let hint = Paragraph::new("  [F2] new agent  [Ctrl+Q] quit")
             .alignment(Alignment::Left);
         f.render_widget(hint, inner);
         return;
@@ -47,7 +47,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     }
 
     spans.push(Span::styled(
-        "  [Ctrl+N] new  [Ctrl+W] close  [Alt+←→] switch",
+        "  [F2] new  [F4] close  [Alt+←→] switch",
         Style::default().fg(Color::DarkGray),
     ));
 
