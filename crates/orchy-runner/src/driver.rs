@@ -3,15 +3,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
 use pty_process::OwnedWritePty;
-use rmcp::ServiceExt;
-use rmcp::model::{CallToolRequestParams, CallToolResult, RawContent};
-use rmcp::service::{Peer, RoleClient, RunningService};
-use rmcp::transport::StreamableHttpClientTransport;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
-use tokio::time::{self, Duration, sleep};
+use tokio::time::{Duration, sleep};
 
 use crate::config::RunnerConfig;
 use crate::error::{Error, Result};
@@ -25,28 +21,15 @@ pub struct AgentDriver {
     is_idle: Arc<AtomicBool>,
     last_output_ms: Arc<AtomicU64>,
     config: RunnerConfig,
-    peer: Arc<Peer<RoleClient>>,
-    #[allow(dead_code)]
-    service: RunningService<RoleClient, ()>,
-    agent_id: String,
     shutting_down: bool,
-    /// True if we wrote the orchy entry into .mcp.json and must clean it up.
     mcp_injected: bool,
 }
 
 impl AgentDriver {
-    async fn connect(
+    fn connect(
         config: RunnerConfig,
         output_tx: UnboundedSender<Vec<u8>>,
     ) -> Result<Self> {
-        let transport = StreamableHttpClientTransport::from_uri(config.url.as_str());
-
-        let service: RunningService<RoleClient, ()> =
-            ().serve(transport).await.map_err(|e| {
-                Error::Mcp(format!("connect to {}: {e}", config.url))
-            })?;
-
-        let peer = Arc::new(service.peer().clone());
         let parts = spawn_pty_raw(&config)?;
         let writer = Arc::new(Mutex::new(parts.writer));
         let is_idle = Arc::new(AtomicBool::new(false));
@@ -66,26 +49,19 @@ impl AgentDriver {
             is_idle,
             last_output_ms,
             config,
-            peer,
-            service,
-            agent_id: String::new(),
             shutting_down: false,
             mcp_injected: false,
         })
     }
 
     /// Standalone entry point: transparent PTY passthrough.
-    /// Puts the terminal in raw mode, pipes PTY output to stdout and stdin to
-    /// the PTY, so the agent's UI is fully visible and interactive.
     pub async fn run(config: RunnerConfig) -> Result<()> {
         let (mut session, handle) = Self::start(config).await?;
 
         crossterm::terminal::enable_raw_mode()
             .map_err(|e| Error::Io(format!("enable raw mode: {e}")))?;
 
-        // PTY output → stdout
         let output_fwd = tokio::spawn(async move {
-            use tokio::io::AsyncWriteExt;
             let mut stdout = tokio::io::stdout();
             while let Some(bytes) = session.output_rx.recv().await {
                 if stdout.write_all(&bytes).await.is_err() {
@@ -95,10 +71,8 @@ impl AgentDriver {
             }
         });
 
-        // stdin → PTY (raw bytes, no processing)
         let input_tx = session.input_tx;
         let stdin_fwd = tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
             let mut stdin = tokio::io::stdin();
             let mut buf = [0u8; 256];
             loop {
@@ -152,12 +126,10 @@ impl AgentDriver {
             false
         };
 
-        let mut driver = Self::connect(config, output_tx).await?;
+        let mut driver = Self::connect(config, output_tx)?;
         driver.mcp_injected = mcp_injected;
-        driver.register().await?;
 
         let alias = driver.config.alias.clone();
-        let agent_id = driver.agent_id.clone();
         let agent_type = driver.config.agent_type.clone();
         let is_idle = Arc::clone(&driver.is_idle);
         let last_output_ms = Arc::clone(&driver.last_output_ms);
@@ -166,7 +138,6 @@ impl AgentDriver {
 
         let session = AgentSession {
             alias,
-            agent_id,
             agent_type,
             is_idle,
             last_output_ms,
@@ -177,39 +148,75 @@ impl AgentDriver {
         Ok((session, handle))
     }
 
-    async fn register(&mut self) -> Result<()> {
-        let mut args = serde_json::Map::new();
-        args.insert("project".into(), self.config.project.clone().into());
-        // No alias: the PTY agent owns the alias. Runner is a service process.
-        args.insert(
-            "description".into(),
-            format!("runner process for {}", self.config.alias).into(),
-        );
+    async fn main_loop_inner(&mut self, mut input_rx: UnboundedReceiver<Vec<u8>>) -> Result<()> {
+        self.inject_bootstrap().await?;
 
-        if let Some(ns) = &self.config.namespace {
-            args.insert("namespace".into(), ns.clone().into());
+        let mut last_was_idle = false;
+        let mut idle_since: Option<Instant> = None;
+
+        tracing::info!(alias = %self.config.alias, "entering main loop");
+
+        loop {
+            if self.shutting_down {
+                break;
+            }
+
+            if let Some(status) = self
+                .child
+                .try_wait()
+                .map_err(|e| Error::Io(format!("wait: {e}")))?
+            {
+                if status.success() {
+                    tracing::info!(alias = %self.config.alias, "agent process exited cleanly");
+                    return Ok(());
+                }
+                tracing::warn!(alias = %self.config.alias, ?status, "process exited with error");
+                return Err(Error::ProcessExited);
+            }
+
+            let last_ms = self.last_output_ms.load(Ordering::Relaxed);
+            if last_ms > 0 && now_ms().saturating_sub(last_ms) > 800 {
+                self.is_idle.store(true, Ordering::Relaxed);
+            }
+
+            let currently_idle = self.is_idle.load(Ordering::Relaxed);
+
+            if currently_idle && !last_was_idle {
+                idle_since = Some(Instant::now());
+            } else if !currently_idle && last_was_idle {
+                idle_since = None;
+            }
+            last_was_idle = currently_idle;
+
+            if let Some(since) = idle_since {
+                let elapsed = since.elapsed();
+                if elapsed > Duration::from_secs(5) && elapsed > self.config.idle_wake {
+                    tracing::info!(alias = %self.config.alias, "idle too long, injecting wake-up");
+                    self.inject("Check your mailbox and get your next task.").await?;
+                    idle_since = None;
+                }
+            }
+
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!(alias = %self.config.alias, "ctrl-c received, shutting down");
+                    self.shutting_down = true;
+                }
+                Some(bytes) = input_rx.recv() => {
+                    let mut w = self.writer.lock().await;
+                    let _ = w.write_all(&bytes).await;
+                    let _ = w.flush().await;
+                }
+                _ = sleep(Duration::from_secs(1)) => {}
+            }
         }
 
-        let mut metadata = serde_json::Map::new();
-        metadata.insert("agent_type".into(), "runner".into());
-        metadata.insert("managed_alias".into(), self.config.alias.clone().into());
-        args.insert("metadata".into(), serde_json::Value::Object(metadata));
-
-        let result = self.call_tool("register_agent", args).await?;
-        let text = extract_text(&result);
-
-        let agent_id = extract_field(&text, "id").unwrap_or_default();
-        tracing::info!(agent_id = %agent_id, alias = %self.config.alias, "runner registered with orchy");
-        self.agent_id = agent_id;
-
-        Ok(())
+        self.shutdown().await
     }
 
     async fn inject_bootstrap(&mut self) -> Result<()> {
-        // Phase 1: wait for first idle (may be a session selector or splash screen).
         self.wait_for_silence(30).await;
 
-        // Send a bare Enter to dismiss any session-selector / "press enter to continue" UI.
         {
             let mut w = self.writer.lock().await;
             let _ = w.write_all(b"\r").await;
@@ -217,7 +224,6 @@ impl AgentDriver {
         }
         self.is_idle.store(false, Ordering::Relaxed);
 
-        // Phase 2: wait for the agent to settle at its actual input prompt.
         sleep(Duration::from_millis(500)).await;
         self.wait_for_silence(20).await;
 
@@ -248,96 +254,6 @@ impl AgentDriver {
             }
             sleep(Duration::from_millis(200)).await;
         }
-    }
-
-    pub async fn main_loop(&mut self) -> Result<()> {
-        let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-        self.main_loop_inner(rx).await
-    }
-
-    async fn main_loop_inner(&mut self, mut input_rx: UnboundedReceiver<Vec<u8>>) -> Result<()> {
-        self.inject_bootstrap().await?;
-
-        let heartbeat_interval = self.config.heartbeat_interval;
-        let mut heartbeat_timer = time::interval(heartbeat_interval);
-        let mut last_was_idle = false;
-        let mut idle_since: Option<Instant> = None;
-
-        heartbeat_timer.tick().await;
-
-        tracing::info!(
-            alias = %self.config.alias,
-            heartbeat_secs = heartbeat_interval.as_secs(),
-            "entering main loop"
-        );
-
-        loop {
-            if self.shutting_down {
-                break;
-            }
-
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .map_err(|e| Error::Io(format!("wait: {e}")))?
-            {
-                if status.success() {
-                    tracing::info!(alias = %self.config.alias, "agent process exited cleanly");
-                    return Ok(());
-                }
-                tracing::warn!(alias = %self.config.alias, ?status, "process exited with error");
-                return Err(Error::ProcessExited);
-            }
-
-            // Silence-based idle: if no output for 800ms and we've received some output, mark idle.
-            let last_ms = self.last_output_ms.load(Ordering::Relaxed);
-            if last_ms > 0 && now_ms().saturating_sub(last_ms) > 800 {
-                self.is_idle.store(true, Ordering::Relaxed);
-            }
-
-            let currently_idle = self.is_idle.load(Ordering::Relaxed);
-
-            if currently_idle && !last_was_idle {
-                idle_since = Some(Instant::now());
-            } else if !currently_idle && last_was_idle {
-                idle_since = None;
-            }
-            last_was_idle = currently_idle;
-
-            if let Some(since) = idle_since {
-                let elapsed = since.elapsed();
-                if elapsed > Duration::from_secs(5) && elapsed > self.config.idle_wake {
-                    tracing::info!(alias = %self.config.alias, "idle too long, injecting wake-up");
-                    self.inject("Check your mailbox and get your next task.").await?;
-                    idle_since = None;
-                }
-            }
-
-            tokio::select! {
-                _ = heartbeat_timer.tick() => {
-                    if let Err(e) = self.heartbeat().await {
-                        tracing::warn!(error = %e, "heartbeat failed");
-                    }
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    tracing::info!(alias = %self.config.alias, "ctrl-c received, shutting down");
-                    self.shutting_down = true;
-                }
-                Some(bytes) = input_rx.recv() => {
-                    let mut w = self.writer.lock().await;
-                    let _ = w.write_all(&bytes).await;
-                    let _ = w.flush().await;
-                }
-                _ = sleep(Duration::from_secs(1)) => {}
-            }
-        }
-
-        self.shutdown().await
-    }
-
-    async fn heartbeat(&self) -> Result<()> {
-        self.call_tool("heartbeat", serde_json::Map::new()).await?;
-        Ok(())
     }
 
     async fn inject(&self, text: &str) -> Result<()> {
@@ -374,7 +290,6 @@ impl AgentDriver {
 
     async fn shutdown(&mut self) -> Result<()> {
         tracing::info!(alias = %self.config.alias, "shutting down");
-        let _ = self.call_tool("disconnect", serde_json::Map::new()).await;
         {
             let mut w = self.writer.lock().await;
             let _ = w.write_all(b"/exit\r").await;
@@ -397,18 +312,6 @@ impl AgentDriver {
 
     pub fn request_shutdown(&mut self) {
         self.shutting_down = true;
-    }
-
-    async fn call_tool(
-        &self,
-        name: &str,
-        args: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<CallToolResult> {
-        let params = CallToolRequestParams::new(name.to_string()).with_arguments(args);
-        self.peer
-            .call_tool(params)
-            .await
-            .map_err(|e| Error::Mcp(format!("call_tool({name}): {e}")))
     }
 }
 
@@ -439,7 +342,6 @@ fn spawn_output_reader(
                         let excess = tail.len() - 512;
                         tail.drain(..excess);
                     }
-                    // Pattern-based: quick signal for well-behaved prompts.
                     if patterns.iter().any(|p| tail.ends_with(p.as_slice())) {
                         is_idle.store(true, Ordering::Relaxed);
                     }
@@ -454,40 +356,4 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
-}
-
-fn extract_text(result: &CallToolResult) -> String {
-    use std::ops::Deref;
-    result
-        .content
-        .iter()
-        .filter_map(|c| match c.deref() {
-            RawContent::Text(t) => Some(t.text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn extract_field(text: &str, field: &str) -> Option<String> {
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(text)
-        && let Some(val) = v.get(field)
-    {
-        return Some(val.as_str().unwrap_or(&val.to_string()).to_string());
-    }
-
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with(field)
-            && let Some(rest) = trimmed.strip_prefix(field)
-        {
-            let rest = rest.trim_start_matches([':', '"', ' ', '\t']);
-            let rest = rest.trim_end_matches(['"', ',']);
-            if !rest.is_empty() {
-                return Some(rest.to_string());
-            }
-        }
-    }
-
-    None
 }

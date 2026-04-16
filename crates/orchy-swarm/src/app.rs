@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::Stdout;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
@@ -11,6 +11,7 @@ use orchy_runner::config::RunnerConfig;
 use orchy_runner::driver::AgentDriver;
 
 use crate::agent_tab::AgentTab;
+use crate::client::{AgentDto, OrchyClient};
 use crate::ui::modal::{AgentTypeOption, ModalState};
 
 pub struct App {
@@ -19,20 +20,27 @@ pub struct App {
     pub modal: Option<ModalState>,
     pub orchy_url: String,
     pub project: String,
+    pub remote_agents: Vec<AgentDto>,
     running: bool,
     next_tab_id: usize,
+    client: OrchyClient,
+    last_agents_refresh: Option<Instant>,
 }
 
 impl App {
     pub fn new(orchy_url: String, project: String) -> Self {
+        let client = OrchyClient::new(&orchy_url);
         Self {
             tabs: Vec::new(),
             active_tab: 0,
             modal: None,
             orchy_url,
             project,
+            remote_agents: Vec::new(),
             running: true,
             next_tab_id: 0,
+            client,
+            last_agents_refresh: None,
         }
     }
 
@@ -47,6 +55,17 @@ impl App {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
                     tab.push_output(bytes);
                 }
+            }
+
+            let needs_refresh = self
+                .last_agents_refresh
+                .map(|t| t.elapsed() > Duration::from_secs(5))
+                .unwrap_or(true);
+            if needs_refresh {
+                if let Ok(agents) = self.client.list_agents(&self.project).await {
+                    self.remote_agents = agents;
+                }
+                self.last_agents_refresh = Some(Instant::now());
             }
 
             terminal.draw(|f| crate::ui::render(f, self))?;
@@ -217,7 +236,6 @@ impl App {
         self.tabs.push(AgentTab::new(
             tab_id,
             alias,
-            session.agent_id,
             agent_type_opt.agent_type.to_string(),
             session.is_idle,
             pty_rows,

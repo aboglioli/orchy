@@ -10,8 +10,6 @@ pub struct AgentTab {
     pub id: usize,
     pub alias: String,
     #[allow(dead_code)]
-    pub agent_id: String,
-    #[allow(dead_code)]
     pub agent_type: String,
     pub is_idle: Arc<AtomicBool>,
     pub screen: vt100::Parser,
@@ -23,7 +21,6 @@ impl AgentTab {
     pub fn new(
         id: usize,
         alias: String,
-        agent_id: String,
         agent_type: String,
         is_idle: Arc<AtomicBool>,
         rows: u16,
@@ -34,7 +31,6 @@ impl AgentTab {
         Self {
             id,
             alias,
-            agent_id,
             agent_type,
             is_idle,
             screen: vt100::Parser::new(rows, cols, 1000),

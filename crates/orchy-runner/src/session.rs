@@ -5,7 +5,6 @@ use tokio::sync::mpsc::UnboundedSender;
 
 pub struct AgentSession {
     pub alias: String,
-    pub agent_id: String,
     pub agent_type: String,
     pub is_idle: Arc<AtomicBool>,
     pub last_output_ms: Arc<AtomicU64>,

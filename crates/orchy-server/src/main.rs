@@ -9,6 +9,7 @@ use tokio::net::TcpListener;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+use orchy_server::api;
 use orchy_server::bootstrap;
 use orchy_server::config::Config;
 use orchy_server::container::Container;
@@ -77,6 +78,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "/bootstrap/{namespace}",
             axum::routing::get(bootstrap_handler),
         )
+        .route("/api/agents", axum::routing::get(api::list_agents))
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&bootstrap_container),
             heartbeat_middleware,
