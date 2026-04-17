@@ -192,3 +192,23 @@ pub async fn get_context(
         pending_tasks,
     }))
 }
+
+pub async fn get_summary(
+    _auth: OrgAuth,
+    Path((org, id)): Path<(String, String)>,
+    State(container): State<Arc<Container>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let cmd = orchy_application::GetAgentSummaryCommand {
+        org_id: org,
+        agent_id: id,
+    };
+
+    let summary = container
+        .app
+        .get_agent_summary
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&summary).unwrap_or_default()))
+}

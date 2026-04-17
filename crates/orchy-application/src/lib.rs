@@ -30,6 +30,7 @@ pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
 mod change_roles;
 mod disconnect_agent;
 mod get_agent;
+mod get_agent_summary;
 mod heartbeat;
 mod list_agents;
 mod register_agent;
@@ -109,6 +110,7 @@ mod poll_updates;
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
 pub use disconnect_agent::{DisconnectAgent, DisconnectAgentCommand};
 pub use get_agent::GetAgent;
+pub use get_agent_summary::{AgentSummary, GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
 pub use register_agent::{RegisterAgent, RegisterAgentCommand};
@@ -184,6 +186,7 @@ pub struct Application {
     pub heartbeat: Heartbeat,
     pub change_roles: ChangeRoles,
     pub get_agent: GetAgent,
+    pub get_agent_summary: GetAgentSummary,
     pub list_agents: ListAgents,
 
     pub post_task: PostTask,
@@ -276,6 +279,13 @@ impl Application {
             heartbeat: Heartbeat::new(agents.clone()),
             change_roles: ChangeRoles::new(agents.clone()),
             get_agent: GetAgent::new(agents.clone()),
+            get_agent_summary: GetAgentSummary::new(
+                agents.clone(),
+                projects.clone(),
+                messages.clone(),
+                tasks.clone(),
+                knowledge.clone(),
+            ),
             list_agents: ListAgents::new(agents.clone()),
 
             post_task: PostTask::new(tasks.clone()),

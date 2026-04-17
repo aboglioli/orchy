@@ -106,6 +106,10 @@ pub fn router() -> Router<Arc<Container>> {
             get(agents::get_context),
         )
         .route(
+            "/organizations/:org/agents/:id/summary",
+            get(agents::get_summary),
+        )
+        .route(
             "/organizations/:org/agents/:id/inbox",
             get(messages::inbox_for_agent),
         )
