@@ -1,1 +1,127 @@
-pub struct GetNextTask;
+use std::collections::HashSet;
+use std::str::FromStr;
+use std::sync::Arc;
+
+use orchy_core::agent::AgentId;
+use orchy_core::error::{Error, Result};
+use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::organization::OrganizationId;
+use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+
+use crate::parse_namespace;
+
+pub struct GetNextTaskCommand {
+    pub org_id: Option<String>,
+    pub project: Option<String>,
+    pub namespace: Option<String>,
+    pub roles: Vec<String>,
+    pub claim: Option<bool>,
+    pub agent_id: Option<String>,
+}
+
+pub struct GetNextTask {
+    tasks: Arc<dyn TaskStore>,
+}
+
+impl GetNextTask {
+    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
+        Self { tasks }
+    }
+
+    pub async fn execute(&self, cmd: GetNextTaskCommand) -> Result<Option<Task>> {
+        let org_id = cmd
+            .org_id
+            .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
+            .transpose()?;
+
+        let project = cmd
+            .project
+            .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
+            .transpose()?;
+
+        let namespace = cmd
+            .namespace
+            .map(|s| parse_namespace(Some(&s)))
+            .transpose()?;
+
+        let candidates = self
+            .sorted_pending_for_roles(&cmd.roles, org_id, project, namespace)
+            .await?;
+
+        let should_claim = cmd.claim.unwrap_or(true);
+
+        if !should_claim {
+            for task in candidates {
+                if self.all_deps_completed(task.depends_on()).await? {
+                    return Ok(Some(task));
+                }
+            }
+            return Ok(None);
+        }
+
+        let agent_id = cmd
+            .agent_id
+            .map(|s| AgentId::from_str(&s))
+            .transpose()
+            .map_err(Error::InvalidInput)?
+            .ok_or_else(|| Error::InvalidInput("agent_id required when claiming".into()))?;
+
+        for mut task in candidates {
+            if self.all_deps_completed(task.depends_on()).await? {
+                match task.claim(agent_id.clone()) {
+                    Ok(()) => {
+                        self.tasks.save(&mut task).await?;
+                        return Ok(Some(task));
+                    }
+                    Err(Error::InvalidTransition { .. }) => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn sorted_pending_for_roles(
+        &self,
+        roles: &[String],
+        org_id: Option<OrganizationId>,
+        project: Option<ProjectId>,
+        namespace: Option<Namespace>,
+    ) -> Result<Vec<Task>> {
+        let mut candidates: Vec<Task> = Vec::new();
+
+        for role in roles {
+            let filter = TaskFilter {
+                org_id: org_id.clone(),
+                project: project.clone(),
+                namespace: namespace.clone(),
+                status: Some(TaskStatus::Pending),
+                assigned_role: Some(role.clone()),
+                ..Default::default()
+            };
+            let mut tasks = self.tasks.list(filter).await?;
+            tasks.sort_by_key(|t| std::cmp::Reverse(t.priority()));
+            candidates.extend(tasks);
+        }
+
+        let mut seen = HashSet::new();
+        candidates.retain(|t| seen.insert(t.id()));
+        candidates.sort_by_key(|t| std::cmp::Reverse(t.priority()));
+        Ok(candidates)
+    }
+
+    async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
+        for dep_id in deps {
+            let dep = self
+                .tasks
+                .find_by_id(dep_id)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
+            if dep.status() != TaskStatus::Completed {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+}

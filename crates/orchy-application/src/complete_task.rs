@@ -1,1 +1,36 @@
-pub struct CompleteTask;
+use std::sync::Arc;
+
+use orchy_core::error::{Error, Result};
+use orchy_core::task::{Task, TaskId, TaskStore};
+
+pub struct CompleteTaskCommand {
+    pub task_id: String,
+    pub summary: Option<String>,
+}
+
+pub struct CompleteTask {
+    tasks: Arc<dyn TaskStore>,
+}
+
+impl CompleteTask {
+    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
+        Self { tasks }
+    }
+
+    pub async fn execute(&self, cmd: CompleteTaskCommand) -> Result<Task> {
+        let task_id = cmd
+            .task_id
+            .parse::<TaskId>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+
+        let mut task = self
+            .tasks
+            .find_by_id(&task_id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+
+        task.complete(cmd.summary)?;
+        self.tasks.save(&mut task).await?;
+        Ok(task)
+    }
+}

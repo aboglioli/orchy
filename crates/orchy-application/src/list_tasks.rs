@@ -1,1 +1,78 @@
-pub struct ListTasks;
+use std::str::FromStr;
+use std::sync::Arc;
+
+use orchy_core::agent::AgentId;
+use orchy_core::error::{Error, Result};
+use orchy_core::namespace::ProjectId;
+use orchy_core::organization::OrganizationId;
+use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+
+use crate::parse_namespace;
+
+pub struct ListTasksCommand {
+    pub org_id: Option<String>,
+    pub project: Option<String>,
+    pub namespace: Option<String>,
+    pub status: Option<String>,
+    pub parent_id: Option<String>,
+    pub assigned_to: Option<String>,
+    pub tag: Option<String>,
+}
+
+pub struct ListTasks {
+    tasks: Arc<dyn TaskStore>,
+}
+
+impl ListTasks {
+    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
+        Self { tasks }
+    }
+
+    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<Vec<Task>> {
+        let org_id = cmd
+            .org_id
+            .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
+            .transpose()?;
+
+        let project = cmd
+            .project
+            .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
+            .transpose()?;
+
+        let namespace = cmd
+            .namespace
+            .map(|s| parse_namespace(Some(&s)))
+            .transpose()?;
+
+        let status = cmd
+            .status
+            .map(|s| s.parse::<TaskStatus>())
+            .transpose()
+            .map_err(Error::InvalidInput)?;
+
+        let parent_id = cmd
+            .parent_id
+            .map(|s| s.parse::<TaskId>())
+            .transpose()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+
+        let assigned_to = cmd
+            .assigned_to
+            .map(|s| AgentId::from_str(&s))
+            .transpose()
+            .map_err(Error::InvalidInput)?;
+
+        let filter = TaskFilter {
+            org_id,
+            project,
+            namespace,
+            status,
+            parent_id,
+            assigned_to,
+            tag: cmd.tag,
+            ..Default::default()
+        };
+
+        self.tasks.list(filter).await
+    }
+}
