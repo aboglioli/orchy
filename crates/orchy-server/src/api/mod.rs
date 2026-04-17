@@ -17,7 +17,26 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Serialize;
 
+use orchy_core::namespace::Namespace;
+
 use crate::container::Container;
+
+pub(crate) fn parse_namespace(s: &str) -> Result<Namespace, ApiError> {
+    let normalized = if s.is_empty() || s == "/" {
+        "/".to_string()
+    } else if s.starts_with('/') {
+        s.to_string()
+    } else {
+        format!("/{s}")
+    };
+    Namespace::try_from(normalized).map_err(|e| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            format!("invalid namespace: {e}"),
+        )
+    })
+}
 
 #[derive(Serialize)]
 struct ApiErrorBody {

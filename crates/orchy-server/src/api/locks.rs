@@ -14,8 +14,8 @@ use orchy_core::resource_lock::ResourceLock;
 
 use crate::container::Container;
 
-use super::ApiError;
 use super::auth::OrgAuth;
+use super::{ApiError, parse_namespace};
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
@@ -29,8 +29,7 @@ fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
 
 fn parse_ns(ns: Option<&str>) -> Result<Namespace, ApiError> {
     match ns {
-        Some(s) => Namespace::try_from(format!("/{s}"))
-            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
+        Some(s) => parse_namespace(s),
         None => Ok(Namespace::root()),
     }
 }

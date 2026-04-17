@@ -18,8 +18,8 @@ use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
-use super::ApiError;
 use super::auth::OrgAuth;
+use super::{ApiError, parse_namespace};
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
@@ -33,17 +33,14 @@ fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
 
 fn parse_ns(ns: Option<&str>) -> Result<Namespace, ApiError> {
     match ns {
-        Some(s) => Namespace::try_from(format!("/{s}"))
-            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
+        Some(s) => parse_namespace(s),
         None => Ok(Namespace::root()),
     }
 }
 
 fn parse_optional_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {
     match ns {
-        Some(s) => Namespace::try_from(format!("/{s}"))
-            .map(Some)
-            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
+        Some(s) => parse_namespace(s).map(Some),
         None => Ok(None),
     }
 }
@@ -447,8 +444,7 @@ pub async fn move_entry(
             )
         })?;
 
-    let new_ns = Namespace::try_from(format!("/{}", body.new_namespace))
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let new_ns = parse_namespace(&body.new_namespace)?;
 
     let updated = container
         .knowledge_service

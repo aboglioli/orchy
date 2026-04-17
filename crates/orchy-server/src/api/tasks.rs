@@ -14,8 +14,8 @@ use orchy_core::task::{Priority, SubtaskDef, Task, TaskFilter, TaskId, TaskStatu
 
 use crate::container::Container;
 
-use super::ApiError;
 use super::auth::OrgAuth;
+use super::{ApiError, parse_namespace};
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
@@ -73,9 +73,7 @@ async fn resolve_agent(
 
 fn parse_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {
     match ns {
-        Some(s) => Namespace::try_from(format!("/{s}"))
-            .map(Some)
-            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string())),
+        Some(s) => parse_namespace(s).map(Some),
         None => Ok(None),
     }
 }
@@ -305,8 +303,7 @@ pub async fn post(
     let project_id = parse_project(&project)?;
 
     let ns = match body.namespace.as_deref() {
-        Some(s) => Namespace::try_from(format!("/{s}"))
-            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?,
+        Some(s) => parse_namespace(s)?,
         None => Namespace::root(),
     };
 
