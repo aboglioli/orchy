@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 use uuid::Uuid;
@@ -9,6 +10,7 @@ use orchy_core::organization::{
 
 use crate::SqliteBackend;
 
+#[async_trait]
 impl OrganizationStore for SqliteBackend {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 
@@ -10,6 +11,7 @@ use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
 use crate::{PgBackend, decode_json_value, parse_project_id};
 
+#[async_trait]
 impl ProjectStore for PgBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
         let metadata_json = serde_json::to_value(project.metadata())

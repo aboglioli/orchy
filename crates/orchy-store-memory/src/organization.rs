@@ -1,8 +1,11 @@
+use async_trait::async_trait;
+
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 
 use crate::MemoryBackend;
 
+#[async_trait]
 impl OrganizationStore for MemoryBackend {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         {

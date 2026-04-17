@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 
@@ -12,6 +13,7 @@ use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
 const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
+#[async_trait]
 impl AgentStore for PgBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         let roles_json = serde_json::to_value(agent.roles())

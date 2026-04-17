@@ -14,6 +14,7 @@ use orchy_store_sqlite::SqliteBackend;
 
 struct NoopEmbeddings;
 
+#[async_trait::async_trait]
 impl EmbeddingsProvider for NoopEmbeddings {
     async fn embed(&self, _text: &str) -> OrchyResult<Vec<f32>> {
         Ok(vec![])

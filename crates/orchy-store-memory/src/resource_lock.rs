@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -6,6 +8,7 @@ use orchy_core::resource_lock::{LockStore, ResourceLock};
 
 use crate::MemoryBackend;
 
+#[async_trait]
 impl LockStore for MemoryBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         {

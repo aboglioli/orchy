@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
@@ -55,6 +56,7 @@ enum Tasks {
     UpdatedAt,
 }
 
+#[async_trait]
 impl TaskStore for PgBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
         let roles_json = serde_json::to_value(task.assigned_roles())

@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use pgvector::Vector;
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
@@ -58,6 +59,7 @@ enum KnowledgeEntries {
 
 const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
 
+#[async_trait]
 impl KnowledgeStore for PgBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));

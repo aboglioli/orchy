@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
@@ -20,6 +21,7 @@ fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     ))
 }
 
+#[async_trait]
 impl ReviewStore for SqliteBackend {
     async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

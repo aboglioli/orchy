@@ -1,9 +1,12 @@
+use async_trait::async_trait;
+
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 
 use crate::MemoryBackend;
 
+#[async_trait]
 impl WatcherStore for MemoryBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
         {

@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
@@ -12,6 +13,7 @@ use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStat
 
 use crate::SqliteBackend;
 
+#[async_trait]
 impl TaskStore for SqliteBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

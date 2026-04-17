@@ -1,9 +1,12 @@
+use async_trait::async_trait;
+
 use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 
 use crate::MemoryBackend;
 
+#[async_trait]
 impl AgentStore for MemoryBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         {

@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -9,6 +10,7 @@ use orchy_core::task::{TaskId, TaskWatcher, WatcherStore};
 
 use crate::{PgBackend, parse_namespace, parse_project_id};
 
+#[async_trait]
 impl WatcherStore for PgBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
         let mut tx = self

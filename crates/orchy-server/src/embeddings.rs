@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +39,7 @@ impl OpenAiEmbeddingsProvider {
     }
 }
 
+#[async_trait]
 impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         let request = EmbeddingsRequest {
@@ -105,6 +107,7 @@ pub enum EmbeddingsBackend {
     OpenAi(OpenAiEmbeddingsProvider),
 }
 
+#[async_trait]
 impl EmbeddingsProvider for EmbeddingsBackend {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         match self {

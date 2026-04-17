@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
@@ -12,6 +13,7 @@ use crate::SqliteBackend;
 
 const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
+#[async_trait]
 impl AgentStore for SqliteBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

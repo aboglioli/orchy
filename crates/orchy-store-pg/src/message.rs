@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
@@ -39,6 +40,7 @@ enum Messages {
     ReplyTo,
 }
 
+#[async_trait]
 impl MessageStore for PgBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
         let mut tx = self

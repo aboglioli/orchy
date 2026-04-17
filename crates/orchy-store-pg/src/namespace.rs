@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use sqlx::Row;
 
 use orchy_core::error::{Error, Result};
@@ -6,6 +7,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::PgBackend;
 
+#[async_trait]
 impl NamespaceStore for PgBackend {
     async fn register(
         &self,

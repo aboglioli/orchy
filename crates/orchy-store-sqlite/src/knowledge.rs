@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
@@ -15,6 +16,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 
+#[async_trait]
 impl KnowledgeStore for SqliteBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -10,6 +11,7 @@ use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
 use crate::{PgBackend, parse_namespace, parse_project_id};
 
+#[async_trait]
 impl LockStore for PgBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         let mut tx = self

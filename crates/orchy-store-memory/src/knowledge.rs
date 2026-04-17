@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -5,6 +7,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::MemoryBackend;
 
+#[async_trait]
 impl KnowledgeStore for MemoryBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         {

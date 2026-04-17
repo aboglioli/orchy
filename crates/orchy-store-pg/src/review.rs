@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -11,6 +12,7 @@ use orchy_core::task::{
 
 use crate::{PgBackend, parse_namespace, parse_project_id};
 
+#[async_trait]
 impl ReviewStore for PgBackend {
     async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
         let mut tx = self

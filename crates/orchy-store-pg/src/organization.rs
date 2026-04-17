@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -9,6 +10,7 @@ use orchy_core::organization::{
 
 use crate::PgBackend;
 
+#[async_trait]
 impl OrganizationStore for PgBackend {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         let mut tx = self

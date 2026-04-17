@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
@@ -6,6 +8,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::MemoryBackend;
 
+#[async_trait]
 impl MessageStore for MemoryBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
         {

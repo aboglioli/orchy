@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use orchy_core::agent::AgentId;
@@ -19,6 +20,7 @@ fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     ))
 }
 
+#[async_trait]
 impl MessageStore for SqliteBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

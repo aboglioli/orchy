@@ -1,8 +1,11 @@
+use async_trait::async_trait;
+
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 
 use crate::MemoryBackend;
 
+#[async_trait]
 impl TaskStore for MemoryBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
         {

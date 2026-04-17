@@ -50,6 +50,7 @@ macro_rules! delegate_trait {
     };
 }
 
+#[async_trait]
 impl OrganizationStore for StoreBackend {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         delegate_trait!(self, OrganizationStore::save(org))
@@ -65,6 +66,7 @@ impl OrganizationStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl TaskStore for StoreBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
         delegate_trait!(self, TaskStore::save(task))
@@ -77,6 +79,7 @@ impl TaskStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl AgentStore for StoreBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         delegate_trait!(self, AgentStore::save(agent))
@@ -92,6 +95,7 @@ impl AgentStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl MessageStore for StoreBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
         delegate_trait!(self, MessageStore::save(message))
@@ -135,6 +139,7 @@ impl MessageStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl ProjectStore for StoreBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
         delegate_trait!(self, ProjectStore::save(project))
@@ -144,6 +149,7 @@ impl ProjectStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl KnowledgeStore for StoreBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         delegate_trait!(self, KnowledgeStore::save(entry))
@@ -184,6 +190,7 @@ impl KnowledgeStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl LockStore for StoreBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         delegate_trait!(self, LockStore::save(lock))
@@ -214,6 +221,7 @@ impl LockStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl WatcherStore for StoreBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
         delegate_trait!(self, WatcherStore::save(watcher))
@@ -229,6 +237,7 @@ impl WatcherStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl ReviewStore for StoreBackend {
     async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
         delegate_trait!(self, ReviewStore::save(review))
@@ -244,6 +253,7 @@ impl ReviewStore for StoreBackend {
     }
 }
 
+#[async_trait]
 impl NamespaceStore for StoreBackend {
     async fn register(
         &self,

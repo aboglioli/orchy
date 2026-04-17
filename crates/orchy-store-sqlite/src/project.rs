@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
@@ -10,6 +11,7 @@ use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
 use crate::SqliteBackend;
 
+#[async_trait]
 impl ProjectStore for SqliteBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
