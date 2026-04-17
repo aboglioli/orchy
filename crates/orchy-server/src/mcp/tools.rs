@@ -252,7 +252,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveAgentParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, org_id, _, _) = self.require_session()?;
 
         let namespace = self
             .build_and_register_namespace(Some(&params.namespace))
@@ -261,7 +261,7 @@ impl OrchyHandler {
         match self
             .container
             .agent_service
-            .move_to(&agent_id, namespace.clone())
+            .switch_context(&agent_id, &org_id, None, namespace.clone())
             .await
         {
             Ok(agent) => {

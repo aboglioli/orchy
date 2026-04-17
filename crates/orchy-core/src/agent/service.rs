@@ -4,16 +4,21 @@ use std::sync::Arc;
 
 use super::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
 use crate::error::{Error, Result};
-use crate::namespace::Namespace;
+use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
+use crate::project::ProjectStore;
 
-pub struct AgentService<S: AgentStore> {
+pub struct AgentService<S: AgentStore, PS: ProjectStore> {
     store: Arc<S>,
+    project_store: Arc<PS>,
 }
 
-impl<S: AgentStore> AgentService<S> {
-    pub fn new(store: Arc<S>) -> Self {
-        Self { store }
+impl<S: AgentStore, PS: ProjectStore> AgentService<S, PS> {
+    pub fn new(store: Arc<S>, project_store: Arc<PS>) -> Self {
+        Self {
+            store,
+            project_store,
+        }
     }
 
     pub async fn register(&self, cmd: RegisterAgent) -> Result<Agent> {
@@ -81,9 +86,22 @@ impl<S: AgentStore> AgentService<S> {
         Ok(agent)
     }
 
-    pub async fn move_to(&self, id: &AgentId, namespace: Namespace) -> Result<Agent> {
+    pub async fn switch_context(
+        &self,
+        id: &AgentId,
+        org: &OrganizationId,
+        project: Option<ProjectId>,
+        namespace: Namespace,
+    ) -> Result<Agent> {
+        if let Some(ref p) = project {
+            self.project_store
+                .find_by_id(org, p)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("project {p}")))?;
+        }
+
         let mut agent = self.get(id).await?;
-        agent.move_to(namespace)?;
+        agent.switch_context(project, namespace)?;
         self.store.save(&mut agent).await?;
         Ok(agent)
     }
@@ -134,7 +152,7 @@ mod tests {
     #[tokio::test]
     async fn register_creates_agent() {
         let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
+        let service = AgentService::new(store.clone(), store);
         let agent = service.register(make_registration()).await.unwrap();
         assert_eq!(agent.status(), AgentStatus::Online);
         assert!(agent.parent_id().is_none());
@@ -143,7 +161,7 @@ mod tests {
     #[tokio::test]
     async fn register_from_parent() {
         let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
+        let service = AgentService::new(store.clone(), store);
         let parent = service.register(make_registration()).await.unwrap();
 
         let child_cmd = RegisterAgent {
@@ -165,7 +183,7 @@ mod tests {
     async fn register_resumes_by_id() {
         use orchy_events::OrganizationId;
         let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
+        let service = AgentService::new(store.clone(), store);
 
         let cmd = RegisterAgent {
             org_id: OrganizationId::new("orchy").unwrap(),
@@ -195,14 +213,14 @@ mod tests {
     #[tokio::test]
     async fn get_returns_not_found() {
         let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
+        let service = AgentService::new(store.clone(), store);
         assert!(service.get(&AgentId::new()).await.is_err());
     }
 
     #[tokio::test]
     async fn change_roles_succeeds() {
         let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
+        let service = AgentService::new(store.clone(), store);
         let agent = service.register(make_registration()).await.unwrap();
         let updated = service
             .change_roles(agent.id(), vec!["reviewer".to_string()])
@@ -214,7 +232,7 @@ mod tests {
     #[tokio::test]
     async fn change_roles_fails_with_empty() {
         let store = Arc::new(MockStore::default());
-        let service = AgentService::new(store);
+        let service = AgentService::new(store.clone(), store);
         let agent = service.register(make_registration()).await.unwrap();
         assert!(service.change_roles(agent.id(), vec![]).await.is_err());
     }

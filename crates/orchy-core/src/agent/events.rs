@@ -8,7 +8,7 @@ pub const TOPIC_DISCONNECTED: &str = "agent.disconnected";
 pub const TOPIC_ROLES_CHANGED: &str = "agent.roles_changed";
 pub const TOPIC_RESUMED: &str = "agent.resumed";
 pub const TOPIC_STATUS_CHANGED: &str = "agent.status_changed";
-pub const TOPIC_MOVED: &str = "agent.moved";
+pub const TOPIC_CONTEXT_SWITCHED: &str = "agent.context_switched";
 
 #[derive(Serialize)]
 pub struct AgentRegisteredPayload {
@@ -51,10 +51,13 @@ pub struct AgentResumedPayload {
 }
 
 #[derive(Serialize)]
-pub struct AgentMovedPayload {
+pub struct AgentContextSwitchedPayload {
     pub org_id: String,
     pub agent_id: String,
-    pub namespace: String,
+    pub old_project: String,
+    pub new_project: String,
+    pub old_namespace: String,
+    pub new_namespace: String,
 }
 
 #[derive(Serialize)]

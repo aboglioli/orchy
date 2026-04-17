@@ -21,7 +21,7 @@ use crate::store::StoreBackend;
 pub struct Container {
     pub store: Arc<StoreBackend>,
     pub task_service: TaskService<StoreBackend, StoreBackend>,
-    pub agent_service: AgentService<StoreBackend>,
+    pub agent_service: AgentService<StoreBackend, StoreBackend>,
     pub message_service: MessageService<StoreBackend, StoreBackend>,
     pub project_service: ProjectService<StoreBackend>,
     pub knowledge_service: KnowledgeService<StoreBackend, EmbeddingsBackend>,
@@ -43,7 +43,7 @@ impl Container {
             .map(Arc::new);
 
         let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
-        let agent_service = AgentService::new(Arc::clone(&store));
+        let agent_service = AgentService::new(Arc::clone(&store), Arc::clone(&store));
         let message_service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
         let knowledge_service = KnowledgeService::new(Arc::clone(&store), embeddings);
         let project_service = ProjectService::new(Arc::clone(&store));

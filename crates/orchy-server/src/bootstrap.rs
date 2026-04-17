@@ -28,7 +28,7 @@ pub async fn generate_bootstrap_prompt<
     port: u16,
     knowledge_service: &KnowledgeService<KS, crate::embeddings::EmbeddingsBackend>,
     project_service: &ProjectService<PS>,
-    agent_service: &AgentService<AS>,
+    agent_service: &AgentService<AS, PS>,
     task_service: &TaskService<TS, AS>,
 ) -> Result<String, String> {
     let default_org = OrganizationId::new("default").unwrap();

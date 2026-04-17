@@ -344,19 +344,36 @@ impl Agent {
         Ok(())
     }
 
-    pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
+    pub fn switch_context(
+        &mut self,
+        project: Option<ProjectId>,
+        namespace: Namespace,
+    ) -> Result<()> {
+        let old_project = self.project.to_string();
+        let old_namespace = self.namespace.to_string();
+
+        if let Some(p) = project {
+            self.project = p;
+        }
         self.namespace = namespace;
 
-        let payload = Payload::from_json(&agent_events::AgentMovedPayload {
+        if old_project == self.project.to_string() && old_namespace == self.namespace.to_string() {
+            return Ok(());
+        }
+
+        let payload = Payload::from_json(&agent_events::AgentContextSwitchedPayload {
             org_id: self.org_id.to_string(),
             agent_id: self.id.to_string(),
-            namespace: self.namespace.to_string(),
+            old_project,
+            new_project: self.project.to_string(),
+            old_namespace,
+            new_namespace: self.namespace.to_string(),
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
         let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
-            agent_events::TOPIC_MOVED,
+            agent_events::TOPIC_CONTEXT_SWITCHED,
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -532,6 +549,34 @@ mod tests {
         agent.disconnect().unwrap();
         sleep(Duration::from_millis(10));
         assert!(!agent.is_timed_out(0));
+    }
+
+    #[test]
+    fn switch_context_changes_project_and_namespace() {
+        let mut agent = make_agent();
+        let new_project = ProjectId::try_from("other").unwrap();
+        let new_ns = Namespace::try_from("/frontend".to_string()).unwrap();
+        agent.switch_context(Some(new_project), new_ns).unwrap();
+        assert_eq!(agent.project().as_ref(), "other");
+        assert_eq!(agent.namespace().to_string(), "/frontend");
+    }
+
+    #[test]
+    fn switch_context_namespace_only() {
+        let mut agent = make_agent();
+        let new_ns = Namespace::try_from("/backend".to_string()).unwrap();
+        agent.switch_context(None, new_ns).unwrap();
+        assert_eq!(agent.project().as_ref(), "test");
+        assert_eq!(agent.namespace().to_string(), "/backend");
+    }
+
+    #[test]
+    fn switch_context_noop_when_unchanged() {
+        let mut agent = make_agent();
+        let _ = agent.drain_events();
+        agent.switch_context(None, Namespace::root()).unwrap();
+        let events = agent.drain_events();
+        assert!(events.is_empty());
     }
 
     #[test]
