@@ -97,6 +97,8 @@ pub enum KnowledgeKind {
     Log,
     Skill,
     Overview,
+    Summary,
+    Report,
 }
 
 impl KnowledgeKind {
@@ -114,6 +116,12 @@ impl KnowledgeKind {
             KnowledgeKind::Log => "activity or change log entry",
             KnowledgeKind::Skill => "instruction or convention agents must follow",
             KnowledgeKind::Overview => "project overview text included in bootstrap prompts",
+            KnowledgeKind::Summary => {
+                "compact synthesized output: task summaries, agent rollups, state snapshots"
+            }
+            KnowledgeKind::Report => {
+                "richer completion artifact: implementation reports, post-task writeups"
+            }
         }
     }
 
@@ -131,6 +139,8 @@ impl KnowledgeKind {
             KnowledgeKind::Log,
             KnowledgeKind::Skill,
             KnowledgeKind::Overview,
+            KnowledgeKind::Summary,
+            KnowledgeKind::Report,
         ]
     }
 }
@@ -150,6 +160,8 @@ impl fmt::Display for KnowledgeKind {
             KnowledgeKind::Log => "log",
             KnowledgeKind::Skill => "skill",
             KnowledgeKind::Overview => "overview",
+            KnowledgeKind::Summary => "summary",
+            KnowledgeKind::Report => "report",
         };
         write!(f, "{s}")
     }
@@ -172,6 +184,8 @@ impl FromStr for KnowledgeKind {
             "log" => Ok(KnowledgeKind::Log),
             "skill" => Ok(KnowledgeKind::Skill),
             "overview" => Ok(KnowledgeKind::Overview),
+            "summary" => Ok(KnowledgeKind::Summary),
+            "report" => Ok(KnowledgeKind::Report),
             other => Err(format!("unknown knowledge kind: {other}")),
         }
     }
