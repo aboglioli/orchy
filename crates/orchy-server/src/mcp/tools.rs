@@ -159,10 +159,7 @@ impl OrchyHandler {
                 .ok_or("pass project or register first")?,
         };
 
-        let org = self
-            .require_session()
-            .map(|(_, org, _, _)| org)
-            .unwrap_or_else(|_| default_org());
+        let (_, org, _, _) = self.require_session()?;
         match self.container.agent_service.list(&org).await {
             Ok(agents) => {
                 let filtered: Vec<_> = agents
@@ -1940,10 +1937,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchKnowledgeParams>,
     ) -> Result<String, String> {
-        let org = self
-            .require_session()
-            .map(|(_, org, _, _)| org)
-            .unwrap_or_else(|_| default_org());
+        let (_, org, _, _) = self.require_session()?;
 
         let namespace = Some(
             self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
