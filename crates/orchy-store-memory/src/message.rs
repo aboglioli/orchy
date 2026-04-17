@@ -138,10 +138,11 @@ impl MessageStore for MemoryBackend {
             None => return Ok(vec![]),
         };
 
-        // Walk backwards to find the root
         let mut root_id = start.id();
         loop {
-            let msg = messages.get(&root_id).unwrap();
+            let Some(msg) = messages.get(&root_id) else {
+                break;
+            };
             match msg.reply_to() {
                 Some(parent_id) if messages.contains_key(&parent_id) => {
                     root_id = parent_id;
@@ -150,10 +151,11 @@ impl MessageStore for MemoryBackend {
             }
         }
 
-        // Collect all messages in the thread (connected via reply_to to root)
         let mut thread: Vec<Message> = Vec::new();
         let mut frontier = vec![root_id];
-        thread.push(messages.get(&root_id).unwrap().clone());
+        if let Some(root_msg) = messages.get(&root_id) {
+            thread.push(root_msg.clone());
+        }
 
         while !frontier.is_empty() {
             let mut next_frontier = Vec::new();
