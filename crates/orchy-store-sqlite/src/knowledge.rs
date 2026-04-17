@@ -248,11 +248,27 @@ impl KnowledgeStore for SqliteBackend {
         &self,
         org: &OrganizationId,
         query: &str,
-        _embedding: Option<&[f32]>,
+        embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+
+        if let Some(emb) = embedding {
+            let vec_ready = conn
+                .query_row(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_vec' LIMIT 1",
+                    [],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(|e| Error::Store(e.to_string()))?
+                .is_some();
+
+            if vec_ready {
+                return search_knowledge_vec(&conn, org, emb, namespace, limit);
+            }
+        }
 
         if query.trim().is_empty() {
             return Ok(Vec::new());
@@ -286,6 +302,52 @@ impl KnowledgeStore for SqliteBackend {
 
         Ok(())
     }
+}
+
+fn search_knowledge_vec(
+    conn: &rusqlite::Connection,
+    org: &OrganizationId,
+    embedding: &[f32],
+    namespace: Option<&Namespace>,
+    limit: usize,
+) -> Result<Vec<Knowledge>> {
+    let emb_bytes = embedding_to_bytes(embedding);
+
+    let mut sql = String::from(
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.agent_id, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+         FROM knowledge_vec kv
+         JOIN knowledge_entries e ON e.rowid = kv.rowid
+         WHERE kv.embedding MATCH ?1 AND kv.k = ?2 AND e.organization_id = ?3",
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    params.push(Box::new(emb_bytes));
+    params.push(Box::new(limit as i64));
+    params.push(Box::new(org.to_string()));
+    let mut idx = 4;
+
+    if let Some(ns) = namespace {
+        if !ns.is_root() {
+            sql.push_str(&format!(
+                " AND (e.namespace = ?{idx} OR e.namespace LIKE ?{idx} || '/%')"
+            ));
+            params.push(Box::new(ns.to_string()));
+            idx += 1;
+        }
+    }
+
+    let _ = idx;
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| Error::Store(e.to_string()))?;
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    let entries = stmt
+        .query_map(param_refs.as_slice(), row_to_entry)
+        .map_err(|e| Error::Store(e.to_string()))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+    Ok(entries)
 }
 
 fn sanitize_fts5_query(q: &str) -> String {

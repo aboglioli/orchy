@@ -233,10 +233,14 @@ impl KnowledgeStore for PgBackend {
         &self,
         _org: &OrganizationId,
         query: &str,
-        _embedding: Option<&[f32]>,
+        embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<Knowledge>> {
+        if let Some(emb) = embedding {
+            return search_by_embedding(&self.pool, emb, namespace, limit).await;
+        }
+
         let mut select = Query::select();
         select
             .from(KnowledgeEntries::Table)
@@ -283,6 +287,50 @@ impl KnowledgeStore for PgBackend {
 
         Ok(())
     }
+}
+
+async fn search_by_embedding(
+    pool: &sqlx::PgPool,
+    embedding: &[f32],
+    namespace: Option<&Namespace>,
+    limit: usize,
+) -> Result<Vec<Knowledge>> {
+    let vec = Vector::from(embedding.to_vec());
+
+    let mut sql =
+        format!("SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE embedding IS NOT NULL");
+    let mut param_idx = 2u32;
+
+    if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
+        sql.push_str(&format!(
+            " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
+        ));
+        param_idx += 1;
+        let _ = param_idx;
+
+        sql.push_str(" ORDER BY embedding <=> $1 LIMIT $3");
+
+        let rows = sqlx::query(&sql)
+            .bind(&vec)
+            .bind(ns.to_string())
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        return rows.iter().map(row_to_entry).collect();
+    }
+
+    sql.push_str(" ORDER BY embedding <=> $1 LIMIT $2");
+
+    let rows = sqlx::query(&sql)
+        .bind(&vec)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+    rows.iter().map(row_to_entry).collect()
 }
 
 fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
