@@ -12,6 +12,7 @@ use orchy_core::message::service::SendMessage;
 use orchy_core::message::{MessageId, MessageTarget};
 use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_lock::LockStore;
 use orchy_core::task::service::RequestReviewCommand;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
@@ -286,31 +287,57 @@ impl OrchyHandler {
         };
 
         if project_changed {
-            let _ = self
+            let tasks = self
                 .container
                 .task_service
-                .release_agent_tasks(&agent_id)
-                .await;
+                .list(TaskFilter {
+                    assigned_to: Some(agent_id.clone()),
+                    project: Some(current_project.clone()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap_or_default();
+            for task in &tasks {
+                let _ = self.container.task_service.release(&task.id()).await;
+            }
 
-            let _ = self
-                .container
-                .lock_service
-                .release_agent_locks(&agent_id)
-                .await;
+            let locks = LockStore::find_by_holder(&*self.container.store, &agent_id)
+                .await
+                .unwrap_or_default();
+            for lock in locks {
+                if *lock.project() == current_project {
+                    let _ = self
+                        .container
+                        .lock_service
+                        .release(
+                            lock.org_id(),
+                            lock.project(),
+                            lock.namespace(),
+                            lock.name(),
+                            &agent_id,
+                        )
+                        .await;
+                }
+            }
 
             let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
                 .await
                 .unwrap_or_default();
             for w in &watchers {
-                let _ = WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
+                if *w.project() == current_project {
+                    let _ =
+                        WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
+                }
             }
 
             let reviews = ReviewStore::find_pending_for_agent(&*self.container.store, &agent_id)
                 .await
                 .unwrap_or_default();
             for mut r in reviews {
-                r.unassign_reviewer();
-                let _ = ReviewStore::save(&*self.container.store, &mut r).await;
+                if *r.project() == current_project {
+                    r.unassign_reviewer();
+                    let _ = ReviewStore::save(&*self.container.store, &mut r).await;
+                }
             }
         }
 
