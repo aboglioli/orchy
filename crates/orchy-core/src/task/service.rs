@@ -709,7 +709,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             requester.clone(),
             reviewer.clone(),
             reviewer_role.clone(),
-        );
+        )?;
         ReviewStore::save(&*self.store, &mut review).await?;
 
         let body = format!(

@@ -1109,7 +1109,14 @@ impl ReviewRequest {
         requester: AgentId,
         reviewer: Option<AgentId>,
         reviewer_role: Option<String>,
-    ) -> Self {
+    ) -> Result<Self> {
+        if reviewer.is_none() && reviewer_role.is_none() {
+            return Err(Error::InvalidInput(
+                "review request requires at least one of reviewer_agent or reviewer_role"
+                    .to_string(),
+            ));
+        }
+
         let mut review = Self {
             id: ReviewId::new(),
             task_id,
@@ -1139,7 +1146,7 @@ impl ReviewRequest {
         )
         .map(|e| review.collector.collect(e));
 
-        review
+        Ok(review)
     }
 
     pub fn restore(r: RestoreReviewRequest) -> Self {
@@ -1520,5 +1527,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(task.status(), TaskStatus::Blocked);
+    }
+
+    #[test]
+    fn review_request_requires_target() {
+        let result = ReviewRequest::new(
+            TaskId::new(),
+            OrganizationId::new("test").unwrap(),
+            ProjectId::try_from("test").unwrap(),
+            Namespace::root(),
+            AgentId::new(),
+            None,
+            None,
+        );
+        assert!(result.is_err());
     }
 }
