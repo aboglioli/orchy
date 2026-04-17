@@ -214,7 +214,7 @@ impl OrchyHandler {
             .agent_service
             .get(&agent_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
 
         if agent.org_id() != &org || agent.project() != &project {
             return Err(format!("agent not found in current project: '{s}'"));
@@ -262,6 +262,20 @@ pub(crate) fn parse_message_id(s: &str) -> Result<MessageId, String> {
 
 pub(crate) fn to_json<T: serde::Serialize>(val: &T) -> String {
     serde_json::to_string_pretty(val).unwrap_or_else(|e| format!("serialization error: {e}"))
+}
+
+pub(crate) fn mcp_error(e: orchy_core::error::Error) -> String {
+    use orchy_core::error::Error;
+    let (code, message) = match &e {
+        Error::NotFound(_) => ("NOT_FOUND", e.to_string()),
+        Error::InvalidInput(_) | Error::InvalidTransition { .. } | Error::DependencyNotMet(_) => {
+            ("INVALID_INPUT", e.to_string())
+        }
+        Error::Conflict(_) | Error::VersionMismatch { .. } => ("CONFLICT", e.to_string()),
+        Error::Embeddings(_) => ("EMBEDDINGS_ERROR", e.to_string()),
+        Error::Store(_) => ("INTERNAL_ERROR", e.to_string()),
+    };
+    serde_json::json!({ "error": { "code": code, "message": message } }).to_string()
 }
 
 pub(crate) const INSTRUCTIONS: &str = "\

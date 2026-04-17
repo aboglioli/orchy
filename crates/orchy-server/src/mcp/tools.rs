@@ -17,8 +17,8 @@ use orchy_core::task::service::RequestReviewCommand;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
-    NamespacePolicy, OrchyHandler, default_org, parse_agent_id, parse_message_id, parse_namespace,
-    parse_project, parse_review_id, parse_task_id, to_json,
+    NamespacePolicy, OrchyHandler, default_org, mcp_error, parse_agent_id, parse_message_id,
+    parse_namespace, parse_project, parse_review_id, parse_task_id, to_json,
 };
 use super::params::*;
 
@@ -116,7 +116,7 @@ impl OrchyHandler {
                     .await;
                 Ok(to_json(&agent))
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -168,7 +168,7 @@ impl OrchyHandler {
                     .collect();
                 Ok(to_json(&filtered))
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -189,7 +189,7 @@ impl OrchyHandler {
             .await
         {
             Ok(agent) => Ok(to_json(&agent)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -199,7 +199,7 @@ impl OrchyHandler {
 
         match self.container.agent_service.heartbeat(&agent_id).await {
             Ok(()) => Ok("ok".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -216,7 +216,7 @@ impl OrchyHandler {
             .release_agent_tasks(&agent_id)
             .await
         {
-            return Err(e.to_string());
+            return Err(mcp_error(e));
         }
 
         let _ = self
@@ -242,7 +242,7 @@ impl OrchyHandler {
 
         match self.container.agent_service.disconnect(&agent_id).await {
             Ok(()) => Ok("disconnected".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -358,7 +358,7 @@ impl OrchyHandler {
                 self.set_session_project_and_namespace(final_project, target_namespace);
                 Ok(to_json(&agent))
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -409,13 +409,13 @@ impl OrchyHandler {
             is_blocked,
         ) {
             Ok(t) => t,
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(mcp_error(e)),
         };
 
         let response = to_json(&task);
         match self.container.task_service.create(task).await {
             Ok(()) => Ok(response),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -457,11 +457,11 @@ impl OrchyHandler {
                         .task_service
                         .get_with_context(&task.id())
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(mcp_error)?;
                     Ok(to_json(&ctx))
                 }
                 Ok(None) => Ok("no tasks available".to_string()),
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(mcp_error(e)),
             }
         } else {
             match self
@@ -476,11 +476,11 @@ impl OrchyHandler {
                         .task_service
                         .get_with_context(&task.id())
                         .await
-                        .map_err(|e| e.to_string())?;
+                        .map_err(mcp_error)?;
                     Ok(to_json(&ctx))
                 }
                 Ok(None) => Ok("no tasks available".to_string()),
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(mcp_error(e)),
             }
         }
     }
@@ -538,7 +538,7 @@ impl OrchyHandler {
             .list(filter)
             .await
             .map(|tasks| to_json(&tasks))
-            .map_err(|e| e.to_string())
+            .map_err(mcp_error)
     }
 
     #[tool(description = "Claim a specific task for the session agent. \
@@ -553,13 +553,13 @@ impl OrchyHandler {
 
         let mut task = match self.container.task_service.claim(&task_id, &agent_id).await {
             Ok(t) => t,
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(mcp_error(e)),
         };
 
         if params.start.unwrap_or(false) {
             task = match self.container.task_service.start(&task_id, &agent_id).await {
                 Ok(t) => t,
-                Err(e) => return Err(e.to_string()),
+                Err(e) => return Err(mcp_error(e)),
             };
         }
 
@@ -568,7 +568,7 @@ impl OrchyHandler {
             .task_service
             .get_with_context(&task.id())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
         Ok(to_json(&ctx))
     }
 
@@ -589,10 +589,10 @@ impl OrchyHandler {
                     .task_service
                     .get_with_context(&task.id())
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -615,7 +615,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -635,7 +635,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -658,7 +658,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -687,7 +687,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -704,7 +704,7 @@ impl OrchyHandler {
 
         match self.container.task_service.unblock_manual(&task_id).await {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -729,7 +729,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -783,7 +783,7 @@ impl OrchyHandler {
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -814,7 +814,7 @@ impl OrchyHandler {
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -842,7 +842,7 @@ impl OrchyHandler {
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -865,7 +865,7 @@ impl OrchyHandler {
             .await
         {
             Ok(()) => Ok("ok".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -890,7 +890,7 @@ impl OrchyHandler {
             .await
         {
             Ok(messages) => Ok(to_json(&messages)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -912,7 +912,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -966,7 +966,7 @@ impl OrchyHandler {
                 });
                 Ok(to_json(&result))
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1019,7 +1019,7 @@ impl OrchyHandler {
                 });
                 Ok(to_json(&result))
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1054,7 +1054,7 @@ impl OrchyHandler {
                 });
                 Ok(to_json(&result))
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1074,7 +1074,7 @@ impl OrchyHandler {
             .task_service
             .get(&parent_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
 
         let priority = match params.priority.as_deref() {
             Some(p) => match p.parse::<Priority>() {
@@ -1098,13 +1098,13 @@ impl OrchyHandler {
             false,
         ) {
             Ok(t) => t,
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(mcp_error(e)),
         };
 
         let response = to_json(&task);
         match self.container.task_service.create(task).await {
             Ok(()) => Ok(response),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1128,7 +1128,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1152,7 +1152,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1171,7 +1171,7 @@ impl OrchyHandler {
             .project_service
             .get_or_create(&org, &project_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
 
         if !params.include_summary.unwrap_or(false) {
             return Ok(to_json(&project));
@@ -1182,7 +1182,7 @@ impl OrchyHandler {
             .agent_service
             .list(&org)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
         let project_agents: Vec<_> = agents
             .into_iter()
             .filter(|a| {
@@ -1199,7 +1199,7 @@ impl OrchyHandler {
                 ..Default::default()
             })
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
 
         let mut by_status = std::collections::HashMap::new();
         for task in &all_tasks {
@@ -1281,7 +1281,7 @@ impl OrchyHandler {
             .project_service
             .get_or_create(&org, &project_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
 
         if let Some(expected) = params.version {
             let updated = project.updated_at().timestamp() as u64;
@@ -1304,7 +1304,7 @@ impl OrchyHandler {
             .await
         {
             Ok(project) => Ok(to_json(&project)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1322,7 +1322,7 @@ impl OrchyHandler {
             .await
         {
             Ok(project) => Ok(to_json(&project)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1343,7 +1343,7 @@ impl OrchyHandler {
 
         match NamespaceStore::list(&*self.container.store, &org, &project).await {
             Ok(namespaces) => Ok(to_json(&namespaces)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1365,7 +1365,7 @@ impl OrchyHandler {
             .move_task(&task_id, namespace)
             .await
             .map(|task| to_json(&task))
-            .map_err(|e| e.to_string())
+            .map_err(mcp_error)
     }
 
     #[tool(
@@ -1403,7 +1403,7 @@ impl OrchyHandler {
         .await
         {
             Ok(prompt) => Ok(prompt),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(e),
         }
     }
 
@@ -1417,7 +1417,7 @@ impl OrchyHandler {
         let task_id = parse_task_id(&params.task_id)?;
         match self.container.task_service.tag(&task_id, params.tag).await {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1436,7 +1436,7 @@ impl OrchyHandler {
             .await
         {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1463,7 +1463,7 @@ impl OrchyHandler {
             .await
         {
             Ok(lock) => Ok(to_json(&lock)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1485,7 +1485,7 @@ impl OrchyHandler {
             .await
         {
             Ok(()) => Ok("ok".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1508,7 +1508,7 @@ impl OrchyHandler {
         {
             Ok(Some(lock)) => Ok(to_json(&lock)),
             Ok(None) => Ok("null".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1522,7 +1522,7 @@ impl OrchyHandler {
         let task_id = parse_task_id(&params.task_id)?;
         match self.container.task_service.release(&task_id).await {
             Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1550,7 +1550,7 @@ impl OrchyHandler {
                 ..Default::default()
             })
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
 
         let mut tags: Vec<String> = tasks
             .iter()
@@ -1573,7 +1573,7 @@ impl OrchyHandler {
         let task_id = parse_task_id(&params.task_id)?;
         match self.container.task_service.get_with_context(&task_id).await {
             Ok(ctx) => Ok(to_json(&ctx)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1595,7 +1595,7 @@ impl OrchyHandler {
             .await
         {
             Ok(watcher) => Ok(to_json(&watcher)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1614,7 +1614,7 @@ impl OrchyHandler {
             .await
         {
             Ok(()) => Ok("ok".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1649,7 +1649,7 @@ impl OrchyHandler {
             .await
         {
             Ok(review) => Ok(to_json(&review)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1669,7 +1669,7 @@ impl OrchyHandler {
             .await
         {
             Ok(review) => Ok(to_json(&review)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1688,7 +1688,7 @@ impl OrchyHandler {
             .await
         {
             Ok(reviews) => Ok(to_json(&reviews)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1702,7 +1702,7 @@ impl OrchyHandler {
         let review_id = parse_review_id(&params.review_id)?;
         match self.container.task_service.get_review(&review_id).await {
             Ok(review) => Ok(to_json(&review)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1736,7 +1736,7 @@ impl OrchyHandler {
             .store
             .query_events(project.as_ref(), since, limit)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(mcp_error)?;
 
         let updates: Vec<_> = events
             .iter()
@@ -1811,7 +1811,7 @@ impl OrchyHandler {
 
         match self.container.knowledge_service.write(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1847,7 +1847,7 @@ impl OrchyHandler {
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1876,7 +1876,7 @@ impl OrchyHandler {
         {
             Ok(Some(entry)) => Ok(to_json(&entry)),
             Ok(None) => Ok("null".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1927,7 +1927,7 @@ impl OrchyHandler {
 
         match self.container.knowledge_service.list(filter).await {
             Ok(entries) => Ok(to_json(&entries)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -1953,7 +1953,7 @@ impl OrchyHandler {
             .await
         {
             Ok(e) => e,
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(mcp_error(e)),
         };
 
         if let Some(k) = params.kind.as_deref() {
@@ -1985,12 +1985,12 @@ impl OrchyHandler {
             .knowledge_service
             .read(&org, Some(&project), &namespace, &params.path)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(mcp_error)?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
         match self.container.knowledge_service.delete(&entry.id()).await {
             Ok(()) => Ok("ok".to_string()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -2030,7 +2030,7 @@ impl OrchyHandler {
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -2050,7 +2050,7 @@ impl OrchyHandler {
             .knowledge_service
             .read(&org, Some(&project), &namespace, &params.path)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(mcp_error)?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
         let new_namespace = self
@@ -2067,7 +2067,7 @@ impl OrchyHandler {
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -2087,7 +2087,7 @@ impl OrchyHandler {
             .knowledge_service
             .read(&org, Some(&project), &namespace, &params.path)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(mcp_error)?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
@@ -2100,7 +2100,7 @@ impl OrchyHandler {
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -2139,7 +2139,7 @@ impl OrchyHandler {
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -2159,7 +2159,7 @@ impl OrchyHandler {
             .knowledge_service
             .read(&org, Some(&project), &namespace, &params.path)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(mcp_error)?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
@@ -2172,7 +2172,7 @@ impl OrchyHandler {
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -2192,7 +2192,7 @@ impl OrchyHandler {
             .knowledge_service
             .read(&org, Some(&project), &namespace, &params.path)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(mcp_error)?
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
@@ -2205,7 +2205,7 @@ impl OrchyHandler {
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -2228,7 +2228,7 @@ impl OrchyHandler {
             .knowledge_service
             .read(&org, Some(&source_project), &source_namespace, &params.path)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(mcp_error)?
             .ok_or_else(|| format!("entry not found in source: {}", params.path))?;
 
         let namespace = self
@@ -2262,7 +2262,7 @@ impl OrchyHandler {
 
         match self.container.knowledge_service.write(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 }
