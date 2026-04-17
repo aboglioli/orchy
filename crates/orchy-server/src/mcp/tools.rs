@@ -901,7 +901,7 @@ impl OrchyHandler {
     #[tool(
         description = "Merge multiple tasks into one. Source tasks must be pending, \
         blocked, or claimed. They are cancelled and a new consolidated task is created \
-        with the highest priority, combined roles, combined dependencies, and collected notes. \
+        with the highest priority, combined roles, and combined dependencies. \
         Children of source tasks are re-parented. Tasks depending on sources are updated."
     )]
     async fn merge_tasks(

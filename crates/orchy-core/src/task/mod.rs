@@ -12,7 +12,6 @@ use orchy_events::{Event, EventCollector, Payload};
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
-use crate::note::Note;
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 use crate::resource_ref::ResourceRef;
@@ -203,7 +202,6 @@ pub struct Task {
     depends_on: Vec<TaskId>,
     tags: Vec<String>,
     result_summary: Option<String>,
-    notes: Vec<Note>,
     refs: Vec<ResourceRef>,
     created_by: Option<AgentId>,
     created_at: DateTime<Utc>,
@@ -252,7 +250,6 @@ impl Task {
             depends_on,
             tags: Vec::new(),
             result_summary: None,
-            notes: Vec::new(),
             refs: Vec::new(),
             created_by,
             created_at: now,
@@ -302,7 +299,6 @@ impl Task {
             depends_on: r.depends_on,
             tags: r.tags,
             result_summary: r.result_summary,
-            notes: r.notes,
             refs: r.refs,
             created_by: r.created_by,
             created_at: r.created_at,
@@ -745,9 +741,6 @@ impl Task {
     pub fn result_summary(&self) -> Option<&str> {
         self.result_summary.as_deref()
     }
-    pub fn notes(&self) -> &[Note] {
-        &self.notes
-    }
     pub fn refs(&self) -> &[ResourceRef] {
         &self.refs
     }
@@ -758,26 +751,6 @@ impl Task {
     }
     pub fn remove_ref(&mut self, r: &ResourceRef) {
         self.refs.retain(|existing| existing != r);
-    }
-    pub fn add_note(&mut self, author: Option<AgentId>, body: String) -> Result<()> {
-        self.notes.push(Note::new(author, body.clone()));
-        self.updated_at = Utc::now();
-
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_NOTE_ADDED,
-                Payload::from_json(&task_events::TaskNoteAddedPayload {
-                    task_id: self.id.to_string(),
-                    body,
-                })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
-            )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
-        );
-
-        Ok(())
     }
     pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) -> Result<()> {
         self.parent_id = parent_id;
@@ -888,7 +861,6 @@ pub struct RestoreTask {
     pub depends_on: Vec<TaskId>,
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
-    pub notes: Vec<Note>,
     pub refs: Vec<ResourceRef>,
     pub created_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
@@ -1035,7 +1007,6 @@ mod tests {
             depends_on: vec![],
             tags: vec![],
             result_summary: None,
-            notes: Vec::new(),
             refs: Vec::new(),
             created_by: None,
             created_at: Utc::now(),

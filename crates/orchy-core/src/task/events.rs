@@ -17,7 +17,6 @@ pub const TOPIC_DEPENDENCY_ADDED: &str = "task.dependency_added";
 pub const TOPIC_DEPENDENCY_REMOVED: &str = "task.dependency_removed";
 pub const TOPIC_TAGGED: &str = "task.tagged";
 pub const TOPIC_TAG_REMOVED: &str = "task.tag_removed";
-pub const TOPIC_NOTE_ADDED: &str = "task.note_added";
 pub const TOPIC_PARENT_CHANGED: &str = "task.parent_changed";
 pub const TOPIC_DEPENDENCY_REPLACED: &str = "task.dependency_replaced";
 pub const TOPIC_MOVED: &str = "task.moved";
@@ -110,12 +109,6 @@ pub struct TaskTaggedPayload {
 pub struct TaskTagRemovedPayload {
     pub task_id: String,
     pub tag: String,
-}
-
-#[derive(Serialize)]
-pub struct TaskNoteAddedPayload {
-    pub task_id: String,
-    pub body: String,
 }
 
 #[derive(Serialize)]

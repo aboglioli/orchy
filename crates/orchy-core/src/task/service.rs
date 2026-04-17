@@ -197,18 +197,6 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore> TaskService<TS,
         Ok(task)
     }
 
-    pub async fn add_note(
-        &self,
-        id: &TaskId,
-        author: Option<AgentId>,
-        body: String,
-    ) -> Result<Task> {
-        let mut task = self.get(id).await?;
-        task.add_note(author, body)?;
-        self.task_store.save(&mut task).await?;
-        Ok(task)
-    }
-
     pub async fn tag(&self, id: &TaskId, tag: String) -> Result<Task> {
         let mut task = self.get(id).await?;
         task.add_tag(tag)?;
@@ -445,12 +433,6 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore> TaskService<TS,
             created_by,
             is_blocked,
         )?;
-
-        for task in &sources {
-            for note in task.notes() {
-                merged.add_note(note.author().cloned(), note.body().to_string())?;
-            }
-        }
 
         self.task_store.save(&mut merged).await?;
 

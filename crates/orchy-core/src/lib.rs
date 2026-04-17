@@ -6,7 +6,6 @@ pub(crate) mod infrastructure;
 pub mod knowledge;
 pub mod message;
 pub mod namespace;
-pub mod note;
 pub mod organization;
 pub mod pagination;
 pub mod project;

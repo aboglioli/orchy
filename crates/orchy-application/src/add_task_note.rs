@@ -45,8 +45,6 @@ impl AddTaskNote {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
-        task.add_note(author.clone(), cmd.body.clone())?;
-
         let namespace = crate::parse_namespace(cmd.namespace.as_deref())?;
         let title = if cmd.body.len() > 80 {
             cmd.body[..80].to_string()

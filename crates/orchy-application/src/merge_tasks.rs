@@ -131,12 +131,6 @@ impl MergeTasks {
             is_blocked,
         )?;
 
-        for task in &sources {
-            for note in task.notes() {
-                merged.add_note(note.author().cloned(), note.body().to_string())?;
-            }
-        }
-
         self.tasks.save(&mut merged).await?;
 
         let mut cancelled = Vec::with_capacity(sources.len());
