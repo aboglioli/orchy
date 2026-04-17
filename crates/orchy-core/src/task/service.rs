@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use super::{
@@ -286,6 +286,14 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             )));
         }
 
+        for def in &subtasks {
+            if def.depends_on.contains(parent_id) {
+                return Err(Error::Conflict(format!(
+                    "subtask depends on parent {parent_id}, which would create a cycle"
+                )));
+            }
+        }
+
         let mut children = Vec::with_capacity(subtasks.len());
 
         for def in subtasks {
@@ -508,6 +516,12 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
     pub async fn add_dependency(&self, task_id: &TaskId, dependency_id: &TaskId) -> Result<Task> {
         self.get(dependency_id).await?;
 
+        if self.would_create_cycle(task_id, dependency_id).await? {
+            return Err(Error::Conflict(format!(
+                "adding dependency {dependency_id} to task {task_id} would create a cycle"
+            )));
+        }
+
         let mut task = self.get(task_id).await?;
 
         if matches!(
@@ -608,6 +622,44 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             ancestors,
             children,
         })
+    }
+
+    async fn would_create_cycle(&self, task_id: &TaskId, new_dep_id: &TaskId) -> Result<bool> {
+        if task_id == new_dep_id {
+            return Ok(true);
+        }
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(*new_dep_id);
+
+        const MAX_TRAVERSAL: usize = 100;
+
+        while let Some(current) = queue.pop_front() {
+            if current == *task_id {
+                return Ok(true);
+            }
+
+            if !visited.insert(current) {
+                continue;
+            }
+
+            if visited.len() > MAX_TRAVERSAL {
+                return Err(Error::InvalidInput(
+                    "dependency graph too large to validate".into(),
+                ));
+            }
+
+            if let Some(task) = self.task_store.find_by_id(&current).await? {
+                for dep in task.depends_on() {
+                    if !visited.contains(dep) {
+                        queue.push_back(*dep);
+                    }
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
@@ -871,5 +923,199 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             children.len(),
             parts.join("\n")
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::{Arc, RwLock};
+
+    use super::*;
+    use crate::agent::{Agent, AgentStore};
+    use crate::message::{Message, MessageId, MessageStore};
+    use crate::namespace::{Namespace, ProjectId};
+    use crate::organization::OrganizationId;
+
+    #[derive(Default)]
+    struct InMemoryTaskStore {
+        tasks: RwLock<HashMap<TaskId, Task>>,
+    }
+
+    impl TaskStore for InMemoryTaskStore {
+        async fn save(&self, task: &mut Task) -> Result<()> {
+            task.drain_events();
+            self.tasks.write().unwrap().insert(task.id(), task.clone());
+            Ok(())
+        }
+
+        async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
+            Ok(self.tasks.read().unwrap().get(id).cloned())
+        }
+
+        async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
+            Ok(self
+                .tasks
+                .read()
+                .unwrap()
+                .values()
+                .filter(|t| {
+                    filter.status.is_none_or(|s| t.status() == s)
+                        && filter.parent_id.is_none_or(|p| t.parent_id() == Some(p))
+                        && filter.project.as_ref().is_none_or(|p| t.project() == p)
+                })
+                .cloned()
+                .collect())
+        }
+    }
+
+    #[derive(Default)]
+    struct StubStore;
+
+    impl AgentStore for StubStore {
+        async fn save(&self, _: &mut Agent) -> Result<()> {
+            Ok(())
+        }
+        async fn find_by_id(&self, _: &AgentId) -> Result<Option<Agent>> {
+            Ok(None)
+        }
+        async fn list(&self, _: &OrganizationId) -> Result<Vec<Agent>> {
+            Ok(vec![])
+        }
+        async fn find_timed_out(&self, _: u64) -> Result<Vec<Agent>> {
+            Ok(vec![])
+        }
+    }
+
+    impl WatcherStore for StubStore {
+        async fn save(&self, _: &mut TaskWatcher) -> Result<()> {
+            Ok(())
+        }
+        async fn delete(&self, _: &TaskId, _: &AgentId) -> Result<()> {
+            Ok(())
+        }
+        async fn find_watchers(&self, _: &TaskId) -> Result<Vec<TaskWatcher>> {
+            Ok(vec![])
+        }
+        async fn find_by_agent(&self, _: &AgentId) -> Result<Vec<TaskWatcher>> {
+            Ok(vec![])
+        }
+    }
+
+    impl MessageStore for StubStore {
+        async fn save(&self, _: &mut Message) -> Result<()> {
+            Ok(())
+        }
+        async fn find_by_id(&self, _: &MessageId) -> Result<Option<Message>> {
+            Ok(None)
+        }
+        async fn mark_read_for_agent(&self, _: &MessageId, _: &AgentId) -> Result<()> {
+            Ok(())
+        }
+        async fn find_pending(
+            &self,
+            _: &AgentId,
+            _: &OrganizationId,
+            _: &ProjectId,
+            _: &Namespace,
+        ) -> Result<Vec<Message>> {
+            Ok(vec![])
+        }
+        async fn find_sent(
+            &self,
+            _: &AgentId,
+            _: &OrganizationId,
+            _: &ProjectId,
+            _: &Namespace,
+        ) -> Result<Vec<Message>> {
+            Ok(vec![])
+        }
+        async fn find_thread(&self, _: &MessageId, _: Option<usize>) -> Result<Vec<Message>> {
+            Ok(vec![])
+        }
+    }
+
+    impl ReviewStore for StubStore {
+        async fn save(&self, _: &mut ReviewRequest) -> Result<()> {
+            Ok(())
+        }
+        async fn find_by_id(&self, _: &ReviewId) -> Result<Option<ReviewRequest>> {
+            Ok(None)
+        }
+        async fn find_pending_for_agent(&self, _: &AgentId) -> Result<Vec<ReviewRequest>> {
+            Ok(vec![])
+        }
+        async fn find_by_task(&self, _: &TaskId) -> Result<Vec<ReviewRequest>> {
+            Ok(vec![])
+        }
+    }
+
+    fn make_service() -> TaskService<InMemoryTaskStore, StubStore> {
+        TaskService::new(Arc::new(InMemoryTaskStore::default()), Arc::new(StubStore))
+    }
+
+    async fn create_task(svc: &TaskService<InMemoryTaskStore, StubStore>) -> Task {
+        let mut task = Task::new(
+            OrganizationId::new("test").unwrap(),
+            ProjectId::try_from("test").unwrap(),
+            Namespace::root(),
+            None,
+            "task".into(),
+            "desc".into(),
+            Priority::Normal,
+            vec![],
+            vec![],
+            None,
+            false,
+        )
+        .unwrap();
+        svc.task_store.save(&mut task).await.unwrap();
+        task
+    }
+
+    #[tokio::test]
+    async fn add_dependency_rejects_self_cycle() {
+        let svc = make_service();
+        let a = create_task(&svc).await;
+        let result = svc.add_dependency(&a.id(), &a.id()).await;
+        assert!(matches!(result.unwrap_err(), Error::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn add_dependency_rejects_direct_cycle() {
+        let svc = make_service();
+        let a = create_task(&svc).await;
+        let b = create_task(&svc).await;
+
+        svc.add_dependency(&a.id(), &b.id()).await.unwrap();
+
+        let result = svc.add_dependency(&b.id(), &a.id()).await;
+        assert!(matches!(result.unwrap_err(), Error::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn add_dependency_rejects_indirect_cycle() {
+        let svc = make_service();
+        let a = create_task(&svc).await;
+        let b = create_task(&svc).await;
+        let c = create_task(&svc).await;
+
+        svc.add_dependency(&a.id(), &b.id()).await.unwrap();
+        svc.add_dependency(&b.id(), &c.id()).await.unwrap();
+
+        let result = svc.add_dependency(&c.id(), &a.id()).await;
+        assert!(matches!(result.unwrap_err(), Error::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn add_dependency_allows_diamond() {
+        let svc = make_service();
+        let a = create_task(&svc).await;
+        let b = create_task(&svc).await;
+        let c = create_task(&svc).await;
+
+        svc.add_dependency(&a.id(), &b.id()).await.unwrap();
+        svc.add_dependency(&c.id(), &b.id()).await.unwrap();
+        svc.add_dependency(&a.id(), &c.id()).await.unwrap();
     }
 }
