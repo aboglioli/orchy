@@ -112,7 +112,8 @@ impl OrchyHandler {
 
         match self.container.agent_service.register(cmd).await {
             Ok(agent) => {
-                self.set_session(agent.id().clone(), org_id, project, namespace);
+                self.set_session(agent.id().clone(), org_id, project, namespace)
+                    .await;
                 Ok(to_json(&agent))
             }
             Err(e) => Err(e.to_string()),

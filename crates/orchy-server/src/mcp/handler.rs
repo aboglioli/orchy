@@ -87,7 +87,7 @@ impl OrchyHandler {
         }
     }
 
-    pub(crate) fn set_session(
+    pub(crate) async fn set_session(
         &self,
         agent_id: AgentId,
         org: OrganizationId,
@@ -109,10 +109,11 @@ impl OrchyHandler {
             .ok()
             .and_then(|g| g.as_ref().cloned())
         {
-            let session_agents = self.container.session_agents.clone();
-            tokio::spawn(async move {
-                session_agents.write().await.insert(session_id, agent_id);
-            });
+            self.container
+                .session_agents
+                .write()
+                .await
+                .insert(session_id, agent_id);
         }
     }
 
