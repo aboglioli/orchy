@@ -214,11 +214,12 @@ pub async fn mark_read_for_agent(
 pub async fn thread(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, msg_id)): Path<(String, String, String)>,
+    Path((org, project, msg_id)): Path<(String, String, String)>,
     Query(query): Query<ThreadQuery>,
 ) -> Result<Json<Vec<Message>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
 
     let message_id = msg_id
         .parse::<MessageId>()
@@ -231,6 +232,16 @@ pub async fn thread(
         .thread(&message_id, limit)
         .await
         .map_err(ApiError::from)?;
+
+    if let Some(first) = messages.first()
+        && first.project() != &project_id
+    {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            format!("message {message_id} not found in project {project_id}"),
+        ));
+    }
 
     Ok(Json(messages))
 }

@@ -90,6 +90,17 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     }
 }
 
+fn check_task_project(task: &Task, project_id: &ProjectId) -> Result<(), ApiError> {
+    if task.project() != project_id {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            format!("task {} not found in project {project_id}", task.id()),
+        ));
+    }
+    Ok(())
+}
+
 type OrgProject = (String, String);
 
 #[derive(Deserialize)]
@@ -369,28 +380,38 @@ pub async fn post(
 pub async fn get_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
 ) -> Result<Json<orchy_core::task::TaskWithContext>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
     let ctx = container
         .task_service
         .get_with_context(&task_id)
         .await
         .map_err(ApiError::from)?;
+    check_task_project(&ctx.task, &project_id)?;
     Ok(Json(ctx))
 }
 
 pub async fn update_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<UpdateTaskBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
 
     let priority = match body.priority.as_deref() {
         Some(p) => Some(p.parse::<Priority>().map_err(|e| {
@@ -422,6 +443,13 @@ pub async fn claim(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
 
     container
@@ -457,6 +485,14 @@ pub async fn start(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
     let task = container
         .task_service
@@ -469,12 +505,21 @@ pub async fn start(
 pub async fn complete(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<CompleteBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let task = container
         .task_service
         .complete(&task_id, body.summary)
@@ -486,12 +531,21 @@ pub async fn complete(
 pub async fn fail(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<FailBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let task = container
         .task_service
         .fail(&task_id, body.reason)
@@ -503,12 +557,21 @@ pub async fn fail(
 pub async fn cancel(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<CancelBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let task = container
         .task_service
         .cancel(&task_id, body.reason)
@@ -520,12 +583,21 @@ pub async fn cancel(
 pub async fn release(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let task = container
         .task_service
         .release(&task_id)
@@ -537,11 +609,20 @@ pub async fn release(
 pub async fn unblock(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let task = container
         .task_service
         .unblock_manual(&task_id)
@@ -560,6 +641,14 @@ pub async fn assign(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
     let task = container
         .task_service
@@ -579,6 +668,14 @@ pub async fn watch(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
 
     let watcher = container
@@ -600,6 +697,14 @@ pub async fn unwatch(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let agent_id = resolve_agent(&container, &org_id, &project_id, &query.agent).await?;
 
     container
@@ -621,6 +726,14 @@ pub async fn add_note(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let agent_id = if let Some(s) = body.agent.as_deref() {
         Some(resolve_agent(&container, &org_id, &project_id, s).await?)
     } else {
@@ -639,12 +752,21 @@ pub async fn add_note(
 pub async fn add_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AddDepBody>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let dep_id = parse_task_id(&body.dependency_id)?;
     let task = container
         .task_service
@@ -657,11 +779,20 @@ pub async fn add_dep(
 pub async fn remove_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id, dep_id)): Path<(String, String, String, String)>,
+    Path((org, project, id, dep_id)): Path<(String, String, String, String)>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let dep_id = parse_task_id(&dep_id)?;
     let task = container
         .task_service
@@ -674,11 +805,20 @@ pub async fn remove_dep(
 pub async fn tag_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id, tag)): Path<(String, String, String, String)>,
+    Path((org, project, id, tag)): Path<(String, String, String, String)>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let task = container
         .task_service
         .tag(&task_id, tag)
@@ -690,11 +830,20 @@ pub async fn tag_task(
 pub async fn untag_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id, tag)): Path<(String, String, String, String)>,
+    Path((org, project, id, tag)): Path<(String, String, String, String)>,
 ) -> Result<Json<Task>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
+
     let task = container
         .task_service
         .untag(&task_id, &tag)
@@ -790,12 +939,20 @@ pub async fn next_task(
 pub async fn split(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<SplitBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
     let subtasks = parse_subtask_defs(body.subtasks)?;
 
     let (parent, children) = container
@@ -812,12 +969,20 @@ pub async fn split(
 pub async fn replace(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<ReplaceBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&id)?;
+
+    let existing = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project_id)?;
     let replacements = parse_subtask_defs(body.replacements)?;
 
     let (original, new_tasks) = container
@@ -834,17 +999,27 @@ pub async fn replace(
 pub async fn merge(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project)): Path<OrgProject>,
+    Path((org, project)): Path<OrgProject>,
     Json(body): Json<MergeBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
 
     let task_ids = body
         .task_ids
         .iter()
         .map(|s| parse_task_id(s))
         .collect::<Result<Vec<_>, _>>()?;
+
+    for tid in &task_ids {
+        let existing = container
+            .task_service
+            .get(tid)
+            .await
+            .map_err(ApiError::from)?;
+        check_task_project(&existing, &project_id)?;
+    }
 
     let (merged, cancelled) = container
         .task_service
@@ -873,6 +1048,7 @@ pub async fn delegate(
         .get(&parent_id)
         .await
         .map_err(ApiError::from)?;
+    check_task_project(&parent, &project_id)?;
 
     let priority = match body.priority.as_deref() {
         Some(p) => p.parse::<Priority>().map_err(|e| {

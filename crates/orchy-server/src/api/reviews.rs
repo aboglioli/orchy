@@ -60,6 +60,17 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     }
 }
 
+fn check_review_project(review: &ReviewRequest, project_id: &ProjectId) -> Result<(), ApiError> {
+    if review.project() != project_id {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            format!("review {} not found in project {project_id}", review.id()),
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 pub struct RequestReviewBody {
     pub requester_agent_id: String,
@@ -77,11 +88,25 @@ pub struct ResolveReviewBody {
 pub async fn list_for_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, task_id_str)): Path<(String, String, String)>,
+    Path((org, project, task_id_str)): Path<(String, String, String)>,
 ) -> Result<Json<Vec<ReviewRequest>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let task_id = parse_task_id(&task_id_str)?;
+
+    let task = container
+        .task_service
+        .get(&task_id)
+        .await
+        .map_err(ApiError::from)?;
+    if task.project() != &project_id {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            format!("task {task_id} not found in project {project_id}"),
+        ));
+    }
 
     let reviews = container
         .task_service
@@ -137,10 +162,11 @@ pub async fn request(
 pub async fn get(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, review_id_str)): Path<(String, String, String)>,
+    Path((org, project, review_id_str)): Path<(String, String, String)>,
 ) -> Result<Json<ReviewRequest>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let review_id = parse_review_id(&review_id_str)?;
 
     let review = container
@@ -148,6 +174,7 @@ pub async fn get(
         .get_review(&review_id)
         .await
         .map_err(ApiError::from)?;
+    check_review_project(&review, &project_id)?;
 
     Ok(Json(review))
 }
@@ -155,12 +182,20 @@ pub async fn get(
 pub async fn resolve(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, review_id_str)): Path<(String, String, String)>,
+    Path((org, project, review_id_str)): Path<(String, String, String)>,
     Json(body): Json<ResolveReviewBody>,
 ) -> Result<Json<ReviewRequest>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
     let review_id = parse_review_id(&review_id_str)?;
+
+    let existing = container
+        .task_service
+        .get_review(&review_id)
+        .await
+        .map_err(ApiError::from)?;
+    check_review_project(&existing, &project_id)?;
 
     let resolver = body
         .resolver_agent_id
