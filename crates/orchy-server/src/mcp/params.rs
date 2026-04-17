@@ -206,6 +206,7 @@ pub struct CheckMailboxParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct CheckSentMessagesParams {
     pub namespace: Option<String>,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

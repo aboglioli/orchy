@@ -831,7 +831,13 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckSentMessagesParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, project, _) = self.require_session()?;
+        let (agent_id, org, session_project, _) = self.require_session()?;
+
+        let project = if let Some(p) = params.project {
+            parse_project(&p)?
+        } else {
+            session_project
+        };
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
