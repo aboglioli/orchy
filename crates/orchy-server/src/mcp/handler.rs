@@ -15,6 +15,12 @@ struct SessionState {
     namespace: Namespace,
 }
 
+pub(crate) enum NamespacePolicy {
+    Required,
+    SessionDefault,
+    RegisterIfNew,
+}
+
 #[derive(Clone)]
 pub struct OrchyHandler {
     pub(crate) container: Arc<Container>,
@@ -132,34 +138,40 @@ impl OrchyHandler {
         }
     }
 
-    pub(crate) fn build_namespace(&self, scope: Option<&str>) -> Result<Namespace, String> {
+    pub(crate) async fn resolve_namespace(
+        &self,
+        param: Option<&str>,
+        policy: NamespacePolicy,
+    ) -> Result<Namespace, String> {
         let _ = self
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        match scope {
+        let ns = match param {
             Some(s) if !s.is_empty() => {
-                Namespace::try_from(format!("/{s}")).map_err(|e| e.to_string())
+                Namespace::try_from(format!("/{s}")).map_err(|e| e.to_string())?
             }
-            _ => Ok(Namespace::root()),
-        }
-    }
+            _ => match policy {
+                NamespacePolicy::SessionDefault => {
+                    self.get_session_namespace().unwrap_or_else(Namespace::root)
+                }
+                _ => Namespace::root(),
+            },
+        };
 
-    pub(crate) async fn build_and_register_namespace(
-        &self,
-        scope: Option<&str>,
-    ) -> Result<Namespace, String> {
-        let ns = self.build_namespace(scope)?;
-        if let (Some(project), Some(org)) = (
-            self.get_session_project(),
-            self.session
-                .read()
-                .ok()
-                .and_then(|g| g.as_ref().map(|s| s.org.clone())),
-        ) {
+        if matches!(policy, NamespacePolicy::RegisterIfNew)
+            && let (Some(project), Some(org)) = (
+                self.get_session_project(),
+                self.session
+                    .read()
+                    .ok()
+                    .and_then(|g| g.as_ref().map(|s| s.org.clone())),
+            )
+        {
             use orchy_core::namespace::NamespaceStore;
             let _ = NamespaceStore::register(&*self.container.store, &org, &project, &ns).await;
         }
+
         Ok(ns)
     }
 
@@ -193,16 +205,6 @@ impl OrchyHandler {
         }
 
         Ok(agent_id)
-    }
-
-    pub(crate) fn build_optional_namespace(
-        &self,
-        scope: Option<&str>,
-    ) -> Result<Option<Namespace>, String> {
-        match scope {
-            Some(_) => self.build_namespace(scope).map(Some),
-            None => Ok(None),
-        }
     }
 }
 

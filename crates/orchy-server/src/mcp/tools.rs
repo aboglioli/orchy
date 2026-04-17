@@ -16,8 +16,8 @@ use orchy_core::task::service::RequestReviewCommand;
 use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
 
 use super::handler::{
-    OrchyHandler, default_org, parse_agent_id, parse_message_id, parse_namespace, parse_project,
-    parse_review_id, parse_task_id, to_json,
+    NamespacePolicy, OrchyHandler, default_org, parse_agent_id, parse_message_id, parse_namespace,
+    parse_project, parse_review_id, parse_task_id, to_json,
 };
 use super::params::*;
 
@@ -271,7 +271,10 @@ impl OrchyHandler {
             .is_some_and(|p| *p != current_project);
 
         let target_namespace = match &params.namespace {
-            Some(ns) => self.build_and_register_namespace(Some(ns)).await?,
+            Some(ns) => {
+                self.resolve_namespace(Some(ns), NamespacePolicy::RegisterIfNew)
+                    .await?
+            }
             None if project_changed => Namespace::root(),
             None => current_namespace,
         };
@@ -334,7 +337,7 @@ impl OrchyHandler {
         let (_, org, project, _) = self.require_session()?;
 
         let namespace = self
-            .build_and_register_namespace(params.namespace.as_deref())
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
         let priority = match params.priority.as_deref() {
@@ -392,7 +395,13 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
+        let namespace = match params.namespace.as_deref() {
+            Some(_) => Some(
+                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+                    .await?,
+            ),
+            None => None,
+        };
 
         let roles = match params.role {
             Some(r) => vec![r],
@@ -463,7 +472,13 @@ impl OrchyHandler {
             session_project
         };
 
-        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
+        let namespace = match params.namespace.as_deref() {
+            Some(_) => Some(
+                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+                    .await?,
+            ),
+            None => None,
+        };
 
         let status = params.status.as_deref().map(|s| match s {
             "pending" => Some(orchy_core::task::TaskStatus::Pending),
@@ -714,7 +729,7 @@ impl OrchyHandler {
         };
 
         let namespace = self
-            .build_and_register_namespace(params.namespace.as_deref())
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
         let reply_to = match params.reply_to {
@@ -753,7 +768,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckMailboxParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, session_project, session_ns) = self.require_session()?;
+        let (agent_id, _, session_project, _) = self.require_session()?;
 
         let project = if let Some(p) = params.project {
             parse_project(&p)?
@@ -761,10 +776,9 @@ impl OrchyHandler {
             session_project
         };
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
-            None => session_ns,
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+            .await?;
 
         let default_org = default_org();
         match self
@@ -783,12 +797,11 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckSentMessagesParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, project, session_ns) = self.require_session()?;
+        let (agent_id, _, project, _) = self.require_session()?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
-            None => session_ns,
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+            .await?;
 
         let default_org = default_org();
         match self
@@ -1332,7 +1345,7 @@ impl OrchyHandler {
         let task_id = parse_task_id(&params.task_id)?;
 
         let namespace = self
-            .build_and_register_namespace(Some(&params.new_namespace))
+            .resolve_namespace(Some(&params.new_namespace), NamespacePolicy::RegisterIfNew)
             .await?;
 
         self.container
@@ -1358,10 +1371,9 @@ impl OrchyHandler {
                 .ok_or("no agent registered for this session; call register_agent first")?
         };
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s)).map_err(|e| e.to_string())?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let host = &self.container.config.server.host;
         let port = self.container.config.server.port;
@@ -1427,7 +1439,7 @@ impl OrchyHandler {
         let (agent_id, _, project, _) = self.require_session()?;
 
         let namespace = self
-            .build_and_register_namespace(params.namespace.as_deref())
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
         let ttl = params.ttl_secs.unwrap_or(300);
@@ -1451,7 +1463,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, project, _) = self.require_session()?;
 
-        let namespace = self.build_namespace(params.namespace.as_deref())?;
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         match self
@@ -1472,7 +1486,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, _, project, _) = self.require_session()?;
 
-        let namespace = self.build_namespace(params.namespace.as_deref())?;
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         match self
@@ -1510,7 +1526,13 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
+        let namespace = match params.namespace.as_deref() {
+            Some(_) => Some(
+                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+                    .await?,
+            ),
+            None => None,
+        };
 
         let tasks = self
             .container
@@ -1759,7 +1781,7 @@ impl OrchyHandler {
         let (_, org, project, _) = self.require_session()?;
 
         let namespace = self
-            .build_and_register_namespace(params.namespace.as_deref())
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
         let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
@@ -1798,10 +1820,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s))?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let set = optional_knowledge_metadata(params.metadata, "metadata")?.unwrap_or_default();
         let remove = params.metadata_remove.unwrap_or_default();
@@ -1837,10 +1858,9 @@ impl OrchyHandler {
             self.get_session_project().ok_or("no agent registered")?
         };
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s))?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         match self
@@ -1864,7 +1884,13 @@ impl OrchyHandler {
         Parameters(params): Parameters<ListKnowledgeParams>,
     ) -> Result<String, String> {
         let explicit_project = params.project.as_deref().map(parse_project).transpose()?;
-        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
+        let namespace = match params.namespace.as_deref() {
+            Some(_) => Some(
+                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+                    .await?,
+            ),
+            None => None,
+        };
 
         let kind = match params.kind.as_deref() {
             Some(t) => Some(t.parse::<KnowledgeKind>().map_err(|e: String| e)?),
@@ -1905,7 +1931,13 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchKnowledgeParams>,
     ) -> Result<String, String> {
-        let namespace = self.build_optional_namespace(params.namespace.as_deref())?;
+        let namespace = match params.namespace.as_deref() {
+            Some(_) => Some(
+                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+                    .await?,
+            ),
+            None => None,
+        };
 
         let limit = params.limit.unwrap_or(10) as usize;
 
@@ -1940,7 +1972,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = self.build_namespace(params.namespace.as_deref())?;
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         let entry = self
@@ -1965,7 +1999,7 @@ impl OrchyHandler {
         let (_, _, project, _) = self.require_session()?;
 
         let namespace = self
-            .build_and_register_namespace(params.namespace.as_deref())
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
         let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
@@ -2005,10 +2039,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s))?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         let entry = self
@@ -2020,7 +2053,7 @@ impl OrchyHandler {
             .ok_or_else(|| format!("entry not found: {}", params.path))?;
 
         let new_namespace = self
-            .build_and_register_namespace(Some(&params.new_namespace))
+            .resolve_namespace(Some(&params.new_namespace), NamespacePolicy::RegisterIfNew)
             .await?;
 
         let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
@@ -2044,10 +2077,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s))?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         let entry = self
@@ -2081,10 +2113,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s))?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let new_kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
 
@@ -2120,10 +2151,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s))?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         let entry = self
@@ -2155,10 +2185,9 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let project = self.get_session_project().ok_or("no agent registered")?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(s) => self.build_namespace(Some(s))?,
-            None => Namespace::root(),
-        };
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
 
         let default_org = default_org();
         let entry = self
@@ -2211,7 +2240,9 @@ impl OrchyHandler {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("entry not found in source: {}", params.path))?;
 
-        let namespace = self.build_and_register_namespace(None).await?;
+        let namespace = self
+            .resolve_namespace(None, NamespacePolicy::RegisterIfNew)
+            .await?;
 
         let mut md = source_entry.metadata().clone();
         if let Some(keys) = params.metadata_remove {
