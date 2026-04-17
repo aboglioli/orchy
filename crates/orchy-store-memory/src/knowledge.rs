@@ -12,6 +12,19 @@ impl KnowledgeStore for MemoryBackend {
                 .knowledge_entries
                 .write()
                 .map_err(|e| Error::Store(e.to_string()))?;
+
+            if let Some(pv) = entry.persisted_version() {
+                if let Some(existing) = entries.get(&entry.id()) {
+                    if existing.version() != pv {
+                        return Err(Error::VersionMismatch {
+                            expected: pv.as_u64(),
+                            actual: existing.version().as_u64(),
+                        });
+                    }
+                }
+            }
+
+            entry.mark_persisted();
             entries.insert(entry.id(), entry.clone());
         }
 

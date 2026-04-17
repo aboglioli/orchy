@@ -26,31 +26,82 @@ impl KnowledgeStore for SqliteBackend {
             let metadata_json =
                 serde_json::to_string(entry.metadata()).map_err(|e| Error::Store(e.to_string()))?;
 
-            conn.execute(
-                "INSERT OR REPLACE INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
-                rusqlite::params![
-                    entry.id().to_string(),
-                    entry.org_id().to_string(),
-                    entry.project().map(|p| p.to_string()),
-                    entry.namespace().to_string(),
-                    entry.path(),
-                    entry.kind().to_string(),
-                    entry.title(),
-                    entry.content(),
-                    tags_json,
-                    entry.version().as_u64() as i64,
-                    entry.agent_id().map(|a| a.to_string()),
-                    metadata_json,
-                    embedding_bytes,
-                    entry.embedding_model(),
-                    entry.embedding_dimensions().map(|d| d as i64),
-                    entry.created_at().to_rfc3339(),
-                    entry.updated_at().to_rfc3339(),
-                ],
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            let params = rusqlite::params![
+                entry.id().to_string(),
+                entry.org_id().to_string(),
+                entry.project().map(|p| p.to_string()),
+                entry.namespace().to_string(),
+                entry.path(),
+                entry.kind().to_string(),
+                entry.title(),
+                entry.content(),
+                tags_json,
+                entry.version().as_u64() as i64,
+                entry.agent_id().map(|a| a.to_string()),
+                metadata_json,
+                embedding_bytes,
+                entry.embedding_model(),
+                entry.embedding_dimensions().map(|d| d as i64),
+                entry.created_at().to_rfc3339(),
+                entry.updated_at().to_rfc3339(),
+            ];
+
+            if let Some(pv) = entry.persisted_version() {
+                let rows = conn.execute(
+                    "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, agent_id = ?11, metadata = ?12, embedding = ?13, embedding_model = ?14, embedding_dimensions = ?15, created_at = ?16, updated_at = ?17
+                     WHERE id = ?1 AND version = ?18",
+                    rusqlite::params![
+                        entry.id().to_string(),
+                        entry.org_id().to_string(),
+                        entry.project().map(|p| p.to_string()),
+                        entry.namespace().to_string(),
+                        entry.path(),
+                        entry.kind().to_string(),
+                        entry.title(),
+                        entry.content(),
+                        tags_json,
+                        entry.version().as_u64() as i64,
+                        entry.agent_id().map(|a| a.to_string()),
+                        metadata_json,
+                        embedding_bytes,
+                        entry.embedding_model(),
+                        entry.embedding_dimensions().map(|d| d as i64),
+                        entry.created_at().to_rfc3339(),
+                        entry.updated_at().to_rfc3339(),
+                        pv.as_u64() as i64,
+                    ],
+                )
+                .map_err(|e| Error::Store(e.to_string()))?;
+
+                if rows == 0 {
+                    let stored_version: Option<i64> = conn
+                        .query_row(
+                            "SELECT version FROM knowledge_entries WHERE id = ?1",
+                            rusqlite::params![entry.id().to_string()],
+                            |row| row.get(0),
+                        )
+                        .optional()
+                        .map_err(|e| Error::Store(e.to_string()))?;
+
+                    return Err(match stored_version {
+                        Some(v) => Error::VersionMismatch {
+                            expected: pv.as_u64(),
+                            actual: v as u64,
+                        },
+                        None => Error::NotFound(format!("knowledge entry {}", entry.id())),
+                    });
+                }
+            } else {
+                conn.execute(
+                    "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                    params,
+                )
+                .map_err(|e| Error::Store(e.to_string()))?;
+            }
         }
+
+        entry.mark_persisted();
 
         let events = entry.drain_events();
         if !events.is_empty() {

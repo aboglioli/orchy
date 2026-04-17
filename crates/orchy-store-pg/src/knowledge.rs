@@ -70,44 +70,74 @@ impl KnowledgeStore for PgBackend {
             ))
         })?;
 
-        sqlx::query(
-            "INSERT INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-             ON CONFLICT (id) DO UPDATE SET
-                project = EXCLUDED.project,
-                namespace = EXCLUDED.namespace,
-                path = EXCLUDED.path,
-                kind = EXCLUDED.kind,
-                title = EXCLUDED.title,
-                content = EXCLUDED.content,
-                tags = EXCLUDED.tags,
-                version = EXCLUDED.version,
-                agent_id = EXCLUDED.agent_id,
-                metadata = EXCLUDED.metadata,
-                embedding = EXCLUDED.embedding,
-                embedding_model = EXCLUDED.embedding_model,
-                embedding_dimensions = EXCLUDED.embedding_dimensions,
-                updated_at = EXCLUDED.updated_at",
-        )
-        .bind(entry.id().as_uuid())
-        .bind(entry.project().map(|p| p.to_string()))
-        .bind(entry.namespace().to_string())
-        .bind(entry.path())
-        .bind(entry.kind().to_string())
-        .bind(entry.title())
-        .bind(entry.content())
-        .bind(&tags_json)
-        .bind(entry.version().as_u64() as i64)
-        .bind(entry.agent_id().map(|a| *a.as_uuid()))
-        .bind(&metadata_json)
-        .bind(vec_binding.as_ref())
-        .bind(entry.embedding_model())
-        .bind(entry.embedding_dimensions().map(|d| d as i32))
-        .bind(entry.created_at())
-        .bind(entry.updated_at())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        if let Some(pv) = entry.persisted_version() {
+            let result = sqlx::query(
+                "UPDATE knowledge_entries SET project = $2, namespace = $3, path = $4, kind = $5, title = $6, content = $7, tags = $8, version = $9, agent_id = $10, metadata = $11, embedding = $12, embedding_model = $13, embedding_dimensions = $14, updated_at = $15
+                 WHERE id = $1 AND version = $16",
+            )
+            .bind(entry.id().as_uuid())
+            .bind(entry.project().map(|p| p.to_string()))
+            .bind(entry.namespace().to_string())
+            .bind(entry.path())
+            .bind(entry.kind().to_string())
+            .bind(entry.title())
+            .bind(entry.content())
+            .bind(&tags_json)
+            .bind(entry.version().as_u64() as i64)
+            .bind(entry.agent_id().map(|a| *a.as_uuid()))
+            .bind(&metadata_json)
+            .bind(vec_binding.as_ref())
+            .bind(entry.embedding_model())
+            .bind(entry.embedding_dimensions().map(|d| d as i32))
+            .bind(entry.updated_at())
+            .bind(pv.as_u64() as i64)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+            if result.rows_affected() == 0 {
+                let stored_version: Option<i64> =
+                    sqlx::query_scalar("SELECT version FROM knowledge_entries WHERE id = $1")
+                        .bind(entry.id().as_uuid())
+                        .fetch_optional(&self.pool)
+                        .await
+                        .map_err(|e| Error::Store(e.to_string()))?;
+
+                return Err(match stored_version {
+                    Some(v) => Error::VersionMismatch {
+                        expected: pv.as_u64(),
+                        actual: v as u64,
+                    },
+                    None => Error::NotFound(format!("knowledge entry {}", entry.id())),
+                });
+            }
+        } else {
+            sqlx::query(
+                "INSERT INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
+            )
+            .bind(entry.id().as_uuid())
+            .bind(entry.project().map(|p| p.to_string()))
+            .bind(entry.namespace().to_string())
+            .bind(entry.path())
+            .bind(entry.kind().to_string())
+            .bind(entry.title())
+            .bind(entry.content())
+            .bind(&tags_json)
+            .bind(entry.version().as_u64() as i64)
+            .bind(entry.agent_id().map(|a| *a.as_uuid()))
+            .bind(&metadata_json)
+            .bind(vec_binding.as_ref())
+            .bind(entry.embedding_model())
+            .bind(entry.embedding_dimensions().map(|d| d as i32))
+            .bind(entry.created_at())
+            .bind(entry.updated_at())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
+
+        entry.mark_persisted();
 
         let events = entry.drain_events();
         if !events.is_empty() {

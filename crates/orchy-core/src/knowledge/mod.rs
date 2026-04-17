@@ -269,6 +269,8 @@ pub struct Knowledge {
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(skip)]
+    persisted_version: Option<Version>,
+    #[serde(skip)]
     collector: EventCollector,
 }
 
@@ -310,6 +312,7 @@ impl Knowledge {
             embedding_dimensions: None,
             created_at: now,
             updated_at: now,
+            persisted_version: None,
             collector: EventCollector::new(),
         };
 
@@ -358,6 +361,7 @@ impl Knowledge {
             embedding_dimensions: r.embedding_dimensions,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            persisted_version: Some(r.version),
             collector: EventCollector::new(),
         }
     }
@@ -578,6 +582,14 @@ impl Knowledge {
         self.embedding = Some(embedding);
         self.embedding_model = Some(model);
         self.embedding_dimensions = Some(dimensions);
+    }
+
+    pub fn persisted_version(&self) -> Option<Version> {
+        self.persisted_version
+    }
+
+    pub fn mark_persisted(&mut self) {
+        self.persisted_version = Some(self.version);
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {

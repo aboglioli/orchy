@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -503,4 +504,120 @@ async fn task_list_filters_by_assigned_to() {
     .unwrap();
     assert_eq!(assigned.len(), 1);
     assert_eq!(assigned[0].title(), "assigned");
+}
+
+#[tokio::test]
+async fn knowledge_save_and_find() {
+    let store = backend();
+    let mut entry = Knowledge::new(
+        org(),
+        Some(proj("test")),
+        Namespace::root(),
+        "decisions/db".into(),
+        KnowledgeKind::Decision,
+        "Database choice".into(),
+        "We chose PostgreSQL".into(),
+        vec!["infra".into()],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    assert_eq!(entry.version().as_u64(), 1);
+
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    let fetched = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.title(), "Database choice");
+    assert_eq!(fetched.version().as_u64(), 1);
+}
+
+#[tokio::test]
+async fn knowledge_optimistic_concurrency_rejects_stale_version() {
+    let store = backend();
+    let mut entry = Knowledge::new(
+        org(),
+        Some(proj("test")),
+        Namespace::root(),
+        "my-note".into(),
+        KnowledgeKind::Note,
+        "v1 title".into(),
+        "v1 content".into(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 1);
+
+    entry
+        .update("v2 title".into(), "v2 content".into(), None)
+        .unwrap();
+    assert_eq!(entry.version().as_u64(), 2);
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    let mut stale = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stale.version().as_u64(), 2);
+
+    entry
+        .update("v3 title".into(), "v3 content".into(), None)
+        .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 3);
+
+    stale
+        .update("stale update".into(), "stale".into(), None)
+        .unwrap();
+    assert_eq!(stale.version().as_u64(), 3);
+    let err = KnowledgeStore::save(&store, &mut stale).await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            orchy_core::error::Error::VersionMismatch {
+                expected: 2,
+                actual: 3
+            }
+        ),
+        "expected VersionMismatch, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn knowledge_optimistic_concurrency_allows_correct_version() {
+    let store = backend();
+    let mut entry = Knowledge::new(
+        org(),
+        Some(proj("test")),
+        Namespace::root(),
+        "my-note".into(),
+        KnowledgeKind::Note,
+        "v1".into(),
+        "v1".into(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    entry.update("v2".into(), "v2".into(), None).unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 2);
+
+    entry.update("v3".into(), "v3".into(), None).unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 3);
+
+    let fetched = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.version().as_u64(), 3);
+    assert_eq!(fetched.title(), "v3");
 }

@@ -689,3 +689,94 @@ async fn knowledge_service_metadata_merge_and_remove() {
     assert_eq!(entry.metadata().get("b"), None);
     assert_eq!(entry.metadata().get("c").map(String::as_str), Some("3"));
 }
+
+#[tokio::test]
+async fn knowledge_optimistic_concurrency_rejects_stale_version() {
+    let store = backend();
+    let o = org("default");
+
+    let mut entry = Knowledge::new(
+        o.clone(),
+        Some(proj("p")),
+        Namespace::root(),
+        "my-note".into(),
+        KnowledgeKind::Note,
+        "v1 title".into(),
+        "v1 content".into(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 1);
+
+    entry
+        .update("v2 title".into(), "v2 content".into(), None)
+        .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 2);
+
+    let mut stale = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stale.version().as_u64(), 2);
+
+    entry
+        .update("v3 title".into(), "v3 content".into(), None)
+        .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 3);
+
+    stale
+        .update("stale update".into(), "stale".into(), None)
+        .unwrap();
+    assert_eq!(stale.version().as_u64(), 3);
+    let err = KnowledgeStore::save(&store, &mut stale).await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            orchy_core::error::Error::VersionMismatch {
+                expected: 2,
+                actual: 3
+            }
+        ),
+        "expected VersionMismatch, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn knowledge_optimistic_concurrency_allows_correct_version() {
+    let store = backend();
+
+    let mut entry = Knowledge::new(
+        org("default"),
+        Some(proj("p")),
+        Namespace::root(),
+        "my-note".into(),
+        KnowledgeKind::Note,
+        "v1".into(),
+        "v1".into(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    entry.update("v2".into(), "v2".into(), None).unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 2);
+
+    entry.update("v3".into(), "v3".into(), None).unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    assert_eq!(entry.version().as_u64(), 3);
+
+    let fetched = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.version().as_u64(), 3);
+    assert_eq!(fetched.title(), "v3");
+}
