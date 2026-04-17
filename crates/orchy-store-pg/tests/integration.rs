@@ -196,11 +196,11 @@ async fn task_list_sorted_by_priority() {
     .unwrap();
     TaskStore::save(&store, &mut critical).await.unwrap();
 
-    let tasks = TaskStore::list(&store, TaskFilter::default())
+    let page = TaskStore::list(&store, TaskFilter::default(), PageParams::unbounded())
         .await
         .unwrap();
-    assert_eq!(tasks[0].title(), "critical");
-    assert_eq!(tasks[1].title(), "low");
+    assert_eq!(page.items[0].title(), "critical");
+    assert_eq!(page.items[1].title(), "low");
 }
 
 #[tokio::test]
