@@ -317,7 +317,7 @@ impl Application {
             add_dependency: AddDependency::new(tasks.clone()),
             remove_dependency: RemoveDependency::new(tasks.clone()),
 
-            add_task_note: AddTaskNote::new(tasks.clone()),
+            add_task_note: AddTaskNote::new(tasks.clone(), knowledge.clone()),
             tag_task: TagTask::new(tasks.clone()),
             untag_task: UntagTask::new(tasks.clone()),
             move_task: MoveTask::new(tasks.clone()),

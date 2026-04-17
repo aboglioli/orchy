@@ -744,9 +744,19 @@ pub async fn add_note(
         None
     };
 
+    let cmd = orchy_application::AddTaskNoteCommand {
+        task_id: id,
+        body: body.body,
+        author: agent_id.map(|a| a.to_string()),
+        org_id: org,
+        project,
+        namespace: Some(existing.namespace().to_string()),
+    };
+
     let task = container
-        .task_service
-        .add_note(&task_id, agent_id, body.body)
+        .app
+        .add_task_note
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
