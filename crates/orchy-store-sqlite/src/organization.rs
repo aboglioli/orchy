@@ -183,13 +183,13 @@ fn load_api_keys(conn: &rusqlite::Connection, org_id: &str) -> Result<Vec<ApiKey
             let created_at = DateTime::parse_from_rfc3339(&created_at_str)
                 .map(|dt| dt.with_timezone(&Utc))
                 .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
-            Ok(build_api_key(
+            build_api_key(
                 ApiKeyId::from_uuid(uuid),
                 name,
                 key,
                 is_active != 0,
                 created_at,
-            ))
+            )
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -202,7 +202,7 @@ fn build_api_key(
     key: String,
     is_active: bool,
     created_at: DateTime<Utc>,
-) -> ApiKey {
+) -> Result<ApiKey> {
     use serde_json::json;
     serde_json::from_value(json!({
         "id": id,
@@ -211,7 +211,7 @@ fn build_api_key(
         "is_active": is_active,
         "created_at": created_at,
     }))
-    .expect("ApiKey deserialization from known-good fields")
+    .map_err(|e| Error::Store(format!("failed to deserialize api keys: {e}")))
 }
 
 fn build_org(

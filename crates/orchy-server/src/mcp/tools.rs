@@ -928,11 +928,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SplitTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
-
-        let created_by = self.get_session_agent();
 
         let mut subtasks = Vec::new();
         for sp in params.subtasks {
@@ -961,7 +959,7 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .split_task(&task_id, subtasks, created_by)
+            .split_task(&task_id, subtasks, Some(agent_id))
             .await
         {
             Ok((parent, children)) => {
@@ -983,11 +981,9 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReplaceTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
-
-        let created_by = self.get_session_agent();
 
         let mut replacements = Vec::new();
         for sp in params.replacements {
@@ -1016,7 +1012,7 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .replace_task(&task_id, params.reason, replacements, created_by)
+            .replace_task(&task_id, params.reason, replacements, Some(agent_id))
             .await
         {
             Ok((original, new_tasks)) => {
@@ -1040,7 +1036,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MergeTasksParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let task_ids: Vec<TaskId> = params
             .task_ids
@@ -1051,12 +1047,7 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .merge_tasks(
-                &task_ids,
-                params.title,
-                params.description,
-                self.get_session_agent(),
-            )
+            .merge_tasks(&task_ids, params.title, params.description, Some(agent_id))
             .await
         {
             Ok((merged, cancelled)) => {
@@ -1078,7 +1069,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DelegateTaskParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (agent_id, org, project, _) = self.require_session()?;
 
         let parent_id = parse_task_id(&params.task_id)?;
         let parent = self
@@ -1106,7 +1097,7 @@ impl OrchyHandler {
             priority,
             params.assigned_roles.unwrap_or_default(),
             vec![],
-            self.get_session_agent(),
+            Some(agent_id.clone()),
             false,
         ) {
             Ok(t) => t,

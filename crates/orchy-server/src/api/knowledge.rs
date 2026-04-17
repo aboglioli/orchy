@@ -73,7 +73,8 @@ pub struct NamespaceQuery {
 
 #[derive(Deserialize)]
 pub struct WriteBody {
-    pub ns: Option<String>,
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub kind: String,
     pub title: String,
     pub content: String,
@@ -85,7 +86,8 @@ pub struct WriteBody {
 #[derive(Deserialize)]
 pub struct SearchBody {
     pub query: String,
-    pub ns: Option<String>,
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub kind: Option<String>,
     pub limit: Option<u32>,
 }
@@ -94,15 +96,18 @@ pub struct SearchBody {
 pub struct ImportBody {
     pub source_project: String,
     pub path: String,
-    pub source_ns: Option<String>,
-    pub ns: Option<String>,
+    #[serde(alias = "source_ns")]
+    pub source_namespace: Option<String>,
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct AppendBody {
     pub value: String,
     pub kind: String,
-    pub ns: Option<String>,
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub separator: Option<String>,
     pub metadata: Option<HashMap<String, String>>,
 }
@@ -221,7 +226,7 @@ pub async fn search(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
 
-    let ns = parse_optional_ns(body.ns.as_deref())?;
+    let ns = parse_optional_ns(body.namespace.as_deref())?;
     let limit = body.limit.unwrap_or(10) as usize;
 
     let mut entries = container
@@ -251,9 +256,9 @@ pub async fn import(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let dest_ns = parse_ns(body.ns.as_deref())?;
+    let dest_ns = parse_ns(body.namespace.as_deref())?;
     let source_project = parse_project(&body.source_project)?;
-    let source_ns = parse_ns(body.source_ns.as_deref())?;
+    let source_ns = parse_ns(body.source_namespace.as_deref())?;
 
     let source_entry = container
         .knowledge_service
@@ -321,7 +326,7 @@ pub async fn write(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(body.ns.as_deref())?;
+    let ns = parse_ns(body.namespace.as_deref())?;
 
     let kind: KnowledgeKind = body
         .kind
@@ -394,7 +399,7 @@ pub async fn append(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(body.ns.as_deref())?;
+    let ns = parse_ns(body.namespace.as_deref())?;
 
     let kind: KnowledgeKind = body
         .kind

@@ -57,7 +57,8 @@ pub struct SendBody {
     pub from_agent_id: String,
     pub to: String,
     pub body: String,
-    pub ns: Option<String>,
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub reply_to: Option<String>,
 }
 
@@ -148,7 +149,7 @@ pub async fn send(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(body.ns.as_deref())?;
+    let ns = parse_ns(body.namespace.as_deref())?;
 
     let from_agent_id = body
         .from_agent_id

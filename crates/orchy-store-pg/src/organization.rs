@@ -146,13 +146,7 @@ async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKe
             let key: String = row.get("key");
             let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
-            Ok(build_api_key(
-                ApiKeyId::from_uuid(id),
-                name,
-                key,
-                is_active,
-                created_at,
-            ))
+            build_api_key(ApiKeyId::from_uuid(id), name, key, is_active, created_at)
         })
         .collect()
 }
@@ -163,7 +157,7 @@ fn build_api_key(
     key: String,
     is_active: bool,
     created_at: DateTime<Utc>,
-) -> ApiKey {
+) -> Result<ApiKey> {
     serde_json::from_value(serde_json::json!({
         "id": id,
         "name": name,
@@ -171,7 +165,7 @@ fn build_api_key(
         "is_active": is_active,
         "created_at": created_at,
     }))
-    .expect("ApiKey deserialization from known-good fields")
+    .map_err(|e| Error::Store(format!("failed to deserialize api keys: {e}")))
 }
 
 fn build_org(

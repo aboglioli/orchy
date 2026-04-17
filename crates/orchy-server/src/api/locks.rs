@@ -60,7 +60,8 @@ pub struct ReleaseQuery {
 #[derive(Deserialize)]
 pub struct AcquireBody {
     pub name: String,
-    pub ns: Option<String>,
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub ttl_secs: Option<u64>,
     pub agent_id: String,
 }
@@ -94,7 +95,7 @@ pub async fn acquire(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let ns = parse_ns(body.ns.as_deref())?;
+    let ns = parse_ns(body.namespace.as_deref())?;
 
     let agent_id = body
         .agent_id
