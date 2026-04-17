@@ -214,11 +214,12 @@ pub async fn list_types(
 pub async fn search(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project)): Path<(String, String)>,
+    Path((org, project)): Path<(String, String)>,
     Json(body): Json<SearchBody>,
 ) -> Result<Json<Vec<Knowledge>>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+    let project_id = parse_project(&project)?;
 
     let ns = parse_optional_ns(body.ns.as_deref())?;
     let limit = body.limit.unwrap_or(10) as usize;
@@ -228,6 +229,8 @@ pub async fn search(
         .search(&org_id, &body.query, ns.as_ref(), limit)
         .await
         .map_err(ApiError::from)?;
+
+    entries.retain(|e| e.project() == Some(&project_id));
 
     if let Some(k) = body.kind.as_deref() {
         let kind: KnowledgeKind = k

@@ -11,8 +11,8 @@ use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
-use super::ApiError;
 use super::auth::OrgAuth;
+use super::{ApiError, parse_namespace};
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
@@ -62,11 +62,17 @@ pub async fn poll(
 
     let limit = query.limit.unwrap_or(50) as usize;
 
-    let events = container
+    let mut events = container
         .store
         .query_events(&project, since, limit)
         .await
         .map_err(ApiError::from)?;
+
+    if let Some(ref ns) = query.namespace {
+        let namespace = parse_namespace(ns)?;
+        let ns_str = namespace.to_string();
+        events.retain(|e| e.namespace == ns_str || e.namespace.starts_with(&format!("{ns_str}/")));
+    }
 
     let updates: Vec<_> = events
         .iter()
