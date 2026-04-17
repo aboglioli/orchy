@@ -56,7 +56,7 @@ enum KnowledgeEntries {
     UpdatedAt,
 }
 
-const SELECT_COLUMNS: &str = "id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
+const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
 
 impl KnowledgeStore for PgBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
@@ -251,6 +251,7 @@ impl KnowledgeStore for PgBackend {
 
 fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     let id: Uuid = row.get("id");
+    let org_id_str: String = row.get("organization_id");
     let project: Option<String> = row.get("project");
     let namespace: String = row.get("namespace");
     let path: String = row.get("path");
@@ -275,7 +276,8 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
 
     Ok(Knowledge::restore(RestoreKnowledge {
         id: KnowledgeId::from_uuid(id),
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid knowledge_entries.organization_id: {e}")))?,
         project: project
             .map(|p| parse_project_id(p, "knowledge_entries", "project"))
             .transpose()?,

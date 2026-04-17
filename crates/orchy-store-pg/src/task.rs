@@ -17,6 +17,8 @@ enum Tasks {
     Table,
     #[iden = "id"]
     Id,
+    #[iden = "organization_id"]
+    OrganizationId,
     #[iden = "project"]
     Project,
     #[iden = "namespace"]
@@ -121,7 +123,7 @@ impl TaskStore for PgBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at
+            "SELECT id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -136,6 +138,7 @@ impl TaskStore for PgBackend {
         let mut select = Query::select();
         select.from(Tasks::Table).columns([
             Tasks::Id,
+            Tasks::OrganizationId,
             Tasks::Project,
             Tasks::Namespace,
             Tasks::ParentId,
@@ -209,6 +212,7 @@ impl TaskStore for PgBackend {
 
 fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
     let id: Uuid = row.get("id");
+    let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let parent_id: Option<Uuid> = row.get("parent_id");
@@ -236,7 +240,8 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
 
     Ok(Task::restore(RestoreTask {
         id: TaskId::from_uuid(id),
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid tasks.organization_id: {e}")))?,
         project: parse_project_id(project, "tasks", "project")?,
         namespace: parse_namespace(namespace, "tasks", "namespace")?,
         parent_id: parent_id.map(TaskId::from_uuid),

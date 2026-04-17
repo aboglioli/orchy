@@ -46,7 +46,7 @@ impl LockStore for PgBackend {
         name: &str,
     ) -> Result<Option<ResourceLock>> {
         let row = sqlx::query(
-            "SELECT project, namespace, name, holder, acquired_at, expires_at
+            "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
              FROM resource_locks WHERE project = $1 AND namespace = $2 AND name = $3",
         )
         .bind(project.to_string())
@@ -81,7 +81,7 @@ impl LockStore for PgBackend {
 
     async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
         let rows = sqlx::query(
-            "SELECT project, namespace, name, holder, acquired_at, expires_at
+            "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
              FROM resource_locks WHERE holder = $1",
         )
         .bind(holder.as_uuid())
@@ -103,6 +103,7 @@ impl LockStore for PgBackend {
 }
 
 fn row_to_resource_lock(row: &sqlx::postgres::PgRow) -> Result<ResourceLock> {
+    let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let name: String = row.get("name");
@@ -111,7 +112,8 @@ fn row_to_resource_lock(row: &sqlx::postgres::PgRow) -> Result<ResourceLock> {
     let expires_at: DateTime<Utc> = row.get("expires_at");
 
     Ok(ResourceLock::restore(RestoreResourceLock {
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid resource_locks.organization_id: {e}")))?,
         project: parse_project_id(project, "resource_locks", "project")?,
         namespace: parse_namespace(namespace, "resource_locks", "namespace")?,
         name,

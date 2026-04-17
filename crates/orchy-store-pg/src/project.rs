@@ -42,7 +42,7 @@ impl ProjectStore for PgBackend {
 
     async fn find_by_id(&self, _org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
         let row = sqlx::query(
-            "SELECT name, description, metadata, created_at, updated_at
+            "SELECT organization_id, name, description, metadata, created_at, updated_at
              FROM projects WHERE name = $1",
         )
         .bind(id.to_string())
@@ -55,6 +55,7 @@ impl ProjectStore for PgBackend {
 }
 
 fn row_to_project(row: &sqlx::postgres::PgRow) -> Result<Project> {
+    let org_id_str: String = row.get("organization_id");
     let name: String = row.get("name");
     let description: String = row.get("description");
     let metadata_json: serde_json::Value = row.get("metadata");
@@ -67,7 +68,8 @@ fn row_to_project(row: &sqlx::postgres::PgRow) -> Result<Project> {
 
     Ok(Project::restore(RestoreProject {
         id,
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid projects.organization_id: {e}")))?,
         description,
         metadata,
         created_at,

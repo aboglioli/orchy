@@ -52,7 +52,7 @@ impl ReviewStore for PgBackend {
 
     async fn find_by_id(&self, id: &ReviewId) -> Result<Option<ReviewRequest>> {
         let row = sqlx::query(
-            "SELECT id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
+            "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
              FROM reviews WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -65,7 +65,7 @@ impl ReviewStore for PgBackend {
 
     async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
         let rows = sqlx::query(
-            "SELECT id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
+            "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
              FROM reviews WHERE reviewer = $1 AND status = 'pending'",
         )
         .bind(agent_id.as_uuid())
@@ -78,7 +78,7 @@ impl ReviewStore for PgBackend {
 
     async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
         let rows = sqlx::query(
-            "SELECT id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
+            "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
              FROM reviews WHERE task_id = $1",
         )
         .bind(task_id.as_uuid())
@@ -92,6 +92,7 @@ impl ReviewStore for PgBackend {
 
 fn row_to_review(row: &sqlx::postgres::PgRow) -> Result<ReviewRequest> {
     let id: Uuid = row.get("id");
+    let org_id_str: String = row.get("organization_id");
     let task_id: Uuid = row.get("task_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
@@ -105,7 +106,8 @@ fn row_to_review(row: &sqlx::postgres::PgRow) -> Result<ReviewRequest> {
 
     Ok(ReviewRequest::restore(RestoreReviewRequest {
         id: ReviewId::from_uuid(id),
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid reviews.organization_id: {e}")))?,
         task_id: TaskId::from_uuid(task_id),
         project: parse_project_id(project, "reviews", "project")?,
         namespace: parse_namespace(namespace, "reviews", "namespace")?,

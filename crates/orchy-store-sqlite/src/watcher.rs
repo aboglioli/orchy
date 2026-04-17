@@ -58,7 +58,7 @@ impl WatcherStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT task_id, agent_id, project, namespace, created_at
+                "SELECT task_id, agent_id, organization_id, project, namespace, created_at
                  FROM task_watchers WHERE task_id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -76,7 +76,7 @@ impl WatcherStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT task_id, agent_id, project, namespace, created_at
+                "SELECT task_id, agent_id, organization_id, project, namespace, created_at
                  FROM task_watchers WHERE agent_id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -94,9 +94,10 @@ impl WatcherStore for SqliteBackend {
 fn row_to_watcher(row: &rusqlite::Row) -> rusqlite::Result<TaskWatcher> {
     let task_id_str: String = row.get(0)?;
     let agent_id_str: String = row.get(1)?;
-    let project_str: String = row.get(2)?;
-    let namespace_str: String = row.get(3)?;
-    let created_at_str: String = row.get(4)?;
+    let org_id_str: String = row.get(2)?;
+    let project_str: String = row.get(3)?;
+    let namespace_str: String = row.get(4)?;
+    let created_at_str: String = row.get(5)?;
 
     let task_id = TaskId::from_str(&task_id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
@@ -112,16 +113,23 @@ fn row_to_watcher(row: &rusqlite::Row) -> rusqlite::Result<TaskWatcher> {
             str_err(e.to_string()),
         )
     })?;
-    let project = ProjectId::try_from(project_str).map_err(|e| {
+    let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             2,
             rusqlite::types::Type::Text,
             str_err(e.to_string()),
         )
     })?;
-    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+    let project = ProjectId::try_from(project_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             3,
+            rusqlite::types::Type::Text,
+            str_err(e.to_string()),
+        )
+    })?;
+    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            4,
             rusqlite::types::Type::Text,
             str_err(e.to_string()),
         )
@@ -130,18 +138,13 @@ fn row_to_watcher(row: &rusqlite::Row) -> rusqlite::Result<TaskWatcher> {
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(
-                4,
+                5,
                 rusqlite::types::Type::Text,
                 str_err(e.to_string()),
             )
         })?;
 
     Ok(TaskWatcher::restore(
-        task_id,
-        agent_id,
-        OrganizationId::new("default").unwrap(),
-        project,
-        namespace,
-        created_at,
+        task_id, agent_id, org_id, project, namespace, created_at,
     ))
 }

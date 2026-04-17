@@ -10,7 +10,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
-const SELECT_COLS: &str = "id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
 
 impl AgentStore for PgBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
@@ -94,6 +94,7 @@ impl AgentStore for PgBackend {
 
 fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let id_str: String = row.get("id");
+    let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let parent_id_str: Option<String> = row.get("parent_id");
@@ -110,7 +111,8 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str).map_err(Error::Store)?,
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,
         namespace: parse_namespace(namespace, "agents", "namespace")?,
         parent_id,

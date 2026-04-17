@@ -19,6 +19,8 @@ enum Messages {
     Table,
     #[iden = "id"]
     Id,
+    #[iden = "organization_id"]
+    OrganizationId,
     #[iden = "project"]
     Project,
     #[iden = "namespace"]
@@ -78,7 +80,7 @@ impl MessageStore for PgBackend {
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         let row = sqlx::query(
-            "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM messages WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -112,7 +114,7 @@ impl MessageStore for PgBackend {
     ) -> Result<Vec<Message>> {
         let rows = if namespace.is_root() {
             sqlx::query(
-                "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages
                  WHERE status = 'pending'
                    AND project = $1
@@ -137,7 +139,7 @@ impl MessageStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
             sqlx::query(
-                "SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages
                  WHERE status = 'pending'
                    AND project = $1
@@ -179,6 +181,7 @@ impl MessageStore for PgBackend {
             .from(Messages::Table)
             .columns([
                 Messages::Id,
+                Messages::OrganizationId,
                 Messages::Project,
                 Messages::Namespace,
                 Messages::FromAgent,
@@ -219,23 +222,23 @@ impl MessageStore for PgBackend {
         let mut sql = String::from(
             "WITH RECURSIVE
              ancestors AS (
-                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages WHERE id = $1
                  UNION ALL
-                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
                  FROM messages m JOIN ancestors a ON m.id = a.reply_to
              ),
              root AS (
                  SELECT id FROM ancestors WHERE reply_to IS NULL
              ),
              thread AS (
-                 SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages WHERE id = (SELECT id FROM root LIMIT 1)
                  UNION ALL
-                 SELECT m.id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
                  FROM messages m JOIN thread t ON m.reply_to = t.id
              )
-             SELECT id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
              FROM thread ORDER BY created_at ASC",
         );
 
@@ -256,6 +259,7 @@ impl MessageStore for PgBackend {
 
 fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
     let id: Uuid = row.get("id");
+    let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let from_agent: Uuid = row.get("from_agent");
@@ -267,7 +271,8 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
 
     Ok(Message::restore(RestoreMessage {
         id: MessageId::from_uuid(id),
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id: OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid messages.organization_id: {e}")))?,
         project: parse_project_id(project, "messages", "project")?,
         namespace: parse_namespace(namespace, "messages", "namespace")?,
         from: AgentId::from_uuid(from_agent),

@@ -55,7 +55,7 @@ impl LockStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT project, namespace, name, holder, acquired_at, expires_at
+                "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
                  FROM resource_locks WHERE project = ?1 AND namespace = ?2 AND name = ?3",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -92,7 +92,7 @@ impl LockStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT project, namespace, name, holder, acquired_at, expires_at
+                "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
                  FROM resource_locks WHERE holder = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -121,35 +121,39 @@ impl LockStore for SqliteBackend {
 }
 
 fn row_to_resource_lock(row: &rusqlite::Row) -> rusqlite::Result<ResourceLock> {
-    let project_str: String = row.get(0)?;
-    let namespace_str: String = row.get(1)?;
-    let name: String = row.get(2)?;
-    let holder_str: String = row.get(3)?;
-    let acquired_at_str: String = row.get(4)?;
-    let expires_at_str: String = row.get(5)?;
+    let org_id_str: String = row.get(0)?;
+    let project_str: String = row.get(1)?;
+    let namespace_str: String = row.get(2)?;
+    let name: String = row.get(3)?;
+    let holder_str: String = row.get(4)?;
+    let acquired_at_str: String = row.get(5)?;
+    let expires_at_str: String = row.get(6)?;
 
-    let project = ProjectId::try_from(project_str).map_err(|e| {
+    let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
     })?;
-    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+    let project = ProjectId::try_from(project_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, str_err(e))
     })?;
+    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, str_err(e))
+    })?;
     let holder = AgentId::from_str(&holder_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, str_err(e))
+        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, str_err(e))
     })?;
     let acquired_at = DateTime::parse_from_rfc3339(&acquired_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, str_err(e))
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, str_err(e))
         })?;
     let expires_at = DateTime::parse_from_rfc3339(&expires_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, str_err(e))
+            rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, str_err(e))
         })?;
 
     Ok(ResourceLock::restore(RestoreResourceLock {
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id,
         project,
         namespace,
         name,

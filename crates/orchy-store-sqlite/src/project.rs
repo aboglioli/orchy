@@ -40,7 +40,7 @@ impl ProjectStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT name, description, metadata, created_at, updated_at
+                "SELECT organization_id, name, description, metadata, created_at, updated_at
                  FROM projects WHERE name = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -55,15 +55,26 @@ impl ProjectStore for SqliteBackend {
 }
 
 fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
-    let name_str: String = row.get(0)?;
-    let description: String = row.get(1)?;
-    let metadata_str: String = row.get(2)?;
-    let created_at_str: String = row.get(3)?;
-    let updated_at_str: String = row.get(4)?;
+    let org_id_str: String = row.get(0)?;
+    let name_str: String = row.get(1)?;
+    let description: String = row.get(2)?;
+    let metadata_str: String = row.get(3)?;
+    let created_at_str: String = row.get(4)?;
+    let updated_at_str: String = row.get(5)?;
 
-    let id = ProjectId::try_from(name_str).map_err(|e| {
+    let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             0,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )),
+        )
+    })?;
+    let id = ProjectId::try_from(name_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
@@ -72,17 +83,17 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Project::restore(RestoreProject {
         id,
-        org_id: OrganizationId::new("default").unwrap(),
+        org_id,
         description,
         metadata,
         created_at,

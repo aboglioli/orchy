@@ -49,7 +49,7 @@ impl WatcherStore for PgBackend {
 
     async fn find_watchers(&self, task_id: &TaskId) -> Result<Vec<TaskWatcher>> {
         let rows = sqlx::query(
-            "SELECT task_id, agent_id, project, namespace, created_at
+            "SELECT task_id, agent_id, organization_id, project, namespace, created_at
              FROM task_watchers WHERE task_id = $1",
         )
         .bind(task_id.as_uuid())
@@ -62,7 +62,7 @@ impl WatcherStore for PgBackend {
 
     async fn find_by_agent(&self, agent_id: &AgentId) -> Result<Vec<TaskWatcher>> {
         let rows = sqlx::query(
-            "SELECT task_id, agent_id, project, namespace, created_at
+            "SELECT task_id, agent_id, organization_id, project, namespace, created_at
              FROM task_watchers WHERE agent_id = $1",
         )
         .bind(agent_id.as_uuid())
@@ -77,6 +77,7 @@ impl WatcherStore for PgBackend {
 fn row_to_watcher(row: &sqlx::postgres::PgRow) -> Result<TaskWatcher> {
     let task_id: Uuid = row.get("task_id");
     let agent_id: Uuid = row.get("agent_id");
+    let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
     let created_at: DateTime<Utc> = row.get("created_at");
@@ -84,7 +85,8 @@ fn row_to_watcher(row: &sqlx::postgres::PgRow) -> Result<TaskWatcher> {
     Ok(TaskWatcher::restore(
         TaskId::from_uuid(task_id),
         AgentId::from_uuid(agent_id),
-        OrganizationId::new("default").unwrap(),
+        OrganizationId::new(&org_id_str)
+            .map_err(|e| Error::Store(format!("invalid task_watchers.organization_id: {e}")))?,
         parse_project_id(project, "task_watchers", "project")?,
         parse_namespace(namespace, "task_watchers", "namespace")?,
         created_at,
