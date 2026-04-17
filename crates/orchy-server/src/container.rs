@@ -60,7 +60,7 @@ impl Container {
         use orchy_core::namespace::NamespaceStore;
         use orchy_core::project::ProjectStore;
         use orchy_core::resource_lock::LockStore;
-        use orchy_core::task::{ReviewStore, TaskStore, WatcherStore};
+        use orchy_core::task::{TaskStore, WatcherStore};
 
         let app = Application::new(
             store.clone() as Arc<dyn AgentStore>,
@@ -70,7 +70,6 @@ impl Container {
             store.clone() as Arc<dyn MessageStore>,
             store.clone() as Arc<dyn LockStore>,
             store.clone() as Arc<dyn WatcherStore>,
-            store.clone() as Arc<dyn ReviewStore>,
             store.clone() as Arc<dyn NamespaceStore>,
             embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
             store.clone() as Arc<dyn EventQuery>,

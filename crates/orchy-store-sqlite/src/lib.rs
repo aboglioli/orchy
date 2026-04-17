@@ -8,7 +8,6 @@ mod namespace;
 mod organization;
 mod project;
 mod resource_lock;
-mod review;
 mod task;
 mod watcher;
 

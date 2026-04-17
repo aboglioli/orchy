@@ -6,7 +6,6 @@ pub mod locks;
 pub mod messages;
 pub mod orgs;
 pub mod projects;
-pub mod reviews;
 pub mod tasks;
 
 use std::sync::Arc;
@@ -213,14 +212,6 @@ pub fn router() -> Router<Arc<Container>> {
         .route(
             "/organizations/:org/projects/:project/tasks/:id/delegate",
             post(tasks::delegate),
-        )
-        .route(
-            "/organizations/:org/projects/:project/tasks/:id/reviews",
-            get(reviews::list_for_task).post(reviews::request),
-        )
-        .route(
-            "/organizations/:org/projects/:project/reviews/:id",
-            get(reviews::get).put(reviews::resolve),
         )
         .route(
             "/organizations/:org/projects/:project/messages",

@@ -12,10 +12,7 @@ use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
-use orchy_core::task::{
-    ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
-    WatcherStore,
-};
+use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore, TaskWatcher, WatcherStore};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
@@ -239,26 +236,6 @@ impl WatcherStore for StoreBackend {
     }
     async fn find_by_agent(&self, agent_id: &AgentId) -> Result<Vec<TaskWatcher>> {
         delegate_trait!(self, WatcherStore::find_by_agent(agent_id))
-    }
-}
-
-#[async_trait]
-impl ReviewStore for StoreBackend {
-    async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
-        delegate_trait!(self, ReviewStore::save(review))
-    }
-    async fn find_by_id(&self, id: &ReviewId) -> Result<Option<ReviewRequest>> {
-        delegate_trait!(self, ReviewStore::find_by_id(id))
-    }
-    async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
-        delegate_trait!(self, ReviewStore::find_pending_for_agent(agent_id))
-    }
-    async fn find_by_task(
-        &self,
-        task_id: &TaskId,
-        page: PageParams,
-    ) -> Result<Page<ReviewRequest>> {
-        delegate_trait!(self, ReviewStore::find_by_task(task_id, page))
     }
 }
 

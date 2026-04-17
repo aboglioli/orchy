@@ -36,7 +36,6 @@ pub struct AgentContextDto {
     pub agent: AgentDto,
     pub inbox: Vec<InboxMessageDto>,
     pub pending_tasks: Vec<PendingTaskDto>,
-    pub pending_reviews: Vec<PendingReviewDto>,
 }
 
 #[derive(Serialize)]
@@ -52,12 +51,6 @@ pub struct PendingTaskDto {
     pub title: String,
     pub priority: String,
     pub assigned_roles: Vec<String>,
-}
-
-#[derive(Serialize)]
-pub struct PendingReviewDto {
-    pub id: String,
-    pub task_id: String,
 }
 
 pub async fn list(
@@ -184,18 +177,6 @@ pub async fn get_context(
         })
         .collect();
 
-    let pending_reviews = container
-        .task_service
-        .pending_reviews_for_agent(agent.id())
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| PendingReviewDto {
-            id: r.id().to_string(),
-            task_id: r.task_id().to_string(),
-        })
-        .collect();
-
     let agent_dto = AgentDto {
         id: agent.id().to_string(),
         description: agent.description().to_string(),
@@ -209,6 +190,5 @@ pub async fn get_context(
         agent: agent_dto,
         inbox,
         pending_tasks,
-        pending_reviews,
     }))
 }

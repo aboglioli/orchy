@@ -337,7 +337,6 @@ async fn fetch_work_prompt(mcp_url: &str, _project: &str, alias: &str) -> Option
     struct AgentContextDto {
         inbox: Vec<InboxMessageDto>,
         pending_tasks: Vec<PendingTaskDto>,
-        pending_reviews: Vec<PendingReviewDto>,
     }
 
     #[derive(serde::Deserialize)]
@@ -356,14 +355,6 @@ async fn fetch_work_prompt(mcp_url: &str, _project: &str, alias: &str) -> Option
         priority: String,
         #[serde(rename = "assigned_roles")]
         _assigned_roles: Vec<String>,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct PendingReviewDto {
-        #[serde(rename = "id")]
-        _id: String,
-        #[serde(rename = "task_id")]
-        _task_id: String,
     }
 
     let Ok(resp) = HTTP_CLIENT.get(&url).send().await else {
@@ -405,10 +396,6 @@ async fn fetch_work_prompt(mcp_url: &str, _project: &str, alias: &str) -> Option
             dto.pending_tasks.len(),
             top
         ));
-    }
-
-    if !dto.pending_reviews.is_empty() {
-        parts.push(format!("{} pending review(s)", dto.pending_reviews.len()));
     }
 
     if parts.is_empty() {

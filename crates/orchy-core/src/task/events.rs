@@ -148,9 +148,6 @@ pub struct TaskUpdatedPayload {
 
 pub const TOPIC_WATCHER_ADDED: &str = "task.watcher_added";
 pub const TOPIC_WATCHER_REMOVED: &str = "task.watcher_removed";
-pub const TOPIC_REVIEW_REQUESTED: &str = "task.review_requested";
-pub const TOPIC_REVIEW_APPROVED: &str = "task.review_approved";
-pub const TOPIC_REVIEW_REJECTED: &str = "task.review_rejected";
 
 #[derive(Serialize)]
 pub struct TaskWatcherAddedPayload {
@@ -162,23 +159,4 @@ pub struct TaskWatcherAddedPayload {
 pub struct TaskWatcherRemovedPayload {
     pub task_id: String,
     pub agent_id: String,
-}
-
-#[derive(Serialize)]
-pub struct ReviewRequestedPayload {
-    pub review_id: String,
-    pub task_id: String,
-    pub requester: String,
-}
-
-#[derive(Serialize)]
-pub struct ReviewApprovedPayload {
-    pub review_id: String,
-    pub task_id: String,
-}
-
-#[derive(Serialize)]
-pub struct ReviewRejectedPayload {
-    pub review_id: String,
-    pub task_id: String,
 }

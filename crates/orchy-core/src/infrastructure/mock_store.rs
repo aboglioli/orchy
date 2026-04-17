@@ -10,10 +10,7 @@ use crate::organization::{Organization, OrganizationId, OrganizationStore};
 use crate::pagination::{Page, PageParams};
 use crate::project::{Project, ProjectStore};
 use crate::resource_lock::{LockStore, ResourceLock};
-use crate::task::{
-    ReviewId, ReviewRequest, ReviewStore, Task, TaskFilter, TaskId, TaskStore, TaskWatcher,
-    WatcherStore,
-};
+use crate::task::{Task, TaskFilter, TaskId, TaskStore, TaskWatcher, WatcherStore};
 
 #[derive(Debug, Default)]
 pub struct MockStore {
@@ -221,22 +218,6 @@ impl WatcherStore for MockStore {
     }
     async fn find_by_agent(&self, _: &AgentId) -> Result<Vec<TaskWatcher>> {
         Ok(vec![])
-    }
-}
-
-#[async_trait::async_trait]
-impl ReviewStore for MockStore {
-    async fn save(&self, _: &mut ReviewRequest) -> Result<()> {
-        Ok(())
-    }
-    async fn find_by_id(&self, _: &ReviewId) -> Result<Option<ReviewRequest>> {
-        unimplemented!()
-    }
-    async fn find_pending_for_agent(&self, _: &AgentId) -> Result<Vec<ReviewRequest>> {
-        Ok(vec![])
-    }
-    async fn find_by_task(&self, _: &TaskId, _: PageParams) -> Result<Page<ReviewRequest>> {
-        Ok(Page::empty())
     }
 }
 

@@ -2,8 +2,8 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use super::{
-    Priority, ReviewId, ReviewRequest, ReviewStore, SubtaskDef, Task, TaskFilter, TaskId,
-    TaskStatus, TaskStore, TaskWatcher, TaskWithContext, WatcherStore,
+    Priority, SubtaskDef, Task, TaskFilter, TaskId, TaskStatus, TaskStore, TaskWatcher,
+    TaskWithContext, WatcherStore,
 };
 use crate::agent::{AgentId, AgentStore};
 use crate::error::{Error, Result};
@@ -12,22 +12,12 @@ use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 
-pub struct TaskService<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> {
+pub struct TaskService<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore> {
     task_store: Arc<TS>,
     store: Arc<S>,
 }
 
-pub struct RequestReviewCommand {
-    pub task_id: TaskId,
-    pub org_id: OrganizationId,
-    pub project: ProjectId,
-    pub namespace: Namespace,
-    pub requester: AgentId,
-    pub reviewer: Option<AgentId>,
-    pub reviewer_role: Option<String>,
-}
-
-impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> TaskService<TS, S> {
+impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore> TaskService<TS, S> {
     pub fn new(task_store: Arc<TS>, store: Arc<S>) -> Self {
         Self { task_store, store }
     }
@@ -774,106 +764,6 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         WatcherStore::delete(&*self.store, task_id, agent_id).await
     }
 
-    pub async fn request_review(&self, cmd: RequestReviewCommand) -> Result<ReviewRequest> {
-        let RequestReviewCommand {
-            task_id,
-            org_id,
-            project,
-            namespace,
-            requester,
-            reviewer,
-            reviewer_role,
-        } = cmd;
-
-        self.get(&task_id).await?;
-        let mut review = ReviewRequest::new(
-            task_id,
-            org_id.clone(),
-            project.clone(),
-            namespace.clone(),
-            requester.clone(),
-            reviewer.clone(),
-            reviewer_role.clone(),
-        )?;
-        ReviewStore::save(&*self.store, &mut review).await?;
-
-        let body = format!(
-            "Review requested for task {} (review {})",
-            review.task_id(),
-            review.id()
-        );
-        let target = if let Some(agent) = reviewer.clone() {
-            MessageTarget::Agent(agent)
-        } else if let Some(role) = reviewer_role {
-            MessageTarget::Role(role)
-        } else {
-            MessageTarget::Broadcast
-        };
-        let mut msg = Message::new(org_id, project, namespace, requester, target, body, None)?;
-        let _ = MessageStore::save(&*self.store, &mut msg).await;
-
-        Ok(review)
-    }
-
-    pub async fn resolve_review(
-        &self,
-        review_id: &ReviewId,
-        resolver: AgentId,
-        approved: bool,
-        comments: Option<String>,
-    ) -> Result<ReviewRequest> {
-        let mut review = ReviewStore::find_by_id(&*self.store, review_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("review {review_id}")))?;
-
-        if approved {
-            review.approve(comments)?;
-        } else {
-            review.reject(comments)?;
-        }
-        ReviewStore::save(&*self.store, &mut review).await?;
-
-        let body = format!(
-            "Review {} for task {}: {}",
-            review.id(),
-            review.task_id(),
-            review.status()
-        );
-        let mut msg = Message::new(
-            review.org_id().clone(),
-            review.project().clone(),
-            review.namespace().clone(),
-            resolver,
-            MessageTarget::Agent(review.requester().clone()),
-            body,
-            None,
-        )?;
-        let _ = MessageStore::save(&*self.store, &mut msg).await;
-
-        Ok(review)
-    }
-
-    pub async fn get_review(&self, id: &ReviewId) -> Result<ReviewRequest> {
-        ReviewStore::find_by_id(&*self.store, id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("review {id}")))
-    }
-
-    pub async fn list_reviews_for_task(
-        &self,
-        task_id: &TaskId,
-        page: PageParams,
-    ) -> Result<Page<ReviewRequest>> {
-        ReviewStore::find_by_task(&*self.store, task_id, page).await
-    }
-
-    pub async fn pending_reviews_for_agent(
-        &self,
-        agent_id: &AgentId,
-    ) -> Result<Vec<ReviewRequest>> {
-        ReviewStore::find_pending_for_agent(&*self.store, agent_id).await
-    }
-
     async fn notify_watchers(&self, task: &Task, event: &str) {
         let watchers = WatcherStore::find_watchers(&*self.store, &task.id()).await;
         if let Ok(watchers) = watchers {
@@ -1085,22 +975,6 @@ mod tests {
         }
         async fn find_thread(&self, _: &MessageId, _: Option<usize>) -> Result<Vec<Message>> {
             Ok(vec![])
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl ReviewStore for StubStore {
-        async fn save(&self, _: &mut ReviewRequest) -> Result<()> {
-            Ok(())
-        }
-        async fn find_by_id(&self, _: &ReviewId) -> Result<Option<ReviewRequest>> {
-            Ok(None)
-        }
-        async fn find_pending_for_agent(&self, _: &AgentId) -> Result<Vec<ReviewRequest>> {
-            Ok(vec![])
-        }
-        async fn find_by_task(&self, _: &TaskId, _: PageParams) -> Result<Page<ReviewRequest>> {
-            Ok(Page::empty())
         }
     }
 

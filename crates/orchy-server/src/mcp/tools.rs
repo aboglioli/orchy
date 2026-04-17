@@ -10,15 +10,15 @@ use orchy_application::{
     DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand, FailTaskCommand,
     GetNextTaskCommand, GetProjectCommand, HeartbeatCommand, ImportKnowledgeCommand,
     ListAgentsCommand, ListConversationCommand, ListKnowledgeCommand, ListNamespacesCommand,
-    ListReviewsCommand, ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand,
-    MergeTasksCommand, MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand,
-    PollUpdatesCommand, PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand,
-    ReleaseTaskCommand, RemoveDependencyCommand, RenameKnowledgeCommand, ReplaceTaskCommand,
-    RequestReviewCommand, ResolveReviewCommand, ResourceRefInput, SearchKnowledgeCommand,
-    SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand, StartTaskCommand,
-    SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand, UnblockTaskCommand,
-    UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand, UnwatchTaskCommand,
-    UpdateProjectCommand, UpdateTaskCommand, WatchTaskCommand, WriteKnowledgeCommand,
+    ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,
+    MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand, PollUpdatesCommand,
+    PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand, ReleaseTaskCommand,
+    RemoveDependencyCommand, RenameKnowledgeCommand, ReplaceTaskCommand, ResourceRefInput,
+    SearchKnowledgeCommand, SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand,
+    StartTaskCommand, SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand,
+    UnblockTaskCommand, UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand,
+    UnwatchTaskCommand, UpdateProjectCommand, UpdateTaskCommand, WatchTaskCommand,
+    WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 use orchy_core::namespace::Namespace;
@@ -245,20 +245,12 @@ impl OrchyHandler {
             .release_agent_locks(&agent_id)
             .await;
 
-        use orchy_core::task::{ReviewStore, WatcherStore};
+        use orchy_core::task::WatcherStore;
         let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
             .await
             .unwrap_or_default();
         for w in &watchers {
             let _ = WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
-        }
-
-        let reviews = ReviewStore::find_pending_for_agent(&*self.container.store, &agent_id)
-            .await
-            .unwrap_or_default();
-        for mut r in reviews {
-            r.unassign_reviewer();
-            let _ = ReviewStore::save(&*self.container.store, &mut r).await;
         }
 
         let cmd = DisconnectAgentCommand {
@@ -275,7 +267,7 @@ impl OrchyHandler {
         within the same organization. \
         If only project is given, namespace resets to root. \
         If only namespace is given, stays in current project. \
-        Switching projects releases claimed tasks, locks, watchers, and reviews in the old project."
+        Switching projects releases claimed tasks, locks, and watchers in the old project."
     )]
     async fn switch_context(
         &self,
@@ -1516,95 +1508,6 @@ impl OrchyHandler {
 
         match self.container.app.unwatch_task.execute(cmd).await {
             Ok(()) => Ok("ok".to_string()),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(
-        description = "Request a review for a task. Sends a notification to the target reviewer \
-        (by agent ID or role). Use list_reviews to check status."
-    )]
-    async fn request_review(
-        &self,
-        Parameters(params): Parameters<RequestReviewParams>,
-    ) -> Result<String, String> {
-        let (agent_id, org, project, namespace) = self.require_session()?;
-
-        let reviewer_agent = match params.reviewer_agent.as_deref() {
-            Some(s) => Some(self.resolve_agent_id(s).await?.to_string()),
-            None => None,
-        };
-
-        let cmd = RequestReviewCommand {
-            task_id: params.task_id,
-            requester_agent_id: agent_id.to_string(),
-            org_id: org.to_string(),
-            project: project.to_string(),
-            namespace: Some(namespace.to_string()),
-            reviewer_agent,
-            reviewer_role: params.reviewer_role,
-        };
-
-        match self.container.app.request_review.execute(cmd).await {
-            Ok(review) => Ok(to_json(&review)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(description = "Approve or reject a review request.")]
-    async fn resolve_review(
-        &self,
-        Parameters(params): Parameters<ResolveReviewParams>,
-    ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
-
-        let cmd = ResolveReviewCommand {
-            review_id: params.review_id,
-            resolver_agent_id: agent_id.to_string(),
-            approved: params.approved,
-            comments: params.comments,
-        };
-
-        match self.container.app.resolve_review.execute(cmd).await {
-            Ok(review) => Ok(to_json(&review)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(description = "List review requests for a task.")]
-    async fn list_reviews(
-        &self,
-        Parameters(params): Parameters<ListReviewsParams>,
-    ) -> Result<String, String> {
-        let _ = self.require_session()?;
-
-        let cmd = ListReviewsCommand {
-            task_id: params.task_id,
-            after: None,
-            limit: None,
-        };
-
-        match self.container.app.list_reviews.execute(cmd).await {
-            Ok(page) => Ok(to_json(&page.items)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(description = "Get a single review request by ID.")]
-    async fn get_review(
-        &self,
-        Parameters(params): Parameters<GetReviewParams>,
-    ) -> Result<String, String> {
-        let _ = self.require_session()?;
-
-        match self
-            .container
-            .app
-            .get_review
-            .execute(&params.review_id)
-            .await
-        {
-            Ok(review) => Ok(to_json(&review)),
             Err(e) => Err(mcp_error(e)),
         }
     }

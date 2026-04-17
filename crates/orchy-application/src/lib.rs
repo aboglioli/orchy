@@ -8,7 +8,7 @@ use orchy_core::message::MessageStore;
 use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
-use orchy_core::task::{ReviewStore, TaskStore, WatcherStore};
+use orchy_core::task::{TaskStore, WatcherStore};
 
 mod dto;
 
@@ -68,12 +68,6 @@ mod untag_task;
 // Task watchers
 mod unwatch_task;
 mod watch_task;
-
-// Reviews
-mod get_review;
-mod list_reviews;
-mod request_review;
-mod resolve_review;
 
 // Messages
 mod check_mailbox;
@@ -150,11 +144,6 @@ pub use untag_task::{UntagTask, UntagTaskCommand};
 pub use unwatch_task::{UnwatchTask, UnwatchTaskCommand};
 pub use watch_task::{WatchTask, WatchTaskCommand};
 
-pub use get_review::GetReview;
-pub use list_reviews::{ListReviews, ListReviewsCommand};
-pub use request_review::{RequestReview, RequestReviewCommand};
-pub use resolve_review::{ResolveReview, ResolveReviewCommand};
-
 pub use check_mailbox::{CheckMailbox, CheckMailboxCommand};
 pub use check_sent_messages::{CheckSentMessages, CheckSentMessagesCommand};
 pub use list_conversation::{ListConversation, ListConversationCommand};
@@ -227,11 +216,6 @@ pub struct Application {
     pub watch_task: WatchTask,
     pub unwatch_task: UnwatchTask,
 
-    pub request_review: RequestReview,
-    pub resolve_review: ResolveReview,
-    pub list_reviews: ListReviews,
-    pub get_review: GetReview,
-
     pub send_message: SendMessage,
     pub check_mailbox: CheckMailbox,
     pub check_sent_messages: CheckSentMessages,
@@ -275,7 +259,6 @@ impl Application {
         messages: Arc<dyn MessageStore>,
         locks: Arc<dyn LockStore>,
         watchers: Arc<dyn WatcherStore>,
-        reviews: Arc<dyn ReviewStore>,
         namespaces: Arc<dyn NamespaceStore>,
         embeddings: Option<Arc<dyn EmbeddingsProvider>>,
         event_query: Arc<dyn EventQuery>,
@@ -288,7 +271,6 @@ impl Application {
                 tasks.clone(),
                 locks.clone(),
                 watchers.clone(),
-                reviews.clone(),
             ),
             disconnect_agent: DisconnectAgent::new(agents.clone()),
             heartbeat: Heartbeat::new(agents.clone()),
@@ -325,11 +307,6 @@ impl Application {
 
             watch_task: WatchTask::new(tasks.clone(), watchers.clone()),
             unwatch_task: UnwatchTask::new(watchers.clone()),
-
-            request_review: RequestReview::new(tasks.clone(), reviews.clone(), messages.clone()),
-            resolve_review: ResolveReview::new(reviews.clone(), messages.clone()),
-            list_reviews: ListReviews::new(reviews.clone()),
-            get_review: GetReview::new(reviews.clone()),
 
             send_message: SendMessage::new(messages.clone()),
             check_mailbox: CheckMailbox::new(messages.clone(), agents.clone()),

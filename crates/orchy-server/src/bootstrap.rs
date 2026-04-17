@@ -17,10 +17,7 @@ use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
 pub async fn generate_bootstrap_prompt<
     KS: KnowledgeStore,
     PS: ProjectStore,
-    AS: AgentStore
-        + orchy_core::task::WatcherStore
-        + orchy_core::message::MessageStore
-        + orchy_core::task::ReviewStore,
+    AS: AgentStore + orchy_core::task::WatcherStore + orchy_core::message::MessageStore,
     TS: TaskStore,
 >(
     project_id: &ProjectId,
@@ -168,7 +165,6 @@ namespace. Namespaces are auto-created on first use.
   Call `list_knowledge_types` to see available types.
 - **send_message** — coordinate by agent ID, `role:name`, or `broadcast`.
 - **watch_task** — get notified when a task you depend on changes status.
-- **request_review** / **resolve_review** — approval workflows between agents.
 - **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
 - **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
 - **write_knowledge(kind: "context")** — save session state before ending.

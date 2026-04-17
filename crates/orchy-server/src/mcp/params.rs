@@ -323,31 +323,6 @@ pub struct UnwatchTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct RequestReviewParams {
-    pub task_id: String,
-    pub reviewer_agent: Option<String>,
-    /// Target reviewer role (e.g. "reviewer").
-    pub reviewer_role: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct ResolveReviewParams {
-    pub review_id: String,
-    pub approved: bool,
-    pub comments: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct ListReviewsParams {
-    pub task_id: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetReviewParams {
-    pub review_id: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct PollUpdatesParams {
     /// ISO 8601 timestamp. Returns events after this time.
     pub since: Option<String>,

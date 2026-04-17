@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::agent::AgentStatus;
-use orchy_core::task::{ReviewStore, WatcherStore};
+use orchy_core::task::WatcherStore;
 use tokio::time::{Duration, interval};
 use tracing::info;
 
@@ -47,14 +47,6 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
                                     agent.id(),
                                 )
                                 .await;
-                            }
-                            let reviews =
-                                ReviewStore::find_pending_for_agent(&*container.store, agent.id())
-                                    .await
-                                    .unwrap_or_default();
-                            for mut r in reviews {
-                                r.unassign_reviewer();
-                                let _ = ReviewStore::save(&*container.store, &mut r).await;
                             }
                         }
                         AgentStatus::Disconnected => {}

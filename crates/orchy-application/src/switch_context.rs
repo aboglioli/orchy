@@ -8,7 +8,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
-use orchy_core::task::{ReviewStore, TaskFilter, TaskStore, WatcherStore};
+use orchy_core::task::{TaskFilter, TaskStore, WatcherStore};
 
 use crate::parse_namespace;
 
@@ -25,7 +25,6 @@ pub struct SwitchContext {
     tasks: Arc<dyn TaskStore>,
     locks: Arc<dyn LockStore>,
     watchers: Arc<dyn WatcherStore>,
-    reviews: Arc<dyn ReviewStore>,
 }
 
 impl SwitchContext {
@@ -35,7 +34,6 @@ impl SwitchContext {
         tasks: Arc<dyn TaskStore>,
         locks: Arc<dyn LockStore>,
         watchers: Arc<dyn WatcherStore>,
-        reviews: Arc<dyn ReviewStore>,
     ) -> Self {
         Self {
             agents,
@@ -43,7 +41,6 @@ impl SwitchContext {
             tasks,
             locks,
             watchers,
-            reviews,
         }
     }
 
@@ -139,18 +136,6 @@ impl SwitchContext {
         for w in &watchers {
             if *w.project() == *project {
                 let _ = self.watchers.delete(&w.task_id(), agent_id).await;
-            }
-        }
-
-        let reviews = self
-            .reviews
-            .find_pending_for_agent(agent_id)
-            .await
-            .unwrap_or_default();
-        for mut r in reviews {
-            if *r.project() == *project {
-                r.unassign_reviewer();
-                let _ = self.reviews.save(&mut r).await;
             }
         }
     }
