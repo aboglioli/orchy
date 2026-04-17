@@ -6,7 +6,6 @@ use orchy_application::Application;
 use orchy_core::agent::AgentId;
 use orchy_core::agent::service::AgentService;
 use orchy_core::knowledge::service::KnowledgeService;
-use orchy_core::message::service::MessageService;
 use orchy_core::organization::service::OrganizationService;
 use orchy_core::project::service::ProjectService;
 use orchy_core::resource_lock::service::LockService;
@@ -24,7 +23,6 @@ pub struct Container {
     pub app: Application,
     pub task_service: TaskService<StoreBackend, StoreBackend>,
     pub agent_service: AgentService<StoreBackend, StoreBackend>,
-    pub message_service: MessageService<StoreBackend>,
     pub project_service: ProjectService<StoreBackend>,
     pub knowledge_service: KnowledgeService<StoreBackend, EmbeddingsBackend>,
     pub lock_service: LockService<StoreBackend>,
@@ -46,7 +44,6 @@ impl Container {
 
         let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
         let agent_service = AgentService::new(Arc::clone(&store), Arc::clone(&store));
-        let message_service = MessageService::new(Arc::clone(&store));
         let knowledge_service = KnowledgeService::new(Arc::clone(&store), embeddings.clone());
         let project_service = ProjectService::new(Arc::clone(&store));
         let lock_service = LockService::new(Arc::clone(&store));
@@ -80,7 +77,6 @@ impl Container {
             app,
             task_service,
             agent_service,
-            message_service,
             project_service,
             knowledge_service,
             lock_service,

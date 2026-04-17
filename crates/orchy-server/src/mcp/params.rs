@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use rmcp::schemars;
 use serde::Deserialize;
 
@@ -408,8 +406,6 @@ pub struct MoveKnowledgeParams {
     pub path: String,
     pub namespace: Option<String>,
     pub new_namespace: String,
-    pub metadata: Option<String>,
-    pub metadata_remove: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -417,8 +413,6 @@ pub struct RenameKnowledgeParams {
     pub path: String,
     pub namespace: Option<String>,
     pub new_path: String,
-    pub metadata: Option<String>,
-    pub metadata_remove: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -429,8 +423,6 @@ pub struct ChangeKnowledgeKindParams {
     pub kind: String,
     /// Expected version for optimistic concurrency (after change, version increments).
     pub version: Option<u64>,
-    pub metadata: Option<String>,
-    pub metadata_remove: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -438,8 +430,6 @@ pub struct TagKnowledgeParams {
     pub path: String,
     pub namespace: Option<String>,
     pub tag: String,
-    pub metadata: Option<String>,
-    pub metadata_remove: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -447,8 +437,6 @@ pub struct UntagKnowledgeParams {
     pub path: String,
     pub namespace: Option<String>,
     pub tag: String,
-    pub metadata: Option<String>,
-    pub metadata_remove: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -459,6 +447,4 @@ pub struct ImportKnowledgeParams {
     pub source_project: String,
     pub path: String,
     pub source_namespace: Option<String>,
-    pub metadata: Option<String>,
-    pub metadata_remove: Option<Vec<String>>,
 }

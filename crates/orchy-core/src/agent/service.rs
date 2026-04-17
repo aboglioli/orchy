@@ -1,5 +1,3 @@
-#[allow(unused_imports)]
-use std::str::FromStr;
 use std::sync::Arc;
 
 use super::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
@@ -131,10 +129,12 @@ impl<S: AgentStore, PS: ProjectStore> AgentService<S, PS> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::str::FromStr;
+
     use super::*;
     use crate::infrastructure::MockStore;
     use crate::namespace::{Namespace, ProjectId};
-    use std::collections::HashMap;
 
     fn make_registration() -> RegisterAgent {
         use orchy_events::OrganizationId;
