@@ -110,10 +110,15 @@ impl OrchyHandler {
         }
     }
 
-    pub(crate) fn set_session_namespace(&self, namespace: Namespace) {
+    pub(crate) fn set_session_project_and_namespace(
+        &self,
+        project: ProjectId,
+        namespace: Namespace,
+    ) {
         if let Ok(mut guard) = self.session.write()
             && let Some(state) = guard.as_mut()
         {
+            state.project = project;
             state.namespace = namespace;
         }
     }

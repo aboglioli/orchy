@@ -29,8 +29,11 @@ pub struct ListAgentsParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct MoveAgentParams {
-    pub namespace: String,
+pub struct SwitchContextParams {
+    /// Target project. Resets namespace to root unless namespace also provided.
+    pub project: Option<String>,
+    /// Target namespace within the project.
+    pub namespace: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

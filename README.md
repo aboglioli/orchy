@@ -124,7 +124,7 @@ when `project` is passed.
 | `change_roles` | yes | Change the roles of the session agent. |
 | `heartbeat` | yes | Send a heartbeat to signal liveness. |
 | `disconnect` | yes | Disconnect and release all claimed tasks back to pending. |
-| `move_agent` | yes | Move the session agent to a new namespace within the same project. |
+| `switch_context` | yes | Switch agent to a different project, namespace, or both within the same org. |
 
 ### `register_agent`
 
@@ -164,11 +164,15 @@ session errors or you are unsure whether you still need `register_agent`.
 |-----------|----------|-------------|
 | `roles` | yes | New role list (replaces existing) |
 
-### `move_agent`
+### `switch_context`
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `namespace` | yes | Target namespace |
+| `project` | no | Target project. Resets namespace to root unless namespace also provided. |
+| `namespace` | no | Target namespace within the project. |
+
+At least one of `project` or `namespace` is required. Switching projects
+releases claimed tasks, locks, watchers, and reviews in the old project.
 
 ---
 

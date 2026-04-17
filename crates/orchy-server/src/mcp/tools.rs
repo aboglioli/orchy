@@ -245,27 +245,80 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Move the session agent to a new namespace within the same project. \
-        Updates both the agent record and the session scope."
+        description = "Switch the session agent to a different project, namespace, or both \
+        within the same organization. \
+        If only project is given, namespace resets to root. \
+        If only namespace is given, stays in current project. \
+        Switching projects releases claimed tasks, locks, watchers, and reviews in the old project."
     )]
-    async fn move_agent(
+    async fn switch_context(
         &self,
-        Parameters(params): Parameters<MoveAgentParams>,
+        Parameters(params): Parameters<SwitchContextParams>,
     ) -> Result<String, String> {
-        let (agent_id, org_id, _, _) = self.require_session()?;
+        let (agent_id, org, current_project, current_namespace) = self.require_session()?;
 
-        let namespace = self
-            .build_and_register_namespace(Some(&params.namespace))
-            .await?;
+        if params.project.is_none() && params.namespace.is_none() {
+            return Err("at least one of project or namespace is required".to_string());
+        }
+
+        let target_project = match &params.project {
+            Some(p) => Some(parse_project(p)?),
+            None => None,
+        };
+
+        let project_changed = target_project
+            .as_ref()
+            .is_some_and(|p| *p != current_project);
+
+        let target_namespace = match &params.namespace {
+            Some(ns) => self.build_and_register_namespace(Some(ns)).await?,
+            None if project_changed => Namespace::root(),
+            None => current_namespace,
+        };
+
+        if project_changed {
+            let _ = self
+                .container
+                .task_service
+                .release_agent_tasks(&agent_id)
+                .await;
+
+            let _ = self
+                .container
+                .lock_service
+                .release_agent_locks(&agent_id)
+                .await;
+
+            let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
+                .await
+                .unwrap_or_default();
+            for w in &watchers {
+                let _ = WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
+            }
+
+            let reviews = ReviewStore::find_pending_for_agent(&*self.container.store, &agent_id)
+                .await
+                .unwrap_or_default();
+            for mut r in reviews {
+                r.unassign_reviewer();
+                let _ = ReviewStore::save(&*self.container.store, &mut r).await;
+            }
+        }
 
         match self
             .container
             .agent_service
-            .switch_context(&agent_id, &org_id, None, namespace.clone())
+            .switch_context(
+                &agent_id,
+                &org,
+                target_project.clone(),
+                target_namespace.clone(),
+            )
             .await
         {
             Ok(agent) => {
-                self.set_session_namespace(namespace);
+                let final_project = target_project.unwrap_or(current_project);
+                self.set_session_project_and_namespace(final_project, target_namespace);
                 Ok(to_json(&agent))
             }
             Err(e) => Err(e.to_string()),
