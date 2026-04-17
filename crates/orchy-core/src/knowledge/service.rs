@@ -34,17 +34,18 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         entry: &mut Knowledge,
         set: Option<HashMap<String, String>>,
         remove_keys: Option<Vec<String>>,
-    ) {
+    ) -> Result<()> {
         if let Some(keys) = remove_keys {
             for k in keys {
-                let _ = entry.remove_metadata(&k);
+                entry.remove_metadata(&k)?;
             }
         }
         if let Some(map) = set {
             for (k, v) in map {
-                entry.set_metadata(k, v);
+                entry.set_metadata(k, v)?;
             }
         }
+        Ok(())
     }
 
     pub async fn write(&self, cmd: WriteKnowledge) -> Result<Knowledge> {
@@ -61,15 +62,15 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                 });
             }
             // `kind` applies only when creating; updates keep the existing kind (use change_kind).
-            existing.update(cmd.title, cmd.content, cmd.agent_id);
+            existing.update(cmd.title, cmd.content, cmd.agent_id)?;
             for tag in &cmd.tags {
-                existing.add_tag(tag.clone());
+                existing.add_tag(tag.clone())?;
             }
             for k in &cmd.metadata_remove {
-                let _ = existing.remove_metadata(k);
+                existing.remove_metadata(k)?;
             }
             for (k, v) in &cmd.metadata {
-                existing.set_metadata(k.clone(), v.clone());
+                existing.set_metadata(k.clone(), v.clone())?;
             }
             existing
         } else {
@@ -92,7 +93,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
                 cmd.metadata,
             )?;
             for k in &cmd.metadata_remove {
-                let _ = created.remove_metadata(k);
+                created.remove_metadata(k)?;
             }
             created
         };
@@ -162,7 +163,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             &mut entry,
             Some(set).filter(|m| !m.is_empty()),
             Some(remove).filter(|v| !v.is_empty()),
-        );
+        )?;
 
         self.store.save(&mut entry).await?;
         Ok(entry)
@@ -187,7 +188,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
 
     pub async fn delete(&self, id: &KnowledgeId) -> Result<()> {
         let mut entry = self.get(id).await?;
-        entry.mark_deleted();
+        entry.mark_deleted()?;
         self.store.save(&mut entry).await?;
         self.store.delete(id).await
     }
@@ -200,8 +201,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
-        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
-        entry.move_to(new_namespace);
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove)?;
+        entry.move_to(new_namespace)?;
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
@@ -214,7 +215,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
-        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove)?;
         entry.rename(new_path)?;
         self.store.save(&mut entry).await?;
         Ok(entry)
@@ -247,14 +248,14 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             });
         }
 
-        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove)?;
 
         if entry.kind() == new_kind {
             self.store.save(&mut entry).await?;
             return Ok(entry);
         }
 
-        entry.change_kind(new_kind);
+        entry.change_kind(new_kind)?;
 
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());
@@ -274,8 +275,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
-        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
-        entry.add_tag(tag);
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove)?;
+        entry.add_tag(tag)?;
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
@@ -288,8 +289,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
         metadata_remove: Option<Vec<String>>,
     ) -> Result<Knowledge> {
         let mut entry = self.get(id).await?;
-        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
-        entry.remove_tag(tag);
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove)?;
+        entry.remove_tag(tag)?;
         self.store.save(&mut entry).await?;
         Ok(entry)
     }
@@ -315,7 +316,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
 
         let mut entry = if let Some(mut existing) = existing {
             let new_content = format!("{}{}{}", existing.content(), separator, value);
-            existing.update(existing.title().to_string(), new_content, agent_id);
+            existing.update(existing.title().to_string(), new_content, agent_id)?;
             existing
         } else {
             Knowledge::new(
@@ -332,7 +333,7 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             )?
         };
 
-        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove);
+        Self::apply_metadata_updates(&mut entry, metadata, metadata_remove)?;
 
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());

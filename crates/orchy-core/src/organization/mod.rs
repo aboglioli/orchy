@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 use self::events as org_events;
 
@@ -111,7 +111,7 @@ pub struct Organization {
 }
 
 impl Organization {
-    pub fn new(id: OrganizationId, name: String) -> Self {
+    pub fn new(id: OrganizationId, name: String) -> Result<Self> {
         let now = Utc::now();
         let mut org = Self {
             id,
@@ -122,19 +122,21 @@ impl Organization {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&org_events::OrgCreatedPayload {
+            org_id: org.id.to_string(),
+            name: org.name.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             org.id.as_str(),
             org_events::NAMESPACE,
             org_events::TOPIC_CREATED,
-            Payload::from_json(&org_events::OrgCreatedPayload {
-                org_id: org.id.to_string(),
-                name: org.name.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| org.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        org.collector.collect(event);
 
-        org
+        Ok(org)
     }
 
     pub fn restore(r: RestoreOrganization) -> Self {
@@ -148,45 +150,50 @@ impl Organization {
         }
     }
 
-    pub fn add_api_key(&mut self, name: String, key: String) -> &ApiKey {
+    pub fn add_api_key(&mut self, name: String, key: String) -> Result<&ApiKey> {
         let api_key = ApiKey::new(name.clone(), key.clone());
         let key_id = api_key.id().to_string();
         self.api_keys.push(api_key);
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&org_events::ApiKeyAddedPayload {
+            org_id: self.id.to_string(),
+            key_id,
+            name,
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.id.as_str(),
             org_events::NAMESPACE,
             org_events::TOPIC_API_KEY_ADDED,
-            Payload::from_json(&org_events::ApiKeyAddedPayload {
-                org_id: self.id.to_string(),
-                key_id,
-                name,
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
 
-        self.api_keys.last().unwrap()
+        Ok(self.api_keys.last().unwrap())
     }
 
-    pub fn revoke_api_key(&mut self, key_id: &ApiKeyId) {
+    pub fn revoke_api_key(&mut self, key_id: &ApiKeyId) -> Result<()> {
         if let Some(k) = self.api_keys.iter_mut().find(|k| k.id() == key_id) {
             k.is_active = false;
             self.updated_at = Utc::now();
 
-            let _ = Event::create(
+            let payload = Payload::from_json(&org_events::ApiKeyRevokedPayload {
+                org_id: self.id.to_string(),
+                key_id: key_id.to_string(),
+            })
+            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            let event = Event::create(
                 self.id.as_str(),
                 org_events::NAMESPACE,
                 org_events::TOPIC_API_KEY_REVOKED,
-                Payload::from_json(&org_events::ApiKeyRevokedPayload {
-                    org_id: self.id.to_string(),
-                    key_id: key_id.to_string(),
-                })
-                .unwrap(),
+                payload,
             )
-            .map(|e| self.collector.collect(e));
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            self.collector.collect(event);
         }
+        Ok(())
     }
 
     pub fn drain_events(&mut self) -> Vec<orchy_events::Event> {

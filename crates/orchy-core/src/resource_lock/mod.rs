@@ -77,21 +77,23 @@ impl ResourceLock {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&lock_events::LockAcquiredPayload {
+            org_id: lock.org_id.to_string(),
+            project: lock.project.to_string(),
+            namespace: lock.namespace.to_string(),
+            name: lock.name.clone(),
+            holder: lock.holder.to_string(),
+            ttl_secs,
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             lock.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_ACQUIRED,
-            Payload::from_json(&lock_events::LockAcquiredPayload {
-                org_id: lock.org_id.to_string(),
-                project: lock.project.to_string(),
-                namespace: lock.namespace.to_string(),
-                name: lock.name.clone(),
-                holder: lock.holder.to_string(),
-                ttl_secs,
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| lock.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        lock.collector.collect(event);
 
         Ok(lock)
     }
@@ -109,20 +111,23 @@ impl ResourceLock {
         }
     }
 
-    pub fn mark_released(&mut self) {
-        let _ = Event::create(
+    pub fn mark_released(&mut self) -> Result<()> {
+        let payload = Payload::from_json(&lock_events::LockReleasedPayload {
+            org_id: self.org_id.to_string(),
+            project: self.project.to_string(),
+            namespace: self.namespace.to_string(),
+            name: self.name.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_RELEASED,
-            Payload::from_json(&lock_events::LockReleasedPayload {
-                org_id: self.org_id.to_string(),
-                project: self.project.to_string(),
-                namespace: self.namespace.to_string(),
-                name: self.name.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {

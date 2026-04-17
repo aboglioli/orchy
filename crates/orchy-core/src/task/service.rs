@@ -464,7 +464,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                 .await?;
 
             for mut child in children {
-                child.set_parent_id(Some(merged.id()));
+                child.set_parent_id(Some(merged.id()))?;
                 self.task_store.save(&mut child).await?;
             }
         }
@@ -491,7 +491,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                 let mut changed = false;
                 for source_id in &source_ids {
                     if task.depends_on().contains(source_id) {
-                        task.replace_dependency(source_id, merged.id());
+                        task.replace_dependency(source_id, merged.id())?;
                         changed = true;
                     }
                 }
@@ -680,7 +680,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         namespace: Namespace,
     ) -> Result<TaskWatcher> {
         self.get(task_id).await?;
-        let mut watcher = TaskWatcher::new(*task_id, agent_id, org_id, project, namespace);
+        let mut watcher = TaskWatcher::new(*task_id, agent_id, org_id, project, namespace)?;
         WatcherStore::save(&*self.store, &mut watcher).await?;
         Ok(watcher)
     }
@@ -724,7 +724,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         } else {
             MessageTarget::Broadcast
         };
-        let mut msg = Message::new(org_id, project, namespace, requester, target, body, None);
+        let mut msg = Message::new(org_id, project, namespace, requester, target, body, None)?;
         let _ = MessageStore::save(&*self.store, &mut msg).await;
 
         Ok(review)
@@ -762,7 +762,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             MessageTarget::Agent(review.requester().clone()),
             body,
             None,
-        );
+        )?;
         let _ = MessageStore::save(&*self.store, &mut msg).await;
 
         Ok(review)
@@ -790,7 +790,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         if let Ok(watchers) = watchers {
             for watcher in watchers {
                 let body = format!("[watch] task {} ({}): {}", task.id(), task.title(), event);
-                let mut msg = Message::new(
+                if let Ok(mut msg) = Message::new(
                     watcher.org_id().clone(),
                     watcher.project().clone(),
                     watcher.namespace().clone(),
@@ -798,8 +798,9 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                     MessageTarget::Agent(watcher.agent_id().clone()),
                     body,
                     None,
-                );
-                let _ = MessageStore::save(&*self.store, &mut msg).await;
+                ) {
+                    let _ = MessageStore::save(&*self.store, &mut msg).await;
+                }
             }
         }
     }
@@ -827,7 +828,7 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                             failed_task.id(),
                             failed_task.title(),
                         );
-                        let mut msg = Message::new(
+                        if let Ok(mut msg) = Message::new(
                             task.org_id().clone(),
                             task.project().clone(),
                             task.namespace().clone(),
@@ -835,8 +836,9 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                             MessageTarget::Agent(agent.clone()),
                             body,
                             None,
-                        );
-                        let _ = MessageStore::save(&*self.store, &mut msg).await;
+                        ) {
+                            let _ = MessageStore::save(&*self.store, &mut msg).await;
+                        }
                     }
                     self.notify_watchers(&task, &format!("dependency {}", event))
                         .await;

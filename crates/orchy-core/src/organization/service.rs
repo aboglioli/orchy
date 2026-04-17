@@ -14,7 +14,7 @@ impl<S: OrganizationStore> OrganizationService<S> {
     }
 
     pub async fn create(&self, id: OrganizationId, name: String) -> Result<Organization> {
-        let mut org = Organization::new(id, name);
+        let mut org = Organization::new(id, name)?;
         self.store.save(&mut org).await?;
         Ok(org)
     }
@@ -42,7 +42,7 @@ impl<S: OrganizationStore> OrganizationService<S> {
             .find_by_id(org_id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("organization {org_id}")))?;
-        org.add_api_key(name, key);
+        org.add_api_key(name, key)?;
         self.store.save(&mut org).await?;
         Ok(org)
     }
@@ -57,7 +57,7 @@ impl<S: OrganizationStore> OrganizationService<S> {
             .find_by_id(org_id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("organization {org_id}")))?;
-        org.revoke_api_key(key_id);
+        org.revoke_api_key(key_id)?;
         self.store.save(&mut org).await?;
         Ok(org)
     }

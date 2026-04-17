@@ -34,7 +34,8 @@ async fn agent_save_and_find() {
         "test agent".into(),
         None,
         HashMap::new(),
-    );
+    )
+    .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
     assert_eq!(agent.status(), AgentStatus::Online);
@@ -58,12 +59,13 @@ async fn agent_save_updates_existing() {
         "original".into(),
         None,
         HashMap::new(),
-    );
+    )
+    .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
     let before = agent.last_heartbeat();
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    agent.heartbeat();
+    agent.heartbeat().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
     let updated = AgentStore::find_by_id(&store, agent.id())
@@ -84,10 +86,11 @@ async fn agent_disconnect_sets_status() {
         "".into(),
         None,
         HashMap::new(),
-    );
+    )
+    .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    agent.disconnect();
+    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
     let fetched = AgentStore::find_by_id(&store, agent.id())
@@ -108,14 +111,15 @@ async fn agent_find_timed_out() {
         "".into(),
         None,
         HashMap::new(),
-    );
+    )
+    .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
-    agent.disconnect();
+    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(!timed_out.iter().any(|a| a.id() == agent.id()));
@@ -212,7 +216,8 @@ async fn message_save_and_find_pending() {
         MessageTarget::Agent(to.clone()),
         "hello".into(),
         None,
-    );
+    )
+    .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
@@ -225,7 +230,7 @@ async fn message_save_and_find_pending() {
     assert_eq!(messages[0].status(), MessageStatus::Pending);
 
     let mut delivered = messages.into_iter().next().unwrap();
-    delivered.deliver();
+    delivered.deliver().unwrap();
     MessageStore::save(&store, &mut delivered).await.unwrap();
 
     let messages = MessageStore::find_pending(&store, &to, &o, &p, &Namespace::root())
@@ -251,14 +256,15 @@ async fn message_find_by_id_and_mark_read() {
         MessageTarget::Agent(to.clone()),
         "hi".into(),
         None,
-    );
+    )
+    .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
     let mut fetched = MessageStore::find_by_id(&store, &msg.id())
         .await
         .unwrap()
         .unwrap();
-    fetched.mark_read();
+    fetched.mark_read().unwrap();
     MessageStore::save(&store, &mut fetched).await.unwrap();
 
     let read = MessageStore::find_by_id(&store, &msg.id())
@@ -283,7 +289,8 @@ async fn message_find_sent() {
         MessageTarget::Agent(receiver.clone()),
         "hello".into(),
         None,
-    );
+    )
+    .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
     let o = org();
@@ -314,13 +321,14 @@ async fn message_find_thread() {
         MessageTarget::Agent(b.clone()),
         "first".into(),
         None,
-    );
+    )
+    .unwrap();
     MessageStore::save(&store, &mut msg1).await.unwrap();
 
-    let mut msg2 = msg1.reply(b.clone(), "second".into());
+    let mut msg2 = msg1.reply(b.clone(), "second".into()).unwrap();
     MessageStore::save(&store, &mut msg2).await.unwrap();
 
-    let mut msg3 = msg2.reply(a.clone(), "third".into());
+    let mut msg3 = msg2.reply(a.clone(), "third".into()).unwrap();
     MessageStore::save(&store, &mut msg3).await.unwrap();
 
     let thread = MessageStore::find_thread(&store, &msg3.id(), None)
@@ -354,7 +362,8 @@ async fn message_find_pending_includes_broadcast() {
         MessageTarget::Broadcast,
         "to all".into(),
         None,
-    );
+    )
+    .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
     let o = org();

@@ -8,7 +8,7 @@ use std::future::Future;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::ProjectId;
 use crate::organization::OrganizationId;
 
@@ -36,7 +36,7 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(org_id: OrganizationId, id: ProjectId, description: String) -> Self {
+    pub fn new(org_id: OrganizationId, id: ProjectId, description: String) -> Result<Self> {
         let now = Utc::now();
         let mut project = Self {
             org_id,
@@ -48,20 +48,22 @@ impl Project {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&project_events::ProjectCreatedPayload {
+            org_id: project.org_id.to_string(),
+            project: project.id.to_string(),
+            description: project.description.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             project.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_CREATED,
-            Payload::from_json(&project_events::ProjectCreatedPayload {
-                org_id: project.org_id.to_string(),
-                project: project.id.to_string(),
-                description: project.description.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| project.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        project.collector.collect(event);
 
-        project
+        Ok(project)
     }
 
     pub fn restore(r: RestoreProject) -> Self {
@@ -76,41 +78,47 @@ impl Project {
         }
     }
 
-    pub fn update_description(&mut self, description: String) {
+    pub fn update_description(&mut self, description: String) -> Result<()> {
         self.description = description;
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&project_events::ProjectDescriptionUpdatedPayload {
+            org_id: self.org_id.to_string(),
+            project: self.id.to_string(),
+            description: self.description.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_DESCRIPTION_UPDATED,
-            Payload::from_json(&project_events::ProjectDescriptionUpdatedPayload {
-                org_id: self.org_id.to_string(),
-                project: self.id.to_string(),
-                description: self.description.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
-    pub fn set_metadata(&mut self, key: String, value: String) {
+    pub fn set_metadata(&mut self, key: String, value: String) -> Result<()> {
         self.metadata.insert(key.clone(), value.clone());
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&project_events::ProjectMetadataSetPayload {
+            org_id: self.org_id.to_string(),
+            project: self.id.to_string(),
+            key,
+            value,
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_METADATA_SET,
-            Payload::from_json(&project_events::ProjectMetadataSetPayload {
-                org_id: self.org_id.to_string(),
-                project: self.id.to_string(),
-                key,
-                value,
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {
@@ -154,20 +162,24 @@ mod tests {
         use orchy_events::OrganizationId;
         let org_id = OrganizationId::new("test").unwrap();
         let id = ProjectId::try_from("test-project".to_string()).unwrap();
-        Project::new(org_id, id, "a test project".to_string())
+        Project::new(org_id, id, "a test project".to_string()).unwrap()
     }
 
     #[test]
     fn update_description_changes() {
         let mut project = test_project();
-        project.update_description("new description".to_string());
+        project
+            .update_description("new description".to_string())
+            .unwrap();
         assert_eq!(project.description(), "new description");
     }
 
     #[test]
     fn set_metadata_inserts() {
         let mut project = test_project();
-        project.set_metadata("env".to_string(), "prod".to_string());
+        project
+            .set_metadata("env".to_string(), "prod".to_string())
+            .unwrap();
         assert_eq!(project.metadata().get("env"), Some(&"prod".to_string()));
     }
 }

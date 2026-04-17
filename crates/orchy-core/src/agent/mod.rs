@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 
@@ -128,7 +128,7 @@ impl Agent {
         description: String,
         id: Option<AgentId>,
         metadata: HashMap<String, String>,
-    ) -> Self {
+    ) -> Result<Self> {
         let now = Utc::now();
         let id = id.unwrap_or_default();
         let mut agent = Self {
@@ -146,22 +146,24 @@ impl Agent {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&agent_events::AgentRegisteredPayload {
+            org_id: agent.org_id.to_string(),
+            agent_id: agent.id.to_string(),
+            project: agent.project.to_string(),
+            namespace: agent.namespace.to_string(),
+            roles: agent.roles.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             agent.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_REGISTERED,
-            Payload::from_json(&agent_events::AgentRegisteredPayload {
-                org_id: agent.org_id.to_string(),
-                agent_id: agent.id.to_string(),
-                project: agent.project.to_string(),
-                namespace: agent.namespace.to_string(),
-                roles: agent.roles.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| agent.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        agent.collector.collect(event);
 
-        agent
+        Ok(agent)
     }
 
     pub fn from_parent(
@@ -170,7 +172,7 @@ impl Agent {
         roles: Vec<String>,
         description: String,
         id: Option<AgentId>,
-    ) -> Self {
+    ) -> Result<Self> {
         let now = Utc::now();
         let id = id.unwrap_or_default();
         let mut agent = Self {
@@ -188,23 +190,25 @@ impl Agent {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&agent_events::AgentSpawnedPayload {
+            org_id: agent.org_id.to_string(),
+            agent_id: agent.id.to_string(),
+            parent_id: parent.id.to_string(),
+            project: agent.project.to_string(),
+            namespace: agent.namespace.to_string(),
+            roles: agent.roles.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             agent.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_SPAWNED,
-            Payload::from_json(&agent_events::AgentSpawnedPayload {
-                org_id: agent.org_id.to_string(),
-                agent_id: agent.id.to_string(),
-                parent_id: parent.id.to_string(),
-                project: agent.project.to_string(),
-                namespace: agent.namespace.to_string(),
-                roles: agent.roles.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| agent.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        agent.collector.collect(event);
 
-        agent
+        Ok(agent)
     }
 
     pub fn restore(r: RestoreAgent) -> Self {
@@ -224,77 +228,94 @@ impl Agent {
         }
     }
 
-    pub fn heartbeat(&mut self) {
+    pub fn heartbeat(&mut self) -> Result<()> {
         self.last_heartbeat = Utc::now();
         if self.status == AgentStatus::Disconnected {
             self.status = AgentStatus::Online;
 
-            let _ = Event::create(
-                self.org_id.as_str(),
-                agent_events::NAMESPACE,
-                agent_events::TOPIC_STATUS_CHANGED,
-                Payload::from_json(&agent_events::AgentStatusChangedPayload {
-                    org_id: self.org_id.to_string(),
-                    agent_id: self.id.to_string(),
-                    status: self.status.to_string(),
-                })
-                .unwrap(),
-            )
-            .map(|e| self.collector.collect(e));
-        }
-    }
-
-    pub fn disconnect(&mut self) {
-        self.status = AgentStatus::Disconnected;
-
-        let _ = Event::create(
-            self.org_id.as_str(),
-            agent_events::NAMESPACE,
-            agent_events::TOPIC_DISCONNECTED,
-            Payload::from_json(&agent_events::AgentDisconnectedPayload {
-                org_id: self.org_id.to_string(),
-                agent_id: self.id.to_string(),
-            })
-            .unwrap(),
-        )
-        .map(|e| self.collector.collect(e));
-    }
-
-    pub fn update_status(&mut self, status: AgentStatus) {
-        self.status = status;
-
-        let _ = Event::create(
-            self.org_id.as_str(),
-            agent_events::NAMESPACE,
-            agent_events::TOPIC_STATUS_CHANGED,
-            Payload::from_json(&agent_events::AgentStatusChangedPayload {
+            let payload = Payload::from_json(&agent_events::AgentStatusChangedPayload {
                 org_id: self.org_id.to_string(),
                 agent_id: self.id.to_string(),
                 status: self.status.to_string(),
             })
-            .unwrap(),
-        )
-        .map(|e| self.collector.collect(e));
+            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            let event = Event::create(
+                self.org_id.as_str(),
+                agent_events::NAMESPACE,
+                agent_events::TOPIC_STATUS_CHANGED,
+                payload,
+            )
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            self.collector.collect(event);
+        }
+        Ok(())
     }
 
-    pub fn change_roles(&mut self, roles: Vec<String>) {
+    pub fn disconnect(&mut self) -> Result<()> {
+        self.status = AgentStatus::Disconnected;
+
+        let payload = Payload::from_json(&agent_events::AgentDisconnectedPayload {
+            org_id: self.org_id.to_string(),
+            agent_id: self.id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_DISCONNECTED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
+    }
+
+    pub fn update_status(&mut self, status: AgentStatus) -> Result<()> {
+        self.status = status;
+
+        let payload = Payload::from_json(&agent_events::AgentStatusChangedPayload {
+            org_id: self.org_id.to_string(),
+            agent_id: self.id.to_string(),
+            status: self.status.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_STATUS_CHANGED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
+    }
+
+    pub fn change_roles(&mut self, roles: Vec<String>) -> Result<()> {
         self.roles = roles;
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&agent_events::AgentRolesChangedPayload {
+            org_id: self.org_id.to_string(),
+            agent_id: self.id.to_string(),
+            roles: self.roles.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_ROLES_CHANGED,
-            Payload::from_json(&agent_events::AgentRolesChangedPayload {
-                org_id: self.org_id.to_string(),
-                agent_id: self.id.to_string(),
-                roles: self.roles.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
-    pub fn resume(&mut self, namespace: Namespace, roles: Vec<String>, description: String) {
+    pub fn resume(
+        &mut self,
+        namespace: Namespace,
+        roles: Vec<String>,
+        description: String,
+    ) -> Result<()> {
         self.namespace = namespace;
         if !roles.is_empty() {
             self.roles = roles;
@@ -305,36 +326,42 @@ impl Agent {
         self.status = AgentStatus::Online;
         self.last_heartbeat = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&agent_events::AgentResumedPayload {
+            org_id: self.org_id.to_string(),
+            agent_id: self.id.to_string(),
+            namespace: self.namespace.to_string(),
+            roles: self.roles.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_RESUMED,
-            Payload::from_json(&agent_events::AgentResumedPayload {
-                org_id: self.org_id.to_string(),
-                agent_id: self.id.to_string(),
-                namespace: self.namespace.to_string(),
-                roles: self.roles.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
-    pub fn move_to(&mut self, namespace: Namespace) {
+    pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
         self.namespace = namespace;
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&agent_events::AgentMovedPayload {
+            org_id: self.org_id.to_string(),
+            agent_id: self.id.to_string(),
+            namespace: self.namespace.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_MOVED,
-            Payload::from_json(&agent_events::AgentMovedPayload {
-                org_id: self.org_id.to_string(),
-                agent_id: self.id.to_string(),
-                namespace: self.namespace.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn set_metadata(&mut self, metadata: HashMap<String, String>) {
@@ -439,6 +466,7 @@ mod tests {
             None,
             HashMap::new(),
         )
+        .unwrap()
     }
 
     #[test]
@@ -458,7 +486,8 @@ mod tests {
             vec!["reviewer".to_string()],
             "child agent".to_string(),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(child.project(), parent.project());
         assert_eq!(child.parent_id(), Some(parent.id()));
         assert_eq!(child.roles(), &["reviewer"]);
@@ -470,29 +499,29 @@ mod tests {
         let mut agent = make_agent();
         let before = agent.last_heartbeat();
         sleep(Duration::from_millis(10));
-        agent.heartbeat();
+        agent.heartbeat().unwrap();
         assert!(agent.last_heartbeat() > before);
     }
 
     #[test]
     fn heartbeat_reconnects_disconnected() {
         let mut agent = make_agent();
-        agent.disconnect();
-        agent.heartbeat();
+        agent.disconnect().unwrap();
+        agent.heartbeat().unwrap();
         assert_eq!(agent.status(), AgentStatus::Online);
     }
 
     #[test]
     fn disconnect_sets_status() {
         let mut agent = make_agent();
-        agent.disconnect();
+        agent.disconnect().unwrap();
         assert_eq!(agent.status(), AgentStatus::Disconnected);
     }
 
     #[test]
     fn is_timed_out_when_stale() {
         let mut agent = make_agent();
-        agent.heartbeat();
+        agent.heartbeat().unwrap();
         sleep(Duration::from_millis(10));
         assert!(agent.is_timed_out(0));
     }
@@ -500,7 +529,7 @@ mod tests {
     #[test]
     fn is_timed_out_false_when_disconnected() {
         let mut agent = make_agent();
-        agent.disconnect();
+        agent.disconnect().unwrap();
         sleep(Duration::from_millis(10));
         assert!(!agent.is_timed_out(0));
     }
@@ -509,8 +538,10 @@ mod tests {
     fn resume_preserves_roles_when_empty() {
         let mut agent = make_agent();
         assert_eq!(agent.roles(), &["coder"]);
-        agent.disconnect();
-        agent.resume(Namespace::root(), vec![], String::new());
+        agent.disconnect().unwrap();
+        agent
+            .resume(Namespace::root(), vec![], String::new())
+            .unwrap();
         assert_eq!(agent.status(), AgentStatus::Online);
         assert_eq!(agent.roles(), &["coder"]);
         assert_eq!(agent.description(), "test agent");
@@ -519,12 +550,14 @@ mod tests {
     #[test]
     fn resume_overwrites_roles_when_provided() {
         let mut agent = make_agent();
-        agent.disconnect();
-        agent.resume(
-            Namespace::root(),
-            vec!["reviewer".to_string()],
-            "updated".to_string(),
-        );
+        agent.disconnect().unwrap();
+        agent
+            .resume(
+                Namespace::root(),
+                vec!["reviewer".to_string()],
+                "updated".to_string(),
+            )
+            .unwrap();
         assert_eq!(agent.roles(), &["reviewer"]);
         assert_eq!(agent.description(), "updated");
     }

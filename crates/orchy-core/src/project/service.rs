@@ -18,7 +18,7 @@ impl<S: ProjectStore> ProjectService<S> {
         match self.store.find_by_id(org, id).await? {
             Some(project) => Ok(project),
             None => {
-                let mut project = Project::new(org.clone(), id.clone(), String::new());
+                let mut project = Project::new(org.clone(), id.clone(), String::new())?;
                 self.store.save(&mut project).await?;
                 Ok(project)
             }
@@ -36,7 +36,7 @@ impl<S: ProjectStore> ProjectService<S> {
         description: String,
     ) -> Result<Project> {
         let mut project = self.get_or_create(org, id).await?;
-        project.update_description(description);
+        project.update_description(description)?;
         self.store.save(&mut project).await?;
         Ok(project)
     }
@@ -49,7 +49,7 @@ impl<S: ProjectStore> ProjectService<S> {
         value: String,
     ) -> Result<Project> {
         let mut project = self.get_or_create(org, id).await?;
-        project.set_metadata(key, value);
+        project.set_metadata(key, value)?;
         self.store.save(&mut project).await?;
         Ok(project)
     }

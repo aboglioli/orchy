@@ -20,7 +20,7 @@ impl<S: AgentStore> AgentService<S> {
         if let Some(parent_id) = cmd.parent_id {
             let parent = self.get(&parent_id).await?;
             let mut agent =
-                Agent::from_parent(&parent, cmd.namespace, cmd.roles, cmd.description, cmd.id);
+                Agent::from_parent(&parent, cmd.namespace, cmd.roles, cmd.description, cmd.id)?;
             self.store.save(&mut agent).await?;
             return Ok(agent);
         }
@@ -30,7 +30,7 @@ impl<S: AgentStore> AgentService<S> {
             && *existing.org_id() == cmd.org_id
             && *existing.project() == cmd.project
         {
-            existing.resume(cmd.namespace, cmd.roles, cmd.description);
+            existing.resume(cmd.namespace, cmd.roles, cmd.description)?;
             self.store.save(&mut existing).await?;
             return Ok(existing);
         }
@@ -43,7 +43,7 @@ impl<S: AgentStore> AgentService<S> {
             cmd.description,
             cmd.id,
             cmd.metadata,
-        );
+        )?;
         self.store.save(&mut agent).await?;
         Ok(agent)
     }
@@ -61,13 +61,13 @@ impl<S: AgentStore> AgentService<S> {
 
     pub async fn heartbeat(&self, id: &AgentId) -> Result<()> {
         let mut agent = self.get(id).await?;
-        agent.heartbeat();
+        agent.heartbeat()?;
         self.store.save(&mut agent).await
     }
 
     pub async fn update_status(&self, id: &AgentId, status: AgentStatus) -> Result<()> {
         let mut agent = self.get(id).await?;
-        agent.update_status(status);
+        agent.update_status(status)?;
         self.store.save(&mut agent).await
     }
 
@@ -76,14 +76,14 @@ impl<S: AgentStore> AgentService<S> {
             return Err(Error::InvalidInput("roles must not be empty".to_string()));
         }
         let mut agent = self.get(id).await?;
-        agent.change_roles(roles);
+        agent.change_roles(roles)?;
         self.store.save(&mut agent).await?;
         Ok(agent)
     }
 
     pub async fn move_to(&self, id: &AgentId, namespace: Namespace) -> Result<Agent> {
         let mut agent = self.get(id).await?;
-        agent.move_to(namespace);
+        agent.move_to(namespace)?;
         self.store.save(&mut agent).await?;
         Ok(agent)
     }
@@ -101,7 +101,7 @@ impl<S: AgentStore> AgentService<S> {
 
     pub async fn disconnect(&self, id: &AgentId) -> Result<()> {
         let mut agent = self.get(id).await?;
-        agent.disconnect();
+        agent.disconnect()?;
         self.store.save(&mut agent).await
     }
 

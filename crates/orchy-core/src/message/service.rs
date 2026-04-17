@@ -42,12 +42,12 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
 
         let targets = match &to {
             MessageTarget::Agent(_) => {
-                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to);
+                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to)?;
                 self.message_store.save(&mut msg).await?;
                 return Ok(vec![msg]);
             }
             MessageTarget::Broadcast => {
-                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to);
+                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to)?;
                 self.message_store.save(&mut msg).await?;
                 return Ok(vec![msg]);
             }
@@ -72,7 +72,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 MessageTarget::Agent(target_id),
                 body.clone(),
                 reply_to,
-            );
+            )?;
             self.message_store.save(&mut msg).await?;
             sent.push(msg);
         }
@@ -104,7 +104,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
             .await?;
         for msg in &mut messages {
             if msg.is_directed_to(agent) {
-                msg.deliver();
+                msg.deliver()?;
                 self.message_store.save(msg).await?;
             }
         }
@@ -135,7 +135,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         for id in ids {
             if let Some(mut msg) = self.message_store.find_by_id(id).await? {
                 if msg.is_directed_to(agent) {
-                    msg.mark_read();
+                    msg.mark_read()?;
                     self.message_store.save(&mut msg).await?;
                     continue;
                 }
@@ -183,6 +183,7 @@ mod tests {
             None,
             HashMap::new(),
         )
+        .unwrap()
     }
 
     async fn save_agent(store: &MockStore, agent: &mut Agent) {

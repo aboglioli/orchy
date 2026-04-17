@@ -184,7 +184,7 @@ impl Message {
         to: MessageTarget,
         body: String,
         reply_to: Option<MessageId>,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut msg = Self {
             id: MessageId::new(),
             org_id,
@@ -199,25 +199,27 @@ impl Message {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&message_events::MessageSentPayload {
+            org_id: msg.org_id.to_string(),
+            message_id: msg.id.to_string(),
+            project: msg.project.to_string(),
+            namespace: msg.namespace.to_string(),
+            from: msg.from.to_string(),
+            to: msg.to.to_string(),
+            body: msg.body.clone(),
+            reply_to: msg.reply_to.map(|id| id.to_string()),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             msg.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_SENT,
-            Payload::from_json(&message_events::MessageSentPayload {
-                org_id: msg.org_id.to_string(),
-                message_id: msg.id.to_string(),
-                project: msg.project.to_string(),
-                namespace: msg.namespace.to_string(),
-                from: msg.from.to_string(),
-                to: msg.to.to_string(),
-                body: msg.body.clone(),
-                reply_to: msg.reply_to.map(|id| id.to_string()),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| msg.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        msg.collector.collect(event);
 
-        msg
+        Ok(msg)
     }
 
     pub fn restore(r: RestoreMessage) -> Self {
@@ -236,7 +238,7 @@ impl Message {
         }
     }
 
-    pub fn reply(&self, from: AgentId, body: String) -> Self {
+    pub fn reply(&self, from: AgentId, body: String) -> Result<Self> {
         Self::new(
             self.org_id.clone(),
             self.project.clone(),
@@ -248,44 +250,50 @@ impl Message {
         )
     }
 
-    pub fn deliver(&mut self) {
+    pub fn deliver(&mut self) -> Result<()> {
         if self.status == MessageStatus::Pending {
             self.status = MessageStatus::Delivered;
 
-            let _ = Event::create(
-                self.org_id.as_str(),
-                message_events::NAMESPACE,
-                message_events::TOPIC_DELIVERED,
-                Payload::from_json(&message_events::MessageDeliveredPayload {
-                    org_id: self.org_id.to_string(),
-                    message_id: self.id.to_string(),
-                    from: self.from.to_string(),
-                    to: self.to.to_string(),
-                    status: "delivered".to_string(),
-                })
-                .unwrap(),
-            )
-            .map(|e| self.collector.collect(e));
-        }
-    }
-
-    pub fn mark_read(&mut self) {
-        self.status = MessageStatus::Read;
-
-        let _ = Event::create(
-            self.org_id.as_str(),
-            message_events::NAMESPACE,
-            message_events::TOPIC_READ,
-            Payload::from_json(&message_events::MessageReadPayload {
+            let payload = Payload::from_json(&message_events::MessageDeliveredPayload {
                 org_id: self.org_id.to_string(),
                 message_id: self.id.to_string(),
                 from: self.from.to_string(),
                 to: self.to.to_string(),
-                status: "read".to_string(),
+                status: "delivered".to_string(),
             })
-            .unwrap(),
+            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            let event = Event::create(
+                self.org_id.as_str(),
+                message_events::NAMESPACE,
+                message_events::TOPIC_DELIVERED,
+                payload,
+            )
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            self.collector.collect(event);
+        }
+        Ok(())
+    }
+
+    pub fn mark_read(&mut self) -> Result<()> {
+        self.status = MessageStatus::Read;
+
+        let payload = Payload::from_json(&message_events::MessageReadPayload {
+            org_id: self.org_id.to_string(),
+            message_id: self.id.to_string(),
+            from: self.from.to_string(),
+            to: self.to.to_string(),
+            status: "read".to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            message_events::NAMESPACE,
+            message_events::TOPIC_READ,
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn is_directed_to(&self, agent: &AgentId) -> bool {
@@ -397,7 +405,8 @@ mod tests {
             MessageTarget::Broadcast,
             "hi".into(),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(msg.status(), MessageStatus::Pending);
     }
 
@@ -411,8 +420,9 @@ mod tests {
             MessageTarget::Broadcast,
             "hi".into(),
             None,
-        );
-        msg.deliver();
+        )
+        .unwrap();
+        msg.deliver().unwrap();
         assert_eq!(msg.status(), MessageStatus::Delivered);
     }
 
@@ -426,8 +436,9 @@ mod tests {
             MessageTarget::Broadcast,
             "hi".into(),
             None,
-        );
-        msg.mark_read();
+        )
+        .unwrap();
+        msg.mark_read().unwrap();
         assert_eq!(msg.status(), MessageStatus::Read);
     }
 
@@ -443,8 +454,9 @@ mod tests {
             MessageTarget::Agent(receiver.clone()),
             "hello".into(),
             None,
-        );
-        let reply = original.reply(receiver.clone(), "hey back".into());
+        )
+        .unwrap();
+        let reply = original.reply(receiver.clone(), "hey back".into()).unwrap();
         assert_eq!(reply.reply_to(), Some(original.id()));
         assert_eq!(reply.from(), &receiver);
         assert_eq!(reply.to(), &MessageTarget::Agent(sender.clone()));

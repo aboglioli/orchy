@@ -348,7 +348,12 @@ impl Knowledge {
         }
     }
 
-    pub fn update(&mut self, title: String, content: String, agent_id: Option<AgentId>) {
+    pub fn update(
+        &mut self,
+        title: String,
+        content: String,
+        agent_id: Option<AgentId>,
+    ) -> Result<()> {
         self.title = title;
         self.content = content;
         self.version = self.version.next();
@@ -357,103 +362,118 @@ impl Knowledge {
         }
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&knowledge_events::KnowledgeUpdatedPayload {
+            entry_id: self.id.to_string(),
+            path: self.path.clone(),
+            title: self.title.clone(),
+            content: self.content.clone(),
+            version: self.version.as_u64(),
+            agent_id: self.agent_id.as_ref().map(|a| a.to_string()),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_UPDATED,
-            Payload::from_json(&knowledge_events::KnowledgeUpdatedPayload {
-                entry_id: self.id.to_string(),
-                path: self.path.clone(),
-                title: self.title.clone(),
-                content: self.content.clone(),
-                version: self.version.as_u64(),
-                agent_id: self.agent_id.as_ref().map(|a| a.to_string()),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
-    pub fn change_kind(&mut self, new_kind: KnowledgeKind) {
+    pub fn change_kind(&mut self, new_kind: KnowledgeKind) -> Result<()> {
         if self.kind == new_kind {
-            return;
+            return Ok(());
         }
         let old_kind = self.kind;
         self.kind = new_kind;
         self.version = self.version.next();
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&knowledge_events::KnowledgeKindChangedPayload {
+            entry_id: self.id.to_string(),
+            path: self.path.clone(),
+            old_kind: old_kind.to_string(),
+            new_kind: self.kind.to_string(),
+            version: self.version.as_u64(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_KIND_CHANGED,
-            Payload::from_json(&knowledge_events::KnowledgeKindChangedPayload {
-                entry_id: self.id.to_string(),
-                path: self.path.clone(),
-                old_kind: old_kind.to_string(),
-                new_kind: self.kind.to_string(),
-                version: self.version.as_u64(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
-    pub fn add_tag(&mut self, tag: String) {
+    pub fn add_tag(&mut self, tag: String) -> Result<()> {
         if !self.tags.contains(&tag) {
             self.tags.push(tag.clone());
             self.updated_at = Utc::now();
 
-            let _ = Event::create(
+            let payload = Payload::from_json(&knowledge_events::KnowledgeTaggedPayload {
+                entry_id: self.id.to_string(),
+                tag,
+            })
+            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            let event = Event::create(
                 self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAGGED,
-                Payload::from_json(&knowledge_events::KnowledgeTaggedPayload {
-                    entry_id: self.id.to_string(),
-                    tag,
-                })
-                .unwrap(),
+                payload,
             )
-            .map(|e| self.collector.collect(e));
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            self.collector.collect(event);
         }
+        Ok(())
     }
 
-    pub fn remove_tag(&mut self, tag: &str) {
+    pub fn remove_tag(&mut self, tag: &str) -> Result<()> {
         if let Some(pos) = self.tags.iter().position(|t| t == tag) {
             self.tags.remove(pos);
             self.updated_at = Utc::now();
 
-            let _ = Event::create(
+            let payload = Payload::from_json(&knowledge_events::KnowledgeTagRemovedPayload {
+                entry_id: self.id.to_string(),
+                tag: tag.to_string(),
+            })
+            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            let event = Event::create(
                 self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAG_REMOVED,
-                Payload::from_json(&knowledge_events::KnowledgeTagRemovedPayload {
-                    entry_id: self.id.to_string(),
-                    tag: tag.to_string(),
-                })
-                .unwrap(),
+                payload,
             )
-            .map(|e| self.collector.collect(e));
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            self.collector.collect(event);
         }
+        Ok(())
     }
 
-    pub fn move_to(&mut self, namespace: Namespace) {
+    pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
         let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&knowledge_events::KnowledgeMovedPayload {
+            entry_id: self.id.to_string(),
+            from_namespace,
+            to_namespace: self.namespace.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_MOVED,
-            Payload::from_json(&knowledge_events::KnowledgeMovedPayload {
-                entry_id: self.id.to_string(),
-                from_namespace,
-                to_namespace: self.namespace.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn rename(&mut self, path: String) -> Result<()> {
@@ -462,72 +482,82 @@ impl Knowledge {
         self.path = path;
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&knowledge_events::KnowledgeRenamedPayload {
+            entry_id: self.id.to_string(),
+            old_path,
+            new_path: self.path.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_RENAMED,
-            Payload::from_json(&knowledge_events::KnowledgeRenamedPayload {
-                entry_id: self.id.to_string(),
-                old_path,
-                new_path: self.path.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
 
         Ok(())
     }
 
-    pub fn set_metadata(&mut self, key: String, value: String) {
+    pub fn set_metadata(&mut self, key: String, value: String) -> Result<()> {
         self.metadata.insert(key.clone(), value.clone());
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&knowledge_events::KnowledgeMetadataSetPayload {
+            entry_id: self.id.to_string(),
+            key,
+            value,
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_SET,
-            Payload::from_json(&knowledge_events::KnowledgeMetadataSetPayload {
-                entry_id: self.id.to_string(),
-                key,
-                value,
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
-    pub fn remove_metadata(&mut self, key: &str) -> bool {
+    pub fn remove_metadata(&mut self, key: &str) -> Result<bool> {
         if self.metadata.remove(key).is_none() {
-            return false;
+            return Ok(false);
         }
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&knowledge_events::KnowledgeMetadataRemovedPayload {
+            entry_id: self.id.to_string(),
+            key: key.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_REMOVED,
-            Payload::from_json(&knowledge_events::KnowledgeMetadataRemovedPayload {
-                entry_id: self.id.to_string(),
-                key: key.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
-        true
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(true)
     }
 
-    pub fn mark_deleted(&mut self) {
-        let _ = Event::create(
+    pub fn mark_deleted(&mut self) -> Result<()> {
+        let payload = Payload::from_json(&knowledge_events::KnowledgeDeletedPayload {
+            entry_id: self.id.to_string(),
+            path: self.path.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_DELETED,
-            Payload::from_json(&knowledge_events::KnowledgeDeletedPayload {
-                entry_id: self.id.to_string(),
-                path: self.path.clone(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn set_embedding(&mut self, embedding: Vec<f32>, model: String, dimensions: u32) {
@@ -736,8 +766,8 @@ mod tests {
             md,
         )
         .unwrap();
-        assert!(!entry.remove_metadata("missing"));
-        assert!(entry.remove_metadata("k"));
+        assert!(!entry.remove_metadata("missing").unwrap());
+        assert!(entry.remove_metadata("k").unwrap());
         assert!(entry.metadata().is_empty());
     }
 
@@ -756,7 +786,7 @@ mod tests {
             HashMap::new(),
         )
         .unwrap();
-        entry.update("title".into(), "v2".into(), None);
+        entry.update("title".into(), "v2".into(), None).unwrap();
         assert_eq!(entry.version().as_u64(), 2);
         assert_eq!(entry.content(), "v2");
     }
@@ -777,10 +807,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entry.version().as_u64(), 1);
-        entry.change_kind(KnowledgeKind::Overview);
+        entry.change_kind(KnowledgeKind::Overview).unwrap();
         assert_eq!(entry.kind(), KnowledgeKind::Overview);
         assert_eq!(entry.version().as_u64(), 2);
-        entry.change_kind(KnowledgeKind::Overview);
+        entry.change_kind(KnowledgeKind::Overview).unwrap();
         assert_eq!(entry.version().as_u64(), 2);
     }
 }

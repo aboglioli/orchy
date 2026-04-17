@@ -763,24 +763,27 @@ impl Task {
 
         Ok(())
     }
-    pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) {
+    pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) -> Result<()> {
         self.parent_id = parent_id;
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&task_events::TaskParentChangedPayload {
+            task_id: self.id.to_string(),
+            parent_id: self.parent_id.map(|id| id.to_string()),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_PARENT_CHANGED,
-            Payload::from_json(&task_events::TaskParentChangedPayload {
-                task_id: self.id.to_string(),
-                parent_id: self.parent_id.map(|id| id.to_string()),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
-    pub fn replace_dependency(&mut self, old: &TaskId, new: TaskId) {
+    pub fn replace_dependency(&mut self, old: &TaskId, new: TaskId) -> Result<()> {
         for dep in &mut self.depends_on {
             if dep == old {
                 *dep = new;
@@ -789,18 +792,21 @@ impl Task {
         self.depends_on.dedup();
         self.updated_at = Utc::now();
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&task_events::TaskDependencyReplacedPayload {
+            task_id: self.id.to_string(),
+            old_dependency_id: old.to_string(),
+            new_dependency_id: new.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_DEPENDENCY_REPLACED,
-            Payload::from_json(&task_events::TaskDependencyReplacedPayload {
-                task_id: self.id.to_string(),
-                old_dependency_id: old.to_string(),
-                new_dependency_id: new.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
@@ -928,7 +934,7 @@ impl TaskWatcher {
         org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut watcher = Self {
             task_id,
             agent_id,
@@ -939,19 +945,21 @@ impl TaskWatcher {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&task_events::TaskWatcherAddedPayload {
+            task_id: watcher.task_id.to_string(),
+            agent_id: watcher.agent_id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             watcher.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_WATCHER_ADDED,
-            Payload::from_json(&task_events::TaskWatcherAddedPayload {
-                task_id: watcher.task_id.to_string(),
-                agent_id: watcher.agent_id.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| watcher.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        watcher.collector.collect(event);
 
-        watcher
+        Ok(watcher)
     }
 
     pub fn restore(
@@ -1133,18 +1141,20 @@ impl ReviewRequest {
             collector: EventCollector::new(),
         };
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&task_events::ReviewRequestedPayload {
+            review_id: review.id.to_string(),
+            task_id: review.task_id.to_string(),
+            requester: review.requester.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             review.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_REVIEW_REQUESTED,
-            Payload::from_json(&task_events::ReviewRequestedPayload {
-                review_id: review.id.to_string(),
-                task_id: review.task_id.to_string(),
-                requester: review.requester.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| review.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        review.collector.collect(event);
 
         Ok(review)
     }
@@ -1178,17 +1188,19 @@ impl ReviewRequest {
         self.comments = comments;
         self.resolved_at = Some(Utc::now());
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&task_events::ReviewApprovedPayload {
+            review_id: self.id.to_string(),
+            task_id: self.task_id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_REVIEW_APPROVED,
-            Payload::from_json(&task_events::ReviewApprovedPayload {
-                review_id: self.id.to_string(),
-                task_id: self.task_id.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
 
         Ok(())
     }
@@ -1208,17 +1220,19 @@ impl ReviewRequest {
         self.comments = comments;
         self.resolved_at = Some(Utc::now());
 
-        let _ = Event::create(
+        let payload = Payload::from_json(&task_events::ReviewRejectedPayload {
+            review_id: self.id.to_string(),
+            task_id: self.task_id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_REVIEW_REJECTED,
-            Payload::from_json(&task_events::ReviewRejectedPayload {
-                review_id: self.id.to_string(),
-                task_id: self.task_id.to_string(),
-            })
-            .unwrap(),
+            payload,
         )
-        .map(|e| self.collector.collect(e));
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
 
         Ok(())
     }
@@ -1464,7 +1478,7 @@ mod tests {
     fn set_parent_id_updates_field() {
         let mut task = make_task(TaskStatus::Pending, None);
         let parent = TaskId::new();
-        task.set_parent_id(Some(parent));
+        task.set_parent_id(Some(parent)).unwrap();
         assert_eq!(task.parent_id(), Some(parent));
     }
 
@@ -1474,7 +1488,7 @@ mod tests {
         let new_dep = TaskId::new();
         let mut task = make_task(TaskStatus::Pending, None);
         task.add_dependency(old_dep).unwrap();
-        task.replace_dependency(&old_dep, new_dep);
+        task.replace_dependency(&old_dep, new_dep).unwrap();
         assert!(!task.depends_on().contains(&old_dep));
         assert!(task.depends_on().contains(&new_dep));
     }
@@ -1486,7 +1500,7 @@ mod tests {
         let mut task = make_task(TaskStatus::Pending, None);
         task.add_dependency(dep_a).unwrap();
         task.add_dependency(dep_b).unwrap();
-        task.replace_dependency(&dep_a, dep_b);
+        task.replace_dependency(&dep_a, dep_b).unwrap();
         assert_eq!(task.depends_on().len(), 1);
         assert!(task.depends_on().contains(&dep_b));
     }
