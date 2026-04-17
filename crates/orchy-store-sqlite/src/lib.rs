@@ -108,14 +108,18 @@ impl SqliteBackend {
             let sql = std::fs::read_to_string(entry.path())
                 .map_err(|e| Error::Store(format!("cannot read {filename}: {e}")))?;
 
-            conn.execute_batch(&sql)
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| Error::Store(format!("migration {filename} tx begin: {e}")))?;
+            tx.execute_batch(&sql)
                 .map_err(|e| Error::Store(format!("migration {filename} failed: {e}")))?;
-
-            conn.execute(
+            tx.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
                 rusqlite::params![&filename, chrono::Utc::now().to_rfc3339()],
             )
             .map_err(|e| Error::Store(e.to_string()))?;
+            tx.commit()
+                .map_err(|e| Error::Store(format!("migration {filename} commit: {e}")))?;
         }
 
         Ok(())

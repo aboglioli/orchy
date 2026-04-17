@@ -80,16 +80,23 @@ impl PgBackend {
             let sql = std::fs::read_to_string(entry.path())
                 .map_err(|e| Error::Store(format!("cannot read {filename}: {e}")))?;
 
+            let mut tx = self
+                .pool
+                .begin()
+                .await
+                .map_err(|e| Error::Store(format!("migration {filename} tx begin: {e}")))?;
             sqlx::query(&sql)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(|e| Error::Store(format!("migration {filename} failed: {e}")))?;
-
             sqlx::query("INSERT INTO schema_migrations (version) VALUES ($1)")
                 .bind(&filename)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(|e| Error::Store(e.to_string()))?;
+            tx.commit()
+                .await
+                .map_err(|e| Error::Store(format!("migration {filename} commit: {e}")))?;
         }
 
         self.init_vector_indexes().await?;
