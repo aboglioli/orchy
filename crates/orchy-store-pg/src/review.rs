@@ -20,9 +20,10 @@ impl ReviewStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO reviews (id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "INSERT INTO reviews (id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              ON CONFLICT (id) DO UPDATE SET
+                organization_id = EXCLUDED.organization_id,
                 task_id = EXCLUDED.task_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
@@ -34,6 +35,7 @@ impl ReviewStore for PgBackend {
                 resolved_at = EXCLUDED.resolved_at",
         )
         .bind(review.id().as_uuid())
+        .bind(review.org_id().to_string())
         .bind(review.task_id().as_uuid())
         .bind(review.project().to_string())
         .bind(review.namespace().to_string())

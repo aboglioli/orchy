@@ -18,15 +18,17 @@ impl WatcherStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO task_watchers (task_id, agent_id, project, namespace, created_at)
-             VALUES ($1, $2, $3, $4, $5)
+            "INSERT INTO task_watchers (task_id, agent_id, organization_id, project, namespace, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (task_id, agent_id) DO UPDATE SET
+                organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 created_at = EXCLUDED.created_at",
         )
         .bind(watcher.task_id().as_uuid())
         .bind(watcher.agent_id().as_uuid())
+        .bind(watcher.org_id().to_string())
         .bind(watcher.project().to_string())
         .bind(watcher.namespace().to_string())
         .bind(watcher.created_at())

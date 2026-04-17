@@ -26,9 +26,10 @@ impl LockStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO resource_locks (project, namespace, name, holder, acquired_at, expires_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
+                lock.org_id().to_string(),
                 lock.project().to_string(),
                 lock.namespace().to_string(),
                 lock.name(),
@@ -48,7 +49,7 @@ impl LockStore for SqliteBackend {
 
     async fn find(
         &self,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
@@ -57,13 +58,18 @@ impl LockStore for SqliteBackend {
         let mut stmt = conn
             .prepare(
                 "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
-                 FROM resource_locks WHERE project = ?1 AND namespace = ?2 AND name = ?3",
+                 FROM resource_locks WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND name = ?4",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let result = stmt
             .query_row(
-                rusqlite::params![project.to_string(), namespace.to_string(), name],
+                rusqlite::params![
+                    org.to_string(),
+                    project.to_string(),
+                    namespace.to_string(),
+                    name
+                ],
                 row_to_resource_lock,
             )
             .optional()
@@ -74,15 +80,20 @@ impl LockStore for SqliteBackend {
 
     async fn delete(
         &self,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
     ) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "DELETE FROM resource_locks WHERE project = ?1 AND namespace = ?2 AND name = ?3",
-            rusqlite::params![project.to_string(), namespace.to_string(), name],
+            "DELETE FROM resource_locks WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND name = ?4",
+            rusqlite::params![
+                org.to_string(),
+                project.to_string(),
+                namespace.to_string(),
+                name
+            ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 

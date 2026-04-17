@@ -25,11 +25,12 @@ impl WatcherStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO task_watchers (task_id, agent_id, project, namespace, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT OR REPLACE INTO task_watchers (task_id, agent_id, organization_id, project, namespace, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![
                 watcher.task_id().to_string(),
                 watcher.agent_id().to_string(),
+                watcher.org_id().to_string(),
                 watcher.project().to_string(),
                 watcher.namespace().to_string(),
                 watcher.created_at().to_rfc3339(),

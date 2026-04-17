@@ -22,13 +22,14 @@ impl ProjectStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO projects (name, description, metadata, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (name) DO UPDATE SET
+            "INSERT INTO projects (organization_id, name, description, metadata, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (organization_id, name) DO UPDATE SET
                 description = EXCLUDED.description,
                 metadata = EXCLUDED.metadata,
                 updated_at = EXCLUDED.updated_at",
         )
+        .bind(project.org_id().to_string())
         .bind(project.id().to_string())
         .bind(project.description())
         .bind(&metadata_json)
@@ -45,11 +46,12 @@ impl ProjectStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, _org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
         let row = sqlx::query(
             "SELECT organization_id, name, description, metadata, created_at, updated_at
-             FROM projects WHERE name = $1",
+             FROM projects WHERE organization_id = $1 AND name = $2",
         )
+        .bind(org.to_string())
         .bind(id.to_string())
         .fetch_optional(&self.pool)
         .await

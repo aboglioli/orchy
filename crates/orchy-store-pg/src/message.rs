@@ -48,9 +48,10 @@ impl MessageStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "INSERT INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO UPDATE SET
+                organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 from_agent = EXCLUDED.from_agent,
@@ -60,6 +61,7 @@ impl MessageStore for PgBackend {
                 status = EXCLUDED.status",
         )
         .bind(message.id().as_uuid())
+        .bind(message.org_id().to_string())
         .bind(message.project().to_string())
         .bind(message.namespace().to_string())
         .bind(message.from().as_uuid())
@@ -113,7 +115,7 @@ impl MessageStore for PgBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -122,33 +124,8 @@ impl MessageStore for PgBackend {
                 "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages
                  WHERE status = 'pending'
-                   AND project = $1
-                   AND (
-                        to_target = $2
-                        OR (
-                            to_target = 'broadcast'
-                            AND from_agent != $3
-                            AND NOT EXISTS (
-                                SELECT 1 FROM message_receipts
-                                WHERE message_receipts.message_id = messages.id
-                                  AND message_receipts.agent_id = $3
-                            )
-                        )
-                   )",
-            )
-            .bind(project.to_string())
-            .bind(agent.to_string())
-            .bind(agent.as_uuid())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
-        } else {
-            sqlx::query(
-                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-                 FROM messages
-                 WHERE status = 'pending'
-                   AND project = $1
-                   AND (namespace = $2 OR namespace LIKE $2 || '/%')
+                   AND organization_id = $1
+                   AND project = $2
                    AND (
                         to_target = $3
                         OR (
@@ -162,6 +139,35 @@ impl MessageStore for PgBackend {
                         )
                    )",
             )
+            .bind(org.to_string())
+            .bind(project.to_string())
+            .bind(agent.to_string())
+            .bind(agent.as_uuid())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?
+        } else {
+            sqlx::query(
+                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 FROM messages
+                 WHERE status = 'pending'
+                   AND organization_id = $1
+                   AND project = $2
+                   AND (namespace = $3 OR namespace LIKE $3 || '/%')
+                   AND (
+                        to_target = $4
+                        OR (
+                            to_target = 'broadcast'
+                            AND from_agent != $5
+                            AND NOT EXISTS (
+                                SELECT 1 FROM message_receipts
+                                WHERE message_receipts.message_id = messages.id
+                                  AND message_receipts.agent_id = $5
+                            )
+                        )
+                   )",
+            )
+            .bind(org.to_string())
             .bind(project.to_string())
             .bind(namespace.to_string())
             .bind(agent.to_string())
@@ -177,7 +183,7 @@ impl MessageStore for PgBackend {
     async fn find_sent(
         &self,
         sender: &AgentId,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<Vec<Message>> {
@@ -197,6 +203,7 @@ impl MessageStore for PgBackend {
                 Messages::ReplyTo,
             ])
             .and_where(Expr::col(Messages::FromAgent).eq(*sender.as_uuid()))
+            .and_where(Expr::col(Messages::OrganizationId).eq(org.to_string()))
             .and_where(Expr::col(Messages::Project).eq(project.to_string()));
 
         if !namespace.is_root() {

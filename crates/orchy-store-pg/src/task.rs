@@ -78,9 +78,10 @@ impl TaskStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            "INSERT INTO tasks (id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
              ON CONFLICT (id) DO UPDATE SET
+                organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 parent_id = EXCLUDED.parent_id,
@@ -98,6 +99,7 @@ impl TaskStore for PgBackend {
                 updated_at = EXCLUDED.updated_at",
         )
         .bind(task.id().as_uuid())
+        .bind(task.org_id().to_string())
         .bind(task.project().to_string())
         .bind(task.namespace().to_string())
         .bind(task.parent_id().map(|id| *id.as_uuid()))

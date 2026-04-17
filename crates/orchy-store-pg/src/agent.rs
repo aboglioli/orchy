@@ -26,9 +26,10 @@ impl AgentStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            "INSERT INTO agents (id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT (id) DO UPDATE SET
+                organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
                 parent_id = EXCLUDED.parent_id,
@@ -40,6 +41,7 @@ impl AgentStore for PgBackend {
                 metadata = EXCLUDED.metadata",
         )
         .bind(agent.id().to_string())
+        .bind(agent.org_id().to_string())
         .bind(agent.project().to_string())
         .bind(agent.namespace().to_string())
         .bind(agent.parent_id().map(|id| *id.as_uuid()))
@@ -71,9 +73,10 @@ impl AgentStore for PgBackend {
         row.map(|r| row_to_agent(&r)).transpose()
     }
 
-    async fn list(&self, _org: &OrganizationId) -> Result<Vec<Agent>> {
-        let sql = format!("SELECT {SELECT_COLS} FROM agents");
+    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = $1");
         let rows = sqlx::query(&sql)
+            .bind(org.to_string())
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;

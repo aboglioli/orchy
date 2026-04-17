@@ -19,13 +19,15 @@ impl LockStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO resource_locks (project, namespace, name, holder, acquired_at, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (project, namespace, name) DO UPDATE SET
+                organization_id = EXCLUDED.organization_id,
                 holder = EXCLUDED.holder,
                 acquired_at = EXCLUDED.acquired_at,
                 expires_at = EXCLUDED.expires_at",
         )
+        .bind(lock.org_id().to_string())
         .bind(lock.project().to_string())
         .bind(lock.namespace().to_string())
         .bind(lock.name())
@@ -45,15 +47,16 @@ impl LockStore for PgBackend {
 
     async fn find(
         &self,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
     ) -> Result<Option<ResourceLock>> {
         let row = sqlx::query(
             "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
-             FROM resource_locks WHERE project = $1 AND namespace = $2 AND name = $3",
+             FROM resource_locks WHERE organization_id = $1 AND project = $2 AND namespace = $3 AND name = $4",
         )
+        .bind(org.to_string())
         .bind(project.to_string())
         .bind(namespace.to_string())
         .bind(name)
@@ -66,14 +69,15 @@ impl LockStore for PgBackend {
 
     async fn delete(
         &self,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
     ) -> Result<()> {
         sqlx::query(
-            "DELETE FROM resource_locks WHERE project = $1 AND namespace = $2 AND name = $3",
+            "DELETE FROM resource_locks WHERE organization_id = $1 AND project = $2 AND namespace = $3 AND name = $4",
         )
+        .bind(org.to_string())
         .bind(project.to_string())
         .bind(namespace.to_string())
         .bind(name)

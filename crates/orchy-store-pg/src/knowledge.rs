@@ -78,10 +78,11 @@ impl KnowledgeStore for PgBackend {
 
         if let Some(pv) = entry.persisted_version() {
             let result = sqlx::query(
-                "UPDATE knowledge_entries SET project = $2, namespace = $3, path = $4, kind = $5, title = $6, content = $7, tags = $8, version = $9, agent_id = $10, metadata = $11, embedding = $12, embedding_model = $13, embedding_dimensions = $14, updated_at = $15
-                 WHERE id = $1 AND version = $16",
+                "UPDATE knowledge_entries SET organization_id = $2, project = $3, namespace = $4, path = $5, kind = $6, title = $7, content = $8, tags = $9, version = $10, agent_id = $11, metadata = $12, embedding = $13, embedding_model = $14, embedding_dimensions = $15, updated_at = $16
+                 WHERE id = $1 AND version = $17",
             )
             .bind(entry.id().as_uuid())
+            .bind(entry.org_id().to_string())
             .bind(entry.project().map(|p| p.to_string()))
             .bind(entry.namespace().to_string())
             .bind(entry.path())
@@ -119,10 +120,11 @@ impl KnowledgeStore for PgBackend {
             }
         } else {
             sqlx::query(
-                "INSERT INTO knowledge_entries (id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
+                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
             )
             .bind(entry.id().as_uuid())
+            .bind(entry.org_id().to_string())
             .bind(entry.project().map(|p| p.to_string()))
             .bind(entry.namespace().to_string())
             .bind(entry.path())
@@ -167,14 +169,15 @@ impl KnowledgeStore for PgBackend {
 
     async fn find_by_path(
         &self,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
         let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE project IS NOT DISTINCT FROM $1 AND namespace = $2 AND path = $3"
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE organization_id = $1 AND project IS NOT DISTINCT FROM $2 AND namespace = $3 AND path = $4"
         ))
+        .bind(org.to_string())
         .bind(project.map(|p| p.to_string()))
         .bind(namespace.to_string())
         .bind(path)

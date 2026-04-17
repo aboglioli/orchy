@@ -18,9 +18,10 @@ impl ProjectStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO projects (name, description, metadata, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT OR REPLACE INTO projects (organization_id, name, description, metadata, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![
+                project.org_id().to_string(),
                 project.id().to_string(),
                 project.description(),
                 serde_json::to_string(project.metadata())
@@ -38,17 +39,20 @@ impl ProjectStore for SqliteBackend {
         Ok(())
     }
 
-    async fn find_by_id(&self, _org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
+    async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT organization_id, name, description, metadata, created_at, updated_at
-                 FROM projects WHERE name = ?1",
+                 FROM projects WHERE organization_id = ?1 AND name = ?2",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let result = stmt
-            .query_row(rusqlite::params![id.to_string()], row_to_project)
+            .query_row(
+                rusqlite::params![org.to_string(), id.to_string()],
+                row_to_project,
+            )
             .optional()
             .map_err(|e| Error::Store(e.to_string()))?;
 
