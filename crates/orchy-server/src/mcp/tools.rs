@@ -21,7 +21,6 @@ use orchy_application::{
     WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
-use orchy_core::namespace::Namespace;
 
 use super::handler::{
     NamespacePolicy, OrchyHandler, default_org, mcp_error, parse_project, to_json,
@@ -91,17 +90,12 @@ impl OrchyHandler {
 
         let input_roles = params.roles.unwrap_or_default();
         let roles = if input_roles.is_empty() {
-            match self
-                .container
-                .task_service
-                .suggest_roles(
-                    &project,
-                    namespace.as_deref().map(|s| {
-                        Namespace::try_from(s.to_string()).unwrap_or_else(|_| Namespace::root())
-                    }),
-                )
-                .await
-            {
+            let cmd = orchy_application::SuggestRolesCommand {
+                org_id: Some(org_id.clone()),
+                project: params.project.clone(),
+                namespace: namespace.clone(),
+            };
+            match self.container.app.suggest_roles.execute(cmd).await {
                 Ok(r) if !r.is_empty() => r,
                 _ => input_roles,
             }
@@ -173,19 +167,13 @@ impl OrchyHandler {
 
         let (_, org, _, _) = self.require_session()?;
         let cmd = ListAgentsCommand {
-            org_id: org.to_string(),
+            org_id: Some(org.to_string()),
+            project: Some(project.to_string()),
             after: None,
             limit: None,
         };
         match self.container.app.list_agents.execute(cmd).await {
-            Ok(page) => {
-                let filtered: Vec<_> = page
-                    .items
-                    .into_iter()
-                    .filter(|a| *a.project() == project)
-                    .collect();
-                Ok(to_json(&filtered))
-            }
+            Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -229,29 +217,6 @@ impl OrchyHandler {
     )]
     async fn disconnect(&self) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
-
-        if let Err(e) = self
-            .container
-            .task_service
-            .release_agent_tasks(&agent_id)
-            .await
-        {
-            return Err(mcp_error(e));
-        }
-
-        let _ = self
-            .container
-            .lock_service
-            .release_agent_locks(&agent_id)
-            .await;
-
-        use orchy_core::task::WatcherStore;
-        let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
-            .await
-            .unwrap_or_default();
-        for w in &watchers {
-            let _ = WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
-        }
 
         let cmd = DisconnectAgentCommand {
             agent_id: agent_id.to_string(),
@@ -408,7 +373,8 @@ impl OrchyHandler {
             Ok(Some(task)) => {
                 let ctx = self
                     .container
-                    .task_service
+                    .app
+                    .get_task_with_context
                     .get_with_context(&task.id())
                     .await
                     .map_err(mcp_error)?;
@@ -474,7 +440,8 @@ impl OrchyHandler {
             Ok(task) => {
                 let ctx = self
                     .container
-                    .task_service
+                    .app
+                    .get_task_with_context
                     .get_with_context(&task.id())
                     .await
                     .map_err(mcp_error)?;
@@ -501,7 +468,8 @@ impl OrchyHandler {
             Ok(task) => {
                 let ctx = self
                     .container
-                    .task_service
+                    .app
+                    .get_task_with_context
                     .get_with_context(&task.id())
                     .await
                     .map_err(mcp_error)?;
@@ -1031,24 +999,21 @@ impl OrchyHandler {
         }
 
         let agents_cmd = ListAgentsCommand {
-            org_id: org.to_string(),
+            org_id: Some(org.to_string()),
+            project: Some(project_id.to_string()),
             after: None,
             limit: None,
         };
-        let agents = self
+        let project_agents: Vec<_> = self
             .container
             .app
             .list_agents
             .execute(agents_cmd)
             .await
-            .map_err(mcp_error)?;
-        let project_agents: Vec<_> = agents
+            .map_err(mcp_error)?
             .items
             .into_iter()
-            .filter(|a| {
-                *a.project() == project_id
-                    && a.status() != orchy_core::agent::AgentStatus::Disconnected
-            })
+            .filter(|a| a.status() != orchy_core::agent::AgentStatus::Disconnected)
             .collect();
 
         let tasks_cmd = ListTasksCommand {
@@ -1279,10 +1244,7 @@ impl OrchyHandler {
             &namespace,
             host,
             port,
-            &self.container.knowledge_service,
-            &self.container.project_service,
-            &self.container.agent_service,
-            &self.container.task_service,
+            &self.container.app,
         )
         .await
         {
@@ -1456,13 +1418,9 @@ impl OrchyHandler {
 
         match self
             .container
-            .task_service
-            .get_with_context(
-                &params
-                    .task_id
-                    .parse()
-                    .map_err(|e| format!("invalid task_id: {e}"))?,
-            )
+            .app
+            .get_task_with_context
+            .execute(&params.task_id)
             .await
         {
             Ok(ctx) => Ok(to_json(&ctx)),
@@ -2079,10 +2037,16 @@ impl ServerHandler for OrchyHandler {
             }
         };
 
+        let cmd = orchy_application::ListSkillsCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+        };
         let skills = self
             .container
-            .knowledge_service
-            .list_skills(&org, &project, &namespace)
+            .app
+            .list_skills
+            .execute(cmd)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
@@ -2111,10 +2075,16 @@ impl ServerHandler for OrchyHandler {
             .require_session()
             .map_err(|e| ErrorData::internal_error(e, None))?;
 
+        let cmd = orchy_application::ListSkillsCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+        };
         let skills = self
             .container
-            .knowledge_service
-            .list_skills(&org, &project, &namespace)
+            .app
+            .list_skills
+            .execute(cmd)
             .await
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 

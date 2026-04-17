@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
+use orchy_application::HeartbeatCommand;
 use rmcp::transport::{
     StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
 };
@@ -49,7 +50,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(ref skills_config) = container.config.skills {
         let dir = std::path::Path::new(&skills_config.dir);
-        skill_loader::load_skills_from_dir(dir, &container.knowledge_service)
+        skill_loader::load_skills_from_dir(dir, &container.app)
             .await
             .map_err(|e| format!("failed to load skills from disk: {e}"))?;
     }
@@ -113,9 +114,10 @@ async fn heartbeat_middleware(
         let session_agents = container.session_agents.read().await;
         if let Some(agent_id) = session_agents.get(session_id) {
             let container = Arc::clone(&container);
-            let agent_id = agent_id.clone();
+            let agent_id = agent_id.to_string();
             tokio::spawn(async move {
-                let _ = container.agent_service.heartbeat(&agent_id).await;
+                let cmd = HeartbeatCommand { agent_id };
+                let _ = container.app.heartbeat.execute(cmd).await;
             });
         }
     }
@@ -148,18 +150,7 @@ async fn bootstrap_handler(
     let host = &container.config.server.host;
     let port = container.config.server.port;
 
-    match bootstrap::generate_bootstrap_prompt(
-        &project_id,
-        &ns,
-        host,
-        port,
-        &container.knowledge_service,
-        &container.project_service,
-        &container.agent_service,
-        &container.task_service,
-    )
-    .await
-    {
+    match bootstrap::generate_bootstrap_prompt(&project_id, &ns, host, port, &container.app).await {
         Ok(prompt) => (
             [(
                 axum::http::header::CONTENT_TYPE,

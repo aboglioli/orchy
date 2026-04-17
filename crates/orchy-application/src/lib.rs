@@ -28,13 +28,16 @@ pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
 
 // Agent
 mod change_roles;
+mod check_timed_out_agents;
 mod disconnect_agent;
 mod get_agent;
 mod get_agent_summary;
 mod heartbeat;
 mod list_agents;
 mod register_agent;
+mod suggest_roles;
 mod switch_context;
+mod update_agent_status;
 
 // Task lifecycle
 mod assign_task;
@@ -44,6 +47,7 @@ mod complete_task;
 mod fail_task;
 mod get_next_task;
 mod get_task;
+mod get_task_with_context;
 mod list_tasks;
 mod post_task;
 mod release_task;
@@ -92,6 +96,10 @@ mod tag_knowledge;
 mod untag_knowledge;
 mod write_knowledge;
 
+// Knowledge (inheritance)
+mod list_overviews;
+pub(crate) mod list_skills;
+
 // Project
 mod get_project;
 mod list_namespaces;
@@ -108,13 +116,16 @@ mod get_project_overview;
 mod poll_updates;
 
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
+pub use check_timed_out_agents::CheckTimedOutAgents;
 pub use disconnect_agent::{DisconnectAgent, DisconnectAgentCommand};
 pub use get_agent::GetAgent;
 pub use get_agent_summary::{AgentSummary, GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
 pub use register_agent::{RegisterAgent, RegisterAgentCommand};
+pub use suggest_roles::{SuggestRoles, SuggestRolesCommand};
 pub use switch_context::{SwitchContext, SwitchContextCommand};
+pub use update_agent_status::{UpdateAgentStatus, UpdateAgentStatusCommand};
 
 pub use assign_task::{AssignTask, AssignTaskCommand};
 pub use cancel_task::{CancelTask, CancelTaskCommand};
@@ -123,6 +134,7 @@ pub use complete_task::{CompleteTask, CompleteTaskCommand};
 pub use fail_task::{FailTask, FailTaskCommand};
 pub use get_next_task::{GetNextTask, GetNextTaskCommand};
 pub use get_task::GetTask;
+pub use get_task_with_context::GetTaskWithContext;
 pub use list_tasks::{ListTasks, ListTasksCommand};
 pub use post_task::{PostTask, PostTaskCommand, ResourceRefInput};
 pub use release_task::{ReleaseTask, ReleaseTaskCommand};
@@ -166,6 +178,9 @@ pub use tag_knowledge::{TagKnowledge, TagKnowledgeCommand};
 pub use untag_knowledge::{UntagKnowledge, UntagKnowledgeCommand};
 pub use write_knowledge::{WriteKnowledge, WriteKnowledgeCommand};
 
+pub use list_overviews::{ListOverviews, ListOverviewsCommand};
+pub use list_skills::{ListSkills, ListSkillsCommand};
+
 pub use get_project::{GetProject, GetProjectCommand};
 pub use list_namespaces::{ListNamespaces, ListNamespacesCommand};
 pub use set_project_metadata::{SetProjectMetadata, SetProjectMetadataCommand};
@@ -188,9 +203,13 @@ pub struct Application {
     pub get_agent: GetAgent,
     pub get_agent_summary: GetAgentSummary,
     pub list_agents: ListAgents,
+    pub suggest_roles: SuggestRoles,
+    pub check_timed_out_agents: CheckTimedOutAgents,
+    pub update_agent_status: UpdateAgentStatus,
 
     pub post_task: PostTask,
     pub get_task: GetTask,
+    pub get_task_with_context: GetTaskWithContext,
     pub list_tasks: ListTasks,
     pub get_next_task: GetNextTask,
     pub claim_task: ClaimTask,
@@ -238,6 +257,8 @@ pub struct Application {
     pub untag_knowledge: UntagKnowledge,
     pub patch_knowledge_metadata: PatchKnowledgeMetadata,
     pub import_knowledge: ImportKnowledge,
+    pub list_skills: ListSkills,
+    pub list_overviews: ListOverviews,
 
     pub get_project: GetProject,
     pub update_project: UpdateProject,
@@ -275,7 +296,12 @@ impl Application {
                 locks.clone(),
                 watchers.clone(),
             ),
-            disconnect_agent: DisconnectAgent::new(agents.clone()),
+            disconnect_agent: DisconnectAgent::new(
+                agents.clone(),
+                tasks.clone(),
+                locks.clone(),
+                watchers.clone(),
+            ),
             heartbeat: Heartbeat::new(agents.clone()),
             change_roles: ChangeRoles::new(agents.clone()),
             get_agent: GetAgent::new(agents.clone()),
@@ -287,9 +313,13 @@ impl Application {
                 knowledge.clone(),
             ),
             list_agents: ListAgents::new(agents.clone()),
+            suggest_roles: SuggestRoles::new(tasks.clone()),
+            check_timed_out_agents: CheckTimedOutAgents::new(agents.clone()),
+            update_agent_status: UpdateAgentStatus::new(agents.clone()),
 
             post_task: PostTask::new(tasks.clone()),
             get_task: GetTask::new(tasks.clone()),
+            get_task_with_context: GetTaskWithContext::new(tasks.clone()),
             list_tasks: ListTasks::new(tasks.clone()),
             get_next_task: GetNextTask::new(tasks.clone()),
             claim_task: ClaimTask::new(tasks.clone()),
@@ -337,6 +367,8 @@ impl Application {
             untag_knowledge: UntagKnowledge::new(knowledge.clone()),
             patch_knowledge_metadata: PatchKnowledgeMetadata::new(knowledge.clone()),
             import_knowledge: ImportKnowledge::new(knowledge.clone(), embeddings),
+            list_skills: ListSkills::new(knowledge.clone()),
+            list_overviews: ListOverviews::new(knowledge.clone()),
 
             get_project: GetProject::new(projects.clone()),
             update_project: UpdateProject::new(projects.clone()),

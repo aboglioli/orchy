@@ -73,7 +73,8 @@ pub async fn list(
     }
 
     let cmd = ListAgentsCommand {
-        org_id: org,
+        org_id: Some(org),
+        project: None,
         after: None,
         limit: None,
     };

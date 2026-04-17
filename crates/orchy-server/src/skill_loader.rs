@@ -1,14 +1,12 @@
 use std::path::Path;
 
-use orchy_core::knowledge::service::KnowledgeService;
-use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore, WriteKnowledge};
+use orchy_application::{Application, WriteKnowledgeCommand};
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::organization::OrganizationId;
 use tracing::{info, warn};
 
-pub async fn load_skills_from_dir<S: KnowledgeStore>(
+pub async fn load_skills_from_dir(
     dir: &Path,
-    service: &KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
+    app: &Application,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     if !dir.exists() {
         warn!(path = %dir.display(), "skills directory does not exist, skipping");
@@ -16,27 +14,27 @@ pub async fn load_skills_from_dir<S: KnowledgeStore>(
     }
 
     let mut count = 0;
-    load_recursive(dir, dir, service, &mut count).await?;
+    load_recursive(dir, dir, app, &mut count).await?;
     info!(count, path = %dir.display(), "loaded skills from disk");
     Ok(count)
 }
 
 #[allow(clippy::type_complexity)]
-fn load_recursive<'a, S: KnowledgeStore>(
+fn load_recursive<'a>(
     base: &'a Path,
     current: &'a Path,
-    service: &'a KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
+    app: &'a Application,
     count: &'a mut usize,
 ) -> std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>,
 > {
-    Box::pin(async move { load_recursive_inner(base, current, service, count).await })
+    Box::pin(async move { load_recursive_inner(base, current, app, count).await })
 }
 
-async fn load_recursive_inner<S: KnowledgeStore>(
+async fn load_recursive_inner(
     base: &Path,
     current: &Path,
-    service: &KnowledgeService<S, crate::embeddings::EmbeddingsBackend>,
+    app: &Application,
     count: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
@@ -46,7 +44,7 @@ async fn load_recursive_inner<S: KnowledgeStore>(
         let path = entry.path();
 
         if path.is_dir() {
-            load_recursive(base, &path, service, count).await?;
+            load_recursive(base, &path, app, count).await?;
             continue;
         }
 
@@ -71,13 +69,10 @@ async fn load_recursive_inner<S: KnowledgeStore>(
             None => (namespace_str.clone(), None),
         };
 
-        let project = match ProjectId::try_from(project_str.clone()) {
-            Ok(p) => p,
-            Err(e) => {
-                warn!(file = %path.display(), error = %e, "invalid project from path, skipping");
-                continue;
-            }
-        };
+        if ProjectId::try_from(project_str.clone()).is_err() {
+            warn!(file = %path.display(), "invalid project from path, skipping");
+            continue;
+        }
 
         let namespace = match scope_str {
             Some(scope) => match Namespace::try_from(format!("/{scope}")) {
@@ -99,23 +94,23 @@ async fn load_recursive_inner<S: KnowledgeStore>(
         let raw = std::fs::read_to_string(&path)?;
         let (description, content) = parse_frontmatter(&raw, &name);
 
-        let cmd = WriteKnowledge {
-            org_id: OrganizationId::new("default").unwrap(),
-            project: Some(project.clone()),
-            namespace: namespace.clone(),
+        let cmd = WriteKnowledgeCommand {
+            org_id: "default".to_string(),
+            project: project_str,
+            namespace: Some(namespace.to_string()),
             path: format!("skills/{name}"),
-            kind: KnowledgeKind::Skill,
+            kind: "skill".to_string(),
             title: description,
             content,
-            tags: vec![],
-            expected_version: None,
+            tags: None,
+            version: None,
             agent_id: None,
-            metadata: std::collections::HashMap::new(),
-            metadata_remove: vec![],
+            metadata: None,
+            metadata_remove: None,
         };
 
-        service
-            .write(cmd)
+        app.write_knowledge
+            .execute(cmd)
             .await
             .map_err(|e| format!("failed to load skill {} in {}: {}", name, namespace, e))?;
 

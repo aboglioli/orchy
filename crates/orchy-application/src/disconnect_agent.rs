@@ -3,6 +3,9 @@ use std::sync::Arc;
 
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
+use orchy_core::pagination::PageParams;
+use orchy_core::resource_lock::LockStore;
+use orchy_core::task::{TaskFilter, TaskStore, WatcherStore};
 
 pub struct DisconnectAgentCommand {
     pub agent_id: String,
@@ -10,15 +13,33 @@ pub struct DisconnectAgentCommand {
 
 pub struct DisconnectAgent {
     agents: Arc<dyn AgentStore>,
+    tasks: Arc<dyn TaskStore>,
+    locks: Arc<dyn LockStore>,
+    watchers: Arc<dyn WatcherStore>,
 }
 
 impl DisconnectAgent {
-    pub fn new(agents: Arc<dyn AgentStore>) -> Self {
-        Self { agents }
+    pub fn new(
+        agents: Arc<dyn AgentStore>,
+        tasks: Arc<dyn TaskStore>,
+        locks: Arc<dyn LockStore>,
+        watchers: Arc<dyn WatcherStore>,
+    ) -> Self {
+        Self {
+            agents,
+            tasks,
+            locks,
+            watchers,
+        }
     }
 
     pub async fn execute(&self, cmd: DisconnectAgentCommand) -> Result<()> {
         let id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+
+        self.release_tasks(&id).await;
+        self.release_locks(&id).await;
+        self.remove_watchers(&id).await;
+
         let mut agent = self
             .agents
             .find_by_id(&id)
@@ -26,5 +47,54 @@ impl DisconnectAgent {
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
         agent.disconnect()?;
         self.agents.save(&mut agent).await
+    }
+
+    async fn release_tasks(&self, agent_id: &AgentId) {
+        let tasks = self
+            .tasks
+            .list(
+                TaskFilter {
+                    assigned_to: Some(agent_id.clone()),
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
+            .await
+            .map(|p| p.items)
+            .unwrap_or_default();
+
+        for mut task in tasks {
+            let _ = task.release();
+            let _ = self.tasks.save(&mut task).await;
+        }
+    }
+
+    async fn release_locks(&self, agent_id: &AgentId) {
+        let locks = self
+            .locks
+            .find_by_holder(agent_id)
+            .await
+            .unwrap_or_default();
+
+        for mut lock in locks {
+            let _ = lock.mark_released();
+            let _ = self.locks.save(&mut lock).await;
+            let _ = self
+                .locks
+                .delete(lock.org_id(), lock.project(), lock.namespace(), lock.name())
+                .await;
+        }
+    }
+
+    async fn remove_watchers(&self, agent_id: &AgentId) {
+        let watchers = self
+            .watchers
+            .find_by_agent(agent_id)
+            .await
+            .unwrap_or_default();
+
+        for w in &watchers {
+            let _ = self.watchers.delete(&w.task_id(), agent_id).await;
+        }
     }
 }

@@ -1,74 +1,78 @@
+use orchy_application::{
+    Application, GetProjectCommand, ListAgentsCommand, ListOverviewsCommand, ListSkillsCommand,
+    ListTasksCommand,
+};
 use orchy_core::agent::Agent;
-use orchy_core::agent::AgentStore;
-use orchy_core::agent::service::AgentService;
 use orchy_core::knowledge::Knowledge;
-use orchy_core::knowledge::KnowledgeStore;
-use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::PageParams;
 use orchy_core::project::Project;
-use orchy_core::project::ProjectStore;
-use orchy_core::project::service::ProjectService;
-use orchy_core::task::service::TaskService;
-use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
+use orchy_core::task::Task;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn generate_bootstrap_prompt<
-    KS: KnowledgeStore,
-    PS: ProjectStore,
-    AS: AgentStore + orchy_core::task::WatcherStore + orchy_core::message::MessageStore,
-    TS: TaskStore,
->(
+pub async fn generate_bootstrap_prompt(
     project_id: &ProjectId,
     namespace: &Namespace,
     host: &str,
     port: u16,
-    knowledge_service: &KnowledgeService<KS, crate::embeddings::EmbeddingsBackend>,
-    project_service: &ProjectService<PS>,
-    agent_service: &AgentService<AS, PS>,
-    task_service: &TaskService<TS, AS>,
+    app: &Application,
 ) -> Result<String, String> {
-    let default_org = OrganizationId::new("default").unwrap();
+    let default_org = "default".to_string();
 
-    let skills = knowledge_service
-        .list_skills(&default_org, project_id, namespace)
+    let skills = app
+        .list_skills
+        .execute(ListSkillsCommand {
+            org_id: default_org.clone(),
+            project: project_id.to_string(),
+            namespace: Some(namespace.to_string()),
+        })
         .await
         .map_err(|e| e.to_string())?;
 
-    let overviews = knowledge_service
-        .list_overviews(&default_org, project_id, namespace)
+    let overviews = app
+        .list_overviews
+        .execute(ListOverviewsCommand {
+            org_id: default_org.clone(),
+            project: project_id.to_string(),
+            namespace: Some(namespace.to_string()),
+        })
         .await
         .map_err(|e| e.to_string())?;
 
-    let project = project_service
-        .get_or_create(&default_org, project_id)
+    let project = app
+        .get_project
+        .execute(GetProjectCommand {
+            org_id: default_org.clone(),
+            project: project_id.to_string(),
+        })
         .await
         .map_err(|e| e.to_string())?;
 
-    let agents: Vec<Agent> = agent_service
-        .list(&default_org, PageParams::unbounded())
+    let agents: Vec<Agent> = app
+        .list_agents
+        .execute(ListAgentsCommand {
+            org_id: Some(default_org.clone()),
+            project: Some(project_id.to_string()),
+            after: None,
+            limit: None,
+        })
         .await
         .map_err(|e| e.to_string())?
-        .items
-        .into_iter()
-        .filter(|a| a.project() == project_id)
-        .collect();
+        .items;
 
     let active_tasks: Vec<Task> = {
         let mut all = Vec::new();
-        for status in &[
-            TaskStatus::Pending,
-            TaskStatus::Claimed,
-            TaskStatus::InProgress,
-            TaskStatus::Blocked,
-        ] {
-            let filter = TaskFilter {
-                project: Some(project_id.clone()),
-                status: Some(*status),
-                ..Default::default()
+        for status in &["pending", "claimed", "in_progress", "blocked"] {
+            let cmd = ListTasksCommand {
+                org_id: Some(default_org.clone()),
+                project: Some(project_id.to_string()),
+                namespace: None,
+                status: Some(status.to_string()),
+                parent_id: None,
+                assigned_to: None,
+                tag: None,
+                after: None,
+                limit: None,
             };
-            if let Ok(page) = task_service.list(filter, PageParams::unbounded()).await {
+            if let Ok(page) = app.list_tasks.execute(cmd).await {
                 all.extend(page.items);
             }
         }

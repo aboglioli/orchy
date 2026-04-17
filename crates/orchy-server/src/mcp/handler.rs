@@ -132,7 +132,10 @@ impl OrchyHandler {
         if let Some(agent_id) = self.get_session_agent() {
             let container = self.container.clone();
             tokio::spawn(async move {
-                let _ = container.agent_service.heartbeat(&agent_id).await;
+                let cmd = orchy_application::HeartbeatCommand {
+                    agent_id: agent_id.to_string(),
+                };
+                let _ = container.app.heartbeat.execute(cmd).await;
             });
         }
     }
@@ -209,8 +212,9 @@ impl OrchyHandler {
 
         let agent = self
             .container
-            .agent_service
-            .get(&agent_id)
+            .app
+            .get_agent
+            .execute(&agent_id.to_string())
             .await
             .map_err(mcp_error)?;
 
