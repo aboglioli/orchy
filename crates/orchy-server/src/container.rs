@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use orchy_application::Application;
 use orchy_core::agent::AgentId;
 use orchy_core::agent::service::AgentService;
 use orchy_core::knowledge::service::KnowledgeService;
@@ -20,6 +21,7 @@ use crate::store::StoreBackend;
 
 pub struct Container {
     pub store: Arc<StoreBackend>,
+    pub app: Application,
     pub task_service: TaskService<StoreBackend, StoreBackend>,
     pub agent_service: AgentService<StoreBackend, StoreBackend>,
     pub message_service: MessageService<StoreBackend, StoreBackend>,
@@ -45,13 +47,38 @@ impl Container {
         let task_service = TaskService::new(Arc::clone(&store), Arc::clone(&store));
         let agent_service = AgentService::new(Arc::clone(&store), Arc::clone(&store));
         let message_service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
-        let knowledge_service = KnowledgeService::new(Arc::clone(&store), embeddings);
+        let knowledge_service = KnowledgeService::new(Arc::clone(&store), embeddings.clone());
         let project_service = ProjectService::new(Arc::clone(&store));
         let lock_service = LockService::new(Arc::clone(&store));
         let org_service = OrganizationService::new(Arc::clone(&store));
 
+        use orchy_application::EventQuery;
+        use orchy_core::agent::AgentStore;
+        use orchy_core::embeddings::EmbeddingsProvider;
+        use orchy_core::knowledge::KnowledgeStore;
+        use orchy_core::message::MessageStore;
+        use orchy_core::namespace::NamespaceStore;
+        use orchy_core::project::ProjectStore;
+        use orchy_core::resource_lock::LockStore;
+        use orchy_core::task::{ReviewStore, TaskStore, WatcherStore};
+
+        let app = Application::new(
+            store.clone() as Arc<dyn AgentStore>,
+            store.clone() as Arc<dyn TaskStore>,
+            store.clone() as Arc<dyn ProjectStore>,
+            store.clone() as Arc<dyn KnowledgeStore>,
+            store.clone() as Arc<dyn MessageStore>,
+            store.clone() as Arc<dyn LockStore>,
+            store.clone() as Arc<dyn WatcherStore>,
+            store.clone() as Arc<dyn ReviewStore>,
+            store.clone() as Arc<dyn NamespaceStore>,
+            embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
+            store.clone() as Arc<dyn EventQuery>,
+        );
+
         Ok(Arc::new(Self {
             store,
+            app,
             task_service,
             agent_service,
             message_service,

@@ -3,22 +3,28 @@ use std::collections::HashMap;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
-use orchy_core::agent::RegisterAgent;
-use orchy_core::knowledge::service::PatchKnowledgeMetadata;
-use orchy_core::knowledge::{
-    KnowledgeFilter, KnowledgeKind, Version as KnowledgeVersion, WriteKnowledge,
+use orchy_application::{
+    AddDependencyCommand, AddTaskNoteCommand, AppendKnowledgeCommand, AssignTaskCommand,
+    CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand, CheckLockCommand,
+    CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand, CompleteTaskCommand,
+    DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand, FailTaskCommand,
+    GetNextTaskCommand, GetProjectCommand, HeartbeatCommand, ImportKnowledgeCommand,
+    ListAgentsCommand, ListConversationCommand, ListKnowledgeCommand, ListNamespacesCommand,
+    ListReviewsCommand, ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand,
+    MergeTasksCommand, MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand,
+    PollUpdatesCommand, PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand,
+    ReleaseTaskCommand, RemoveDependencyCommand, RenameKnowledgeCommand, ReplaceTaskCommand,
+    RequestReviewCommand, ResolveReviewCommand, SearchKnowledgeCommand, SendMessageCommand,
+    SetProjectMetadataCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
+    SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand, UnblockTaskCommand,
+    UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand, UnwatchTaskCommand,
+    UpdateProjectCommand, UpdateTaskCommand, WatchTaskCommand, WriteKnowledgeCommand,
 };
-use orchy_core::message::service::SendMessage;
-use orchy_core::message::{MessageId, MessageTarget};
-use orchy_core::namespace::{Namespace, NamespaceStore};
-use orchy_core::organization::OrganizationId;
-use orchy_core::resource_lock::LockStore;
-use orchy_core::task::service::RequestReviewCommand;
-use orchy_core::task::{Priority, ReviewStore, Task, TaskFilter, TaskId, WatcherStore};
+use orchy_core::knowledge::KnowledgeKind;
+use orchy_core::namespace::Namespace;
 
 use super::handler::{
-    NamespacePolicy, OrchyHandler, default_org, mcp_error, parse_agent_id, parse_message_id,
-    parse_namespace, parse_project, parse_review_id, parse_task_id, to_json,
+    NamespacePolicy, OrchyHandler, default_org, mcp_error, parse_project, to_json,
 };
 use super::params::*;
 
@@ -65,31 +71,35 @@ impl OrchyHandler {
         let project = parse_project(&params.project)?;
 
         let namespace = match params.namespace.as_deref() {
-            Some(s) if !s.is_empty() => parse_namespace(&format!("/{s}"))?,
-            _ => Namespace::root(),
+            Some(s) if !s.is_empty() => Some(format!("/{s}")),
+            _ => None,
         };
 
         let org_id = match params.organization.as_deref() {
-            Some(s) if !s.is_empty() => OrganizationId::new(s).map_err(|e| e.to_string())?,
-            _ => default_org(),
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => default_org().to_string(),
         };
 
-        let _ =
-            NamespaceStore::register(&*self.container.store, &org_id, &project, &namespace).await;
-
-        let parent_id = params.parent_id.map(|s| parse_agent_id(&s)).transpose()?;
-
-        let id = match params.id {
-            Some(s) if !s.is_empty() => Some(parse_agent_id(&s)?),
-            _ => None,
-        };
+        let _ = self
+            .resolve_namespace_for(
+                namespace.as_deref(),
+                NamespacePolicy::RegisterIfNew,
+                None,
+                None,
+            )
+            .await;
 
         let input_roles = params.roles.unwrap_or_default();
         let roles = if input_roles.is_empty() {
             match self
                 .container
                 .task_service
-                .suggest_roles(&project, Some(namespace.clone()))
+                .suggest_roles(
+                    &project,
+                    namespace.as_deref().map(|s| {
+                        Namespace::try_from(s.to_string()).unwrap_or_else(|_| Namespace::root())
+                    }),
+                )
                 .await
             {
                 Ok(r) if !r.is_empty() => r,
@@ -99,20 +109,22 @@ impl OrchyHandler {
             input_roles
         };
 
-        let cmd = RegisterAgent {
+        let cmd = RegisterAgentCommand {
             org_id: org_id.clone(),
-            project: project.clone(),
+            project: params.project.clone(),
             namespace: namespace.clone(),
             roles,
             description: params.description.unwrap_or_default(),
-            id,
-            parent_id,
+            id: params.id.clone(),
+            parent_id: params.parent_id.clone(),
             metadata: params.metadata.unwrap_or_default(),
         };
 
-        match self.container.agent_service.register(cmd).await {
+        match self.container.app.register_agent.execute(cmd).await {
             Ok(agent) => {
-                self.set_session(agent.id().clone(), org_id, project, namespace)
+                let org = orchy_core::organization::OrganizationId::new(&org_id)
+                    .map_err(|e| e.to_string())?;
+                self.set_session(agent.id().clone(), org, project, agent.namespace().clone())
                     .await;
                 Ok(to_json(&agent))
             }
@@ -160,12 +172,12 @@ impl OrchyHandler {
         };
 
         let (_, org, _, _) = self.require_session()?;
-        match self
-            .container
-            .agent_service
-            .list(&org, orchy_core::pagination::PageParams::unbounded())
-            .await
-        {
+        let cmd = ListAgentsCommand {
+            org_id: org.to_string(),
+            after: None,
+            limit: None,
+        };
+        match self.container.app.list_agents.execute(cmd).await {
             Ok(page) => {
                 let filtered: Vec<_> = page
                     .items
@@ -188,12 +200,11 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        match self
-            .container
-            .agent_service
-            .change_roles(&agent_id, params.roles)
-            .await
-        {
+        let cmd = ChangeRolesCommand {
+            agent_id: agent_id.to_string(),
+            roles: params.roles,
+        };
+        match self.container.app.change_roles.execute(cmd).await {
             Ok(agent) => Ok(to_json(&agent)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -203,7 +214,10 @@ impl OrchyHandler {
     async fn heartbeat(&self) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        match self.container.agent_service.heartbeat(&agent_id).await {
+        let cmd = HeartbeatCommand {
+            agent_id: agent_id.to_string(),
+        };
+        match self.container.app.heartbeat.execute(cmd).await {
             Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
@@ -231,6 +245,7 @@ impl OrchyHandler {
             .release_agent_locks(&agent_id)
             .await;
 
+        use orchy_core::task::{ReviewStore, WatcherStore};
         let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
             .await
             .unwrap_or_default();
@@ -246,7 +261,10 @@ impl OrchyHandler {
             let _ = ReviewStore::save(&*self.container.store, &mut r).await;
         }
 
-        match self.container.agent_service.disconnect(&agent_id).await {
+        let cmd = DisconnectAgentCommand {
+            agent_id: agent_id.to_string(),
+        };
+        match self.container.app.disconnect_agent.execute(cmd).await {
             Ok(()) => Ok("disconnected".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
@@ -263,109 +281,48 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SwitchContextParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, current_project, current_namespace) = self.require_session()?;
+        let (agent_id, org, current_project, _) = self.require_session()?;
 
         if params.project.is_none() && params.namespace.is_none() {
             return Err("at least one of project or namespace is required".to_string());
         }
 
-        let target_project = match &params.project {
-            Some(p) => Some(parse_project(p)?),
-            None => None,
-        };
-
-        let project_changed = target_project
-            .as_ref()
-            .is_some_and(|p| *p != current_project);
-
-        let register_project = target_project.as_ref().unwrap_or(&current_project);
-        let target_namespace = match &params.namespace {
-            Some(ns) => {
-                self.resolve_namespace_for(
+        if let Some(ref ns) = params.namespace {
+            let target_project = params
+                .project
+                .as_deref()
+                .map(parse_project)
+                .transpose()?
+                .unwrap_or(current_project.clone());
+            let _ = self
+                .resolve_namespace_for(
                     Some(ns),
                     NamespacePolicy::RegisterIfNew,
                     Some(&org),
-                    Some(register_project),
+                    Some(&target_project),
                 )
-                .await?
-            }
-            None if project_changed => Namespace::root(),
-            None => current_namespace,
-        };
-
-        if project_changed {
-            let tasks = self
-                .container
-                .task_service
-                .list(
-                    TaskFilter {
-                        assigned_to: Some(agent_id.clone()),
-                        project: Some(current_project.clone()),
-                        ..Default::default()
-                    },
-                    orchy_core::pagination::PageParams::unbounded(),
-                )
-                .await
-                .map(|p| p.items)
-                .unwrap_or_default();
-            for task in &tasks {
-                let _ = self.container.task_service.release(&task.id()).await;
-            }
-
-            let locks = LockStore::find_by_holder(&*self.container.store, &agent_id)
-                .await
-                .unwrap_or_default();
-            for lock in locks {
-                if *lock.project() == current_project {
-                    let _ = self
-                        .container
-                        .lock_service
-                        .release(
-                            lock.org_id(),
-                            lock.project(),
-                            lock.namespace(),
-                            lock.name(),
-                            &agent_id,
-                        )
-                        .await;
-                }
-            }
-
-            let watchers = WatcherStore::find_by_agent(&*self.container.store, &agent_id)
-                .await
-                .unwrap_or_default();
-            for w in &watchers {
-                if *w.project() == current_project {
-                    let _ =
-                        WatcherStore::delete(&*self.container.store, &w.task_id(), &agent_id).await;
-                }
-            }
-
-            let reviews = ReviewStore::find_pending_for_agent(&*self.container.store, &agent_id)
-                .await
-                .unwrap_or_default();
-            for mut r in reviews {
-                if *r.project() == current_project {
-                    r.unassign_reviewer();
-                    let _ = ReviewStore::save(&*self.container.store, &mut r).await;
-                }
-            }
+                .await;
         }
 
-        match self
-            .container
-            .agent_service
-            .switch_context(
-                &agent_id,
-                &org,
-                target_project.clone(),
-                target_namespace.clone(),
-            )
-            .await
-        {
+        let cmd = SwitchContextCommand {
+            org_id: org.to_string(),
+            agent_id: agent_id.to_string(),
+            project: params.project.clone(),
+            namespace: params.namespace.map(|ns| {
+                if ns.starts_with('/') {
+                    ns
+                } else {
+                    format!("/{ns}")
+                }
+            }),
+        };
+
+        match self.container.app.switch_context.execute(cmd).await {
             Ok(agent) => {
-                let final_project = target_project.unwrap_or(current_project);
-                self.set_session_project_and_namespace(final_project, target_namespace);
+                self.set_session_project_and_namespace(
+                    agent.project().clone(),
+                    agent.namespace().clone(),
+                );
                 Ok(to_json(&agent))
             }
             Err(e) => Err(mcp_error(e)),
@@ -384,47 +341,21 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
-        let priority = match params.priority.as_deref() {
-            Some(p) => match p.parse::<Priority>() {
-                Ok(pri) => pri,
-                Err(e) => return Err(format!("invalid priority: {e}")),
-            },
-            None => Priority::default(),
+        let cmd = PostTaskCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            title: params.title,
+            description: params.description,
+            priority: params.priority,
+            assigned_roles: params.assigned_roles,
+            depends_on: params.depends_on,
+            parent_id: params.parent_id,
+            created_by: self.get_session_agent().map(|id| id.to_string()),
         };
 
-        let depends_on: Vec<TaskId> = params
-            .depends_on
-            .unwrap_or_default()
-            .iter()
-            .map(|s| parse_task_id(s))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let parent_id = match params.parent_id.as_deref() {
-            Some(s) => Some(parse_task_id(s)?),
-            None => None,
-        };
-
-        let is_blocked = !depends_on.is_empty();
-        let task = match Task::new(
-            org,
-            project,
-            namespace,
-            parent_id,
-            params.title,
-            params.description,
-            priority,
-            params.assigned_roles.unwrap_or_default(),
-            depends_on,
-            self.get_session_agent(),
-            is_blocked,
-        ) {
-            Ok(t) => t,
-            Err(e) => return Err(mcp_error(e)),
-        };
-
-        let response = to_json(&task);
-        match self.container.task_service.create(task).await {
-            Ok(()) => Ok(response),
+        match self.container.app.post_task.execute(cmd).await {
+            Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -437,16 +368,21 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetNextTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, org, project, _) = self.require_session()?;
 
-        let namespace = Some(
-            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
-                .await?,
-        );
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+            .await?;
 
         let roles = match params.role {
             Some(r) => vec![r],
-            None => match self.container.agent_service.get(&agent_id).await {
+            None => match self
+                .container
+                .app
+                .get_agent
+                .execute(&agent_id.to_string())
+                .await
+            {
                 Ok(agent) => agent.roles().to_vec(),
                 Err(e) => return Err(format!("error fetching agent roles: {e}")),
             },
@@ -454,44 +390,31 @@ impl OrchyHandler {
 
         let claim = params.claim.unwrap_or(true);
 
-        if claim {
-            match self
-                .container
-                .task_service
-                .get_next(&agent_id, &roles, namespace)
-                .await
-            {
-                Ok(Some(task)) => {
-                    let ctx = self
-                        .container
-                        .task_service
-                        .get_with_context(&task.id())
-                        .await
-                        .map_err(mcp_error)?;
-                    Ok(to_json(&ctx))
-                }
-                Ok(None) => Ok("no tasks available".to_string()),
-                Err(e) => Err(mcp_error(e)),
+        let cmd = GetNextTaskCommand {
+            org_id: Some(org.to_string()),
+            project: Some(project.to_string()),
+            namespace: Some(namespace.to_string()),
+            roles,
+            claim: Some(claim),
+            agent_id: if claim {
+                Some(agent_id.to_string())
+            } else {
+                None
+            },
+        };
+
+        match self.container.app.get_next_task.execute(cmd).await {
+            Ok(Some(task)) => {
+                let ctx = self
+                    .container
+                    .task_service
+                    .get_with_context(&task.id())
+                    .await
+                    .map_err(mcp_error)?;
+                Ok(to_json(&ctx))
             }
-        } else {
-            match self
-                .container
-                .task_service
-                .peek_next(&roles, namespace)
-                .await
-            {
-                Ok(Some(task)) => {
-                    let ctx = self
-                        .container
-                        .task_service
-                        .get_with_context(&task.id())
-                        .await
-                        .map_err(mcp_error)?;
-                    Ok(to_json(&ctx))
-                }
-                Ok(None) => Ok("no tasks available".to_string()),
-                Err(e) => Err(mcp_error(e)),
-            }
+            Ok(None) => Ok("no tasks available".to_string()),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
@@ -504,51 +427,32 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTasksParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let (_, org, session_project, _) = self.require_session()?;
 
-        let session_project = self.get_session_project();
-        let project = if let Some(p) = params.project {
-            Some(parse_project(&p)?)
-        } else {
-            session_project
+        let project = params
+            .project
+            .unwrap_or_else(|| session_project.to_string());
+
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+            .await?;
+
+        let cmd = ListTasksCommand {
+            org_id: Some(org.to_string()),
+            project: Some(project),
+            namespace: Some(namespace.to_string()),
+            status: params.status,
+            parent_id: params.parent_id,
+            assigned_to: None,
+            tag: None,
+            after: None,
+            limit: None,
         };
 
-        let namespace = Some(
-            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
-                .await?,
-        );
-
-        let status = params.status.as_deref().map(|s| match s {
-            "pending" => Some(orchy_core::task::TaskStatus::Pending),
-            "blocked" => Some(orchy_core::task::TaskStatus::Blocked),
-            "claimed" => Some(orchy_core::task::TaskStatus::Claimed),
-            "in_progress" => Some(orchy_core::task::TaskStatus::InProgress),
-            "completed" => Some(orchy_core::task::TaskStatus::Completed),
-            "failed" => Some(orchy_core::task::TaskStatus::Failed),
-            "cancelled" => Some(orchy_core::task::TaskStatus::Cancelled),
-            _ => None,
-        });
-
-        if params.status.is_some() && status == Some(None) {
-            return Err("invalid status value".to_string());
+        match self.container.app.list_tasks.execute(cmd).await {
+            Ok(page) => Ok(to_json(&page.items)),
+            Err(e) => Err(mcp_error(e)),
         }
-
-        let parent_id = params.parent_id.as_deref().map(parse_task_id).transpose()?;
-
-        let filter = TaskFilter {
-            project,
-            namespace,
-            status: status.flatten(),
-            parent_id,
-            ..Default::default()
-        };
-
-        self.container
-            .task_service
-            .list(filter, orchy_core::pagination::PageParams::unbounded())
-            .await
-            .map(|page| to_json(&page.items))
-            .map_err(mcp_error)
     }
 
     #[tool(description = "Claim a specific task for the session agent. \
@@ -559,27 +463,24 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-
-        let mut task = match self.container.task_service.claim(&task_id, &agent_id).await {
-            Ok(t) => t,
-            Err(e) => return Err(mcp_error(e)),
+        let cmd = ClaimTaskCommand {
+            task_id: params.task_id.clone(),
+            agent_id: agent_id.to_string(),
+            start: params.start,
         };
 
-        if params.start.unwrap_or(false) {
-            task = match self.container.task_service.start(&task_id, &agent_id).await {
-                Ok(t) => t,
-                Err(e) => return Err(mcp_error(e)),
-            };
+        match self.container.app.claim_task.execute(cmd).await {
+            Ok(task) => {
+                let ctx = self
+                    .container
+                    .task_service
+                    .get_with_context(&task.id())
+                    .await
+                    .map_err(mcp_error)?;
+                Ok(to_json(&ctx))
+            }
+            Err(e) => Err(mcp_error(e)),
         }
-
-        let ctx = self
-            .container
-            .task_service
-            .get_with_context(&task.id())
-            .await
-            .map_err(mcp_error)?;
-        Ok(to_json(&ctx))
     }
 
     #[tool(description = "Start a claimed task (claimed → in_progress). \
@@ -590,9 +491,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
+        let cmd = StartTaskCommand {
+            task_id: params.task_id.clone(),
+            agent_id: agent_id.to_string(),
+        };
 
-        match self.container.task_service.start(&task_id, &agent_id).await {
+        match self.container.app.start_task.execute(cmd).await {
             Ok(task) => {
                 let ctx = self
                     .container
@@ -616,14 +520,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
+        let cmd = CompleteTaskCommand {
+            task_id: params.task_id,
+            summary: params.summary,
+        };
 
-        match self
-            .container
-            .task_service
-            .complete(&task_id, params.summary)
-            .await
-        {
+        match self.container.app.complete_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -636,14 +538,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
+        let cmd = FailTaskCommand {
+            task_id: params.task_id,
+            reason: params.reason,
+        };
 
-        match self
-            .container
-            .task_service
-            .fail(&task_id, params.reason)
-            .await
-        {
+        match self.container.app.fail_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -659,14 +559,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
+        let cmd = CancelTaskCommand {
+            task_id: params.task_id,
+            reason: params.reason,
+        };
 
-        match self
-            .container
-            .task_service
-            .cancel(&task_id, params.reason)
-            .await
-        {
+        match self.container.app.cancel_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -680,22 +578,14 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-
-        let priority = match params.priority.as_deref() {
-            Some(p) => Some(
-                p.parse::<Priority>()
-                    .map_err(|e| format!("invalid priority: {e}"))?,
-            ),
-            None => None,
+        let cmd = UpdateTaskCommand {
+            task_id: params.task_id,
+            title: params.title,
+            description: params.description,
+            priority: params.priority,
         };
 
-        match self
-            .container
-            .task_service
-            .update_details(&task_id, params.title, params.description, priority)
-            .await
-        {
+        match self.container.app.update_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -710,9 +600,11 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
+        let cmd = UnblockTaskCommand {
+            task_id: params.task_id,
+        };
 
-        match self.container.task_service.unblock_manual(&task_id).await {
+        match self.container.app.unblock_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -728,16 +620,14 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-
         let agent_id = self.resolve_agent_id(&params.agent).await?;
 
-        match self
-            .container
-            .task_service
-            .assign(&task_id, &agent_id)
-            .await
-        {
+        let cmd = AssignTaskCommand {
+            task_id: params.task_id,
+            agent_id: agent_id.to_string(),
+        };
+
+        match self.container.app.assign_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -753,10 +643,14 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, org, project, _) = self.require_session()?;
 
-        let target = match MessageTarget::parse(&params.to) {
-            Ok(t) => t,
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
+            .await?;
+
+        let to = match orchy_core::message::MessageTarget::parse(&params.to) {
+            Ok(_) => params.to.clone(),
             Err(_) => match self.resolve_agent_id(&params.to).await {
-                Ok(id) => MessageTarget::Agent(id),
+                Ok(id) => id.to_string(),
                 Err(_) => {
                     return Err(format!(
                         "invalid target: '{}' (not a UUID, role:name, broadcast, or known alias)",
@@ -766,32 +660,17 @@ impl OrchyHandler {
             },
         };
 
-        let namespace = self
-            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
-            .await?;
-
-        let reply_to = match params.reply_to {
-            Some(s) => match s.parse::<MessageId>() {
-                Ok(id) => Some(id),
-                Err(e) => return Err(format!("invalid reply_to: {e}")),
-            },
-            None => None,
+        let cmd = SendMessageCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            from_agent_id: agent_id.to_string(),
+            to,
+            body: params.body,
+            reply_to: params.reply_to,
         };
 
-        match self
-            .container
-            .message_service
-            .send(SendMessage {
-                org_id: org,
-                project,
-                namespace,
-                from: agent_id,
-                to: target,
-                body: params.body,
-                reply_to,
-            })
-            .await
-        {
+        match self.container.app.send_message.execute(cmd).await {
             Ok(messages) => Ok(to_json(&messages)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -808,27 +687,25 @@ impl OrchyHandler {
         let (agent_id, org, session_project, _) = self.require_session()?;
 
         let project = if let Some(p) = params.project {
-            parse_project(&p)?
+            p
         } else {
-            session_project
+            session_project.to_string()
         };
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
             .await?;
 
-        match self
-            .container
-            .message_service
-            .check(
-                &agent_id,
-                &org,
-                &project,
-                &namespace,
-                orchy_core::pagination::PageParams::unbounded(),
-            )
-            .await
-        {
+        let cmd = CheckMailboxCommand {
+            agent_id: agent_id.to_string(),
+            org_id: org.to_string(),
+            project,
+            namespace: Some(namespace.to_string()),
+            after: None,
+            limit: None,
+        };
+
+        match self.container.app.check_mailbox.execute(cmd).await {
             Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -842,27 +719,25 @@ impl OrchyHandler {
         let (agent_id, org, session_project, _) = self.require_session()?;
 
         let project = if let Some(p) = params.project {
-            parse_project(&p)?
+            p
         } else {
-            session_project
+            session_project.to_string()
         };
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
             .await?;
 
-        match self
-            .container
-            .message_service
-            .sent(
-                &agent_id,
-                &org,
-                &project,
-                &namespace,
-                orchy_core::pagination::PageParams::unbounded(),
-            )
-            .await
-        {
+        let cmd = CheckSentMessagesCommand {
+            agent_id: agent_id.to_string(),
+            org_id: org.to_string(),
+            project,
+            namespace: Some(namespace.to_string()),
+            after: None,
+            limit: None,
+        };
+
+        match self.container.app.check_sent_messages.execute(cmd).await {
             Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -874,18 +749,13 @@ impl OrchyHandler {
         Parameters(params): Parameters<MarkReadParams>,
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
-        let ids: Vec<MessageId> = params
-            .message_ids
-            .iter()
-            .map(|s| parse_message_id(s))
-            .collect::<Result<Vec<_>, _>>()?;
 
-        match self
-            .container
-            .message_service
-            .mark_read(&agent_id, &ids)
-            .await
-        {
+        let cmd = MarkReadCommand {
+            agent_id: agent_id.to_string(),
+            message_ids: params.message_ids,
+        };
+
+        match self.container.app.mark_read.execute(cmd).await {
             Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
@@ -901,16 +771,12 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListConversationParams>,
     ) -> Result<String, String> {
-        let message_id = parse_message_id(&params.message_id)?;
+        let cmd = ListConversationCommand {
+            message_id: params.message_id,
+            limit: params.limit,
+        };
 
-        let limit = params.limit.map(|n| n as usize);
-
-        match self
-            .container
-            .message_service
-            .thread(&message_id, limit)
-            .await
-        {
+        match self.container.app.list_conversation.execute(cmd).await {
             Ok(messages) => Ok(to_json(&messages)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -925,14 +791,13 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
+        let cmd = AddTaskNoteCommand {
+            task_id: params.task_id,
+            body: params.body,
+            author: Some(agent_id.to_string()),
+        };
 
-        match self
-            .container
-            .task_service
-            .add_note(&task_id, Some(agent_id), params.body)
-            .await
-        {
+        match self.container.app.add_task_note.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -949,38 +814,25 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-
-        let mut subtasks = Vec::new();
-        for sp in params.subtasks {
-            let priority = match sp.priority.as_deref() {
-                Some(p) => match p.parse::<Priority>() {
-                    Ok(pri) => pri,
-                    Err(e) => return Err(format!("invalid priority: {e}")),
-                },
-                None => Priority::default(),
-            };
-            let depends_on: Vec<TaskId> = sp
-                .depends_on
-                .unwrap_or_default()
-                .iter()
-                .map(|s| parse_task_id(s))
-                .collect::<Result<Vec<_>, _>>()?;
-            subtasks.push(orchy_core::task::SubtaskDef {
+        let subtasks = params
+            .subtasks
+            .into_iter()
+            .map(|sp| SubtaskInput {
                 title: sp.title,
                 description: sp.description,
-                priority,
-                assigned_roles: sp.assigned_roles.unwrap_or_default(),
-                depends_on,
-            });
-        }
+                priority: sp.priority,
+                assigned_roles: sp.assigned_roles,
+                depends_on: sp.depends_on,
+            })
+            .collect();
 
-        match self
-            .container
-            .task_service
-            .split_task(&task_id, subtasks, Some(agent_id))
-            .await
-        {
+        let cmd = SplitTaskCommand {
+            task_id: params.task_id,
+            subtasks,
+            created_by: Some(agent_id.to_string()),
+        };
+
+        match self.container.app.split_task.execute(cmd).await {
             Ok((parent, children)) => {
                 let result = serde_json::json!({
                     "parent": parent,
@@ -1002,38 +854,26 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-
-        let mut replacements = Vec::new();
-        for sp in params.replacements {
-            let priority = match sp.priority.as_deref() {
-                Some(p) => match p.parse::<Priority>() {
-                    Ok(pri) => pri,
-                    Err(e) => return Err(format!("invalid priority: {e}")),
-                },
-                None => Priority::default(),
-            };
-            let depends_on: Vec<TaskId> = sp
-                .depends_on
-                .unwrap_or_default()
-                .iter()
-                .map(|s| parse_task_id(s))
-                .collect::<Result<Vec<_>, _>>()?;
-            replacements.push(orchy_core::task::SubtaskDef {
+        let replacements = params
+            .replacements
+            .into_iter()
+            .map(|sp| SubtaskInput {
                 title: sp.title,
                 description: sp.description,
-                priority,
-                assigned_roles: sp.assigned_roles.unwrap_or_default(),
-                depends_on,
-            });
-        }
+                priority: sp.priority,
+                assigned_roles: sp.assigned_roles,
+                depends_on: sp.depends_on,
+            })
+            .collect();
 
-        match self
-            .container
-            .task_service
-            .replace_task(&task_id, params.reason, replacements, Some(agent_id))
-            .await
-        {
+        let cmd = ReplaceTaskCommand {
+            task_id: params.task_id,
+            reason: params.reason,
+            replacements,
+            created_by: Some(agent_id.to_string()),
+        };
+
+        match self.container.app.replace_task.execute(cmd).await {
             Ok((original, new_tasks)) => {
                 let result = serde_json::json!({
                     "cancelled": original,
@@ -1055,20 +895,23 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MergeTasksParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, org, project, _) = self.require_session()?;
 
-        let task_ids: Vec<TaskId> = params
-            .task_ids
-            .iter()
-            .map(|s| parse_task_id(s))
-            .collect::<Result<Vec<_>, _>>()?;
+        let namespace = self
+            .resolve_namespace(None, NamespacePolicy::SessionDefault)
+            .await?;
 
-        match self
-            .container
-            .task_service
-            .merge_tasks(&task_ids, params.title, params.description, Some(agent_id))
-            .await
-        {
+        let cmd = MergeTasksCommand {
+            task_ids: params.task_ids,
+            title: params.title,
+            description: params.description,
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            created_by: Some(agent_id.to_string()),
+        };
+
+        match self.container.app.merge_tasks.execute(cmd).await {
             Ok((merged, cancelled)) => {
                 let result = serde_json::json!({
                     "merged": merged,
@@ -1088,44 +931,19 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DelegateTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, project, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
-        let parent_id = parse_task_id(&params.task_id)?;
-        let parent = self
-            .container
-            .task_service
-            .get(&parent_id)
-            .await
-            .map_err(mcp_error)?;
-
-        let priority = match params.priority.as_deref() {
-            Some(p) => match p.parse::<Priority>() {
-                Ok(pri) => pri,
-                Err(e) => return Err(format!("invalid priority: {e}")),
-            },
-            None => parent.priority(),
+        let cmd = DelegateTaskCommand {
+            task_id: params.task_id,
+            title: params.title,
+            description: params.description,
+            priority: params.priority,
+            assigned_roles: params.assigned_roles,
+            created_by: Some(agent_id.to_string()),
         };
 
-        let task = match Task::new(
-            org,
-            project,
-            parent.namespace().clone(),
-            Some(parent_id),
-            params.title,
-            params.description,
-            priority,
-            params.assigned_roles.unwrap_or_default(),
-            vec![],
-            Some(agent_id.clone()),
-            false,
-        ) {
-            Ok(t) => t,
-            Err(e) => return Err(mcp_error(e)),
-        };
-
-        let response = to_json(&task);
-        match self.container.task_service.create(task).await {
-            Ok(()) => Ok(response),
+        match self.container.app.delegate_task.execute(cmd).await {
+            Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1140,15 +958,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        let dep_id = parse_task_id(&params.dependency_id)?;
+        let cmd = AddDependencyCommand {
+            task_id: params.task_id,
+            dependency_id: params.dependency_id,
+        };
 
-        match self
-            .container
-            .task_service
-            .add_dependency(&task_id, &dep_id)
-            .await
-        {
+        match self.container.app.add_dependency.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1164,15 +979,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        let dep_id = parse_task_id(&params.dependency_id)?;
+        let cmd = RemoveDependencyCommand {
+            task_id: params.task_id,
+            dependency_id: params.dependency_id,
+        };
 
-        match self
-            .container
-            .task_service
-            .remove_dependency(&task_id, &dep_id)
-            .await
-        {
+        match self.container.app.remove_dependency.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1188,10 +1000,16 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, project_id, _) = self.require_session()?;
 
+        let cmd = GetProjectCommand {
+            org_id: org.to_string(),
+            project: project_id.to_string(),
+        };
+
         let project = self
             .container
-            .project_service
-            .get_or_create(&org, &project_id)
+            .app
+            .get_project
+            .execute(cmd)
             .await
             .map_err(mcp_error)?;
 
@@ -1199,10 +1017,16 @@ impl OrchyHandler {
             return Ok(to_json(&project));
         }
 
+        let agents_cmd = ListAgentsCommand {
+            org_id: org.to_string(),
+            after: None,
+            limit: None,
+        };
         let agents = self
             .container
-            .agent_service
-            .list(&org, orchy_core::pagination::PageParams::unbounded())
+            .app
+            .list_agents
+            .execute(agents_cmd)
             .await
             .map_err(mcp_error)?;
         let project_agents: Vec<_> = agents
@@ -1214,16 +1038,22 @@ impl OrchyHandler {
             })
             .collect();
 
+        let tasks_cmd = ListTasksCommand {
+            org_id: Some(org.to_string()),
+            project: Some(project_id.to_string()),
+            namespace: None,
+            status: None,
+            parent_id: None,
+            assigned_to: None,
+            tag: None,
+            after: None,
+            limit: None,
+        };
         let all_tasks = self
             .container
-            .task_service
-            .list(
-                TaskFilter {
-                    project: Some(project_id.clone()),
-                    ..Default::default()
-                },
-                orchy_core::pagination::PageParams::unbounded(),
-            )
+            .app
+            .list_tasks
+            .execute(tasks_cmd)
             .await
             .map_err(mcp_error)?
             .items;
@@ -1303,10 +1133,15 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, project_id, _) = self.require_session()?;
 
+        let project_cmd = GetProjectCommand {
+            org_id: org.to_string(),
+            project: project_id.to_string(),
+        };
         let project = self
             .container
-            .project_service
-            .get_or_create(&org, &project_id)
+            .app
+            .get_project
+            .execute(project_cmd)
             .await
             .map_err(mcp_error)?;
 
@@ -1324,12 +1159,13 @@ impl OrchyHandler {
             .description
             .unwrap_or_else(|| project.description().to_string());
 
-        match self
-            .container
-            .project_service
-            .update_description(&org, &project_id, description)
-            .await
-        {
+        let cmd = UpdateProjectCommand {
+            org_id: org.to_string(),
+            project: project_id.to_string(),
+            description,
+        };
+
+        match self.container.app.update_project.execute(cmd).await {
             Ok(project) => Ok(to_json(&project)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1342,12 +1178,14 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, project_id, _) = self.require_session()?;
 
-        match self
-            .container
-            .project_service
-            .set_metadata(&org, &project_id, params.key, params.value)
-            .await
-        {
+        let cmd = SetProjectMetadataCommand {
+            org_id: org.to_string(),
+            project: project_id.to_string(),
+            key: params.key,
+            value: params.value,
+        };
+
+        match self.container.app.set_project_metadata.execute(cmd).await {
             Ok(project) => Ok(to_json(&project)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1363,12 +1201,17 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, session_project, _) = self.require_session()?;
         let project = if let Some(p) = params.project {
-            parse_project(&p)?
+            p
         } else {
-            session_project
+            session_project.to_string()
         };
 
-        match NamespaceStore::list(&*self.container.store, &org, &project).await {
+        let cmd = ListNamespacesCommand {
+            org_id: org.to_string(),
+            project,
+        };
+
+        match self.container.app.list_namespaces.execute(cmd).await {
             Ok(namespaces) => Ok(to_json(&namespaces)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1381,18 +1224,19 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-
         let namespace = self
             .resolve_namespace(Some(&params.new_namespace), NamespacePolicy::RegisterIfNew)
             .await?;
 
-        self.container
-            .task_service
-            .move_task(&task_id, namespace)
-            .await
-            .map(|task| to_json(&task))
-            .map_err(mcp_error)
+        let cmd = MoveTaskCommand {
+            task_id: params.task_id,
+            new_namespace: namespace.to_string(),
+        };
+
+        match self.container.app.move_task.execute(cmd).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(mcp_error(e)),
+        }
     }
 
     #[tool(
@@ -1441,8 +1285,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        match self.container.task_service.tag(&task_id, params.tag).await {
+        let cmd = TagTaskCommand {
+            task_id: params.task_id,
+            tag: params.tag,
+        };
+
+        match self.container.app.tag_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1455,13 +1303,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        match self
-            .container
-            .task_service
-            .untag(&task_id, &params.tag)
-            .await
-        {
+        let cmd = UntagTaskCommand {
+            task_id: params.task_id,
+            tag: params.tag,
+        };
+
+        match self.container.app.untag_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1481,14 +1328,16 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
-        let ttl = params.ttl_secs.unwrap_or(300);
+        let cmd = LockResourceCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            name: params.name,
+            holder_agent_id: agent_id.to_string(),
+            ttl_secs: params.ttl_secs,
+        };
 
-        match self
-            .container
-            .lock_service
-            .acquire(org, project, namespace, params.name, agent_id, ttl)
-            .await
-        {
+        match self.container.app.lock_resource.execute(cmd).await {
             Ok(lock) => Ok(to_json(&lock)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1505,12 +1354,15 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        match self
-            .container
-            .lock_service
-            .release(&org, &project, &namespace, &params.name, &agent_id)
-            .await
-        {
+        let cmd = UnlockResourceCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            name: params.name,
+            holder_agent_id: agent_id.to_string(),
+        };
+
+        match self.container.app.unlock_resource.execute(cmd).await {
             Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1527,12 +1379,14 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        match self
-            .container
-            .lock_service
-            .check(&org, &project, &namespace, &params.name)
-            .await
-        {
+        let cmd = CheckLockCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            name: params.name,
+        };
+
+        match self.container.app.check_lock.execute(cmd).await {
             Ok(Some(lock)) => Ok(to_json(&lock)),
             Ok(None) => Ok("null".to_string()),
             Err(e) => Err(mcp_error(e)),
@@ -1546,8 +1400,11 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        match self.container.task_service.release(&task_id).await {
+        let cmd = ReleaseTaskCommand {
+            task_id: params.task_id,
+        };
+
+        match self.container.app.release_task.execute(cmd).await {
             Ok(task) => Ok(to_json(&task)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1559,39 +1416,22 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTagsParams>,
     ) -> Result<String, String> {
-        let project = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
+        let (_, org, project, _) = self.require_session()?;
 
-        let namespace = Some(
-            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
-                .await?,
-        );
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+            .await?;
 
-        let tasks = self
-            .container
-            .task_service
-            .list(
-                TaskFilter {
-                    project: Some(project),
-                    namespace,
-                    ..Default::default()
-                },
-                orchy_core::pagination::PageParams::unbounded(),
-            )
-            .await
-            .map_err(mcp_error)?
-            .items;
+        let cmd = ListTagsCommand {
+            org_id: Some(org.to_string()),
+            project: Some(project.to_string()),
+            namespace: Some(namespace.to_string()),
+        };
 
-        let mut tags: Vec<String> = tasks
-            .iter()
-            .flat_map(|t| t.tags().iter().cloned())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        tags.sort();
-
-        Ok(to_json(&tags))
+        match self.container.app.list_tags.execute(cmd).await {
+            Ok(tags) => Ok(to_json(&tags)),
+            Err(e) => Err(mcp_error(e)),
+        }
     }
 
     #[tool(description = "Get a task by its ID with full context (ancestors and children).")]
@@ -1601,8 +1441,17 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        match self.container.task_service.get_with_context(&task_id).await {
+        match self
+            .container
+            .task_service
+            .get_with_context(
+                &params
+                    .task_id
+                    .parse()
+                    .map_err(|e| format!("invalid task_id: {e}"))?,
+            )
+            .await
+        {
             Ok(ctx) => Ok(to_json(&ctx)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1618,13 +1467,15 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, org, project, namespace) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        match self
-            .container
-            .task_service
-            .watch(&task_id, agent_id, org, project, namespace)
-            .await
-        {
+        let cmd = WatchTaskCommand {
+            task_id: params.task_id,
+            agent_id: agent_id.to_string(),
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+        };
+
+        match self.container.app.watch_task.execute(cmd).await {
             Ok(watcher) => Ok(to_json(&watcher)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1637,13 +1488,12 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        match self
-            .container
-            .task_service
-            .unwatch(&task_id, &agent_id)
-            .await
-        {
+        let cmd = UnwatchTaskCommand {
+            task_id: params.task_id,
+            agent_id: agent_id.to_string(),
+        };
+
+        match self.container.app.unwatch_task.execute(cmd).await {
             Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1659,26 +1509,22 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, org, project, namespace) = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        let reviewer = match params.reviewer_agent.as_deref() {
-            Some(s) => Some(self.resolve_agent_id(s).await?),
+        let reviewer_agent = match params.reviewer_agent.as_deref() {
+            Some(s) => Some(self.resolve_agent_id(s).await?.to_string()),
             None => None,
         };
 
-        match self
-            .container
-            .task_service
-            .request_review(RequestReviewCommand {
-                task_id,
-                org_id: org,
-                project,
-                namespace,
-                requester: agent_id,
-                reviewer,
-                reviewer_role: params.reviewer_role,
-            })
-            .await
-        {
+        let cmd = RequestReviewCommand {
+            task_id: params.task_id,
+            requester_agent_id: agent_id.to_string(),
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            reviewer_agent,
+            reviewer_role: params.reviewer_role,
+        };
+
+        match self.container.app.request_review.execute(cmd).await {
             Ok(review) => Ok(to_json(&review)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1691,14 +1537,14 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let review_id = parse_review_id(&params.review_id)?;
+        let cmd = ResolveReviewCommand {
+            review_id: params.review_id,
+            resolver_agent_id: agent_id.to_string(),
+            approved: params.approved,
+            comments: params.comments,
+        };
 
-        match self
-            .container
-            .task_service
-            .resolve_review(&review_id, agent_id, params.approved, params.comments)
-            .await
-        {
+        match self.container.app.resolve_review.execute(cmd).await {
             Ok(review) => Ok(to_json(&review)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1711,13 +1557,13 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let task_id = parse_task_id(&params.task_id)?;
-        match self
-            .container
-            .task_service
-            .list_reviews_for_task(&task_id, orchy_core::pagination::PageParams::unbounded())
-            .await
-        {
+        let cmd = ListReviewsCommand {
+            task_id: params.task_id,
+            after: None,
+            limit: None,
+        };
+
+        match self.container.app.list_reviews.execute(cmd).await {
             Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1730,8 +1576,13 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let _ = self.require_session()?;
 
-        let review_id = parse_review_id(&params.review_id)?;
-        match self.container.task_service.get_review(&review_id).await {
+        match self
+            .container
+            .app
+            .get_review
+            .execute(&params.review_id)
+            .await
+        {
             Ok(review) => Ok(to_json(&review)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1747,47 +1598,45 @@ impl OrchyHandler {
         Parameters(params): Parameters<PollUpdatesParams>,
     ) -> Result<String, String> {
         let (_, _, session_project, _) = self.require_session()?;
-        let project = if let Some(p) = params.project {
-            parse_project(&p)?
-        } else {
-            session_project
-        };
+        let project = params
+            .project
+            .unwrap_or_else(|| session_project.to_string());
 
         let since = match params.since.as_deref() {
-            Some(s) => chrono::DateTime::parse_from_rfc3339(s)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .map_err(|e| format!("invalid timestamp: {e}"))?,
-            None => chrono::Utc::now() - chrono::Duration::minutes(5),
+            Some(s) => s.to_string(),
+            None => (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339(),
         };
 
-        let limit = params.limit.unwrap_or(50) as usize;
+        let cmd = PollUpdatesCommand {
+            org_id: project.clone(),
+            since: since.clone(),
+            limit: params.limit,
+        };
 
-        let events = self
-            .container
-            .store
-            .query_events(project.as_ref(), since, limit)
-            .await
-            .map_err(mcp_error)?;
+        match self.container.app.poll_updates.execute(cmd).await {
+            Ok(events) => {
+                let updates: Vec<_> = events
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "topic": e.topic,
+                            "namespace": e.namespace,
+                            "payload": e.payload,
+                            "timestamp": e.timestamp.to_rfc3339(),
+                        })
+                    })
+                    .collect();
 
-        let updates: Vec<_> = events
-            .iter()
-            .map(|e| {
-                serde_json::json!({
-                    "topic": e.topic,
-                    "namespace": e.namespace,
-                    "payload": e.payload,
-                    "timestamp": e.timestamp.to_rfc3339(),
-                })
-            })
-            .collect();
+                let result = serde_json::json!({
+                    "since": since,
+                    "count": updates.len(),
+                    "events": updates,
+                });
 
-        let result = serde_json::json!({
-            "since": since.to_rfc3339(),
-            "count": updates.len(),
-            "events": updates,
-        });
-
-        Ok(to_json(&result))
+                Ok(to_json(&result))
+            }
+            Err(e) => Err(mcp_error(e)),
+        }
     }
 
     #[tool(description = "List available knowledge entry types with descriptions.")]
@@ -1820,27 +1669,28 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
-        let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
-
         let metadata = knowledge_metadata_from_json_str(params.metadata.as_deref(), "metadata")?;
-        let metadata_remove = params.metadata_remove.unwrap_or_default();
 
-        let cmd = WriteKnowledge {
-            org_id: org,
-            project: Some(project),
-            namespace,
+        let cmd = WriteKnowledgeCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
             path: params.path,
-            kind,
+            kind: params.kind,
             title: params.title,
             content: params.content,
-            tags: params.tags.unwrap_or_default(),
-            expected_version: params.version.map(KnowledgeVersion::from),
-            agent_id: self.get_session_agent(),
-            metadata,
-            metadata_remove,
+            tags: params.tags,
+            version: params.version,
+            agent_id: self.get_session_agent().map(|id| id.to_string()),
+            metadata: if metadata.is_empty() {
+                None
+            } else {
+                Some(metadata)
+            },
+            metadata_remove: params.metadata_remove,
         };
 
-        match self.container.knowledge_service.write(cmd).await {
+        match self.container.app.write_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1863,18 +1713,21 @@ impl OrchyHandler {
         let set = optional_knowledge_metadata(params.metadata, "metadata")?.unwrap_or_default();
         let remove = params.metadata_remove.unwrap_or_default();
 
+        let cmd = PatchKnowledgeMetadataCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            set,
+            remove,
+            version: params.version,
+        };
+
         match self
             .container
-            .knowledge_service
-            .patch_metadata(PatchKnowledgeMetadata {
-                org,
-                project: Some(project),
-                namespace,
-                path: params.path,
-                set,
-                remove,
-                expected_version: params.version.map(KnowledgeVersion::from),
-            })
+            .app
+            .patch_knowledge_metadata
+            .execute(cmd)
             .await
         {
             Ok(entry) => Ok(to_json(&entry)),
@@ -1889,22 +1742,22 @@ impl OrchyHandler {
         Parameters(params): Parameters<ReadKnowledgeParams>,
     ) -> Result<String, String> {
         let (_, org, session_project, _) = self.require_session()?;
-        let project = if let Some(p) = params.project {
-            parse_project(&p)?
-        } else {
-            session_project
-        };
+        let project = params
+            .project
+            .unwrap_or_else(|| session_project.to_string());
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
             .await?;
 
-        match self
-            .container
-            .knowledge_service
-            .read(&org, Some(&project), &namespace, &params.path)
-            .await
-        {
+        let cmd = ReadKnowledgeCommand {
+            org_id: org.to_string(),
+            project,
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+        };
+
+        match self.container.app.read_knowledge.execute(cmd).await {
             Ok(Some(entry)) => Ok(to_json(&entry)),
             Ok(None) => Ok("null".to_string()),
             Err(e) => Err(mcp_error(e)),
@@ -1919,49 +1772,44 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListKnowledgeParams>,
     ) -> Result<String, String> {
-        let explicit_project = params.project.as_deref().map(parse_project).transpose()?;
+        let (_, org, _, _) = self.require_session()?;
+
         let namespace = match params.namespace.as_deref() {
             Some(_) => Some(
                 self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-                    .await?,
+                    .await?
+                    .to_string(),
             ),
             None => None,
         };
 
-        let kind = match params.kind.as_deref() {
-            Some(t) => Some(t.parse::<KnowledgeKind>().map_err(|e: String| e)?),
-            None => None,
-        };
-
         let agent_id = match params.agent.as_deref() {
-            Some(s) => Some(self.resolve_agent_id(s).await?),
+            Some(s) => Some(self.resolve_agent_id(s).await?.to_string()),
             None => None,
         };
 
-        let project = if explicit_project.is_some() {
-            explicit_project
+        let project = if params.project.is_some() {
+            params.project
         } else if namespace.is_none() {
-            self.get_session_project()
+            self.get_session_project().map(|p| p.to_string())
         } else {
             None
         };
 
-        let filter = KnowledgeFilter {
+        let cmd = ListKnowledgeCommand {
+            org_id: Some(org.to_string()),
             project,
+            include_org_level: false,
             namespace,
-            kind,
+            kind: params.kind,
             tag: params.tag,
             path_prefix: params.path_prefix,
             agent_id,
-            ..Default::default()
+            after: None,
+            limit: None,
         };
 
-        match self
-            .container
-            .knowledge_service
-            .list(filter, orchy_core::pagination::PageParams::unbounded())
-            .await
-        {
+        match self.container.app.list_knowledge.execute(cmd).await {
             Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -1975,27 +1823,22 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, _, _) = self.require_session()?;
 
-        let namespace = Some(
-            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
-                .await?,
-        );
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+            .await?;
 
-        let limit = params.limit.unwrap_or(10) as usize;
+        let cmd = SearchKnowledgeCommand {
+            org_id: org.to_string(),
+            query: params.query,
+            namespace: Some(namespace.to_string()),
+            kind: params.kind,
+            limit: params.limit,
+        };
 
-        let mut entries = match self
-            .container
-            .knowledge_service
-            .search(&org, &params.query, namespace.as_ref(), limit)
-            .await
-        {
+        let mut entries = match self.container.app.search_knowledge.execute(cmd).await {
             Ok(e) => e,
             Err(e) => return Err(mcp_error(e)),
         };
-
-        if let Some(k) = params.kind.as_deref() {
-            let kind: KnowledgeKind = k.parse().map_err(|e: String| e)?;
-            entries.retain(|e| e.kind() == kind);
-        }
 
         if let Some(p) = params.project {
             let project = parse_project(&p)?;
@@ -2016,15 +1859,14 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        let entry = self
-            .container
-            .knowledge_service
-            .read(&org, Some(&project), &namespace, &params.path)
-            .await
-            .map_err(mcp_error)?
-            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+        let cmd = DeleteKnowledgeCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+        };
 
-        match self.container.knowledge_service.delete(&entry.id()).await {
+        match self.container.app.delete_knowledge.execute(cmd).await {
             Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
@@ -2041,30 +1883,22 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
             .await?;
 
-        let kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
+        let metadata = optional_knowledge_metadata(params.metadata, "metadata")?;
 
-        let separator = params.separator.as_deref().unwrap_or("\n");
+        let cmd = AppendKnowledgeCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            kind: params.kind,
+            value: params.value,
+            separator: params.separator,
+            agent_id: self.get_session_agent().map(|id| id.to_string()),
+            metadata,
+            metadata_remove: params.metadata_remove,
+        };
 
-        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
-        let meta_remove = params.metadata_remove;
-
-        match self
-            .container
-            .knowledge_service
-            .append(
-                &org,
-                Some(&project),
-                &namespace,
-                &params.path,
-                kind,
-                params.value,
-                separator,
-                self.get_session_agent(),
-                meta,
-                meta_remove,
-            )
-            .await
-        {
+        match self.container.app.append_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -2081,27 +1915,19 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        let entry = self
-            .container
-            .knowledge_service
-            .read(&org, Some(&project), &namespace, &params.path)
-            .await
-            .map_err(mcp_error)?
-            .ok_or_else(|| format!("entry not found: {}", params.path))?;
-
         let new_namespace = self
             .resolve_namespace(Some(&params.new_namespace), NamespacePolicy::RegisterIfNew)
             .await?;
 
-        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
-        let meta_remove = params.metadata_remove;
+        let cmd = MoveKnowledgeCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            new_namespace: new_namespace.to_string(),
+        };
 
-        match self
-            .container
-            .knowledge_service
-            .move_entry(&entry.id(), new_namespace, meta, meta_remove)
-            .await
-        {
+        match self.container.app.move_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -2118,23 +1944,15 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        let entry = self
-            .container
-            .knowledge_service
-            .read(&org, Some(&project), &namespace, &params.path)
-            .await
-            .map_err(mcp_error)?
-            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+        let cmd = RenameKnowledgeCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            new_path: params.new_path,
+        };
 
-        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
-        let meta_remove = params.metadata_remove;
-
-        match self
-            .container
-            .knowledge_service
-            .rename(&entry.id(), params.new_path, meta, meta_remove)
-            .await
-        {
+        match self.container.app.rename_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -2153,27 +1971,16 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        let new_kind: KnowledgeKind = params.kind.parse().map_err(|e: String| e)?;
+        let cmd = ChangeKnowledgeKindCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            new_kind: params.kind,
+            version: params.version,
+        };
 
-        let expected = params.version.map(KnowledgeVersion::from);
-        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
-        let meta_remove = params.metadata_remove;
-
-        match self
-            .container
-            .knowledge_service
-            .change_kind(
-                &org,
-                Some(&project),
-                &namespace,
-                &params.path,
-                new_kind,
-                expected,
-                meta,
-                meta_remove,
-            )
-            .await
-        {
+        match self.container.app.change_knowledge_kind.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -2190,23 +1997,15 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        let entry = self
-            .container
-            .knowledge_service
-            .read(&org, Some(&project), &namespace, &params.path)
-            .await
-            .map_err(mcp_error)?
-            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+        let cmd = TagKnowledgeCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            tag: params.tag,
+        };
 
-        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
-        let meta_remove = params.metadata_remove;
-
-        match self
-            .container
-            .knowledge_service
-            .tag(&entry.id(), params.tag, meta, meta_remove)
-            .await
-        {
+        match self.container.app.tag_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -2223,23 +2022,15 @@ impl OrchyHandler {
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
             .await?;
 
-        let entry = self
-            .container
-            .knowledge_service
-            .read(&org, Some(&project), &namespace, &params.path)
-            .await
-            .map_err(mcp_error)?
-            .ok_or_else(|| format!("entry not found: {}", params.path))?;
+        let cmd = UntagKnowledgeCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            tag: params.tag,
+        };
 
-        let meta = optional_knowledge_metadata(params.metadata, "metadata")?;
-        let meta_remove = params.metadata_remove;
-
-        match self
-            .container
-            .knowledge_service
-            .untag(&entry.id(), &params.tag, meta, meta_remove)
-            .await
-        {
+        match self.container.app.untag_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }
@@ -2252,51 +2043,23 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, project, _) = self.require_session()?;
 
-        let source_project = parse_project(&params.source_project)?;
-
-        let source_namespace = match params.source_namespace.as_deref() {
-            Some(s) => parse_namespace(&format!("/{s}"))?,
-            None => Namespace::root(),
-        };
-
-        let source_entry = self
-            .container
-            .knowledge_service
-            .read(&org, Some(&source_project), &source_namespace, &params.path)
-            .await
-            .map_err(mcp_error)?
-            .ok_or_else(|| format!("entry not found in source: {}", params.path))?;
-
         let namespace = self
             .resolve_namespace(None, NamespacePolicy::RegisterIfNew)
             .await?;
 
-        let mut md = source_entry.metadata().clone();
-        if let Some(keys) = params.metadata_remove {
-            for k in keys {
-                md.remove(&k);
-            }
-        }
-        if let Some(overlay) = optional_knowledge_metadata(params.metadata, "metadata")? {
-            md.extend(overlay);
-        }
-
-        let cmd = WriteKnowledge {
-            org_id: org,
-            project: Some(project),
-            namespace,
-            path: source_entry.path().to_string(),
-            kind: source_entry.kind(),
-            title: source_entry.title().to_string(),
-            content: source_entry.content().to_string(),
-            tags: source_entry.tags().to_vec(),
-            expected_version: None,
-            agent_id: self.get_session_agent(),
-            metadata: md,
-            metadata_remove: vec![],
+        let cmd = ImportKnowledgeCommand {
+            source_org_id: org.to_string(),
+            source_project: params.source_project,
+            source_namespace: params.source_namespace,
+            source_path: params.path,
+            target_org_id: org.to_string(),
+            target_project: project.to_string(),
+            target_namespace: Some(namespace.to_string()),
+            target_path: None,
+            agent_id: self.get_session_agent().map(|id| id.to_string()),
         };
 
-        match self.container.knowledge_service.write(cmd).await {
+        match self.container.app.import_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }

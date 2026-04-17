@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use orchy_events::Event;
 use orchy_events::io::Writer as EventWriter;
 
+use orchy_application::EventQuery;
 use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::Result;
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
@@ -282,6 +283,22 @@ impl EventWriter for StoreBackend {
             StoreBackend::Memory(b) => EventWriter::write(b, event).await,
             StoreBackend::Sqlite(b) => EventWriter::write(b, event).await,
             StoreBackend::Postgres(b) => EventWriter::write(b, event).await,
+        }
+    }
+}
+
+#[async_trait]
+impl EventQuery for StoreBackend {
+    async fn query_events(
+        &self,
+        organization: &str,
+        since: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> Result<Vec<orchy_events::SerializedEvent>> {
+        match self {
+            StoreBackend::Memory(b) => b.query_events(organization, since, limit),
+            StoreBackend::Sqlite(b) => b.query_events(organization, since, limit),
+            StoreBackend::Postgres(b) => b.query_events(organization, since, limit).await,
         }
     }
 }

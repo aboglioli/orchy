@@ -112,13 +112,13 @@ mod unlock_resource;
 mod get_project_overview;
 mod poll_updates;
 
-pub use change_roles::ChangeRoles;
-pub use disconnect_agent::DisconnectAgent;
+pub use change_roles::{ChangeRoles, ChangeRolesCommand};
+pub use disconnect_agent::{DisconnectAgent, DisconnectAgentCommand};
 pub use get_agent::GetAgent;
-pub use heartbeat::Heartbeat;
-pub use list_agents::ListAgents;
-pub use register_agent::RegisterAgent;
-pub use switch_context::SwitchContext;
+pub use heartbeat::{Heartbeat, HeartbeatCommand};
+pub use list_agents::{ListAgents, ListAgentsCommand};
+pub use register_agent::{RegisterAgent, RegisterAgentCommand};
+pub use switch_context::{SwitchContext, SwitchContextCommand};
 
 pub use assign_task::{AssignTask, AssignTaskCommand};
 pub use cancel_task::{CancelTask, CancelTaskCommand};

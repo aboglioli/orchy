@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use orchy_core::agent::{AgentId, AgentStatus};
-use orchy_core::message::MessageId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
-use orchy_core::task::{ReviewId, TaskId};
 
 use crate::container::Container;
 
@@ -236,28 +234,9 @@ pub(crate) fn parse_project(s: &str) -> Result<ProjectId, String> {
     ProjectId::try_from(s.to_string()).map_err(|e| e.to_string())
 }
 
-pub(crate) fn parse_namespace(s: &str) -> Result<Namespace, String> {
-    Namespace::try_from(s.to_string()).map_err(|e| e.to_string())
-}
-
-pub(crate) fn parse_task_id(s: &str) -> Result<TaskId, String> {
-    s.parse::<TaskId>()
-        .map_err(|e| format!("invalid task_id: {e}"))
-}
-
-pub(crate) fn parse_review_id(s: &str) -> Result<ReviewId, String> {
-    s.parse::<ReviewId>()
-        .map_err(|e| format!("invalid review_id: {e}"))
-}
-
 pub(crate) fn parse_agent_id(s: &str) -> Result<AgentId, String> {
     s.parse::<AgentId>()
         .map_err(|e| format!("invalid agent_id: {e}"))
-}
-
-pub(crate) fn parse_message_id(s: &str) -> Result<MessageId, String> {
-    s.parse::<MessageId>()
-        .map_err(|e| format!("invalid message_id: {e}"))
 }
 
 pub(crate) fn to_json<T: serde::Serialize>(val: &T) -> String {

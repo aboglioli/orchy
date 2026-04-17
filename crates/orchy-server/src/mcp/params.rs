@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use rmcp::schemars;
 use serde::Deserialize;
 
