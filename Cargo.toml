@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/orchy-events",
     "crates/orchy-core",
+    "crates/orchy-application",
     "crates/orchy-store-memory",
     "crates/orchy-store-sqlite",
     "crates/orchy-store-pg",
@@ -50,6 +51,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Internal
 orchy-events = { path = "crates/orchy-events" }
 orchy-core = { path = "crates/orchy-core" }
+orchy-application = { path = "crates/orchy-application" }
 orchy-store-memory = { path = "crates/orchy-store-memory" }
 orchy-store-sqlite = { path = "crates/orchy-store-sqlite" }
 orchy-store-pg = { path = "crates/orchy-store-pg" }

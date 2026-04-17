@@ -1,0 +1,18 @@
+[package]
+name = "orchy-application"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+orchy-core = { workspace = true }
+orchy-events = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
