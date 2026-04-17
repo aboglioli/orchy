@@ -12,6 +12,12 @@ use crate::{PgBackend, parse_namespace, parse_project_id};
 
 impl LockStore for PgBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO resource_locks (project, namespace, name, holder, acquired_at, expires_at)
              VALUES ($1, $2, $3, $4, $5, $6)
@@ -26,15 +32,14 @@ impl LockStore for PgBackend {
         .bind(lock.holder().as_uuid())
         .bind(lock.acquired_at())
         .bind(lock.expires_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = lock.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&mut tx, &events).await?;
 
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

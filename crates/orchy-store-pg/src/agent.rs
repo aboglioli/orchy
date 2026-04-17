@@ -19,6 +19,12 @@ impl AgentStore for PgBackend {
         let metadata_json = serde_json::to_value(agent.metadata())
             .map_err(|e| Error::Store(format!("failed to serialize agents.metadata: {e}")))?;
 
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO agents (id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -43,15 +49,14 @@ impl AgentStore for PgBackend {
         .bind(agent.last_heartbeat())
         .bind(agent.connected_at())
         .bind(&metadata_json)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = agent.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&mut tx, &events).await?;
 
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

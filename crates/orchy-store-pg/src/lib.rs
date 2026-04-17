@@ -127,6 +127,35 @@ impl PgBackend {
     }
 }
 
+pub(crate) async fn write_events_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    events: &[orchy_events::Event],
+) -> Result<()> {
+    for event in events {
+        let serialized = orchy_events::SerializedEvent::from_event(event)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let id = uuid::Uuid::parse_str(&serialized.id).map_err(|e| Error::Store(e.to_string()))?;
+
+        sqlx::query(
+            "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(id)
+        .bind(&serialized.organization)
+        .bind(&serialized.namespace)
+        .bind(&serialized.topic)
+        .bind(&serialized.payload)
+        .bind(&serialized.content_type)
+        .bind(serde_json::to_value(&serialized.metadata).map_err(|e| Error::Store(e.to_string()))?)
+        .bind(serialized.timestamp)
+        .bind(serialized.version as i64)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+    }
+    Ok(())
+}
+
 pub(crate) fn decode_json_value<T: DeserializeOwned>(
     value: serde_json::Value,
     table: &str,

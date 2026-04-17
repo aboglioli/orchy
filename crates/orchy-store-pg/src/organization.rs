@@ -11,6 +11,12 @@ use crate::PgBackend;
 
 impl OrganizationStore for PgBackend {
     async fn save(&self, org: &mut Organization) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO organizations (id, name, created_at, updated_at)
              VALUES ($1, $2, $3, $4)
@@ -22,13 +28,13 @@ impl OrganizationStore for PgBackend {
         .bind(org.name())
         .bind(org.created_at())
         .bind(org.updated_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query("DELETE FROM api_keys WHERE organization_id = $1")
             .bind(org.id().as_str())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -43,16 +49,15 @@ impl OrganizationStore for PgBackend {
             .bind(key.key())
             .bind(key.is_active())
             .bind(key.created_at())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
         }
 
         let events = org.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&mut tx, &events).await?;
 
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

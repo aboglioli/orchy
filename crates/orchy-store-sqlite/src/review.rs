@@ -22,33 +22,34 @@ fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
 
 impl ReviewStore for SqliteBackend {
     async fn save(&self, review: &mut ReviewRequest) -> Result<()> {
-        {
-            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-            conn.execute(
-                "INSERT OR REPLACE INTO reviews (id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                rusqlite::params![
-                    review.id().to_string(),
-                    review.task_id().to_string(),
-                    review.project().to_string(),
-                    review.namespace().to_string(),
-                    review.requester().to_string(),
-                    review.reviewer().map(|a| a.to_string()),
-                    review.reviewer_role().map(|s| s.to_string()),
-                    review.status().to_string(),
-                    review.comments().map(|s| s.to_string()),
-                    review.created_at().to_rfc3339(),
-                    review.resolved_at().map(|dt| dt.to_rfc3339()),
-                ],
-            )
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
             .map_err(|e| Error::Store(e.to_string()))?;
-        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO reviews (id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![
+                review.id().to_string(),
+                review.task_id().to_string(),
+                review.project().to_string(),
+                review.namespace().to_string(),
+                review.requester().to_string(),
+                review.reviewer().map(|a| a.to_string()),
+                review.reviewer_role().map(|s| s.to_string()),
+                review.status().to_string(),
+                review.comments().map(|s| s.to_string()),
+                review.created_at().to_rfc3339(),
+                review.resolved_at().map(|dt| dt.to_rfc3339()),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = review.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&tx, &events)?;
 
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

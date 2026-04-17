@@ -41,6 +41,12 @@ enum Messages {
 
 impl MessageStore for PgBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO messages (id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -66,15 +72,14 @@ impl MessageStore for PgBackend {
             MessageStatus::Read => "read",
         })
         .bind(message.created_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = message.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&mut tx, &events).await?;
 
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

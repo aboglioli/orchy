@@ -71,6 +71,12 @@ impl TaskStore for PgBackend {
         let notes_json = serde_json::to_value(task.notes())
             .map_err(|e| Error::Store(format!("failed to serialize tasks.notes: {e}")))?;
 
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
@@ -109,15 +115,14 @@ impl TaskStore for PgBackend {
         .bind(task.created_by().map(|a| *a.as_uuid()))
         .bind(task.created_at())
         .bind(task.updated_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = task.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&mut tx, &events).await?;
 
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

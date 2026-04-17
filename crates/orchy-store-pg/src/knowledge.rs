@@ -70,6 +70,12 @@ impl KnowledgeStore for PgBackend {
             ))
         })?;
 
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         if let Some(pv) = entry.persisted_version() {
             let result = sqlx::query(
                 "UPDATE knowledge_entries SET project = $2, namespace = $3, path = $4, kind = $5, title = $6, content = $7, tags = $8, version = $9, agent_id = $10, metadata = $11, embedding = $12, embedding_model = $13, embedding_dimensions = $14, updated_at = $15
@@ -91,7 +97,7 @@ impl KnowledgeStore for PgBackend {
             .bind(entry.embedding_dimensions().map(|d| d as i32))
             .bind(entry.updated_at())
             .bind(pv.as_u64() as i64)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -99,7 +105,7 @@ impl KnowledgeStore for PgBackend {
                 let stored_version: Option<i64> =
                     sqlx::query_scalar("SELECT version FROM knowledge_entries WHERE id = $1")
                         .bind(entry.id().as_uuid())
-                        .fetch_optional(&self.pool)
+                        .fetch_optional(&mut *tx)
                         .await
                         .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -132,17 +138,17 @@ impl KnowledgeStore for PgBackend {
             .bind(entry.embedding_dimensions().map(|d| d as i32))
             .bind(entry.created_at())
             .bind(entry.updated_at())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
         }
 
-        entry.mark_persisted();
-
         let events = entry.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&mut tx, &events).await?;
+
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+
+        entry.mark_persisted();
 
         Ok(())
     }

@@ -14,40 +14,41 @@ use crate::SqliteBackend;
 
 impl TaskStore for SqliteBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        {
-            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-            conn.execute(
-                "INSERT OR REPLACE INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
-                rusqlite::params![
-                    task.id().to_string(),
-                    task.project().to_string(),
-                    task.namespace().to_string(),
-                    task.parent_id().map(|id| id.to_string()),
-                    task.title(),
-                    task.description(),
-                    task.status().to_string(),
-                    task.priority().to_string(),
-                    serde_json::to_string(task.assigned_roles()).unwrap(),
-                    task.assigned_to().map(|a| a.to_string()),
-                    task.assigned_at().map(|dt| dt.to_rfc3339()),
-                    serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap(),
-                    serde_json::to_string(task.tags()).unwrap(),
-                    task.result_summary().map(|s| s.to_string()),
-                    serde_json::to_string(&task.notes()).unwrap(),
-                    task.created_by().map(|a| a.to_string()),
-                    task.created_at().to_rfc3339(),
-                    task.updated_at().to_rfc3339(),
-                ],
-            )
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
             .map_err(|e| Error::Store(e.to_string()))?;
-        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO tasks (id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            rusqlite::params![
+                task.id().to_string(),
+                task.project().to_string(),
+                task.namespace().to_string(),
+                task.parent_id().map(|id| id.to_string()),
+                task.title(),
+                task.description(),
+                task.status().to_string(),
+                task.priority().to_string(),
+                serde_json::to_string(task.assigned_roles()).unwrap(),
+                task.assigned_to().map(|a| a.to_string()),
+                task.assigned_at().map(|dt| dt.to_rfc3339()),
+                serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap(),
+                serde_json::to_string(task.tags()).unwrap(),
+                task.result_summary().map(|s| s.to_string()),
+                serde_json::to_string(&task.notes()).unwrap(),
+                task.created_by().map(|a| a.to_string()),
+                task.created_at().to_rfc3339(),
+                task.updated_at().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = task.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&tx, &events)?;
 
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

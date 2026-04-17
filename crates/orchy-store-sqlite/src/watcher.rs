@@ -19,27 +19,28 @@ fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
 
 impl WatcherStore for SqliteBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
-        {
-            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-            conn.execute(
-                "INSERT OR REPLACE INTO task_watchers (task_id, agent_id, project, namespace, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![
-                    watcher.task_id().to_string(),
-                    watcher.agent_id().to_string(),
-                    watcher.project().to_string(),
-                    watcher.namespace().to_string(),
-                    watcher.created_at().to_rfc3339(),
-                ],
-            )
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
             .map_err(|e| Error::Store(e.to_string()))?;
-        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO task_watchers (task_id, agent_id, project, namespace, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                watcher.task_id().to_string(),
+                watcher.agent_id().to_string(),
+                watcher.project().to_string(),
+                watcher.namespace().to_string(),
+                watcher.created_at().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = watcher.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&tx, &events)?;
 
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

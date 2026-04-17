@@ -20,28 +20,29 @@ fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
 
 impl LockStore for SqliteBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
-        {
-            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-            conn.execute(
-                "INSERT OR REPLACE INTO resource_locks (project, namespace, name, holder, acquired_at, expires_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![
-                    lock.project().to_string(),
-                    lock.namespace().to_string(),
-                    lock.name(),
-                    lock.holder().to_string(),
-                    lock.acquired_at().to_rfc3339(),
-                    lock.expires_at().to_rfc3339(),
-                ],
-            )
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
             .map_err(|e| Error::Store(e.to_string()))?;
-        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO resource_locks (project, namespace, name, holder, acquired_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                lock.project().to_string(),
+                lock.namespace().to_string(),
+                lock.name(),
+                lock.holder().to_string(),
+                lock.acquired_at().to_rfc3339(),
+                lock.expires_at().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = lock.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&tx, &events)?;
 
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

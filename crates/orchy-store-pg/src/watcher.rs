@@ -11,6 +11,12 @@ use crate::{PgBackend, parse_namespace, parse_project_id};
 
 impl WatcherStore for PgBackend {
     async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO task_watchers (task_id, agent_id, project, namespace, created_at)
              VALUES ($1, $2, $3, $4, $5)
@@ -24,15 +30,14 @@ impl WatcherStore for PgBackend {
         .bind(watcher.project().to_string())
         .bind(watcher.namespace().to_string())
         .bind(watcher.created_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = watcher.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&mut tx, &events).await?;
 
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

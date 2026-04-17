@@ -12,27 +12,28 @@ use crate::SqliteBackend;
 
 impl ProjectStore for SqliteBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
-        {
-            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-            conn.execute(
-                "INSERT OR REPLACE INTO projects (name, description, metadata, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![
-                    project.id().to_string(),
-                    project.description(),
-                    serde_json::to_string(project.metadata()).unwrap(),
-                    project.created_at().to_rfc3339(),
-                    project.updated_at().to_rfc3339(),
-                ],
-            )
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
             .map_err(|e| Error::Store(e.to_string()))?;
-        }
+
+        tx.execute(
+            "INSERT OR REPLACE INTO projects (name, description, metadata, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                project.id().to_string(),
+                project.description(),
+                serde_json::to_string(project.metadata()).unwrap(),
+                project.created_at().to_rfc3339(),
+                project.updated_at().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = project.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&tx, &events)?;
 
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

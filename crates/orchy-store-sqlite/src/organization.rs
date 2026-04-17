@@ -11,48 +11,49 @@ use crate::SqliteBackend;
 
 impl OrganizationStore for SqliteBackend {
     async fn save(&self, org: &mut Organization) -> Result<()> {
-        {
-            let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-            conn.execute(
-                "INSERT OR REPLACE INTO organizations (id, name, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4)",
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        tx.execute(
+            "INSERT OR REPLACE INTO organizations (id, name, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                org.id().to_string(),
+                org.name(),
+                org.created_at().to_rfc3339(),
+                org.updated_at().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        tx.execute(
+            "DELETE FROM api_keys WHERE organization_id = ?1",
+            rusqlite::params![org.id().to_string()],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        for key in org.api_keys() {
+            tx.execute(
+                "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 rusqlite::params![
+                    key.id().to_string(),
                     org.id().to_string(),
-                    org.name(),
-                    org.created_at().to_rfc3339(),
-                    org.updated_at().to_rfc3339(),
+                    key.name(),
+                    key.key(),
+                    key.is_active() as i32,
+                    key.created_at().to_rfc3339(),
                 ],
             )
             .map_err(|e| Error::Store(e.to_string()))?;
-
-            conn.execute(
-                "DELETE FROM api_keys WHERE organization_id = ?1",
-                rusqlite::params![org.id().to_string()],
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-            for key in org.api_keys() {
-                conn.execute(
-                    "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    rusqlite::params![
-                        key.id().to_string(),
-                        org.id().to_string(),
-                        key.name(),
-                        key.key(),
-                        key.is_active() as i32,
-                        key.created_at().to_rfc3339(),
-                    ],
-                )
-                .map_err(|e| Error::Store(e.to_string()))?;
-            }
         }
 
         let events = org.drain_events();
-        if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
-        }
+        crate::write_events_in_tx(&tx, &events)?;
 
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 
