@@ -1,5 +1,14 @@
+use std::sync::Arc;
+
+use orchy_core::agent::AgentStore;
+use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
-use orchy_core::namespace::Namespace;
+use orchy_core::knowledge::KnowledgeStore;
+use orchy_core::message::MessageStore;
+use orchy_core::namespace::{Namespace, NamespaceStore};
+use orchy_core::project::ProjectStore;
+use orchy_core::resource_lock::LockStore;
+use orchy_core::task::{ReviewStore, TaskStore, WatcherStore};
 
 mod dto;
 
@@ -178,3 +187,181 @@ pub use unlock_resource::{UnlockResource, UnlockResourceCommand};
 pub use dto::ProjectOverview;
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
+
+pub struct Application {
+    pub register_agent: RegisterAgent,
+    pub switch_context: SwitchContext,
+    pub disconnect_agent: DisconnectAgent,
+    pub heartbeat: Heartbeat,
+    pub change_roles: ChangeRoles,
+    pub get_agent: GetAgent,
+    pub list_agents: ListAgents,
+
+    pub post_task: PostTask,
+    pub get_task: GetTask,
+    pub list_tasks: ListTasks,
+    pub get_next_task: GetNextTask,
+    pub claim_task: ClaimTask,
+    pub start_task: StartTask,
+    pub complete_task: CompleteTask,
+    pub fail_task: FailTask,
+    pub cancel_task: CancelTask,
+    pub release_task: ReleaseTask,
+    pub update_task: UpdateTask,
+    pub assign_task: AssignTask,
+    pub unblock_task: UnblockTask,
+
+    pub split_task: SplitTask,
+    pub replace_task: ReplaceTask,
+    pub merge_tasks: MergeTasks,
+    pub delegate_task: DelegateTask,
+    pub add_dependency: AddDependency,
+    pub remove_dependency: RemoveDependency,
+
+    pub add_task_note: AddTaskNote,
+    pub tag_task: TagTask,
+    pub untag_task: UntagTask,
+    pub move_task: MoveTask,
+    pub list_tags: ListTags,
+
+    pub watch_task: WatchTask,
+    pub unwatch_task: UnwatchTask,
+
+    pub request_review: RequestReview,
+    pub resolve_review: ResolveReview,
+    pub list_reviews: ListReviews,
+    pub get_review: GetReview,
+
+    pub send_message: SendMessage,
+    pub check_mailbox: CheckMailbox,
+    pub check_sent_messages: CheckSentMessages,
+    pub mark_read: MarkRead,
+    pub list_conversation: ListConversation,
+
+    pub write_knowledge: WriteKnowledge,
+    pub read_knowledge: ReadKnowledge,
+    pub list_knowledge: ListKnowledge,
+    pub search_knowledge: SearchKnowledge,
+    pub delete_knowledge: DeleteKnowledge,
+    pub append_knowledge: AppendKnowledge,
+    pub rename_knowledge: RenameKnowledge,
+    pub move_knowledge: MoveKnowledge,
+    pub change_knowledge_kind: ChangeKnowledgeKind,
+    pub tag_knowledge: TagKnowledge,
+    pub untag_knowledge: UntagKnowledge,
+    pub patch_knowledge_metadata: PatchKnowledgeMetadata,
+    pub import_knowledge: ImportKnowledge,
+
+    pub get_project: GetProject,
+    pub update_project: UpdateProject,
+    pub set_project_metadata: SetProjectMetadata,
+    pub list_namespaces: ListNamespaces,
+
+    pub lock_resource: LockResource,
+    pub unlock_resource: UnlockResource,
+    pub check_lock: CheckLock,
+
+    pub poll_updates: PollUpdates,
+    pub get_project_overview: GetProjectOverview,
+}
+
+impl Application {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        agents: Arc<dyn AgentStore>,
+        tasks: Arc<dyn TaskStore>,
+        projects: Arc<dyn ProjectStore>,
+        knowledge: Arc<dyn KnowledgeStore>,
+        messages: Arc<dyn MessageStore>,
+        locks: Arc<dyn LockStore>,
+        watchers: Arc<dyn WatcherStore>,
+        reviews: Arc<dyn ReviewStore>,
+        namespaces: Arc<dyn NamespaceStore>,
+        embeddings: Option<Arc<dyn EmbeddingsProvider>>,
+        event_query: Arc<dyn EventQuery>,
+    ) -> Self {
+        Self {
+            register_agent: RegisterAgent::new(agents.clone()),
+            switch_context: SwitchContext::new(
+                agents.clone(),
+                projects.clone(),
+                tasks.clone(),
+                locks.clone(),
+                watchers.clone(),
+                reviews.clone(),
+            ),
+            disconnect_agent: DisconnectAgent::new(agents.clone()),
+            heartbeat: Heartbeat::new(agents.clone()),
+            change_roles: ChangeRoles::new(agents.clone()),
+            get_agent: GetAgent::new(agents.clone()),
+            list_agents: ListAgents::new(agents.clone()),
+
+            post_task: PostTask::new(tasks.clone()),
+            get_task: GetTask::new(tasks.clone()),
+            list_tasks: ListTasks::new(tasks.clone()),
+            get_next_task: GetNextTask::new(tasks.clone()),
+            claim_task: ClaimTask::new(tasks.clone()),
+            start_task: StartTask::new(tasks.clone()),
+            complete_task: CompleteTask::new(tasks.clone()),
+            fail_task: FailTask::new(tasks.clone()),
+            cancel_task: CancelTask::new(tasks.clone()),
+            release_task: ReleaseTask::new(tasks.clone()),
+            update_task: UpdateTask::new(tasks.clone()),
+            assign_task: AssignTask::new(tasks.clone()),
+            unblock_task: UnblockTask::new(tasks.clone()),
+
+            split_task: SplitTask::new(tasks.clone()),
+            replace_task: ReplaceTask::new(tasks.clone()),
+            merge_tasks: MergeTasks::new(tasks.clone()),
+            delegate_task: DelegateTask::new(tasks.clone()),
+            add_dependency: AddDependency::new(tasks.clone()),
+            remove_dependency: RemoveDependency::new(tasks.clone()),
+
+            add_task_note: AddTaskNote::new(tasks.clone()),
+            tag_task: TagTask::new(tasks.clone()),
+            untag_task: UntagTask::new(tasks.clone()),
+            move_task: MoveTask::new(tasks.clone()),
+            list_tags: ListTags::new(tasks.clone()),
+
+            watch_task: WatchTask::new(tasks.clone(), watchers.clone()),
+            unwatch_task: UnwatchTask::new(watchers.clone()),
+
+            request_review: RequestReview::new(tasks.clone(), reviews.clone(), messages.clone()),
+            resolve_review: ResolveReview::new(reviews.clone(), messages.clone()),
+            list_reviews: ListReviews::new(reviews.clone()),
+            get_review: GetReview::new(reviews.clone()),
+
+            send_message: SendMessage::new(messages.clone(), agents.clone()),
+            check_mailbox: CheckMailbox::new(messages.clone()),
+            check_sent_messages: CheckSentMessages::new(messages.clone()),
+            mark_read: MarkRead::new(messages.clone()),
+            list_conversation: ListConversation::new(messages.clone()),
+
+            write_knowledge: WriteKnowledge::new(knowledge.clone(), embeddings.clone()),
+            read_knowledge: ReadKnowledge::new(knowledge.clone()),
+            list_knowledge: ListKnowledge::new(knowledge.clone()),
+            search_knowledge: SearchKnowledge::new(knowledge.clone(), embeddings.clone()),
+            delete_knowledge: DeleteKnowledge::new(knowledge.clone()),
+            append_knowledge: AppendKnowledge::new(knowledge.clone(), embeddings.clone()),
+            rename_knowledge: RenameKnowledge::new(knowledge.clone()),
+            move_knowledge: MoveKnowledge::new(knowledge.clone()),
+            change_knowledge_kind: ChangeKnowledgeKind::new(knowledge.clone(), embeddings.clone()),
+            tag_knowledge: TagKnowledge::new(knowledge.clone()),
+            untag_knowledge: UntagKnowledge::new(knowledge.clone()),
+            patch_knowledge_metadata: PatchKnowledgeMetadata::new(knowledge.clone()),
+            import_knowledge: ImportKnowledge::new(knowledge.clone(), embeddings),
+
+            get_project: GetProject::new(projects.clone()),
+            update_project: UpdateProject::new(projects.clone()),
+            set_project_metadata: SetProjectMetadata::new(projects.clone()),
+            list_namespaces: ListNamespaces::new(namespaces),
+
+            lock_resource: LockResource::new(locks.clone()),
+            unlock_resource: UnlockResource::new(locks.clone()),
+            check_lock: CheckLock::new(locks),
+
+            poll_updates: PollUpdates::new(event_query),
+            get_project_overview: GetProjectOverview::new(projects, agents, tasks, knowledge),
+        }
+    }
+}
