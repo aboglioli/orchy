@@ -143,13 +143,24 @@ impl OrchyHandler {
         param: Option<&str>,
         policy: NamespacePolicy,
     ) -> Result<Namespace, String> {
-        let _ = self
-            .get_session_project()
-            .ok_or("no agent registered for this session; call register_agent first")?;
+        self.resolve_namespace_for(param, policy, None, None).await
+    }
 
+    pub(crate) async fn resolve_namespace_for(
+        &self,
+        param: Option<&str>,
+        policy: NamespacePolicy,
+        explicit_org: Option<&OrganizationId>,
+        explicit_project: Option<&ProjectId>,
+    ) -> Result<Namespace, String> {
         let ns = match param {
             Some(s) if !s.is_empty() => {
-                Namespace::try_from(format!("/{s}")).map_err(|e| e.to_string())?
+                let normalized = if s.starts_with('/') {
+                    s.to_string()
+                } else {
+                    format!("/{s}")
+                };
+                Namespace::try_from(normalized).map_err(|e| e.to_string())?
             }
             _ => match policy {
                 NamespacePolicy::SessionDefault => {
@@ -159,15 +170,23 @@ impl OrchyHandler {
             },
         };
 
-        if matches!(policy, NamespacePolicy::RegisterIfNew)
-            && let (Some(project), Some(org)) = (
-                self.get_session_project(),
-                self.session
+        if matches!(policy, NamespacePolicy::RegisterIfNew) {
+            let org = match explicit_org {
+                Some(o) => o.clone(),
+                None => self
+                    .session
                     .read()
                     .ok()
-                    .and_then(|g| g.as_ref().map(|s| s.org.clone())),
-            )
-        {
+                    .and_then(|g| g.as_ref().map(|s| s.org.clone()))
+                    .ok_or("no session org for namespace registration")?,
+            };
+            let project = match explicit_project {
+                Some(p) => p.clone(),
+                None => self
+                    .get_session_project()
+                    .ok_or("no session project for namespace registration")?,
+            };
+
             use orchy_core::namespace::NamespaceStore;
             let _ = NamespaceStore::register(&*self.container.store, &org, &project, &ns).await;
         }

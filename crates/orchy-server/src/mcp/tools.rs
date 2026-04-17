@@ -270,10 +270,16 @@ impl OrchyHandler {
             .as_ref()
             .is_some_and(|p| *p != current_project);
 
+        let register_project = target_project.as_ref().unwrap_or(&current_project);
         let target_namespace = match &params.namespace {
             Some(ns) => {
-                self.resolve_namespace(Some(ns), NamespacePolicy::RegisterIfNew)
-                    .await?
+                self.resolve_namespace_for(
+                    Some(ns),
+                    NamespacePolicy::RegisterIfNew,
+                    Some(&org),
+                    Some(register_project),
+                )
+                .await?
             }
             None if project_changed => Namespace::root(),
             None => current_namespace,
