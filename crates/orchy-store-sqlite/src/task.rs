@@ -31,13 +31,17 @@ impl TaskStore for SqliteBackend {
                 task.description(),
                 task.status().to_string(),
                 task.priority().to_string(),
-                serde_json::to_string(task.assigned_roles()).unwrap(),
+                serde_json::to_string(task.assigned_roles())
+                    .map_err(|e| Error::Store(format!("failed to serialize assigned_roles: {e}")))?,
                 task.assigned_to().map(|a| a.to_string()),
                 task.assigned_at().map(|dt| dt.to_rfc3339()),
-                serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap(),
-                serde_json::to_string(task.tags()).unwrap(),
+                serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>())
+                    .map_err(|e| Error::Store(format!("failed to serialize depends_on: {e}")))?,
+                serde_json::to_string(task.tags())
+                    .map_err(|e| Error::Store(format!("failed to serialize tags: {e}")))?,
                 task.result_summary().map(|s| s.to_string()),
-                serde_json::to_string(&task.notes()).unwrap(),
+                serde_json::to_string(&task.notes())
+                    .map_err(|e| Error::Store(format!("failed to serialize notes: {e}")))?,
                 task.created_by().map(|a| a.to_string()),
                 task.created_at().to_rfc3339(),
                 task.updated_at().to_rfc3339(),

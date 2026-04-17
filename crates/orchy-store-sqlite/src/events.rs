@@ -24,9 +24,11 @@ impl Writer for SqliteBackend {
                 serialized.organization,
                 serialized.namespace,
                 serialized.topic,
-                serde_json::to_string(&serialized.payload).unwrap(),
+                serde_json::to_string(&serialized.payload)
+                    .map_err(|e| orchy_events::Error::Store(format!("failed to serialize payload: {e}")))?,
                 serialized.content_type,
-                serde_json::to_string(&serialized.metadata).unwrap(),
+                serde_json::to_string(&serialized.metadata)
+                    .map_err(|e| orchy_events::Error::Store(format!("failed to serialize metadata: {e}")))?,
                 serialized.timestamp.to_rfc3339(),
                 serialized.version,
             ],

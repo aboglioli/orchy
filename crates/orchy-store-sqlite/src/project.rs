@@ -23,7 +23,8 @@ impl ProjectStore for SqliteBackend {
             rusqlite::params![
                 project.id().to_string(),
                 project.description(),
-                serde_json::to_string(project.metadata()).unwrap(),
+                serde_json::to_string(project.metadata())
+                    .map_err(|e| Error::Store(format!("failed to serialize metadata: {e}")))?,
                 project.created_at().to_rfc3339(),
                 project.updated_at().to_rfc3339(),
             ],

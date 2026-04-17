@@ -28,12 +28,14 @@ impl AgentStore for SqliteBackend {
                 agent.project().to_string(),
                 agent.namespace().to_string(),
                 agent.parent_id().map(|id| id.to_string()),
-                serde_json::to_string(agent.roles()).unwrap(),
+                serde_json::to_string(agent.roles())
+                    .map_err(|e| Error::Store(format!("failed to serialize roles: {e}")))?,
                 agent.description(),
                 agent.status().to_string(),
                 agent.last_heartbeat().to_rfc3339(),
                 agent.connected_at().to_rfc3339(),
-                serde_json::to_string(agent.metadata()).unwrap(),
+                serde_json::to_string(agent.metadata())
+                    .map_err(|e| Error::Store(format!("failed to serialize metadata: {e}")))?,
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
