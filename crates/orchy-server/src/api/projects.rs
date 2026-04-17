@@ -96,7 +96,7 @@ pub async fn get(
         .agent_service
         .list(&org_id)
         .await
-        .unwrap_or_default();
+        .map_err(ApiError::from)?;
     let project_agents: Vec<_> = agents
         .into_iter()
         .filter(|a| *a.project() == project_id)
@@ -109,7 +109,7 @@ pub async fn get(
             ..Default::default()
         })
         .await
-        .unwrap_or_default();
+        .map_err(ApiError::from)?;
 
     let mut by_status = std::collections::HashMap::new();
     for task in &tasks {

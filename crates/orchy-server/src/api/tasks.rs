@@ -153,13 +153,11 @@ pub struct AgentBody {
 
 #[derive(Deserialize)]
 pub struct CompleteBody {
-    pub agent: Option<String>,
     pub summary: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct FailBody {
-    pub agent: Option<String>,
     pub reason: Option<String>,
 }
 
@@ -680,7 +678,13 @@ pub async fn watch(
 
     let watcher = container
         .task_service
-        .watch(&task_id, agent_id, org_id, project_id, Namespace::root())
+        .watch(
+            &task_id,
+            agent_id,
+            org_id,
+            project_id,
+            existing.namespace().clone(),
+        )
         .await
         .map_err(ApiError::from)?;
 
