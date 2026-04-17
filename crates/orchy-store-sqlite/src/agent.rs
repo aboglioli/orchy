@@ -134,7 +134,8 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
         id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e))?,
         org_id: OrganizationId::new(&org_id_str).map_err(|e| conversion_err(1, e.to_string()))?,
         project: ProjectId::try_from(project_str).map_err(|e| conversion_err(2, e))?,
-        namespace: Namespace::try_from(namespace_str).map_err(|e| conversion_err(3, e))?,
+        namespace: Namespace::try_from(namespace_str)
+            .map_err(|e| conversion_err(3, e.to_string()))?,
         parent_id,
         roles: crate::decode_json(&roles_str, "roles")?,
         description,

@@ -20,7 +20,7 @@ pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
             } else {
                 format!("/{s}")
             };
-            Namespace::try_from(normalized).map_err(Error::InvalidInput)
+            Namespace::try_from(normalized).map_err(|e| Error::InvalidInput(e.to_string()))
         }
         _ => Ok(Namespace::root()),
     }

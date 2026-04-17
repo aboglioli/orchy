@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const NAMESPACE: &str = "task";
+pub const NAMESPACE: &str = "/task";
 
 pub const TOPIC_CREATED: &str = "task.created";
 pub const TOPIC_CLAIMED: &str = "task.claimed";

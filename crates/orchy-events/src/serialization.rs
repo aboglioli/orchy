@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use crate::error::{Error, Result};
 use crate::event::{Event, EventId, RestoreEvent};
 use crate::metadata::Metadata;
-use crate::namespace::EventNamespace;
+use crate::namespace::Namespace;
 use crate::organization::OrganizationId;
 use crate::payload::{ContentType, Payload};
 use crate::topic::Topic;
@@ -62,7 +62,7 @@ impl SerializedEvent {
         Ok(Event::restore(RestoreEvent {
             id: EventId::from_str(&self.id).map_err(|e| Error::Serialization(e.to_string()))?,
             organization: OrganizationId::new(&self.organization)?,
-            namespace: EventNamespace::new(&self.namespace)?,
+            namespace: Namespace::new(&self.namespace)?,
             topic: Topic::new(&self.topic)?,
             payload: Payload::from_raw(data, content_type),
             metadata: Metadata::from(self.metadata.clone()),
@@ -79,11 +79,11 @@ mod tests {
     #[test]
     fn roundtrip() {
         let payload = Payload::from_json(&serde_json::json!({"key": "value"})).unwrap();
-        let event = Event::create("org", "task", "task.created", payload).unwrap();
+        let event = Event::create("org", "/task", "task.created", payload).unwrap();
 
         let serialized = SerializedEvent::from_event(&event).unwrap();
         assert_eq!(serialized.topic, "task.created");
-        assert_eq!(serialized.namespace, "task");
+        assert_eq!(serialized.namespace, "/task");
         assert_eq!(serialized.organization, "org");
 
         let restored = serialized.to_event().unwrap();

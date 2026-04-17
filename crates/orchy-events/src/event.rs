@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::error::Result;
 use crate::metadata::Metadata;
-use crate::namespace::EventNamespace;
+use crate::namespace::Namespace;
 use crate::organization::OrganizationId;
 use crate::payload::Payload;
 use crate::topic::Topic;
@@ -51,7 +51,7 @@ impl std::str::FromStr for EventId {
 pub struct Event {
     id: EventId,
     organization: OrganizationId,
-    namespace: EventNamespace,
+    namespace: Namespace,
     topic: Topic,
     payload: Payload,
     metadata: Metadata,
@@ -69,7 +69,7 @@ impl Event {
         Ok(Self {
             id: EventId::new(),
             organization: OrganizationId::new(organization)?,
-            namespace: EventNamespace::new(namespace)?,
+            namespace: Namespace::new(namespace)?,
             topic: Topic::new(topic)?,
             payload,
             metadata: Metadata::new(),
@@ -102,7 +102,7 @@ impl Event {
     pub fn organization(&self) -> &OrganizationId {
         &self.organization
     }
-    pub fn namespace(&self) -> &EventNamespace {
+    pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
     pub fn topic(&self) -> &Topic {
@@ -125,7 +125,7 @@ impl Event {
 pub struct RestoreEvent {
     pub id: EventId,
     pub organization: OrganizationId,
-    pub namespace: EventNamespace,
+    pub namespace: Namespace,
     pub topic: Topic,
     pub payload: Payload,
     pub metadata: Metadata,
@@ -140,9 +140,9 @@ mod tests {
     #[test]
     fn create_event() {
         let payload = Payload::from_json(&serde_json::json!({"task_id": "123"})).unwrap();
-        let event = Event::create("my-project", "task", "task.created", payload).unwrap();
+        let event = Event::create("my-project", "/task", "task.created", payload).unwrap();
         assert_eq!(event.organization().as_str(), "my-project");
-        assert_eq!(event.namespace().as_str(), "task");
+        assert_eq!(event.namespace().as_str(), "/task");
         assert_eq!(event.topic().as_str(), "task.created");
         assert_eq!(event.version(), 1);
     }
@@ -153,7 +153,7 @@ mod tests {
         let metadata = Metadata::new()
             .with("agent_id", "abc-123")
             .with("project", "my-project");
-        let event = Event::create("org", "agent", "agent.registered", payload)
+        let event = Event::create("org", "/agent", "agent.registered", payload)
             .unwrap()
             .with_metadata(metadata);
         assert_eq!(event.metadata().get("agent_id"), Some("abc-123"));

@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const NAMESPACE: &str = "lock";
+pub const NAMESPACE: &str = "/lock";
 
 pub const TOPIC_ACQUIRED: &str = "lock.acquired";
 pub const TOPIC_RELEASED: &str = "lock.released";

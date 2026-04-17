@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-pub const NAMESPACE: &str = "knowledge";
+pub const NAMESPACE: &str = "/knowledge";
 
 pub const TOPIC_CREATED: &str = "knowledge.created";
 pub const TOPIC_UPDATED: &str = "knowledge.updated";

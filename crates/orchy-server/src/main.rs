@@ -140,7 +140,7 @@ async fn bootstrap_handler(
     let ns = match scope {
         Some(s) => match orchy_core::namespace::Namespace::try_from(format!("/{s}")) {
             Ok(ns) => ns,
-            Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
+            Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         },
         None => orchy_core::namespace::Namespace::root(),
     };

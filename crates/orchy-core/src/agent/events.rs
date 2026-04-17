@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const NAMESPACE: &str = "agent";
+pub const NAMESPACE: &str = "/agent";
 
 pub const TOPIC_REGISTERED: &str = "agent.registered";
 pub const TOPIC_SPAWNED: &str = "agent.spawned";

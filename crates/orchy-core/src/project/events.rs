@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const NAMESPACE: &str = "project";
+pub const NAMESPACE: &str = "/project";
 
 pub const TOPIC_CREATED: &str = "project.created";
 pub const TOPIC_DESCRIPTION_UPDATED: &str = "project.description_updated";

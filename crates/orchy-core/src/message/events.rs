@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const NAMESPACE: &str = "message";
+pub const NAMESPACE: &str = "/message";
 
 pub const TOPIC_SENT: &str = "message.sent";
 pub const TOPIC_DELIVERED: &str = "message.delivered";
