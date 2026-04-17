@@ -66,6 +66,45 @@ impl Default for MemoryBackend {
     }
 }
 
+pub(crate) fn apply_cursor_pagination<T, F>(
+    items: Vec<T>,
+    page: &orchy_core::pagination::PageParams,
+    id_fn: F,
+) -> orchy_core::pagination::Page<T>
+where
+    T: serde::Serialize + Clone,
+    F: Fn(&T) -> String,
+{
+    use orchy_core::pagination::{Page, decode_cursor, encode_cursor};
+
+    let start = if let Some(ref cursor) = page.after {
+        if let Some(decoded) = decode_cursor(cursor) {
+            items
+                .iter()
+                .position(|i| id_fn(i) == decoded)
+                .map(|pos| pos + 1)
+                .unwrap_or(0)
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    let limit = page.limit as usize;
+    let remaining = items.len().saturating_sub(start);
+    let has_more = remaining > limit;
+    let result: Vec<T> = items.into_iter().skip(start).take(limit).collect();
+
+    let next_cursor = if has_more {
+        result.last().map(|last| encode_cursor(&id_fn(last)))
+    } else {
+        None
+    };
+
+    Page::new(result, next_cursor)
+}
+
 pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
         return 0.0;

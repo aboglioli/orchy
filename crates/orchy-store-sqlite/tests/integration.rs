@@ -9,6 +9,7 @@ use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore, WriteKnowl
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_sqlite::SqliteBackend;
 
@@ -316,11 +317,11 @@ async fn task_list_sorted_by_priority() {
     .unwrap();
     TaskStore::save(&store, &mut critical).await.unwrap();
 
-    let tasks = TaskStore::list(&store, TaskFilter::default())
+    let page = TaskStore::list(&store, TaskFilter::default(), PageParams::unbounded())
         .await
         .unwrap();
-    assert_eq!(tasks[0].title(), "critical");
-    assert_eq!(tasks[1].title(), "low");
+    assert_eq!(page.items[0].title(), "critical");
+    assert_eq!(page.items[1].title(), "low");
 }
 
 #[tokio::test]
@@ -346,21 +347,35 @@ async fn message_save_and_find_pending() {
     MessageStore::save(&store, &mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
-    let messages = MessageStore::find_pending(&store, &to, &o, &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].body(), "hello");
-    assert_eq!(messages[0].status(), MessageStatus::Pending);
+    let page = MessageStore::find_pending(
+        &store,
+        &to,
+        &o,
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].body(), "hello");
+    assert_eq!(page.items[0].status(), MessageStatus::Pending);
 
-    let mut delivered = messages.into_iter().next().unwrap();
+    let mut delivered = page.items.into_iter().next().unwrap();
     delivered.deliver().unwrap();
     MessageStore::save(&store, &mut delivered).await.unwrap();
 
-    let messages = MessageStore::find_pending(&store, &to, &o, &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert!(messages.is_empty());
+    let page = MessageStore::find_pending(
+        &store,
+        &to,
+        &o,
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert!(page.items.is_empty());
 }
 
 #[tokio::test]
@@ -419,16 +434,30 @@ async fn message_find_sent() {
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let sent = MessageStore::find_sent(&store, &sender, &o, &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].body(), "hello");
+    let sent = MessageStore::find_sent(
+        &store,
+        &sender,
+        &o,
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(sent.items.len(), 1);
+    assert_eq!(sent.items[0].body(), "hello");
 
-    let sent_other = MessageStore::find_sent(&store, &receiver, &o, &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert!(sent_other.is_empty());
+    let sent_other = MessageStore::find_sent(
+        &store,
+        &receiver,
+        &o,
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert!(sent_other.items.is_empty());
 }
 
 #[tokio::test]
@@ -493,25 +522,46 @@ async fn message_find_pending_includes_broadcast() {
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let pending = MessageStore::find_pending(&store, &receiver, &o, &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].body(), "to all");
+    let pending = MessageStore::find_pending(
+        &store,
+        &receiver,
+        &o,
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(pending.items.len(), 1);
+    assert_eq!(pending.items[0].body(), "to all");
 
-    let sender_pending = MessageStore::find_pending(&store, &sender, &o, &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert!(sender_pending.is_empty());
+    let sender_pending = MessageStore::find_pending(
+        &store,
+        &sender,
+        &o,
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert!(sender_pending.items.is_empty());
 
     MessageStore::mark_read_for_agent(&store, &msg.id(), &receiver)
         .await
         .unwrap();
 
-    let after_read = MessageStore::find_pending(&store, &receiver, &o, &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert!(after_read.is_empty());
+    let after_read = MessageStore::find_pending(
+        &store,
+        &receiver,
+        &o,
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert!(after_read.items.is_empty());
 }
 
 #[tokio::test]
@@ -557,11 +607,12 @@ async fn task_list_filters_by_parent_id() {
             parent_id: Some(parent.id()),
             ..Default::default()
         },
+        PageParams::unbounded(),
     )
     .await
     .unwrap();
-    assert_eq!(children.len(), 1);
-    assert_eq!(children[0].title(), "child");
+    assert_eq!(children.items.len(), 1);
+    assert_eq!(children.items[0].title(), "child");
 }
 
 #[tokio::test]
@@ -592,11 +643,12 @@ async fn task_list_filters_by_assigned_to() {
             assigned_to: Some(agent),
             ..Default::default()
         },
+        PageParams::unbounded(),
     )
     .await
     .unwrap();
-    assert_eq!(assigned.len(), 1);
-    assert_eq!(assigned[0].title(), "assigned");
+    assert_eq!(assigned.items.len(), 1);
+    assert_eq!(assigned.items[0].title(), "assigned");
 }
 
 #[tokio::test]

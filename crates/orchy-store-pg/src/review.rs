@@ -6,6 +6,7 @@ use uuid::Uuid;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{
     RestoreReviewRequest, ReviewId, ReviewRequest, ReviewStatus, ReviewStore, TaskId,
 };
@@ -85,17 +86,53 @@ impl ReviewStore for PgBackend {
         rows.iter().map(row_to_review).collect()
     }
 
-    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
-        let rows = sqlx::query(
-            "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
-             FROM reviews WHERE task_id = $1",
-        )
-        .bind(task_id.as_uuid())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+    async fn find_by_task(
+        &self,
+        task_id: &TaskId,
+        page: PageParams,
+    ) -> Result<Page<ReviewRequest>> {
+        let fetch_limit = (page.limit as i64).saturating_add(1);
 
-        rows.iter().map(row_to_review).collect()
+        let rows = if let Some(cursor_uuid) = page
+            .after
+            .as_ref()
+            .and_then(|c| decode_cursor(c))
+            .and_then(|s| s.parse::<Uuid>().ok())
+        {
+            sqlx::query(
+                "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
+                 FROM reviews WHERE task_id = $1 AND id < $2 ORDER BY id DESC LIMIT $3",
+            )
+            .bind(task_id.as_uuid())
+            .bind(cursor_uuid)
+            .bind(fetch_limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?
+        } else {
+            sqlx::query(
+                "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
+                 FROM reviews WHERE task_id = $1 ORDER BY id DESC LIMIT $2",
+            )
+            .bind(task_id.as_uuid())
+            .bind(fetch_limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?
+        };
+
+        let mut reviews: Vec<ReviewRequest> =
+            rows.iter().map(row_to_review).collect::<Result<Vec<_>>>()?;
+        let has_more = reviews.len() > page.limit as usize;
+        if has_more {
+            reviews.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            reviews.last().map(|r| encode_cursor(&r.id().to_string()))
+        } else {
+            None
+        };
+        Ok(Page::new(reviews, next_cursor))
     }
 }
 

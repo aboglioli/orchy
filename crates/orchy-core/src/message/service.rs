@@ -5,6 +5,7 @@ use crate::agent::{AgentId, AgentStore};
 use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 
 pub struct MessageService<MS: MessageStore, AS: AgentStore> {
     message_store: Arc<MS>,
@@ -52,7 +53,11 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                 return Ok(vec![msg]);
             }
             MessageTarget::Role(role) => {
-                let agents = self.agent_store.list(&org_id).await?;
+                let agents = self
+                    .agent_store
+                    .list(&org_id, PageParams::unbounded())
+                    .await?
+                    .items;
                 agents
                     .into_iter()
                     .filter(|a| a.project() == &project)
@@ -85,9 +90,10 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         self.message_store
-            .find_pending(agent, org, project, namespace)
+            .find_pending(agent, org, project, namespace, page)
             .await
     }
 
@@ -97,18 +103,19 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
-        let mut messages = self
+        page: PageParams,
+    ) -> Result<Page<Message>> {
+        let mut result = self
             .message_store
-            .find_pending(agent, org, project, namespace)
+            .find_pending(agent, org, project, namespace, page)
             .await?;
-        for msg in &mut messages {
+        for msg in &mut result.items {
             if msg.is_directed_to(agent) {
                 msg.deliver()?;
                 self.message_store.save(msg).await?;
             }
         }
-        Ok(messages)
+        Ok(result)
     }
 
     pub async fn sent(
@@ -117,9 +124,10 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         self.message_store
-            .find_sent(agent, org, project, namespace)
+            .find_sent(agent, org, project, namespace, page)
             .await
     }
 

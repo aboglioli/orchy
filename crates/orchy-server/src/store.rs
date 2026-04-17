@@ -8,6 +8,7 @@ use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeSt
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
+use orchy_core::pagination::{Page, PageParams};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::task::{
@@ -74,8 +75,8 @@ impl TaskStore for StoreBackend {
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         delegate_trait!(self, TaskStore::find_by_id(id))
     }
-    async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
-        delegate_trait!(self, TaskStore::list(filter))
+    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
+        delegate_trait!(self, TaskStore::list(filter, page))
     }
 }
 
@@ -87,8 +88,8 @@ impl AgentStore for StoreBackend {
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         delegate_trait!(self, AgentStore::find_by_id(id))
     }
-    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
-        delegate_trait!(self, AgentStore::list(org))
+    async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
+        delegate_trait!(self, AgentStore::list(org, page))
     }
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         delegate_trait!(self, AgentStore::find_timed_out(timeout_secs))
@@ -112,10 +113,11 @@ impl MessageStore for StoreBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         delegate_trait!(
             self,
-            MessageStore::find_pending(agent, org, project, namespace)
+            MessageStore::find_pending(agent, org, project, namespace, page)
         )
     }
     async fn find_sent(
@@ -124,10 +126,11 @@ impl MessageStore for StoreBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         delegate_trait!(
             self,
-            MessageStore::find_sent(sender, org, project, namespace)
+            MessageStore::find_sent(sender, org, project, namespace, page)
         )
     }
     async fn find_thread(
@@ -169,8 +172,8 @@ impl KnowledgeStore for StoreBackend {
             KnowledgeStore::find_by_path(org, project, namespace, path)
         )
     }
-    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
-        delegate_trait!(self, KnowledgeStore::list(filter))
+    async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::list(filter, page))
     }
     async fn search(
         &self,
@@ -248,8 +251,12 @@ impl ReviewStore for StoreBackend {
     async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>> {
         delegate_trait!(self, ReviewStore::find_pending_for_agent(agent_id))
     }
-    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
-        delegate_trait!(self, ReviewStore::find_by_task(task_id))
+    async fn find_by_task(
+        &self,
+        task_id: &TaskId,
+        page: PageParams,
+    ) -> Result<Page<ReviewRequest>> {
+        delegate_trait!(self, ReviewStore::find_by_task(task_id, page))
     }
 }
 

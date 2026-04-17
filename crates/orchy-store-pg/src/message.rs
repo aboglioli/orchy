@@ -13,6 +13,8 @@ use orchy_core::message::{
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+
 use crate::{PgBackend, parse_namespace, parse_project_id};
 
 #[derive(Iden)]
@@ -120,31 +122,107 @@ impl MessageStore for PgBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
+        let fetch_limit = (page.limit as i64).saturating_add(1);
+        let cursor_id: Option<Uuid> = page
+            .after
+            .as_ref()
+            .and_then(|c| decode_cursor(c))
+            .and_then(|s| s.parse::<Uuid>().ok());
+
         let rows = if namespace.is_root() {
+            if let Some(cid) = cursor_id {
+                sqlx::query(
+                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                     FROM messages
+                     WHERE status = 'pending'
+                       AND organization_id = $1
+                       AND project = $2
+                       AND id < $5
+                       AND (
+                            to_target = $3
+                            OR (
+                                to_target = 'broadcast'
+                                AND from_agent != $4
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM message_receipts
+                                    WHERE message_receipts.message_id = messages.id
+                                      AND message_receipts.agent_id = $4
+                                )
+                            )
+                       )
+                     ORDER BY id DESC LIMIT $6",
+                )
+                .bind(org.to_string())
+                .bind(project.to_string())
+                .bind(agent.to_string())
+                .bind(agent.as_uuid())
+                .bind(cid)
+                .bind(fetch_limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
+            } else {
+                sqlx::query(
+                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                     FROM messages
+                     WHERE status = 'pending'
+                       AND organization_id = $1
+                       AND project = $2
+                       AND (
+                            to_target = $3
+                            OR (
+                                to_target = 'broadcast'
+                                AND from_agent != $4
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM message_receipts
+                                    WHERE message_receipts.message_id = messages.id
+                                      AND message_receipts.agent_id = $4
+                                )
+                            )
+                       )
+                     ORDER BY id DESC LIMIT $5",
+                )
+                .bind(org.to_string())
+                .bind(project.to_string())
+                .bind(agent.to_string())
+                .bind(agent.as_uuid())
+                .bind(fetch_limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
+            }
+        } else if let Some(cid) = cursor_id {
             sqlx::query(
                 "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
                  FROM messages
                  WHERE status = 'pending'
                    AND organization_id = $1
                    AND project = $2
+                   AND (namespace = $3 OR namespace LIKE $3 || '/%')
+                   AND id < $6
                    AND (
-                        to_target = $3
+                        to_target = $4
                         OR (
                             to_target = 'broadcast'
-                            AND from_agent != $4
+                            AND from_agent != $5
                             AND NOT EXISTS (
                                 SELECT 1 FROM message_receipts
                                 WHERE message_receipts.message_id = messages.id
-                                  AND message_receipts.agent_id = $4
+                                  AND message_receipts.agent_id = $5
                             )
                         )
-                   )",
+                   )
+                 ORDER BY id DESC LIMIT $7",
             )
             .bind(org.to_string())
             .bind(project.to_string())
+            .bind(namespace.to_string())
             .bind(agent.to_string())
             .bind(agent.as_uuid())
+            .bind(cid)
+            .bind(fetch_limit)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?
@@ -167,19 +245,34 @@ impl MessageStore for PgBackend {
                                   AND message_receipts.agent_id = $5
                             )
                         )
-                   )",
+                   )
+                 ORDER BY id DESC LIMIT $6",
             )
             .bind(org.to_string())
             .bind(project.to_string())
             .bind(namespace.to_string())
             .bind(agent.to_string())
             .bind(agent.as_uuid())
+            .bind(fetch_limit)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?
         };
 
-        rows.iter().map(row_to_message).collect()
+        let mut messages: Vec<Message> = rows
+            .iter()
+            .map(row_to_message)
+            .collect::<Result<Vec<_>>>()?;
+        let has_more = messages.len() > page.limit as usize;
+        if has_more {
+            messages.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            messages.last().map(|m| encode_cursor(&m.id().to_string()))
+        } else {
+            None
+        };
+        Ok(Page::new(messages, next_cursor))
     }
 
     async fn find_sent(
@@ -188,7 +281,8 @@ impl MessageStore for PgBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         let mut select = Query::select();
         select
             .from(Messages::Table)
@@ -216,7 +310,17 @@ impl MessageStore for PgBackend {
             );
         }
 
-        select.order_by(Messages::CreatedAt, sea_query::Order::Desc);
+        if let Some(ref cursor) = page.after
+            && let Some(decoded) = decode_cursor(cursor)
+            && let Ok(cursor_uuid) = decoded.parse::<Uuid>()
+        {
+            select.and_where(Expr::col(Messages::Id).lt(cursor_uuid));
+        }
+
+        select
+            .order_by(Messages::CreatedAt, sea_query::Order::Desc)
+            .order_by(Messages::Id, sea_query::Order::Desc)
+            .limit((page.limit as u64).saturating_add(1));
 
         let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
@@ -225,7 +329,20 @@ impl MessageStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        rows.iter().map(row_to_message).collect()
+        let mut messages: Vec<Message> = rows
+            .iter()
+            .map(row_to_message)
+            .collect::<Result<Vec<_>>>()?;
+        let has_more = messages.len() > page.limit as usize;
+        if has_more {
+            messages.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            messages.last().map(|m| encode_cursor(&m.id().to_string()))
+        } else {
+            None
+        };
+        Ok(Page::new(messages, next_cursor))
     }
 
     async fn find_thread(

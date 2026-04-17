@@ -4,6 +4,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 use orchy_core::task::{TaskFilter, TaskStore};
 
 use crate::parse_namespace;
@@ -49,7 +50,11 @@ impl ListTags {
             ..Default::default()
         };
 
-        let tasks = self.tasks.list(filter).await?;
+        let tasks = self
+            .tasks
+            .list(filter, PageParams::unbounded())
+            .await?
+            .items;
         let mut tags = BTreeSet::new();
         for task in &tasks {
             for tag in task.tags() {

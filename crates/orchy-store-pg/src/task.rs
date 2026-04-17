@@ -9,6 +9,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::note::Note;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
@@ -143,7 +144,7 @@ impl TaskStore for PgBackend {
         row.map(|r| row_to_task(&r)).transpose()
     }
 
-    async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
+    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
         let mut select = Query::select();
         select.from(Tasks::Table).columns([
             Tasks::Id,
@@ -201,12 +202,22 @@ impl TaskStore for PgBackend {
             ));
         }
 
-        select.order_by_expr(
-            Expr::cust(
-                "CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END",
-            ),
-            sea_query::Order::Desc,
-        );
+        if let Some(ref cursor) = page.after
+            && let Some(decoded) = decode_cursor(cursor)
+            && let Ok(cursor_uuid) = decoded.parse::<Uuid>()
+        {
+            select.and_where(Expr::col(Tasks::Id).lt(cursor_uuid));
+        }
+
+        select
+            .order_by_expr(
+                Expr::cust(
+                    "CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END",
+                ),
+                sea_query::Order::Desc,
+            )
+            .order_by(Tasks::Id, sea_query::Order::Desc)
+            .limit((page.limit as u64).saturating_add(1));
 
         let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
@@ -215,7 +226,19 @@ impl TaskStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        rows.iter().map(row_to_task).collect()
+        let mut tasks: Vec<Task> = rows.iter().map(row_to_task).collect::<Result<Vec<_>>>()?;
+
+        let has_more = tasks.len() > page.limit as usize;
+        if has_more {
+            tasks.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            tasks.last().map(|t| encode_cursor(&t.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(tasks, next_cursor))
     }
 }
 

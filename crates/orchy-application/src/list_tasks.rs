@@ -5,6 +5,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::parse_namespace;
@@ -17,6 +18,8 @@ pub struct ListTasksCommand {
     pub parent_id: Option<String>,
     pub assigned_to: Option<String>,
     pub tag: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 pub struct ListTasks {
@@ -28,7 +31,7 @@ impl ListTasks {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<Vec<Task>> {
+    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<Page<Task>> {
         let org_id = cmd
             .org_id
             .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
@@ -73,6 +76,7 @@ impl ListTasks {
             ..Default::default()
         };
 
-        self.tasks.list(filter).await
+        let page = PageParams::new(cmd.after, cmd.limit);
+        self.tasks.list(filter, page).await
     }
 }

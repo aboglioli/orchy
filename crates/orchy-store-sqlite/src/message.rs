@@ -10,6 +10,7 @@ use orchy_core::message::{
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::SqliteBackend;
 
@@ -95,7 +96,8 @@ impl MessageStore for SqliteBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
@@ -133,19 +135,41 @@ impl MessageStore for SqliteBackend {
             idx += 1;
         }
 
+        if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                sql.push_str(&format!(" AND id < ?{idx}"));
+                params.push(Box::new(decoded));
+                idx += 1;
+            }
+        }
+
         let _ = idx;
+        sql.push_str(" ORDER BY id DESC");
+        let fetch_limit = (page.limit as u64).saturating_add(1);
+        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
-        let messages = stmt
+        let mut messages: Vec<Message> = stmt
             .query_map(param_refs.as_slice(), row_to_message)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(messages)
+        let has_more = messages.len() > page.limit as usize;
+        if has_more {
+            messages.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            messages.last().map(|m| encode_cursor(&m.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(messages, next_cursor))
     }
 
     async fn find_sent(
@@ -154,7 +178,8 @@ impl MessageStore for SqliteBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
@@ -174,21 +199,41 @@ impl MessageStore for SqliteBackend {
             idx += 1;
         }
 
+        if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                sql.push_str(&format!(" AND id < ?{idx}"));
+                params.push(Box::new(decoded));
+                idx += 1;
+            }
+        }
+
         let _ = idx;
-        sql.push_str(" ORDER BY created_at DESC");
+        sql.push_str(" ORDER BY created_at DESC, id DESC");
+        let fetch_limit = (page.limit as u64).saturating_add(1);
+        sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
-        let messages = stmt
+        let mut messages: Vec<Message> = stmt
             .query_map(param_refs.as_slice(), row_to_message)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(messages)
+        let has_more = messages.len() > page.limit as usize;
+        if has_more {
+            messages.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            messages.last().map(|m| encode_cursor(&m.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(messages, next_cursor))
     }
 
     async fn find_thread(

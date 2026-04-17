@@ -183,13 +183,13 @@ pub async fn list(
         ..Default::default()
     };
 
-    let entries = container
+    let page = container
         .knowledge_service
-        .list(filter)
+        .list(filter, orchy_core::pagination::PageParams::unbounded())
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(entries))
+    Ok(Json(page.items))
 }
 
 pub async fn list_types(

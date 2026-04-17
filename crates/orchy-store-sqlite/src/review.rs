@@ -8,6 +8,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{
     RestoreReviewRequest, ReviewId, ReviewRequest, ReviewStatus, ReviewStore, TaskId,
 };
@@ -91,22 +92,55 @@ impl ReviewStore for SqliteBackend {
         Ok(reviews)
     }
 
-    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
+    async fn find_by_task(
+        &self,
+        task_id: &TaskId,
+        page: PageParams,
+    ) -> Result<Page<ReviewRequest>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
-                 FROM reviews WHERE task_id = ?1",
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
 
-        let reviews = stmt
-            .query_map(rusqlite::params![task_id.to_string()], row_to_review)
+        let mut sql = String::from(
+            "SELECT id, organization_id, task_id, project, namespace, requester, reviewer, reviewer_role, status, comments, created_at, resolved_at
+             FROM reviews WHERE task_id = ?1",
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(task_id.to_string())];
+        let mut idx = 2;
+
+        if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                sql.push_str(&format!(" AND id < ?{idx}"));
+                params.push(Box::new(decoded));
+                idx += 1;
+            }
+        }
+
+        let _ = idx;
+        sql.push_str(" ORDER BY id DESC");
+        let fetch_limit = (page.limit as u64).saturating_add(1);
+        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        let mut reviews: Vec<ReviewRequest> = stmt
+            .query_map(param_refs.as_slice(), row_to_review)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(reviews)
+        let has_more = reviews.len() > page.limit as usize;
+        if has_more {
+            reviews.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            reviews.last().map(|r| encode_cursor(&r.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(reviews, next_cursor))
     }
 }
 

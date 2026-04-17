@@ -8,6 +8,7 @@ pub mod message;
 pub mod namespace;
 pub mod note;
 pub mod organization;
+pub mod pagination;
 pub mod project;
 pub mod resource_lock;
 pub mod task;

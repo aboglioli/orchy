@@ -13,6 +13,7 @@ use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 
 use self::events as message_events;
 
@@ -27,14 +28,16 @@ pub trait MessageStore: Send + Sync {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>>;
+        page: PageParams,
+    ) -> Result<Page<Message>>;
     async fn find_sent(
         &self,
         sender: &AgentId,
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>>;
+        page: PageParams,
+    ) -> Result<Page<Message>>;
     async fn find_thread(
         &self,
         message_id: &MessageId,

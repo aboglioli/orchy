@@ -8,6 +8,7 @@ use sqlx::Row;
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
@@ -75,15 +76,68 @@ impl AgentStore for PgBackend {
         row.map(|r| row_to_agent(&r)).transpose()
     }
 
-    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = $1");
-        let rows = sqlx::query(&sql)
+    async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
+        let mut sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = $1");
+        let mut param_idx = 2u32;
+
+        if let Some(ref cursor) = page.after
+            && let Some(decoded) = decode_cursor(cursor)
+        {
+            sql.push_str(&format!(" AND id < ${param_idx}"));
+            param_idx += 1;
+            let _ = param_idx;
+
+            sql.push_str(" ORDER BY id DESC");
+            let fetch_limit = (page.limit as u64).saturating_add(1);
+            sql.push_str(&format!(" LIMIT {fetch_limit}"));
+
+            let mut agents: Vec<Agent> = sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(decoded)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
+                .iter()
+                .map(row_to_agent)
+                .collect::<Result<Vec<_>>>()?;
+
+            let has_more = agents.len() > page.limit as usize;
+            if has_more {
+                agents.truncate(page.limit as usize);
+            }
+            let next_cursor = if has_more {
+                agents.last().map(|a| encode_cursor(&a.id().to_string()))
+            } else {
+                None
+            };
+
+            return Ok(Page::new(agents, next_cursor));
+        }
+
+        sql.push_str(" ORDER BY id DESC");
+        let fetch_limit = (page.limit as u64).saturating_add(1);
+        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+
+        let mut agents: Vec<Agent> = sqlx::query(&sql)
             .bind(org.to_string())
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(|e| Error::Store(e.to_string()))?
+            .iter()
+            .map(row_to_agent)
+            .collect::<Result<Vec<_>>>()?;
 
-        rows.iter().map(row_to_agent).collect()
+        let has_more = agents.len() > page.limit as usize;
+        if has_more {
+            agents.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            agents.last().map(|a| encode_cursor(&a.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(agents, next_cursor))
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {

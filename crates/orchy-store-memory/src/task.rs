@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 
 use orchy_core::error::{Error, Result};
+use orchy_core::pagination::{Page, PageParams};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 
 use crate::MemoryBackend;
@@ -29,7 +30,7 @@ impl TaskStore for MemoryBackend {
         Ok(tasks.get(id).cloned())
     }
 
-    async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
+    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
         let tasks = self.tasks.read().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut results: Vec<Task> = tasks
@@ -83,6 +84,9 @@ impl TaskStore for MemoryBackend {
             .collect();
 
         results.sort_by_key(|t| std::cmp::Reverse(t.priority()));
-        Ok(results)
+
+        Ok(crate::apply_cursor_pagination(results, &page, |t| {
+            t.id().to_string()
+        }))
     }
 }

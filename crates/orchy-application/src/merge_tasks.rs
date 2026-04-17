@@ -5,6 +5,7 @@ use std::sync::Arc;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 pub struct MergeTasksCommand {
@@ -148,11 +149,15 @@ impl MergeTasks {
         for source_id in &source_ids {
             let children = self
                 .tasks
-                .list(TaskFilter {
-                    parent_id: Some(*source_id),
-                    ..Default::default()
-                })
-                .await?;
+                .list(
+                    TaskFilter {
+                        parent_id: Some(*source_id),
+                        ..Default::default()
+                    },
+                    PageParams::unbounded(),
+                )
+                .await?
+                .items;
 
             for mut child in children {
                 child.set_parent_id(Some(merged.id()))?;
@@ -167,12 +172,16 @@ impl MergeTasks {
         ] {
             let tasks = self
                 .tasks
-                .list(TaskFilter {
-                    project: Some(merged.project().clone()),
-                    status: Some(status),
-                    ..Default::default()
-                })
-                .await?;
+                .list(
+                    TaskFilter {
+                        project: Some(merged.project().clone()),
+                        status: Some(status),
+                        ..Default::default()
+                    },
+                    PageParams::unbounded(),
+                )
+                .await?
+                .items;
 
             for mut task in tasks {
                 if source_ids.contains(&task.id()) || task.id() == merged.id() {

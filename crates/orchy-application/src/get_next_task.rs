@@ -6,6 +6,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::parse_namespace;
@@ -100,7 +101,11 @@ impl GetNextTask {
                 assigned_role: Some(role.clone()),
                 ..Default::default()
             };
-            let mut tasks = self.tasks.list(filter).await?;
+            let mut tasks = self
+                .tasks
+                .list(filter, PageParams::unbounded())
+                .await?
+                .items;
             tasks.sort_by_key(|t| std::cmp::Reverse(t.priority()));
             candidates.extend(tasks);
         }

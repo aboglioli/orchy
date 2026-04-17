@@ -108,13 +108,13 @@ pub async fn list_for_task(
         ));
     }
 
-    let reviews = container
+    let page = container
         .task_service
-        .list_reviews_for_task(&task_id)
+        .list_reviews_for_task(&task_id, orchy_core::pagination::PageParams::unbounded())
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(reviews))
+    Ok(Json(page.items))
 }
 
 pub async fn request(

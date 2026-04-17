@@ -2,6 +2,7 @@ use async_trait::async_trait;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
+use orchy_core::pagination::{Page, PageParams};
 use orchy_core::task::{ReviewId, ReviewRequest, ReviewStatus, ReviewStore, TaskId};
 
 use crate::MemoryBackend;
@@ -48,15 +49,22 @@ impl ReviewStore for MemoryBackend {
             .collect())
     }
 
-    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
+    async fn find_by_task(
+        &self,
+        task_id: &TaskId,
+        page: PageParams,
+    ) -> Result<Page<ReviewRequest>> {
         let reviews = self
             .reviews
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(reviews
+        let items: Vec<ReviewRequest> = reviews
             .values()
             .filter(|r| r.task_id() == *task_id)
             .cloned()
-            .collect())
+            .collect();
+        Ok(crate::apply_cursor_pagination(items, &page, |r| {
+            r.id().to_string()
+        }))
     }
 }

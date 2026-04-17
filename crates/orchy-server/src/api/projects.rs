@@ -92,27 +92,31 @@ pub async fn get(
         return Ok(Json(serde_json::to_value(project_to_dto(project)).unwrap()));
     }
 
-    let agents = container
+    let agents_page = container
         .agent_service
-        .list(&org_id)
+        .list(&org_id, orchy_core::pagination::PageParams::unbounded())
         .await
         .map_err(ApiError::from)?;
-    let project_agents: Vec<_> = agents
+    let project_agents: Vec<_> = agents_page
+        .items
         .into_iter()
         .filter(|a| *a.project() == project_id)
         .collect();
 
-    let tasks = container
+    let tasks_page = container
         .task_service
-        .list(orchy_core::task::TaskFilter {
-            project: Some(project_id),
-            ..Default::default()
-        })
+        .list(
+            orchy_core::task::TaskFilter {
+                project: Some(project_id),
+                ..Default::default()
+            },
+            orchy_core::pagination::PageParams::unbounded(),
+        )
         .await
         .map_err(ApiError::from)?;
 
     let mut by_status = std::collections::HashMap::new();
-    for task in &tasks {
+    for task in &tasks_page.items {
         *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
     }
 
@@ -121,7 +125,7 @@ pub async fn get(
         "summary": {
             "agents_count": project_agents.len(),
             "tasks_by_status": by_status,
-            "total_tasks": tasks.len(),
+            "total_tasks": tasks_page.items.len(),
         }
     })))
 }

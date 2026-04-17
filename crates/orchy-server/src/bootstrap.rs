@@ -6,6 +6,7 @@ use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::knowledge::service::KnowledgeService;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 use orchy_core::project::Project;
 use orchy_core::project::ProjectStore;
 use orchy_core::project::service::ProjectService;
@@ -49,9 +50,10 @@ pub async fn generate_bootstrap_prompt<
         .map_err(|e| e.to_string())?;
 
     let agents: Vec<Agent> = agent_service
-        .list(&default_org)
+        .list(&default_org, PageParams::unbounded())
         .await
         .map_err(|e| e.to_string())?
+        .items
         .into_iter()
         .filter(|a| a.project() == project_id)
         .collect();
@@ -69,8 +71,8 @@ pub async fn generate_bootstrap_prompt<
                 status: Some(*status),
                 ..Default::default()
             };
-            if let Ok(tasks) = task_service.list(filter).await {
-                all.extend(tasks);
+            if let Ok(page) = task_service.list(filter, PageParams::unbounded()).await {
+                all.extend(page.items);
             }
         }
         all

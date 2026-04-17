@@ -6,6 +6,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams};
 
 use crate::parse_namespace;
 
@@ -14,6 +15,8 @@ pub struct CheckMailboxCommand {
     pub org_id: String,
     pub project: String,
     pub namespace: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 pub struct CheckMailbox {
@@ -25,26 +28,27 @@ impl CheckMailbox {
         Self { messages }
     }
 
-    pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<Vec<Message>> {
+    pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<Page<Message>> {
         let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
+        let page = PageParams::new(cmd.after, cmd.limit);
 
-        let mut messages = self
+        let mut result = self
             .messages
-            .find_pending(&agent_id, &org_id, &project, &namespace)
+            .find_pending(&agent_id, &org_id, &project, &namespace, page)
             .await?;
 
-        for msg in &mut messages {
+        for msg in &mut result.items {
             if msg.is_directed_to(&agent_id) {
                 msg.deliver()?;
                 self.messages.save(msg).await?;
             }
         }
 
-        Ok(messages)
+        Ok(result)
     }
 }

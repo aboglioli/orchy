@@ -5,6 +5,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams};
 
 use crate::MemoryBackend;
 
@@ -49,7 +50,8 @@ impl MessageStore for MemoryBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         let messages = self
             .messages
             .read()
@@ -95,7 +97,9 @@ impl MessageStore for MemoryBackend {
             results.push(msg.clone());
         }
 
-        Ok(results)
+        Ok(crate::apply_cursor_pagination(results, &page, |m| {
+            m.id().to_string()
+        }))
     }
 
     async fn find_sent(
@@ -104,7 +108,8 @@ impl MessageStore for MemoryBackend {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        page: PageParams,
+    ) -> Result<Page<Message>> {
         let messages = self
             .messages
             .read()
@@ -122,7 +127,10 @@ impl MessageStore for MemoryBackend {
             .collect();
 
         results.sort_by_key(|m| std::cmp::Reverse(m.created_at()));
-        Ok(results)
+
+        Ok(crate::apply_cursor_pagination(results, &page, |m| {
+            m.id().to_string()
+        }))
     }
 
     async fn find_thread(
@@ -135,7 +143,6 @@ impl MessageStore for MemoryBackend {
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        // Find the starting message
         let start = match messages.get(message_id) {
             Some(m) => m.clone(),
             None => return Ok(vec![]),

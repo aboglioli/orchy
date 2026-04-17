@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams};
 
 use crate::MemoryBackend;
 
@@ -33,16 +34,19 @@ impl AgentStore for MemoryBackend {
         Ok(agents.get(id).cloned())
     }
 
-    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
+    async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
         let agents = self
             .agents
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(agents
+        let items: Vec<Agent> = agents
             .values()
             .filter(|a| a.org_id() == org)
             .cloned()
-            .collect())
+            .collect();
+        Ok(crate::apply_cursor_pagination(items, &page, |a| {
+            a.id().to_string()
+        }))
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {

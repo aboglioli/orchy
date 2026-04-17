@@ -4,6 +4,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams};
 
 use crate::MemoryBackend;
 
@@ -68,7 +69,7 @@ impl KnowledgeStore for MemoryBackend {
             .cloned())
     }
 
-    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
+    async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
         let entries = self
             .knowledge_entries
             .read()
@@ -119,7 +120,9 @@ impl KnowledgeStore for MemoryBackend {
             .cloned()
             .collect();
 
-        Ok(results)
+        Ok(crate::apply_cursor_pagination(results, &page, |e| {
+            e.id().to_string()
+        }))
     }
 
     async fn search(

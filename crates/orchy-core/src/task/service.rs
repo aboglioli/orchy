@@ -10,6 +10,7 @@ use crate::error::{Error, Result};
 use crate::message::{Message, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 
 pub struct TaskService<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> {
     task_store: Arc<TS>,
@@ -47,8 +48,8 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             .ok_or_else(|| Error::NotFound(format!("task {id}")))
     }
 
-    pub async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
-        self.task_store.list(filter).await
+    pub async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
+        self.task_store.list(filter, page).await
     }
 
     pub async fn claim(&self, id: &TaskId, agent: &AgentId) -> Result<Task> {
@@ -77,7 +78,11 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                 assigned_role: Some(role.clone()),
                 ..Default::default()
             };
-            let mut tasks = self.task_store.list(filter).await?;
+            let mut tasks = self
+                .task_store
+                .list(filter, PageParams::unbounded())
+                .await?
+                .items;
             tasks.sort_by_key(|t| std::cmp::Reverse(t.priority()));
             candidates.extend(tasks);
         }
@@ -258,7 +263,11 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             assigned_to: Some(agent.clone()),
             ..Default::default()
         };
-        let tasks = self.task_store.list(filter).await?;
+        let tasks = self
+            .task_store
+            .list(filter, PageParams::unbounded())
+            .await?
+            .items;
         let mut released = Vec::with_capacity(tasks.len());
         for task in &tasks {
             self.release(&task.id()).await?;
@@ -465,11 +474,15 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         for source_id in &source_ids {
             let children = self
                 .task_store
-                .list(TaskFilter {
-                    parent_id: Some(*source_id),
-                    ..Default::default()
-                })
-                .await?;
+                .list(
+                    TaskFilter {
+                        parent_id: Some(*source_id),
+                        ..Default::default()
+                    },
+                    PageParams::unbounded(),
+                )
+                .await?
+                .items;
 
             for mut child in children {
                 child.set_parent_id(Some(merged.id()))?;
@@ -484,12 +497,16 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
         ] {
             let tasks = self
                 .task_store
-                .list(TaskFilter {
-                    project: Some(merged.project().clone()),
-                    status: Some(status),
-                    ..Default::default()
-                })
-                .await?;
+                .list(
+                    TaskFilter {
+                        project: Some(merged.project().clone()),
+                        status: Some(status),
+                        ..Default::default()
+                    },
+                    PageParams::unbounded(),
+                )
+                .await?
+                .items;
 
             for mut task in tasks {
                 if source_ids.contains(&task.id()) || task.id() == merged.id() {
@@ -580,7 +597,11 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
                 status: Some(*status),
                 ..Default::default()
             };
-            let tasks = self.task_store.list(filter).await?;
+            let tasks = self
+                .task_store
+                .list(filter, PageParams::unbounded())
+                .await?
+                .items;
             for task in &tasks {
                 for role in task.assigned_roles() {
                     *role_counts.entry(role.clone()).or_insert(0) += 1;
@@ -611,11 +632,15 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
 
         let children = self
             .task_store
-            .list(TaskFilter {
-                parent_id: Some(*id),
-                ..Default::default()
-            })
-            .await?;
+            .list(
+                TaskFilter {
+                    parent_id: Some(*id),
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
+            .await?
+            .items;
 
         Ok(TaskWithContext {
             task,
@@ -686,11 +711,15 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
     async fn resolve_dependents_inner(&self, completed_id: TaskId) -> Result<()> {
         let blocked = self
             .task_store
-            .list(TaskFilter {
-                status: Some(TaskStatus::Blocked),
-                ..Default::default()
-            })
-            .await?;
+            .list(
+                TaskFilter {
+                    status: Some(TaskStatus::Blocked),
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
+            .await?
+            .items;
 
         for mut task in blocked {
             if task.depends_on().contains(&completed_id)
@@ -715,11 +744,15 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
     async fn has_children(&self, task: &Task) -> Result<bool> {
         let children = self
             .task_store
-            .list(TaskFilter {
-                parent_id: Some(task.id()),
-                ..Default::default()
-            })
-            .await?;
+            .list(
+                TaskFilter {
+                    parent_id: Some(task.id()),
+                    ..Default::default()
+                },
+                PageParams::new(None, Some(1)),
+            )
+            .await?
+            .items;
         Ok(!children.is_empty())
     }
 
@@ -826,8 +859,12 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
             .ok_or_else(|| Error::NotFound(format!("review {id}")))
     }
 
-    pub async fn list_reviews_for_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>> {
-        ReviewStore::find_by_task(&*self.store, task_id).await
+    pub async fn list_reviews_for_task(
+        &self,
+        task_id: &TaskId,
+        page: PageParams,
+    ) -> Result<Page<ReviewRequest>> {
+        ReviewStore::find_by_task(&*self.store, task_id, page).await
     }
 
     pub async fn pending_reviews_for_agent(
@@ -860,15 +897,18 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
     async fn notify_blocked_dependents_terminated(&self, failed_task: &Task, event: &str) {
         let blocked = self
             .task_store
-            .list(TaskFilter {
-                project: Some(failed_task.project().clone()),
-                status: Some(TaskStatus::Blocked),
-                ..Default::default()
-            })
+            .list(
+                TaskFilter {
+                    project: Some(failed_task.project().clone()),
+                    status: Some(TaskStatus::Blocked),
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
             .await;
 
-        if let Ok(tasks) = blocked {
-            for task in tasks {
+        if let Ok(page) = blocked {
+            for task in page.items {
                 if task.depends_on().contains(&failed_task.id()) {
                     if let Some(agent) = task.assigned_to() {
                         let body = format!(
@@ -902,11 +942,15 @@ impl<TS: TaskStore, S: AgentStore + WatcherStore + MessageStore + ReviewStore> T
     async fn children_summaries(&self, task: &Task) -> Result<String> {
         let children = self
             .task_store
-            .list(TaskFilter {
-                parent_id: Some(task.id()),
-                ..Default::default()
-            })
-            .await?;
+            .list(
+                TaskFilter {
+                    parent_id: Some(task.id()),
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
+            .await?
+            .items;
 
         let mut parts = Vec::new();
         for child in &children {
@@ -936,6 +980,7 @@ mod tests {
     use crate::message::{Message, MessageId, MessageStore};
     use crate::namespace::{Namespace, ProjectId};
     use crate::organization::OrganizationId;
+    use crate::pagination::{Page, PageParams};
 
     #[derive(Default)]
     struct InMemoryTaskStore {
@@ -954,8 +999,8 @@ mod tests {
             Ok(self.tasks.read().unwrap().get(id).cloned())
         }
 
-        async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
-            Ok(self
+        async fn list(&self, filter: TaskFilter, _page: PageParams) -> Result<Page<Task>> {
+            let items: Vec<Task> = self
                 .tasks
                 .read()
                 .unwrap()
@@ -966,7 +1011,8 @@ mod tests {
                         && filter.project.as_ref().is_none_or(|p| t.project() == p)
                 })
                 .cloned()
-                .collect())
+                .collect();
+            Ok(Page::new(items, None))
         }
     }
 
@@ -981,8 +1027,8 @@ mod tests {
         async fn find_by_id(&self, _: &AgentId) -> Result<Option<Agent>> {
             Ok(None)
         }
-        async fn list(&self, _: &OrganizationId) -> Result<Vec<Agent>> {
-            Ok(vec![])
+        async fn list(&self, _: &OrganizationId, _: PageParams) -> Result<Page<Agent>> {
+            Ok(Page::empty())
         }
         async fn find_timed_out(&self, _: u64) -> Result<Vec<Agent>> {
             Ok(vec![])
@@ -1022,8 +1068,9 @@ mod tests {
             _: &OrganizationId,
             _: &ProjectId,
             _: &Namespace,
-        ) -> Result<Vec<Message>> {
-            Ok(vec![])
+            _: PageParams,
+        ) -> Result<Page<Message>> {
+            Ok(Page::empty())
         }
         async fn find_sent(
             &self,
@@ -1031,8 +1078,9 @@ mod tests {
             _: &OrganizationId,
             _: &ProjectId,
             _: &Namespace,
-        ) -> Result<Vec<Message>> {
-            Ok(vec![])
+            _: PageParams,
+        ) -> Result<Page<Message>> {
+            Ok(Page::empty())
         }
         async fn find_thread(&self, _: &MessageId, _: Option<usize>) -> Result<Vec<Message>> {
             Ok(vec![])
@@ -1050,8 +1098,8 @@ mod tests {
         async fn find_pending_for_agent(&self, _: &AgentId) -> Result<Vec<ReviewRequest>> {
             Ok(vec![])
         }
-        async fn find_by_task(&self, _: &TaskId) -> Result<Vec<ReviewRequest>> {
-            Ok(vec![])
+        async fn find_by_task(&self, _: &TaskId, _: PageParams) -> Result<Page<ReviewRequest>> {
+            Ok(Page::empty())
         }
     }
 

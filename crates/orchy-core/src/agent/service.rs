@@ -6,6 +6,7 @@ use super::{Agent, AgentId, AgentStatus, AgentStore, RegisterAgent};
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 use crate::project::ProjectStore;
 
 pub struct AgentService<S: AgentStore, PS: ProjectStore> {
@@ -60,8 +61,8 @@ impl<S: AgentStore, PS: ProjectStore> AgentService<S, PS> {
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))
     }
 
-    pub async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
-        self.store.list(org).await
+    pub async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
+        self.store.list(org, page).await
     }
 
     pub async fn heartbeat(&self, id: &AgentId) -> Result<()> {

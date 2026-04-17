@@ -292,13 +292,13 @@ pub async fn list(
         ..Default::default()
     };
 
-    let tasks = container
+    let page = container
         .task_service
-        .list(filter)
+        .list(filter, orchy_core::pagination::PageParams::unbounded())
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(tasks))
+    Ok(Json(page.items))
 }
 
 pub async fn post(
@@ -867,17 +867,21 @@ pub async fn list_tags(
     let project_id = parse_project(&project)?;
     let ns = parse_ns(query.namespace.as_deref())?;
 
-    let tasks = container
+    let page = container
         .task_service
-        .list(TaskFilter {
-            project: Some(project_id),
-            namespace: ns,
-            ..Default::default()
-        })
+        .list(
+            TaskFilter {
+                project: Some(project_id),
+                namespace: ns,
+                ..Default::default()
+            },
+            orchy_core::pagination::PageParams::unbounded(),
+        )
         .await
         .map_err(ApiError::from)?;
 
-    let mut tags: Vec<String> = tasks
+    let mut tags: Vec<String> = page
+        .items
         .iter()
         .flat_map(|t| t.tags().iter().cloned())
         .collect::<std::collections::HashSet<_>>()

@@ -17,6 +17,8 @@ use orchy_core::knowledge::{
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+
 use crate::{
     PgBackend, decode_json_value, parse_namespace, parse_pg_vector_text, parse_project_id,
 };
@@ -190,7 +192,7 @@ impl KnowledgeStore for PgBackend {
         row.map(|r| row_to_entry(&r)).transpose()
     }
 
-    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
+    async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
         let mut select = Query::select();
         select
             .from(KnowledgeEntries::Table)
@@ -224,6 +226,17 @@ impl KnowledgeStore for PgBackend {
             select.and_where(Expr::col(KnowledgeEntries::AgentId).eq(agent_id.to_string()));
         }
 
+        if let Some(ref cursor) = page.after
+            && let Some(decoded) = decode_cursor(cursor)
+            && let Ok(cursor_uuid) = decoded.parse::<Uuid>()
+        {
+            select.and_where(Expr::col(KnowledgeEntries::Id).lt(cursor_uuid));
+        }
+
+        select
+            .order_by(KnowledgeEntries::Id, sea_query::Order::Desc)
+            .limit((page.limit as u64).saturating_add(1));
+
         let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
 
         let rows = sqlx::query_with(&sql, values)
@@ -231,7 +244,19 @@ impl KnowledgeStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        rows.iter().map(row_to_entry).collect()
+        let mut entries: Vec<Knowledge> =
+            rows.iter().map(row_to_entry).collect::<Result<Vec<_>>>()?;
+        let has_more = entries.len() > page.limit as usize;
+        if has_more {
+            entries.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            entries.last().map(|e| encode_cursor(&e.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(entries, next_cursor))
     }
 
     async fn search(

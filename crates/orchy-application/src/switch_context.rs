@@ -5,6 +5,7 @@ use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::{ReviewStore, TaskFilter, TaskStore, WatcherStore};
@@ -100,12 +101,16 @@ impl SwitchContext {
     async fn release_project_resources(&self, agent_id: &AgentId, project: &ProjectId) {
         let tasks = self
             .tasks
-            .list(TaskFilter {
-                assigned_to: Some(agent_id.clone()),
-                project: Some(project.clone()),
-                ..Default::default()
-            })
+            .list(
+                TaskFilter {
+                    assigned_to: Some(agent_id.clone()),
+                    project: Some(project.clone()),
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
             .await
+            .map(|p| p.items)
             .unwrap_or_default();
         for mut task in tasks {
             let _ = task.release();

@@ -160,9 +160,15 @@ impl OrchyHandler {
         };
 
         let (_, org, _, _) = self.require_session()?;
-        match self.container.agent_service.list(&org).await {
-            Ok(agents) => {
-                let filtered: Vec<_> = agents
+        match self
+            .container
+            .agent_service
+            .list(&org, orchy_core::pagination::PageParams::unbounded())
+            .await
+        {
+            Ok(page) => {
+                let filtered: Vec<_> = page
+                    .items
                     .into_iter()
                     .filter(|a| *a.project() == project)
                     .collect();
@@ -291,12 +297,16 @@ impl OrchyHandler {
             let tasks = self
                 .container
                 .task_service
-                .list(TaskFilter {
-                    assigned_to: Some(agent_id.clone()),
-                    project: Some(current_project.clone()),
-                    ..Default::default()
-                })
+                .list(
+                    TaskFilter {
+                        assigned_to: Some(agent_id.clone()),
+                        project: Some(current_project.clone()),
+                        ..Default::default()
+                    },
+                    orchy_core::pagination::PageParams::unbounded(),
+                )
                 .await
+                .map(|p| p.items)
                 .unwrap_or_default();
             for task in &tasks {
                 let _ = self.container.task_service.release(&task.id()).await;
@@ -535,9 +545,9 @@ impl OrchyHandler {
 
         self.container
             .task_service
-            .list(filter)
+            .list(filter, orchy_core::pagination::PageParams::unbounded())
             .await
-            .map(|tasks| to_json(&tasks))
+            .map(|page| to_json(&page.items))
             .map_err(mcp_error)
     }
 
@@ -810,10 +820,16 @@ impl OrchyHandler {
         match self
             .container
             .message_service
-            .check(&agent_id, &org, &project, &namespace)
+            .check(
+                &agent_id,
+                &org,
+                &project,
+                &namespace,
+                orchy_core::pagination::PageParams::unbounded(),
+            )
             .await
         {
-            Ok(messages) => Ok(to_json(&messages)),
+            Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -838,10 +854,16 @@ impl OrchyHandler {
         match self
             .container
             .message_service
-            .sent(&agent_id, &org, &project, &namespace)
+            .sent(
+                &agent_id,
+                &org,
+                &project,
+                &namespace,
+                orchy_core::pagination::PageParams::unbounded(),
+            )
             .await
         {
-            Ok(messages) => Ok(to_json(&messages)),
+            Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1180,10 +1202,11 @@ impl OrchyHandler {
         let agents = self
             .container
             .agent_service
-            .list(&org)
+            .list(&org, orchy_core::pagination::PageParams::unbounded())
             .await
             .map_err(mcp_error)?;
         let project_agents: Vec<_> = agents
+            .items
             .into_iter()
             .filter(|a| {
                 *a.project() == project_id
@@ -1194,12 +1217,16 @@ impl OrchyHandler {
         let all_tasks = self
             .container
             .task_service
-            .list(TaskFilter {
-                project: Some(project_id.clone()),
-                ..Default::default()
-            })
+            .list(
+                TaskFilter {
+                    project: Some(project_id.clone()),
+                    ..Default::default()
+                },
+                orchy_core::pagination::PageParams::unbounded(),
+            )
             .await
-            .map_err(mcp_error)?;
+            .map_err(mcp_error)?
+            .items;
 
         let mut by_status = std::collections::HashMap::new();
         for task in &all_tasks {
@@ -1544,13 +1571,17 @@ impl OrchyHandler {
         let tasks = self
             .container
             .task_service
-            .list(TaskFilter {
-                project: Some(project),
-                namespace,
-                ..Default::default()
-            })
+            .list(
+                TaskFilter {
+                    project: Some(project),
+                    namespace,
+                    ..Default::default()
+                },
+                orchy_core::pagination::PageParams::unbounded(),
+            )
             .await
-            .map_err(mcp_error)?;
+            .map_err(mcp_error)?
+            .items;
 
         let mut tags: Vec<String> = tasks
             .iter()
@@ -1684,10 +1715,10 @@ impl OrchyHandler {
         match self
             .container
             .task_service
-            .list_reviews_for_task(&task_id)
+            .list_reviews_for_task(&task_id, orchy_core::pagination::PageParams::unbounded())
             .await
         {
-            Ok(reviews) => Ok(to_json(&reviews)),
+            Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1925,8 +1956,13 @@ impl OrchyHandler {
             ..Default::default()
         };
 
-        match self.container.knowledge_service.list(filter).await {
-            Ok(entries) => Ok(to_json(&entries)),
+        match self
+            .container
+            .knowledge_service
+            .list(filter, orchy_core::pagination::PageParams::unbounded())
+            .await
+        {
+            Ok(page) => Ok(to_json(&page.items)),
             Err(e) => Err(mcp_error(e)),
         }
     }

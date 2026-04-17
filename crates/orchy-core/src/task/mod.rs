@@ -14,6 +14,7 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::note::Note;
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 
 use self::events as task_events;
 
@@ -21,7 +22,7 @@ use self::events as task_events;
 pub trait TaskStore: Send + Sync {
     async fn save(&self, task: &mut Task) -> Result<()>;
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
-    async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>>;
+    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1032,7 +1033,8 @@ pub trait ReviewStore: Send + Sync {
     async fn save(&self, review: &mut ReviewRequest) -> Result<()>;
     async fn find_by_id(&self, id: &ReviewId) -> Result<Option<ReviewRequest>>;
     async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>>;
-    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>>;
+    async fn find_by_task(&self, task_id: &TaskId, page: PageParams)
+    -> Result<Page<ReviewRequest>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -9,6 +9,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::note::Note;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::SqliteBackend;
@@ -76,7 +77,7 @@ impl TaskStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>> {
+    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
@@ -127,21 +128,43 @@ impl TaskStore for SqliteBackend {
             idx += 1;
         }
 
+        if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                sql.push_str(&format!(" AND id < ?{idx}"));
+                params.push(Box::new(decoded));
+                idx += 1;
+            }
+        }
+
         let _ = idx;
-        sql.push_str(" ORDER BY CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END DESC");
+        sql.push_str(" ORDER BY CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END DESC, id DESC");
+
+        let fetch_limit = (page.limit as u64).saturating_add(1);
+        sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
-        let tasks = stmt
+        let mut tasks: Vec<Task> = stmt
             .query_map(param_refs.as_slice(), row_to_task)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(tasks)
+        let has_more = tasks.len() > page.limit as usize;
+        if has_more {
+            tasks.truncate(page.limit as usize);
+        }
+
+        let next_cursor = if has_more {
+            tasks.last().map(|t| encode_cursor(&t.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(tasks, next_cursor))
     }
 }
 

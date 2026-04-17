@@ -9,6 +9,7 @@ use crate::embeddings::EmbeddingsProvider;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 
 pub struct KnowledgeService<S: KnowledgeStore, E: EmbeddingsProvider> {
     store: Arc<S>,
@@ -125,8 +126,8 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             .ok_or_else(|| Error::NotFound(format!("entry {id}")))
     }
 
-    pub async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
-        self.store.list(filter).await
+    pub async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
+        self.store.list(filter, page).await
     }
 
     pub async fn patch_metadata(&self, cmd: PatchKnowledgeMetadata) -> Result<Knowledge> {
@@ -358,7 +359,11 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             kind: Some(KnowledgeKind::Skill),
             ..Default::default()
         };
-        let all = self.store.list(filter).await?;
+        let all = self
+            .store
+            .list(filter, PageParams::unbounded())
+            .await?
+            .items;
         Ok(Self::filter_with_inheritance(all, namespace))
     }
 
@@ -375,7 +380,11 @@ impl<S: KnowledgeStore, E: EmbeddingsProvider> KnowledgeService<S, E> {
             kind: Some(KnowledgeKind::Overview),
             ..Default::default()
         };
-        let all = self.store.list(filter).await?;
+        let all = self
+            .store
+            .list(filter, PageParams::unbounded())
+            .await?
+            .items;
         Ok(Self::filter_with_inheritance(all, namespace))
     }
 

@@ -13,6 +13,7 @@ use orchy_core::knowledge::{
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 
@@ -178,7 +179,7 @@ impl KnowledgeStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>> {
+    async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
@@ -231,19 +232,41 @@ impl KnowledgeStore for SqliteBackend {
             idx += 1;
         }
 
+        if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                sql.push_str(&format!(" AND id < ?{idx}"));
+                params.push(Box::new(decoded));
+                idx += 1;
+            }
+        }
+
         let _ = idx;
+        sql.push_str(" ORDER BY id DESC");
+        let fetch_limit = (page.limit as u64).saturating_add(1);
+        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
-        let entries = stmt
+        let mut entries: Vec<Knowledge> = stmt
             .query_map(param_refs.as_slice(), row_to_entry)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(entries)
+        let has_more = entries.len() > page.limit as usize;
+        if has_more {
+            entries.truncate(page.limit as usize);
+        }
+        let next_cursor = if has_more {
+            entries.last().map(|e| encode_cursor(&e.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(entries, next_cursor))
     }
 
     async fn search(

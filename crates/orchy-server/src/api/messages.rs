@@ -111,14 +111,20 @@ pub async fn inbox_for_agent(
     let agent = load_agent(&state.0, &auth, &org, &id).await?;
     let ns = parse_ns(query.namespace.as_deref())?;
 
-    let messages = state
+    let page = state
         .0
         .message_service
-        .check(agent.id(), agent.org_id(), agent.project(), &ns)
+        .check(
+            agent.id(),
+            agent.org_id(),
+            agent.project(),
+            &ns,
+            orchy_core::pagination::PageParams::unbounded(),
+        )
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(messages))
+    Ok(Json(page.items))
 }
 
 pub async fn sent_for_agent(
@@ -130,14 +136,20 @@ pub async fn sent_for_agent(
     let agent = load_agent(&state.0, &auth, &org, &id).await?;
     let ns = parse_ns(query.namespace.as_deref())?;
 
-    let messages = state
+    let page = state
         .0
         .message_service
-        .sent(agent.id(), agent.org_id(), agent.project(), &ns)
+        .sent(
+            agent.id(),
+            agent.org_id(),
+            agent.project(),
+            &ns,
+            orchy_core::pagination::PageParams::unbounded(),
+        )
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(messages))
+    Ok(Json(page.items))
 }
 
 pub async fn send(

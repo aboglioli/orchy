@@ -15,6 +15,7 @@ use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 
 use self::events as knowledge_events;
 
@@ -29,7 +30,7 @@ pub trait KnowledgeStore: Send + Sync {
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>>;
-    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>>;
+    async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>>;
     async fn search(
         &self,
         org: &OrganizationId,

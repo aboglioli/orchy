@@ -8,6 +8,7 @@ use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::SqliteBackend;
 
@@ -64,20 +65,50 @@ impl AgentStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>> {
+    async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1");
+
+        let mut sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1");
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(org.to_string())];
+        let mut idx = 2;
+
+        if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                sql.push_str(&format!(" AND id < ?{idx}"));
+                params.push(Box::new(decoded));
+                idx += 1;
+            }
+        }
+
+        let _ = idx;
+        sql.push_str(" ORDER BY id DESC");
+
+        let fetch_limit = (page.limit as u64).saturating_add(1);
+        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
-
-        let agents = stmt
-            .query_map(rusqlite::params![org.to_string()], row_to_agent)
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        let mut agents: Vec<Agent> = stmt
+            .query_map(param_refs.as_slice(), row_to_agent)
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        Ok(agents)
+        let has_more = agents.len() > page.limit as usize;
+        if has_more {
+            agents.truncate(page.limit as usize);
+        }
+
+        let next_cursor = if has_more {
+            agents.last().map(|a| encode_cursor(&a.id().to_string()))
+        } else {
+            None
+        };
+
+        Ok(Page::new(agents, next_cursor))
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {

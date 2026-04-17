@@ -6,6 +6,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 
 use crate::parse_namespace;
 
@@ -57,7 +58,11 @@ impl SendMessage {
                 return Ok(vec![msg]);
             }
             MessageTarget::Role(role) => {
-                let agents = self.agents.list(&org_id).await?;
+                let agents = self
+                    .agents
+                    .list(&org_id, PageParams::unbounded())
+                    .await?
+                    .items;
                 agents
                     .into_iter()
                     .filter(|a| a.project() == &project)

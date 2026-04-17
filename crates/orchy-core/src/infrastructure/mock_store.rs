@@ -7,6 +7,7 @@ use crate::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use crate::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use crate::namespace::{Namespace, NamespaceStore, ProjectId};
 use crate::organization::{Organization, OrganizationId, OrganizationStore};
+use crate::pagination::{Page, PageParams};
 use crate::project::{Project, ProjectStore};
 use crate::resource_lock::{LockStore, ResourceLock};
 use crate::task::{
@@ -45,7 +46,7 @@ impl TaskStore for MockStore {
     async fn find_by_id(&self, _: &TaskId) -> Result<Option<Task>> {
         unimplemented!()
     }
-    async fn list(&self, _: TaskFilter) -> Result<Vec<Task>> {
+    async fn list(&self, _: TaskFilter, _: PageParams) -> Result<Page<Task>> {
         unimplemented!()
     }
 }
@@ -62,8 +63,9 @@ impl AgentStore for MockStore {
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         Ok(self.agents.read().unwrap().get(id).cloned())
     }
-    async fn list(&self, _org: &OrganizationId) -> Result<Vec<Agent>> {
-        Ok(self.agents.read().unwrap().values().cloned().collect())
+    async fn list(&self, _org: &OrganizationId, _page: PageParams) -> Result<Page<Agent>> {
+        let items: Vec<Agent> = self.agents.read().unwrap().values().cloned().collect();
+        Ok(Page::new(items, None))
     }
     async fn find_timed_out(&self, _: u64) -> Result<Vec<Agent>> {
         Ok(vec![])
@@ -95,9 +97,10 @@ impl MessageStore for MockStore {
         _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
+        _page: PageParams,
+    ) -> Result<Page<Message>> {
         let receipts = self.message_receipts.read().unwrap();
-        Ok(self
+        let items: Vec<Message> = self
             .messages
             .read()
             .unwrap()
@@ -115,7 +118,8 @@ impl MessageStore for MockStore {
                     && m.namespace().starts_with(namespace)
             })
             .cloned()
-            .collect())
+            .collect();
+        Ok(Page::new(items, None))
     }
 
     async fn find_sent(
@@ -124,8 +128,9 @@ impl MessageStore for MockStore {
         _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> Result<Vec<Message>> {
-        Ok(self
+        _page: PageParams,
+    ) -> Result<Page<Message>> {
+        let items: Vec<Message> = self
             .messages
             .read()
             .unwrap()
@@ -134,7 +139,8 @@ impl MessageStore for MockStore {
                 m.from() == sender && m.project() == project && m.namespace().starts_with(namespace)
             })
             .cloned()
-            .collect())
+            .collect();
+        Ok(Page::new(items, None))
     }
 
     async fn find_thread(
@@ -224,8 +230,8 @@ impl ReviewStore for MockStore {
     async fn find_pending_for_agent(&self, _: &AgentId) -> Result<Vec<ReviewRequest>> {
         Ok(vec![])
     }
-    async fn find_by_task(&self, _: &TaskId) -> Result<Vec<ReviewRequest>> {
-        Ok(vec![])
+    async fn find_by_task(&self, _: &TaskId, _: PageParams) -> Result<Page<ReviewRequest>> {
+        Ok(Page::empty())
     }
 }
 
@@ -246,7 +252,7 @@ impl KnowledgeStore for MockStore {
     ) -> Result<Option<Knowledge>> {
         unimplemented!()
     }
-    async fn list(&self, _: KnowledgeFilter) -> Result<Vec<Knowledge>> {
+    async fn list(&self, _: KnowledgeFilter, _: PageParams) -> Result<Page<Knowledge>> {
         unimplemented!()
     }
     async fn search(

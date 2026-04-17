@@ -78,7 +78,7 @@ pub async fn list(
 
     let agents = container
         .agent_service
-        .list(&org_id)
+        .list(&org_id, orchy_core::pagination::PageParams::unbounded())
         .await
         .map_err(ApiError::from)?;
 
@@ -90,6 +90,7 @@ pub async fn list(
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let body: Vec<AgentDto> = agents
+        .items
         .into_iter()
         .filter(|a| a.status() != AgentStatus::Disconnected)
         .filter(|a| {
@@ -149,8 +150,15 @@ pub async fn get_context(
 
     let inbox = container
         .message_service
-        .pending(agent.id(), &org_id, agent.project(), agent.namespace())
+        .pending(
+            agent.id(),
+            &org_id,
+            agent.project(),
+            agent.namespace(),
+            orchy_core::pagination::PageParams::unbounded(),
+        )
         .await
+        .map(|p| p.items)
         .unwrap_or_default()
         .into_iter()
         .map(|m| InboxMessageDto {

@@ -6,6 +6,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams};
 
 use crate::parse_namespace;
 
@@ -18,6 +19,8 @@ pub struct ListKnowledgeCommand {
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
     pub agent_id: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 pub struct ListKnowledge {
@@ -29,7 +32,7 @@ impl ListKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: ListKnowledgeCommand) -> Result<Vec<Knowledge>> {
+    pub async fn execute(&self, cmd: ListKnowledgeCommand) -> Result<Page<Knowledge>> {
         let org_id = cmd
             .org_id
             .map(|s| OrganizationId::new(&s))
@@ -71,6 +74,7 @@ impl ListKnowledge {
             agent_id,
         };
 
-        self.store.list(filter).await
+        let page = PageParams::new(cmd.after, cmd.limit);
+        self.store.list(filter, page).await
     }
 }
