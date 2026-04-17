@@ -75,8 +75,8 @@ Skills (kind=skill) inherit through namespace hierarchy.
 Pending → Claimed → InProgress → Completed/Failed/Cancelled
 ```
 
-Tasks support hierarchy (`split_task`), dependencies, tags, watchers,
-and reviews. Parent tasks auto-complete when all subtasks finish.
+Tasks support hierarchy (`split_task`), dependencies, tags, and watchers.
+Parent tasks auto-complete when all subtasks finish.
 
 ### Agent lifecycle
 
@@ -172,7 +172,7 @@ session errors or you are unsure whether you still need `register_agent`.
 | `namespace` | no | Target namespace within the project. |
 
 At least one of `project` or `namespace` is required. Switching projects
-releases claimed tasks, locks, watchers, and reviews in the old project.
+releases claimed tasks, locks, and watchers in the old project.
 
 ---
 
@@ -378,45 +378,18 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 
 ---
 
-## Tasks — Watchers and Reviews
+## Tasks — Watchers
 
 | Tool | Session | Description |
 |------|---------|-------------|
 | `watch_task` | yes | Watch a task for status changes (notifications via mailbox). |
 | `unwatch_task` | yes | Stop watching a task. |
-| `request_review` | yes | Request a review for a task (by agent ID or role). |
-| `resolve_review` | yes | Approve or reject a review request. |
-| `list_reviews` | yes | List review requests for a task. |
-| `get_review` | yes | Get a single review request by ID. |
 
 ### `watch_task` / `unwatch_task`
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `task_id` | yes | |
-
-### `request_review`
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `task_id` | yes | |
-| `reviewer_agent` | no | Specific agent UUID |
-| `reviewer_role` | no | Target reviewer role (e.g. "reviewer") |
-
-### `resolve_review`
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `review_id` | yes | |
-| `approved` | yes | `true` to approve, `false` to reject |
-| `comments` | no | |
-
-### `list_reviews` / `get_review`
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `task_id` | yes | (for `list_reviews`) |
-| `review_id` | yes | (for `get_review`) |
 
 ---
 

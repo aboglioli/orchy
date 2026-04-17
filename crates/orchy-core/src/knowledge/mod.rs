@@ -1,5 +1,4 @@
 pub mod events;
-pub mod service;
 
 use std::collections::HashMap;
 use std::fmt;

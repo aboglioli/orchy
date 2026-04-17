@@ -1,5 +1,4 @@
 pub mod events;
-pub mod service;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

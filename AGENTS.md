@@ -24,8 +24,8 @@ How agents coordinate in real time.
 - **Project broadcasts** — send to everyone except yourself
 - **Threading** — reply to messages, walk full conversation threads
 - **Delivery tracking** — pending, delivered, read status
-- **System notifications** — task watchers, review results, and dependency
-  failures are delivered as messages to your mailbox automatically
+- **System notifications** — task watchers and dependency failures are
+  delivered as messages to your mailbox automatically
 
 ### Work (JIRA/Trello for agents)
 
@@ -37,11 +37,9 @@ How agents organize, claim, and complete work.
   merge related tasks. Parent auto-completes when all children finish.
 - **Dependencies** — tasks block until dependencies complete. Cascading failure
   notifications when a dependency fails.
-- **Reviews** — request approval from a role or agent before proceeding.
-  Approve/reject with comments, requester gets notified.
 - **Watchers** — subscribe to task status changes, get notified via mailbox.
 - **Specs and planning** — use documents for spec-driven development. Write the
-  spec first, get it reviewed, then create implementation tasks from it.
+  spec first, then create implementation tasks from it.
 - **Resource locks** — prevent two agents from editing the same file or area.
   TTL-based, auto-released on disconnect.
 
@@ -93,7 +91,7 @@ crates/
 ├── orchy-core/            # domain types, traits, services
 │   └── src/
 │       ├── agent/         # Agent aggregate + AgentStore trait + events
-│       ├── task/          # Task + TaskWatcher + ReviewRequest + state machine
+│       ├── task/          # Task + TaskWatcher + state machine
 │       ├── message/       # Message threading + delivery tracking
 │       ├── knowledge/     # Unified knowledge: notes, decisions, skills, context, docs
 │       ├── project/       # Project metadata + notes
@@ -207,7 +205,6 @@ When an agent disconnects (or times out via heartbeat monitor):
 1. Claimed/in-progress tasks -> released back to Pending
 2. Resource locks held by agent -> released
 3. Task watchers for agent -> removed
-4. Pending reviews assigned to agent -> unassigned
 
 ## Agent Lifecycle
 
@@ -288,7 +285,7 @@ A "janitor" agent can compact and reorganize:
 - Restore structs over positional params for DB reconstruction.
 - UUID v7 everywhere for time-ordered identifiers.
 - Embeddings provider lives in server crate, core only defines the trait.
-- TaskService uses 2 generics: `TS: TaskStore` + `S: AgentStore + WatcherStore + MessageStore + ReviewStore`.
+- TaskService was removed; all orchestration lives in orchy-application use cases.
 - poll_updates queries the events table, not task projections.
 - All tools require a registered session except `register_agent`,
   `list_agents` (when `project` is passed), `list_knowledge_types`, `mark_read`,
