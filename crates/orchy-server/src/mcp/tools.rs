@@ -432,13 +432,10 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (agent_id, _, _, _) = self.require_session()?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(_) => Some(
-                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-                    .await?,
-            ),
-            None => None,
-        };
+        let namespace = Some(
+            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+                .await?,
+        );
 
         let roles = match params.role {
             Some(r) => vec![r],
@@ -494,7 +491,7 @@ impl OrchyHandler {
     #[tool(
         description = "List tasks, optionally filtered by namespace, status, and parent_id. \
         Use parent_id to list subtasks of a specific task. \
-        If namespace is omitted, returns all tasks in the project."
+        Defaults to session namespace; pass namespace=/ to see all namespaces."
     )]
     async fn list_tasks(
         &self,
@@ -509,13 +506,10 @@ impl OrchyHandler {
             session_project
         };
 
-        let namespace = match params.namespace.as_deref() {
-            Some(_) => Some(
-                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-                    .await?,
-            ),
-            None => None,
-        };
+        let namespace = Some(
+            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+                .await?,
+        );
 
         let status = params.status.as_deref().map(|s| match s {
             "pending" => Some(orchy_core::task::TaskStatus::Pending),
@@ -1544,7 +1538,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "List all unique tags used across tasks in the project.")]
+    #[tool(description = "List all unique tags used across tasks. \
+        Defaults to session namespace; pass namespace=/ to see all namespaces.")]
     async fn list_tags(
         &self,
         Parameters(params): Parameters<ListTagsParams>,
@@ -1553,13 +1548,10 @@ impl OrchyHandler {
             .get_session_project()
             .ok_or("no agent registered for this session; call register_agent first")?;
 
-        let namespace = match params.namespace.as_deref() {
-            Some(_) => Some(
-                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-                    .await?,
-            ),
-            None => None,
-        };
+        let namespace = Some(
+            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+                .await?,
+        );
 
         let tasks = self
             .container
@@ -1871,7 +1863,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Read a knowledge entry by path.")]
+    #[tool(description = "Read a knowledge entry by path. \
+        Defaults to session namespace; pass namespace=/ for root.")]
     async fn read_knowledge(
         &self,
         Parameters(params): Parameters<ReadKnowledgeParams>,
@@ -1884,7 +1877,7 @@ impl OrchyHandler {
         };
 
         let namespace = self
-            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
             .await?;
 
         match self
@@ -1950,7 +1943,8 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Search knowledge entries by semantic similarity.")]
+    #[tool(description = "Search knowledge entries by semantic similarity. \
+        Defaults to session namespace; pass namespace=/ to search all namespaces.")]
     async fn search_knowledge(
         &self,
         Parameters(params): Parameters<SearchKnowledgeParams>,
@@ -1960,13 +1954,10 @@ impl OrchyHandler {
             .map(|(_, org, _, _)| org)
             .unwrap_or_else(|_| default_org());
 
-        let namespace = match params.namespace.as_deref() {
-            Some(_) => Some(
-                self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-                    .await?,
-            ),
-            None => None,
-        };
+        let namespace = Some(
+            self.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
+                .await?,
+        );
 
         let limit = params.limit.unwrap_or(10) as usize;
 

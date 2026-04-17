@@ -308,8 +308,9 @@ for the next agent.
 ## Namespaces
 
 Resources live in namespaces: `/` (root), `/backend`, `/backend/auth`. \
-Omit namespace on reads to see everything. Writes default to your current \
-namespace. Namespaces are auto-created on first use.
+Tools default to your current namespace when you omit the namespace parameter. \
+Pass `namespace=/` to see all namespaces. \
+Writes default to your current namespace. Namespaces are auto-created on first use.
 
 ## Task Workflow
 
