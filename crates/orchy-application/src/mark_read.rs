@@ -37,7 +37,7 @@ impl MarkRead {
                     continue;
                 }
 
-                if msg.is_broadcast() {
+                if msg.is_broadcast() || msg.is_role_targeted() {
                     self.messages.mark_read_for_agent(id, &agent_id).await?;
                 }
             }

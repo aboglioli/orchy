@@ -331,8 +331,8 @@ impl Application {
             list_reviews: ListReviews::new(reviews.clone()),
             get_review: GetReview::new(reviews.clone()),
 
-            send_message: SendMessage::new(messages.clone(), agents.clone()),
-            check_mailbox: CheckMailbox::new(messages.clone()),
+            send_message: SendMessage::new(messages.clone()),
+            check_mailbox: CheckMailbox::new(messages.clone(), agents.clone()),
             check_sent_messages: CheckSentMessages::new(messages.clone()),
             mark_read: MarkRead::new(messages.clone()),
             list_conversation: ListConversation::new(messages.clone()),

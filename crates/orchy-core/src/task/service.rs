@@ -1065,6 +1065,7 @@ mod tests {
         async fn find_pending(
             &self,
             _: &AgentId,
+            _: &[String],
             _: &OrganizationId,
             _: &ProjectId,
             _: &Namespace,

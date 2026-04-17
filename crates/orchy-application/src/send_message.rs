@@ -1,12 +1,11 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentId, AgentStore};
+use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::PageParams;
 
 use crate::parse_namespace;
 
@@ -22,12 +21,11 @@ pub struct SendMessageCommand {
 
 pub struct SendMessage {
     messages: Arc<dyn MessageStore>,
-    agents: Arc<dyn AgentStore>,
 }
 
 impl SendMessage {
-    pub fn new(messages: Arc<dyn MessageStore>, agents: Arc<dyn AgentStore>) -> Self {
-        Self { messages, agents }
+    pub fn new(messages: Arc<dyn MessageStore>) -> Self {
+        Self { messages }
     }
 
     pub async fn execute(&self, cmd: SendMessageCommand) -> Result<Vec<Message>> {
@@ -44,48 +42,8 @@ impl SendMessage {
             .transpose()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
-        let targets = match &to {
-            MessageTarget::Agent(_) => {
-                let mut msg =
-                    Message::new(org_id, project, namespace, from, to, cmd.body, reply_to)?;
-                self.messages.save(&mut msg).await?;
-                return Ok(vec![msg]);
-            }
-            MessageTarget::Broadcast => {
-                let mut msg =
-                    Message::new(org_id, project, namespace, from, to, cmd.body, reply_to)?;
-                self.messages.save(&mut msg).await?;
-                return Ok(vec![msg]);
-            }
-            MessageTarget::Role(role) => {
-                let agents = self
-                    .agents
-                    .list(&org_id, PageParams::unbounded())
-                    .await?
-                    .items;
-                agents
-                    .into_iter()
-                    .filter(|a| a.project() == &project)
-                    .filter(|a| a.roles().iter().any(|r| r == role))
-                    .map(|a| a.id().clone())
-                    .collect::<Vec<_>>()
-            }
-        };
-
-        let mut sent = Vec::with_capacity(targets.len());
-        for target_id in targets {
-            let mut msg = Message::new(
-                org_id.clone(),
-                project.clone(),
-                namespace.clone(),
-                from.clone(),
-                MessageTarget::Agent(target_id),
-                cmd.body.clone(),
-                reply_to,
-            )?;
-            self.messages.save(&mut msg).await?;
-            sent.push(msg);
-        }
-        Ok(sent)
+        let mut msg = Message::new(org_id, project, namespace, from, to, cmd.body, reply_to)?;
+        self.messages.save(&mut msg).await?;
+        Ok(vec![msg])
     }
 }

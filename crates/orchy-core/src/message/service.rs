@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use super::{Message, MessageId, MessageStore, MessageTarget};
-use crate::agent::{AgentId, AgentStore};
+use crate::agent::AgentId;
 use crate::error::Result;
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 
-pub struct MessageService<MS: MessageStore, AS: AgentStore> {
+pub struct MessageService<MS: MessageStore> {
     message_store: Arc<MS>,
-    agent_store: Arc<AS>,
 }
 
 pub struct SendMessage {
@@ -22,12 +21,9 @@ pub struct SendMessage {
     pub reply_to: Option<MessageId>,
 }
 
-impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
-    pub fn new(message_store: Arc<MS>, agent_store: Arc<AS>) -> Self {
-        Self {
-            message_store,
-            agent_store,
-        }
+impl<MS: MessageStore> MessageService<MS> {
+    pub fn new(message_store: Arc<MS>) -> Self {
+        Self { message_store }
     }
 
     pub async fn send(&self, cmd: SendMessage) -> Result<Vec<Message>> {
@@ -41,65 +37,29 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
             reply_to,
         } = cmd;
 
-        let targets = match &to {
-            MessageTarget::Agent(_) => {
-                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to)?;
-                self.message_store.save(&mut msg).await?;
-                return Ok(vec![msg]);
-            }
-            MessageTarget::Broadcast => {
-                let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to)?;
-                self.message_store.save(&mut msg).await?;
-                return Ok(vec![msg]);
-            }
-            MessageTarget::Role(role) => {
-                let agents = self
-                    .agent_store
-                    .list(&org_id, PageParams::unbounded())
-                    .await?
-                    .items;
-                agents
-                    .into_iter()
-                    .filter(|a| a.project() == &project)
-                    .filter(|a| a.roles().iter().any(|r| r == role))
-                    .map(|a| a.id().clone())
-                    .collect::<Vec<_>>()
-            }
-        };
-
-        let mut sent = Vec::with_capacity(targets.len());
-        for target_id in targets {
-            let mut msg = Message::new(
-                org_id.clone(),
-                project.clone(),
-                namespace.clone(),
-                from.clone(),
-                MessageTarget::Agent(target_id),
-                body.clone(),
-                reply_to,
-            )?;
-            self.message_store.save(&mut msg).await?;
-            sent.push(msg);
-        }
-        Ok(sent)
+        let mut msg = Message::new(org_id, project, namespace, from, to, body, reply_to)?;
+        self.message_store.save(&mut msg).await?;
+        Ok(vec![msg])
     }
 
     pub async fn pending(
         &self,
         agent: &AgentId,
+        agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
         self.message_store
-            .find_pending(agent, org, project, namespace, page)
+            .find_pending(agent, agent_roles, org, project, namespace, page)
             .await
     }
 
     pub async fn check(
         &self,
         agent: &AgentId,
+        agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
@@ -107,7 +67,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
     ) -> Result<Page<Message>> {
         let mut result = self
             .message_store
-            .find_pending(agent, org, project, namespace, page)
+            .find_pending(agent, agent_roles, org, project, namespace, page)
             .await?;
         for msg in &mut result.items {
             if msg.is_directed_to(agent) {
@@ -148,7 +108,7 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
                     continue;
                 }
 
-                if msg.is_broadcast() {
+                if msg.is_broadcast() || msg.is_role_targeted() {
                     self.message_store.mark_read_for_agent(id, agent).await?;
                 }
             }
@@ -160,10 +120,8 @@ impl<MS: MessageStore, AS: AgentStore> MessageService<MS, AS> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::{Agent, AgentStore};
     use crate::infrastructure::MockStore;
-    use crate::namespace::{Namespace, ProjectId};
-    use std::collections::HashMap;
+    use crate::namespace::Namespace;
 
     fn test_project() -> ProjectId {
         ProjectId::try_from("test").unwrap()
@@ -173,35 +131,10 @@ mod tests {
         OrganizationId::new("test").unwrap()
     }
 
-    fn make_agent(roles: Vec<&str>) -> Agent {
-        make_agent_for_project(test_project(), roles)
-    }
-
-    fn other_project() -> ProjectId {
-        ProjectId::try_from("other").unwrap()
-    }
-
-    fn make_agent_for_project(project: ProjectId, roles: Vec<&str>) -> Agent {
-        Agent::register(
-            test_org(),
-            project,
-            Namespace::root(),
-            roles.into_iter().map(String::from).collect(),
-            "test".to_string(),
-            None,
-            HashMap::new(),
-        )
-        .unwrap()
-    }
-
-    async fn save_agent(store: &MockStore, agent: &mut Agent) {
-        AgentStore::save(store, agent).await.unwrap();
-    }
-
     #[tokio::test]
     async fn send_to_agent_returns_single_message() {
         let store = Arc::new(MockStore::default());
-        let service = MessageService::new(Arc::clone(&store), store);
+        let service = MessageService::new(store);
         let result = service
             .send(SendMessage {
                 org_id: test_org(),
@@ -218,13 +151,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_to_role_routes_to_matching_agents() {
+    async fn send_to_role_stores_single_message() {
         let store = Arc::new(MockStore::default());
-        let mut a1 = make_agent(vec!["tester"]);
-        let mut a2 = make_agent(vec!["developer"]);
-        save_agent(&store, &mut a1).await;
-        save_agent(&store, &mut a2).await;
-        let service = MessageService::new(Arc::clone(&store), store);
+        let service = MessageService::new(Arc::clone(&store));
         let result = service
             .send(SendMessage {
                 org_id: test_org(),
@@ -238,100 +167,164 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to(), &MessageTarget::Role("tester".to_string()));
     }
 
     #[tokio::test]
-    async fn send_to_role_with_no_matching_agents_returns_empty() {
+    async fn role_message_appears_in_pending_for_matching_agent() {
         let store = Arc::new(MockStore::default());
-        let mut a = make_agent(vec!["developer"]);
-        save_agent(&store, &mut a).await;
-        let service = MessageService::new(Arc::clone(&store), store);
-        let result = service
+        let sender = AgentId::new();
+        let receiver = AgentId::new();
+
+        let service = MessageService::new(Arc::clone(&store));
+        service
             .send(SendMessage {
                 org_id: test_org(),
                 project: test_project(),
                 namespace: Namespace::root(),
-                from: AgentId::new(),
-                to: MessageTarget::Role("tester".to_string()),
-                body: "hi".into(),
-                reply_to: None,
-            })
-            .await
-            .unwrap();
-        assert!(result.is_empty());
-    }
-
-    #[tokio::test]
-    async fn broadcast_excludes_sender() {
-        let store = Arc::new(MockStore::default());
-        let mut sender = make_agent(vec!["tester"]);
-        let mut other = make_agent(vec!["tester"]);
-        save_agent(&store, &mut sender).await;
-        save_agent(&store, &mut other).await;
-        let service = MessageService::new(Arc::clone(&store), store);
-        let result = service
-            .send(SendMessage {
-                org_id: test_org(),
-                project: test_project(),
-                namespace: Namespace::root(),
-                from: sender.id().clone(),
-                to: MessageTarget::Broadcast,
-                body: "hi".into(),
-                reply_to: None,
-            })
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to(), &MessageTarget::Broadcast);
-    }
-
-    #[tokio::test]
-    async fn send_to_role_skips_agents_from_other_projects() {
-        let store = Arc::new(MockStore::default());
-        let mut local = make_agent(vec!["reviewer"]);
-        let mut foreign = make_agent_for_project(other_project(), vec!["reviewer"]);
-        save_agent(&store, &mut local).await;
-        save_agent(&store, &mut foreign).await;
-        let service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
-
-        let result = service
-            .send(SendMessage {
-                org_id: test_org(),
-                project: test_project(),
-                namespace: Namespace::root(),
-                from: AgentId::new(),
+                from: sender,
                 to: MessageTarget::Role("reviewer".to_string()),
-                body: "hi".into(),
+                body: "review please".into(),
                 reply_to: None,
             })
             .await
             .unwrap();
 
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to(), &MessageTarget::Agent(local.id().clone()));
+        let pending = service
+            .pending(
+                &receiver,
+                &["reviewer".to_string()],
+                &test_org(),
+                &test_project(),
+                &Namespace::root(),
+                PageParams::unbounded(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(pending.items.len(), 1);
     }
 
     #[tokio::test]
-    async fn broadcast_preserves_broadcast_target() {
+    async fn role_message_hidden_from_non_matching_agent() {
         let store = Arc::new(MockStore::default());
-        let mut sender = make_agent(vec!["tester"]);
-        save_agent(&store, &mut sender).await;
-        let service = MessageService::new(Arc::clone(&store), Arc::clone(&store));
+        let sender = AgentId::new();
+        let receiver = AgentId::new();
 
+        let service = MessageService::new(Arc::clone(&store));
+        service
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: sender,
+                to: MessageTarget::Role("reviewer".to_string()),
+                body: "review please".into(),
+                reply_to: None,
+            })
+            .await
+            .unwrap();
+
+        let pending = service
+            .pending(
+                &receiver,
+                &["developer".to_string()],
+                &test_org(),
+                &test_project(),
+                &Namespace::root(),
+                PageParams::unbounded(),
+            )
+            .await
+            .unwrap();
+        assert!(pending.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn role_message_excluded_from_sender() {
+        let store = Arc::new(MockStore::default());
+        let sender = AgentId::new();
+
+        let service = MessageService::new(Arc::clone(&store));
+        service
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: sender.clone(),
+                to: MessageTarget::Role("reviewer".to_string()),
+                body: "review please".into(),
+                reply_to: None,
+            })
+            .await
+            .unwrap();
+
+        let pending = service
+            .pending(
+                &sender,
+                &["reviewer".to_string()],
+                &test_org(),
+                &test_project(),
+                &Namespace::root(),
+                PageParams::unbounded(),
+            )
+            .await
+            .unwrap();
+        assert!(pending.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn broadcast_stores_single_message() {
+        let store = Arc::new(MockStore::default());
+        let service = MessageService::new(store);
+        let sender = AgentId::new();
         let result = service
             .send(SendMessage {
                 org_id: test_org(),
                 project: test_project(),
                 namespace: Namespace::root(),
-                from: sender.id().clone(),
+                from: sender,
                 to: MessageTarget::Broadcast,
                 body: "hi".into(),
                 reply_to: None,
             })
             .await
             .unwrap();
-
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].to(), &MessageTarget::Broadcast);
+    }
+
+    #[tokio::test]
+    async fn mark_read_uses_receipt_for_role_message() {
+        let store = Arc::new(MockStore::default());
+        let sender = AgentId::new();
+        let receiver = AgentId::new();
+
+        let service = MessageService::new(Arc::clone(&store));
+        let sent = service
+            .send(SendMessage {
+                org_id: test_org(),
+                project: test_project(),
+                namespace: Namespace::root(),
+                from: sender,
+                to: MessageTarget::Role("reviewer".to_string()),
+                body: "review please".into(),
+                reply_to: None,
+            })
+            .await
+            .unwrap();
+
+        service.mark_read(&receiver, &[sent[0].id()]).await.unwrap();
+
+        let pending = service
+            .pending(
+                &receiver,
+                &["reviewer".to_string()],
+                &test_org(),
+                &test_project(),
+                &Namespace::root(),
+                PageParams::unbounded(),
+            )
+            .await
+            .unwrap();
+        assert!(pending.items.is_empty());
     }
 }

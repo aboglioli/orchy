@@ -227,6 +227,7 @@ async fn message_save_and_find_pending() {
     let page = MessageStore::find_pending(
         &store,
         &to,
+        &[],
         &o,
         &p,
         &Namespace::root(),
@@ -245,6 +246,7 @@ async fn message_save_and_find_pending() {
     let page = MessageStore::find_pending(
         &store,
         &to,
+        &[],
         &o,
         &p,
         &Namespace::root(),
@@ -400,6 +402,7 @@ async fn message_find_pending_includes_broadcast() {
     let pending = MessageStore::find_pending(
         &store,
         &receiver,
+        &[],
         &o,
         &p,
         &Namespace::root(),
@@ -413,6 +416,7 @@ async fn message_find_pending_includes_broadcast() {
     let sender_pending = MessageStore::find_pending(
         &store,
         &sender,
+        &[],
         &o,
         &p,
         &Namespace::root(),
@@ -429,6 +433,7 @@ async fn message_find_pending_includes_broadcast() {
     let after_read = MessageStore::find_pending(
         &store,
         &receiver,
+        &[],
         &o,
         &p,
         &Namespace::root(),

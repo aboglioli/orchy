@@ -93,6 +93,7 @@ impl MessageStore for SqliteBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
@@ -117,6 +118,15 @@ impl MessageStore for SqliteBackend {
                               AND message_receipts.agent_id = ?2
                         )
                     )
+                    OR (
+                        to_target LIKE 'role:%'
+                        AND from_agent != ?2
+                        AND NOT EXISTS (
+                            SELECT 1 FROM message_receipts
+                            WHERE message_receipts.message_id = messages.id
+                              AND message_receipts.agent_id = ?2
+                        )
+                    )
                )",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
@@ -126,6 +136,7 @@ impl MessageStore for SqliteBackend {
             Box::new(project.to_string()),
         ];
         let mut idx = 5;
+        let role_set: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
 
         if !namespace.is_root() {
             sql.push_str(&format!(
@@ -158,6 +169,11 @@ impl MessageStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
+
+        messages.retain(|m| match m.to() {
+            MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
+            _ => true,
+        });
 
         let has_more = messages.len() > page.limit as usize;
         if has_more {

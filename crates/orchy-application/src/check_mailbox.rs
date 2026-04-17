@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageStore};
 use orchy_core::namespace::ProjectId;
@@ -21,11 +21,12 @@ pub struct CheckMailboxCommand {
 
 pub struct CheckMailbox {
     messages: Arc<dyn MessageStore>,
+    agents: Arc<dyn AgentStore>,
 }
 
 impl CheckMailbox {
-    pub fn new(messages: Arc<dyn MessageStore>) -> Self {
-        Self { messages }
+    pub fn new(messages: Arc<dyn MessageStore>, agents: Arc<dyn AgentStore>) -> Self {
+        Self { messages, agents }
     }
 
     pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<Page<Message>> {
@@ -37,9 +38,14 @@ impl CheckMailbox {
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let page = PageParams::new(cmd.after, cmd.limit);
 
+        let agent_roles = match self.agents.find_by_id(&agent_id).await? {
+            Some(agent) => agent.roles().to_vec(),
+            None => vec![],
+        };
+
         let mut result = self
             .messages
-            .find_pending(&agent_id, &org_id, &project, &namespace, page)
+            .find_pending(&agent_id, &agent_roles, &org_id, &project, &namespace, page)
             .await?;
 
         for msg in &mut result.items {

@@ -94,6 +94,7 @@ impl MessageStore for MockStore {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        agent_roles: &[String],
         _org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
@@ -112,7 +113,11 @@ impl MessageStore for MockStore {
                         MessageTarget::Broadcast => {
                             m.from() != agent && !receipts.contains(&(m.id(), agent.clone()))
                         }
-                        _ => false,
+                        MessageTarget::Role(role) => {
+                            m.from() != agent
+                                && agent_roles.contains(role)
+                                && !receipts.contains(&(m.id(), agent.clone()))
+                        }
                     }
                     && m.project() == project
                     && m.namespace().starts_with(namespace)

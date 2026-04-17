@@ -4,6 +4,7 @@ use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::PageParams;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_pg::PgBackend;
 
@@ -245,23 +246,37 @@ async fn message_save_and_find_pending() {
     assert_eq!(msg.status(), MessageStatus::Pending);
 
     let p = proj("test-project");
-    let messages =
-        MessageStore::find_pending(&store, to_agent.id(), &org(), &p, &Namespace::root())
-            .await
-            .unwrap();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].body(), "hello");
-    assert_eq!(messages[0].status(), MessageStatus::Pending);
+    let messages = MessageStore::find_pending(
+        &store,
+        to_agent.id(),
+        &[],
+        &org(),
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(messages.items.len(), 1);
+    assert_eq!(messages.items[0].body(), "hello");
+    assert_eq!(messages.items[0].status(), MessageStatus::Pending);
 
-    let mut delivered = messages.into_iter().next().unwrap();
+    let mut delivered = messages.items.into_iter().next().unwrap();
     delivered.deliver().unwrap();
     MessageStore::save(&store, &mut delivered).await.unwrap();
 
-    let messages =
-        MessageStore::find_pending(&store, to_agent.id(), &org(), &p, &Namespace::root())
-            .await
-            .unwrap();
-    assert!(messages.is_empty());
+    let messages = MessageStore::find_pending(
+        &store,
+        to_agent.id(),
+        &[],
+        &org(),
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert!(messages.items.is_empty());
 }
 
 #[tokio::test]
@@ -339,23 +354,46 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let pending = MessageStore::find_pending(&store, &receiver, &org(), &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert_eq!(pending.len(), 1);
+    let pending = MessageStore::find_pending(
+        &store,
+        &receiver,
+        &[],
+        &org(),
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(pending.items.len(), 1);
 
-    let sender_pending =
-        MessageStore::find_pending(&store, &sender, &org(), &p, &Namespace::root())
-            .await
-            .unwrap();
-    assert!(sender_pending.is_empty());
+    let sender_pending = MessageStore::find_pending(
+        &store,
+        &sender,
+        &[],
+        &org(),
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert!(sender_pending.items.is_empty());
 
     MessageStore::mark_read_for_agent(&store, &msg.id(), &receiver)
         .await
         .unwrap();
 
-    let after_read = MessageStore::find_pending(&store, &receiver, &org(), &p, &Namespace::root())
-        .await
-        .unwrap();
-    assert!(after_read.is_empty());
+    let after_read = MessageStore::find_pending(
+        &store,
+        &receiver,
+        &[],
+        &org(),
+        &p,
+        &Namespace::root(),
+        PageParams::unbounded(),
+    )
+    .await
+    .unwrap();
+    assert!(after_read.items.is_empty());
 }

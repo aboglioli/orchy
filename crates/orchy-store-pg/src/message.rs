@@ -119,6 +119,7 @@ impl MessageStore for PgBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
@@ -130,6 +131,7 @@ impl MessageStore for PgBackend {
             .as_ref()
             .and_then(|c| decode_cursor(c))
             .and_then(|s| s.parse::<Uuid>().ok());
+        let role_set: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
 
         let rows = if namespace.is_root() {
             if let Some(cid) = cursor_id {
@@ -144,6 +146,15 @@ impl MessageStore for PgBackend {
                             to_target = $3
                             OR (
                                 to_target = 'broadcast'
+                                AND from_agent != $4
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM message_receipts
+                                    WHERE message_receipts.message_id = messages.id
+                                      AND message_receipts.agent_id = $4
+                                )
+                            )
+                            OR (
+                                to_target LIKE 'role:%'
                                 AND from_agent != $4
                                 AND NOT EXISTS (
                                     SELECT 1 FROM message_receipts
@@ -174,6 +185,15 @@ impl MessageStore for PgBackend {
                             to_target = $3
                             OR (
                                 to_target = 'broadcast'
+                                AND from_agent != $4
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM message_receipts
+                                    WHERE message_receipts.message_id = messages.id
+                                      AND message_receipts.agent_id = $4
+                                )
+                            )
+                            OR (
+                                to_target LIKE 'role:%'
                                 AND from_agent != $4
                                 AND NOT EXISTS (
                                     SELECT 1 FROM message_receipts
@@ -213,6 +233,15 @@ impl MessageStore for PgBackend {
                                   AND message_receipts.agent_id = $5
                             )
                         )
+                        OR (
+                            to_target LIKE 'role:%'
+                            AND from_agent != $5
+                            AND NOT EXISTS (
+                                SELECT 1 FROM message_receipts
+                                WHERE message_receipts.message_id = messages.id
+                                  AND message_receipts.agent_id = $5
+                            )
+                        )
                    )
                  ORDER BY id DESC LIMIT $7",
             )
@@ -245,6 +274,15 @@ impl MessageStore for PgBackend {
                                   AND message_receipts.agent_id = $5
                             )
                         )
+                        OR (
+                            to_target LIKE 'role:%'
+                            AND from_agent != $5
+                            AND NOT EXISTS (
+                                SELECT 1 FROM message_receipts
+                                WHERE message_receipts.message_id = messages.id
+                                  AND message_receipts.agent_id = $5
+                            )
+                        )
                    )
                  ORDER BY id DESC LIMIT $6",
             )
@@ -263,6 +301,12 @@ impl MessageStore for PgBackend {
             .iter()
             .map(row_to_message)
             .collect::<Result<Vec<_>>>()?;
+
+        messages.retain(|m| match m.to() {
+            MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
+            _ => true,
+        });
+
         let has_more = messages.len() > page.limit as usize;
         if has_more {
             messages.truncate(page.limit as usize);

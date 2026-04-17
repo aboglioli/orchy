@@ -47,6 +47,7 @@ impl MessageStore for MemoryBackend {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
@@ -71,7 +72,7 @@ impl MessageStore for MemoryBackend {
             let targets_agent = match msg.to() {
                 MessageTarget::Agent(id) => id == agent,
                 MessageTarget::Broadcast => msg.from() != agent,
-                MessageTarget::Role(_) => false,
+                MessageTarget::Role(role) => msg.from() != agent && agent_roles.contains(role),
             };
 
             if !targets_agent {
@@ -90,7 +91,9 @@ impl MessageStore for MemoryBackend {
                 continue;
             }
 
-            if msg.is_broadcast() && receipts.contains(&(msg.id(), agent.clone())) {
+            if (msg.is_broadcast() || msg.is_role_targeted())
+                && receipts.contains(&(msg.id(), agent.clone()))
+            {
                 continue;
             }
 

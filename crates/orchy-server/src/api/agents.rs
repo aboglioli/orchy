@@ -152,6 +152,7 @@ pub async fn get_context(
         .message_service
         .pending(
             agent.id(),
+            agent.roles(),
             &org_id,
             agent.project(),
             agent.namespace(),

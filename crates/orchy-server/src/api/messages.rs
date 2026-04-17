@@ -116,6 +116,7 @@ pub async fn inbox_for_agent(
         .message_service
         .check(
             agent.id(),
+            agent.roles(),
             agent.org_id(),
             agent.project(),
             &ns,

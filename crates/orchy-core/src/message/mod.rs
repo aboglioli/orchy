@@ -25,6 +25,7 @@ pub trait MessageStore: Send + Sync {
     async fn find_pending(
         &self,
         agent: &AgentId,
+        agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
@@ -304,6 +305,10 @@ impl Message {
 
     pub fn is_broadcast(&self) -> bool {
         matches!(self.to, MessageTarget::Broadcast)
+    }
+
+    pub fn is_role_targeted(&self) -> bool {
+        matches!(self.to, MessageTarget::Role(_))
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {
