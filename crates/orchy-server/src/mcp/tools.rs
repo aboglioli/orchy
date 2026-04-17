@@ -804,16 +804,14 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddTaskNoteParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let task_id = parse_task_id(&params.task_id)?;
-
-        let author = self.get_session_agent();
 
         match self
             .container
             .task_service
-            .add_note(&task_id, author, params.body)
+            .add_note(&task_id, Some(agent_id), params.body)
             .await
         {
             Ok(task) => Ok(to_json(&task)),
