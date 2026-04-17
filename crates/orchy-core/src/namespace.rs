@@ -1,21 +1,21 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::future::Future;
 
 use crate::organization::OrganizationId;
 
+#[async_trait::async_trait]
 pub trait NamespaceStore: Send + Sync {
-    fn register(
+    async fn register(
         &self,
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> impl Future<Output = crate::error::Result<()>> + Send;
-    fn list(
+    ) -> crate::error::Result<()>;
+    async fn list(
         &self,
         org: &OrganizationId,
         project: &ProjectId,
-    ) -> impl Future<Output = crate::error::Result<Vec<Namespace>>> + Send;
+    ) -> crate::error::Result<Vec<Namespace>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

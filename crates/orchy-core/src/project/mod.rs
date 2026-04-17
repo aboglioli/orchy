@@ -4,7 +4,6 @@ pub mod service;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::future::Future;
 
 use orchy_events::{Event, EventCollector, Payload};
 
@@ -14,13 +13,10 @@ use crate::organization::OrganizationId;
 
 use self::events as project_events;
 
+#[async_trait::async_trait]
 pub trait ProjectStore: Send + Sync {
-    fn save(&self, project: &mut Project) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(
-        &self,
-        org: &OrganizationId,
-        id: &ProjectId,
-    ) -> impl Future<Output = Result<Option<Project>>> + Send;
+    async fn save(&self, project: &mut Project) -> Result<()>;
+    async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

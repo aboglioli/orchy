@@ -6,7 +6,6 @@ pub use orchy_events::OrganizationId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::future::Future;
 use uuid::Uuid;
 
 use orchy_events::{Event, EventCollector, Payload};
@@ -15,17 +14,12 @@ use crate::error::{Error, Result};
 
 use self::events as org_events;
 
+#[async_trait::async_trait]
 pub trait OrganizationStore: Send + Sync {
-    fn save(&self, org: &mut Organization) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(
-        &self,
-        id: &OrganizationId,
-    ) -> impl Future<Output = Result<Option<Organization>>> + Send;
-    fn find_by_api_key(
-        &self,
-        key: &str,
-    ) -> impl Future<Output = Result<Option<Organization>>> + Send;
-    fn list(&self) -> impl Future<Output = Result<Vec<Organization>>> + Send;
+    async fn save(&self, org: &mut Organization) -> Result<()>;
+    async fn find_by_id(&self, id: &OrganizationId) -> Result<Option<Organization>>;
+    async fn find_by_api_key(&self, key: &str) -> Result<Option<Organization>>;
+    async fn list(&self) -> Result<Vec<Organization>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

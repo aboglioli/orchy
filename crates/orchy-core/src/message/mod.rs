@@ -4,7 +4,6 @@ pub mod service;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -17,33 +16,30 @@ use crate::organization::OrganizationId;
 
 use self::events as message_events;
 
+#[async_trait::async_trait]
 pub trait MessageStore: Send + Sync {
-    fn save(&self, message: &mut Message) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &MessageId) -> impl Future<Output = Result<Option<Message>>> + Send;
-    fn mark_read_for_agent(
-        &self,
-        message_id: &MessageId,
-        agent: &AgentId,
-    ) -> impl Future<Output = Result<()>> + Send;
-    fn find_pending(
+    async fn save(&self, message: &mut Message) -> Result<()>;
+    async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>>;
+    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()>;
+    async fn find_pending(
         &self,
         agent: &AgentId,
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
-    fn find_sent(
+    ) -> Result<Vec<Message>>;
+    async fn find_sent(
         &self,
         sender: &AgentId,
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
-    fn find_thread(
+    ) -> Result<Vec<Message>>;
+    async fn find_thread(
         &self,
         message_id: &MessageId,
         limit: Option<usize>,
-    ) -> impl Future<Output = Result<Vec<Message>>> + Send;
+    ) -> Result<Vec<Message>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

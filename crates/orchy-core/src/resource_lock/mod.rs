@@ -3,7 +3,6 @@ pub mod service;
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use std::future::Future;
 
 use orchy_events::{Event, EventCollector, Payload};
 
@@ -14,27 +13,25 @@ use crate::organization::OrganizationId;
 
 use self::events as lock_events;
 
+#[async_trait::async_trait]
 pub trait LockStore: Send + Sync {
-    fn save(&self, lock: &mut ResourceLock) -> impl Future<Output = Result<()>> + Send;
-    fn find(
+    async fn save(&self, lock: &mut ResourceLock) -> Result<()>;
+    async fn find(
         &self,
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
-    ) -> impl Future<Output = Result<Option<ResourceLock>>> + Send;
-    fn delete(
+    ) -> Result<Option<ResourceLock>>;
+    async fn delete(
         &self,
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
         name: &str,
-    ) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_holder(
-        &self,
-        holder: &AgentId,
-    ) -> impl Future<Output = Result<Vec<ResourceLock>>> + Send;
-    fn delete_expired(&self) -> impl Future<Output = Result<u64>> + Send;
+    ) -> Result<()>;
+    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>>;
+    async fn delete_expired(&self) -> Result<u64>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

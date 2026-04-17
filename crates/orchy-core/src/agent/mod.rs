@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -59,11 +58,12 @@ impl FromStr for AgentId {
     }
 }
 
+#[async_trait::async_trait]
 pub trait AgentStore: Send + Sync {
-    fn save(&self, agent: &mut Agent) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &AgentId) -> impl Future<Output = Result<Option<Agent>>> + Send;
-    fn list(&self, org: &OrganizationId) -> impl Future<Output = Result<Vec<Agent>>> + Send;
-    fn find_timed_out(&self, timeout_secs: u64) -> impl Future<Output = Result<Vec<Agent>>> + Send;
+    async fn save(&self, agent: &mut Agent) -> Result<()>;
+    async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>>;
+    async fn list(&self, org: &OrganizationId) -> Result<Vec<Agent>>;
+    async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -4,7 +4,6 @@ pub mod service;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::future::Future;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -18,10 +17,11 @@ use crate::organization::OrganizationId;
 
 use self::events as task_events;
 
+#[async_trait::async_trait]
 pub trait TaskStore: Send + Sync {
-    fn save(&self, task: &mut Task) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
-    fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
+    async fn save(&self, task: &mut Task) -> Result<()>;
+    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
+    async fn list(&self, filter: TaskFilter) -> Result<Vec<Task>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -898,21 +898,12 @@ pub struct TaskFilter {
     pub tag: Option<String>,
 }
 
+#[async_trait::async_trait]
 pub trait WatcherStore: Send + Sync {
-    fn save(&self, watcher: &mut TaskWatcher) -> impl Future<Output = Result<()>> + Send;
-    fn delete(
-        &self,
-        task_id: &TaskId,
-        agent_id: &AgentId,
-    ) -> impl Future<Output = Result<()>> + Send;
-    fn find_watchers(
-        &self,
-        task_id: &TaskId,
-    ) -> impl Future<Output = Result<Vec<TaskWatcher>>> + Send;
-    fn find_by_agent(
-        &self,
-        agent_id: &AgentId,
-    ) -> impl Future<Output = Result<Vec<TaskWatcher>>> + Send;
+    async fn save(&self, watcher: &mut TaskWatcher) -> Result<()>;
+    async fn delete(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()>;
+    async fn find_watchers(&self, task_id: &TaskId) -> Result<Vec<TaskWatcher>>;
+    async fn find_by_agent(&self, agent_id: &AgentId) -> Result<Vec<TaskWatcher>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1036,20 +1027,12 @@ impl FromStr for ReviewStatus {
     }
 }
 
+#[async_trait::async_trait]
 pub trait ReviewStore: Send + Sync {
-    fn save(&self, review: &mut ReviewRequest) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(
-        &self,
-        id: &ReviewId,
-    ) -> impl Future<Output = Result<Option<ReviewRequest>>> + Send;
-    fn find_pending_for_agent(
-        &self,
-        agent_id: &AgentId,
-    ) -> impl Future<Output = Result<Vec<ReviewRequest>>> + Send;
-    fn find_by_task(
-        &self,
-        task_id: &TaskId,
-    ) -> impl Future<Output = Result<Vec<ReviewRequest>>> + Send;
+    async fn save(&self, review: &mut ReviewRequest) -> Result<()>;
+    async fn find_by_id(&self, id: &ReviewId) -> Result<Option<ReviewRequest>>;
+    async fn find_pending_for_agent(&self, agent_id: &AgentId) -> Result<Vec<ReviewRequest>>;
+    async fn find_by_task(&self, task_id: &TaskId) -> Result<Vec<ReviewRequest>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

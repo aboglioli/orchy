@@ -21,6 +21,7 @@ pub struct MockStore {
     message_receipts: RwLock<HashSet<(MessageId, AgentId)>>,
 }
 
+#[async_trait::async_trait]
 impl OrganizationStore for MockStore {
     async fn save(&self, _: &mut Organization) -> Result<()> {
         Ok(())
@@ -36,6 +37,7 @@ impl OrganizationStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl TaskStore for MockStore {
     async fn save(&self, _: &mut Task) -> Result<()> {
         Ok(())
@@ -48,6 +50,7 @@ impl TaskStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl AgentStore for MockStore {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         self.agents
@@ -67,6 +70,7 @@ impl AgentStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl MessageStore for MockStore {
     async fn save(&self, message: &mut Message) -> Result<()> {
         self.messages
@@ -142,6 +146,7 @@ impl MessageStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl ProjectStore for MockStore {
     async fn save(&self, _: &mut Project) -> Result<()> {
         Ok(())
@@ -151,6 +156,7 @@ impl ProjectStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl NamespaceStore for MockStore {
     async fn register(&self, _: &OrganizationId, _: &ProjectId, _: &Namespace) -> Result<()> {
         Ok(())
@@ -160,6 +166,7 @@ impl NamespaceStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl LockStore for MockStore {
     async fn save(&self, _: &mut ResourceLock) -> Result<()> {
         unimplemented!()
@@ -190,6 +197,7 @@ impl LockStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl WatcherStore for MockStore {
     async fn save(&self, _: &mut TaskWatcher) -> Result<()> {
         Ok(())
@@ -205,6 +213,7 @@ impl WatcherStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl ReviewStore for MockStore {
     async fn save(&self, _: &mut ReviewRequest) -> Result<()> {
         Ok(())
@@ -220,6 +229,7 @@ impl ReviewStore for MockStore {
     }
 }
 
+#[async_trait::async_trait]
 impl KnowledgeStore for MockStore {
     async fn save(&self, _: &mut Knowledge) -> Result<()> {
         Ok(())

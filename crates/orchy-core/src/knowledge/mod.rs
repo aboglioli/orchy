@@ -3,7 +3,6 @@ pub mod service;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::future::Future;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
@@ -19,29 +18,27 @@ use crate::organization::OrganizationId;
 
 use self::events as knowledge_events;
 
+#[async_trait::async_trait]
 pub trait KnowledgeStore: Send + Sync {
-    fn save(&self, entry: &mut Knowledge) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(
-        &self,
-        id: &KnowledgeId,
-    ) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
-    fn find_by_path(
+    async fn save(&self, entry: &mut Knowledge) -> Result<()>;
+    async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>>;
+    async fn find_by_path(
         &self,
         org: &OrganizationId,
         project: Option<&ProjectId>,
         namespace: &Namespace,
         path: &str,
-    ) -> impl Future<Output = Result<Option<Knowledge>>> + Send;
-    fn list(&self, filter: KnowledgeFilter) -> impl Future<Output = Result<Vec<Knowledge>>> + Send;
-    fn search(
+    ) -> Result<Option<Knowledge>>;
+    async fn list(&self, filter: KnowledgeFilter) -> Result<Vec<Knowledge>>;
+    async fn search(
         &self,
         org: &OrganizationId,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<Knowledge>>> + Send;
-    fn delete(&self, id: &KnowledgeId) -> impl Future<Output = Result<()>> + Send;
+    ) -> Result<Vec<Knowledge>>;
+    async fn delete(&self, id: &KnowledgeId) -> Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

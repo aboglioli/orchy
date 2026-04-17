@@ -942,6 +942,7 @@ mod tests {
         tasks: RwLock<HashMap<TaskId, Task>>,
     }
 
+    #[async_trait::async_trait]
     impl TaskStore for InMemoryTaskStore {
         async fn save(&self, task: &mut Task) -> Result<()> {
             task.drain_events();
@@ -972,6 +973,7 @@ mod tests {
     #[derive(Default)]
     struct StubStore;
 
+    #[async_trait::async_trait]
     impl AgentStore for StubStore {
         async fn save(&self, _: &mut Agent) -> Result<()> {
             Ok(())
@@ -987,6 +989,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl WatcherStore for StubStore {
         async fn save(&self, _: &mut TaskWatcher) -> Result<()> {
             Ok(())
@@ -1002,6 +1005,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl MessageStore for StubStore {
         async fn save(&self, _: &mut Message) -> Result<()> {
             Ok(())
@@ -1035,6 +1039,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl ReviewStore for StubStore {
         async fn save(&self, _: &mut ReviewRequest) -> Result<()> {
             Ok(())
