@@ -1,4 +1,21 @@
+use orchy_core::error::{Error, Result};
+use orchy_core::namespace::Namespace;
+
 mod dto;
+
+pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
+    match ns {
+        Some(s) if !s.is_empty() => {
+            let normalized = if s.starts_with('/') {
+                s.to_string()
+            } else {
+                format!("/{s}")
+            };
+            Namespace::try_from(normalized).map_err(Error::InvalidInput)
+        }
+        _ => Ok(Namespace::root()),
+    }
+}
 
 // Agent
 mod change_roles;
