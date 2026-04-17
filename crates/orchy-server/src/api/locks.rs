@@ -47,19 +47,6 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     }
 }
 
-fn map_err(e: orchy_core::error::Error) -> ApiError {
-    use orchy_core::error::Error;
-    match &e {
-        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
-        Error::Conflict(_) => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
-        _ => ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        ),
-    }
-}
-
 #[derive(Deserialize)]
 pub struct NamespaceQuery {
     pub namespace: Option<String>,
@@ -94,7 +81,7 @@ pub async fn check(
         .lock_service
         .check(&org_id, &project_id, &ns, &name)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(lock))
 }
@@ -121,7 +108,7 @@ pub async fn acquire(
         .lock_service
         .acquire(org_id, project_id, ns, body.name, agent_id, ttl)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(lock))
 }
@@ -146,7 +133,7 @@ pub async fn release(
         .lock_service
         .release(&org_id, &project_id, &ns, &name, &agent_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(serde_json::json!({"ok": true})))
 }

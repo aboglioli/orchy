@@ -76,13 +76,11 @@ pub async fn list(
         ));
     }
 
-    let agents = container.agent_service.list(&org_id).await.map_err(|e| {
-        ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        )
-    })?;
+    let agents = container
+        .agent_service
+        .list(&org_id)
+        .await
+        .map_err(ApiError::from)?;
 
     let project_filter = query
         .project
@@ -135,13 +133,11 @@ pub async fn get_context(
         )
     })?;
 
-    let agent = container.agent_service.get(&agent_id).await.map_err(|e| {
-        ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        )
-    })?;
+    let agent = container
+        .agent_service
+        .get(&agent_id)
+        .await
+        .map_err(ApiError::from)?;
 
     if agent.org_id() != &org_id || agent.status() == AgentStatus::Disconnected {
         return Err(ApiError(

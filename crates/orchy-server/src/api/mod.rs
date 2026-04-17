@@ -32,6 +32,33 @@ struct ApiErrorEnvelope {
 
 pub struct ApiError(pub StatusCode, pub &'static str, pub String);
 
+impl From<orchy_core::error::Error> for ApiError {
+    fn from(e: orchy_core::error::Error) -> Self {
+        use orchy_core::error::Error;
+        match &e {
+            Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
+            Error::InvalidInput(_)
+            | Error::InvalidTransition { .. }
+            | Error::DependencyNotMet(_) => ApiError(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVALID_INPUT",
+                e.to_string(),
+            ),
+            Error::Conflict(_) | Error::VersionMismatch { .. } => {
+                ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string())
+            }
+            Error::Embeddings(_) => {
+                ApiError(StatusCode::BAD_GATEWAY, "EMBEDDINGS_ERROR", e.to_string())
+            }
+            Error::Store(_) => ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            ),
+        }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let body = ApiErrorEnvelope {

@@ -60,19 +60,6 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     }
 }
 
-fn map_err(e: orchy_core::error::Error) -> ApiError {
-    use orchy_core::error::Error;
-    match &e {
-        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
-        Error::VersionMismatch { .. } => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
-        _ => ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        ),
-    }
-}
-
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub kind: Option<String>,
@@ -198,7 +185,7 @@ pub async fn list(
         .knowledge_service
         .list(filter)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(entries))
 }
@@ -243,7 +230,7 @@ pub async fn search(
         .knowledge_service
         .search(&org_id, &body.query, ns.as_ref(), limit)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     if let Some(k) = body.kind.as_deref() {
         let kind: KnowledgeKind = k
@@ -272,7 +259,7 @@ pub async fn import(
         .knowledge_service
         .read(&org_id, Some(&source_project), &source_ns, &body.path)
         .await
-        .map_err(map_err)?
+        .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError(
                 StatusCode::NOT_FOUND,
@@ -300,7 +287,7 @@ pub async fn import(
         .knowledge_service
         .write(cmd)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(entry))
 }
@@ -320,7 +307,7 @@ pub async fn read(
         .knowledge_service
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(entry))
 }
@@ -360,7 +347,7 @@ pub async fn write(
         .knowledge_service
         .write(cmd)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(entry))
 }
@@ -380,7 +367,7 @@ pub async fn delete(
         .knowledge_service
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
-        .map_err(map_err)?
+        .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError(
                 StatusCode::NOT_FOUND,
@@ -393,7 +380,7 @@ pub async fn delete(
         .knowledge_service
         .delete(&entry.id())
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(serde_json::json!({"ok": true})))
 }
@@ -431,7 +418,7 @@ pub async fn append(
             None,
         )
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(entry))
 }
@@ -451,7 +438,7 @@ pub async fn move_entry(
         .knowledge_service
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
-        .map_err(map_err)?
+        .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError(
                 StatusCode::NOT_FOUND,
@@ -467,7 +454,7 @@ pub async fn move_entry(
         .knowledge_service
         .move_entry(&entry.id(), new_ns, body.metadata, None)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(updated))
 }
@@ -487,7 +474,7 @@ pub async fn rename(
         .knowledge_service
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
-        .map_err(map_err)?
+        .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError(
                 StatusCode::NOT_FOUND,
@@ -500,7 +487,7 @@ pub async fn rename(
         .knowledge_service
         .rename(&entry.id(), body.new_path, body.metadata, None)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(updated))
 }
@@ -534,7 +521,7 @@ pub async fn change_kind(
             None,
         )
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(updated))
 }
@@ -562,7 +549,7 @@ pub async fn patch_metadata(
             expected_version: body.version.map(KnowledgeVersion::from),
         })
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(updated))
 }
@@ -581,7 +568,7 @@ pub async fn tag(
         .knowledge_service
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
-        .map_err(map_err)?
+        .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError(
                 StatusCode::NOT_FOUND,
@@ -594,7 +581,7 @@ pub async fn tag(
         .knowledge_service
         .tag(&entry.id(), tag_name, None, None)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(updated))
 }
@@ -613,7 +600,7 @@ pub async fn untag(
         .knowledge_service
         .read(&org_id, Some(&project_id), &ns, &path)
         .await
-        .map_err(map_err)?
+        .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError(
                 StatusCode::NOT_FOUND,
@@ -626,7 +613,7 @@ pub async fn untag(
         .knowledge_service
         .untag(&entry.id(), &tag_name, None, None)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(updated))
 }

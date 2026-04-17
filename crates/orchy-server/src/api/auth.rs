@@ -35,13 +35,7 @@ impl FromRequestParts<Arc<Container>> for OrgAuth {
             .org_service
             .resolve_api_key(key)
             .await
-            .map_err(|e| {
-                ApiError(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    e.to_string(),
-                )
-            })?
+            .map_err(ApiError::from)?
             .ok_or_else(|| {
                 ApiError(
                     StatusCode::UNAUTHORIZED,

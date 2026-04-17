@@ -51,13 +51,11 @@ async fn resolve_agent(
         )
     })?;
 
-    let agent = container.agent_service.get(&agent_id).await.map_err(|e| {
-        ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        )
-    })?;
+    let agent = container
+        .agent_service
+        .get(&agent_id)
+        .await
+        .map_err(ApiError::from)?;
 
     if agent.org_id() != org_id
         || agent.project() != project_id
@@ -91,26 +89,6 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
         ))
     } else {
         Ok(())
-    }
-}
-
-fn map_err(e: orchy_core::error::Error) -> ApiError {
-    use orchy_core::error::Error;
-    match &e {
-        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
-        Error::InvalidInput(_) | Error::InvalidTransition { .. } | Error::DependencyNotMet(_) => {
-            ApiError(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "INVALID_INPUT",
-                e.to_string(),
-            )
-        }
-        Error::Conflict(_) => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
-        _ => ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        ),
     }
 }
 
@@ -307,7 +285,11 @@ pub async fn list(
         ..Default::default()
     };
 
-    let tasks = container.task_service.list(filter).await.map_err(map_err)?;
+    let tasks = container
+        .task_service
+        .list(filter)
+        .await
+        .map_err(ApiError::from)?;
 
     Ok(Json(tasks))
 }
@@ -372,13 +354,17 @@ pub async fn post(
     })?;
 
     let task_id = task.id();
-    container.task_service.create(task).await.map_err(map_err)?;
+    container
+        .task_service
+        .create(task)
+        .await
+        .map_err(ApiError::from)?;
 
     let created = container
         .task_service
         .get(&task_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(created))
 }
@@ -395,7 +381,7 @@ pub async fn get_task(
         .task_service
         .get_with_context(&task_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(ctx))
 }
 
@@ -424,7 +410,7 @@ pub async fn update_task(
         .task_service
         .update_details(&task_id, body.title, body.description, priority)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(task))
 }
@@ -445,21 +431,21 @@ pub async fn claim(
         .task_service
         .claim(&task_id, &agent_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     if body.start.unwrap_or(false) {
         container
             .task_service
             .start(&task_id, &agent_id)
             .await
-            .map_err(map_err)?;
+            .map_err(ApiError::from)?;
     }
 
     let ctx = container
         .task_service
         .get_with_context(&task_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(ctx))
 }
@@ -479,7 +465,7 @@ pub async fn start(
         .task_service
         .start(&task_id, &agent_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -496,7 +482,7 @@ pub async fn complete(
         .task_service
         .complete(&task_id, body.summary)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -513,7 +499,7 @@ pub async fn fail(
         .task_service
         .fail(&task_id, body.reason)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -530,7 +516,7 @@ pub async fn cancel(
         .task_service
         .cancel(&task_id, body.reason)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -547,7 +533,7 @@ pub async fn release(
         .task_service
         .release(&task_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -563,7 +549,7 @@ pub async fn unblock(
         .task_service
         .unblock_manual(&task_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -582,7 +568,7 @@ pub async fn assign(
         .task_service
         .assign(&task_id, &agent_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -602,7 +588,7 @@ pub async fn watch(
         .task_service
         .watch(&task_id, agent_id, org_id, project_id, Namespace::root())
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(watcher))
 }
@@ -623,7 +609,7 @@ pub async fn unwatch(
         .task_service
         .unwatch(&task_id, &agent_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(serde_json::json!({"ok": true})))
 }
@@ -648,7 +634,7 @@ pub async fn add_note(
         .task_service
         .add_note(&task_id, agent_id, body.body)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(task))
 }
@@ -667,7 +653,7 @@ pub async fn add_dep(
         .task_service
         .add_dependency(&task_id, &dep_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -684,7 +670,7 @@ pub async fn remove_dep(
         .task_service
         .remove_dependency(&task_id, &dep_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -700,7 +686,7 @@ pub async fn tag_task(
         .task_service
         .tag(&task_id, tag)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -716,7 +702,7 @@ pub async fn untag_task(
         .task_service
         .untag(&task_id, &tag)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
     Ok(Json(task))
 }
 
@@ -739,7 +725,7 @@ pub async fn list_tags(
             ..Default::default()
         })
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     let mut tags: Vec<String> = tasks
         .iter()
@@ -789,7 +775,7 @@ pub async fn next_task(
         .task_service
         .peek_next(&roles, ns)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     match task {
         Some(t) => {
@@ -797,7 +783,7 @@ pub async fn next_task(
                 .task_service
                 .get_with_context(&t.id())
                 .await
-                .map_err(map_err)?;
+                .map_err(ApiError::from)?;
             Ok(Json(serde_json::to_value(ctx).unwrap()))
         }
         None => Ok(Json(serde_json::Value::Null)),
@@ -819,7 +805,7 @@ pub async fn split(
         .task_service
         .split_task(&task_id, subtasks, None)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({"parent": parent, "subtasks": children}),
@@ -841,7 +827,7 @@ pub async fn replace(
         .task_service
         .replace_task(&task_id, body.reason, replacements, None)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({"cancelled": original, "replacements": new_tasks}),
@@ -867,7 +853,7 @@ pub async fn merge(
         .task_service
         .merge_tasks(&task_ids, body.title, body.description, None)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({"merged": merged, "cancelled": cancelled}),
@@ -889,7 +875,7 @@ pub async fn delegate(
         .task_service
         .get(&parent_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     let priority = match body.priority.as_deref() {
         Some(p) => p.parse::<Priority>().map_err(|e| {
@@ -924,13 +910,17 @@ pub async fn delegate(
     })?;
 
     let task_id = task.id();
-    container.task_service.create(task).await.map_err(map_err)?;
+    container
+        .task_service
+        .create(task)
+        .await
+        .map_err(ApiError::from)?;
 
     let created = container
         .task_service
         .get(&task_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(created))
 }

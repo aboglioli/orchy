@@ -71,13 +71,7 @@ pub async fn create(
         .org_service
         .create(id, body.name)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
     Ok(Json(org_to_dto(org)))
 }
 
@@ -85,13 +79,7 @@ pub async fn list(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
 ) -> Result<Json<Vec<OrgDto>>, ApiError> {
-    let orgs = container.org_service.list().await.map_err(|e| {
-        ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        )
-    })?;
+    let orgs = container.org_service.list().await.map_err(ApiError::from)?;
     Ok(Json(orgs.into_iter().map(org_to_dto).collect()))
 }
 
@@ -113,13 +101,7 @@ pub async fn get(
         .org_service
         .get(&org_id)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?
+        .map_err(ApiError::from)?
         .ok_or_else(|| {
             ApiError(
                 StatusCode::NOT_FOUND,
@@ -149,13 +131,7 @@ pub async fn add_api_key(
         .org_service
         .add_api_key(&org_id, body.name, body.key)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
     Ok(Json(org_to_dto(org)))
 }
 
@@ -181,12 +157,6 @@ pub async fn revoke_api_key(
         .org_service
         .revoke_api_key(&org_id, &key_id)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
     Ok(Json(org_to_dto(org)))
 }

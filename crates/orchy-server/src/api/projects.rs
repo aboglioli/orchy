@@ -86,13 +86,7 @@ pub async fn get(
         .project_service
         .get_or_create(&org_id, &project_id)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
 
     if !query.include_summary.unwrap_or(false) {
         return Ok(Json(serde_json::to_value(project_to_dto(project)).unwrap()));
@@ -147,13 +141,7 @@ pub async fn update(
         .project_service
         .update_description(&org_id, &project_id, description)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(project_to_dto(project)))
 }
@@ -172,13 +160,7 @@ pub async fn set_metadata(
         .project_service
         .set_metadata(&org_id, &project_id, body.key, body.value)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(project_to_dto(project)))
 }
@@ -194,13 +176,7 @@ pub async fn list_namespaces(
 
     let namespaces = NamespaceStore::list(&*container.store, &org_id, &project_id)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(namespaces.iter().map(|n| n.to_string()).collect()))
 }

@@ -60,19 +60,6 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     }
 }
 
-fn map_err(e: orchy_core::error::Error) -> ApiError {
-    use orchy_core::error::Error;
-    match &e {
-        Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
-        Error::Conflict(_) => ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string()),
-        _ => ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            e.to_string(),
-        ),
-    }
-}
-
 #[derive(Deserialize)]
 pub struct RequestReviewBody {
     pub requester_agent_id: String,
@@ -100,7 +87,7 @@ pub async fn list_for_task(
         .task_service
         .list_reviews_for_task(&task_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(reviews))
 }
@@ -142,7 +129,7 @@ pub async fn request(
             reviewer_role: body.reviewer_role,
         })
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(review))
 }
@@ -160,7 +147,7 @@ pub async fn get(
         .task_service
         .get_review(&review_id)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(review))
 }
@@ -184,7 +171,7 @@ pub async fn resolve(
         .task_service
         .resolve_review(&review_id, resolver, body.approved, body.comments)
         .await
-        .map_err(map_err)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(review))
 }

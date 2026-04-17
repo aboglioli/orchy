@@ -66,13 +66,7 @@ pub async fn poll(
         .store
         .query_events(&project, since, limit)
         .await
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
+        .map_err(ApiError::from)?;
 
     let updates: Vec<_> = events
         .iter()
