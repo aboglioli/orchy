@@ -1,1 +1,43 @@
-pub struct DeleteKnowledge;
+use std::sync::Arc;
+
+use orchy_core::error::{Error, Result};
+use orchy_core::knowledge::KnowledgeStore;
+use orchy_core::namespace::ProjectId;
+use orchy_core::organization::OrganizationId;
+
+use crate::parse_namespace;
+
+pub struct DeleteKnowledgeCommand {
+    pub org_id: String,
+    pub project: String,
+    pub namespace: Option<String>,
+    pub path: String,
+}
+
+pub struct DeleteKnowledge {
+    store: Arc<dyn KnowledgeStore>,
+}
+
+impl DeleteKnowledge {
+    pub fn new(store: Arc<dyn KnowledgeStore>) -> Self {
+        Self { store }
+    }
+
+    pub async fn execute(&self, cmd: DeleteKnowledgeCommand) -> Result<()> {
+        let org_id =
+            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let project =
+            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let namespace = parse_namespace(cmd.namespace.as_deref())?;
+
+        let mut entry = self
+            .store
+            .find_by_path(&org_id, Some(&project), &namespace, &cmd.path)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {}", cmd.path)))?;
+
+        entry.mark_deleted()?;
+        self.store.save(&mut entry).await?;
+        self.store.delete(&entry.id()).await
+    }
+}
