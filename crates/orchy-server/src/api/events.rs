@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 
+use orchy_application::PollUpdatesCommand;
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -47,26 +48,38 @@ pub async fn poll(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let since = match query.since.as_deref() {
-        Some(s) => chrono::DateTime::parse_from_rfc3339(s)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .map_err(|e| {
+    let since_str = match query.since.as_deref() {
+        Some(s) => {
+            chrono::DateTime::parse_from_rfc3339(s).map_err(|e| {
                 ApiError(
                     StatusCode::BAD_REQUEST,
                     "INVALID_PARAM",
                     format!("invalid timestamp: {e}"),
                 )
-            })?,
-        None => chrono::Utc::now() - chrono::Duration::minutes(5),
+            })?;
+            s.to_string()
+        }
+        None => (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339(),
     };
 
-    let limit = query.limit.unwrap_or(50) as usize;
+    let since_parsed = since_str
+        .parse::<chrono::DateTime<chrono::Utc>>()
+        .unwrap_or_else(|_| chrono::Utc::now() - chrono::Duration::minutes(5));
+
+    let cmd = PollUpdatesCommand {
+        org_id: org,
+        since: since_str,
+        limit: query.limit,
+    };
 
     let mut events = container
-        .store
-        .query_events(&project, since, limit)
+        .app
+        .poll_updates
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
+
+    events.retain(|e| e.organization == project);
 
     if let Some(ref ns) = query.namespace {
         let namespace = parse_namespace(ns)?;
@@ -87,7 +100,7 @@ pub async fn poll(
         .collect();
 
     Ok(Json(serde_json::json!({
-        "since": since.to_rfc3339(),
+        "since": since_parsed.to_rfc3339(),
         "count": updates.len(),
         "events": updates,
     })))

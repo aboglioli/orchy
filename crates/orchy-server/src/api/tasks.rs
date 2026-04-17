@@ -7,15 +7,21 @@ use axum::{
 };
 use serde::Deserialize;
 
-use orchy_core::agent::{AgentId, AgentStatus};
-use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_application::{
+    AddDependencyCommand, AssignTaskCommand, CancelTaskCommand, ClaimTaskCommand,
+    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, ListTagsCommand,
+    ListTasksCommand, MergeTasksCommand, PostTaskCommand, ReleaseTaskCommand,
+    RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
+    TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UnwatchTaskCommand, UpdateTaskCommand,
+    WatchTaskCommand,
+};
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::task::{Priority, SubtaskDef, Task, TaskFilter, TaskId, TaskStatus};
+use orchy_core::task::Task;
 
 use crate::container::Container;
 
 use super::auth::OrgAuth;
-use super::{ApiError, parse_namespace};
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
@@ -25,57 +31,6 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
 fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
     ProjectId::try_from(s.to_string())
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn parse_task_id(s: &str) -> Result<TaskId, ApiError> {
-    s.parse::<TaskId>().map_err(|e| {
-        ApiError(
-            StatusCode::BAD_REQUEST,
-            "INVALID_PARAM",
-            format!("invalid task id: {e}"),
-        )
-    })
-}
-
-async fn resolve_agent(
-    container: &Arc<Container>,
-    org_id: &OrganizationId,
-    project_id: &ProjectId,
-    s: &str,
-) -> Result<AgentId, ApiError> {
-    let agent_id = s.parse::<AgentId>().map_err(|e| {
-        ApiError(
-            StatusCode::BAD_REQUEST,
-            "INVALID_PARAM",
-            format!("invalid agent id: {e}"),
-        )
-    })?;
-
-    let agent = container
-        .agent_service
-        .get(&agent_id)
-        .await
-        .map_err(ApiError::from)?;
-
-    if agent.org_id() != org_id
-        || agent.project() != project_id
-        || agent.status() == AgentStatus::Disconnected
-    {
-        return Err(ApiError(
-            StatusCode::NOT_FOUND,
-            "NOT_FOUND",
-            format!("agent not found: {s}"),
-        ));
-    }
-
-    Ok(agent_id)
-}
-
-fn parse_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {
-    match ns {
-        Some(s) => parse_namespace(s).map(Some),
-        None => Ok(None),
-    }
 }
 
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
@@ -100,6 +55,8 @@ fn check_task_project(task: &Task, project_id: &ProjectId) -> Result<(), ApiErro
     }
     Ok(())
 }
+
+use super::ApiError;
 
 type OrgProject = (String, String);
 
@@ -222,32 +179,14 @@ pub struct DelegateBody {
     pub assigned_roles: Option<Vec<String>>,
 }
 
-fn parse_subtask_defs(defs: Vec<SubtaskDefBody>) -> Result<Vec<SubtaskDef>, ApiError> {
+fn to_subtask_inputs(defs: Vec<SubtaskDefBody>) -> Vec<SubtaskInput> {
     defs.into_iter()
-        .map(|d| {
-            let priority = match d.priority.as_deref() {
-                Some(p) => p.parse::<Priority>().map_err(|e| {
-                    ApiError(
-                        StatusCode::BAD_REQUEST,
-                        "INVALID_PARAM",
-                        format!("invalid priority: {e}"),
-                    )
-                })?,
-                None => Priority::default(),
-            };
-            let depends_on = d
-                .depends_on
-                .unwrap_or_default()
-                .iter()
-                .map(|s| parse_task_id(s))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(SubtaskDef {
-                title: d.title,
-                description: d.description,
-                priority,
-                assigned_roles: d.assigned_roles.unwrap_or_default(),
-                depends_on,
-            })
+        .map(|d| SubtaskInput {
+            title: d.title,
+            description: d.description,
+            priority: d.priority,
+            assigned_roles: d.assigned_roles,
+            depends_on: d.depends_on,
         })
         .collect()
 }
@@ -257,48 +196,30 @@ pub async fn list(
     auth: OrgAuth,
     Path((org, project)): Path<OrgProject>,
     Query(query): Query<ListTasksQuery>,
-) -> Result<Json<Vec<Task>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
-    let ns = parse_ns(query.namespace.as_deref())?;
-
-    let status = match query.status.as_deref() {
-        Some("pending") => Some(TaskStatus::Pending),
-        Some("blocked") => Some(TaskStatus::Blocked),
-        Some("claimed") => Some(TaskStatus::Claimed),
-        Some("in_progress") => Some(TaskStatus::InProgress),
-        Some("completed") => Some(TaskStatus::Completed),
-        Some("failed") => Some(TaskStatus::Failed),
-        Some("cancelled") => Some(TaskStatus::Cancelled),
-        Some(other) => {
-            return Err(ApiError(
-                StatusCode::BAD_REQUEST,
-                "INVALID_PARAM",
-                format!("invalid status: {other}"),
-            ));
-        }
-        None => None,
-    };
-
-    let parent_id = query.parent_id.as_deref().map(parse_task_id).transpose()?;
-
-    let filter = TaskFilter {
-        project: Some(project_id),
-        namespace: ns,
-        status,
-        parent_id,
-        ..Default::default()
+    let cmd = ListTasksCommand {
+        org_id: Some(org),
+        project: Some(project),
+        namespace: query.namespace,
+        status: query.status,
+        parent_id: query.parent_id,
+        assigned_to: None,
+        tag: None,
+        after: None,
+        limit: None,
     };
 
     let page = container
-        .task_service
-        .list(filter, orchy_core::pagination::PageParams::unbounded())
+        .app
+        .list_tasks
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(page.items))
+    Ok(Json(serde_json::to_value(&page.items).unwrap_or_default()))
 }
 
 pub async fn post(
@@ -306,91 +227,52 @@ pub async fn post(
     auth: OrgAuth,
     Path((org, project)): Path<OrgProject>,
     Json(body): Json<PostTaskBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
-    let ns = match body.namespace.as_deref() {
-        Some(s) => parse_namespace(s)?,
-        None => Namespace::root(),
+    let cmd = PostTaskCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        title: body.title,
+        description: body.description,
+        priority: body.priority,
+        assigned_roles: body.assigned_roles,
+        depends_on: body.depends_on,
+        parent_id: body.parent_id,
+        created_by: None,
+        refs: None,
     };
 
-    let priority = match body.priority.as_deref() {
-        Some(p) => p.parse::<Priority>().map_err(|e| {
-            ApiError(
-                StatusCode::BAD_REQUEST,
-                "INVALID_PARAM",
-                format!("invalid priority: {e}"),
-            )
-        })?,
-        None => Priority::default(),
-    };
-
-    let depends_on = body
-        .depends_on
-        .unwrap_or_default()
-        .iter()
-        .map(|s| parse_task_id(s))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let parent_id = body.parent_id.as_deref().map(parse_task_id).transpose()?;
-
-    let is_blocked = !depends_on.is_empty();
-
-    let task = Task::new(
-        org_id,
-        project_id,
-        ns,
-        parent_id,
-        body.title,
-        body.description,
-        priority,
-        body.assigned_roles.unwrap_or_default(),
-        depends_on,
-        None,
-        is_blocked,
-    )
-    .map_err(|e| {
-        ApiError(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "INVALID_INPUT",
-            e.to_string(),
-        )
-    })?;
-
-    let task_id = task.id();
-    container
-        .task_service
-        .create(task)
+    let task = container
+        .app
+        .post_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    let created = container
-        .task_service
-        .get(&task_id)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(Json(created))
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn get_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
-) -> Result<Json<orchy_core::task::TaskWithContext>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
-    let ctx = container
-        .task_service
-        .get_with_context(&task_id)
+
+    let task = container
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&ctx.task, &project_id)?;
-    Ok(Json(ctx))
+    check_task_project(&task, &project_id)?;
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn update_task(
@@ -398,37 +280,34 @@ pub async fn update_task(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<UpdateTaskBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let priority = match body.priority.as_deref() {
-        Some(p) => Some(p.parse::<Priority>().map_err(|e| {
-            ApiError(
-                StatusCode::BAD_REQUEST,
-                "INVALID_PARAM",
-                format!("invalid priority: {e}"),
-            )
-        })?),
-        None => None,
+    let cmd = UpdateTaskCommand {
+        task_id: id,
+        title: body.title,
+        description: body.description,
+        priority: body.priority,
     };
 
     let task = container
-        .task_service
-        .update_details(&task_id, body.title, body.description, priority)
+        .app
+        .update_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(task))
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn claim(
@@ -436,41 +315,33 @@ pub async fn claim(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<ClaimBody>,
-) -> Result<Json<orchy_core::task::TaskWithContext>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
+
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
+    let cmd = ClaimTaskCommand {
+        task_id: id,
+        agent_id: body.agent,
+        start: body.start,
+    };
 
-    container
-        .task_service
-        .claim(&task_id, &agent_id)
+    let task = container
+        .app
+        .claim_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    if body.start.unwrap_or(false) {
-        container
-            .task_service
-            .start(&task_id, &agent_id)
-            .await
-            .map_err(ApiError::from)?;
-    }
-
-    let ctx = container
-        .task_service
-        .get_with_context(&task_id)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(Json(ctx))
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn start(
@@ -478,26 +349,32 @@ pub async fn start(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
+    let cmd = StartTaskCommand {
+        task_id: id,
+        agent_id: body.agent,
+    };
+
     let task = container
-        .task_service
-        .start(&task_id, &agent_id)
+        .app
+        .start_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn complete(
@@ -505,25 +382,32 @@ pub async fn complete(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<CompleteBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
+    let cmd = CompleteTaskCommand {
+        task_id: id,
+        summary: body.summary,
+    };
+
     let task = container
-        .task_service
-        .complete(&task_id, body.summary)
+        .app
+        .complete_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn fail(
@@ -531,25 +415,32 @@ pub async fn fail(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<FailBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
+    let cmd = FailTaskCommand {
+        task_id: id,
+        reason: body.reason,
+    };
+
     let task = container
-        .task_service
-        .fail(&task_id, body.reason)
+        .app
+        .fail_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn cancel(
@@ -557,25 +448,32 @@ pub async fn cancel(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<CancelBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
+    let cmd = CancelTaskCommand {
+        task_id: id,
+        reason: body.reason,
+    };
+
     let task = container
-        .task_service
-        .cancel(&task_id, body.reason)
+        .app
+        .cancel_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn release(
@@ -583,50 +481,58 @@ pub async fn release(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(_body): Json<serde_json::Value>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
+    let cmd = ReleaseTaskCommand { task_id: id };
+
     let task = container
-        .task_service
-        .release(&task_id)
+        .app
+        .release_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn unblock(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
+    let cmd = UnblockTaskCommand { task_id: id };
+
     let task = container
-        .task_service
-        .unblock_manual(&task_id)
+        .app
+        .unblock_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn assign(
@@ -634,26 +540,32 @@ pub async fn assign(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
+    let cmd = AssignTaskCommand {
+        task_id: id,
+        agent_id: body.agent,
+    };
+
     let task = container
-        .task_service
-        .assign(&task_id, &agent_id)
+        .app
+        .assign_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn watch(
@@ -661,34 +573,35 @@ pub async fn watch(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AgentBody>,
-) -> Result<Json<orchy_core::task::TaskWatcher>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let agent_id = resolve_agent(&container, &org_id, &project_id, &body.agent).await?;
+    let cmd = WatchTaskCommand {
+        task_id: id,
+        agent_id: body.agent,
+        org_id: org,
+        project,
+        namespace: Some(existing.namespace().to_string()),
+    };
 
     let watcher = container
-        .task_service
-        .watch(
-            &task_id,
-            agent_id,
-            org_id,
-            project_id,
-            existing.namespace().clone(),
-        )
+        .app
+        .watch_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(watcher))
+    Ok(Json(serde_json::to_value(&watcher).unwrap_or_default()))
 }
 
 pub async fn unwatch(
@@ -700,20 +613,24 @@ pub async fn unwatch(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let agent_id = resolve_agent(&container, &org_id, &project_id, &query.agent).await?;
+    let cmd = UnwatchTaskCommand {
+        task_id: id,
+        agent_id: query.agent,
+    };
 
     container
-        .task_service
-        .unwatch(&task_id, &agent_id)
+        .app
+        .unwatch_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
@@ -725,29 +642,23 @@ pub async fn add_note(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AddNoteBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let agent_id = if let Some(s) = body.agent.as_deref() {
-        Some(resolve_agent(&container, &org_id, &project_id, s).await?)
-    } else {
-        None
-    };
-
     let cmd = orchy_application::AddTaskNoteCommand {
         task_id: id,
         body: body.body,
-        author: agent_id.map(|a| a.to_string()),
+        author: body.agent,
         org_id: org,
         project,
         namespace: Some(existing.namespace().to_string()),
@@ -760,7 +671,7 @@ pub async fn add_note(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(task))
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn add_dep(
@@ -768,102 +679,122 @@ pub async fn add_dep(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<AddDepBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let dep_id = parse_task_id(&body.dependency_id)?;
+    let cmd = AddDependencyCommand {
+        task_id: id,
+        dependency_id: body.dependency_id,
+    };
+
     let task = container
-        .task_service
-        .add_dependency(&task_id, &dep_id)
+        .app
+        .add_dependency
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn remove_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, id, dep_id)): Path<(String, String, String, String)>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
-    let dep_id = parse_task_id(&dep_id)?;
+    let cmd = RemoveDependencyCommand {
+        task_id: id,
+        dependency_id: dep_id,
+    };
+
     let task = container
-        .task_service
-        .remove_dependency(&task_id, &dep_id)
+        .app
+        .remove_dependency
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn tag_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, id, tag)): Path<(String, String, String, String)>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
+    let cmd = TagTaskCommand { task_id: id, tag };
+
     let task = container
-        .task_service
-        .tag(&task_id, tag)
+        .app
+        .tag_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn untag_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, id, tag)): Path<(String, String, String, String)>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
 
+    let cmd = UntagTaskCommand { task_id: id, tag };
+
     let task = container
-        .task_service
-        .untag(&task_id, &tag)
+        .app
+        .untag_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(task))
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn list_tags(
@@ -871,35 +802,24 @@ pub async fn list_tags(
     auth: OrgAuth,
     Path((org, project)): Path<OrgProject>,
     Query(query): Query<NamespaceQuery>,
-) -> Result<Json<Vec<String>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.namespace.as_deref())?;
 
-    let page = container
-        .task_service
-        .list(
-            TaskFilter {
-                project: Some(project_id),
-                namespace: ns,
-                ..Default::default()
-            },
-            orchy_core::pagination::PageParams::unbounded(),
-        )
+    let cmd = ListTagsCommand {
+        org_id: Some(org),
+        project: Some(project),
+        namespace: query.namespace,
+    };
+
+    let tags = container
+        .app
+        .list_tags
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    let mut tags: Vec<String> = page
-        .items
-        .iter()
-        .flat_map(|t| t.tags().iter().cloned())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    tags.sort();
-
-    Ok(Json(tags))
+    Ok(Json(serde_json::to_value(&tags).unwrap_or_default()))
 }
 
 pub async fn next_task(
@@ -911,13 +831,10 @@ pub async fn next_task(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let ns = parse_ns(query.namespace.as_deref())?;
     let roles = match query.role {
         Some(r) => vec![r],
         None => vec![],
     };
-
-    let claim = query.claim.unwrap_or(false);
 
     if roles.is_empty() {
         return Err(ApiError(
@@ -927,6 +844,7 @@ pub async fn next_task(
         ));
     }
 
+    let claim = query.claim.unwrap_or(false);
     if claim {
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
@@ -935,23 +853,23 @@ pub async fn next_task(
         ));
     }
 
+    let cmd = GetNextTaskCommand {
+        org_id: Some(org),
+        project: None,
+        namespace: query.namespace,
+        roles,
+        claim: Some(false),
+        agent_id: None,
+    };
+
     let task = container
-        .task_service
-        .peek_next(&roles, ns)
+        .app
+        .get_next_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    match task {
-        Some(t) => {
-            let ctx = container
-                .task_service
-                .get_with_context(&t.id())
-                .await
-                .map_err(ApiError::from)?;
-            Ok(Json(serde_json::to_value(ctx).unwrap()))
-        }
-        None => Ok(Json(serde_json::Value::Null)),
-    }
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
 
 pub async fn split(
@@ -963,19 +881,25 @@ pub async fn split(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
-    let subtasks = parse_subtask_defs(body.subtasks)?;
+
+    let cmd = SplitTaskCommand {
+        task_id: id,
+        subtasks: to_subtask_inputs(body.subtasks),
+        created_by: None,
+    };
 
     let (parent, children) = container
-        .task_service
-        .split_task(&task_id, subtasks, None)
+        .app
+        .split_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
@@ -993,19 +917,26 @@ pub async fn replace(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let task_id = parse_task_id(&id)?;
 
     let existing = container
-        .task_service
-        .get(&task_id)
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project_id)?;
-    let replacements = parse_subtask_defs(body.replacements)?;
+
+    let cmd = ReplaceTaskCommand {
+        task_id: id,
+        reason: body.reason,
+        replacements: to_subtask_inputs(body.replacements),
+        created_by: None,
+    };
 
     let (original, new_tasks) = container
-        .task_service
-        .replace_task(&task_id, body.reason, replacements, None)
+        .app
+        .replace_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
@@ -1024,24 +955,30 @@ pub async fn merge(
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
 
-    let task_ids = body
-        .task_ids
-        .iter()
-        .map(|s| parse_task_id(s))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    for tid in &task_ids {
+    for tid in &body.task_ids {
         let existing = container
-            .task_service
-            .get(tid)
+            .app
+            .get_task
+            .execute(tid)
             .await
             .map_err(ApiError::from)?;
         check_task_project(&existing, &project_id)?;
     }
 
+    let cmd = MergeTasksCommand {
+        task_ids: body.task_ids,
+        title: body.title,
+        description: body.description,
+        org_id: org,
+        project,
+        namespace: None,
+        created_by: None,
+    };
+
     let (merged, cancelled) = container
-        .task_service
-        .merge_tasks(&task_ids, body.title, body.description, None)
+        .app
+        .merge_tasks
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
@@ -1055,63 +992,34 @@ pub async fn delegate(
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
     Json(body): Json<DelegateBody>,
-) -> Result<Json<Task>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
     let project_id = parse_project(&project)?;
-    let parent_id = parse_task_id(&id)?;
 
-    let parent = container
-        .task_service
-        .get(&parent_id)
+    let existing = container
+        .app
+        .get_task
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&parent, &project_id)?;
+    check_task_project(&existing, &project_id)?;
 
-    let priority = match body.priority.as_deref() {
-        Some(p) => p.parse::<Priority>().map_err(|e| {
-            ApiError(
-                StatusCode::BAD_REQUEST,
-                "INVALID_PARAM",
-                format!("invalid priority: {e}"),
-            )
-        })?,
-        None => parent.priority(),
+    let cmd = DelegateTaskCommand {
+        task_id: id,
+        title: body.title,
+        description: body.description,
+        priority: body.priority,
+        assigned_roles: body.assigned_roles,
+        created_by: None,
     };
 
-    let task = Task::new(
-        org_id,
-        project_id,
-        parent.namespace().clone(),
-        Some(parent_id),
-        body.title,
-        body.description,
-        priority,
-        body.assigned_roles.unwrap_or_default(),
-        vec![],
-        None,
-        false,
-    )
-    .map_err(|e| {
-        ApiError(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "INVALID_INPUT",
-            e.to_string(),
-        )
-    })?;
-
-    let task_id = task.id();
-    container
-        .task_service
-        .create(task)
+    let task = container
+        .app
+        .delegate_task
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    let created = container
-        .task_service
-        .get(&task_id)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(Json(created))
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }

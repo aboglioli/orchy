@@ -7,7 +7,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use orchy_core::agent::{AgentId, AgentStatus};
+use orchy_application::{
+    CheckMailboxCommand, GetAgentSummaryCommand, ListAgentsCommand, ListTasksCommand,
+};
+use orchy_core::agent::AgentStatus;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -69,9 +72,16 @@ pub async fn list(
         ));
     }
 
+    let cmd = ListAgentsCommand {
+        org_id: org,
+        after: None,
+        limit: None,
+    };
+
     let agents = container
-        .agent_service
-        .list(&org_id, orchy_core::pagination::PageParams::unbounded())
+        .app
+        .list_agents
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
@@ -119,17 +129,11 @@ pub async fn get_context(
             "forbidden".to_string(),
         ));
     }
-    let agent_id = id.parse::<AgentId>().map_err(|e| {
-        ApiError(
-            StatusCode::BAD_REQUEST,
-            "INVALID_PARAM",
-            format!("invalid agent id: {e}"),
-        )
-    })?;
 
     let agent = container
-        .agent_service
-        .get(&agent_id)
+        .app
+        .get_agent
+        .execute(&id)
         .await
         .map_err(ApiError::from)?;
 
@@ -141,16 +145,19 @@ pub async fn get_context(
         ));
     }
 
+    let mailbox_cmd = CheckMailboxCommand {
+        agent_id: id.clone(),
+        org_id: org.clone(),
+        project: agent.project().to_string(),
+        namespace: Some(agent.namespace().to_string()),
+        after: None,
+        limit: None,
+    };
+
     let inbox = container
-        .message_service
-        .pending(
-            agent.id(),
-            agent.roles(),
-            &org_id,
-            agent.project(),
-            agent.namespace(),
-            orchy_core::pagination::PageParams::unbounded(),
-        )
+        .app
+        .check_mailbox
+        .execute(mailbox_cmd)
         .await
         .map(|p| p.items)
         .unwrap_or_default()
@@ -162,13 +169,26 @@ pub async fn get_context(
         })
         .collect();
 
+    let tasks_cmd = ListTasksCommand {
+        org_id: Some(org),
+        project: Some(agent.project().to_string()),
+        namespace: Some(agent.namespace().to_string()),
+        status: Some("pending".to_string()),
+        parent_id: None,
+        assigned_to: None,
+        tag: None,
+        after: None,
+        limit: Some(10),
+    };
+
     let pending_tasks = container
-        .task_service
-        .pending_tasks_for_roles(agent.roles(), Some(agent.namespace().clone()))
+        .app
+        .list_tasks
+        .execute(tasks_cmd)
         .await
+        .map(|p| p.items)
         .unwrap_or_default()
         .into_iter()
-        .take(10)
         .map(|t| PendingTaskDto {
             id: t.id().to_string(),
             title: t.title().to_string(),
@@ -198,7 +218,7 @@ pub async fn get_summary(
     Path((org, id)): Path<(String, String)>,
     State(container): State<Arc<Container>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let cmd = orchy_application::GetAgentSummaryCommand {
+    let cmd = GetAgentSummaryCommand {
         org_id: org,
         agent_id: id,
     };

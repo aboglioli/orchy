@@ -7,7 +7,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use orchy_core::namespace::{NamespaceStore, ProjectId};
+use orchy_application::{
+    GetProjectCommand, GetProjectOverviewCommand, ListNamespacesCommand, SetProjectMetadataCommand,
+    UpdateProjectCommand,
+};
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -55,11 +58,6 @@ fn parse_org_id(org: &str) -> Result<OrganizationId, ApiError> {
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn parse_project_id(project: &str) -> Result<ProjectId, ApiError> {
-    ProjectId::try_from(project.to_string())
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     if auth.0.id() != org_id {
         Err(ApiError(
@@ -80,52 +78,49 @@ pub async fn get(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project_id(&project)?;
-
-    let project = container
-        .project_service
-        .get_or_create(&org_id, &project_id)
-        .await
-        .map_err(ApiError::from)?;
 
     if !query.include_summary.unwrap_or(false) {
-        return Ok(Json(serde_json::to_value(project_to_dto(project)).unwrap()));
+        let cmd = GetProjectCommand {
+            org_id: org,
+            project,
+        };
+
+        let p = container
+            .app
+            .get_project
+            .execute(cmd)
+            .await
+            .map_err(ApiError::from)?;
+
+        return Ok(Json(serde_json::to_value(project_to_dto(p)).unwrap()));
     }
 
-    let agents_page = container
-        .agent_service
-        .list(&org_id, orchy_core::pagination::PageParams::unbounded())
-        .await
-        .map_err(ApiError::from)?;
-    let project_agents: Vec<_> = agents_page
-        .items
-        .into_iter()
-        .filter(|a| *a.project() == project_id)
-        .collect();
+    let cmd = GetProjectOverviewCommand {
+        org_id: org,
+        project,
+        namespace: None,
+    };
 
-    let tasks_page = container
-        .task_service
-        .list(
-            orchy_core::task::TaskFilter {
-                project: Some(project_id),
-                ..Default::default()
-            },
-            orchy_core::pagination::PageParams::unbounded(),
-        )
+    let overview = container
+        .app
+        .get_project_overview
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
     let mut by_status = std::collections::HashMap::new();
-    for task in &tasks_page.items {
+    for task in &overview.tasks {
         *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
     }
 
+    let project_dto = overview.project.map(project_to_dto);
+
     Ok(Json(serde_json::json!({
-        "project": project_to_dto(project),
+        "project": project_dto.map(|p| serde_json::to_value(p).unwrap()),
         "summary": {
-            "agents_count": project_agents.len(),
+            "agents_count": overview.agents.len(),
             "tasks_by_status": by_status,
-            "total_tasks": tasks_page.items.len(),
+            "total_tasks": overview.tasks.len(),
         }
     })))
 }
@@ -138,16 +133,21 @@ pub async fn update(
 ) -> Result<Json<ProjectDto>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project_id(&project)?;
 
-    let description = body.description.unwrap_or_default();
-    let project = container
-        .project_service
-        .update_description(&org_id, &project_id, description)
+    let cmd = UpdateProjectCommand {
+        org_id: org,
+        project,
+        description: body.description.unwrap_or_default(),
+    };
+
+    let p = container
+        .app
+        .update_project
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(project_to_dto(project)))
+    Ok(Json(project_to_dto(p)))
 }
 
 pub async fn set_metadata(
@@ -158,15 +158,22 @@ pub async fn set_metadata(
 ) -> Result<Json<ProjectDto>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project_id(&project)?;
 
-    let project = container
-        .project_service
-        .set_metadata(&org_id, &project_id, body.key, body.value)
+    let cmd = SetProjectMetadataCommand {
+        org_id: org,
+        project,
+        key: body.key,
+        value: body.value,
+    };
+
+    let p = container
+        .app
+        .set_project_metadata
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(project_to_dto(project)))
+    Ok(Json(project_to_dto(p)))
 }
 
 pub async fn list_namespaces(
@@ -176,9 +183,16 @@ pub async fn list_namespaces(
 ) -> Result<Json<Vec<String>>, ApiError> {
     let org_id = parse_org_id(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project_id(&project)?;
 
-    let namespaces = NamespaceStore::list(&*container.store, &org_id, &project_id)
+    let cmd = ListNamespacesCommand {
+        org_id: org,
+        project,
+    };
+
+    let namespaces = container
+        .app
+        .list_namespaces
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 

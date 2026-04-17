@@ -8,41 +8,23 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use orchy_core::agent::AgentId;
-use orchy_core::knowledge::service::PatchKnowledgeMetadata;
-use orchy_core::knowledge::{
-    Knowledge, KnowledgeFilter, KnowledgeKind, Version as KnowledgeVersion, WriteKnowledge,
+use orchy_application::{
+    AppendKnowledgeCommand, ChangeKnowledgeKindCommand, DeleteKnowledgeCommand,
+    ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
+    PatchKnowledgeMetadataCommand, ReadKnowledgeCommand, RenameKnowledgeCommand,
+    SearchKnowledgeCommand, TagKnowledgeCommand, UntagKnowledgeCommand, WriteKnowledgeCommand,
 };
-use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::knowledge::KnowledgeKind;
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
-use super::{ApiError, parse_namespace};
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
-    ProjectId::try_from(s.to_string())
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn parse_ns(ns: Option<&str>) -> Result<Namespace, ApiError> {
-    match ns {
-        Some(s) => parse_namespace(s),
-        None => Ok(Namespace::root()),
-    }
-}
-
-fn parse_optional_ns(ns: Option<&str>) -> Result<Option<Namespace>, ApiError> {
-    match ns {
-        Some(s) => parse_namespace(s).map(Some),
-        None => Ok(None),
-    }
 }
 
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
@@ -149,47 +131,31 @@ pub async fn list(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Query(query): Query<ListQuery>,
-) -> Result<Json<Vec<Knowledge>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_optional_ns(query.namespace.as_deref())?;
 
-    let kind = match query.kind.as_deref() {
-        Some(k) => Some(
-            k.parse::<KnowledgeKind>()
-                .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?,
-        ),
-        None => None,
-    };
-
-    let agent_id = query
-        .author_agent_id
-        .as_deref()
-        .map(|s| {
-            s.parse::<AgentId>()
-                .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-        })
-        .transpose()?;
-
-    let filter = KnowledgeFilter {
-        org_id: Some(org_id),
-        project: Some(project_id),
-        namespace: ns,
-        kind,
+    let cmd = ListKnowledgeCommand {
+        org_id: Some(org),
+        project: Some(project),
+        include_org_level: false,
+        namespace: query.namespace,
+        kind: query.kind,
         tag: query.tag,
         path_prefix: query.path_prefix,
-        agent_id,
-        ..Default::default()
+        agent_id: query.author_agent_id,
+        after: None,
+        limit: None,
     };
 
     let page = container
-        .knowledge_service
-        .list(filter, orchy_core::pagination::PageParams::unbounded())
+        .app
+        .list_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(page.items))
+    Ok(Json(serde_json::to_value(&page.items).unwrap_or_default()))
 }
 
 pub async fn list_types(
@@ -221,30 +187,34 @@ pub async fn search(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Json(body): Json<SearchBody>,
-) -> Result<Json<Vec<Knowledge>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
-    let ns = parse_optional_ns(body.namespace.as_deref())?;
-    let limit = body.limit.unwrap_or(10) as usize;
+    let cmd = SearchKnowledgeCommand {
+        org_id: org,
+        query: body.query,
+        namespace: body.namespace,
+        kind: body.kind,
+        limit: body.limit,
+    };
 
-    let mut entries = container
-        .knowledge_service
-        .search(&org_id, &body.query, ns.as_ref(), limit)
+    let entries = container
+        .app
+        .search_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    entries.retain(|e| e.project() == Some(&project_id));
+    let project_id = orchy_core::namespace::ProjectId::try_from(project)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
-    if let Some(k) = body.kind.as_deref() {
-        let kind: KnowledgeKind = k
-            .parse()
-            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
-        entries.retain(|e| e.kind() == kind);
-    }
+    let filtered: Vec<_> = entries
+        .into_iter()
+        .filter(|e| e.project() == Some(&project_id))
+        .collect();
 
-    Ok(Json(entries))
+    Ok(Json(serde_json::to_value(&filtered).unwrap_or_default()))
 }
 
 pub async fn import(
@@ -252,49 +222,30 @@ pub async fn import(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Json(body): Json<ImportBody>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let dest_ns = parse_ns(body.namespace.as_deref())?;
-    let source_project = parse_project(&body.source_project)?;
-    let source_ns = parse_ns(body.source_namespace.as_deref())?;
 
-    let source_entry = container
-        .knowledge_service
-        .read(&org_id, Some(&source_project), &source_ns, &body.path)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                format!("entry not found: {}", body.path),
-            )
-        })?;
-
-    let cmd = WriteKnowledge {
-        org_id,
-        project: Some(project_id),
-        namespace: dest_ns,
-        path: source_entry.path().to_string(),
-        kind: source_entry.kind(),
-        title: source_entry.title().to_string(),
-        content: source_entry.content().to_string(),
-        tags: source_entry.tags().to_vec(),
-        expected_version: None,
+    let cmd = ImportKnowledgeCommand {
+        source_org_id: org.clone(),
+        source_project: body.source_project,
+        source_namespace: body.source_namespace,
+        source_path: body.path,
+        target_org_id: org,
+        target_project: project,
+        target_namespace: body.namespace,
+        target_path: None,
         agent_id: None,
-        metadata: source_entry.metadata().clone(),
-        metadata_remove: vec![],
     };
 
     let entry = container
-        .knowledge_service
-        .write(cmd)
+        .app
+        .import_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(entry))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn read(
@@ -302,19 +253,25 @@ pub async fn read(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
-) -> Result<Json<Option<Knowledge>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.namespace.as_deref())?;
+
+    let cmd = ReadKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: query.namespace,
+        path,
+    };
 
     let entry = container
-        .knowledge_service
-        .read(&org_id, Some(&project_id), &ns, &path)
+        .app
+        .read_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(entry))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn write(
@@ -322,39 +279,33 @@ pub async fn write(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<WriteBody>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(body.namespace.as_deref())?;
 
-    let kind: KnowledgeKind = body
-        .kind
-        .parse()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
-
-    let cmd = WriteKnowledge {
-        org_id,
-        project: Some(project_id),
-        namespace: ns,
+    let cmd = WriteKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
         path,
-        kind,
+        kind: body.kind,
         title: body.title,
         content: body.content,
-        tags: body.tags.unwrap_or_default(),
-        expected_version: body.version.map(KnowledgeVersion::from),
+        tags: body.tags,
+        version: body.version,
         agent_id: None,
-        metadata: body.metadata.unwrap_or_default(),
-        metadata_remove: vec![],
+        metadata: body.metadata,
+        metadata_remove: None,
     };
 
     let entry = container
-        .knowledge_service
-        .write(cmd)
+        .app
+        .write_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(entry))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn delete(
@@ -365,25 +316,18 @@ pub async fn delete(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.namespace.as_deref())?;
 
-    let entry = container
-        .knowledge_service
-        .read(&org_id, Some(&project_id), &ns, &path)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                format!("entry not found: {path}"),
-            )
-        })?;
+    let cmd = DeleteKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: query.namespace,
+        path,
+    };
 
     container
-        .knowledge_service
-        .delete(&entry.id())
+        .app
+        .delete_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
@@ -395,37 +339,31 @@ pub async fn append(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<AppendBody>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(body.namespace.as_deref())?;
 
-    let kind: KnowledgeKind = body
-        .kind
-        .parse()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
-
-    let separator = body.separator.as_deref().unwrap_or("\n");
+    let cmd = AppendKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        path,
+        kind: body.kind,
+        value: body.value,
+        separator: body.separator,
+        agent_id: None,
+        metadata: body.metadata,
+        metadata_remove: None,
+    };
 
     let entry = container
-        .knowledge_service
-        .append(
-            &org_id,
-            Some(&project_id),
-            &ns,
-            &path,
-            kind,
-            body.value,
-            separator,
-            None,
-            body.metadata,
-            None,
-        )
+        .app
+        .append_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(entry))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn move_entry(
@@ -433,34 +371,26 @@ pub async fn move_entry(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<MoveBody>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = Namespace::root();
+
+    let cmd = MoveKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: None,
+        path,
+        new_namespace: body.new_namespace,
+    };
 
     let entry = container
-        .knowledge_service
-        .read(&org_id, Some(&project_id), &ns, &path)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                format!("entry not found: {path}"),
-            )
-        })?;
-
-    let new_ns = parse_namespace(&body.new_namespace)?;
-
-    let updated = container
-        .knowledge_service
-        .move_entry(&entry.id(), new_ns, body.metadata, None)
+        .app
+        .move_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(updated))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn rename(
@@ -468,32 +398,26 @@ pub async fn rename(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<RenameBody>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = Namespace::root();
+
+    let cmd = RenameKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: None,
+        path,
+        new_path: body.new_path,
+    };
 
     let entry = container
-        .knowledge_service
-        .read(&org_id, Some(&project_id), &ns, &path)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                format!("entry not found: {path}"),
-            )
-        })?;
-
-    let updated = container
-        .knowledge_service
-        .rename(&entry.id(), body.new_path, body.metadata, None)
+        .app
+        .rename_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(updated))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn change_kind(
@@ -501,33 +425,27 @@ pub async fn change_kind(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<ChangeKindBody>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = Namespace::root();
 
-    let kind: KnowledgeKind = body
-        .kind
-        .parse()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
+    let cmd = ChangeKnowledgeKindCommand {
+        org_id: org,
+        project,
+        namespace: None,
+        path,
+        new_kind: body.kind,
+        version: body.version,
+    };
 
-    let updated = container
-        .knowledge_service
-        .change_kind(
-            &org_id,
-            Some(&project_id),
-            &ns,
-            &path,
-            kind,
-            body.version.map(KnowledgeVersion::from),
-            body.metadata,
-            None,
-        )
+    let entry = container
+        .app
+        .change_knowledge_kind
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(updated))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn patch_metadata(
@@ -535,89 +453,78 @@ pub async fn patch_metadata(
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
     Json(body): Json<PatchMetadataBody>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = Namespace::root();
 
-    let updated = container
-        .knowledge_service
-        .patch_metadata(PatchKnowledgeMetadata {
-            org: org_id,
-            project: Some(project_id),
-            namespace: ns,
-            path,
-            set: body.set.unwrap_or_default(),
-            remove: body.remove.unwrap_or_default(),
-            expected_version: body.version.map(KnowledgeVersion::from),
-        })
+    let cmd = PatchKnowledgeMetadataCommand {
+        org_id: org,
+        project,
+        namespace: None,
+        path,
+        set: body.set.unwrap_or_default(),
+        remove: body.remove.unwrap_or_default(),
+        version: body.version,
+    };
+
+    let entry = container
+        .app
+        .patch_knowledge_metadata
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(updated))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn tag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = Namespace::root();
+
+    let cmd = TagKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: None,
+        path,
+        tag: tag_name,
+    };
 
     let entry = container
-        .knowledge_service
-        .read(&org_id, Some(&project_id), &ns, &path)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                format!("entry not found: {path}"),
-            )
-        })?;
-
-    let updated = container
-        .knowledge_service
-        .tag(&entry.id(), tag_name, None, None)
+        .app
+        .tag_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(updated))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
 pub async fn untag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
-) -> Result<Json<Knowledge>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = Namespace::root();
+
+    let cmd = UntagKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: None,
+        path,
+        tag: tag_name,
+    };
 
     let entry = container
-        .knowledge_service
-        .read(&org_id, Some(&project_id), &ns, &path)
-        .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                format!("entry not found: {path}"),
-            )
-        })?;
-
-    let updated = container
-        .knowledge_service
-        .untag(&entry.id(), &tag_name, None, None)
+        .app
+        .untag_knowledge
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(updated))
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }

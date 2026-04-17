@@ -7,31 +7,17 @@ use axum::{
 };
 use serde::Deserialize;
 
-use orchy_core::agent::AgentId;
-use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_application::{CheckLockCommand, LockResourceCommand, UnlockResourceCommand};
 use orchy_core::organization::OrganizationId;
-use orchy_core::resource_lock::ResourceLock;
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
-use super::{ApiError, parse_namespace};
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
-    ProjectId::try_from(s.to_string())
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn parse_ns(ns: Option<&str>) -> Result<Namespace, ApiError> {
-    match ns {
-        Some(s) => parse_namespace(s),
-        None => Ok(Namespace::root()),
-    }
 }
 
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
@@ -71,19 +57,25 @@ pub async fn check(
     auth: OrgAuth,
     Path((org, project, name)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
-) -> Result<Json<Option<ResourceLock>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.namespace.as_deref())?;
+
+    let cmd = CheckLockCommand {
+        org_id: org,
+        project,
+        namespace: query.namespace,
+        name,
+    };
 
     let lock = container
-        .lock_service
-        .check(&org_id, &project_id, &ns, &name)
+        .app
+        .check_lock
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(lock))
+    Ok(Json(serde_json::to_value(&lock).unwrap_or_default()))
 }
 
 pub async fn acquire(
@@ -91,26 +83,27 @@ pub async fn acquire(
     auth: OrgAuth,
     Path((org, project)): Path<(String, String)>,
     Json(body): Json<AcquireBody>,
-) -> Result<Json<ResourceLock>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(body.namespace.as_deref())?;
 
-    let agent_id = body
-        .agent_id
-        .parse::<AgentId>()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-
-    let ttl = body.ttl_secs.unwrap_or(300);
+    let cmd = LockResourceCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        name: body.name,
+        holder_agent_id: body.agent_id,
+        ttl_secs: body.ttl_secs,
+    };
 
     let lock = container
-        .lock_service
-        .acquire(org_id, project_id, ns, body.name, agent_id, ttl)
+        .app
+        .lock_resource
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(lock))
+    Ok(Json(serde_json::to_value(&lock).unwrap_or_default()))
 }
 
 pub async fn release(
@@ -121,17 +114,19 @@ pub async fn release(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
-    let ns = parse_ns(query.namespace.as_deref())?;
 
-    let agent_id = query
-        .agent_id
-        .parse::<AgentId>()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let cmd = UnlockResourceCommand {
+        org_id: org,
+        project,
+        namespace: query.namespace,
+        name,
+        holder_agent_id: query.agent_id,
+    };
 
     container
-        .lock_service
-        .release(&org_id, &project_id, &ns, &name, &agent_id)
+        .app
+        .unlock_resource
+        .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
