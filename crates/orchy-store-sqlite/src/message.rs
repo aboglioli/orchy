@@ -11,6 +11,7 @@ use orchy_core::message::{
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+use orchy_core::resource_ref::ResourceRef;
 
 use crate::SqliteBackend;
 
@@ -30,8 +31,8 @@ impl MessageStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, refs, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 message.id().to_string(),
                 message.org_id().to_string(),
@@ -41,6 +42,8 @@ impl MessageStore for SqliteBackend {
                 message.to().to_string(),
                 message.body(),
                 message.reply_to().map(|id| id.to_string()),
+                serde_json::to_string(message.refs())
+                    .map_err(|e| Error::Store(format!("failed to serialize refs: {e}")))?,
                 match message.status() {
                     MessageStatus::Pending => "pending",
                     MessageStatus::Delivered => "delivered",
@@ -62,7 +65,7 @@ impl MessageStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
                  FROM messages WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -102,7 +105,7 @@ impl MessageStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
              FROM messages
              WHERE status = ?1
                AND organization_id = ?3
@@ -199,7 +202,7 @@ impl MessageStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to FROM messages WHERE from_agent = ?1 AND organization_id = ?2 AND project = ?3",
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs FROM messages WHERE from_agent = ?1 AND organization_id = ?2 AND project = ?3",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         params.push(Box::new(sender.to_string()));
@@ -262,10 +265,10 @@ impl MessageStore for SqliteBackend {
         let mut sql = String::from(
             "WITH RECURSIVE
              ancestors AS (
-                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
                  FROM messages WHERE id = ?1
                  UNION ALL
-                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
                  FROM messages m JOIN ancestors a ON m.id = a.reply_to
              ),
              root AS (
@@ -274,13 +277,13 @@ impl MessageStore for SqliteBackend {
                  SELECT a.id FROM ancestors a WHERE NOT EXISTS (SELECT 1 FROM messages m2 WHERE m2.id = a.reply_to)
              ),
              thread AS (
-                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
                  FROM messages WHERE id = (SELECT id FROM root LIMIT 1)
                  UNION ALL
-                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
                  FROM messages m JOIN thread t ON m.reply_to = t.id
              )
-             SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
              FROM thread ORDER BY created_at ASC",
         );
 
@@ -314,6 +317,11 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
     let status_str: String = row.get(7)?;
     let created_at_str: String = row.get(8)?;
     let reply_to_str: Option<String> = row.get(9)?;
+    let refs_str: String = row
+        .get::<_, Option<String>>(10)?
+        .unwrap_or_else(|| "[]".to_string());
+
+    let refs: Vec<ResourceRef> = crate::decode_json(&refs_str, "refs")?;
 
     let reply_to = reply_to_str
         .map(|s| {
@@ -370,6 +378,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
         })?,
         body,
         reply_to,
+        refs,
         status: status_str
             .parse::<MessageStatus>()
             .unwrap_or(MessageStatus::Pending),

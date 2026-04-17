@@ -10,6 +10,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::note::Note;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+use orchy_core::resource_ref::ResourceRef;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
@@ -49,6 +50,8 @@ enum Tasks {
     ResultSummary,
     #[iden = "notes"]
     Notes,
+    #[iden = "refs"]
+    Refs,
     #[iden = "created_by"]
     CreatedBy,
     #[iden = "created_at"]
@@ -73,6 +76,8 @@ impl TaskStore for PgBackend {
             .map_err(|e| Error::Store(format!("failed to serialize tasks.tags: {e}")))?;
         let notes_json = serde_json::to_value(task.notes())
             .map_err(|e| Error::Store(format!("failed to serialize tasks.notes: {e}")))?;
+        let refs_json = serde_json::to_value(task.refs())
+            .map_err(|e| Error::Store(format!("failed to serialize tasks.refs: {e}")))?;
 
         let mut tx = self
             .pool
@@ -81,8 +86,8 @@ impl TaskStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO tasks (id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            "INSERT INTO tasks (id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, refs, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
              ON CONFLICT (id) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
@@ -99,6 +104,7 @@ impl TaskStore for PgBackend {
                 tags = EXCLUDED.tags,
                 result_summary = EXCLUDED.result_summary,
                 notes = EXCLUDED.notes,
+                refs = EXCLUDED.refs,
                 updated_at = EXCLUDED.updated_at",
         )
         .bind(task.id().as_uuid())
@@ -117,6 +123,7 @@ impl TaskStore for PgBackend {
         .bind(&tags_json)
         .bind(task.result_summary())
         .bind(&notes_json)
+        .bind(&refs_json)
         .bind(task.created_by().map(|a| *a.as_uuid()))
         .bind(task.created_at())
         .bind(task.updated_at())
@@ -133,7 +140,7 @@ impl TaskStore for PgBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, created_by, created_at, updated_at
+            "SELECT id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, notes, refs, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -163,6 +170,7 @@ impl TaskStore for PgBackend {
             Tasks::Tags,
             Tasks::ResultSummary,
             Tasks::Notes,
+            Tasks::Refs,
             Tasks::CreatedBy,
             Tasks::CreatedAt,
             Tasks::UpdatedAt,
@@ -259,6 +267,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
     let tags: serde_json::Value = row.get("tags");
     let result_summary: Option<String> = row.get("result_summary");
     let notes_json: serde_json::Value = row.get("notes");
+    let refs_json: serde_json::Value = row.get("refs");
     let created_by: Option<Uuid> = row.get("created_by");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
@@ -269,6 +278,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
         .filter_map(|s| s.parse().ok())
         .collect();
     let notes: Vec<Note> = decode_json_value(notes_json, "tasks", "notes")?;
+    let refs: Vec<ResourceRef> = decode_json_value(refs_json, "tasks", "refs")?;
 
     Ok(Task::restore(RestoreTask {
         id: TaskId::from_uuid(id),
@@ -288,6 +298,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
         tags: decode_json_value(tags, "tasks", "tags")?,
         result_summary,
         notes,
+        refs,
         created_by: created_by.map(AgentId::from_uuid),
         created_at,
         updated_at,

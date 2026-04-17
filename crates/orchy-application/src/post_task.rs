@@ -5,6 +5,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
 
 use crate::parse_namespace;
@@ -20,6 +21,13 @@ pub struct PostTaskCommand {
     pub depends_on: Option<Vec<String>>,
     pub parent_id: Option<String>,
     pub created_by: Option<String>,
+    pub refs: Option<Vec<ResourceRefInput>>,
+}
+
+pub struct ResourceRefInput {
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
 }
 
 pub struct PostTask {
@@ -67,6 +75,30 @@ impl PostTask {
             .transpose()
             .map_err(Error::InvalidInput)?;
 
+        let refs = cmd
+            .refs
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| {
+                let kind = match r.kind.as_str() {
+                    "task" => ResourceKind::Task,
+                    "knowledge" => ResourceKind::Knowledge,
+                    "agent" => ResourceKind::Agent,
+                    "message" => ResourceKind::Message,
+                    other => {
+                        return Err(Error::InvalidInput(format!(
+                            "unknown resource kind: {other}"
+                        )));
+                    }
+                };
+                let mut rr = ResourceRef::new(kind, r.id);
+                if let Some(d) = r.display {
+                    rr = rr.with_display(d);
+                }
+                Ok(rr)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
         let is_blocked = !depends_on.is_empty();
 
         let mut task = Task::new(
@@ -82,6 +114,10 @@ impl PostTask {
             created_by,
             is_blocked,
         )?;
+
+        for r in refs {
+            task.add_ref(r);
+        }
 
         self.tasks.save(&mut task).await?;
         Ok(task)

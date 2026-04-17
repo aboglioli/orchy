@@ -12,10 +12,11 @@ use orchy_core::message::{
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::ResourceRef;
 
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
-use crate::{PgBackend, parse_namespace, parse_project_id};
+use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
 #[derive(Iden)]
 enum Messages {
@@ -40,6 +41,8 @@ enum Messages {
     CreatedAt,
     #[iden = "reply_to"]
     ReplyTo,
+    #[iden = "refs"]
+    Refs,
 }
 
 #[async_trait]
@@ -51,9 +54,12 @@ impl MessageStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
+        let refs_json = serde_json::to_value(message.refs())
+            .map_err(|e| Error::Store(format!("failed to serialize messages.refs: {e}")))?;
+
         sqlx::query(
-            "INSERT INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            "INSERT INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, refs, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT (id) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
@@ -62,6 +68,7 @@ impl MessageStore for PgBackend {
                 to_target = EXCLUDED.to_target,
                 body = EXCLUDED.body,
                 reply_to = EXCLUDED.reply_to,
+                refs = EXCLUDED.refs,
                 status = EXCLUDED.status",
         )
         .bind(message.id().as_uuid())
@@ -72,6 +79,7 @@ impl MessageStore for PgBackend {
         .bind(message.to().to_string())
         .bind(message.body())
         .bind(message.reply_to().map(|id| *id.as_uuid()))
+        .bind(&refs_json)
         .bind(match message.status() {
             MessageStatus::Pending => "pending",
             MessageStatus::Delivered => "delivered",
@@ -91,7 +99,7 @@ impl MessageStore for PgBackend {
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
              FROM messages WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -136,7 +144,7 @@ impl MessageStore for PgBackend {
         let rows = if namespace.is_root() {
             if let Some(cid) = cursor_id {
                 sqlx::query(
-                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
                      FROM messages
                      WHERE status = 'pending'
                        AND organization_id = $1
@@ -176,7 +184,7 @@ impl MessageStore for PgBackend {
                 .map_err(|e| Error::Store(e.to_string()))?
             } else {
                 sqlx::query(
-                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
                      FROM messages
                      WHERE status = 'pending'
                        AND organization_id = $1
@@ -341,6 +349,7 @@ impl MessageStore for PgBackend {
                 Messages::Status,
                 Messages::CreatedAt,
                 Messages::ReplyTo,
+                Messages::Refs,
             ])
             .and_where(Expr::col(Messages::FromAgent).eq(*sender.as_uuid()))
             .and_where(Expr::col(Messages::OrganizationId).eq(org.to_string()))
@@ -397,23 +406,23 @@ impl MessageStore for PgBackend {
         let mut sql = String::from(
             "WITH RECURSIVE
              ancestors AS (
-                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
                  FROM messages WHERE id = $1
                  UNION ALL
-                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
                  FROM messages m JOIN ancestors a ON m.id = a.reply_to
              ),
              root AS (
                  SELECT id FROM ancestors WHERE reply_to IS NULL
              ),
              thread AS (
-                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+                 SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
                  FROM messages WHERE id = (SELECT id FROM root LIMIT 1)
                  UNION ALL
-                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
                  FROM messages m JOIN thread t ON m.reply_to = t.id
              )
-             SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
+             SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
              FROM thread ORDER BY created_at ASC",
         );
 
@@ -443,6 +452,8 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
     let status: String = row.get("status");
     let created_at: DateTime<Utc> = row.get("created_at");
     let reply_to: Option<Uuid> = row.get("reply_to");
+    let refs_json: serde_json::Value = row.get("refs");
+    let refs: Vec<ResourceRef> = decode_json_value(refs_json, "messages", "refs")?;
 
     Ok(Message::restore(RestoreMessage {
         id: MessageId::from_uuid(id),
@@ -454,6 +465,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
         to: MessageTarget::parse(&to_target).unwrap_or(MessageTarget::Broadcast),
         body,
         reply_to: reply_to.map(MessageId::from_uuid),
+        refs,
         status: status
             .parse::<MessageStatus>()
             .unwrap_or(MessageStatus::Pending),

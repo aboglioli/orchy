@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     tags TEXT NOT NULL DEFAULT '[]',
     result_summary TEXT,
     notes TEXT NOT NULL DEFAULT '[]',
+    refs TEXT NOT NULL DEFAULT '[]',
     created_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS messages (
     to_target TEXT NOT NULL,
     body TEXT NOT NULL,
     reply_to TEXT,
+    refs TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL
 );

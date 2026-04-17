@@ -15,6 +15,7 @@ use crate::namespace::{Namespace, ProjectId};
 use crate::note::Note;
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
+use crate::resource_ref::ResourceRef;
 
 use self::events as task_events;
 
@@ -203,6 +204,7 @@ pub struct Task {
     tags: Vec<String>,
     result_summary: Option<String>,
     notes: Vec<Note>,
+    refs: Vec<ResourceRef>,
     created_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -251,6 +253,7 @@ impl Task {
             tags: Vec::new(),
             result_summary: None,
             notes: Vec::new(),
+            refs: Vec::new(),
             created_by,
             created_at: now,
             updated_at: now,
@@ -300,6 +303,7 @@ impl Task {
             tags: r.tags,
             result_summary: r.result_summary,
             notes: r.notes,
+            refs: r.refs,
             created_by: r.created_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -744,6 +748,17 @@ impl Task {
     pub fn notes(&self) -> &[Note] {
         &self.notes
     }
+    pub fn refs(&self) -> &[ResourceRef] {
+        &self.refs
+    }
+    pub fn add_ref(&mut self, r: ResourceRef) {
+        if !self.refs.contains(&r) {
+            self.refs.push(r);
+        }
+    }
+    pub fn remove_ref(&mut self, r: &ResourceRef) {
+        self.refs.retain(|existing| existing != r);
+    }
     pub fn add_note(&mut self, author: Option<AgentId>, body: String) -> Result<()> {
         self.notes.push(Note::new(author, body.clone()));
         self.updated_at = Utc::now();
@@ -874,6 +889,7 @@ pub struct RestoreTask {
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
     pub notes: Vec<Note>,
+    pub refs: Vec<ResourceRef>,
     pub created_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -1302,6 +1318,7 @@ mod tests {
             tags: vec![],
             result_summary: None,
             notes: Vec::new(),
+            refs: Vec::new(),
             created_by: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

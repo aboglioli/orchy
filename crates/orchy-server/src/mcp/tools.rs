@@ -14,9 +14,9 @@ use orchy_application::{
     MergeTasksCommand, MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand,
     PollUpdatesCommand, PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand,
     ReleaseTaskCommand, RemoveDependencyCommand, RenameKnowledgeCommand, ReplaceTaskCommand,
-    RequestReviewCommand, ResolveReviewCommand, SearchKnowledgeCommand, SendMessageCommand,
-    SetProjectMetadataCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
-    SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand, UnblockTaskCommand,
+    RequestReviewCommand, ResolveReviewCommand, ResourceRefInput, SearchKnowledgeCommand,
+    SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand, StartTaskCommand,
+    SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand, UnblockTaskCommand,
     UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand, UnwatchTaskCommand,
     UpdateProjectCommand, UpdateTaskCommand, WatchTaskCommand, WriteKnowledgeCommand,
 };
@@ -352,6 +352,15 @@ impl OrchyHandler {
             depends_on: params.depends_on,
             parent_id: params.parent_id,
             created_by: self.get_session_agent().map(|id| id.to_string()),
+            refs: params.refs.map(|v| {
+                v.into_iter()
+                    .map(|r| ResourceRefInput {
+                        kind: r.kind,
+                        id: r.id,
+                        display: r.display,
+                    })
+                    .collect()
+            }),
         };
 
         match self.container.app.post_task.execute(cmd).await {
@@ -668,6 +677,15 @@ impl OrchyHandler {
             to,
             body: params.body,
             reply_to: params.reply_to,
+            refs: params.refs.map(|v| {
+                v.into_iter()
+                    .map(|r| ResourceRefInput {
+                        kind: r.kind,
+                        id: r.id,
+                        display: r.display,
+                    })
+                    .collect()
+            }),
         };
 
         match self.container.app.send_message.execute(cmd).await {

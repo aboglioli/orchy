@@ -51,6 +51,16 @@ pub struct PostTaskParams {
     pub assigned_roles: Option<Vec<String>>,
     /// Task IDs that must complete before this task can be claimed.
     pub depends_on: Option<Vec<String>>,
+    /// Resource references: links to tasks, knowledge, agents, or messages.
+    pub refs: Option<Vec<ResourceRefParam>>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ResourceRefParam {
+    /// task, knowledge, agent, or message.
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -197,6 +207,8 @@ pub struct SendMessageParams {
     pub namespace: Option<String>,
     /// Creates a thread.
     pub reply_to: Option<String>,
+    /// Resource references: links to tasks, knowledge, agents, or messages.
+    pub refs: Option<Vec<ResourceRefParam>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

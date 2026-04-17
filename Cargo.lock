@@ -1534,6 +1534,7 @@ dependencies = [
  "axum",
  "chrono",
  "http",
+ "orchy-application",
  "orchy-core",
  "orchy-events",
  "orchy-store-memory",

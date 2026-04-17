@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     tags JSONB NOT NULL DEFAULT '[]',
     result_summary TEXT,
     notes JSONB NOT NULL DEFAULT '[]',
+    refs JSONB NOT NULL DEFAULT '[]',
     created_by UUID REFERENCES agents(id),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS messages (
     to_target TEXT NOT NULL,
     body TEXT NOT NULL,
     reply_to UUID REFERENCES messages(id),
+    refs JSONB NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMPTZ NOT NULL
 );

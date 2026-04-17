@@ -128,7 +128,7 @@ pub use fail_task::{FailTask, FailTaskCommand};
 pub use get_next_task::{GetNextTask, GetNextTaskCommand};
 pub use get_task::GetTask;
 pub use list_tasks::{ListTasks, ListTasksCommand};
-pub use post_task::{PostTask, PostTaskCommand};
+pub use post_task::{PostTask, PostTaskCommand, ResourceRefInput};
 pub use release_task::{ReleaseTask, ReleaseTaskCommand};
 pub use start_task::{StartTask, StartTaskCommand};
 pub use unblock_task::{UnblockTask, UnblockTaskCommand};
