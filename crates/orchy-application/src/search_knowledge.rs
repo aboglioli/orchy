@@ -5,6 +5,8 @@ use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::organization::OrganizationId;
 
+use orchy_core::namespace::ProjectId;
+
 use crate::dto::KnowledgeResponse;
 use crate::parse_namespace;
 
@@ -14,6 +16,7 @@ pub struct SearchKnowledgeCommand {
     pub namespace: Option<String>,
     pub kind: Option<String>,
     pub limit: Option<u32>,
+    pub project: Option<String>,
 }
 
 pub struct SearchKnowledge {
@@ -47,6 +50,11 @@ impl SearchKnowledge {
             None
         };
 
+        let project = cmd
+            .project
+            .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
+            .transpose()?;
+
         let entries = self
             .store
             .search(
@@ -57,6 +65,17 @@ impl SearchKnowledge {
                 limit,
             )
             .await?;
-        Ok(entries.iter().map(KnowledgeResponse::from).collect())
+
+        let filtered: Vec<_> = if let Some(ref pid) = project {
+            entries
+                .iter()
+                .filter(|e| e.project().map(|p| p == pid).unwrap_or(false))
+                .map(KnowledgeResponse::from)
+                .collect()
+        } else {
+            entries.iter().map(KnowledgeResponse::from).collect()
+        };
+
+        Ok(filtered)
     }
 }

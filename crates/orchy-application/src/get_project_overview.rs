@@ -10,7 +10,7 @@ use orchy_core::project::ProjectStore;
 use orchy_core::task::{TaskFilter, TaskStore};
 
 use crate::dto::{
-    AgentResponse, KnowledgeResponse, ProjectOverview, ProjectResponse, TaskResponse,
+    AgentResponse, KnowledgeResponse, ProjectOverviewResponse, ProjectResponse, TaskResponse,
 };
 use crate::parse_namespace;
 
@@ -42,7 +42,7 @@ impl GetProjectOverview {
         }
     }
 
-    pub async fn execute(&self, cmd: GetProjectOverviewCommand) -> Result<ProjectOverview> {
+    pub async fn execute(&self, cmd: GetProjectOverviewCommand) -> Result<ProjectOverviewResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project_id =
@@ -131,7 +131,7 @@ impl GetProjectOverview {
             .map(KnowledgeResponse::from)
             .collect();
 
-        Ok(ProjectOverview {
+        Ok(ProjectOverviewResponse {
             project,
             agents,
             tasks,

@@ -5,6 +5,8 @@ use orchy_core::organization::OrganizationStore;
 
 use crate::dto::OrganizationResponse;
 
+pub struct ListOrganizationsCommand {}
+
 pub struct ListOrganizations {
     orgs: Arc<dyn OrganizationStore>,
 }
@@ -14,7 +16,10 @@ impl ListOrganizations {
         Self { orgs }
     }
 
-    pub async fn execute(&self) -> Result<Vec<OrganizationResponse>> {
+    pub async fn execute(
+        &self,
+        _cmd: ListOrganizationsCommand,
+    ) -> Result<Vec<OrganizationResponse>> {
         let orgs = self.orgs.list().await?;
         Ok(orgs.iter().map(OrganizationResponse::from).collect())
     }

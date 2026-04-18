@@ -139,7 +139,7 @@ pub use complete_task::{CompleteTask, CompleteTaskCommand};
 pub use fail_task::{FailTask, FailTaskCommand};
 pub use get_next_task::{GetNextTask, GetNextTaskCommand};
 pub use get_task::{GetTask, GetTaskCommand};
-pub use get_task_with_context::GetTaskWithContext;
+pub use get_task_with_context::{GetTaskWithContext, GetTaskWithContextCommand};
 pub use list_tasks::{ListTasks, ListTasksCommand};
 pub use post_task::{PostTask, PostTaskCommand, ResourceRefInput};
 pub use release_task::{ReleaseTask, ReleaseTaskCommand};
@@ -195,14 +195,14 @@ pub use unlock_resource::{UnlockResource, UnlockResourceCommand};
 pub use add_api_key::{AddApiKey, AddApiKeyCommand};
 pub use create_organization::{CreateOrganization, CreateOrganizationCommand};
 pub use get_organization::{GetOrganization, GetOrganizationCommand};
-pub use list_organizations::ListOrganizations;
+pub use list_organizations::{ListOrganizations, ListOrganizationsCommand};
 pub use resolve_api_key::{ResolveApiKey, ResolveApiKeyCommand};
 pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 
 pub use dto::{
     AgentResponse, AgentSummaryResponse, ApiKeyResponse, KnowledgeResponse, MessageResponse,
-    OrganizationResponse, PageResponse, ProjectOverview, ProjectResponse, ResourceLockResponse,
-    ResourceRefResponse, TaskResponse, TaskWithContextResponse,
+    OrganizationResponse, PageResponse, ProjectOverviewResponse, ProjectResponse,
+    ResourceLockResponse, ResourceRefResponse, TaskResponse, TaskWithContextResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};

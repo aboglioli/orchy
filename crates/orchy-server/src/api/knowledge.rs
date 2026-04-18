@@ -28,7 +28,7 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
 }
 
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.0.id() != org_id {
+    if auth.0.id.as_str() != org_id.as_str() {
         Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -165,7 +165,7 @@ pub async fn list_types(
     Path((org, _project)): Path<(String, String)>,
 ) -> Result<Json<Vec<KnowledgeTypeDto>>, ApiError> {
     let org_id = parse_org(&org)?;
-    if auth.0.id() != &org_id {
+    if auth.0.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -199,6 +199,7 @@ pub async fn search(
         namespace: body.namespace,
         kind: body.kind,
         limit: body.limit,
+        project: Some(project),
     };
 
     let entries = container
@@ -208,12 +209,7 @@ pub async fn search(
         .await
         .map_err(ApiError::from)?;
 
-    let filtered: Vec<_> = entries
-        .into_iter()
-        .filter(|e| e.project.as_deref() == Some(&project))
-        .collect();
-
-    Ok(Json(serde_json::to_value(&filtered).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&entries).unwrap_or_default()))
 }
 
 pub async fn import(

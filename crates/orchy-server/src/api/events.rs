@@ -21,7 +21,7 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
 }
 
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.0.id() != org_id {
+    if auth.0.id.as_str() != org_id.as_str() {
         Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",

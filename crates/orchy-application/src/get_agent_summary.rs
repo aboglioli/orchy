@@ -97,12 +97,16 @@ impl GetAgentSummary {
             .map(MessageResponse::from)
             .collect();
 
+        let agent_roles: std::collections::HashSet<&str> =
+            agent.roles().iter().map(|r| r.as_str()).collect();
+
         let pending_tasks: Vec<TaskResponse> = self
             .tasks
             .list(
                 TaskFilter {
                     org_id: Some(org_id.clone()),
                     project: Some(agent.project().clone()),
+                    namespace: Some(agent.namespace().clone()),
                     status: Some(TaskStatus::Pending),
                     ..Default::default()
                 },
@@ -111,6 +115,12 @@ impl GetAgentSummary {
             .await?
             .items
             .iter()
+            .filter(|t| {
+                t.assigned_roles().is_empty()
+                    || t.assigned_roles()
+                        .iter()
+                        .any(|r| agent_roles.contains(r.as_str()))
+            })
             .map(TaskResponse::from)
             .collect();
 

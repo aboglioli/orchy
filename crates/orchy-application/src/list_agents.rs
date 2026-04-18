@@ -33,22 +33,45 @@ impl ListAgents {
             .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
             .transpose()?;
 
+        if let Some(ref project) = project {
+            let limit = cmd.limit.unwrap_or(50) as usize;
+            let result = self.agents.list(&org, PageParams::unbounded()).await?;
+
+            let filtered: Vec<AgentResponse> = result
+                .items
+                .iter()
+                .filter(|a| a.project() == project)
+                .map(AgentResponse::from)
+                .collect();
+
+            let start = if let Some(ref cursor) = cmd.after {
+                filtered
+                    .iter()
+                    .position(|a| a.id == *cursor)
+                    .map(|i| i + 1)
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            let page_items: Vec<AgentResponse> =
+                filtered.into_iter().skip(start).take(limit + 1).collect();
+            let has_more = page_items.len() > limit;
+            let items: Vec<AgentResponse> = page_items.into_iter().take(limit).collect();
+            let next_cursor = if has_more {
+                items.last().map(|a| a.id.clone())
+            } else {
+                None
+            };
+
+            return Ok(PageResponse { items, next_cursor });
+        }
+
         let page = PageParams::new(cmd.after, cmd.limit);
         let result = self.agents.list(&org, page).await?;
 
-        let items: Vec<_> = if let Some(project) = project {
-            result
-                .items
-                .iter()
-                .filter(|a| *a.project() == project)
-                .map(AgentResponse::from)
-                .collect()
-        } else {
-            result.items.iter().map(AgentResponse::from).collect()
-        };
-
         Ok(PageResponse {
-            items,
+            items: result.items.iter().map(AgentResponse::from).collect(),
             next_cursor: result.next_cursor,
         })
     }

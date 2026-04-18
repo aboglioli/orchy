@@ -53,7 +53,7 @@ pub async fn list(
     let orgs = container
         .app
         .list_organizations
-        .execute()
+        .execute(orchy_application::ListOrganizationsCommand {})
         .await
         .map_err(ApiError::from)?;
     Ok(Json(orgs))
@@ -66,7 +66,7 @@ pub async fn get(
 ) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id() != &org_id {
+    if auth.0.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -90,7 +90,7 @@ pub async fn add_api_key(
 ) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id() != &org_id {
+    if auth.0.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -117,7 +117,7 @@ pub async fn revoke_api_key(
 ) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id() != &org_id {
+    if auth.0.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",

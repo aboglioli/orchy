@@ -6,6 +6,10 @@ use orchy_core::task::{TaskFilter, TaskId, TaskStore, TaskWithContext};
 
 use crate::dto::TaskWithContextResponse;
 
+pub struct GetTaskWithContextCommand {
+    pub task_id: String,
+}
+
 pub struct GetTaskWithContext {
     tasks: Arc<dyn TaskStore>,
 }
@@ -15,14 +19,15 @@ impl GetTaskWithContext {
         Self { tasks }
     }
 
-    pub async fn execute(&self, task_id: &str) -> Result<TaskWithContextResponse> {
-        let id = task_id
+    pub async fn execute(&self, cmd: GetTaskWithContextCommand) -> Result<TaskWithContextResponse> {
+        let id = cmd
+            .task_id
             .parse::<TaskId>()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         self.get_with_context(&id).await
     }
 
-    pub async fn get_with_context(&self, id: &TaskId) -> Result<TaskWithContextResponse> {
+    async fn get_with_context(&self, id: &TaskId) -> Result<TaskWithContextResponse> {
         let task = self
             .tasks
             .find_by_id(id)

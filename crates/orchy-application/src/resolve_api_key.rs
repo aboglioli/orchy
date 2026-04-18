@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use orchy_core::error::Result;
-use orchy_core::organization::{Organization, OrganizationStore};
+use orchy_core::organization::OrganizationStore;
 
-pub struct ResolveApiKeyCommand<'a> {
-    pub key: &'a str,
+use crate::dto::OrganizationResponse;
+
+pub struct ResolveApiKeyCommand {
+    pub key: String,
 }
 
 pub struct ResolveApiKey {
@@ -16,7 +18,8 @@ impl ResolveApiKey {
         Self { orgs }
     }
 
-    pub async fn execute(&self, cmd: ResolveApiKeyCommand<'_>) -> Result<Option<Organization>> {
-        self.orgs.find_by_api_key(cmd.key).await
+    pub async fn execute(&self, cmd: ResolveApiKeyCommand) -> Result<Option<OrganizationResponse>> {
+        let org = self.orgs.find_by_api_key(&cmd.key).await?;
+        Ok(org.as_ref().map(OrganizationResponse::from))
     }
 }

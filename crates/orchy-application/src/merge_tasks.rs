@@ -11,12 +11,10 @@ use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 use crate::dto::TaskResponse;
 
 pub struct MergeTasksCommand {
+    pub org_id: String,
     pub task_ids: Vec<String>,
     pub title: String,
     pub description: String,
-    pub org_id: String,
-    pub project: String,
-    pub namespace: Option<String>,
     pub created_by: Option<String>,
 }
 

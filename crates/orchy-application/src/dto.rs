@@ -378,7 +378,7 @@ impl From<&orchy_core::organization::ApiKey> for ApiKeyResponse {
     }
 }
 
-pub struct ProjectOverview {
+pub struct ProjectOverviewResponse {
     pub project: Option<ProjectResponse>,
     pub agents: Vec<AgentResponse>,
     pub tasks: Vec<TaskResponse>,

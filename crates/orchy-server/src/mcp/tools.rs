@@ -9,16 +9,16 @@ use orchy_application::{
     CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand, CheckLockCommand,
     CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand, CompleteTaskCommand,
     DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand, FailTaskCommand,
-    GetNextTaskCommand, GetProjectCommand, HeartbeatCommand, ImportKnowledgeCommand,
-    ListAgentsCommand, ListConversationCommand, ListKnowledgeCommand, ListNamespacesCommand,
-    ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,
-    MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand, PollUpdatesCommand,
-    PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand, ReleaseTaskCommand,
-    RemoveDependencyCommand, RenameKnowledgeCommand, ReplaceTaskCommand, ResourceRefInput,
-    SearchKnowledgeCommand, SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand,
-    StartTaskCommand, SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand,
-    UnblockTaskCommand, UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand,
-    UpdateProjectCommand, UpdateTaskCommand, WriteKnowledgeCommand,
+    GetNextTaskCommand, GetProjectCommand, GetTaskWithContextCommand, HeartbeatCommand,
+    ImportKnowledgeCommand, ListAgentsCommand, ListConversationCommand, ListKnowledgeCommand,
+    ListNamespacesCommand, ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand,
+    MergeTasksCommand, MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand,
+    PollUpdatesCommand, PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand,
+    ReleaseTaskCommand, RemoveDependencyCommand, RenameKnowledgeCommand, ReplaceTaskCommand,
+    ResourceRefInput, SearchKnowledgeCommand, SendMessageCommand, SetProjectMetadataCommand,
+    SplitTaskCommand, StartTaskCommand, SubtaskInput, SwitchContextCommand, TagKnowledgeCommand,
+    TagTaskCommand, UnblockTaskCommand, UnlockResourceCommand, UntagKnowledgeCommand,
+    UntagTaskCommand, UpdateProjectCommand, UpdateTaskCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 
@@ -384,7 +384,9 @@ impl OrchyHandler {
                     .container
                     .app
                     .get_task_with_context
-                    .get_with_context(&task_id)
+                    .execute(GetTaskWithContextCommand {
+                        task_id: task_id.to_string(),
+                    })
                     .await
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
@@ -455,7 +457,9 @@ impl OrchyHandler {
                     .container
                     .app
                     .get_task_with_context
-                    .get_with_context(&task_id)
+                    .execute(GetTaskWithContextCommand {
+                        task_id: task_id.to_string(),
+                    })
                     .await
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
@@ -487,7 +491,9 @@ impl OrchyHandler {
                     .container
                     .app
                     .get_task_with_context
-                    .get_with_context(&task_id)
+                    .execute(GetTaskWithContextCommand {
+                        task_id: task_id.to_string(),
+                    })
                     .await
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
@@ -890,19 +896,13 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MergeTasksParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, project, _) = self.require_session()?;
-
-        let namespace = self
-            .resolve_namespace(None, NamespacePolicy::SessionDefault)
-            .await?;
+        let (agent_id, org, _, _) = self.require_session()?;
 
         let cmd = MergeTasksCommand {
+            org_id: org.to_string(),
             task_ids: params.task_ids,
             title: params.title,
             description: params.description,
-            org_id: org.to_string(),
-            project: project.to_string(),
-            namespace: Some(namespace.to_string()),
             created_by: Some(agent_id.to_string()),
         };
 
@@ -1432,7 +1432,9 @@ impl OrchyHandler {
             .container
             .app
             .get_task_with_context
-            .execute(&params.task_id)
+            .execute(GetTaskWithContextCommand {
+                task_id: params.task_id.clone(),
+            })
             .await
         {
             Ok(ctx) => Ok(to_json(&ctx)),
@@ -1685,18 +1687,13 @@ impl OrchyHandler {
             namespace: Some(namespace.to_string()),
             kind: params.kind,
             limit: params.limit,
+            project: params.project,
         };
 
-        let mut entries = match self.container.app.search_knowledge.execute(cmd).await {
-            Ok(e) => e,
-            Err(e) => return Err(mcp_error(e)),
-        };
-
-        if let Some(p) = params.project {
-            entries.retain(|e| e.project.as_deref() == Some(&p));
+        match self.container.app.search_knowledge.execute(cmd).await {
+            Ok(entries) => Ok(to_json(&entries)),
+            Err(e) => Err(mcp_error(e)),
         }
-
-        Ok(to_json(&entries))
     }
 
     #[tool(description = "Delete a knowledge entry by path.")]

@@ -3,14 +3,13 @@ use std::sync::Arc;
 use axum::extract::FromRequestParts;
 use axum::http::{StatusCode, request::Parts};
 
-use orchy_application::ResolveApiKeyCommand;
-use orchy_core::organization::Organization;
+use orchy_application::{OrganizationResponse, ResolveApiKeyCommand};
 
 use crate::container::Container;
 
 use super::ApiError;
 
-pub struct OrgAuth(pub Organization);
+pub struct OrgAuth(pub OrganizationResponse);
 
 impl FromRequestParts<Arc<Container>> for OrgAuth {
     type Rejection = ApiError;
@@ -35,7 +34,9 @@ impl FromRequestParts<Arc<Container>> for OrgAuth {
         let org = state
             .app
             .resolve_api_key
-            .execute(ResolveApiKeyCommand { key })
+            .execute(ResolveApiKeyCommand {
+                key: key.to_string(),
+            })
             .await
             .map_err(ApiError::from)?
             .ok_or_else(|| {

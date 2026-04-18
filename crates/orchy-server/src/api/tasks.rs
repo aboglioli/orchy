@@ -27,7 +27,7 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
 }
 
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.0.id() != org_id {
+    if auth.0.id.as_str() != org_id.as_str() {
         Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -918,12 +918,10 @@ pub async fn merge(
     }
 
     let cmd = MergeTasksCommand {
+        org_id: org,
         task_ids: body.task_ids,
         title: body.title,
         description: body.description,
-        org_id: org,
-        project,
-        namespace: None,
         created_by: None,
     };
 

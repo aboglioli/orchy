@@ -66,6 +66,24 @@ impl RegisterAgent {
                 .find_by_id(&parent_id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("agent {parent_id}")))?;
+
+            if *parent.org_id() != domain_cmd.org_id {
+                return Err(Error::InvalidInput(format!(
+                    "parent agent {} belongs to org {}, expected {}",
+                    parent_id,
+                    parent.org_id(),
+                    domain_cmd.org_id,
+                )));
+            }
+            if *parent.project() != domain_cmd.project {
+                return Err(Error::InvalidInput(format!(
+                    "parent agent {} belongs to project {}, expected {}",
+                    parent_id,
+                    parent.project(),
+                    domain_cmd.project,
+                )));
+            }
+
             let mut agent = orchy_core::agent::Agent::from_parent(
                 &parent,
                 domain_cmd.namespace,
