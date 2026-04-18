@@ -364,14 +364,15 @@ This builds a shared graph that any agent can traverse.
 - `write_knowledge` with `task_id` auto-creates a `produces` edge (task → knowledge)
 - `merge_tasks` auto-creates `merged_from` edges (merged ← each source)
 
-**Relationship types (8):**
+**Relationship types (9):**
 - `derived_from` — this was created/informed by that
 - `produces` — completing this produced that as output
-- `supersedes` — this replaces/obsoletes that
+- `supersedes` — this replaces/obsoletes that; auto-created by replace_task
 - `merged_from` — N-to-1 consolidation (merged task ← source tasks); auto-created by merge_tasks
 - `summarizes` — 1-to-1 distillation of another entry
 - `implements` — this executes/fulfills that (task implementing a plan)
-- `spawns` — this triggered/created that; auto-created by split_task and delegate_task
+- `spawns` — this triggered/created that; auto-created by split_task, delegate_task, and post_task (when parent_id is set)
+- `depends_on` — task A depends on task B completing first; auto-created by add_dependency, post_task (with depends_on list), auto-deleted by remove_dependency
 - `related_to` — general symmetric peer relationship
 
 **Deduplication:** `add_edge` returns an error if the same (from, rel_type, to) triple already exists.
