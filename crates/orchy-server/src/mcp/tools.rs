@@ -1527,6 +1527,7 @@ impl OrchyHandler {
                 Some(metadata)
             },
             metadata_remove: params.metadata_remove,
+            task_id: params.task_id,
         };
 
         match self.container.app.write_knowledge.execute(cmd).await {

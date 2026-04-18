@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
+use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
@@ -10,6 +11,8 @@ use orchy_core::knowledge::{
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::ResourceKind;
+use orchy_core::task::TaskId;
 
 use crate::parse_namespace;
 
@@ -28,19 +31,23 @@ pub struct WriteKnowledgeCommand {
     pub agent_id: Option<String>,
     pub metadata: Option<HashMap<String, String>>,
     pub metadata_remove: Option<Vec<String>>,
+    /// If set, auto-creates a Task→Knowledge Produces edge after writing.
+    pub task_id: Option<String>,
 }
 
 pub struct WriteKnowledge {
     store: Arc<dyn KnowledgeStore>,
+    edges: Arc<dyn EdgeStore>,
     embeddings: Option<Arc<dyn EmbeddingsProvider>>,
 }
 
 impl WriteKnowledge {
     pub fn new(
         store: Arc<dyn KnowledgeStore>,
+        edges: Arc<dyn EdgeStore>,
         embeddings: Option<Arc<dyn EmbeddingsProvider>>,
     ) -> Self {
-        Self { store, embeddings }
+        Self { store, edges, embeddings }
     }
 
     pub async fn execute(&self, cmd: WriteKnowledgeCommand) -> Result<KnowledgeResponse> {
@@ -59,9 +66,10 @@ impl WriteKnowledge {
             .transpose()
             .map_err(Error::InvalidInput)?;
         let expected_version = cmd.version.map(Version::from);
+        let task_id_str = cmd.task_id.clone();
 
         let write_cmd = WriteKnowledgeCmd {
-            org_id,
+            org_id: org_id.clone(),
             project: Some(project),
             namespace,
             path: cmd.path,
@@ -70,7 +78,7 @@ impl WriteKnowledge {
             content: cmd.content,
             tags: cmd.tags.unwrap_or_default(),
             expected_version,
-            agent_id,
+            agent_id: agent_id.clone(),
             metadata: cmd.metadata.unwrap_or_default(),
             metadata_remove: cmd.metadata_remove.unwrap_or_default(),
         };
@@ -138,6 +146,25 @@ impl WriteKnowledge {
         }
 
         self.store.save(&mut entry).await?;
+
+        if let Some(task_id) = task_id_str {
+            if task_id.parse::<TaskId>().is_ok() {
+                let edge = Edge::new(
+                    org_id,
+                    ResourceKind::Task,
+                    task_id,
+                    ResourceKind::Knowledge,
+                    entry.id().to_string(),
+                    RelationType::Produces,
+                    None,
+                    agent_id,
+                );
+                if let Err(e) = self.edges.save(&edge).await {
+                    tracing::warn!("failed to create produces edge for knowledge {}: {e}", entry.id());
+                }
+            }
+        }
+
         Ok(KnowledgeResponse::from(&entry))
     }
 }

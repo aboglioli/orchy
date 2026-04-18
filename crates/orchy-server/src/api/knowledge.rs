@@ -299,6 +299,7 @@ pub async fn write(
         agent_id: None,
         metadata: body.metadata,
         metadata_remove: None,
+        task_id: None,
     };
 
     let entry = container

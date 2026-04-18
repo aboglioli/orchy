@@ -388,7 +388,7 @@ impl Application {
             mark_read: MarkRead::new(messages.clone(), agents.clone()),
             list_conversation: ListConversation::new(messages.clone()),
 
-            write_knowledge: WriteKnowledge::new(knowledge.clone(), embeddings.clone()),
+            write_knowledge: WriteKnowledge::new(knowledge.clone(), edges.clone(), embeddings.clone()),
             read_knowledge: ReadKnowledge::new(knowledge.clone()),
             list_knowledge: ListKnowledge::new(knowledge.clone()),
             search_knowledge: SearchKnowledge::new(knowledge.clone(), embeddings.clone()),
