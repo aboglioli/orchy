@@ -168,6 +168,9 @@ impl TaskStore for PgBackend {
             Tasks::UpdatedAt,
         ]);
 
+        if let Some(ref org_id) = filter.org_id {
+            select.and_where(Expr::col(Tasks::OrganizationId).eq(org_id.to_string()));
+        }
         if let Some(ref ns) = filter.namespace
             && !ns.is_root()
         {

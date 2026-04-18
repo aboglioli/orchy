@@ -90,12 +90,17 @@ impl LockStore for PgBackend {
         Ok(())
     }
 
-    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+    async fn find_by_holder(
+        &self,
+        holder: &AgentId,
+        org: &OrganizationId,
+    ) -> Result<Vec<ResourceLock>> {
         let rows = sqlx::query(
             "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
-             FROM resource_locks WHERE holder = $1",
+             FROM resource_locks WHERE holder = $1 AND organization_id = $2",
         )
         .bind(holder.as_uuid())
+        .bind(org.to_string())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;

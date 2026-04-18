@@ -261,20 +261,24 @@ impl KnowledgeStore for PgBackend {
 
     async fn search(
         &self,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         query: &str,
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<Knowledge>> {
         if let Some(emb) = embedding {
-            return search_by_embedding(&self.pool, emb, namespace, limit).await;
+            return search_by_embedding(&self.pool, org, emb, namespace, limit).await;
         }
 
         let mut select = Query::select();
         select
             .from(KnowledgeEntries::Table)
             .expr(Expr::cust(SELECT_COLUMNS))
+            .and_where(Expr::cust_with_values(
+                "organization_id = ?",
+                [sea_query::Value::String(Some(Box::new(org.to_string())))],
+            ))
             .and_where(Expr::cust_with_values(
                 "to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', ?)",
                 [sea_query::Value::String(Some(Box::new(query.to_string())))],
@@ -321,27 +325,29 @@ impl KnowledgeStore for PgBackend {
 
 async fn search_by_embedding(
     pool: &sqlx::PgPool,
+    org: &OrganizationId,
     embedding: &[f32],
     namespace: Option<&Namespace>,
     limit: usize,
 ) -> Result<Vec<Knowledge>> {
     let vec = Vector::from(embedding.to_vec());
 
-    let mut sql =
-        format!("SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE embedding IS NOT NULL");
-    let mut param_idx = 2u32;
+    let mut sql = format!(
+        "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE embedding IS NOT NULL AND organization_id = $2"
+    );
+    let mut param_idx = 3u32;
 
     if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
         sql.push_str(&format!(
             " AND (namespace = ${param_idx} OR namespace LIKE ${param_idx} || '/%')"
         ));
         param_idx += 1;
-        let _ = param_idx;
 
-        sql.push_str(" ORDER BY embedding <=> $1 LIMIT $3");
+        sql.push_str(&format!(" ORDER BY embedding <=> $1 LIMIT ${param_idx}"));
 
         let rows = sqlx::query(&sql)
             .bind(&vec)
+            .bind(org.to_string())
             .bind(ns.to_string())
             .bind(limit as i64)
             .fetch_all(pool)
@@ -351,10 +357,11 @@ async fn search_by_embedding(
         return rows.iter().map(row_to_entry).collect();
     }
 
-    sql.push_str(" ORDER BY embedding <=> $1 LIMIT $2");
+    sql.push_str(&format!(" ORDER BY embedding <=> $1 LIMIT ${param_idx}"));
 
     let rows = sqlx::query(&sql)
         .bind(&vec)
+        .bind(org.to_string())
         .bind(limit as i64)
         .fetch_all(pool)
         .await

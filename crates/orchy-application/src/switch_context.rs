@@ -85,7 +85,7 @@ impl SwitchContext {
         }
 
         if project_changed {
-            self.release_project_resources(&agent_id, &current_project)
+            self.release_project_resources(&agent_id, &org, &current_project)
                 .await;
         }
 
@@ -94,7 +94,12 @@ impl SwitchContext {
         Ok(AgentResponse::from(&agent))
     }
 
-    async fn release_project_resources(&self, agent_id: &AgentId, project: &ProjectId) {
+    async fn release_project_resources(
+        &self,
+        agent_id: &AgentId,
+        org: &OrganizationId,
+        project: &ProjectId,
+    ) {
         let tasks = self
             .tasks
             .list(
@@ -115,7 +120,7 @@ impl SwitchContext {
 
         let locks = self
             .locks
-            .find_by_holder(agent_id)
+            .find_by_holder(agent_id, org)
             .await
             .unwrap_or_default();
         for lock in locks {

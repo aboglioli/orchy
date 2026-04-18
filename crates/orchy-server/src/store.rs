@@ -215,8 +215,12 @@ impl LockStore for StoreBackend {
     ) -> Result<()> {
         delegate_trait!(self, LockStore::delete(org, project, namespace, name))
     }
-    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
-        delegate_trait!(self, LockStore::find_by_holder(holder))
+    async fn find_by_holder(
+        &self,
+        holder: &AgentId,
+        org: &OrganizationId,
+    ) -> Result<Vec<ResourceLock>> {
+        delegate_trait!(self, LockStore::find_by_holder(holder, org))
     }
     async fn delete_expired(&self) -> Result<u64> {
         delegate_trait!(self, LockStore::delete_expired())

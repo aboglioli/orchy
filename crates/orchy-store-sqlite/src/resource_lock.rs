@@ -102,17 +102,24 @@ impl LockStore for SqliteBackend {
         Ok(())
     }
 
-    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+    async fn find_by_holder(
+        &self,
+        holder: &AgentId,
+        org: &OrganizationId,
+    ) -> Result<Vec<ResourceLock>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
                 "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
-                 FROM resource_locks WHERE holder = ?1",
+                 FROM resource_locks WHERE holder = ?1 AND organization_id = ?2",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let locks = stmt
-            .query_map(rusqlite::params![holder.to_string()], row_to_resource_lock)
+            .query_map(
+                rusqlite::params![holder.to_string(), org.to_string()],
+                row_to_resource_lock,
+            )
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;

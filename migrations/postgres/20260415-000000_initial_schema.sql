@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS agents (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id UUID REFERENCES agents(id),
-    alias TEXT,
     roles JSONB NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
@@ -34,7 +33,6 @@ CREATE TABLE IF NOT EXISTS agents (
     connected_at TIMESTAMPTZ NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'
 );
-CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (organization_id, project, alias) WHERE alias IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID PRIMARY KEY,
@@ -52,7 +50,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     depends_on JSONB NOT NULL DEFAULT '[]',
     tags JSONB NOT NULL DEFAULT '[]',
     result_summary TEXT,
-    notes JSONB NOT NULL DEFAULT '[]',
     refs JSONB NOT NULL DEFAULT '[]',
     created_by UUID REFERENCES agents(id),
     created_at TIMESTAMPTZ NOT NULL,
@@ -136,33 +133,6 @@ CREATE TABLE IF NOT EXISTS resource_locks (
     expires_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (organization_id, project, namespace, name)
 );
-
-CREATE TABLE IF NOT EXISTS task_watchers (
-    task_id UUID NOT NULL REFERENCES tasks(id),
-    agent_id UUID NOT NULL REFERENCES agents(id),
-    organization_id TEXT NOT NULL DEFAULT 'default',
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (task_id, agent_id)
-);
-
-CREATE TABLE IF NOT EXISTS reviews (
-    id UUID PRIMARY KEY,
-    organization_id TEXT NOT NULL DEFAULT 'default',
-    task_id UUID NOT NULL REFERENCES tasks(id),
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    requester UUID NOT NULL REFERENCES agents(id),
-    reviewer UUID REFERENCES agents(id),
-    reviewer_role TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    comments TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    resolved_at TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS reviews_task_idx ON reviews (task_id);
-CREATE INDEX IF NOT EXISTS reviews_status_idx ON reviews (status);
 
 CREATE TABLE IF NOT EXISTS events (
     id UUID PRIMARY KEY,

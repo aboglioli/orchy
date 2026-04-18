@@ -86,6 +86,11 @@ impl TaskStore for SqliteBackend {
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
 
+        if let Some(ref org_id) = filter.org_id {
+            sql.push_str(&format!(" AND organization_id = ?{idx}"));
+            params.push(Box::new(org_id.to_string()));
+            idx += 1;
+        }
         if let Some(ref ns) = filter.namespace {
             if !ns.is_root() {
                 sql.push_str(&format!(

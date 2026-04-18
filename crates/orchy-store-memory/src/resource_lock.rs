@@ -73,14 +73,18 @@ impl LockStore for MemoryBackend {
         Ok(())
     }
 
-    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>> {
+    async fn find_by_holder(
+        &self,
+        holder: &AgentId,
+        org: &OrganizationId,
+    ) -> Result<Vec<ResourceLock>> {
         let locks = self
             .resource_locks
             .read()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(locks
             .values()
-            .filter(|lock| *lock.holder() == *holder)
+            .filter(|lock| *lock.holder() == *holder && lock.org_id() == org)
             .cloned()
             .collect())
     }

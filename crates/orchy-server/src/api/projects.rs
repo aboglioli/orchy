@@ -32,6 +32,7 @@ pub struct SetMetadataBody {
 #[derive(Deserialize)]
 pub struct IncludeSummaryQuery {
     pub include_summary: Option<bool>,
+    pub namespace: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -98,7 +99,7 @@ pub async fn get(
     let cmd = GetProjectOverviewCommand {
         org_id: org,
         project,
-        namespace: None,
+        namespace: query.namespace,
     };
 
     let overview = container

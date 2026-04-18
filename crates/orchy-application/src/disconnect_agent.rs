@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
+use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::{TaskFilter, TaskStore};
@@ -33,14 +34,15 @@ impl DisconnectAgent {
     pub async fn execute(&self, cmd: DisconnectAgentCommand) -> Result<()> {
         let id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
 
-        self.release_tasks(&id).await;
-        self.release_locks(&id).await;
-
         let mut agent = self
             .agents
             .find_by_id(&id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
+
+        self.release_tasks(&id).await;
+        self.release_locks(&id, agent.org_id()).await;
+
         agent.disconnect()?;
         self.agents.save(&mut agent).await
     }
@@ -65,10 +67,10 @@ impl DisconnectAgent {
         }
     }
 
-    async fn release_locks(&self, agent_id: &AgentId) {
+    async fn release_locks(&self, agent_id: &AgentId, org: &OrganizationId) {
         let locks = self
             .locks
-            .find_by_holder(agent_id)
+            .find_by_holder(agent_id, org)
             .await
             .unwrap_or_default();
 

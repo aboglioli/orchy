@@ -29,7 +29,11 @@ pub trait LockStore: Send + Sync {
         namespace: &Namespace,
         name: &str,
     ) -> Result<()>;
-    async fn find_by_holder(&self, holder: &AgentId) -> Result<Vec<ResourceLock>>;
+    async fn find_by_holder(
+        &self,
+        holder: &AgentId,
+        org: &OrganizationId,
+    ) -> Result<Vec<ResourceLock>>;
     async fn delete_expired(&self) -> Result<u64>;
 }
 

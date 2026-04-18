@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS agents (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
     parent_id TEXT,
-    alias TEXT,
     roles TEXT NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
@@ -31,7 +30,6 @@ CREATE TABLE IF NOT EXISTS agents (
     connected_at TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}'
 );
-CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (organization_id, project, alias) WHERE alias IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
@@ -49,7 +47,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     depends_on TEXT NOT NULL DEFAULT '[]',
     tags TEXT NOT NULL DEFAULT '[]',
     result_summary TEXT,
-    notes TEXT NOT NULL DEFAULT '[]',
     refs TEXT NOT NULL DEFAULT '[]',
     created_by TEXT,
     created_at TEXT NOT NULL,
@@ -156,33 +153,6 @@ CREATE TABLE IF NOT EXISTS resource_locks (
     expires_at TEXT NOT NULL,
     PRIMARY KEY (organization_id, project, namespace, name)
 );
-
-CREATE TABLE IF NOT EXISTS task_watchers (
-    task_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL,
-    organization_id TEXT NOT NULL DEFAULT 'default',
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (task_id, agent_id)
-);
-
-CREATE TABLE IF NOT EXISTS reviews (
-    id TEXT PRIMARY KEY,
-    organization_id TEXT NOT NULL DEFAULT 'default',
-    task_id TEXT NOT NULL,
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    requester TEXT NOT NULL,
-    reviewer TEXT,
-    reviewer_role TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    comments TEXT,
-    created_at TEXT NOT NULL,
-    resolved_at TEXT
-);
-CREATE INDEX IF NOT EXISTS reviews_task_idx ON reviews (task_id);
-CREATE INDEX IF NOT EXISTS reviews_status_idx ON reviews (status);
 
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,

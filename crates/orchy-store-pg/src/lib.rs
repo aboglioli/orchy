@@ -123,7 +123,7 @@ impl PgBackend {
 
     pub async fn truncate_all(&self) -> Result<()> {
         sqlx::query(
-            "TRUNCATE message_receipts, task_watchers, resource_locks, messages, tasks, knowledge_entries, events, namespaces, agents, projects CASCADE",
+            "TRUNCATE message_receipts, resource_locks, messages, tasks, knowledge_entries, events, namespaces, agents, projects CASCADE",
         )
             .execute(&self.pool)
             .await
