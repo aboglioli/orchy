@@ -6,6 +6,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::{Namespace, NamespaceStore};
+use orchy_core::organization::OrganizationStore;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
@@ -107,6 +108,14 @@ mod check_lock;
 mod lock_resource;
 mod unlock_resource;
 
+// Organization
+mod add_api_key;
+mod create_organization;
+mod get_organization;
+mod list_organizations;
+mod resolve_api_key;
+mod revoke_api_key;
+
 // Events/overview
 mod get_project_overview;
 mod poll_updates;
@@ -183,10 +192,17 @@ pub use check_lock::{CheckLock, CheckLockCommand};
 pub use lock_resource::{LockResource, LockResourceCommand};
 pub use unlock_resource::{UnlockResource, UnlockResourceCommand};
 
+pub use add_api_key::{AddApiKey, AddApiKeyCommand};
+pub use create_organization::{CreateOrganization, CreateOrganizationCommand};
+pub use get_organization::{GetOrganization, GetOrganizationCommand};
+pub use list_organizations::ListOrganizations;
+pub use resolve_api_key::{ResolveApiKey, ResolveApiKeyCommand};
+pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
+
 pub use dto::{
-    AgentResponse, AgentSummaryResponse, KnowledgeResponse, MessageResponse, PageResponse,
-    ProjectOverview, ProjectResponse, ResourceLockResponse, ResourceRefResponse, TaskResponse,
-    TaskWithContextResponse,
+    AgentResponse, AgentSummaryResponse, ApiKeyResponse, KnowledgeResponse, MessageResponse,
+    OrganizationResponse, PageResponse, ProjectOverview, ProjectResponse, ResourceLockResponse,
+    ResourceRefResponse, TaskResponse, TaskWithContextResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
@@ -265,6 +281,13 @@ pub struct Application {
 
     pub poll_updates: PollUpdates,
     pub get_project_overview: GetProjectOverview,
+
+    pub create_organization: CreateOrganization,
+    pub get_organization: GetOrganization,
+    pub list_organizations: ListOrganizations,
+    pub add_api_key: AddApiKey,
+    pub revoke_api_key: RevokeApiKey,
+    pub resolve_api_key: ResolveApiKey,
 }
 
 impl Application {
@@ -277,6 +300,7 @@ impl Application {
         messages: Arc<dyn MessageStore>,
         locks: Arc<dyn LockStore>,
         namespaces: Arc<dyn NamespaceStore>,
+        orgs: Arc<dyn OrganizationStore>,
         embeddings: Option<Arc<dyn EmbeddingsProvider>>,
         event_query: Arc<dyn EventQuery>,
     ) -> Self {
@@ -365,6 +389,13 @@ impl Application {
 
             poll_updates: PollUpdates::new(event_query),
             get_project_overview: GetProjectOverview::new(projects, agents, tasks, knowledge),
+
+            create_organization: CreateOrganization::new(orgs.clone()),
+            get_organization: GetOrganization::new(orgs.clone()),
+            list_organizations: ListOrganizations::new(orgs.clone()),
+            add_api_key: AddApiKey::new(orgs.clone()),
+            revoke_api_key: RevokeApiKey::new(orgs.clone()),
+            resolve_api_key: ResolveApiKey::new(orgs),
         }
     }
 }

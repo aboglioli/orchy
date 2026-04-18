@@ -3,6 +3,7 @@ use std::sync::Arc;
 use axum::extract::FromRequestParts;
 use axum::http::{StatusCode, request::Parts};
 
+use orchy_application::ResolveApiKeyCommand;
 use orchy_core::organization::Organization;
 
 use crate::container::Container;
@@ -32,8 +33,9 @@ impl FromRequestParts<Arc<Container>> for OrgAuth {
             })?;
 
         let org = state
-            .org_service
-            .resolve_api_key(key)
+            .app
+            .resolve_api_key
+            .execute(ResolveApiKeyCommand { key })
             .await
             .map_err(ApiError::from)?
             .ok_or_else(|| {

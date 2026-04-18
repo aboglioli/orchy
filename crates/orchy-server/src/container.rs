@@ -4,7 +4,6 @@ use tokio::sync::RwLock;
 
 use orchy_application::Application;
 use orchy_core::agent::AgentId;
-use orchy_core::organization::service::OrganizationService;
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
@@ -16,7 +15,6 @@ use crate::store::StoreBackend;
 pub struct Container {
     pub store: Arc<StoreBackend>,
     pub app: Application,
-    pub org_service: OrganizationService<StoreBackend>,
     pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
     pub start_time: std::time::Instant,
@@ -32,14 +30,13 @@ impl Container {
             .transpose()?
             .map(Arc::new);
 
-        let org_service = OrganizationService::new(Arc::clone(&store));
-
         use orchy_application::EventQuery;
         use orchy_core::agent::AgentStore;
         use orchy_core::embeddings::EmbeddingsProvider;
         use orchy_core::knowledge::KnowledgeStore;
         use orchy_core::message::MessageStore;
         use orchy_core::namespace::NamespaceStore;
+        use orchy_core::organization::OrganizationStore;
         use orchy_core::project::ProjectStore;
         use orchy_core::resource_lock::LockStore;
         use orchy_core::task::TaskStore;
@@ -52,6 +49,7 @@ impl Container {
             store.clone() as Arc<dyn MessageStore>,
             store.clone() as Arc<dyn LockStore>,
             store.clone() as Arc<dyn NamespaceStore>,
+            store.clone() as Arc<dyn OrganizationStore>,
             embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
             store.clone() as Arc<dyn EventQuery>,
         );
@@ -59,7 +57,6 @@ impl Container {
         Ok(Arc::new(Self {
             store,
             app,
-            org_service,
             session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
             start_time: std::time::Instant::now(),

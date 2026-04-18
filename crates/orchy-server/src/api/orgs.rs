@@ -5,10 +5,13 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use serde::Deserialize;
 
-use orchy_core::organization::{ApiKeyId, OrganizationId};
+use orchy_application::{
+    AddApiKeyCommand, CreateOrganizationCommand, GetOrganizationCommand, OrganizationResponse,
+    RevokeApiKeyCommand,
+};
+use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
@@ -27,67 +30,40 @@ pub struct AddApiKeyBody {
     pub key: String,
 }
 
-#[derive(Serialize)]
-pub struct ApiKeyDto {
-    pub id: String,
-    pub name: String,
-    pub is_active: bool,
-}
-
-#[derive(Serialize)]
-pub struct OrgDto {
-    pub id: String,
-    pub name: String,
-    pub api_keys: Vec<ApiKeyDto>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-fn org_to_dto(org: orchy_core::organization::Organization) -> OrgDto {
-    OrgDto {
-        id: org.id().to_string(),
-        name: org.name().to_string(),
-        api_keys: org
-            .api_keys()
-            .iter()
-            .map(|k| ApiKeyDto {
-                id: k.id().to_string(),
-                name: k.name().to_string(),
-                is_active: k.is_active(),
-            })
-            .collect(),
-        created_at: org.created_at().to_rfc3339(),
-        updated_at: org.updated_at().to_rfc3339(),
-    }
-}
-
 pub async fn create(
     State(container): State<Arc<Container>>,
     Json(body): Json<CreateOrgBody>,
-) -> Result<Json<OrgDto>, ApiError> {
-    let id = OrganizationId::new(&body.id)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    let org = container
-        .org_service
-        .create(id, body.name)
+) -> Result<Json<OrganizationResponse>, ApiError> {
+    let resp = container
+        .app
+        .create_organization
+        .execute(CreateOrganizationCommand {
+            id: body.id,
+            name: body.name,
+        })
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(org_to_dto(org)))
+    Ok(Json(resp))
 }
 
 pub async fn list(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
-) -> Result<Json<Vec<OrgDto>>, ApiError> {
-    let orgs = container.org_service.list().await.map_err(ApiError::from)?;
-    Ok(Json(orgs.into_iter().map(org_to_dto).collect()))
+) -> Result<Json<Vec<OrganizationResponse>>, ApiError> {
+    let orgs = container
+        .app
+        .list_organizations
+        .execute()
+        .await
+        .map_err(ApiError::from)?;
+    Ok(Json(orgs))
 }
 
 pub async fn get(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path(org): Path<String>,
-) -> Result<Json<OrgDto>, ApiError> {
+) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     if auth.0.id() != &org_id {
@@ -97,19 +73,13 @@ pub async fn get(
             "forbidden".to_string(),
         ));
     }
-    let org = container
-        .org_service
-        .get(&org_id)
+    let resp = container
+        .app
+        .get_organization
+        .execute(GetOrganizationCommand { id: org })
         .await
-        .map_err(ApiError::from)?
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                "organization not found".to_string(),
-            )
-        })?;
-    Ok(Json(org_to_dto(org)))
+        .map_err(ApiError::from)?;
+    Ok(Json(resp))
 }
 
 pub async fn add_api_key(
@@ -117,7 +87,7 @@ pub async fn add_api_key(
     auth: OrgAuth,
     Path(org): Path<String>,
     Json(body): Json<AddApiKeyBody>,
-) -> Result<Json<OrgDto>, ApiError> {
+) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     if auth.0.id() != &org_id {
@@ -127,19 +97,24 @@ pub async fn add_api_key(
             "forbidden".to_string(),
         ));
     }
-    let org = container
-        .org_service
-        .add_api_key(&org_id, body.name, body.key)
+    let resp = container
+        .app
+        .add_api_key
+        .execute(AddApiKeyCommand {
+            org_id: org,
+            name: body.name,
+            key: body.key,
+        })
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(org_to_dto(org)))
+    Ok(Json(resp))
 }
 
 pub async fn revoke_api_key(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, key_id_str)): Path<(String, String)>,
-) -> Result<Json<OrgDto>, ApiError> {
+) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     if auth.0.id() != &org_id {
@@ -149,14 +124,14 @@ pub async fn revoke_api_key(
             "forbidden".to_string(),
         ));
     }
-    let uuid = key_id_str
-        .parse::<Uuid>()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    let key_id = ApiKeyId::from_uuid(uuid);
-    let org = container
-        .org_service
-        .revoke_api_key(&org_id, &key_id)
+    let resp = container
+        .app
+        .revoke_api_key
+        .execute(RevokeApiKeyCommand {
+            org_id: org,
+            key_id: key_id_str,
+        })
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(org_to_dto(org)))
+    Ok(Json(resp))
 }

@@ -5,6 +5,7 @@ use serde::Serialize;
 use orchy_core::agent::Agent;
 use orchy_core::knowledge::Knowledge;
 use orchy_core::message::Message;
+use orchy_core::organization::Organization;
 use orchy_core::pagination::Page;
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
@@ -320,6 +321,52 @@ pub struct AgentSummaryResponse {
     pub pending_tasks: Vec<TaskResponse>,
     pub skills: Vec<KnowledgeResponse>,
     pub handoff_context: Vec<KnowledgeResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OrganizationResponse {
+    pub id: String,
+    pub name: String,
+    pub api_keys: Vec<ApiKeyResponse>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<Organization> for OrganizationResponse {
+    fn from(o: Organization) -> Self {
+        Self::from(&o)
+    }
+}
+
+impl From<&Organization> for OrganizationResponse {
+    fn from(o: &Organization) -> Self {
+        Self {
+            id: o.id().to_string(),
+            name: o.name().to_string(),
+            api_keys: o.api_keys().iter().map(ApiKeyResponse::from).collect(),
+            created_at: o.created_at().to_rfc3339(),
+            updated_at: o.updated_at().to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ApiKeyResponse {
+    pub id: String,
+    pub name: String,
+    pub is_active: bool,
+    pub created_at: String,
+}
+
+impl From<&orchy_core::organization::ApiKey> for ApiKeyResponse {
+    fn from(k: &orchy_core::organization::ApiKey) -> Self {
+        Self {
+            id: k.id().to_string(),
+            name: k.name().to_string(),
+            is_active: k.is_active(),
+            created_at: k.created_at().to_rfc3339(),
+        }
+    }
 }
 
 pub struct ProjectOverview {

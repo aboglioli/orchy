@@ -1,5 +1,4 @@
 pub mod events;
-pub mod service;
 
 pub use orchy_events::OrganizationId;
 
