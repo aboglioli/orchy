@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod edge;
 pub mod embeddings;
 pub mod error;
 pub mod knowledge;
