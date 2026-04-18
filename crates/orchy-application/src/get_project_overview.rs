@@ -57,7 +57,8 @@ impl GetProjectOverview {
             .projects
             .find_by_id(&org_id, &project_id)
             .await?
-            .map(|p| ProjectResponse::from(&p));
+            .ok_or_else(|| Error::NotFound(format!("project {project_id}")))?;
+        let project = Some(ProjectResponse::from(&project));
 
         let all_agents = self
             .agents
@@ -70,7 +71,7 @@ impl GetProjectOverview {
             .filter(|a| {
                 namespace
                     .as_ref()
-                    .map(|ns| a.namespace() == ns)
+                    .map(|ns| a.namespace().starts_with(ns))
                     .unwrap_or(true)
             })
             .map(AgentResponse::from)

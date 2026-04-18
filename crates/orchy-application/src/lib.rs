@@ -383,8 +383,8 @@ impl Application {
             set_project_metadata: SetProjectMetadata::new(projects.clone()),
             list_namespaces: ListNamespaces::new(namespaces),
 
-            lock_resource: LockResource::new(locks.clone()),
-            unlock_resource: UnlockResource::new(locks.clone()),
+            lock_resource: LockResource::new(agents.clone(), locks.clone()),
+            unlock_resource: UnlockResource::new(agents.clone(), locks.clone()),
             check_lock: CheckLock::new(locks),
 
             poll_updates: PollUpdates::new(event_query),

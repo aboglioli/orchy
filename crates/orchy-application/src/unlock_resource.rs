@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -18,12 +18,13 @@ pub struct UnlockResourceCommand {
 }
 
 pub struct UnlockResource {
+    agents: Arc<dyn AgentStore>,
     store: Arc<dyn LockStore>,
 }
 
 impl UnlockResource {
-    pub fn new(store: Arc<dyn LockStore>) -> Self {
-        Self { store }
+    pub fn new(agents: Arc<dyn AgentStore>, store: Arc<dyn LockStore>) -> Self {
+        Self { agents, store }
     }
 
     pub async fn execute(&self, cmd: UnlockResourceCommand) -> Result<()> {
@@ -33,6 +34,11 @@ impl UnlockResource {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let holder = AgentId::from_str(&cmd.holder_agent_id).map_err(Error::InvalidInput)?;
+
+        self.agents
+            .find_by_id(&holder)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("agent {holder}")))?;
 
         let mut lock = self
             .store
