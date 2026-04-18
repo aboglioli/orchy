@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{TaskId, TaskStatus, TaskStore};
 
@@ -14,12 +14,13 @@ pub struct ClaimTaskCommand {
 }
 
 pub struct ClaimTask {
+    agents: Arc<dyn AgentStore>,
     tasks: Arc<dyn TaskStore>,
 }
 
 impl ClaimTask {
-    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
-        Self { tasks }
+    pub fn new(agents: Arc<dyn AgentStore>, tasks: Arc<dyn TaskStore>) -> Self {
+        Self { agents, tasks }
     }
 
     pub async fn execute(&self, cmd: ClaimTaskCommand) -> Result<TaskResponse> {
@@ -28,6 +29,11 @@ impl ClaimTask {
             .parse::<TaskId>()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+
+        self.agents
+            .find_by_id(&agent_id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
 
         let mut task = self
             .tasks

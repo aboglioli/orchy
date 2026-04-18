@@ -35,20 +35,22 @@ impl CancelTask {
         task.cancel(cmd.reason)?;
         self.tasks.save(&mut task).await?;
 
-        self.try_auto_complete_parent(&task_id).await;
+        if let Err(e) = self.try_auto_complete_parent(&task_id).await {
+            tracing::warn!("failed to check parent auto-complete for {task_id}: {e}");
+        }
 
         Ok(TaskResponse::from(&task))
     }
 
-    async fn try_auto_complete_parent(&self, task_id: &TaskId) {
-        let Ok(Some(task)) = self.tasks.find_by_id(task_id).await else {
-            return;
+    async fn try_auto_complete_parent(&self, task_id: &TaskId) -> Result<()> {
+        let Some(task) = self.tasks.find_by_id(task_id).await? else {
+            return Ok(());
         };
         let Some(parent_id) = task.parent_id() else {
-            return;
+            return Ok(());
         };
-        let Ok(Some(mut parent)) = self.tasks.find_by_id(&parent_id).await else {
-            return;
+        let Some(mut parent) = self.tasks.find_by_id(&parent_id).await? else {
+            return Ok(());
         };
         let children = self
             .tasks
@@ -59,9 +61,8 @@ impl CancelTask {
                 },
                 PageParams::unbounded(),
             )
-            .await
-            .map(|p| p.items)
-            .unwrap_or_default();
+            .await?
+            .items;
 
         let all_done = children
             .iter()
@@ -69,7 +70,11 @@ impl CancelTask {
 
         if all_done {
             let _ = parent.auto_complete("all subtasks completed".to_string());
-            let _ = self.tasks.save(&mut parent).await;
+            if let Err(e) = self.tasks.save(&mut parent).await {
+                tracing::warn!("failed to auto-complete parent {}: {e}", parent_id);
+            }
         }
+
+        Ok(())
     }
 }

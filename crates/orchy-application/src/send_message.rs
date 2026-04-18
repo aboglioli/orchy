@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::ProjectId;
@@ -23,12 +23,13 @@ pub struct SendMessageCommand {
 }
 
 pub struct SendMessage {
+    agents: Arc<dyn AgentStore>,
     messages: Arc<dyn MessageStore>,
 }
 
 impl SendMessage {
-    pub fn new(messages: Arc<dyn MessageStore>) -> Self {
-        Self { messages }
+    pub fn new(agents: Arc<dyn AgentStore>, messages: Arc<dyn MessageStore>) -> Self {
+        Self { agents, messages }
     }
 
     pub async fn execute(&self, cmd: SendMessageCommand) -> Result<Vec<MessageResponse>> {
@@ -38,6 +39,22 @@ impl SendMessage {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let from = AgentId::from_str(&cmd.from_agent_id).map_err(Error::InvalidInput)?;
+
+        let sender = self
+            .agents
+            .find_by_id(&from)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("agent {from}")))?;
+        if sender.org_id() != &org_id {
+            return Err(Error::InvalidInput(format!(
+                "agent {from} belongs to a different organization"
+            )));
+        }
+        if sender.project() != &project {
+            return Err(Error::InvalidInput(format!(
+                "agent {from} belongs to a different project"
+            )));
+        }
         let to = MessageTarget::parse(&cmd.to)?;
         let reply_to = cmd
             .reply_to
