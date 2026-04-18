@@ -431,5 +431,13 @@ pub struct GraphResponse {
     pub root_kind: String,
     pub root_id: String,
     pub edges: Vec<TraversalEdgeResponse>,
-    pub node_count: usize,
+    pub node_ids: Vec<String>,
+    pub nodes: Option<std::collections::HashMap<String, NodeSummary>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NodeSummary {
+    pub kind: String,
+    pub id: String,
+    pub label: String,
 }

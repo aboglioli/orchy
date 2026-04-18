@@ -477,6 +477,8 @@ pub struct GetGraphParams {
     pub rel_types: Option<Vec<String>>,
     /// outgoing (default), incoming, or both.
     pub direction: Option<String>,
+    /// When true, include a `nodes` map with title/label for each touched resource.
+    pub include_nodes: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

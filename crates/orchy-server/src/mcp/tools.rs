@@ -1982,6 +1982,7 @@ impl OrchyHandler {
             max_depth: params.max_depth,
             rel_types: params.rel_types,
             direction: params.direction,
+            include_nodes: params.include_nodes.unwrap_or(false),
         };
 
         match self.container.app.get_graph.execute(cmd).await {

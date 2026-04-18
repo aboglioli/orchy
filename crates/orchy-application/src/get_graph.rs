@@ -1,12 +1,15 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use orchy_core::agent::AgentStore;
 use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::error::{Error, Result};
+use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
+use orchy_core::task::TaskStore;
 
-use crate::dto::{GraphResponse, TraversalEdgeResponse};
+use crate::dto::{GraphResponse, NodeSummary, TraversalEdgeResponse};
 
 pub struct GetGraphCommand {
     pub org_id: String,
@@ -15,15 +18,24 @@ pub struct GetGraphCommand {
     pub max_depth: Option<u32>,
     pub rel_types: Option<Vec<String>>,
     pub direction: Option<String>,
+    pub include_nodes: bool,
 }
 
 pub struct GetGraph {
     store: Arc<dyn EdgeStore>,
+    tasks: Arc<dyn TaskStore>,
+    knowledge: Arc<dyn KnowledgeStore>,
+    agents: Arc<dyn AgentStore>,
 }
 
 impl GetGraph {
-    pub fn new(store: Arc<dyn EdgeStore>) -> Self {
-        Self { store }
+    pub fn new(
+        store: Arc<dyn EdgeStore>,
+        tasks: Arc<dyn TaskStore>,
+        knowledge: Arc<dyn KnowledgeStore>,
+        agents: Arc<dyn AgentStore>,
+    ) -> Self {
+        Self { store, tasks, knowledge, agents }
     }
 
     pub async fn execute(&self, cmd: GetGraphCommand) -> Result<GraphResponse> {
@@ -62,22 +74,98 @@ impl GetGraph {
             )
             .await?;
 
-        let mut node_ids: HashSet<String> = HashSet::new();
-        node_ids.insert(format!("{}:{}", kind, cmd.id));
+        let mut node_set: HashSet<String> = HashSet::new();
+        node_set.insert(format!("{}:{}", kind, cmd.id));
         for e in &traversal {
-            node_ids.insert(format!("{}:{}", e.from_kind, e.from_id));
-            node_ids.insert(format!("{}:{}", e.to_kind, e.to_id));
+            node_set.insert(format!("{}:{}", e.from_kind, e.from_id));
+            node_set.insert(format!("{}:{}", e.to_kind, e.to_id));
         }
+        let mut node_ids: Vec<String> = node_set.into_iter().collect();
+        node_ids.sort();
 
         let edges: Vec<TraversalEdgeResponse> =
             traversal.iter().map(TraversalEdgeResponse::from).collect();
-        let node_count = node_ids.len();
+
+        let nodes = if cmd.include_nodes {
+            Some(self.fetch_nodes(&node_ids).await)
+        } else {
+            None
+        };
 
         Ok(GraphResponse {
             root_kind: kind.to_string(),
             root_id: cmd.id,
             edges,
-            node_count,
+            node_ids,
+            nodes,
         })
+    }
+
+    async fn fetch_nodes(&self, node_ids: &[String]) -> HashMap<String, NodeSummary> {
+        let mut result = HashMap::new();
+
+        for node_key in node_ids {
+            let Some((kind_str, id)) = node_key.split_once(':') else {
+                continue;
+            };
+            let Ok(kind) = kind_str.parse::<ResourceKind>() else {
+                continue;
+            };
+
+            let summary = match kind {
+                ResourceKind::Task => {
+                    if let Ok(task_id) = id.parse() {
+                        if let Ok(Some(task)) = self.tasks.find_by_id(&task_id).await {
+                            Some(NodeSummary {
+                                kind: "task".to_string(),
+                                id: id.to_string(),
+                                label: task.title().to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                ResourceKind::Knowledge => {
+                    if let Ok(know_id) = id.parse() {
+                        if let Ok(Some(entry)) = self.knowledge.find_by_id(&know_id).await {
+                            Some(NodeSummary {
+                                kind: "knowledge".to_string(),
+                                id: id.to_string(),
+                                label: entry.title().to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                ResourceKind::Agent => {
+                    if let Ok(agent_id) = id.parse() {
+                        if let Ok(Some(agent)) = self.agents.find_by_id(&agent_id).await {
+                            Some(NodeSummary {
+                                kind: "agent".to_string(),
+                                id: id.to_string(),
+                                label: agent.description().to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                ResourceKind::Message => None,
+            };
+
+            if let Some(s) = summary {
+                result.insert(node_key.clone(), s);
+            }
+        }
+
+        result
     }
 }

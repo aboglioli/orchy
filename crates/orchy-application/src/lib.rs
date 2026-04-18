@@ -215,7 +215,7 @@ pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
 pub use dto::{
     AgentResponse, AgentSummaryResponse, ApiKeyResponse, EdgeResponse, GraphResponse,
-    KnowledgeResponse, MessageResponse, OrganizationResponse, PageResponse,
+    KnowledgeResponse, MessageResponse, NodeSummary, OrganizationResponse, PageResponse,
     ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
     TaskWithContextResponse, TraversalEdgeResponse,
 };
@@ -375,7 +375,7 @@ impl Application {
             add_edge: AddEdge::new(edges.clone()),
             remove_edge: RemoveEdge::new(edges.clone()),
             get_neighbors: GetNeighbors::new(edges.clone()),
-            get_graph: GetGraph::new(edges.clone()),
+            get_graph: GetGraph::new(edges.clone(), tasks.clone(), knowledge.clone(), agents.clone()),
             list_edges: ListEdges::new(edges.clone()),
             tag_task: TagTask::new(tasks.clone()),
             untag_task: UntagTask::new(tasks.clone()),
