@@ -120,6 +120,8 @@ pub enum RelationType {
     Spawns,
     /// General symmetric relationship
     RelatedTo,
+    /// This task depends on that task completing first
+    DependsOn,
 }
 
 impl RelationType {
@@ -133,6 +135,7 @@ impl RelationType {
             RelationType::Implements,
             RelationType::Spawns,
             RelationType::RelatedTo,
+            RelationType::DependsOn,
         ]
     }
 }
@@ -148,6 +151,7 @@ impl fmt::Display for RelationType {
             RelationType::Implements => "implements",
             RelationType::Spawns => "spawns",
             RelationType::RelatedTo => "related_to",
+            RelationType::DependsOn => "depends_on",
         };
         write!(f, "{s}")
     }
@@ -166,8 +170,9 @@ impl FromStr for RelationType {
             "implements" => Ok(RelationType::Implements),
             "spawns" => Ok(RelationType::Spawns),
             "related_to" => Ok(RelationType::RelatedTo),
+            "depends_on" => Ok(RelationType::DependsOn),
             other => Err(format!(
-                "unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to"
+                "unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on"
             )),
         }
     }
