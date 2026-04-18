@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use orchy_core::edge::EdgeStore;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::ResourceKind;
 
 use crate::parse_namespace;
 
@@ -16,11 +18,12 @@ pub struct DeleteKnowledgeCommand {
 
 pub struct DeleteKnowledge {
     store: Arc<dyn KnowledgeStore>,
+    edges: Arc<dyn EdgeStore>,
 }
 
 impl DeleteKnowledge {
-    pub fn new(store: Arc<dyn KnowledgeStore>) -> Self {
-        Self { store }
+    pub fn new(store: Arc<dyn KnowledgeStore>, edges: Arc<dyn EdgeStore>) -> Self {
+        Self { store, edges }
     }
 
     pub async fn execute(&self, cmd: DeleteKnowledgeCommand) -> Result<()> {
@@ -36,8 +39,12 @@ impl DeleteKnowledge {
             .await?
             .ok_or_else(|| Error::NotFound(format!("knowledge entry: {}", cmd.path)))?;
 
+        let knowledge_id = entry.id().to_string();
         entry.mark_deleted()?;
         self.store.save(&mut entry).await?;
-        self.store.delete(&entry.id()).await
+        self.store.delete(&entry.id()).await?;
+        self.edges
+            .delete_all_for(&org_id, &ResourceKind::Knowledge, &knowledge_id)
+            .await
     }
 }

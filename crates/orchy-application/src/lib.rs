@@ -392,7 +392,7 @@ impl Application {
             read_knowledge: ReadKnowledge::new(knowledge.clone()),
             list_knowledge: ListKnowledge::new(knowledge.clone()),
             search_knowledge: SearchKnowledge::new(knowledge.clone(), embeddings.clone()),
-            delete_knowledge: DeleteKnowledge::new(knowledge.clone()),
+            delete_knowledge: DeleteKnowledge::new(knowledge.clone(), edges.clone()),
             append_knowledge: AppendKnowledge::new(knowledge.clone(), embeddings.clone()),
             rename_knowledge: RenameKnowledge::new(knowledge.clone()),
             move_knowledge: MoveKnowledge::new(knowledge.clone()),

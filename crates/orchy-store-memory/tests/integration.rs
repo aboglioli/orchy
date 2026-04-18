@@ -771,3 +771,54 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
     assert_eq!(spawns_only.items.len(), 1);
     assert_eq!(spawns_only.items[0].from_id(), "t2");
 }
+
+#[tokio::test]
+async fn delete_knowledge_cleans_up_associated_edges() {
+    let store = backend();
+    let o = org();
+
+    let mut entry = Knowledge::new(
+        o.clone(),
+        Some(proj("myapp")),
+        ns("/"),
+        "test-decision".to_string(),
+        KnowledgeKind::Decision,
+        "Test".to_string(),
+        "content".to_string(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    let kid = entry.id().to_string();
+
+    let edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-1".to_string(),
+        ResourceKind::Knowledge,
+        kid.clone(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    let before = EdgeStore::list_by_org(&store, &o, None, PageParams::default())
+        .await
+        .unwrap();
+    assert_eq!(before.items.len(), 1);
+
+    entry.mark_deleted().unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    KnowledgeStore::delete(&store, &entry.id()).await.unwrap();
+    EdgeStore::delete_all_for(&store, &o, &ResourceKind::Knowledge, &kid)
+        .await
+        .unwrap();
+
+    let after = EdgeStore::list_by_org(&store, &o, None, PageParams::default())
+        .await
+        .unwrap();
+    assert_eq!(after.items.len(), 0);
+}
