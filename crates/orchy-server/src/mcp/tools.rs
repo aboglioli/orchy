@@ -972,9 +972,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RemoveDependencyParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let (_, org, _, _) = self.require_session()?;
 
         let cmd = RemoveDependencyCommand {
+            org_id: org.to_string(),
             task_id: params.task_id,
             dependency_id: params.dependency_id,
         };

@@ -656,6 +656,7 @@ pub async fn remove_dep(
     check_task_project(&existing, &project)?;
 
     let cmd = RemoveDependencyCommand {
+        org_id: org_id.to_string(),
         task_id: id,
         dependency_id: dep_id,
     };

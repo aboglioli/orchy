@@ -369,7 +369,7 @@ impl Application {
             merge_tasks: MergeTasks::new(tasks.clone(), edges.clone()),
             delegate_task: DelegateTask::new(tasks.clone(), edges.clone()),
             add_dependency: AddDependency::new(tasks.clone(), edges.clone()),
-            remove_dependency: RemoveDependency::new(tasks.clone()),
+            remove_dependency: RemoveDependency::new(tasks.clone(), edges.clone()),
 
             add_task_note: AddTaskNote::new(tasks.clone(), knowledge.clone()),
             add_edge: AddEdge::new(edges.clone()),
