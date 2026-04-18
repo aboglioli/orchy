@@ -120,6 +120,7 @@ when `project` is passed.
 |------|---------|-------------|
 | `register_agent` | no | Register as an agent. Required before almost every other tool. |
 | `session_status` | no | Check whether this MCP session is bound to an orchy agent. |
+| `get_agent_context` | yes | Get everything in one call: agent info, project, inbox, pending tasks, skills, handoff context. |
 | `list_agents` | partial | List agents in a project. Works before registration if `project` is passed. |
 | `change_roles` | yes | Change the roles of the session agent. |
 | `heartbeat` | yes | Send a heartbeat to signal liveness. |
@@ -151,6 +152,13 @@ Check whether this MCP session is bound to an orchy agent, and how to resume
 after an orchy or MCP transport restart. Does not require registration. Call
 after the client has reconnected (new MCP initialize) if tools failed with
 session errors or you are unsure whether you still need `register_agent`.
+
+### `get_agent_context`
+
+Get everything you need in one call: your agent info, project metadata,
+inbox messages, pending tasks matching your roles, skills, and handoff
+context from previous sessions. Call this after `register_agent` to
+bootstrap quickly. No parameters — uses the session agent.
 
 ### `list_agents`
 
@@ -599,7 +607,6 @@ Locks auto-expire after `ttl_secs` (default 300).
 | `get_project` | yes | Get project metadata. |
 | `update_project` | yes | Update project description. |
 | `set_project_metadata` | yes | Set a metadata key-value pair on the project. |
-| `get_project_overview` | yes | Get a comprehensive project overview. |
 | `list_namespaces` | yes | List all registered namespaces for the project. |
 | `poll_updates` | yes | Poll for recent domain events since a timestamp. |
 
@@ -622,15 +629,6 @@ Locks auto-expire after `ttl_secs` (default 300).
 |-----------|----------|-------------|
 | `key` | yes | |
 | `value` | yes | |
-
-### `get_project_overview`
-
-Get a comprehensive project overview: instructions, connected agents, active
-tasks, and skills. Also available as HTTP GET `/bootstrap/{project}`.
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `namespace` | no | |
 
 ### `poll_updates`
 

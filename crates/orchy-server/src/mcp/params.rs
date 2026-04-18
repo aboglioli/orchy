@@ -242,10 +242,7 @@ pub struct ListConversationParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetProjectOverviewParams {
-    pub namespace: Option<String>,
-    pub project: Option<String>,
-}
+pub struct GetAgentContextParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetProjectParams {

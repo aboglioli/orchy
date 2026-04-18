@@ -274,17 +274,14 @@ You bring the intelligence; orchy enforces the rules.
 ## On Session Start
 
 1. `register_agent` — project, roles (optional), description. \
-   Pass `agent_id` to resume the same orchy agent after a **new MCP session** (orchy or client \
-   restarted). Persist that UUID from the last registration or from `kind: \"context\"` handoff. \
+   Pass `id` to resume the same orchy agent after a **new MCP session** (orchy or client \
+   restarted). Persist that id from the last registration or from `kind: \"context\"` handoff. \
    `session_status` explains reconnect if unsure. \
    `list_agents` accepts optional `project` before you register.
-2. `get_project` — metadata; set `include_summary: true` for task/agent overview.
-3. `list_knowledge(kind: \"skill\")` — load conventions; `kind: \"overview\"` for bootstrap summaries. Follow skills.
-4. `list_knowledge(kind: \"context\")` — check for handoff notes from previous agents. \
-   Also `search_knowledge` to find relevant decisions and discoveries.
-5. `check_mailbox` — read incoming messages. `check_sent_messages` for sent mail.
-6. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek only.
-7. `heartbeat` — call every ~30s to stay alive.
+2. `get_agent_context` — returns project metadata, inbox messages, pending tasks \
+   matching your roles, skills, and handoff context from previous sessions in one call.
+3. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek only.
+4. `heartbeat` — call every ~30s to stay alive.
 
 ## After orchy or MCP transport restart
 

@@ -1230,38 +1230,24 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Get a comprehensive project overview: instructions, connected agents, \
-        active tasks, and skills. Also available as HTTP GET /bootstrap/{project}."
+        description = "Get everything you need in one call: your agent info, project metadata, \
+        inbox messages, pending tasks matching your roles, skills, and handoff context from \
+        previous sessions. Call this after register_agent to bootstrap quickly."
     )]
-    async fn get_project_overview(
+    async fn get_agent_context(
         &self,
-        Parameters(params): Parameters<GetProjectOverviewParams>,
+        Parameters(_params): Parameters<GetAgentContextParams>,
     ) -> Result<String, String> {
-        let project = if let Some(p) = params.project {
-            parse_project(&p)?
-        } else {
-            self.get_session_project()
-                .ok_or("no agent registered for this session; call register_agent first")?
+        let (agent_id, org, _, _) = self.require_session()?;
+
+        let cmd = orchy_application::GetAgentSummaryCommand {
+            org_id: org.to_string(),
+            agent_id: agent_id.to_string(),
         };
 
-        let namespace = self
-            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-            .await?;
-
-        let host = &self.container.config.server.host;
-        let port = self.container.config.server.port;
-
-        match crate::bootstrap::generate_bootstrap_prompt(
-            &project,
-            &namespace,
-            host,
-            port,
-            &self.container.app,
-        )
-        .await
-        {
-            Ok(prompt) => Ok(prompt),
-            Err(e) => Err(e),
+        match self.container.app.get_agent_summary.execute(cmd).await {
+            Ok(summary) => Ok(to_json(&summary)),
+            Err(e) => Err(mcp_error(e)),
         }
     }
 
