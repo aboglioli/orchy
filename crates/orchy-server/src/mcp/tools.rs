@@ -950,9 +950,10 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddDependencyParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let (_, org, _, _) = self.require_session()?;
 
         let cmd = AddDependencyCommand {
+            org_id: org.to_string(),
             task_id: params.task_id,
             dependency_id: params.dependency_id,
         };

@@ -622,6 +622,7 @@ pub async fn add_dep(
     check_task_project(&existing, &project)?;
 
     let cmd = AddDependencyCommand {
+        org_id: org_id.to_string(),
         task_id: id,
         dependency_id: body.dependency_id,
     };
