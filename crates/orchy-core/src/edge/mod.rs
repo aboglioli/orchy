@@ -92,8 +92,6 @@ pub enum RelationType {
     DerivedFrom,
     /// Completing/processing this produced that as output
     Produces,
-    /// This references that (generic weak link)
-    References,
     /// This replaces/supersedes that (new task replacing old, refined knowledge replacing original)
     Supersedes,
     /// This was merged/consolidated from that (knowledge merged into summary)
@@ -113,7 +111,6 @@ impl RelationType {
         &[
             RelationType::DerivedFrom,
             RelationType::Produces,
-            RelationType::References,
             RelationType::Supersedes,
             RelationType::MergedFrom,
             RelationType::Summarizes,
@@ -129,7 +126,6 @@ impl fmt::Display for RelationType {
         let s = match self {
             RelationType::DerivedFrom => "derived_from",
             RelationType::Produces => "produces",
-            RelationType::References => "references",
             RelationType::Supersedes => "supersedes",
             RelationType::MergedFrom => "merged_from",
             RelationType::Summarizes => "summarizes",
@@ -148,14 +144,13 @@ impl FromStr for RelationType {
         match s {
             "derived_from" => Ok(RelationType::DerivedFrom),
             "produces" => Ok(RelationType::Produces),
-            "references" => Ok(RelationType::References),
             "supersedes" => Ok(RelationType::Supersedes),
             "merged_from" => Ok(RelationType::MergedFrom),
             "summarizes" => Ok(RelationType::Summarizes),
             "implements" => Ok(RelationType::Implements),
             "spawns" => Ok(RelationType::Spawns),
             "related_to" => Ok(RelationType::RelatedTo),
-            other => Err(format!("unknown relation type: {other}")),
+            other => Err(format!("unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to")),
         }
     }
 }
@@ -301,6 +296,11 @@ mod tests {
             let parsed: RelationType = s.parse().unwrap();
             assert_eq!(*rt, parsed);
         }
+    }
+
+    #[test]
+    fn references_is_not_a_valid_relation_type() {
+        assert!("references".parse::<RelationType>().is_err());
     }
 
     #[test]

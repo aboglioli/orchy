@@ -438,14 +438,13 @@ pub struct ImportKnowledgeParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct AddEdgeParams {
-    /// Source resource kind: task, knowledge, agent, message.
+    /// Source resource kind: task, knowledge, agent. (message not allowed)
     pub from_kind: String,
     pub from_id: String,
-    /// Target resource kind: task, knowledge, agent, message.
+    /// Target resource kind: task, knowledge, agent. (message not allowed)
     pub to_kind: String,
     pub to_id: String,
-    /// Relationship type: derived_from, produces, references, supersedes, merged_from,
-    /// summarizes, implements, spawns, related_to.
+    /// Relationship type: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to.
     pub rel_type: String,
     /// Optional human-readable label for the edge.
     pub display: Option<String>,
@@ -458,10 +457,10 @@ pub struct RemoveEdgeParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetNeighborsParams {
-    /// Resource kind: task, knowledge, agent, message.
+    /// Resource kind: task, knowledge, agent.
     pub kind: String,
     pub id: String,
-    /// outgoing (default), incoming, or omit for both.
+    /// outgoing, incoming, or omit for both (default).
     pub direction: Option<String>,
     /// Filter by relationship type.
     pub rel_type: Option<String>,
@@ -469,7 +468,7 @@ pub struct GetNeighborsParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetGraphParams {
-    /// Root resource kind: task, knowledge, agent, message.
+    /// Resource kind: task, knowledge, agent.
     pub kind: String,
     pub id: String,
     /// Max traversal depth (default 3, max 10).

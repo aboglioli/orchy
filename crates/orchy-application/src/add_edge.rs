@@ -40,6 +40,11 @@ impl AddEdge {
             .to_kind
             .parse::<ResourceKind>()
             .map_err(Error::InvalidInput)?;
+        if from_kind == ResourceKind::Message || to_kind == ResourceKind::Message {
+            return Err(Error::InvalidInput(
+                "message resources cannot be graph nodes — edges connect task, knowledge, and agent only".into(),
+            ));
+        }
         let rel_type = cmd
             .rel_type
             .parse::<RelationType>()
