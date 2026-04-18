@@ -12,7 +12,7 @@ use crate::dto::{PageResponse, TaskResponse};
 use crate::parse_namespace;
 
 pub struct ListTasksCommand {
-    pub org_id: Option<String>,
+    pub org_id: String,
     pub project: Option<String>,
     pub namespace: Option<String>,
     pub status: Option<String>,
@@ -33,10 +33,8 @@ impl ListTasks {
     }
 
     pub async fn execute(&self, cmd: ListTasksCommand) -> Result<PageResponse<TaskResponse>> {
-        let org_id = cmd
-            .org_id
-            .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+        let org_id =
+            Some(OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?);
 
         let project = cmd
             .project

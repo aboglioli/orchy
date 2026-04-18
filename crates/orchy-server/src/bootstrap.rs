@@ -58,7 +58,7 @@ pub async fn generate_bootstrap_prompt(
         let mut all = Vec::new();
         for status in &["pending", "claimed", "in_progress", "blocked"] {
             let cmd = ListTasksCommand {
-                org_id: Some(default_org.clone()),
+                org_id: default_org.clone(),
                 project: Some(project_id.to_string()),
                 namespace: None,
                 status: Some(status.to_string()),
@@ -112,13 +112,13 @@ MCP server: `http://{host}:{port}/mcp`
 Project namespace: `{namespace}`
 
 If orchy or the MCP client restarts, you get a new MCP session. Call `register_agent` again with
-the **same** `agent_id` from your last registration or handoff (`session_status` summarizes this).
+the **same** `id` from your last registration or handoff (`session_status` summarizes this).
 
 ## On Session Start
 
 1. **Register** — `register_agent(project, description)`. Roles are optional;
    orchy assigns them based on pending task demand if omitted.
-   Pass `agent_id` to resume the same orchy agent after an MCP/orchy restart.
+   Pass `id` to resume the same orchy agent after an MCP/orchy restart.
 2. **Load context** — `get_project` (set `include_summary: true` for overview),
    then `list_knowledge(kind: "skill")` for conventions and `list_knowledge(kind: "overview")`
    for bootstrap-style project summaries. Follow skills.

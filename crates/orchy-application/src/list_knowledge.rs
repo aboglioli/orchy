@@ -12,7 +12,7 @@ use crate::dto::{KnowledgeResponse, PageResponse};
 use crate::parse_namespace;
 
 pub struct ListKnowledgeCommand {
-    pub org_id: Option<String>,
+    pub org_id: String,
     pub project: Option<String>,
     pub include_org_level: bool,
     pub namespace: Option<String>,
@@ -37,11 +37,8 @@ impl ListKnowledge {
         &self,
         cmd: ListKnowledgeCommand,
     ) -> Result<PageResponse<KnowledgeResponse>> {
-        let org_id = cmd
-            .org_id
-            .map(|s| OrganizationId::new(&s))
-            .transpose()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id =
+            Some(OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?);
 
         let project = cmd
             .project

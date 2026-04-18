@@ -46,6 +46,8 @@ pub struct ListQuery {
     pub namespace: Option<String>,
     pub path_prefix: Option<String>,
     pub author_agent_id: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -136,7 +138,7 @@ pub async fn list(
     check_org(&auth, &org_id)?;
 
     let cmd = ListKnowledgeCommand {
-        org_id: Some(org),
+        org_id: org,
         project: Some(project),
         include_org_level: false,
         namespace: query.namespace,
@@ -144,8 +146,8 @@ pub async fn list(
         tag: query.tag,
         path_prefix: query.path_prefix,
         agent_id: query.author_agent_id,
-        after: None,
-        limit: None,
+        after: query.after,
+        limit: query.limit,
     };
 
     let page = container
@@ -155,7 +157,7 @@ pub async fn list(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&page.items).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&page).unwrap_or_default()))
 }
 
 pub async fn list_types(

@@ -32,7 +32,7 @@ impl SendMessage {
         Self { agents, messages }
     }
 
-    pub async fn execute(&self, cmd: SendMessageCommand) -> Result<Vec<MessageResponse>> {
+    pub async fn execute(&self, cmd: SendMessageCommand) -> Result<MessageResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -93,6 +93,6 @@ impl SendMessage {
         }
 
         self.messages.save(&mut msg).await?;
-        Ok(vec![MessageResponse::from(&msg)])
+        Ok(MessageResponse::from(&msg))
     }
 }

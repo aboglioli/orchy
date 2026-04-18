@@ -173,7 +173,7 @@ pub async fn get_context(
         .collect();
 
     let tasks_cmd = ListTasksCommand {
-        org_id: Some(org),
+        org_id: org,
         project: Some(agent.project.clone()),
         namespace: Some(agent.namespace.clone()),
         status: Some("pending".to_string()),

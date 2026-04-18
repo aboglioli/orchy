@@ -176,7 +176,7 @@ impl OrchyHandler {
             limit: None,
         };
         match self.container.app.list_agents.execute(cmd).await {
-            Ok(page) => Ok(to_json(&page.items)),
+            Ok(page) => Ok(to_json(&page)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -414,19 +414,19 @@ impl OrchyHandler {
             .await?;
 
         let cmd = ListTasksCommand {
-            org_id: Some(org.to_string()),
+            org_id: org.to_string(),
             project: Some(project),
             namespace: Some(namespace.to_string()),
             status: params.status,
             parent_id: params.parent_id,
             assigned_to: None,
             tag: None,
-            after: None,
-            limit: None,
+            after: params.after,
+            limit: params.limit,
         };
 
         match self.container.app.list_tasks.execute(cmd).await {
-            Ok(page) => Ok(to_json(&page.items)),
+            Ok(page) => Ok(to_json(&page)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -666,7 +666,7 @@ impl OrchyHandler {
         };
 
         match self.container.app.send_message.execute(cmd).await {
-            Ok(messages) => Ok(to_json(&messages)),
+            Ok(message) => Ok(to_json(&message)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -696,12 +696,12 @@ impl OrchyHandler {
             org_id: org.to_string(),
             project,
             namespace: Some(namespace.to_string()),
-            after: None,
-            limit: None,
+            after: params.after,
+            limit: params.limit,
         };
 
         match self.container.app.check_mailbox.execute(cmd).await {
-            Ok(page) => Ok(to_json(&page.items)),
+            Ok(page) => Ok(to_json(&page)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -728,12 +728,12 @@ impl OrchyHandler {
             org_id: org.to_string(),
             project,
             namespace: Some(namespace.to_string()),
-            after: None,
-            limit: None,
+            after: params.after,
+            limit: params.limit,
         };
 
         match self.container.app.check_sent_messages.execute(cmd).await {
-            Ok(page) => Ok(to_json(&page.items)),
+            Ok(page) => Ok(to_json(&page)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1031,7 +1031,7 @@ impl OrchyHandler {
             .collect();
 
         let tasks_cmd = ListTasksCommand {
-            org_id: Some(org.to_string()),
+            org_id: org.to_string(),
             project: Some(project_id.to_string()),
             namespace: None,
             status: None,
@@ -1649,7 +1649,7 @@ impl OrchyHandler {
         };
 
         let cmd = ListKnowledgeCommand {
-            org_id: Some(org.to_string()),
+            org_id: org.to_string(),
             project,
             include_org_level: false,
             namespace,
@@ -1657,12 +1657,12 @@ impl OrchyHandler {
             tag: params.tag,
             path_prefix: params.path_prefix,
             agent_id,
-            after: None,
-            limit: None,
+            after: params.after,
+            limit: params.limit,
         };
 
         match self.container.app.list_knowledge.execute(cmd).await {
-            Ok(page) => Ok(to_json(&page.items)),
+            Ok(page) => Ok(to_json(&page)),
             Err(e) => Err(mcp_error(e)),
         }
     }

@@ -14,7 +14,7 @@ use orchy_application::{
     RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
     TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
 };
-use orchy_application::{GetTaskCommand, TaskResponse};
+use orchy_application::{GetTaskCommand, ResourceRefInput, TaskResponse};
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -58,6 +58,8 @@ pub struct ListTasksQuery {
     pub status: Option<String>,
     pub namespace: Option<String>,
     pub parent_id: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +83,14 @@ pub struct PostTaskBody {
     pub depends_on: Option<Vec<String>>,
     pub parent_id: Option<String>,
     pub namespace: Option<String>,
+    pub refs: Option<Vec<ResourceRefBody>>,
+}
+
+#[derive(Deserialize)]
+pub struct ResourceRefBody {
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -189,15 +199,15 @@ pub async fn list(
     check_org(&auth, &org_id)?;
 
     let cmd = ListTasksCommand {
-        org_id: Some(org),
+        org_id: org,
         project: Some(project),
         namespace: query.namespace,
         status: query.status,
         parent_id: query.parent_id,
         assigned_to: None,
         tag: None,
-        after: None,
-        limit: None,
+        after: query.after,
+        limit: query.limit,
     };
 
     let page = container
@@ -207,7 +217,7 @@ pub async fn list(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&page.items).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&page).unwrap_or_default()))
 }
 
 pub async fn post(
@@ -230,7 +240,15 @@ pub async fn post(
         depends_on: body.depends_on,
         parent_id: body.parent_id,
         created_by: None,
-        refs: None,
+        refs: body.refs.map(|v| {
+            v.into_iter()
+                .map(|r| ResourceRefInput {
+                    kind: r.kind,
+                    id: r.id,
+                    display: r.display,
+                })
+                .collect()
+        }),
     };
 
     let task = container
@@ -756,7 +774,7 @@ pub async fn list_tags(
 pub async fn next_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project)): Path<OrgProject>,
+    Path((org, project)): Path<OrgProject>,
     Query(query): Query<NextTaskQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
@@ -786,7 +804,7 @@ pub async fn next_task(
 
     let cmd = GetNextTaskCommand {
         org_id: Some(org),
-        project: None,
+        project: Some(project),
         namespace: query.namespace,
         roles,
         claim: Some(false),

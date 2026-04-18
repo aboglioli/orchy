@@ -79,6 +79,10 @@ pub struct ListTasksParams {
     pub parent_id: Option<String>,
     /// Override the session project to query another project.
     pub project: Option<String>,
+    /// Cursor for pagination (task ID from next_cursor of previous page).
+    pub after: Option<String>,
+    /// Max items per page.
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -213,12 +217,16 @@ pub struct SendMessageParams {
 pub struct CheckMailboxParams {
     pub namespace: Option<String>,
     pub project: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct CheckSentMessagesParams {
     pub namespace: Option<String>,
     pub project: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -362,6 +370,10 @@ pub struct ListKnowledgeParams {
     pub path_prefix: Option<String>,
     pub agent: Option<String>,
     pub project: Option<String>,
+    /// Cursor for pagination (entry ID from next_cursor of previous page).
+    pub after: Option<String>,
+    /// Max items per page.
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

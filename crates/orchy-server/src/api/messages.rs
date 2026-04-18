@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use orchy_application::{
     CheckMailboxCommand, CheckSentMessagesCommand, ListConversationCommand, MarkReadCommand,
-    SendMessageCommand,
+    ResourceRefInput, SendMessageCommand,
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -39,6 +39,8 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
 #[derive(Deserialize)]
 pub struct AgentNamespaceQuery {
     pub namespace: Option<String>,
+    pub after: Option<String>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +51,14 @@ pub struct SendBody {
     #[serde(alias = "ns")]
     pub namespace: Option<String>,
     pub reply_to: Option<String>,
+    pub refs: Option<Vec<ResourceRefBody>>,
+}
+
+#[derive(Deserialize)]
+pub struct ResourceRefBody {
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -92,8 +102,8 @@ pub async fn inbox_for_agent(
         org_id: org,
         project: agent.project.clone(),
         namespace: query.namespace,
-        after: None,
-        limit: None,
+        after: query.after,
+        limit: query.limit,
     };
 
     let page = container
@@ -103,7 +113,7 @@ pub async fn inbox_for_agent(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&page.items).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&page).unwrap_or_default()))
 }
 
 pub async fn sent_for_agent(
@@ -137,8 +147,8 @@ pub async fn sent_for_agent(
         org_id: org,
         project: agent.project.clone(),
         namespace: query.namespace,
-        after: None,
-        limit: None,
+        after: query.after,
+        limit: query.limit,
     };
 
     let page = container
@@ -148,7 +158,7 @@ pub async fn sent_for_agent(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&page.items).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&page).unwrap_or_default()))
 }
 
 pub async fn send(
@@ -168,17 +178,25 @@ pub async fn send(
         to: body.to,
         body: body.body,
         reply_to: body.reply_to,
-        refs: None,
+        refs: body.refs.map(|v| {
+            v.into_iter()
+                .map(|r| ResourceRefInput {
+                    kind: r.kind,
+                    id: r.id,
+                    display: r.display,
+                })
+                .collect()
+        }),
     };
 
-    let messages = container
+    let message = container
         .app
         .send_message
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&messages).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&message).unwrap_or_default()))
 }
 
 pub async fn mark_read_for_agent(
