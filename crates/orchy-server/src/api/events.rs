@@ -42,7 +42,7 @@ pub struct PollQuery {
 pub async fn poll(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path((org, _project)): Path<(String, String)>,
     Query(query): Query<PollQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
@@ -78,8 +78,6 @@ pub async fn poll(
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-
-    events.retain(|e| e.organization == project);
 
     if let Some(ref ns) = query.namespace {
         let namespace = parse_namespace(ns)?;

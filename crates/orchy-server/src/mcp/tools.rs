@@ -784,15 +784,12 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddTaskNoteParams>,
     ) -> Result<String, String> {
-        let (agent_id, org_id, project, namespace) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session()?;
 
         let cmd = AddTaskNoteCommand {
             task_id: params.task_id,
             body: params.body,
             author: Some(agent_id.to_string()),
-            org_id: org_id.to_string(),
-            project: project.to_string(),
-            namespace: Some(namespace.to_string()),
         };
 
         match self.container.app.add_task_note.execute(cmd).await {

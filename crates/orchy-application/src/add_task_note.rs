@@ -14,9 +14,6 @@ pub struct AddTaskNoteCommand {
     pub task_id: String,
     pub body: String,
     pub author: Option<String>,
-    pub org_id: String,
-    pub project: String,
-    pub namespace: Option<String>,
 }
 
 pub struct AddTaskNote {
@@ -47,7 +44,7 @@ impl AddTaskNote {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
-        let namespace = crate::parse_namespace(cmd.namespace.as_deref())?;
+        let namespace = task.namespace().clone();
         let title = if cmd.body.len() > 80 {
             cmd.body[..80].to_string()
         } else {

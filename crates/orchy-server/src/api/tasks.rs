@@ -589,9 +589,6 @@ pub async fn add_note(
         task_id: id,
         body: body.body,
         author: body.agent,
-        org_id: org,
-        project,
-        namespace: Some(existing.namespace.clone()),
     };
 
     let task = container
