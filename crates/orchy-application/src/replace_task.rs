@@ -88,6 +88,33 @@ impl ReplaceTask {
             )?;
             self.tasks.save(&mut task).await?;
 
+            for dep_id in task.depends_on() {
+                let already_exists = self
+                    .edges
+                    .exists_by_pair(
+                        &org_id,
+                        &ResourceKind::Task,
+                        &task.id().to_string(),
+                        &ResourceKind::Task,
+                        &dep_id.to_string(),
+                        &RelationType::DependsOn,
+                    )
+                    .await?;
+                if !already_exists {
+                    let dep_edge = Edge::new(
+                        org_id.clone(),
+                        ResourceKind::Task,
+                        task.id().to_string(),
+                        ResourceKind::Task,
+                        dep_id.to_string(),
+                        RelationType::DependsOn,
+                        None,
+                        created_by.clone(),
+                    );
+                    self.edges.save(&dep_edge).await?;
+                }
+            }
+
             let edge = Edge::new(
                 org_id.clone(),
                 ResourceKind::Task,
