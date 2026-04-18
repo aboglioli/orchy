@@ -12,8 +12,7 @@ use orchy_application::{
     CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, ListTagsCommand,
     ListTasksCommand, MergeTasksCommand, PostTaskCommand, ReleaseTaskCommand,
     RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
-    TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UnwatchTaskCommand, UpdateTaskCommand,
-    WatchTaskCommand,
+    TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
 };
 use orchy_application::{GetTaskCommand, TaskResponse};
 use orchy_core::organization::OrganizationId;
@@ -126,11 +125,6 @@ pub struct AddNoteBody {
 #[derive(Deserialize)]
 pub struct AddDepBody {
     pub dependency_id: String,
-}
-
-#[derive(Deserialize)]
-pub struct UnwatchQuery {
-    pub agent: String,
 }
 
 #[derive(Deserialize)]
@@ -570,77 +564,6 @@ pub async fn assign(
         .map_err(ApiError::from)?;
 
     Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
-}
-
-pub async fn watch(
-    State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
-    Json(body): Json<AgentBody>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
-    let existing = container
-        .app
-        .get_task
-        .execute(GetTaskCommand {
-            task_id: id.clone(),
-        })
-        .await
-        .map_err(ApiError::from)?;
-    check_task_project(&existing, &project)?;
-
-    let cmd = WatchTaskCommand {
-        task_id: id,
-        agent_id: body.agent,
-        org_id: org,
-        project,
-        namespace: Some(existing.namespace.clone()),
-    };
-
-    let watcher = container
-        .app
-        .watch_task
-        .execute(cmd)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(Json(serde_json::to_value(&watcher).unwrap_or_default()))
-}
-
-pub async fn unwatch(
-    State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
-    Query(query): Query<UnwatchQuery>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
-    let existing = container
-        .app
-        .get_task
-        .execute(GetTaskCommand {
-            task_id: id.clone(),
-        })
-        .await
-        .map_err(ApiError::from)?;
-    check_task_project(&existing, &project)?;
-
-    let cmd = UnwatchTaskCommand {
-        task_id: id,
-        agent_id: query.agent,
-    };
-
-    container
-        .app
-        .unwatch_task
-        .execute(cmd)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(Json(serde_json::json!({"ok": true})))
 }
 
 pub async fn add_note(

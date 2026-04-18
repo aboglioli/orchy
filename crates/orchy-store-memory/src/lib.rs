@@ -9,7 +9,6 @@ mod organization;
 mod project;
 mod resource_lock;
 mod task;
-mod watcher;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
@@ -23,7 +22,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::{Organization, OrganizationId};
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
-use orchy_core::task::{Task, TaskId, TaskWatcher};
+use orchy_core::task::{Task, TaskId};
 
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
@@ -31,7 +30,6 @@ pub struct MemoryBackend {
     pub(crate) messages: RwLock<HashMap<MessageId, Message>>,
     pub(crate) message_receipts: RwLock<HashSet<(MessageId, AgentId)>>,
     pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
-    pub(crate) watchers: RwLock<Vec<TaskWatcher>>,
     pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
     pub(crate) resource_locks: RwLock<HashMap<(String, String, String, String), ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String, String)>>,
@@ -47,7 +45,6 @@ impl MemoryBackend {
             messages: RwLock::new(HashMap::new()),
             message_receipts: RwLock::new(HashSet::new()),
             projects: RwLock::new(HashMap::new()),
-            watchers: RwLock::new(Vec::new()),
             knowledge_entries: RwLock::new(HashMap::new()),
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),

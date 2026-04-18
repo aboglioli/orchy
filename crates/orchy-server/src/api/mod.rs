@@ -186,10 +186,6 @@ pub fn router() -> Router<Arc<Container>> {
             post(tasks::assign),
         )
         .route(
-            "/organizations/:org/projects/:project/tasks/:id/watch",
-            post(tasks::watch).delete(tasks::unwatch),
-        )
-        .route(
             "/organizations/:org/projects/:project/tasks/:id/notes",
             post(tasks::add_note),
         )

@@ -10,7 +10,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
-use orchy_core::task::{TaskFilter, TaskStore, WatcherStore};
+use orchy_core::task::{TaskFilter, TaskStore};
 
 use crate::parse_namespace;
 
@@ -26,7 +26,6 @@ pub struct SwitchContext {
     projects: Arc<dyn ProjectStore>,
     tasks: Arc<dyn TaskStore>,
     locks: Arc<dyn LockStore>,
-    watchers: Arc<dyn WatcherStore>,
 }
 
 impl SwitchContext {
@@ -35,14 +34,12 @@ impl SwitchContext {
         projects: Arc<dyn ProjectStore>,
         tasks: Arc<dyn TaskStore>,
         locks: Arc<dyn LockStore>,
-        watchers: Arc<dyn WatcherStore>,
     ) -> Self {
         Self {
             agents,
             projects,
             tasks,
             locks,
-            watchers,
         }
     }
 
@@ -127,17 +124,6 @@ impl SwitchContext {
                     .locks
                     .delete(lock.org_id(), lock.project(), lock.namespace(), lock.name())
                     .await;
-            }
-        }
-
-        let watchers = self
-            .watchers
-            .find_by_agent(agent_id)
-            .await
-            .unwrap_or_default();
-        for w in &watchers {
-            if *w.project() == *project {
-                let _ = self.watchers.delete(&w.task_id(), agent_id).await;
             }
         }
     }

@@ -9,7 +9,6 @@ mod organization;
 mod project;
 mod resource_lock;
 mod task;
-mod watcher;
 
 use std::path::Path;
 

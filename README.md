@@ -75,14 +75,14 @@ Skills (kind=skill) inherit through namespace hierarchy.
 Pending → Claimed → InProgress → Completed/Failed/Cancelled
 ```
 
-Tasks support hierarchy (`split_task`), dependencies, tags, and watchers.
+Tasks support hierarchy (`split_task`), dependencies, and tags.
 Parent tasks auto-complete when all subtasks finish.
 
 ### Agent lifecycle
 
 1. Register with `register_agent` (roles auto-assigned if omitted)
 2. `heartbeat` every ~30s; after registration, MCP tool invocations refresh liveness
-3. On disconnect: tasks released, locks freed, watchers removed
+3. On disconnect: tasks released, locks freed
 
 ### Resource locking
 
@@ -172,7 +172,7 @@ session errors or you are unsure whether you still need `register_agent`.
 | `namespace` | no | Target namespace within the project. |
 
 At least one of `project` or `namespace` is required. Switching projects
-releases claimed tasks, locks, and watchers in the old project.
+releases claimed tasks and locks in the old project.
 
 ---
 
@@ -375,21 +375,6 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 |-----------|----------|-------------|
 | `task_id` | yes | |
 | `new_namespace` | yes | |
-
----
-
-## Tasks — Watchers
-
-| Tool | Session | Description |
-|------|---------|-------------|
-| `watch_task` | yes | Watch a task for status changes (notifications via mailbox). |
-| `unwatch_task` | yes | Stop watching a task. |
-
-### `watch_task` / `unwatch_task`
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `task_id` | yes | |
 
 ---
 

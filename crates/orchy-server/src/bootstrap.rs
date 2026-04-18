@@ -164,7 +164,6 @@ namespace. Namespaces are auto-created on first use.
 - **write_knowledge** — persist decisions, discoveries, patterns, configs, plans.
   Call `list_knowledge_types` to see available types.
 - **send_message** — coordinate by agent ID, `role:name`, or `broadcast`.
-- **watch_task** — get notified when a task you depend on changes status.
 - **lock_resource** / **unlock_resource** — prevent conflicts on shared resources.
 - **poll_updates** + **check_mailbox** — poll on each heartbeat cycle for reactivity.
 - **write_knowledge(kind: "context")** — save session state before ending.

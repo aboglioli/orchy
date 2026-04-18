@@ -24,8 +24,8 @@ How agents coordinate in real time.
 - **Project broadcasts** — send to everyone except yourself
 - **Threading** — reply to messages, walk full conversation threads
 - **Delivery tracking** — pending, delivered, read status
-- **System notifications** — task watchers and dependency failures are
-  delivered as messages to your mailbox automatically
+- **System notifications** — dependency failures are delivered as messages
+  to your mailbox automatically
 
 ### Work (JIRA/Trello for agents)
 
@@ -37,7 +37,6 @@ How agents organize, claim, and complete work.
   merge related tasks. Parent auto-completes when all children finish.
 - **Dependencies** — tasks block until dependencies complete. Cascading failure
   notifications when a dependency fails.
-- **Watchers** — subscribe to task status changes, get notified via mailbox.
 - **Specs and planning** — use documents for spec-driven development. Write the
   spec first, then create implementation tasks from it.
 - **Resource locks** — prevent two agents from editing the same file or area.
@@ -91,7 +90,7 @@ crates/
 ├── orchy-core/            # domain types, traits, services
 │   └── src/
 │       ├── agent/         # Agent aggregate + AgentStore trait + events
-│       ├── task/          # Task + TaskWatcher + state machine
+│       ├── task/          # Task + state machine
 │       ├── message/       # Message threading + delivery tracking
 │       ├── knowledge/     # Unified knowledge: notes, decisions, skills, context, docs
 │       ├── project/       # Project metadata + notes
@@ -204,7 +203,6 @@ startup. Falls back to most recent snapshot in namespace if no own context exist
 When an agent disconnects (or times out via heartbeat monitor):
 1. Claimed/in-progress tasks -> released back to Pending
 2. Resource locks held by agent -> released
-3. Task watchers for agent -> removed
 
 ## Agent Lifecycle
 
@@ -220,7 +218,6 @@ When an agent disconnects (or times out via heartbeat monitor):
 **Working:**
 - `heartbeat` every ~30s
 - `poll_updates` + `check_mailbox` for reactivity
-- `watch_task` to track dependencies
 - `lock_resource` before editing shared files
 - `write_knowledge` for decisions, discoveries, patterns
 
@@ -230,7 +227,7 @@ When an agent disconnects (or times out via heartbeat monitor):
 
 **Disconnecting:**
 - `write_knowledge(kind: "context", path: "handoff")` with: task ID, progress, blockers, decisions
-- `disconnect` — tasks released to pending, locks freed, watchers removed
+- `disconnect` — tasks released to pending, locks freed
 
 ## Knowledge Module
 

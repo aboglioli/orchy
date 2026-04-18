@@ -311,16 +311,6 @@ pub struct GetTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct WatchTaskParams {
-    pub task_id: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct UnwatchTaskParams {
-    pub task_id: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct PollUpdatesParams {
     /// ISO 8601 timestamp. Returns events after this time.
     pub since: Option<String>,

@@ -138,18 +138,3 @@ pub struct TaskUpdatedPayload {
     pub description: Option<String>,
     pub priority: Option<String>,
 }
-
-pub const TOPIC_WATCHER_ADDED: &str = "task.watcher_added";
-pub const TOPIC_WATCHER_REMOVED: &str = "task.watcher_removed";
-
-#[derive(Serialize)]
-pub struct TaskWatcherAddedPayload {
-    pub task_id: String,
-    pub agent_id: String,
-}
-
-#[derive(Serialize)]
-pub struct TaskWatcherRemovedPayload {
-    pub task_id: String,
-    pub agent_id: String,
-}

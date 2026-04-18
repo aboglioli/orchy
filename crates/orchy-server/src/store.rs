@@ -12,7 +12,7 @@ use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
-use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore, TaskWatcher, WatcherStore};
+use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
@@ -220,22 +220,6 @@ impl LockStore for StoreBackend {
     }
     async fn delete_expired(&self) -> Result<u64> {
         delegate_trait!(self, LockStore::delete_expired())
-    }
-}
-
-#[async_trait]
-impl WatcherStore for StoreBackend {
-    async fn save(&self, watcher: &mut TaskWatcher) -> Result<()> {
-        delegate_trait!(self, WatcherStore::save(watcher))
-    }
-    async fn delete(&self, task_id: &TaskId, agent_id: &AgentId) -> Result<()> {
-        delegate_trait!(self, WatcherStore::delete(task_id, agent_id))
-    }
-    async fn find_watchers(&self, task_id: &TaskId) -> Result<Vec<TaskWatcher>> {
-        delegate_trait!(self, WatcherStore::find_watchers(task_id))
-    }
-    async fn find_by_agent(&self, agent_id: &AgentId) -> Result<Vec<TaskWatcher>> {
-        delegate_trait!(self, WatcherStore::find_by_agent(agent_id))
     }
 }
 

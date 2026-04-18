@@ -8,7 +8,7 @@ use orchy_core::message::MessageStore;
 use orchy_core::namespace::{Namespace, NamespaceStore};
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
-use orchy_core::task::{TaskStore, WatcherStore};
+use orchy_core::task::TaskStore;
 
 pub mod dto;
 
@@ -69,10 +69,6 @@ mod list_tags;
 mod move_task;
 mod tag_task;
 mod untag_task;
-
-// Task watchers
-mod unwatch_task;
-mod watch_task;
 
 // Messages
 mod check_mailbox;
@@ -155,9 +151,6 @@ pub use move_task::{MoveTask, MoveTaskCommand};
 pub use tag_task::{TagTask, TagTaskCommand};
 pub use untag_task::{UntagTask, UntagTaskCommand};
 
-pub use unwatch_task::{UnwatchTask, UnwatchTaskCommand};
-pub use watch_task::{WatchTask, WatchTaskCommand};
-
 pub use check_mailbox::{CheckMailbox, CheckMailboxCommand};
 pub use check_sent_messages::{CheckSentMessages, CheckSentMessagesCommand};
 pub use list_conversation::{ListConversation, ListConversationCommand};
@@ -193,7 +186,7 @@ pub use unlock_resource::{UnlockResource, UnlockResourceCommand};
 pub use dto::{
     AgentResponse, AgentSummaryResponse, KnowledgeResponse, MessageResponse, PageResponse,
     ProjectOverview, ProjectResponse, ResourceLockResponse, ResourceRefResponse, TaskResponse,
-    TaskWatcherResponse, TaskWithContextResponse,
+    TaskWithContextResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
@@ -239,9 +232,6 @@ pub struct Application {
     pub move_task: MoveTask,
     pub list_tags: ListTags,
 
-    pub watch_task: WatchTask,
-    pub unwatch_task: UnwatchTask,
-
     pub send_message: SendMessage,
     pub check_mailbox: CheckMailbox,
     pub check_sent_messages: CheckSentMessages,
@@ -286,7 +276,6 @@ impl Application {
         knowledge: Arc<dyn KnowledgeStore>,
         messages: Arc<dyn MessageStore>,
         locks: Arc<dyn LockStore>,
-        watchers: Arc<dyn WatcherStore>,
         namespaces: Arc<dyn NamespaceStore>,
         embeddings: Option<Arc<dyn EmbeddingsProvider>>,
         event_query: Arc<dyn EventQuery>,
@@ -298,14 +287,8 @@ impl Application {
                 projects.clone(),
                 tasks.clone(),
                 locks.clone(),
-                watchers.clone(),
             ),
-            disconnect_agent: DisconnectAgent::new(
-                agents.clone(),
-                tasks.clone(),
-                locks.clone(),
-                watchers.clone(),
-            ),
+            disconnect_agent: DisconnectAgent::new(agents.clone(), tasks.clone(), locks.clone()),
             heartbeat: Heartbeat::new(agents.clone()),
             change_roles: ChangeRoles::new(agents.clone()),
             get_agent: GetAgent::new(agents.clone()),
@@ -348,9 +331,6 @@ impl Application {
             untag_task: UntagTask::new(tasks.clone()),
             move_task: MoveTask::new(tasks.clone()),
             list_tags: ListTags::new(tasks.clone()),
-
-            watch_task: WatchTask::new(tasks.clone(), watchers.clone()),
-            unwatch_task: UnwatchTask::new(watchers.clone()),
 
             send_message: SendMessage::new(messages.clone()),
             check_mailbox: CheckMailbox::new(messages.clone(), agents.clone()),

@@ -18,8 +18,7 @@ use orchy_application::{
     SearchKnowledgeCommand, SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand,
     StartTaskCommand, SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand,
     UnblockTaskCommand, UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand,
-    UnwatchTaskCommand, UpdateProjectCommand, UpdateTaskCommand, WatchTaskCommand,
-    WriteKnowledgeCommand,
+    UpdateProjectCommand, UpdateTaskCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 
@@ -1440,48 +1439,6 @@ impl OrchyHandler {
             .await
         {
             Ok(ctx) => Ok(to_json(&ctx)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(
-        description = "Watch a task for status changes. You'll receive mailbox notifications \
-        when the task is started, completed, failed, or has a dependency failure."
-    )]
-    async fn watch_task(
-        &self,
-        Parameters(params): Parameters<WatchTaskParams>,
-    ) -> Result<String, String> {
-        let (agent_id, org, project, namespace) = self.require_session()?;
-
-        let cmd = WatchTaskCommand {
-            task_id: params.task_id,
-            agent_id: agent_id.to_string(),
-            org_id: org.to_string(),
-            project: project.to_string(),
-            namespace: Some(namespace.to_string()),
-        };
-
-        match self.container.app.watch_task.execute(cmd).await {
-            Ok(watcher) => Ok(to_json(&watcher)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(description = "Stop watching a task.")]
-    async fn unwatch_task(
-        &self,
-        Parameters(params): Parameters<UnwatchTaskParams>,
-    ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
-
-        let cmd = UnwatchTaskCommand {
-            task_id: params.task_id,
-            agent_id: agent_id.to_string(),
-        };
-
-        match self.container.app.unwatch_task.execute(cmd).await {
-            Ok(()) => Ok("ok".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }

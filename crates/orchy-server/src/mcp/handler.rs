@@ -330,7 +330,6 @@ On disconnect, claimed tasks return to pending.
   Use `change_knowledge_kind` to change an entry's kind (not via `write_knowledge` updates).
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.
-- `watch_task` to get notified when a task status changes.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
 - `write_knowledge(kind: \"context\")` before your session ends for continuity.
 - Register without roles — orchy assigns them based on task demand.

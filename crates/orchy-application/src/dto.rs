@@ -9,7 +9,7 @@ use orchy_core::pagination::Page;
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
 use orchy_core::resource_ref::ResourceRef;
-use orchy_core::task::{Task, TaskWatcher, TaskWithContext};
+use orchy_core::task::{Task, TaskWithContext};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentResponse {
@@ -121,35 +121,6 @@ impl From<TaskWithContext> for TaskWithContextResponse {
             task: TaskResponse::from(&ctx.task),
             ancestors: ctx.ancestors.iter().map(TaskResponse::from).collect(),
             children: ctx.children.iter().map(TaskResponse::from).collect(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TaskWatcherResponse {
-    pub task_id: String,
-    pub agent_id: String,
-    pub org_id: String,
-    pub project: String,
-    pub namespace: String,
-    pub created_at: String,
-}
-
-impl From<TaskWatcher> for TaskWatcherResponse {
-    fn from(w: TaskWatcher) -> Self {
-        Self::from(&w)
-    }
-}
-
-impl From<&TaskWatcher> for TaskWatcherResponse {
-    fn from(w: &TaskWatcher) -> Self {
-        Self {
-            task_id: w.task_id().to_string(),
-            agent_id: w.agent_id().to_string(),
-            org_id: w.org_id().to_string(),
-            project: w.project().to_string(),
-            namespace: w.namespace().to_string(),
-            created_at: w.created_at().to_rfc3339(),
         }
     }
 }

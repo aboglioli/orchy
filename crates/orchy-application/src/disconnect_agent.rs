@@ -5,7 +5,7 @@ use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::pagination::PageParams;
 use orchy_core::resource_lock::LockStore;
-use orchy_core::task::{TaskFilter, TaskStore, WatcherStore};
+use orchy_core::task::{TaskFilter, TaskStore};
 
 pub struct DisconnectAgentCommand {
     pub agent_id: String,
@@ -15,7 +15,6 @@ pub struct DisconnectAgent {
     agents: Arc<dyn AgentStore>,
     tasks: Arc<dyn TaskStore>,
     locks: Arc<dyn LockStore>,
-    watchers: Arc<dyn WatcherStore>,
 }
 
 impl DisconnectAgent {
@@ -23,13 +22,11 @@ impl DisconnectAgent {
         agents: Arc<dyn AgentStore>,
         tasks: Arc<dyn TaskStore>,
         locks: Arc<dyn LockStore>,
-        watchers: Arc<dyn WatcherStore>,
     ) -> Self {
         Self {
             agents,
             tasks,
             locks,
-            watchers,
         }
     }
 
@@ -38,7 +35,6 @@ impl DisconnectAgent {
 
         self.release_tasks(&id).await;
         self.release_locks(&id).await;
-        self.remove_watchers(&id).await;
 
         let mut agent = self
             .agents
@@ -83,18 +79,6 @@ impl DisconnectAgent {
                 .locks
                 .delete(lock.org_id(), lock.project(), lock.namespace(), lock.name())
                 .await;
-        }
-    }
-
-    async fn remove_watchers(&self, agent_id: &AgentId) {
-        let watchers = self
-            .watchers
-            .find_by_agent(agent_id)
-            .await
-            .unwrap_or_default();
-
-        for w in &watchers {
-            let _ = self.watchers.delete(&w.task_id(), agent_id).await;
         }
     }
 }
