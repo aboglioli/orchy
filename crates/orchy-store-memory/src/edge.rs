@@ -197,7 +197,7 @@ impl EdgeStore for MemoryBackend {
         }
 
         let mut traversal: Vec<TraversalEdge> = result.into_values().collect();
-        traversal.sort_by(|a, b| a.depth.cmp(&b.depth));
+        traversal.sort_by_key(|a| a.depth);
         Ok(traversal)
     }
 

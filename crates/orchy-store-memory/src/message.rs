@@ -152,10 +152,7 @@ impl MessageStore for MemoryBackend {
         };
 
         let mut root_id = start.id();
-        loop {
-            let Some(msg) = messages.get(&root_id) else {
-                break;
-            };
+        while let Some(msg) = messages.get(&root_id) {
             match msg.reply_to() {
                 Some(parent_id) if messages.contains_key(&parent_id) => {
                     root_id = parent_id;

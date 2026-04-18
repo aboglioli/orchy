@@ -348,30 +348,40 @@ You must externalize knowledge so future agents can benefit:
 
 ## Graph (Relationships Between Resources)
 
-Use edges to record meaningful relationships between tasks, knowledge entries, agents, and messages. \
+Use edges to record meaningful relationships between tasks, knowledge entries, and agents. \
 This builds a shared graph that any agent can traverse.
 
+**Resource kinds for edges:** `task`, `knowledge`, `agent` only. Message resources cannot be graph nodes.
+
 **When to create edges:**
-- Task produces a knowledge artifact → `add_edge(from=task, to=knowledge, rel=produces)`
-- Knowledge entry governs a task → `add_edge(from=knowledge, to=task, rel=implements)`
-- Task spawned subtasks via split or delegate → `add_edge(from=parent, to=child, rel=spawns)`
-- Knowledge entry supersedes an old one → `add_edge(from=new, to=old, rel=supersedes)`
-- Two entries are conceptually linked → `add_edge(rel=related_to)`
-- Task was derived from or informed by another → `add_edge(rel=derived_from)`
+- Task produces a knowledge artifact → `add_edge(from_kind=task, to_kind=knowledge, rel_type=produces)`
+- Knowledge governs or informs a task → `add_edge(from_kind=knowledge, to_kind=task, rel_type=implements)`
+- Task spawned subtasks (auto-created by `split_task` and `delegate_task`)
+- Knowledge entry supersedes an old one → `add_edge(rel_type=supersedes)`
+- Knowledge summarizes another → `add_edge(rel_type=summarizes)`
+- Two entries are conceptually linked → `add_edge(rel_type=related_to)`
+- Task was derived from another → `add_edge(rel_type=derived_from)`
+- `write_knowledge` with `task_id` auto-creates a `produces` edge (task → knowledge)
+- `merge_tasks` auto-creates `merged_from` edges (merged ← each source)
 
-**When to traverse:**
-- Before claiming a task, `get_neighbors(kind=task, id=..., direction=both)` \
-  to see linked decisions, blockers, and prior artifacts.
-- Use `get_graph(kind=task, id=root, max_depth=3)` to map a task tree \
-  and its connected knowledge before planning work.
-- Use `get_graph(kind=knowledge, id=..., rel_types=[supersedes])` \
-  to find the latest version of a decision chain.
+**Relationship types (8):**
+- `derived_from` — this was created/informed by that
+- `produces` — completing this produced that as output
+- `supersedes` — this replaces/obsoletes that
+- `merged_from` — N-to-1 consolidation (merged task ← source tasks); auto-created by merge_tasks
+- `summarizes` — 1-to-1 distillation of another entry
+- `implements` — this executes/fulfills that (task implementing a plan)
+- `spawns` — this triggered/created that; auto-created by split_task and delegate_task
+- `related_to` — general symmetric peer relationship
 
-**Relationship types:** \
-`derived_from`, `produces`, `references`, `supersedes`, `merged_from`, \
-`summarizes`, `implements`, `spawns`, `related_to`
+**Deduplication:** `add_edge` returns an error if the same (from, rel_type, to) triple already exists.
 
-**Resource kinds:** `task`, `knowledge`, `agent`, `message`
+**Query patterns:**
+- `get_neighbors(kind=task, id=..., direction=outgoing)` — direct connections (1 hop)
+- `get_graph(kind=task, id=root, max_depth=3)` — traverse task tree and connected knowledge
+- `get_graph(..., include_nodes=true)` — edges plus title/label for every touched resource in one call
+- `get_graph(kind=knowledge, id=..., rel_types=[supersedes], direction=incoming)` — find what supersedes this entry
+- `list_edges(rel_type=spawns)` — browse all edges in the org without a known root
 
 Edges are org-scoped and directed. `get_neighbors` returns direct connections; \
 `get_graph` recurses up to max_depth hops (default 3, max 10).";

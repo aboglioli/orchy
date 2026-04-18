@@ -61,7 +61,7 @@ impl SuggestRoles {
         }
 
         let mut roles: Vec<(String, usize)> = role_counts.into_iter().collect();
-        roles.sort_by(|a, b| b.1.cmp(&a.1));
+        roles.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         Ok(roles.into_iter().take(3).map(|(r, _)| r).collect())
     }

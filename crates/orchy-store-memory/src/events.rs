@@ -44,7 +44,7 @@ impl MemoryBackend {
             .filter(|e| e.organization == organization && e.timestamp >= since)
             .cloned()
             .collect();
-        filtered.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        filtered.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
         filtered.truncate(limit);
         filtered.reverse();
         Ok(filtered)
