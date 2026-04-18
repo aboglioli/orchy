@@ -73,7 +73,7 @@ pub async fn list(
     }
 
     let cmd = ListAgentsCommand {
-        org_id: Some(org),
+        org_id: org,
         project: None,
         after: None,
         limit: None,
@@ -217,10 +217,20 @@ pub async fn get_context(
 }
 
 pub async fn get_summary(
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((org, id)): Path<(String, String)>,
     State(container): State<Arc<Container>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = OrganizationId::new(&org)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    if auth.0.id() != &org_id {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            "forbidden".to_string(),
+        ));
+    }
+
     let cmd = GetAgentSummaryCommand {
         org_id: org,
         agent_id: id,

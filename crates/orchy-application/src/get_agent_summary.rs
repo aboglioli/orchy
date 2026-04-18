@@ -11,7 +11,7 @@ use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 
 use crate::dto::{
     AgentResponse, AgentSummaryResponse, KnowledgeResponse, MessageResponse, ProjectResponse,
-    TaskResponse,
+    SummaryCounts, TaskResponse,
 };
 
 pub struct GetAgentSummaryCommand {
@@ -91,9 +91,11 @@ impl GetAgentSummary {
                 agent.namespace(),
                 PageParams::unbounded(),
             )
-            .await
-            .map(|p| p.items.iter().map(MessageResponse::from).collect())
-            .unwrap_or_default();
+            .await?
+            .items
+            .iter()
+            .map(MessageResponse::from)
+            .collect();
 
         let pending_tasks: Vec<TaskResponse> = self
             .tasks
@@ -106,9 +108,11 @@ impl GetAgentSummary {
                 },
                 PageParams::unbounded(),
             )
-            .await
-            .map(|p| p.items.iter().map(TaskResponse::from).collect())
-            .unwrap_or_default();
+            .await?
+            .items
+            .iter()
+            .map(TaskResponse::from)
+            .collect();
 
         let skills: Vec<KnowledgeResponse> = self
             .knowledge
@@ -122,9 +126,11 @@ impl GetAgentSummary {
                 },
                 PageParams::unbounded(),
             )
-            .await
-            .map(|p| p.items.iter().map(KnowledgeResponse::from).collect())
-            .unwrap_or_default();
+            .await?
+            .items
+            .iter()
+            .map(KnowledgeResponse::from)
+            .collect();
 
         let handoff_context: Vec<KnowledgeResponse> = self
             .knowledge
@@ -138,13 +144,23 @@ impl GetAgentSummary {
                 },
                 PageParams::unbounded(),
             )
-            .await
-            .map(|p| p.items.iter().map(KnowledgeResponse::from).collect())
-            .unwrap_or_default();
+            .await?
+            .items
+            .iter()
+            .map(KnowledgeResponse::from)
+            .collect();
+
+        let counts = SummaryCounts {
+            connected_agents: connected_agents.len(),
+            inbox_messages: inbox.len(),
+            pending_tasks: pending_tasks.len(),
+            skills: skills.len(),
+        };
 
         Ok(AgentSummaryResponse {
             agent: AgentResponse::from(&agent),
             project,
+            counts,
             connected_agents,
             inbox,
             pending_tasks,

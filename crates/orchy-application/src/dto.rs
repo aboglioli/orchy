@@ -313,9 +313,18 @@ where
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SummaryCounts {
+    pub connected_agents: usize,
+    pub inbox_messages: usize,
+    pub pending_tasks: usize,
+    pub skills: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AgentSummaryResponse {
     pub agent: AgentResponse,
     pub project: Option<ProjectResponse>,
+    pub counts: SummaryCounts,
     pub connected_agents: Vec<AgentResponse>,
     pub inbox: Vec<MessageResponse>,
     pub pending_tasks: Vec<TaskResponse>,
@@ -373,5 +382,6 @@ pub struct ProjectOverview {
     pub project: Option<ProjectResponse>,
     pub agents: Vec<AgentResponse>,
     pub tasks: Vec<TaskResponse>,
+    pub skills: Vec<KnowledgeResponse>,
     pub overviews: Vec<KnowledgeResponse>,
 }

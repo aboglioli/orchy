@@ -12,6 +12,7 @@ use orchy_core::task::{TaskFilter, TaskStore};
 use crate::dto::{
     AgentResponse, KnowledgeResponse, ProjectOverview, ProjectResponse, TaskResponse,
 };
+use crate::parse_namespace;
 
 pub struct GetProjectOverviewCommand {
     pub org_id: String,
@@ -46,6 +47,12 @@ impl GetProjectOverview {
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project_id =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let namespace = cmd
+            .namespace
+            .as_deref()
+            .map(|s| parse_namespace(Some(s)))
+            .transpose()?;
+
         let project = self
             .projects
             .find_by_id(&org_id, &project_id)
@@ -60,6 +67,12 @@ impl GetProjectOverview {
         let agents: Vec<AgentResponse> = all_agents
             .iter()
             .filter(|a| a.project() == &project_id)
+            .filter(|a| {
+                namespace
+                    .as_ref()
+                    .map(|ns| a.namespace() == ns)
+                    .unwrap_or(true)
+            })
             .map(AgentResponse::from)
             .collect();
 
@@ -69,6 +82,7 @@ impl GetProjectOverview {
                 TaskFilter {
                     org_id: Some(org_id.clone()),
                     project: Some(project_id.clone()),
+                    namespace: namespace.clone(),
                     ..Default::default()
                 },
                 PageParams::unbounded(),
@@ -79,6 +93,25 @@ impl GetProjectOverview {
             .map(TaskResponse::from)
             .collect();
 
+        let skills: Vec<KnowledgeResponse> = self
+            .knowledge
+            .list(
+                KnowledgeFilter {
+                    org_id: Some(org_id.clone()),
+                    project: Some(project_id.clone()),
+                    include_org_level: true,
+                    kind: Some(KnowledgeKind::Skill),
+                    namespace: namespace.clone(),
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
+            .await?
+            .items
+            .iter()
+            .map(KnowledgeResponse::from)
+            .collect();
+
         let overviews: Vec<KnowledgeResponse> = self
             .knowledge
             .list(
@@ -87,6 +120,7 @@ impl GetProjectOverview {
                     project: Some(project_id.clone()),
                     include_org_level: true,
                     kind: Some(KnowledgeKind::Overview),
+                    namespace: namespace.clone(),
                     ..Default::default()
                 },
                 PageParams::unbounded(),
@@ -101,6 +135,7 @@ impl GetProjectOverview {
             project,
             agents,
             tasks,
+            skills,
             overviews,
         })
     }

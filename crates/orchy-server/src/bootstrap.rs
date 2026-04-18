@@ -45,7 +45,7 @@ pub async fn generate_bootstrap_prompt(
     let agents: Vec<AgentResponse> = app
         .list_agents
         .execute(ListAgentsCommand {
-            org_id: Some(default_org.clone()),
+            org_id: default_org.clone(),
             project: Some(project_id.to_string()),
             after: None,
             limit: None,

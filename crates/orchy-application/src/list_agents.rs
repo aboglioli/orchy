@@ -9,7 +9,7 @@ use orchy_core::pagination::PageParams;
 use crate::dto::{AgentResponse, PageResponse};
 
 pub struct ListAgentsCommand {
-    pub org_id: Option<String>,
+    pub org_id: String,
     pub project: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
@@ -25,11 +25,8 @@ impl ListAgents {
     }
 
     pub async fn execute(&self, cmd: ListAgentsCommand) -> Result<PageResponse<AgentResponse>> {
-        let org = cmd
-            .org_id
-            .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?
-            .unwrap_or_else(|| OrganizationId::new("default").unwrap());
+        let org =
+            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let project = cmd
             .project

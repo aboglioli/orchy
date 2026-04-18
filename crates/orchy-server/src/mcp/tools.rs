@@ -170,7 +170,7 @@ impl OrchyHandler {
 
         let (_, org, _, _) = self.require_session()?;
         let cmd = ListAgentsCommand {
-            org_id: Some(org.to_string()),
+            org_id: org.to_string(),
             project: Some(project.to_string()),
             after: None,
             limit: None,
@@ -1016,7 +1016,7 @@ impl OrchyHandler {
         }
 
         let agents_cmd = ListAgentsCommand {
-            org_id: Some(org.to_string()),
+            org_id: org.to_string(),
             project: Some(project_id.to_string()),
             after: None,
             limit: None,

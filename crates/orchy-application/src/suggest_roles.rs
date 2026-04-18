@@ -25,7 +25,7 @@ impl SuggestRoles {
     }
 
     pub async fn execute(&self, cmd: SuggestRolesCommand) -> Result<Vec<String>> {
-        let _org_id = cmd
+        let org_id = cmd
             .org_id
             .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
             .transpose()?;
@@ -42,6 +42,7 @@ impl SuggestRoles {
 
         for status in &[TaskStatus::Pending, TaskStatus::Blocked] {
             let filter = TaskFilter {
+                org_id: org_id.clone(),
                 project: Some(project.clone()),
                 namespace: namespace.clone(),
                 status: Some(*status),
