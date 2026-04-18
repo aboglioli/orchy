@@ -30,6 +30,15 @@ pub trait EdgeStore: Send + Sync {
         id: &str,
         rel_type: Option<&RelationType>,
     ) -> Result<Vec<Edge>>;
+    async fn exists_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<bool>;
     async fn traverse(
         &self,
         org: &OrganizationId,
@@ -150,7 +159,9 @@ impl FromStr for RelationType {
             "implements" => Ok(RelationType::Implements),
             "spawns" => Ok(RelationType::Spawns),
             "related_to" => Ok(RelationType::RelatedTo),
-            other => Err(format!("unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to")),
+            other => Err(format!(
+                "unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to"
+            )),
         }
     }
 }

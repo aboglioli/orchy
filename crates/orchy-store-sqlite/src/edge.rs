@@ -153,6 +153,35 @@ impl EdgeStore for SqliteBackend {
         Ok(edges)
     }
 
+    async fn exists_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges
+                 WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3
+                   AND to_kind = ?4 AND to_id = ?5 AND rel_type = ?6",
+                rusqlite::params![
+                    org.to_string(),
+                    from_kind.to_string(),
+                    from_id,
+                    to_kind.to_string(),
+                    to_id,
+                    rel_type.to_string(),
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(count > 0)
+    }
+
     async fn traverse(
         &self,
         org: &OrganizationId,
@@ -263,8 +292,10 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>) -> String {
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.depth + 1
              FROM edges e
              INNER JOIN traversal t ON e.org_id = t.org_id AND (
+                 (e.from_kind = t.from_kind AND e.from_id = t.from_id) OR
+                 (e.to_kind = t.from_kind AND e.to_id = t.from_id) OR
                  (e.from_kind = t.to_kind AND e.from_id = t.to_id) OR
-                 (e.to_kind = t.from_kind AND e.to_id = t.from_id)
+                 (e.to_kind = t.to_kind AND e.to_id = t.to_id)
              )
              WHERE t.depth < ?4{rel_clause}"
         ),

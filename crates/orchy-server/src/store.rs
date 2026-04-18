@@ -273,6 +273,20 @@ impl EdgeStore for StoreBackend {
     ) -> Result<Vec<Edge>> {
         delegate_trait!(self, EdgeStore::find_to(org, kind, id, rel_type))
     }
+    async fn exists_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<bool> {
+        delegate_trait!(
+            self,
+            EdgeStore::exists_by_pair(org, from_kind, from_id, to_kind, to_id, rel_type)
+        )
+    }
     async fn traverse(
         &self,
         org: &OrganizationId,

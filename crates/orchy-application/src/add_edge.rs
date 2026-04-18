@@ -55,6 +55,24 @@ impl AddEdge {
             .transpose()
             .map_err(Error::InvalidInput)?;
 
+        if self
+            .store
+            .exists_by_pair(
+                &org_id,
+                &from_kind,
+                &cmd.from_id,
+                &to_kind,
+                &cmd.to_id,
+                &rel_type,
+            )
+            .await?
+        {
+            return Err(Error::Conflict(format!(
+                "edge {from_kind}:{} --{rel_type}--> {to_kind}:{} already exists",
+                cmd.from_id, cmd.to_id
+            )));
+        }
+
         let edge = Edge::new(
             org_id,
             from_kind,

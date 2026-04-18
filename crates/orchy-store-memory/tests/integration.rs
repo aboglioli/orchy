@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_memory::MemoryBackend;
 
@@ -677,4 +679,50 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
         .unwrap();
     assert_eq!(fetched.version().as_u64(), 3);
     assert_eq!(fetched.title(), "v3");
+}
+
+#[tokio::test]
+async fn edge_exists_by_pair_detects_duplicate() {
+    let store = backend();
+    let o = org();
+
+    let edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-1".to_string(),
+        ResourceKind::Knowledge,
+        "know-1".to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    assert!(
+        EdgeStore::exists_by_pair(
+            &store,
+            &o,
+            &ResourceKind::Task,
+            "task-1",
+            &ResourceKind::Knowledge,
+            "know-1",
+            &RelationType::Produces,
+        )
+        .await
+        .unwrap()
+    );
+
+    assert!(
+        !EdgeStore::exists_by_pair(
+            &store,
+            &o,
+            &ResourceKind::Task,
+            "task-1",
+            &ResourceKind::Knowledge,
+            "know-1",
+            &RelationType::RelatedTo,
+        )
+        .await
+        .unwrap()
+    );
 }
