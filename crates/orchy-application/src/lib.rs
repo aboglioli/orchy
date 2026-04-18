@@ -358,8 +358,8 @@ impl Application {
 
             send_message: SendMessage::new(agents.clone(), messages.clone()),
             check_mailbox: CheckMailbox::new(messages.clone(), agents.clone()),
-            check_sent_messages: CheckSentMessages::new(messages.clone()),
-            mark_read: MarkRead::new(messages.clone()),
+            check_sent_messages: CheckSentMessages::new(messages.clone(), agents.clone()),
+            mark_read: MarkRead::new(messages.clone(), agents.clone()),
             list_conversation: ListConversation::new(messages.clone()),
 
             write_knowledge: WriteKnowledge::new(knowledge.clone(), embeddings.clone()),

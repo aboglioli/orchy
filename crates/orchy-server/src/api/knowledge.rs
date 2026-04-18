@@ -98,18 +98,24 @@ pub struct AppendBody {
 
 #[derive(Deserialize)]
 pub struct MoveBody {
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub new_namespace: String,
     pub metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]
 pub struct RenameBody {
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub new_path: String,
     pub metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]
 pub struct ChangeKindBody {
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub kind: String,
     pub version: Option<u64>,
     pub metadata: Option<HashMap<String, String>>,
@@ -117,6 +123,8 @@ pub struct ChangeKindBody {
 
 #[derive(Deserialize)]
 pub struct PatchMetadataBody {
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
     pub set: Option<HashMap<String, String>>,
     pub remove: Option<Vec<String>>,
     pub version: Option<u64>,
@@ -373,7 +381,7 @@ pub async fn move_entry(
     let cmd = MoveKnowledgeCommand {
         org_id: org,
         project,
-        namespace: None,
+        namespace: body.namespace,
         path,
         new_namespace: body.new_namespace,
     };
@@ -400,7 +408,7 @@ pub async fn rename(
     let cmd = RenameKnowledgeCommand {
         org_id: org,
         project,
-        namespace: None,
+        namespace: body.namespace,
         path,
         new_path: body.new_path,
     };
@@ -427,7 +435,7 @@ pub async fn change_kind(
     let cmd = ChangeKnowledgeKindCommand {
         org_id: org,
         project,
-        namespace: None,
+        namespace: body.namespace,
         path,
         new_kind: body.kind,
         version: body.version,
@@ -455,7 +463,7 @@ pub async fn patch_metadata(
     let cmd = PatchKnowledgeMetadataCommand {
         org_id: org,
         project,
-        namespace: None,
+        namespace: body.namespace,
         path,
         set: body.set.unwrap_or_default(),
         remove: body.remove.unwrap_or_default(),
@@ -476,6 +484,7 @@ pub async fn tag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
+    Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
@@ -483,7 +492,7 @@ pub async fn tag(
     let cmd = TagKnowledgeCommand {
         org_id: org,
         project,
-        namespace: None,
+        namespace: query.namespace,
         path,
         tag: tag_name,
     };
@@ -502,6 +511,7 @@ pub async fn untag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
+    Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
@@ -509,7 +519,7 @@ pub async fn untag(
     let cmd = UntagKnowledgeCommand {
         org_id: org,
         project,
-        namespace: None,
+        namespace: query.namespace,
         path,
         tag: tag_name,
     };

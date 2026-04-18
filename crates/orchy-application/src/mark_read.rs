@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{MessageId, MessageStore};
 
@@ -12,15 +12,20 @@ pub struct MarkReadCommand {
 
 pub struct MarkRead {
     messages: Arc<dyn MessageStore>,
+    agents: Arc<dyn AgentStore>,
 }
 
 impl MarkRead {
-    pub fn new(messages: Arc<dyn MessageStore>) -> Self {
-        Self { messages }
+    pub fn new(messages: Arc<dyn MessageStore>, agents: Arc<dyn AgentStore>) -> Self {
+        Self { messages, agents }
     }
 
     pub async fn execute(&self, cmd: MarkReadCommand) -> Result<()> {
         let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        self.agents
+            .find_by_id(&agent_id)
+            .await?
+            .ok_or(Error::NotFound("agent not found".to_string()))?;
 
         let message_ids = cmd
             .message_ids

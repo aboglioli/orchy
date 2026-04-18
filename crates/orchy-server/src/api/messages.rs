@@ -11,7 +11,6 @@ use orchy_application::{
     CheckMailboxCommand, CheckSentMessagesCommand, ListConversationCommand, MarkReadCommand,
     ResourceRefInput, SendMessageCommand,
 };
-use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -248,11 +247,11 @@ pub async fn thread(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = ProjectId::try_from(project)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let cmd = ListConversationCommand {
-        message_id: msg_id.clone(),
+        org_id: org,
+        project,
+        message_id: msg_id,
         limit: query.limit,
     };
 
@@ -262,16 +261,6 @@ pub async fn thread(
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
-
-    if let Some(first) = messages.first()
-        && first.project != project_id.as_ref()
-    {
-        return Err(ApiError(
-            StatusCode::NOT_FOUND,
-            "NOT_FOUND",
-            format!("message {msg_id} not found in project {project_id}"),
-        ));
-    }
 
     Ok(Json(serde_json::to_value(&messages).unwrap_or_default()))
 }

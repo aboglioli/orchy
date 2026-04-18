@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::ProjectId;
@@ -22,11 +22,12 @@ pub struct CheckSentMessagesCommand {
 
 pub struct CheckSentMessages {
     messages: Arc<dyn MessageStore>,
+    agents: Arc<dyn AgentStore>,
 }
 
 impl CheckSentMessages {
-    pub fn new(messages: Arc<dyn MessageStore>) -> Self {
-        Self { messages }
+    pub fn new(messages: Arc<dyn MessageStore>, agents: Arc<dyn AgentStore>) -> Self {
+        Self { messages, agents }
     }
 
     pub async fn execute(
@@ -34,6 +35,10 @@ impl CheckSentMessages {
         cmd: CheckSentMessagesCommand,
     ) -> Result<PageResponse<MessageResponse>> {
         let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        self.agents
+            .find_by_id(&agent_id)
+            .await?
+            .ok_or(Error::NotFound("agent not found".to_string()))?;
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =

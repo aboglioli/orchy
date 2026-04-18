@@ -39,10 +39,12 @@ impl CheckMailbox {
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let page = PageParams::new(cmd.after, cmd.limit);
 
-        let agent_roles = match self.agents.find_by_id(&agent_id).await? {
-            Some(agent) => agent.roles().to_vec(),
-            None => vec![],
-        };
+        let agent = self
+            .agents
+            .find_by_id(&agent_id)
+            .await?
+            .ok_or(Error::NotFound("agent not found".to_string()))?;
+        let agent_roles = agent.roles().to_vec();
 
         let mut result = self
             .messages

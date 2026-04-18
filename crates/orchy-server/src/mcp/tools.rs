@@ -161,17 +161,27 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListAgentsParams>,
     ) -> Result<String, String> {
-        let project = match params.project.as_deref() {
-            Some(p) => parse_project(p)?,
-            None => self
-                .get_session_project()
-                .ok_or("pass project or register first")?,
+        let (org, project) = match self.require_session() {
+            Ok((_, org, proj, _)) => {
+                let project = match params.project.as_deref() {
+                    Some(p) => parse_project(p)?,
+                    None => proj,
+                };
+                (org.to_string(), project.to_string())
+            }
+            Err(_) => {
+                let p = params
+                    .project
+                    .as_deref()
+                    .ok_or("pass project or register first")?;
+                let project = parse_project(p)?;
+                (default_org().to_string(), project.to_string())
+            }
         };
 
-        let (_, org, _, _) = self.require_session()?;
         let cmd = ListAgentsCommand {
-            org_id: org.to_string(),
-            project: Some(project.to_string()),
+            org_id: org,
+            project: Some(project),
             after: None,
             limit: None,
         };
@@ -766,13 +776,17 @@ impl OrchyHandler {
         description = "List the full conversation thread for a given message ID. \
         Walks the reply_to chain to find the root, then returns all messages in \
         the thread in chronological order. Use limit to cap the number of messages \
-        returned (most recent N). Does not require a registered session."
+        returned (most recent N)."
     )]
     async fn list_conversation(
         &self,
         Parameters(params): Parameters<ListConversationParams>,
     ) -> Result<String, String> {
+        let (_, org, project, _) = self.require_session()?;
+
         let cmd = ListConversationCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
             message_id: params.message_id,
             limit: params.limit,
         };
