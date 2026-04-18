@@ -726,3 +726,48 @@ async fn edge_exists_by_pair_detects_duplicate() {
         .unwrap()
     );
 }
+
+#[tokio::test]
+async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
+    let store = backend();
+    let o = org();
+
+    let e1 = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "t1".to_string(),
+        ResourceKind::Knowledge,
+        "k1".to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    let e2 = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "t2".to_string(),
+        ResourceKind::Task,
+        "t3".to_string(),
+        RelationType::Spawns,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &e1).await.unwrap();
+    EdgeStore::save(&store, &e2).await.unwrap();
+
+    let all = EdgeStore::list_by_org(&store, &o, None, PageParams::default())
+        .await
+        .unwrap();
+    assert_eq!(all.items.len(), 2);
+
+    let spawns_only = EdgeStore::list_by_org(
+        &store,
+        &o,
+        Some(&RelationType::Spawns),
+        PageParams::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(spawns_only.items.len(), 1);
+    assert_eq!(spawns_only.items[0].from_id(), "t2");
+}

@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalEdge};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams};
 use orchy_core::resource_ref::ResourceKind;
 
 use crate::MemoryBackend;
@@ -95,6 +96,24 @@ impl EdgeStore for MemoryBackend {
                 && e.to_kind() == to_kind
                 && e.to_id() == to_id
                 && e.rel_type() == rel_type
+        }))
+    }
+
+    async fn list_by_org(
+        &self,
+        org: &OrganizationId,
+        rel_type: Option<&RelationType>,
+        page: PageParams,
+    ) -> Result<Page<Edge>> {
+        let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
+        let mut edges: Vec<Edge> = store
+            .values()
+            .filter(|e| e.org_id() == org && rel_type.is_none_or(|rt| e.rel_type() == rt))
+            .cloned()
+            .collect();
+        edges.sort_by_key(|e| e.created_at());
+        Ok(crate::apply_cursor_pagination(edges, &page, |e| {
+            e.id().to_string()
         }))
     }
 

@@ -18,6 +18,7 @@ pub mod dto;
 mod add_edge;
 mod get_graph;
 mod get_neighbors;
+mod list_edges;
 mod remove_edge;
 
 pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
@@ -209,6 +210,7 @@ pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 pub use add_edge::{AddEdge, AddEdgeCommand};
 pub use get_graph::{GetGraph, GetGraphCommand};
 pub use get_neighbors::{GetNeighbors, GetNeighborsCommand};
+pub use list_edges::{ListEdges, ListEdgesCommand};
 pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
 pub use dto::{
@@ -260,6 +262,7 @@ pub struct Application {
     pub remove_edge: RemoveEdge,
     pub get_neighbors: GetNeighbors,
     pub get_graph: GetGraph,
+    pub list_edges: ListEdges,
     pub tag_task: TagTask,
     pub untag_task: UntagTask,
     pub move_task: MoveTask,
@@ -373,6 +376,7 @@ impl Application {
             remove_edge: RemoveEdge::new(edges.clone()),
             get_neighbors: GetNeighbors::new(edges.clone()),
             get_graph: GetGraph::new(edges.clone()),
+            list_edges: ListEdges::new(edges.clone()),
             tag_task: TagTask::new(tasks.clone()),
             untag_task: UntagTask::new(tasks.clone()),
             move_task: MoveTask::new(tasks.clone()),

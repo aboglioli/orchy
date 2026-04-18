@@ -478,3 +478,12 @@ pub struct GetGraphParams {
     /// outgoing (default), incoming, or both.
     pub direction: Option<String>,
 }
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ListEdgesParams {
+    /// Filter by relationship type. Omit to list all edge types.
+    pub rel_type: Option<String>,
+    /// Cursor from previous page's next_cursor field.
+    pub after: Option<String>,
+    pub limit: Option<u32>,
+}

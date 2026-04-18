@@ -287,6 +287,14 @@ impl EdgeStore for StoreBackend {
             EdgeStore::exists_by_pair(org, from_kind, from_id, to_kind, to_id, rel_type)
         )
     }
+    async fn list_by_org(
+        &self,
+        org: &OrganizationId,
+        rel_type: Option<&RelationType>,
+        page: PageParams,
+    ) -> Result<Page<Edge>> {
+        delegate_trait!(self, EdgeStore::list_by_org(org, rel_type, page))
+    }
     async fn traverse(
         &self,
         org: &OrganizationId,

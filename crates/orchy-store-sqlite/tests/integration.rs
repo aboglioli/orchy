@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_sqlite::SqliteBackend;
 
@@ -823,4 +825,53 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
         .unwrap();
     assert_eq!(fetched.version().as_u64(), 3);
     assert_eq!(fetched.title(), "v3");
+}
+
+#[tokio::test]
+async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
+    let store = backend();
+    let o = org("default");
+
+    let edge_to_root = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "neighbor".into(),
+        ResourceKind::Task,
+        "root".into(),
+        RelationType::RelatedTo,
+        None,
+        None,
+    );
+    let edge_from_neighbor = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "neighbor".into(),
+        ResourceKind::Task,
+        "leaf".into(),
+        RelationType::RelatedTo,
+        None,
+        None,
+    );
+
+    EdgeStore::save(&store, &edge_to_root).await.unwrap();
+    EdgeStore::save(&store, &edge_from_neighbor).await.unwrap();
+
+    let edges = EdgeStore::traverse(
+        &store,
+        &o,
+        &ResourceKind::Task,
+        "root",
+        3,
+        None,
+        TraversalDirection::Both,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        edges
+            .iter()
+            .any(|e| e.from_id == "neighbor" && e.to_id == "leaf"),
+        "expected traversal to include neighbor -> leaf edge"
+    );
 }

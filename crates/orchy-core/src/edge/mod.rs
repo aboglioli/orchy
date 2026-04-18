@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::agent::AgentId;
 use crate::error::Result;
 use crate::organization::OrganizationId;
+use crate::pagination::{Page, PageParams};
 use crate::resource_ref::ResourceKind;
 
 #[async_trait]
@@ -39,6 +40,12 @@ pub trait EdgeStore: Send + Sync {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<bool>;
+    async fn list_by_org(
+        &self,
+        org: &OrganizationId,
+        rel_type: Option<&RelationType>,
+        page: PageParams,
+    ) -> Result<Page<Edge>>;
     async fn traverse(
         &self,
         org: &OrganizationId,

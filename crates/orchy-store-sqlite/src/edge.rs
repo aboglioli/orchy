@@ -10,6 +10,7 @@ use orchy_core::edge::{
 };
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::ResourceKind;
 
 use crate::SqliteBackend;
@@ -180,6 +181,88 @@ impl EdgeStore for SqliteBackend {
             )
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(count > 0)
+    }
+
+    async fn list_by_org(
+        &self,
+        org: &OrganizationId,
+        rel_type: Option<&RelationType>,
+        page: PageParams,
+    ) -> Result<Page<Edge>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let fetch_limit = (page.limit as i64) + 1;
+
+        let mut edges = if let Some(rt) = rel_type {
+            if let Some(ref cursor) = page.after {
+                if let Some(decoded) = decode_cursor(cursor) {
+                    let mut stmt = conn.prepare(
+                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                         FROM edges WHERE org_id = ?1 AND rel_type = ?2 AND id > ?3
+                         ORDER BY id ASC LIMIT ?4",
+                    ).map_err(|e| Error::Store(e.to_string()))?;
+                    stmt.query_map(
+                        rusqlite::params![org.to_string(), rt.to_string(), decoded, fetch_limit],
+                        row_to_edge,
+                    )
+                    .map_err(|e| Error::Store(e.to_string()))?
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(|e| Error::Store(e.to_string()))?
+                } else {
+                    vec![]
+                }
+            } else {
+                let mut stmt = conn.prepare(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                     FROM edges WHERE org_id = ?1 AND rel_type = ?2
+                     ORDER BY id ASC LIMIT ?3",
+                ).map_err(|e| Error::Store(e.to_string()))?;
+                stmt.query_map(
+                    rusqlite::params![org.to_string(), rt.to_string(), fetch_limit],
+                    row_to_edge,
+                )
+                .map_err(|e| Error::Store(e.to_string()))?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| Error::Store(e.to_string()))?
+            }
+        } else if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                let mut stmt = conn.prepare(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                     FROM edges WHERE org_id = ?1 AND id > ?2
+                     ORDER BY id ASC LIMIT ?3",
+                ).map_err(|e| Error::Store(e.to_string()))?;
+                stmt.query_map(
+                    rusqlite::params![org.to_string(), decoded, fetch_limit],
+                    row_to_edge,
+                )
+                .map_err(|e| Error::Store(e.to_string()))?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| Error::Store(e.to_string()))?
+            } else {
+                vec![]
+            }
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                 FROM edges WHERE org_id = ?1
+                 ORDER BY id ASC LIMIT ?2",
+            ).map_err(|e| Error::Store(e.to_string()))?;
+            stmt.query_map(rusqlite::params![org.to_string(), fetch_limit], row_to_edge)
+                .map_err(|e| Error::Store(e.to_string()))?
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| Error::Store(e.to_string()))?
+        };
+
+        let has_more = edges.len() > page.limit as usize;
+        if has_more {
+            edges.pop();
+        }
+        let next_cursor = if has_more {
+            edges.last().map(|e| encode_cursor(&e.id().to_string()))
+        } else {
+            None
+        };
+        Ok(Page::new(edges, next_cursor))
     }
 
     async fn traverse(

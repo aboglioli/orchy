@@ -11,8 +11,8 @@ use orchy_application::{
     CompleteTaskCommand, DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand,
     FailTaskCommand, GetGraphCommand, GetNeighborsCommand, GetNextTaskCommand, GetProjectCommand,
     GetTaskWithContextCommand, HeartbeatCommand, ImportKnowledgeCommand, ListAgentsCommand,
-    ListConversationCommand, ListKnowledgeCommand, ListNamespacesCommand, ListTagsCommand,
-    ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,
+    ListConversationCommand, ListEdgesCommand, ListKnowledgeCommand, ListNamespacesCommand,
+    ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,
     MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand, PollUpdatesCommand,
     PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand, ReleaseTaskCommand,
     RemoveDependencyCommand, RemoveEdgeCommand, RenameKnowledgeCommand, ReplaceTaskCommand,
@@ -1986,6 +1986,29 @@ impl OrchyHandler {
 
         match self.container.app.get_graph.execute(cmd).await {
             Ok(graph) => Ok(to_json(&graph)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(
+        description = "List edges across the organization graph. Use to browse the full graph \
+            without a known root. Supports optional rel_type filter and cursor pagination."
+    )]
+    async fn list_edges(
+        &self,
+        Parameters(params): Parameters<ListEdgesParams>,
+    ) -> Result<String, String> {
+        let (_, org, _, _) = self.require_session()?;
+
+        let cmd = ListEdgesCommand {
+            org_id: org.to_string(),
+            rel_type: params.rel_type,
+            after: params.after,
+            limit: params.limit,
+        };
+
+        match self.container.app.list_edges.execute(cmd).await {
+            Ok(page) => Ok(to_json(&page)),
             Err(e) => Err(mcp_error(e)),
         }
     }

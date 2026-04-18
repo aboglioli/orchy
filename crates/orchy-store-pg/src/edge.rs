@@ -10,6 +10,7 @@ use orchy_core::edge::{
 };
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
+use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::ResourceKind;
 
 use crate::PgBackend;
@@ -165,6 +166,74 @@ impl EdgeStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
         Ok(count > 0)
+    }
+
+    async fn list_by_org(
+        &self,
+        org: &OrganizationId,
+        rel_type: Option<&RelationType>,
+        page: PageParams,
+    ) -> Result<Page<Edge>> {
+        let fetch_limit = (page.limit as i64) + 1;
+
+        let mut rows = if let Some(rt) = rel_type {
+            if let Some(ref cursor) = page.after {
+                if let Some(decoded) = decode_cursor(cursor) {
+                    sqlx::query(
+                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                         FROM edges WHERE org_id = $1 AND rel_type = $2 AND id > $3
+                         ORDER BY id ASC LIMIT $4",
+                    )
+                    .bind(org.to_string()).bind(rt.to_string()).bind(decoded).bind(fetch_limit)
+                    .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+                } else {
+                    vec![]
+                }
+            } else {
+                sqlx::query(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                     FROM edges WHERE org_id = $1 AND rel_type = $2
+                     ORDER BY id ASC LIMIT $3",
+                )
+                .bind(org.to_string()).bind(rt.to_string()).bind(fetch_limit)
+                .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+            }
+        } else if let Some(ref cursor) = page.after {
+            if let Some(decoded) = decode_cursor(cursor) {
+                sqlx::query(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                     FROM edges WHERE org_id = $1 AND id > $2
+                     ORDER BY id ASC LIMIT $3",
+                )
+                .bind(org.to_string()).bind(decoded).bind(fetch_limit)
+                .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+            } else {
+                vec![]
+            }
+        } else {
+            sqlx::query(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                 FROM edges WHERE org_id = $1
+                 ORDER BY id ASC LIMIT $2",
+            )
+            .bind(org.to_string()).bind(fetch_limit)
+            .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+        };
+
+        let has_more = rows.len() > page.limit as usize;
+        if has_more {
+            rows.pop();
+        }
+        let edges: Vec<Edge> = rows
+            .iter()
+            .map(row_to_edge)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let next_cursor = if has_more {
+            edges.last().map(|e| encode_cursor(&e.id().to_string()))
+        } else {
+            None
+        };
+        Ok(Page::new(edges, next_cursor))
     }
 
     async fn traverse(
