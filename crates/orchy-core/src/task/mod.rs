@@ -13,8 +13,6 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
-use crate::resource_ref::ResourceRef;
-
 use self::events as task_events;
 
 #[async_trait::async_trait]
@@ -201,7 +199,6 @@ pub struct Task {
     depends_on: Vec<TaskId>,
     tags: Vec<String>,
     result_summary: Option<String>,
-    refs: Vec<ResourceRef>,
     created_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -249,7 +246,6 @@ impl Task {
             depends_on,
             tags: Vec::new(),
             result_summary: None,
-            refs: Vec::new(),
             created_by,
             created_at: now,
             updated_at: now,
@@ -298,7 +294,6 @@ impl Task {
             depends_on: r.depends_on,
             tags: r.tags,
             result_summary: r.result_summary,
-            refs: r.refs,
             created_by: r.created_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -740,17 +735,6 @@ impl Task {
     pub fn result_summary(&self) -> Option<&str> {
         self.result_summary.as_deref()
     }
-    pub fn refs(&self) -> &[ResourceRef] {
-        &self.refs
-    }
-    pub fn add_ref(&mut self, r: ResourceRef) {
-        if !self.refs.contains(&r) {
-            self.refs.push(r);
-        }
-    }
-    pub fn remove_ref(&mut self, r: &ResourceRef) {
-        self.refs.retain(|existing| existing != r);
-    }
     pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) -> Result<()> {
         self.parent_id = parent_id;
         self.updated_at = Utc::now();
@@ -860,7 +844,6 @@ pub struct RestoreTask {
     pub depends_on: Vec<TaskId>,
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
-    pub refs: Vec<ResourceRef>,
     pub created_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -908,7 +891,6 @@ mod tests {
             depends_on: vec![],
             tags: vec![],
             result_summary: None,
-            refs: Vec::new(),
             created_by: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

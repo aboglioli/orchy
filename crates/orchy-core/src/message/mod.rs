@@ -13,8 +13,6 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
-use crate::resource_ref::ResourceRef;
-
 use self::events as message_events;
 
 #[async_trait::async_trait]
@@ -169,7 +167,6 @@ pub struct Message {
     to: MessageTarget,
     body: String,
     reply_to: Option<MessageId>,
-    refs: Vec<ResourceRef>,
     status: MessageStatus,
     created_at: DateTime<Utc>,
     #[serde(skip)]
@@ -195,7 +192,6 @@ impl Message {
             to,
             body,
             reply_to,
-            refs: Vec::new(),
             status: MessageStatus::Pending,
             created_at: Utc::now(),
             collector: EventCollector::new(),
@@ -234,7 +230,6 @@ impl Message {
             to: r.to,
             body: r.body,
             reply_to: r.reply_to,
-            refs: r.refs,
             status: r.status,
             created_at: r.created_at,
             collector: EventCollector::new(),
@@ -314,15 +309,6 @@ impl Message {
         matches!(self.to, MessageTarget::Role(_))
     }
 
-    pub fn refs(&self) -> &[ResourceRef] {
-        &self.refs
-    }
-    pub fn add_ref(&mut self, r: ResourceRef) {
-        if !self.refs.contains(&r) {
-            self.refs.push(r);
-        }
-    }
-
     pub fn drain_events(&mut self) -> Vec<Event> {
         self.collector.drain()
     }
@@ -368,7 +354,6 @@ pub struct RestoreMessage {
     pub to: MessageTarget,
     pub body: String,
     pub reply_to: Option<MessageId>,
-    pub refs: Vec<ResourceRef>,
     pub status: MessageStatus,
     pub created_at: DateTime<Utc>,
 }

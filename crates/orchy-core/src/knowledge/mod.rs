@@ -15,8 +15,6 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
-use crate::resource_ref::ResourceRef;
-
 use self::events as knowledge_events;
 
 #[async_trait::async_trait]
@@ -261,7 +259,6 @@ pub struct Knowledge {
     version: Version,
     agent_id: Option<AgentId>,
     metadata: HashMap<String, String>,
-    refs: Vec<ResourceRef>,
     embedding: Option<Vec<f32>>,
     embedding_model: Option<String>,
     embedding_dimensions: Option<u32>,
@@ -306,7 +303,6 @@ impl Knowledge {
             version: Version::initial(),
             agent_id,
             metadata,
-            refs: Vec::new(),
             embedding: None,
             embedding_model: None,
             embedding_dimensions: None,
@@ -356,7 +352,6 @@ impl Knowledge {
             version: r.version,
             agent_id: r.agent_id,
             metadata: r.metadata,
-            refs: r.refs,
             embedding: r.embedding,
             embedding_model: r.embedding_model,
             embedding_dimensions: r.embedding_dimensions,
@@ -633,17 +628,6 @@ impl Knowledge {
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }
-    pub fn refs(&self) -> &[ResourceRef] {
-        &self.refs
-    }
-    pub fn add_ref(&mut self, r: ResourceRef) {
-        if !self.refs.contains(&r) {
-            self.refs.push(r);
-        }
-    }
-    pub fn remove_ref(&mut self, r: &ResourceRef) {
-        self.refs.retain(|existing| existing != r);
-    }
     pub fn embedding(&self) -> Option<&[f32]> {
         self.embedding.as_deref()
     }
@@ -674,7 +658,6 @@ pub struct RestoreKnowledge {
     pub version: Version,
     pub agent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
-    pub refs: Vec<ResourceRef>,
     pub embedding: Option<Vec<f32>>,
     pub embedding_model: Option<String>,
     pub embedding_dimensions: Option<u32>,
