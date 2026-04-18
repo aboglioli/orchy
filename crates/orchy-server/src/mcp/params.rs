@@ -123,6 +123,10 @@ pub struct UpdateTaskParams {
     pub description: Option<String>,
     /// low, normal, high, critical.
     pub priority: Option<String>,
+    /// Resource references to add.
+    pub add_refs: Option<Vec<ResourceRefParam>>,
+    /// Resource references to remove (kind + id).
+    pub remove_refs: Option<Vec<ResourceRefParam>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -448,4 +452,40 @@ pub struct ImportKnowledgeParams {
     pub source_project: String,
     pub path: String,
     pub source_namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct AddTaskRefParams {
+    pub task_id: String,
+    /// task, knowledge, agent, or message.
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct RemoveTaskRefParams {
+    pub task_id: String,
+    /// task, knowledge, agent, or message.
+    pub kind: String,
+    pub id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct AddKnowledgeRefParams {
+    pub path: String,
+    /// task, knowledge, agent, or message.
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
+    pub namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct RemoveKnowledgeRefParams {
+    pub path: String,
+    /// task, knowledge, agent, or message.
+    pub kind: String,
+    pub id: String,
+    pub namespace: Option<String>,
 }

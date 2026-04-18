@@ -66,8 +66,10 @@ mod split_task;
 
 // Task metadata
 mod add_task_note;
+mod add_task_ref;
 mod list_tags;
 mod move_task;
+mod remove_task_ref;
 mod tag_task;
 mod untag_task;
 
@@ -92,6 +94,10 @@ mod search_knowledge;
 mod tag_knowledge;
 mod untag_knowledge;
 mod write_knowledge;
+
+// Knowledge refs
+mod add_knowledge_ref;
+mod remove_knowledge_ref;
 
 // Knowledge (inheritance)
 mod list_overviews;
@@ -155,8 +161,10 @@ pub use replace_task::{ReplaceTask, ReplaceTaskCommand};
 pub use split_task::{SplitTask, SplitTaskCommand, SubtaskInput};
 
 pub use add_task_note::{AddTaskNote, AddTaskNoteCommand};
+pub use add_task_ref::{AddTaskRef, AddTaskRefCommand};
 pub use list_tags::{ListTags, ListTagsCommand};
 pub use move_task::{MoveTask, MoveTaskCommand};
+pub use remove_task_ref::{RemoveTaskRef, RemoveTaskRefCommand};
 pub use tag_task::{TagTask, TagTaskCommand};
 pub use untag_task::{UntagTask, UntagTaskCommand};
 
@@ -180,8 +188,10 @@ pub use tag_knowledge::{TagKnowledge, TagKnowledgeCommand};
 pub use untag_knowledge::{UntagKnowledge, UntagKnowledgeCommand};
 pub use write_knowledge::{WriteKnowledge, WriteKnowledgeCommand};
 
+pub use add_knowledge_ref::{AddKnowledgeRef, AddKnowledgeRefCommand};
 pub use list_overviews::{ListOverviews, ListOverviewsCommand};
 pub use list_skills::{ListSkills, ListSkillsCommand};
+pub use remove_knowledge_ref::{RemoveKnowledgeRef, RemoveKnowledgeRefCommand};
 
 pub use get_project::{GetProject, GetProjectCommand};
 pub use list_namespaces::{ListNamespaces, ListNamespacesCommand};
@@ -243,6 +253,8 @@ pub struct Application {
     pub remove_dependency: RemoveDependency,
 
     pub add_task_note: AddTaskNote,
+    pub add_task_ref: AddTaskRef,
+    pub remove_task_ref: RemoveTaskRef,
     pub tag_task: TagTask,
     pub untag_task: UntagTask,
     pub move_task: MoveTask,
@@ -267,6 +279,8 @@ pub struct Application {
     pub untag_knowledge: UntagKnowledge,
     pub patch_knowledge_metadata: PatchKnowledgeMetadata,
     pub import_knowledge: ImportKnowledge,
+    pub add_knowledge_ref: AddKnowledgeRef,
+    pub remove_knowledge_ref: RemoveKnowledgeRef,
     pub list_skills: ListSkills,
     pub list_overviews: ListOverviews,
 
@@ -351,6 +365,8 @@ impl Application {
             remove_dependency: RemoveDependency::new(tasks.clone()),
 
             add_task_note: AddTaskNote::new(tasks.clone(), knowledge.clone()),
+            add_task_ref: AddTaskRef::new(tasks.clone()),
+            remove_task_ref: RemoveTaskRef::new(tasks.clone()),
             tag_task: TagTask::new(tasks.clone()),
             untag_task: UntagTask::new(tasks.clone()),
             move_task: MoveTask::new(tasks.clone()),
@@ -375,6 +391,8 @@ impl Application {
             untag_knowledge: UntagKnowledge::new(knowledge.clone()),
             patch_knowledge_metadata: PatchKnowledgeMetadata::new(knowledge.clone()),
             import_knowledge: ImportKnowledge::new(knowledge.clone(), embeddings),
+            add_knowledge_ref: AddKnowledgeRef::new(knowledge.clone()),
+            remove_knowledge_ref: RemoveKnowledgeRef::new(knowledge.clone()),
             list_skills: ListSkills::new(knowledge.clone()),
             list_overviews: ListOverviews::new(knowledge.clone()),
 

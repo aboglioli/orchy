@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -17,6 +19,20 @@ impl fmt::Display for ResourceKind {
             ResourceKind::Knowledge => write!(f, "knowledge"),
             ResourceKind::Agent => write!(f, "agent"),
             ResourceKind::Message => write!(f, "message"),
+        }
+    }
+}
+
+impl FromStr for ResourceKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "task" => Ok(ResourceKind::Task),
+            "knowledge" => Ok(ResourceKind::Knowledge),
+            "agent" => Ok(ResourceKind::Agent),
+            "message" => Ok(ResourceKind::Message),
+            other => Err(format!("unknown resource kind: {other}")),
         }
     }
 }

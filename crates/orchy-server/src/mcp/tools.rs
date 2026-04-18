@@ -5,20 +5,22 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_application::{
-    AddDependencyCommand, AddTaskNoteCommand, AppendKnowledgeCommand, AssignTaskCommand,
-    CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand, CheckLockCommand,
-    CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand, CompleteTaskCommand,
-    DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand, FailTaskCommand,
-    GetNextTaskCommand, GetProjectCommand, GetTaskWithContextCommand, HeartbeatCommand,
-    ImportKnowledgeCommand, ListAgentsCommand, ListConversationCommand, ListKnowledgeCommand,
-    ListNamespacesCommand, ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand,
-    MergeTasksCommand, MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand,
-    PollUpdatesCommand, PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand,
-    ReleaseTaskCommand, RemoveDependencyCommand, RenameKnowledgeCommand, ReplaceTaskCommand,
-    ResourceRefInput, SearchKnowledgeCommand, SendMessageCommand, SetProjectMetadataCommand,
-    SplitTaskCommand, StartTaskCommand, SubtaskInput, SwitchContextCommand, TagKnowledgeCommand,
-    TagTaskCommand, UnblockTaskCommand, UnlockResourceCommand, UntagKnowledgeCommand,
-    UntagTaskCommand, UpdateProjectCommand, UpdateTaskCommand, WriteKnowledgeCommand,
+    AddDependencyCommand, AddKnowledgeRefCommand, AddTaskNoteCommand, AddTaskRefCommand,
+    AppendKnowledgeCommand, AssignTaskCommand, CancelTaskCommand, ChangeKnowledgeKindCommand,
+    ChangeRolesCommand, CheckLockCommand, CheckMailboxCommand, CheckSentMessagesCommand,
+    ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, DeleteKnowledgeCommand,
+    DisconnectAgentCommand, FailTaskCommand, GetNextTaskCommand, GetProjectCommand,
+    GetTaskWithContextCommand, HeartbeatCommand, ImportKnowledgeCommand, ListAgentsCommand,
+    ListConversationCommand, ListKnowledgeCommand, ListNamespacesCommand, ListTagsCommand,
+    ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,
+    MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand, PollUpdatesCommand,
+    PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand, ReleaseTaskCommand,
+    RemoveDependencyCommand, RemoveKnowledgeRefCommand, RemoveTaskRefCommand,
+    RenameKnowledgeCommand, ReplaceTaskCommand, ResourceRefInput, SearchKnowledgeCommand,
+    SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand, StartTaskCommand,
+    SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand, UnblockTaskCommand,
+    UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand, UpdateProjectCommand,
+    UpdateTaskCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 
@@ -586,6 +588,24 @@ impl OrchyHandler {
             title: params.title,
             description: params.description,
             priority: params.priority,
+            add_refs: params.add_refs.map(|v| {
+                v.into_iter()
+                    .map(|r| ResourceRefInput {
+                        kind: r.kind,
+                        id: r.id,
+                        display: r.display,
+                    })
+                    .collect()
+            }),
+            remove_refs: params.remove_refs.map(|v| {
+                v.into_iter()
+                    .map(|r| ResourceRefInput {
+                        kind: r.kind,
+                        id: r.id,
+                        display: r.display,
+                    })
+                    .collect()
+            }),
         };
 
         match self.container.app.update_task.execute(cmd).await {
@@ -1304,6 +1324,47 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Add a resource reference to a task. Links to knowledge, other tasks, agents, or messages."
+    )]
+    async fn add_task_ref(
+        &self,
+        Parameters(params): Parameters<AddTaskRefParams>,
+    ) -> Result<String, String> {
+        let _ = self.require_session()?;
+
+        let cmd = AddTaskRefCommand {
+            task_id: params.task_id,
+            ref_kind: params.kind,
+            ref_id: params.id,
+            ref_display: params.display,
+        };
+
+        match self.container.app.add_task_ref.execute(cmd).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(description = "Remove a resource reference from a task.")]
+    async fn remove_task_ref(
+        &self,
+        Parameters(params): Parameters<RemoveTaskRefParams>,
+    ) -> Result<String, String> {
+        let _ = self.require_session()?;
+
+        let cmd = RemoveTaskRefCommand {
+            task_id: params.task_id,
+            ref_kind: params.kind,
+            ref_id: params.id,
+        };
+
+        match self.container.app.remove_task_ref.execute(cmd).await {
+            Ok(task) => Ok(to_json(&task)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(
         description = "Acquire a named distributed lock. Fails if held by another agent. \
         Locks auto-expire after ttl_secs (default 300)."
     )]
@@ -1890,6 +1951,59 @@ impl OrchyHandler {
         };
 
         match self.container.app.untag_knowledge.execute(cmd).await {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(description = "Add a resource reference to a knowledge entry.")]
+    async fn add_knowledge_ref(
+        &self,
+        Parameters(params): Parameters<AddKnowledgeRefParams>,
+    ) -> Result<String, String> {
+        let (_, org, project, _) = self.require_session()?;
+
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
+
+        let cmd = AddKnowledgeRefCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            ref_kind: params.kind,
+            ref_id: params.id,
+            ref_display: params.display,
+        };
+
+        match self.container.app.add_knowledge_ref.execute(cmd).await {
+            Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(description = "Remove a resource reference from a knowledge entry.")]
+    async fn remove_knowledge_ref(
+        &self,
+        Parameters(params): Parameters<RemoveKnowledgeRefParams>,
+    ) -> Result<String, String> {
+        let (_, org, project, _) = self.require_session()?;
+
+        let namespace = self
+            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+            .await?;
+
+        let cmd = RemoveKnowledgeRefCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            namespace: Some(namespace.to_string()),
+            path: params.path,
+            ref_kind: params.kind,
+            ref_id: params.id,
+        };
+
+        match self.container.app.remove_knowledge_ref.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
             Err(e) => Err(mcp_error(e)),
         }

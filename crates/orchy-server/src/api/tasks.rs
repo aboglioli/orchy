@@ -8,11 +8,12 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_application::{
-    AddDependencyCommand, AssignTaskCommand, CancelTaskCommand, ClaimTaskCommand,
-    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, ListTagsCommand,
-    ListTasksCommand, MergeTasksCommand, PostTaskCommand, ReleaseTaskCommand,
-    RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
-    TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
+    AddDependencyCommand, AddTaskRefCommand, AssignTaskCommand, CancelTaskCommand,
+    ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand,
+    GetNextTaskCommand, ListTagsCommand, ListTasksCommand, MergeTasksCommand, PostTaskCommand,
+    ReleaseTaskCommand, RemoveDependencyCommand, RemoveTaskRefCommand, ReplaceTaskCommand,
+    SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand, UnblockTaskCommand,
+    UntagTaskCommand, UpdateTaskCommand,
 };
 use orchy_application::{GetTaskCommand, ResourceRefInput, TaskResponse};
 use orchy_core::organization::OrganizationId;
@@ -98,6 +99,21 @@ pub struct UpdateTaskBody {
     pub title: Option<String>,
     pub description: Option<String>,
     pub priority: Option<String>,
+    pub add_refs: Option<Vec<ResourceRefBody>>,
+    pub remove_refs: Option<Vec<ResourceRefBody>>,
+}
+
+#[derive(Deserialize)]
+pub struct AddRefBody {
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RemoveRefBody {
+    pub kind: String,
+    pub id: String,
 }
 
 #[derive(Deserialize)]
@@ -306,6 +322,24 @@ pub async fn update_task(
         title: body.title,
         description: body.description,
         priority: body.priority,
+        add_refs: body.add_refs.map(|v| {
+            v.into_iter()
+                .map(|r| ResourceRefInput {
+                    kind: r.kind,
+                    id: r.id,
+                    display: r.display,
+                })
+                .collect()
+        }),
+        remove_refs: body.remove_refs.map(|v| {
+            v.into_iter()
+                .map(|r| ResourceRefInput {
+                    kind: r.kind,
+                    id: r.id,
+                    display: r.display,
+                })
+                .collect()
+        }),
     };
 
     let task = container
@@ -968,6 +1002,77 @@ pub async fn delegate(
     let task = container
         .app
         .delegate_task
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+}
+
+pub async fn add_ref(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, id)): Path<(String, String, String)>,
+    Json(body): Json<AddRefBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let existing = container
+        .app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project)?;
+
+    let cmd = AddTaskRefCommand {
+        task_id: id,
+        ref_kind: body.kind,
+        ref_id: body.id,
+        ref_display: body.display,
+    };
+
+    let task = container
+        .app
+        .add_task_ref
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+}
+
+pub async fn remove_ref(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, id)): Path<(String, String, String)>,
+    Json(body): Json<RemoveRefBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let existing = container
+        .app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project)?;
+
+    let cmd = RemoveTaskRefCommand {
+        task_id: id,
+        ref_kind: body.kind,
+        ref_id: body.id,
+    };
+
+    let task = container
+        .app
+        .remove_task_ref
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;

@@ -9,10 +9,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use orchy_application::{
-    AppendKnowledgeCommand, ChangeKnowledgeKindCommand, DeleteKnowledgeCommand,
-    ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
-    PatchKnowledgeMetadataCommand, ReadKnowledgeCommand, RenameKnowledgeCommand, ResourceRefInput,
-    SearchKnowledgeCommand, TagKnowledgeCommand, UntagKnowledgeCommand, WriteKnowledgeCommand,
+    AddKnowledgeRefCommand, AppendKnowledgeCommand, ChangeKnowledgeKindCommand,
+    DeleteKnowledgeCommand, ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
+    PatchKnowledgeMetadataCommand, ReadKnowledgeCommand, RemoveKnowledgeRefCommand,
+    RenameKnowledgeCommand, ResourceRefInput, SearchKnowledgeCommand, TagKnowledgeCommand,
+    UntagKnowledgeCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 use orchy_core::organization::OrganizationId;
@@ -136,6 +137,23 @@ pub struct PatchMetadataBody {
     pub set: Option<HashMap<String, String>>,
     pub remove: Option<Vec<String>>,
     pub version: Option<u64>,
+}
+
+#[derive(Deserialize)]
+pub struct AddRefBody {
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RemoveRefBody {
+    #[serde(alias = "ns")]
+    pub namespace: Option<String>,
+    pub kind: String,
+    pub id: String,
 }
 
 #[derive(Serialize)]
@@ -337,23 +355,44 @@ pub async fn delete(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    if full_path.contains("/tags/") {
-        if let Some((path, tag_name)) = full_path.rsplit_once("/tags/") {
-            let cmd = UntagKnowledgeCommand {
-                org_id: org,
-                project,
-                path: path.to_string(),
-                tag: tag_name.to_string(),
-                namespace: query.namespace,
-            };
-            let entry = container
-                .app
-                .untag_knowledge
-                .execute(cmd)
-                .await
-                .map_err(ApiError::from)?;
-            return Ok(Json(serde_json::to_value(&entry).unwrap_or_default()));
-        }
+    if full_path.contains("/refs/")
+        && let Some((path, ref_spec)) = full_path.rsplit_once("/refs/")
+        && let Some((kind, id)) = ref_spec.split_once('/')
+    {
+        let cmd = RemoveKnowledgeRefCommand {
+            org_id: org,
+            project,
+            namespace: query.namespace,
+            path: path.to_string(),
+            ref_kind: kind.to_string(),
+            ref_id: id.to_string(),
+        };
+        let entry = container
+            .app
+            .remove_knowledge_ref
+            .execute(cmd)
+            .await
+            .map_err(ApiError::from)?;
+        return Ok(Json(serde_json::to_value(&entry).unwrap_or_default()));
+    }
+
+    if full_path.contains("/tags/")
+        && let Some((path, tag_name)) = full_path.rsplit_once("/tags/")
+    {
+        let cmd = UntagKnowledgeCommand {
+            org_id: org,
+            project,
+            path: path.to_string(),
+            tag: tag_name.to_string(),
+            namespace: query.namespace,
+        };
+        let entry = container
+            .app
+            .untag_knowledge
+            .execute(cmd)
+            .await
+            .map_err(ApiError::from)?;
+        return Ok(Json(serde_json::to_value(&entry).unwrap_or_default()));
     }
 
     let cmd = DeleteKnowledgeCommand {
@@ -570,12 +609,80 @@ pub async fn untag(
     Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
 }
 
+pub async fn add_ref(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, path)): Path<(String, String, String)>,
+    Json(body): Json<AddRefBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let cmd = AddKnowledgeRefCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        path,
+        ref_kind: body.kind,
+        ref_id: body.id,
+        ref_display: body.display,
+    };
+
+    let entry = container
+        .app
+        .add_knowledge_ref
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
+}
+
+pub async fn remove_ref(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, path)): Path<(String, String, String)>,
+    Json(body): Json<RemoveRefBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let cmd = RemoveKnowledgeRefCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        path,
+        ref_kind: body.kind,
+        ref_id: body.id,
+    };
+
+    let entry = container
+        .app
+        .remove_knowledge_ref
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
+}
+
 pub async fn knowledge_action(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, full_path)): Path<(String, String, String)>,
     body: axum::body::Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    if let Some(path) = full_path.strip_suffix("/refs") {
+        let json: AddRefBody = serde_json::from_slice(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return add_ref(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Json(json),
+        )
+        .await;
+    }
     if let Some(path) = full_path.strip_suffix("/append") {
         let json: AppendBody = serde_json::from_slice(&body)
             .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
@@ -609,32 +716,32 @@ pub async fn knowledge_action(
         )
         .await;
     }
-    if full_path.contains("/tags/") {
-        if let Some((path, tag_name)) = full_path.rsplit_once("/tags/") {
-            let org_id = parse_org(&org)?;
-            check_org(&auth, &org_id)?;
-            let namespace = serde_json::from_slice::<serde_json::Value>(&body)
-                .ok()
-                .and_then(|v| {
-                    v.get("namespace")
-                        .and_then(|n| n.as_str())
-                        .map(|s| s.to_string())
-                });
-            let cmd = TagKnowledgeCommand {
-                org_id: org,
-                project,
-                path: path.to_string(),
-                tag: tag_name.to_string(),
-                namespace,
-            };
-            let entry = container
-                .app
-                .tag_knowledge
-                .execute(cmd)
-                .await
-                .map_err(ApiError::from)?;
-            return Ok(Json(serde_json::to_value(&entry).unwrap_or_default()));
-        }
+    if full_path.contains("/tags/")
+        && let Some((path, tag_name)) = full_path.rsplit_once("/tags/")
+    {
+        let org_id = parse_org(&org)?;
+        check_org(&auth, &org_id)?;
+        let namespace = serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| {
+                v.get("namespace")
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string())
+            });
+        let cmd = TagKnowledgeCommand {
+            org_id: org,
+            project,
+            path: path.to_string(),
+            tag: tag_name.to_string(),
+            namespace,
+        };
+        let entry = container
+            .app
+            .tag_knowledge
+            .execute(cmd)
+            .await
+            .map_err(ApiError::from)?;
+        return Ok(Json(serde_json::to_value(&entry).unwrap_or_default()));
     }
     Err(ApiError(
         StatusCode::NOT_FOUND,

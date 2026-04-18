@@ -198,6 +198,10 @@ pub fn router() -> Router<Arc<Container>> {
             delete(tasks::remove_dep),
         )
         .route(
+            "/organizations/{org}/projects/{project}/tasks/{id}/refs",
+            post(tasks::add_ref).delete(tasks::remove_ref),
+        )
+        .route(
             "/organizations/{org}/projects/{project}/tasks/{id}/tags/{tag}",
             post(tasks::tag_task).delete(tasks::untag_task),
         )

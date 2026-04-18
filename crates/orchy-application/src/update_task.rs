@@ -1,15 +1,19 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
+use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 use orchy_core::task::{Priority, TaskId, TaskStore};
 
 use crate::dto::TaskResponse;
+use crate::post_task::ResourceRefInput;
 
 pub struct UpdateTaskCommand {
     pub task_id: String,
     pub title: Option<String>,
     pub description: Option<String>,
     pub priority: Option<String>,
+    pub add_refs: Option<Vec<ResourceRefInput>>,
+    pub remove_refs: Option<Vec<ResourceRefInput>>,
 }
 
 pub struct UpdateTask {
@@ -40,6 +44,31 @@ impl UpdateTask {
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
         task.update_details(cmd.title, cmd.description, priority)?;
+
+        if let Some(refs) = cmd.add_refs {
+            for r in refs {
+                let kind = r
+                    .kind
+                    .parse::<ResourceKind>()
+                    .map_err(Error::InvalidInput)?;
+                let mut rr = ResourceRef::new(kind, r.id);
+                if let Some(d) = r.display {
+                    rr = rr.with_display(d);
+                }
+                task.add_ref(rr);
+            }
+        }
+
+        if let Some(refs) = cmd.remove_refs {
+            for r in refs {
+                let kind = r
+                    .kind
+                    .parse::<ResourceKind>()
+                    .map_err(Error::InvalidInput)?;
+                task.remove_ref(&ResourceRef::new(kind, r.id));
+            }
+        }
+
         self.tasks.save(&mut task).await?;
         Ok(TaskResponse::from(&task))
     }
