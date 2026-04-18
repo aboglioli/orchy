@@ -314,17 +314,36 @@ pub async fn write(
 pub async fn delete(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((org, project, full_path)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
+    if full_path.contains("/tags/") {
+        if let Some((path, tag_name)) = full_path.rsplit_once("/tags/") {
+            let cmd = UntagKnowledgeCommand {
+                org_id: org,
+                project,
+                path: path.to_string(),
+                tag: tag_name.to_string(),
+                namespace: query.namespace,
+            };
+            let entry = container
+                .app
+                .untag_knowledge
+                .execute(cmd)
+                .await
+                .map_err(ApiError::from)?;
+            return Ok(Json(serde_json::to_value(&entry).unwrap_or_default()));
+        }
+    }
+
     let cmd = DeleteKnowledgeCommand {
         org_id: org,
         project,
         namespace: query.namespace,
-        path,
+        path: full_path,
     };
 
     container
@@ -532,4 +551,112 @@ pub async fn untag(
         .map_err(ApiError::from)?;
 
     Ok(Json(serde_json::to_value(&entry).unwrap_or_default()))
+}
+
+pub async fn knowledge_action(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, full_path)): Path<(String, String, String)>,
+    body: axum::body::Bytes,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    if let Some(path) = full_path.strip_suffix("/append") {
+        let json: AppendBody = serde_json::from_slice(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return append(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Json(json),
+        )
+        .await;
+    }
+    if let Some(path) = full_path.strip_suffix("/move") {
+        let json: MoveBody = serde_json::from_slice(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return move_entry(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Json(json),
+        )
+        .await;
+    }
+    if let Some(path) = full_path.strip_suffix("/rename") {
+        let json: RenameBody = serde_json::from_slice(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return rename(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Json(json),
+        )
+        .await;
+    }
+    if full_path.contains("/tags/") {
+        if let Some((path, tag_name)) = full_path.rsplit_once("/tags/") {
+            let org_id = parse_org(&org)?;
+            check_org(&auth, &org_id)?;
+            let namespace = serde_json::from_slice::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| {
+                    v.get("namespace")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                });
+            let cmd = TagKnowledgeCommand {
+                org_id: org,
+                project,
+                path: path.to_string(),
+                tag: tag_name.to_string(),
+                namespace,
+            };
+            let entry = container
+                .app
+                .tag_knowledge
+                .execute(cmd)
+                .await
+                .map_err(ApiError::from)?;
+            return Ok(Json(serde_json::to_value(&entry).unwrap_or_default()));
+        }
+    }
+    Err(ApiError(
+        StatusCode::NOT_FOUND,
+        "NOT_FOUND",
+        "unknown knowledge action".to_string(),
+    ))
+}
+
+pub async fn knowledge_patch(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, full_path)): Path<(String, String, String)>,
+    body: axum::body::Bytes,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    if let Some(path) = full_path.strip_suffix("/kind") {
+        let json: ChangeKindBody = serde_json::from_slice(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return change_kind(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Json(json),
+        )
+        .await;
+    }
+    if let Some(path) = full_path.strip_suffix("/metadata") {
+        let json: PatchMetadataBody = serde_json::from_slice(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return patch_metadata(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Json(json),
+        )
+        .await;
+    }
+    Err(ApiError(
+        StatusCode::NOT_FOUND,
+        "NOT_FOUND",
+        "unknown knowledge patch action".to_string(),
+    ))
 }
