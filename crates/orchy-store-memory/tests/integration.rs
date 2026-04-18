@@ -822,3 +822,68 @@ async fn delete_knowledge_cleans_up_associated_edges() {
         .unwrap();
     assert_eq!(after.items.len(), 0);
 }
+
+#[tokio::test]
+async fn split_task_creates_spawns_edges() {
+    use std::sync::Arc;
+
+    use orchy_application::{SplitTask, SplitTaskCommand, SubtaskInput};
+
+    let store = Arc::new(backend());
+    let o = org();
+
+    let mut parent = Task::new(
+        o.clone(),
+        proj("myapp"),
+        ns("/"),
+        None,
+        "Parent task".to_string(),
+        "desc".to_string(),
+        Priority::Normal,
+        vec![],
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(store.as_ref(), &mut parent).await.unwrap();
+    let parent_id = parent.id().to_string();
+
+    let cmd = SplitTaskCommand {
+        task_id: parent_id.clone(),
+        subtasks: vec![
+            SubtaskInput {
+                title: "Sub A".to_string(),
+                description: "desc".to_string(),
+                priority: None,
+                assigned_roles: None,
+                depends_on: None,
+            },
+            SubtaskInput {
+                title: "Sub B".to_string(),
+                description: "desc".to_string(),
+                priority: None,
+                assigned_roles: None,
+                depends_on: None,
+            },
+        ],
+        created_by: None,
+    };
+
+    let split = SplitTask::new(
+        store.clone() as Arc<dyn orchy_core::task::TaskStore>,
+        store.clone() as Arc<dyn EdgeStore>,
+    );
+    split.execute(cmd).await.unwrap();
+
+    let edges = EdgeStore::list_by_org(
+        store.as_ref(),
+        &o,
+        Some(&RelationType::Spawns),
+        PageParams::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(edges.items.len(), 2);
+    assert!(edges.items.iter().all(|e| e.from_id() == parent_id));
+}

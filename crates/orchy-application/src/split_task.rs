@@ -2,7 +2,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
+use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, SubtaskDef, Task, TaskId, TaskStatus, TaskStore};
 
 use crate::dto::TaskResponse;
@@ -23,11 +25,12 @@ pub struct SplitTaskCommand {
 
 pub struct SplitTask {
     tasks: Arc<dyn TaskStore>,
+    edges: Arc<dyn EdgeStore>,
 }
 
 impl SplitTask {
-    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
-        Self { tasks }
+    pub fn new(tasks: Arc<dyn TaskStore>, edges: Arc<dyn EdgeStore>) -> Self {
+        Self { tasks, edges }
     }
 
     pub async fn execute(
@@ -110,6 +113,19 @@ impl SplitTask {
                 false,
             )?;
             self.tasks.save(&mut task).await?;
+            let edge = Edge::new(
+                parent.org_id().clone(),
+                ResourceKind::Task,
+                parent_id.to_string(),
+                ResourceKind::Task,
+                task.id().to_string(),
+                RelationType::Spawns,
+                None,
+                created_by.clone(),
+            );
+            if let Err(e) = self.edges.save(&edge).await {
+                tracing::warn!("failed to create spawns edge for subtask {}: {e}", task.id());
+            }
             children.push(task);
         }
 

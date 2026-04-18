@@ -3,9 +3,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
+use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::dto::TaskResponse;
@@ -20,11 +22,12 @@ pub struct MergeTasksCommand {
 
 pub struct MergeTasks {
     tasks: Arc<dyn TaskStore>,
+    edges: Arc<dyn EdgeStore>,
 }
 
 impl MergeTasks {
-    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
-        Self { tasks }
+    pub fn new(tasks: Arc<dyn TaskStore>, edges: Arc<dyn EdgeStore>) -> Self {
+        Self { tasks, edges }
     }
 
     pub async fn execute(
@@ -130,7 +133,7 @@ impl MergeTasks {
             priority,
             assigned_roles,
             depends_on,
-            created_by,
+            created_by.clone(),
             is_blocked,
         )?;
 
@@ -141,6 +144,25 @@ impl MergeTasks {
             task.cancel(Some(format!("merged into {}", merged.id())))?;
             self.tasks.save(&mut task).await?;
             cancelled.push(task);
+        }
+
+        for source in &cancelled {
+            let edge = Edge::new(
+                merged.org_id().clone(),
+                ResourceKind::Task,
+                merged.id().to_string(),
+                ResourceKind::Task,
+                source.id().to_string(),
+                RelationType::MergedFrom,
+                None,
+                created_by.clone(),
+            );
+            if let Err(e) = self.edges.save(&edge).await {
+                tracing::warn!(
+                    "failed to create merged_from edge for {}: {e}",
+                    source.id()
+                );
+            }
         }
 
         for source_id in &source_ids {
