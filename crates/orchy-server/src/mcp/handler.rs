@@ -288,11 +288,11 @@ You bring the intelligence; orchy enforces the rules.
 MCP session ids are **in-memory** and do not survive a restart. The client must run a fresh MCP \
 handshake; you may see **Session not found** until it does.
 
-Your **orchy agent** (`agent_id`) lives in the database — it is **not** auto-attached to a new MCP \
-session. After reconnect, call **`register_agent` again with the same `agent_id`** you used before \
+Your **orchy agent** (`id`) lives in the database — it is **not** auto-attached to a new MCP \
+session. After reconnect, call **`register_agent` again with the same `id`** you used before \
 (save it in the workspace or a handoff note). Tasks and knowledge remain under that id.
 
-`register_agent`, `session_status`, `mark_read`, `list_conversation`, and `list_agents` (when \
+`register_agent`, `session_status`, `list_knowledge_types`, and `list_agents` (when \
 `project` is passed) do not require a registered orchy session; most other tools do.
 
 ## Before Disconnecting

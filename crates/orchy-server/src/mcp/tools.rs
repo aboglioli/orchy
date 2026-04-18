@@ -300,7 +300,8 @@ impl OrchyHandler {
     }
 
     #[tool(description = "Create a task. Use parent_id to create a subtask. \
-        Tasks with depends_on are auto-blocked until dependencies complete.")]
+        Tasks with depends_on are auto-blocked until dependencies complete. \
+        Use refs to attach resource references (files, URLs, etc.).")]
     async fn post_task(
         &self,
         Parameters(params): Parameters<PostTaskParams>,
@@ -637,7 +638,8 @@ impl OrchyHandler {
 
     #[tool(
         description = "Send a message. Target: agent UUID, 'role:name' (all agents \
-        with that role), or 'broadcast' (all agents except you)."
+        with that role), or 'broadcast' (all agents except you). \
+        Use refs to attach resource references (files, URLs, etc.)."
     )]
     async fn send_message(
         &self,
@@ -798,7 +800,7 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Add a note to a task. Notes are timestamped comments attached to the task."
+        description = "Add a note to a task. Creates a knowledge entry linked to the task via ResourceRef."
     )]
     async fn add_task_note(
         &self,

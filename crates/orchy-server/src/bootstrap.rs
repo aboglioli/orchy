@@ -116,18 +116,12 @@ the **same** `id` from your last registration or handoff (`session_status` summa
 
 ## On Session Start
 
-1. **Register** — `register_agent(project, description)`. Roles are optional;
-   orchy assigns them based on pending task demand if omitted.
-   Pass `id` to resume the same orchy agent after an MCP/orchy restart.
-2. **Load context** — `get_project` (set `include_summary: true` for overview),
-   then `list_knowledge(kind: "skill")` for conventions and `list_knowledge(kind: "overview")`
-   for bootstrap-style project summaries. Follow skills.
-3. **Resume** — `list_knowledge(kind: "context")` for handoff notes from
-   previous sessions. `search_knowledge` to find relevant decisions.
-   `check_mailbox` for incoming messages. `check_sent_messages` for sent mail.
-4. **Claim work** — `get_next_task` (`claim: false` to peek only). Tasks from disconnected
-   agents return to pending automatically.
-5. **Heartbeat** — `heartbeat` every ~30s to stay alive.
+1. **Register** — `register_agent(project, description)`. Pass `id` to resume
+   a previous agent.
+2. **Load context** — `get_agent_context` returns project metadata, inbox,
+   pending tasks, skills, and handoff context in one call.
+3. **Claim work** — `get_next_task` (`claim: false` to peek only).
+4. **Heartbeat** — `heartbeat` every ~30s to stay alive.
 
 ## Before Disconnecting
 
@@ -143,8 +137,8 @@ This is the handoff note for the next agent (or your next session).
 ## Namespaces
 
 Resources live in namespaces: `/` (root), `/backend`, `/backend/auth`.
-Omit namespace on reads to see everything. Writes default to your current
-namespace. Namespaces are auto-created on first use.
+Tools default to your current namespace when you omit the namespace parameter. Pass `namespace=/` to see all namespaces.
+Writes default to your current namespace. Namespaces are auto-created on first use.
 
 ## Task Workflow
 
@@ -179,6 +173,8 @@ You must externalize knowledge so future agents can benefit:
   what the next agent should know. Never just "done".
 - Before disconnecting, `write_knowledge(kind: "context", path: "handoff")`
   with structured summary: current task, progress, blockers, decisions.
+- Use `kind: "summary"` for concise task/feature summaries, `kind: "report"` for
+  detailed analysis or post-mortems.
 - When you discover something non-obvious, write it to knowledge immediately.
 - **Always `search_knowledge` before writing** to avoid duplicating existing
   entries. If an entry exists, update it instead of creating a new one.
