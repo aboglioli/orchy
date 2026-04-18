@@ -6,7 +6,7 @@ together on complex goals — like a company operating system for agents.
 
 ## What Orchy Does
 
-Orchy exposes **69** MCP tools over Streamable HTTP. Agents connect, register,
+Orchy exposes **59** MCP tools over Streamable HTTP. Agents connect, register,
 and use these tools to coordinate. Orchy enforces the rules; agents bring
 the intelligence.
 
@@ -24,8 +24,8 @@ How agents coordinate in real time.
 - **Project broadcasts** — send to everyone except yourself
 - **Threading** — reply to messages, walk full conversation threads
 - **Delivery tracking** — pending, delivered, read status
-- **System notifications** — dependency failures are delivered as messages
-  to your mailbox automatically
+- **System notifications** — dependency failures are delivered as messages to
+  your mailbox automatically
 
 ### Work (JIRA/Trello for agents)
 
@@ -79,7 +79,7 @@ crates/
 │   └── src/
 │       ├── event.rs       # Event, EventId, RestoreEvent
 │       ├── topic.rs       # Topic (dot-separated, validated)
-│       ├── namespace.rs   # EventNamespace (domain scope)
+│       ├── namespace.rs   # Namespace (canonical type used by all crates)
 │       ├── organization.rs # Organization (tenant scope)
 │       ├── payload.rs     # Payload with ContentType (JSON, text, binary)
 │       ├── metadata.rs    # Key-value metadata
@@ -87,19 +87,22 @@ crates/
 │       ├── serialization.rs # SerializedEvent for DB persistence
 │       └── io/            # Acker, Message<A>, Handler, Reader, Writer traits
 │
-├── orchy-core/            # domain types, traits, services
+├── orchy-core/            # domain types, traits, store traits
 │   └── src/
 │       ├── agent/         # Agent aggregate + AgentStore trait + events
 │       ├── task/          # Task + state machine
 │       ├── message/       # Message threading + delivery tracking
 │       ├── knowledge/     # Unified knowledge: notes, decisions, skills, context, docs
-│       ├── project/       # Project metadata + notes
+│       ├── project/       # Project metadata
+│       ├── organization/  # Organization aggregate + events
 │       ├── resource_lock/ # TTL-based distributed locking
-│       ├── project_link/  # Cross-project resource sharing
-│       ├── namespace.rs   # Namespace + ProjectId value objects
-│       ├── note.rs        # Note value object
+│       ├── namespace.rs   # ProjectId value object
+│       ├── resource_ref.rs # ResourceRef for cross-entity links
+│       ├── pagination.rs  # PageParams + Page<T> for paginated queries
 │       ├── error.rs       # Domain error types
 │       └── embeddings/    # EmbeddingsProvider trait
+│
+├── orchy-application/     # use cases / application layer
 │
 ├── orchy-store-memory/    # in-memory HashMap backend (dev/test)
 ├── orchy-store-sqlite/    # SQLite + sea-query backend (single-node)
@@ -123,9 +126,10 @@ crates/
 
 | Layer | Can Import | Cannot Import |
 |-------|-----------|---------------|
-| orchy-events | stdlib, serde, uuid, chrono | orchy-core, stores, server |
-| orchy-core | stdlib, orchy-events | stores, server |
-| orchy-store-* | stdlib, orchy-core, orchy-events | server, other stores |
+| orchy-events | stdlib, serde, uuid, chrono | orchy-core, application, stores, server |
+| orchy-core | stdlib, orchy-events | application, stores, server |
+| orchy-application | stdlib, orchy-core, orchy-events | stores, server |
+| orchy-store-* | stdlib, orchy-core, orchy-events | application, server, other stores |
 | orchy-server | everything | — |
 
 ## Key Patterns
@@ -161,12 +165,20 @@ Domain defines traits. Each store crate implements them. `StoreBackend` enum
 in server delegates via macro. All `save()` methods take `&mut` to drain events.
 
 ```rust
+#[async_trait]
 pub trait TaskStore: Send + Sync {
-    fn save(&self, task: &mut Task) -> impl Future<Output = Result<()>> + Send;
-    fn find_by_id(&self, id: &TaskId) -> impl Future<Output = Result<Option<Task>>> + Send;
-    fn list(&self, filter: TaskFilter) -> impl Future<Output = Result<Vec<Task>>> + Send;
+    async fn save(&self, task: &mut Task) -> Result<()>;
+    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
+    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>>;
 }
 ```
+
+### Application Service Contract
+
+Every use case in `orchy-application` follows:
+- Command DTO in, Response DTO out
+- No domain aggregates cross the application boundary
+- `Arc<dyn Trait>` for store dependencies
 
 ### Task State Machine
 
@@ -195,28 +207,25 @@ namespace see everything. Writes default to agent's current namespace.
 
 **Resource locking** — TTL-based. Released on disconnect. Use for files, not data.
 
-**Session continuity** — `write_knowledge(kind: "context")` before disconnect, `list_knowledge(kind: "context")` on
-startup. Falls back to most recent snapshot in namespace if no own context exists.
+**Session continuity** — `write_knowledge(kind: "context")` before disconnect.
+On startup, `get_agent_context` returns skills, handoff context, inbox, and
+pending tasks in one call.
 
 ### Agent Disconnect Cleanup
 
 When an agent disconnects (or times out via heartbeat monitor):
-1. Claimed/in-progress tasks -> released back to Pending
-2. Resource locks held by agent -> released
+1. Claimed/in-progress tasks released back to Pending
+2. Resource locks held by agent released
 
 ## Agent Lifecycle
 
 **Startup:**
 1. `register_agent(project, description)` — roles auto-assigned from task demand
-2. `get_project` — metadata; use `include_summary` for task/agent overview
-3. `list_knowledge(kind: "skill")` — load conventions
-4. `list_knowledge(kind: "context")` — find handoff notes from previous sessions
-5. `search_knowledge` — check existing decisions and discoveries
-6. `check_mailbox` — inbound; `check_sent_messages` for outbound
-7. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
+2. `get_agent_context` — everything in one call: agent info, project, inbox, pending tasks, skills, handoff context
+3. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
+4. `heartbeat` every ~30s
 
 **Working:**
-- `heartbeat` every ~30s
 - `poll_updates` + `check_mailbox` for reactivity
 - `lock_resource` before editing shared files
 - `write_knowledge` for decisions, discoveries, patterns
@@ -247,7 +256,9 @@ Use `list_knowledge_types` to discover available kinds.
 | `plan` | strategies, roadmaps, approaches |
 | `log` | activity or change log entries |
 | `skill` | instructions/conventions agents must follow |
-| `overview` | project summaries surfaced in bootstrap / `get_project_overview` |
+| `overview` | project summaries surfaced in bootstrap prompts |
+| `summary` | compact synthesized output: task summaries, agent rollups, state snapshots |
+| `report` | richer completion artifact: implementation reports, post-task writeups |
 
 **Paths** identify the topic: `auth-algorithm`, `api-design`, `error-handling`.
 Use hierarchy for sub-topics: `auth/jwt-strategy`. Don't repeat the kind in
@@ -257,10 +268,8 @@ the path — the kind already categorizes. Scoped by `(project, namespace, path)
 override parent skills with the same path.
 
 A new agent joining the project should:
-1. `list_knowledge(kind: "skill")` to understand conventions
-2. `search_knowledge` to find decisions and discoveries
-3. `list_knowledge(kind: "context")` for the latest handoff note
-4. Check task notes for progress on specific work
+1. `get_agent_context` after registration — returns skills, handoff context, inbox, and pending tasks
+2. `search_knowledge` to find decisions and discoveries relevant to the assigned work
 
 ## Maintenance Patterns
 
@@ -285,8 +294,8 @@ A "janitor" agent can compact and reorganize:
 - TaskService was removed; all orchestration lives in orchy-application use cases.
 - poll_updates queries the events table, not task projections.
 - All tools require a registered session except `register_agent`,
-  `list_agents` (when `project` is passed), `list_knowledge_types`, `mark_read`,
-  and `list_conversation`.
+  `session_status`, `list_knowledge_types`, and `list_agents` (when `project`
+  is passed).
 
 ## Configuration
 
@@ -332,6 +341,7 @@ path = "orchy.db"
 cargo run -p orchy-server          # start MCP server (default: config.toml)
 cargo test -p orchy-core           # domain tests
 cargo test -p orchy-events         # event library tests
+cargo test -p orchy-application    # application layer tests
 cargo test -p orchy-store-memory   # in-memory store tests
 cargo test -p orchy-store-sqlite   # SQLite tests (in-memory DB)
 cargo test -p orchy-store-pg       # PG tests (needs running postgres)

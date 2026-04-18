@@ -2,7 +2,7 @@
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
 board, unified knowledge base, messaging, resource locking, and project
-context — exposed as **69** MCP tools over Streamable HTTP.
+context — exposed as **59** MCP tools over Streamable HTTP.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides
 the coordination layer and enforces the rules.
@@ -65,6 +65,8 @@ Each entry has a `kind`, `path`, `title`, `content`, `tags`, and `version`.
 | `log` | Activity or change log entry |
 | `skill` | Instruction or convention agents must follow |
 | `overview` | Project summary included in HTTP/bootstrap prompts |
+| `summary` | Compact synthesized output: task summaries, agent rollups, state snapshots |
+| `report` | Richer completion artifact: implementation reports, post-task writeups |
 
 Paths are hierarchical: `db-choice`, `auth/jwt-strategy`, `api-design`.
 Skills (kind=skill) inherit through namespace hierarchy.
@@ -80,9 +82,10 @@ Parent tasks auto-complete when all subtasks finish.
 
 ### Agent lifecycle
 
-1. Register with `register_agent` (roles auto-assigned if omitted)
-2. `heartbeat` every ~30s; after registration, MCP tool invocations refresh liveness
-3. On disconnect: tasks released, locks freed
+1. `register_agent(project, description)` — roles auto-assigned from task demand
+2. `get_agent_context` — everything in one call: agent info, project, inbox, pending tasks, skills, handoff context
+3. `get_next_task` — claim or peek the next available task
+4. `heartbeat` every ~30s; on disconnect: tasks released, locks freed
 
 ### Resource locking
 
@@ -109,8 +112,7 @@ without registration. **partial** — `list_agents` only: pass `project`,
 or register to use the session project.
 
 Tools that do not require registration: `register_agent`, `session_status`,
-`list_knowledge_types`, `mark_read`, `list_conversation`, and `list_agents`
-when `project` is passed.
+`list_knowledge_types`, and `list_agents` when `project` is passed.
 
 ---
 
@@ -393,8 +395,8 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `send_message` | yes | Send a message to an agent, role, or broadcast. |
 | `check_mailbox` | yes | Check your mailbox for incoming messages. |
 | `check_sent_messages` | yes | List messages you have sent, with delivery and read status. |
-| `mark_read` | no | Mark messages as read by their IDs. |
-| `list_conversation` | no | Get the full conversation thread for a message ID. |
+| `mark_read` | yes | Mark messages as read by their IDs. |
+| `list_conversation` | yes | Get the full conversation thread for a message ID. |
 
 ### `send_message`
 
