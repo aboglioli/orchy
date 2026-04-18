@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     version INTEGER NOT NULL DEFAULT 1,
     agent_id TEXT,
     metadata TEXT NOT NULL DEFAULT '{}',
+    refs TEXT NOT NULL DEFAULT '[]',
     embedding BLOB,
     embedding_model TEXT,
     embedding_dimensions INTEGER,

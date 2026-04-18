@@ -140,6 +140,7 @@ pub struct KnowledgeResponse {
     pub version: u64,
     pub agent_id: Option<String>,
     pub metadata: HashMap<String, String>,
+    pub refs: Vec<ResourceRefResponse>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -165,6 +166,7 @@ impl From<&Knowledge> for KnowledgeResponse {
             version: k.version().as_u64(),
             agent_id: k.agent_id().map(|id| id.to_string()),
             metadata: k.metadata().clone(),
+            refs: k.refs().iter().map(ResourceRefResponse::from).collect(),
             created_at: k.created_at().to_rfc3339(),
             updated_at: k.updated_at().to_rfc3339(),
         }

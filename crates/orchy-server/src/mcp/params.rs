@@ -339,6 +339,8 @@ pub struct WriteKnowledgeParams {
     pub metadata: Option<String>,
     /// Metadata keys to remove before applying `metadata` (updates only; ignored on create).
     pub metadata_remove: Option<Vec<String>>,
+    /// Resource references: links to tasks, knowledge, agents, or messages.
+    pub refs: Option<Vec<ResourceRefParam>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

@@ -10,8 +10,10 @@ use orchy_core::knowledge::{
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 
 use crate::parse_namespace;
+use crate::post_task::ResourceRefInput;
 
 use crate::dto::KnowledgeResponse;
 
@@ -28,6 +30,7 @@ pub struct WriteKnowledgeCommand {
     pub agent_id: Option<String>,
     pub metadata: Option<HashMap<String, String>>,
     pub metadata_remove: Option<Vec<String>>,
+    pub refs: Option<Vec<ResourceRefInput>>,
 }
 
 pub struct WriteKnowledge {
@@ -130,6 +133,34 @@ impl WriteKnowledge {
             }
             created
         };
+
+        let refs = cmd
+            .refs
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| {
+                let kind = match r.kind.as_str() {
+                    "task" => ResourceKind::Task,
+                    "knowledge" => ResourceKind::Knowledge,
+                    "agent" => ResourceKind::Agent,
+                    "message" => ResourceKind::Message,
+                    other => {
+                        return Err(Error::InvalidInput(format!(
+                            "unknown resource kind: {other}"
+                        )));
+                    }
+                };
+                let mut rr = ResourceRef::new(kind, r.id);
+                if let Some(d) = r.display {
+                    rr = rr.with_display(d);
+                }
+                Ok(rr)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        for r in refs {
+            entry.add_ref(r);
+        }
 
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());

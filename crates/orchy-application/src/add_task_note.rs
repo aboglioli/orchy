@@ -63,6 +63,7 @@ impl AddTaskNote {
             author,
             HashMap::new(),
         )?;
+        entry.add_ref(ResourceRef::task(task_id.to_string()));
         self.knowledge.save(&mut entry).await?;
 
         task.add_ref(

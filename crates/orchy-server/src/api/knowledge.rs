@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use orchy_application::{
     AppendKnowledgeCommand, ChangeKnowledgeKindCommand, DeleteKnowledgeCommand,
     ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
-    PatchKnowledgeMetadataCommand, ReadKnowledgeCommand, RenameKnowledgeCommand,
+    PatchKnowledgeMetadataCommand, ReadKnowledgeCommand, RenameKnowledgeCommand, ResourceRefInput,
     SearchKnowledgeCommand, TagKnowledgeCommand, UntagKnowledgeCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
@@ -65,6 +65,14 @@ pub struct WriteBody {
     pub tags: Option<Vec<String>>,
     pub version: Option<u64>,
     pub metadata: Option<HashMap<String, String>>,
+    pub refs: Option<Vec<ResourceRefBody>>,
+}
+
+#[derive(Deserialize)]
+pub struct ResourceRefBody {
+    pub kind: String,
+    pub id: String,
+    pub display: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -299,6 +307,15 @@ pub async fn write(
         agent_id: None,
         metadata: body.metadata,
         metadata_remove: None,
+        refs: body.refs.map(|v| {
+            v.into_iter()
+                .map(|r| ResourceRefInput {
+                    kind: r.kind,
+                    id: r.id,
+                    display: r.display,
+                })
+                .collect()
+        }),
     };
 
     let entry = container

@@ -1544,6 +1544,15 @@ impl OrchyHandler {
                 Some(metadata)
             },
             metadata_remove: params.metadata_remove,
+            refs: params.refs.map(|v| {
+                v.into_iter()
+                    .map(|r| ResourceRefInput {
+                        kind: r.kind,
+                        id: r.id,
+                        display: r.display,
+                    })
+                    .collect()
+            }),
         };
 
         match self.container.app.write_knowledge.execute(cmd).await {

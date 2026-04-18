@@ -1,0 +1,1 @@
+ALTER TABLE knowledge_entries ADD COLUMN refs JSONB NOT NULL DEFAULT '[]';

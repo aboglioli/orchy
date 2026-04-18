@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     version BIGINT NOT NULL DEFAULT 1,
     agent_id UUID REFERENCES agents(id),
     metadata JSONB NOT NULL DEFAULT '{}',
+    refs JSONB NOT NULL DEFAULT '[]',
     embedding VECTOR,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
