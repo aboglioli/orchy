@@ -365,7 +365,7 @@ impl Application {
             unblock_task: UnblockTask::new(tasks.clone()),
 
             split_task: SplitTask::new(tasks.clone(), edges.clone()),
-            replace_task: ReplaceTask::new(tasks.clone()),
+            replace_task: ReplaceTask::new(tasks.clone(), edges.clone()),
             merge_tasks: MergeTasks::new(tasks.clone(), edges.clone()),
             delegate_task: DelegateTask::new(tasks.clone(), edges.clone()),
             add_dependency: AddDependency::new(tasks.clone(), edges.clone()),
