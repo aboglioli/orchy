@@ -196,7 +196,6 @@ async fn task_save_overwrites_existing() {
         depends_on: vec![],
         tags: vec![],
         result_summary: Some("done".into()),
-        refs: vec![],
         created_by: None,
         created_at: task.created_at(),
         updated_at: task.updated_at(),

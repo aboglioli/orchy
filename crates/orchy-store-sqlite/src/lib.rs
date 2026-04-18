@@ -1,6 +1,7 @@
 #![allow(clippy::collapsible_if)]
 
 mod agent;
+mod edge;
 mod events;
 mod knowledge;
 mod message;
@@ -128,6 +129,11 @@ impl SqliteBackend {
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260415-000000_initial_schema.sql"
+        )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260419-000000_add_edges.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))
     }

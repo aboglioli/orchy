@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use orchy_application::{
     CheckMailboxCommand, CheckSentMessagesCommand, ListConversationCommand, MarkReadCommand,
-    ResourceRefInput, SendMessageCommand,
+    SendMessageCommand,
 };
 use orchy_core::organization::OrganizationId;
 
@@ -50,14 +50,6 @@ pub struct SendBody {
     #[serde(alias = "ns")]
     pub namespace: Option<String>,
     pub reply_to: Option<String>,
-    pub refs: Option<Vec<ResourceRefBody>>,
-}
-
-#[derive(Deserialize)]
-pub struct ResourceRefBody {
-    pub kind: String,
-    pub id: String,
-    pub display: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -177,15 +169,6 @@ pub async fn send(
         to: body.to,
         body: body.body,
         reply_to: body.reply_to,
-        refs: body.refs.map(|v| {
-            v.into_iter()
-                .map(|r| ResourceRefInput {
-                    kind: r.kind,
-                    id: r.id,
-                    display: r.display,
-                })
-                .collect()
-        }),
     };
 
     let message = container

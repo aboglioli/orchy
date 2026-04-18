@@ -5,22 +5,21 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_application::{
-    AddDependencyCommand, AddKnowledgeRefCommand, AddTaskNoteCommand, AddTaskRefCommand,
-    AppendKnowledgeCommand, AssignTaskCommand, CancelTaskCommand, ChangeKnowledgeKindCommand,
-    ChangeRolesCommand, CheckLockCommand, CheckMailboxCommand, CheckSentMessagesCommand,
-    ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, DeleteKnowledgeCommand,
-    DisconnectAgentCommand, FailTaskCommand, GetNextTaskCommand, GetProjectCommand,
+    AddDependencyCommand, AddEdgeCommand, AddTaskNoteCommand, AppendKnowledgeCommand,
+    AssignTaskCommand, CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand,
+    CheckLockCommand, CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand,
+    CompleteTaskCommand, DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand,
+    FailTaskCommand, GetGraphCommand, GetNeighborsCommand, GetNextTaskCommand, GetProjectCommand,
     GetTaskWithContextCommand, HeartbeatCommand, ImportKnowledgeCommand, ListAgentsCommand,
     ListConversationCommand, ListKnowledgeCommand, ListNamespacesCommand, ListTagsCommand,
     ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,
     MoveKnowledgeCommand, MoveTaskCommand, PatchKnowledgeMetadataCommand, PollUpdatesCommand,
     PostTaskCommand, ReadKnowledgeCommand, RegisterAgentCommand, ReleaseTaskCommand,
-    RemoveDependencyCommand, RemoveKnowledgeRefCommand, RemoveTaskRefCommand,
-    RenameKnowledgeCommand, ReplaceTaskCommand, ResourceRefInput, SearchKnowledgeCommand,
-    SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand, StartTaskCommand,
-    SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand, UnblockTaskCommand,
-    UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand, UpdateProjectCommand,
-    UpdateTaskCommand, WriteKnowledgeCommand,
+    RemoveDependencyCommand, RemoveEdgeCommand, RenameKnowledgeCommand, ReplaceTaskCommand,
+    SearchKnowledgeCommand, SendMessageCommand, SetProjectMetadataCommand, SplitTaskCommand,
+    StartTaskCommand, SubtaskInput, SwitchContextCommand, TagKnowledgeCommand, TagTaskCommand,
+    UnblockTaskCommand, UnlockResourceCommand, UntagKnowledgeCommand, UntagTaskCommand,
+    UpdateProjectCommand, UpdateTaskCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 
@@ -325,15 +324,6 @@ impl OrchyHandler {
             depends_on: params.depends_on,
             parent_id: params.parent_id,
             created_by: self.get_session_agent().map(|id| id.to_string()),
-            refs: params.refs.map(|v| {
-                v.into_iter()
-                    .map(|r| ResourceRefInput {
-                        kind: r.kind,
-                        id: r.id,
-                        display: r.display,
-                    })
-                    .collect()
-            }),
         };
 
         match self.container.app.post_task.execute(cmd).await {
@@ -588,24 +578,6 @@ impl OrchyHandler {
             title: params.title,
             description: params.description,
             priority: params.priority,
-            add_refs: params.add_refs.map(|v| {
-                v.into_iter()
-                    .map(|r| ResourceRefInput {
-                        kind: r.kind,
-                        id: r.id,
-                        display: r.display,
-                    })
-                    .collect()
-            }),
-            remove_refs: params.remove_refs.map(|v| {
-                v.into_iter()
-                    .map(|r| ResourceRefInput {
-                        kind: r.kind,
-                        id: r.id,
-                        display: r.display,
-                    })
-                    .collect()
-            }),
         };
 
         match self.container.app.update_task.execute(cmd).await {
@@ -692,15 +664,6 @@ impl OrchyHandler {
             to,
             body: params.body,
             reply_to: params.reply_to,
-            refs: params.refs.map(|v| {
-                v.into_iter()
-                    .map(|r| ResourceRefInput {
-                        kind: r.kind,
-                        id: r.id,
-                        display: r.display,
-                    })
-                    .collect()
-            }),
         };
 
         match self.container.app.send_message.execute(cmd).await {
@@ -1324,47 +1287,6 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Add a resource reference to a task. Links to knowledge, other tasks, agents, or messages."
-    )]
-    async fn add_task_ref(
-        &self,
-        Parameters(params): Parameters<AddTaskRefParams>,
-    ) -> Result<String, String> {
-        let _ = self.require_session()?;
-
-        let cmd = AddTaskRefCommand {
-            task_id: params.task_id,
-            ref_kind: params.kind,
-            ref_id: params.id,
-            ref_display: params.display,
-        };
-
-        match self.container.app.add_task_ref.execute(cmd).await {
-            Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(description = "Remove a resource reference from a task.")]
-    async fn remove_task_ref(
-        &self,
-        Parameters(params): Parameters<RemoveTaskRefParams>,
-    ) -> Result<String, String> {
-        let _ = self.require_session()?;
-
-        let cmd = RemoveTaskRefCommand {
-            task_id: params.task_id,
-            ref_kind: params.kind,
-            ref_id: params.id,
-        };
-
-        match self.container.app.remove_task_ref.execute(cmd).await {
-            Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(
         description = "Acquire a named distributed lock. Fails if held by another agent. \
         Locks auto-expire after ttl_secs (default 300)."
     )]
@@ -1605,15 +1527,6 @@ impl OrchyHandler {
                 Some(metadata)
             },
             metadata_remove: params.metadata_remove,
-            refs: params.refs.map(|v| {
-                v.into_iter()
-                    .map(|r| ResourceRefInput {
-                        kind: r.kind,
-                        id: r.id,
-                        display: r.display,
-                    })
-                    .collect()
-            }),
         };
 
         match self.container.app.write_knowledge.execute(cmd).await {
@@ -1956,59 +1869,6 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Add a resource reference to a knowledge entry.")]
-    async fn add_knowledge_ref(
-        &self,
-        Parameters(params): Parameters<AddKnowledgeRefParams>,
-    ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
-
-        let namespace = self
-            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-            .await?;
-
-        let cmd = AddKnowledgeRefCommand {
-            org_id: org.to_string(),
-            project: project.to_string(),
-            namespace: Some(namespace.to_string()),
-            path: params.path,
-            ref_kind: params.kind,
-            ref_id: params.id,
-            ref_display: params.display,
-        };
-
-        match self.container.app.add_knowledge_ref.execute(cmd).await {
-            Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(description = "Remove a resource reference from a knowledge entry.")]
-    async fn remove_knowledge_ref(
-        &self,
-        Parameters(params): Parameters<RemoveKnowledgeRefParams>,
-    ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
-
-        let namespace = self
-            .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
-            .await?;
-
-        let cmd = RemoveKnowledgeRefCommand {
-            org_id: org.to_string(),
-            project: project.to_string(),
-            namespace: Some(namespace.to_string()),
-            path: params.path,
-            ref_kind: params.kind,
-            ref_id: params.id,
-        };
-
-        match self.container.app.remove_knowledge_ref.execute(cmd).await {
-            Ok(entry) => Ok(to_json(&entry)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
     #[tool(description = "Import a knowledge entry from a linked project.")]
     async fn import_knowledge(
         &self,
@@ -2034,6 +1894,98 @@ impl OrchyHandler {
 
         match self.container.app.import_knowledge.execute(cmd).await {
             Ok(entry) => Ok(to_json(&entry)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(description = "Create a typed directed edge between two resources. \
+        Relationship types: derived_from, produces, references, supersedes, merged_from, \
+        summarizes, implements, spawns, related_to. \
+        Resource kinds: task, knowledge, agent, message.")]
+    async fn add_edge(
+        &self,
+        Parameters(params): Parameters<AddEdgeParams>,
+    ) -> Result<String, String> {
+        let (_, org, _, _) = self.require_session()?;
+
+        let cmd = AddEdgeCommand {
+            org_id: org.to_string(),
+            from_kind: params.from_kind,
+            from_id: params.from_id,
+            to_kind: params.to_kind,
+            to_id: params.to_id,
+            rel_type: params.rel_type,
+            display: params.display,
+            created_by: self.get_session_agent().map(|id| id.to_string()),
+        };
+
+        match self.container.app.add_edge.execute(cmd).await {
+            Ok(edge) => Ok(to_json(&edge)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(description = "Delete an edge by its ID.")]
+    async fn remove_edge(
+        &self,
+        Parameters(params): Parameters<RemoveEdgeParams>,
+    ) -> Result<String, String> {
+        self.require_session()?;
+
+        let cmd = RemoveEdgeCommand {
+            edge_id: params.edge_id,
+        };
+
+        match self.container.app.remove_edge.execute(cmd).await {
+            Ok(()) => Ok("edge deleted".to_string()),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(description = "Get direct edges (neighbors) for a resource. \
+        Returns edges where the resource is the source (outgoing), target (incoming), or both.")]
+    async fn get_neighbors(
+        &self,
+        Parameters(params): Parameters<GetNeighborsParams>,
+    ) -> Result<String, String> {
+        let (_, org, _, _) = self.require_session()?;
+
+        let cmd = GetNeighborsCommand {
+            org_id: org.to_string(),
+            kind: params.kind,
+            id: params.id,
+            direction: params.direction,
+            rel_type: params.rel_type,
+        };
+
+        match self.container.app.get_neighbors.execute(cmd).await {
+            Ok(edges) => Ok(to_json(&edges)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(
+        description = "Traverse the graph from a root resource using recursive BFS. \
+        Returns all reachable edges up to max_depth (default 3, max 10) with traversal depth. \
+        Use to explore dependency chains, knowledge lineage, or agent work trees."
+    )]
+    async fn get_graph(
+        &self,
+        Parameters(params): Parameters<GetGraphParams>,
+    ) -> Result<String, String> {
+        let (_, org, _, _) = self.require_session()?;
+
+        let cmd = GetGraphCommand {
+            org_id: org.to_string(),
+            kind: params.kind,
+            id: params.id,
+            max_depth: params.max_depth,
+            rel_types: params.rel_types,
+            direction: params.direction,
+        };
+
+        match self.container.app.get_graph.execute(cmd).await {
+            Ok(graph) => Ok(to_json(&graph)),
             Err(e) => Err(mcp_error(e)),
         }
     }

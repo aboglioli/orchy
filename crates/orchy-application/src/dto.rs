@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use orchy_core::agent::Agent;
+use orchy_core::edge::{Edge, TraversalEdge};
 use orchy_core::knowledge::Knowledge;
 use orchy_core::message::Message;
 use orchy_core::organization::Organization;
 use orchy_core::pagination::Page;
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
-use orchy_core::resource_ref::ResourceRef;
 use orchy_core::task::{Task, TaskWithContext};
 
 #[derive(Debug, Clone, Serialize)]
@@ -68,7 +68,6 @@ pub struct TaskResponse {
     pub depends_on: Vec<String>,
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
-    pub refs: Vec<ResourceRefResponse>,
     pub created_by: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -98,7 +97,6 @@ impl From<&Task> for TaskResponse {
             depends_on: t.depends_on().iter().map(|id| id.to_string()).collect(),
             tags: t.tags().to_vec(),
             result_summary: t.result_summary().map(|s| s.to_string()),
-            refs: t.refs().iter().map(ResourceRefResponse::from).collect(),
             created_by: t.created_by().map(|id| id.to_string()),
             created_at: t.created_at().to_rfc3339(),
             updated_at: t.updated_at().to_rfc3339(),
@@ -140,7 +138,6 @@ pub struct KnowledgeResponse {
     pub version: u64,
     pub agent_id: Option<String>,
     pub metadata: HashMap<String, String>,
-    pub refs: Vec<ResourceRefResponse>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -166,7 +163,6 @@ impl From<&Knowledge> for KnowledgeResponse {
             version: k.version().as_u64(),
             agent_id: k.agent_id().map(|id| id.to_string()),
             metadata: k.metadata().clone(),
-            refs: k.refs().iter().map(ResourceRefResponse::from).collect(),
             created_at: k.created_at().to_rfc3339(),
             updated_at: k.updated_at().to_rfc3339(),
         }
@@ -184,7 +180,6 @@ pub struct MessageResponse {
     pub body: String,
     pub reply_to: Option<String>,
     pub status: String,
-    pub refs: Vec<ResourceRefResponse>,
     pub created_at: String,
 }
 
@@ -211,7 +206,6 @@ impl From<&Message> for MessageResponse {
                 orchy_core::message::MessageStatus::Read => "read",
             }
             .to_string(),
-            refs: m.refs().iter().map(ResourceRefResponse::from).collect(),
             created_at: m.created_at().to_rfc3339(),
         }
     }
@@ -273,24 +267,6 @@ impl From<&ResourceLock> for ResourceLockResponse {
             holder: l.holder().to_string(),
             acquired_at: l.acquired_at().to_rfc3339(),
             expires_at: l.expires_at().to_rfc3339(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ResourceRefResponse {
-    pub kind: String,
-    pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub display: Option<String>,
-}
-
-impl From<&ResourceRef> for ResourceRefResponse {
-    fn from(r: &ResourceRef) -> Self {
-        Self {
-            kind: r.kind().to_string(),
-            id: r.id().to_string(),
-            display: r.display().map(|s| s.to_string()),
         }
     }
 }
@@ -386,4 +362,74 @@ pub struct ProjectOverviewResponse {
     pub tasks: Vec<TaskResponse>,
     pub skills: Vec<KnowledgeResponse>,
     pub overviews: Vec<KnowledgeResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EdgeResponse {
+    pub id: String,
+    pub from_kind: String,
+    pub from_id: String,
+    pub to_kind: String,
+    pub to_id: String,
+    pub rel_type: String,
+    pub display: Option<String>,
+    pub created_at: String,
+    pub created_by: Option<String>,
+}
+
+impl From<Edge> for EdgeResponse {
+    fn from(e: Edge) -> Self {
+        Self::from(&e)
+    }
+}
+
+impl From<&Edge> for EdgeResponse {
+    fn from(e: &Edge) -> Self {
+        Self {
+            id: e.id().to_string(),
+            from_kind: e.from_kind().to_string(),
+            from_id: e.from_id().to_string(),
+            to_kind: e.to_kind().to_string(),
+            to_id: e.to_id().to_string(),
+            rel_type: e.rel_type().to_string(),
+            display: e.display().map(|s| s.to_string()),
+            created_at: e.created_at().to_rfc3339(),
+            created_by: e.created_by().map(|a| a.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TraversalEdgeResponse {
+    pub id: String,
+    pub from_kind: String,
+    pub from_id: String,
+    pub to_kind: String,
+    pub to_id: String,
+    pub rel_type: String,
+    pub display: Option<String>,
+    pub depth: u32,
+}
+
+impl From<&TraversalEdge> for TraversalEdgeResponse {
+    fn from(e: &TraversalEdge) -> Self {
+        Self {
+            id: e.id.to_string(),
+            from_kind: e.from_kind.to_string(),
+            from_id: e.from_id.clone(),
+            to_kind: e.to_kind.to_string(),
+            to_id: e.to_id.clone(),
+            rel_type: e.rel_type.to_string(),
+            display: e.display.clone(),
+            depth: e.depth,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GraphResponse {
+    pub root_kind: String,
+    pub root_id: String,
+    pub edges: Vec<TraversalEdgeResponse>,
+    pub node_count: usize,
 }

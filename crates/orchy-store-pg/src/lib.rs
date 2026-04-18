@@ -1,4 +1,5 @@
 mod agent;
+mod edge;
 mod events;
 mod knowledge;
 mod message;

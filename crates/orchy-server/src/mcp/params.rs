@@ -49,16 +49,6 @@ pub struct PostTaskParams {
     pub assigned_roles: Option<Vec<String>>,
     /// Task IDs that must complete before this task can be claimed.
     pub depends_on: Option<Vec<String>>,
-    /// Resource references: links to tasks, knowledge, agents, or messages.
-    pub refs: Option<Vec<ResourceRefParam>>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct ResourceRefParam {
-    /// task, knowledge, agent, or message.
-    pub kind: String,
-    pub id: String,
-    pub display: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -123,10 +113,6 @@ pub struct UpdateTaskParams {
     pub description: Option<String>,
     /// low, normal, high, critical.
     pub priority: Option<String>,
-    /// Resource references to add.
-    pub add_refs: Option<Vec<ResourceRefParam>>,
-    /// Resource references to remove (kind + id).
-    pub remove_refs: Option<Vec<ResourceRefParam>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -213,8 +199,6 @@ pub struct SendMessageParams {
     pub namespace: Option<String>,
     /// Creates a thread.
     pub reply_to: Option<String>,
-    /// Resource references: links to tasks, knowledge, agents, or messages.
-    pub refs: Option<Vec<ResourceRefParam>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -343,8 +327,6 @@ pub struct WriteKnowledgeParams {
     pub metadata: Option<String>,
     /// Metadata keys to remove before applying `metadata` (updates only; ignored on create).
     pub metadata_remove: Option<Vec<String>>,
-    /// Resource references: links to tasks, knowledge, agents, or messages.
-    pub refs: Option<Vec<ResourceRefParam>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -455,37 +437,45 @@ pub struct ImportKnowledgeParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct AddTaskRefParams {
-    pub task_id: String,
-    /// task, knowledge, agent, or message.
-    pub kind: String,
-    pub id: String,
+pub struct AddEdgeParams {
+    /// Source resource kind: task, knowledge, agent, message.
+    pub from_kind: String,
+    pub from_id: String,
+    /// Target resource kind: task, knowledge, agent, message.
+    pub to_kind: String,
+    pub to_id: String,
+    /// Relationship type: derived_from, produces, references, supersedes, merged_from,
+    /// summarizes, implements, spawns, related_to.
+    pub rel_type: String,
+    /// Optional human-readable label for the edge.
     pub display: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct RemoveTaskRefParams {
-    pub task_id: String,
-    /// task, knowledge, agent, or message.
-    pub kind: String,
-    pub id: String,
+pub struct RemoveEdgeParams {
+    pub edge_id: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct AddKnowledgeRefParams {
-    pub path: String,
-    /// task, knowledge, agent, or message.
+pub struct GetNeighborsParams {
+    /// Resource kind: task, knowledge, agent, message.
     pub kind: String,
     pub id: String,
-    pub display: Option<String>,
-    pub namespace: Option<String>,
+    /// outgoing (default), incoming, or omit for both.
+    pub direction: Option<String>,
+    /// Filter by relationship type.
+    pub rel_type: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct RemoveKnowledgeRefParams {
-    pub path: String,
-    /// task, knowledge, agent, or message.
+pub struct GetGraphParams {
+    /// Root resource kind: task, knowledge, agent, message.
     pub kind: String,
     pub id: String,
-    pub namespace: Option<String>,
+    /// Max traversal depth (default 3, max 10).
+    pub max_depth: Option<u32>,
+    /// Filter to specific relationship types.
+    pub rel_types: Option<Vec<String>>,
+    /// outgoing (default), incoming, or both.
+    pub direction: Option<String>,
 }

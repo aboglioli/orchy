@@ -32,6 +32,7 @@ impl Container {
 
         use orchy_application::EventQuery;
         use orchy_core::agent::AgentStore;
+        use orchy_core::edge::EdgeStore;
         use orchy_core::embeddings::EmbeddingsProvider;
         use orchy_core::knowledge::KnowledgeStore;
         use orchy_core::message::MessageStore;
@@ -50,6 +51,7 @@ impl Container {
             store.clone() as Arc<dyn LockStore>,
             store.clone() as Arc<dyn NamespaceStore>,
             store.clone() as Arc<dyn OrganizationStore>,
+            store.clone() as Arc<dyn EdgeStore>,
             embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
             store.clone() as Arc<dyn EventQuery>,
         );

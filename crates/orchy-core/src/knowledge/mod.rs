@@ -10,12 +10,12 @@ use uuid::Uuid;
 
 use orchy_events::{Event, EventCollector, Payload};
 
+use self::events as knowledge_events;
 use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
-use self::events as knowledge_events;
 
 #[async_trait::async_trait]
 pub trait KnowledgeStore: Send + Sync {

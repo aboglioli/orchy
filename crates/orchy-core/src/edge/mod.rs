@@ -160,18 +160,13 @@ impl FromStr for RelationType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TraversalDirection {
+    #[default]
     Outgoing,
     Incoming,
     Both,
-}
-
-impl Default for TraversalDirection {
-    fn default() -> Self {
-        Self::Outgoing
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

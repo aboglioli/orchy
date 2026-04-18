@@ -4,6 +4,7 @@ use orchy_events::io::Writer as EventWriter;
 
 use orchy_application::EventQuery;
 use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalEdge};
 use orchy_core::error::Result;
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
@@ -12,6 +13,7 @@ use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
@@ -239,6 +241,59 @@ impl NamespaceStore for StoreBackend {
     }
     async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
         delegate_trait!(self, NamespaceStore::list(org, project))
+    }
+}
+
+#[async_trait]
+impl EdgeStore for StoreBackend {
+    async fn save(&self, edge: &Edge) -> Result<()> {
+        delegate_trait!(self, EdgeStore::save(edge))
+    }
+    async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
+        delegate_trait!(self, EdgeStore::find_by_id(id))
+    }
+    async fn delete(&self, id: &EdgeId) -> Result<()> {
+        delegate_trait!(self, EdgeStore::delete(id))
+    }
+    async fn find_from(
+        &self,
+        org: &OrganizationId,
+        kind: &ResourceKind,
+        id: &str,
+        rel_type: Option<&RelationType>,
+    ) -> Result<Vec<Edge>> {
+        delegate_trait!(self, EdgeStore::find_from(org, kind, id, rel_type))
+    }
+    async fn find_to(
+        &self,
+        org: &OrganizationId,
+        kind: &ResourceKind,
+        id: &str,
+        rel_type: Option<&RelationType>,
+    ) -> Result<Vec<Edge>> {
+        delegate_trait!(self, EdgeStore::find_to(org, kind, id, rel_type))
+    }
+    async fn traverse(
+        &self,
+        org: &OrganizationId,
+        kind: &ResourceKind,
+        id: &str,
+        max_depth: u32,
+        rel_types: Option<&[RelationType]>,
+        direction: TraversalDirection,
+    ) -> Result<Vec<TraversalEdge>> {
+        delegate_trait!(
+            self,
+            EdgeStore::traverse(org, kind, id, max_depth, rel_types, direction)
+        )
+    }
+    async fn delete_all_for(
+        &self,
+        org: &OrganizationId,
+        kind: &ResourceKind,
+        id: &str,
+    ) -> Result<()> {
+        delegate_trait!(self, EdgeStore::delete_all_for(org, kind, id))
     }
 }
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::agent::AgentStore;
+use orchy_core::edge::EdgeStore;
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
@@ -12,6 +13,12 @@ use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
 
 pub mod dto;
+
+// Edges
+mod add_edge;
+mod get_graph;
+mod get_neighbors;
+mod remove_edge;
 
 pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
     match ns {
@@ -66,10 +73,8 @@ mod split_task;
 
 // Task metadata
 mod add_task_note;
-mod add_task_ref;
 mod list_tags;
 mod move_task;
-mod remove_task_ref;
 mod tag_task;
 mod untag_task;
 
@@ -94,10 +99,6 @@ mod search_knowledge;
 mod tag_knowledge;
 mod untag_knowledge;
 mod write_knowledge;
-
-// Knowledge refs
-mod add_knowledge_ref;
-mod remove_knowledge_ref;
 
 // Knowledge (inheritance)
 mod list_overviews;
@@ -147,7 +148,7 @@ pub use get_next_task::{GetNextTask, GetNextTaskCommand};
 pub use get_task::{GetTask, GetTaskCommand};
 pub use get_task_with_context::{GetTaskWithContext, GetTaskWithContextCommand};
 pub use list_tasks::{ListTasks, ListTasksCommand};
-pub use post_task::{PostTask, PostTaskCommand, ResourceRefInput};
+pub use post_task::{PostTask, PostTaskCommand};
 pub use release_task::{ReleaseTask, ReleaseTaskCommand};
 pub use start_task::{StartTask, StartTaskCommand};
 pub use unblock_task::{UnblockTask, UnblockTaskCommand};
@@ -161,10 +162,8 @@ pub use replace_task::{ReplaceTask, ReplaceTaskCommand};
 pub use split_task::{SplitTask, SplitTaskCommand, SubtaskInput};
 
 pub use add_task_note::{AddTaskNote, AddTaskNoteCommand};
-pub use add_task_ref::{AddTaskRef, AddTaskRefCommand};
 pub use list_tags::{ListTags, ListTagsCommand};
 pub use move_task::{MoveTask, MoveTaskCommand};
-pub use remove_task_ref::{RemoveTaskRef, RemoveTaskRefCommand};
 pub use tag_task::{TagTask, TagTaskCommand};
 pub use untag_task::{UntagTask, UntagTaskCommand};
 
@@ -188,10 +187,8 @@ pub use tag_knowledge::{TagKnowledge, TagKnowledgeCommand};
 pub use untag_knowledge::{UntagKnowledge, UntagKnowledgeCommand};
 pub use write_knowledge::{WriteKnowledge, WriteKnowledgeCommand};
 
-pub use add_knowledge_ref::{AddKnowledgeRef, AddKnowledgeRefCommand};
 pub use list_overviews::{ListOverviews, ListOverviewsCommand};
 pub use list_skills::{ListSkills, ListSkillsCommand};
-pub use remove_knowledge_ref::{RemoveKnowledgeRef, RemoveKnowledgeRefCommand};
 
 pub use get_project::{GetProject, GetProjectCommand};
 pub use list_namespaces::{ListNamespaces, ListNamespacesCommand};
@@ -209,10 +206,16 @@ pub use list_organizations::{ListOrganizations, ListOrganizationsCommand};
 pub use resolve_api_key::{ResolveApiKey, ResolveApiKeyCommand};
 pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 
+pub use add_edge::{AddEdge, AddEdgeCommand};
+pub use get_graph::{GetGraph, GetGraphCommand};
+pub use get_neighbors::{GetNeighbors, GetNeighborsCommand};
+pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
+
 pub use dto::{
-    AgentResponse, AgentSummaryResponse, ApiKeyResponse, KnowledgeResponse, MessageResponse,
-    OrganizationResponse, PageResponse, ProjectOverviewResponse, ProjectResponse,
-    ResourceLockResponse, ResourceRefResponse, TaskResponse, TaskWithContextResponse,
+    AgentResponse, AgentSummaryResponse, ApiKeyResponse, EdgeResponse, GraphResponse,
+    KnowledgeResponse, MessageResponse, OrganizationResponse, PageResponse,
+    ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
+    TaskWithContextResponse, TraversalEdgeResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
@@ -253,8 +256,10 @@ pub struct Application {
     pub remove_dependency: RemoveDependency,
 
     pub add_task_note: AddTaskNote,
-    pub add_task_ref: AddTaskRef,
-    pub remove_task_ref: RemoveTaskRef,
+    pub add_edge: AddEdge,
+    pub remove_edge: RemoveEdge,
+    pub get_neighbors: GetNeighbors,
+    pub get_graph: GetGraph,
     pub tag_task: TagTask,
     pub untag_task: UntagTask,
     pub move_task: MoveTask,
@@ -279,8 +284,6 @@ pub struct Application {
     pub untag_knowledge: UntagKnowledge,
     pub patch_knowledge_metadata: PatchKnowledgeMetadata,
     pub import_knowledge: ImportKnowledge,
-    pub add_knowledge_ref: AddKnowledgeRef,
-    pub remove_knowledge_ref: RemoveKnowledgeRef,
     pub list_skills: ListSkills,
     pub list_overviews: ListOverviews,
 
@@ -315,6 +318,7 @@ impl Application {
         locks: Arc<dyn LockStore>,
         namespaces: Arc<dyn NamespaceStore>,
         orgs: Arc<dyn OrganizationStore>,
+        edges: Arc<dyn EdgeStore>,
         embeddings: Option<Arc<dyn EmbeddingsProvider>>,
         event_query: Arc<dyn EventQuery>,
     ) -> Self {
@@ -365,8 +369,10 @@ impl Application {
             remove_dependency: RemoveDependency::new(tasks.clone()),
 
             add_task_note: AddTaskNote::new(tasks.clone(), knowledge.clone()),
-            add_task_ref: AddTaskRef::new(tasks.clone()),
-            remove_task_ref: RemoveTaskRef::new(tasks.clone()),
+            add_edge: AddEdge::new(edges.clone()),
+            remove_edge: RemoveEdge::new(edges.clone()),
+            get_neighbors: GetNeighbors::new(edges.clone()),
+            get_graph: GetGraph::new(edges.clone()),
             tag_task: TagTask::new(tasks.clone()),
             untag_task: UntagTask::new(tasks.clone()),
             move_task: MoveTask::new(tasks.clone()),
@@ -391,8 +397,6 @@ impl Application {
             untag_knowledge: UntagKnowledge::new(knowledge.clone()),
             patch_knowledge_metadata: PatchKnowledgeMetadata::new(knowledge.clone()),
             import_knowledge: ImportKnowledge::new(knowledge.clone(), embeddings),
-            add_knowledge_ref: AddKnowledgeRef::new(knowledge.clone()),
-            remove_knowledge_ref: RemoveKnowledgeRef::new(knowledge.clone()),
             list_skills: ListSkills::new(knowledge.clone()),
             list_overviews: ListOverviews::new(knowledge.clone()),
 

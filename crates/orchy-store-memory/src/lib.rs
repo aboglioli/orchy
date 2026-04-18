@@ -1,6 +1,7 @@
 #![allow(clippy::collapsible_if)]
 
 mod agent;
+mod edge;
 mod events;
 mod knowledge;
 mod message;
@@ -16,6 +17,7 @@ use std::sync::RwLock;
 use orchy_events::SerializedEvent;
 
 use orchy_core::agent::{Agent, AgentId};
+use orchy_core::edge::{Edge, EdgeId};
 use orchy_core::knowledge::{Knowledge, KnowledgeId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
@@ -26,6 +28,7 @@ use orchy_core::task::{Task, TaskId};
 
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
+    pub(crate) edges: RwLock<HashMap<EdgeId, Edge>>,
     pub(crate) tasks: RwLock<HashMap<TaskId, Task>>,
     pub(crate) messages: RwLock<HashMap<MessageId, Message>>,
     pub(crate) message_receipts: RwLock<HashSet<(MessageId, AgentId)>>,
@@ -41,6 +44,7 @@ impl MemoryBackend {
     pub fn new() -> Self {
         Self {
             agents: RwLock::new(HashMap::new()),
+            edges: RwLock::new(HashMap::new()),
             tasks: RwLock::new(HashMap::new()),
             messages: RwLock::new(HashMap::new()),
             message_receipts: RwLock::new(HashSet::new()),

@@ -107,7 +107,6 @@ async fn load_recursive_inner(
             agent_id: None,
             metadata: None,
             metadata_remove: None,
-            refs: None,
         };
 
         app.write_knowledge
