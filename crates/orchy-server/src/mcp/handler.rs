@@ -344,4 +344,34 @@ You must externalize knowledge so future agents can benefit:
 - When you discover something non-obvious (a gotcha, a pattern, a constraint), \
   write it to knowledge immediately — don't wait until task completion.
 - Use `search_knowledge` before starting work to check \
-  if a previous agent already explored this area.";
+  if a previous agent already explored this area.
+
+## Graph (Relationships Between Resources)
+
+Use edges to record meaningful relationships between tasks, knowledge entries, agents, and messages. \
+This builds a shared graph that any agent can traverse.
+
+**When to create edges:**
+- Task produces a knowledge artifact → `add_edge(from=task, to=knowledge, rel=produces)`
+- Knowledge entry governs a task → `add_edge(from=knowledge, to=task, rel=implements)`
+- Task spawned subtasks via split or delegate → `add_edge(from=parent, to=child, rel=spawns)`
+- Knowledge entry supersedes an old one → `add_edge(from=new, to=old, rel=supersedes)`
+- Two entries are conceptually linked → `add_edge(rel=related_to)`
+- Task was derived from or informed by another → `add_edge(rel=derived_from)`
+
+**When to traverse:**
+- Before claiming a task, `get_neighbors(kind=task, id=..., direction=both)` \
+  to see linked decisions, blockers, and prior artifacts.
+- Use `get_graph(kind=task, id=root, max_depth=3)` to map a task tree \
+  and its connected knowledge before planning work.
+- Use `get_graph(kind=knowledge, id=..., rel_types=[supersedes])` \
+  to find the latest version of a decision chain.
+
+**Relationship types:** \
+`derived_from`, `produces`, `references`, `supersedes`, `merged_from`, \
+`summarizes`, `implements`, `spawns`, `related_to`
+
+**Resource kinds:** `task`, `knowledge`, `agent`, `message`
+
+Edges are org-scoped and directed. `get_neighbors` returns direct connections; \
+`get_graph` recurses up to max_depth hops (default 3, max 10).";

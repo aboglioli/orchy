@@ -179,6 +179,23 @@ You must externalize knowledge so future agents can benefit:
 - **Always `search_knowledge` before writing** to avoid duplicating existing
   entries. If an entry exists, update it instead of creating a new one.
 - Use `list_knowledge_types` to see available kinds.
+
+## Graph (Relationships Between Resources)
+
+Use edges to record meaningful relationships between tasks, knowledge entries, agents, and messages.
+
+**When to create edges:**
+- Task produces a knowledge artifact → `add_edge(from_kind=task, to_kind=knowledge, rel_type=produces)`
+- Knowledge governs a task → `add_edge(from_kind=knowledge, to_kind=task, rel_type=implements)`
+- Task split/delegated into subtasks → `add_edge(from=parent, to=child, rel_type=spawns)`
+- Knowledge supersedes an older entry → `add_edge(from=new, to=old, rel_type=supersedes)`
+
+**When to traverse:**
+- Before starting a task: `get_neighbors(kind=task, id=..., direction=both)` — see linked decisions and prior work.
+- Mapping a task tree: `get_graph(kind=task, id=root, max_depth=3)` — full dependency + knowledge graph.
+- Finding latest decision: `get_graph(kind=knowledge, id=..., rel_types=["supersedes"])`.
+
+**Relationship types:** `derived_from`, `produces`, `references`, `supersedes`, `merged_from`, `summarizes`, `implements`, `spawns`, `related_to`
 "#
     );
 
