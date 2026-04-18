@@ -2,9 +2,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
+use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
 
 use crate::parse_namespace;
@@ -26,11 +28,12 @@ pub struct PostTaskCommand {
 
 pub struct PostTask {
     tasks: Arc<dyn TaskStore>,
+    edges: Arc<dyn EdgeStore>,
 }
 
 impl PostTask {
-    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
-        Self { tasks }
+    pub fn new(tasks: Arc<dyn TaskStore>, edges: Arc<dyn EdgeStore>) -> Self {
+        Self { tasks, edges }
     }
 
     pub async fn execute(&self, cmd: PostTaskCommand) -> Result<TaskResponse> {
@@ -72,7 +75,7 @@ impl PostTask {
         let is_blocked = !depends_on.is_empty();
 
         let mut task = Task::new(
-            org_id,
+            org_id.clone(),
             project,
             namespace,
             parent_id,
@@ -80,12 +83,67 @@ impl PostTask {
             cmd.description,
             priority,
             assigned_roles,
-            depends_on,
-            created_by,
+            depends_on.clone(),
+            created_by.clone(),
             is_blocked,
         )?;
 
         self.tasks.save(&mut task).await?;
+
+        for dep_id in &depends_on {
+            let already_exists = self
+                .edges
+                .exists_by_pair(
+                    &org_id,
+                    &ResourceKind::Task,
+                    &task.id().to_string(),
+                    &ResourceKind::Task,
+                    &dep_id.to_string(),
+                    &RelationType::DependsOn,
+                )
+                .await?;
+            if !already_exists {
+                let edge = Edge::new(
+                    org_id.clone(),
+                    ResourceKind::Task,
+                    task.id().to_string(),
+                    ResourceKind::Task,
+                    dep_id.to_string(),
+                    RelationType::DependsOn,
+                    None,
+                    created_by.clone(),
+                );
+                self.edges.save(&edge).await?;
+            }
+        }
+
+        if let Some(pid) = task.parent_id() {
+            let already_exists = self
+                .edges
+                .exists_by_pair(
+                    &org_id,
+                    &ResourceKind::Task,
+                    &pid.to_string(),
+                    &ResourceKind::Task,
+                    &task.id().to_string(),
+                    &RelationType::Spawns,
+                )
+                .await?;
+            if !already_exists {
+                let edge = Edge::new(
+                    org_id,
+                    ResourceKind::Task,
+                    pid.to_string(),
+                    ResourceKind::Task,
+                    task.id().to_string(),
+                    RelationType::Spawns,
+                    None,
+                    created_by,
+                );
+                self.edges.save(&edge).await?;
+            }
+        }
+
         Ok(TaskResponse::from(&task))
     }
 }

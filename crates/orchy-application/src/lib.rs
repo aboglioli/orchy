@@ -349,7 +349,7 @@ impl Application {
             check_timed_out_agents: CheckTimedOutAgents::new(agents.clone()),
             update_agent_status: UpdateAgentStatus::new(agents.clone()),
 
-            post_task: PostTask::new(tasks.clone()),
+            post_task: PostTask::new(tasks.clone(), edges.clone()),
             get_task: GetTask::new(tasks.clone()),
             get_task_with_context: GetTaskWithContext::new(tasks.clone()),
             list_tasks: ListTasks::new(tasks.clone()),
