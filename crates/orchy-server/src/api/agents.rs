@@ -8,9 +8,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use orchy_application::{
-    CheckMailboxCommand, GetAgentSummaryCommand, ListAgentsCommand, ListTasksCommand,
+    CheckMailboxCommand, GetAgentCommand, GetAgentSummaryCommand, ListAgentsCommand,
+    ListTasksCommand,
 };
-use orchy_core::agent::AgentStatus;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -96,20 +96,20 @@ pub async fn list(
     let body: Vec<AgentDto> = agents
         .items
         .into_iter()
-        .filter(|a| a.status() != AgentStatus::Disconnected)
+        .filter(|a| a.status != "disconnected")
         .filter(|a| {
             project_filter
                 .as_ref()
-                .map(|p| a.project() == p)
+                .map(|p| a.project == p.as_ref())
                 .unwrap_or(true)
         })
         .map(|a| AgentDto {
-            id: a.id().to_string(),
-            description: a.description().to_string(),
-            status: a.status().to_string(),
-            agent_type: a.metadata().get("agent_type").cloned(),
-            namespace: a.namespace().to_string(),
-            last_heartbeat: a.last_heartbeat().to_rfc3339(),
+            id: a.id.clone(),
+            description: a.description.clone(),
+            status: a.status.clone(),
+            agent_type: a.metadata.get("agent_type").cloned(),
+            namespace: a.namespace.clone(),
+            last_heartbeat: a.last_heartbeat.clone(),
         })
         .collect();
 
@@ -134,11 +134,13 @@ pub async fn get_context(
     let agent = container
         .app
         .get_agent
-        .execute(&id)
+        .execute(GetAgentCommand {
+            agent_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id() != &org_id || agent.status() == AgentStatus::Disconnected {
+    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
@@ -149,8 +151,8 @@ pub async fn get_context(
     let mailbox_cmd = CheckMailboxCommand {
         agent_id: id.clone(),
         org_id: org.clone(),
-        project: agent.project().to_string(),
-        namespace: Some(agent.namespace().to_string()),
+        project: agent.project.clone(),
+        namespace: Some(agent.namespace.clone()),
         after: None,
         limit: None,
     };
@@ -164,16 +166,16 @@ pub async fn get_context(
         .unwrap_or_default()
         .into_iter()
         .map(|m| InboxMessageDto {
-            id: m.id().to_string(),
-            from: m.from().to_string(),
-            body: m.body().to_string(),
+            id: m.id.clone(),
+            from: m.from.clone(),
+            body: m.body.clone(),
         })
         .collect();
 
     let tasks_cmd = ListTasksCommand {
         org_id: Some(org),
-        project: Some(agent.project().to_string()),
-        namespace: Some(agent.namespace().to_string()),
+        project: Some(agent.project.clone()),
+        namespace: Some(agent.namespace.clone()),
         status: Some("pending".to_string()),
         parent_id: None,
         assigned_to: None,
@@ -191,20 +193,20 @@ pub async fn get_context(
         .unwrap_or_default()
         .into_iter()
         .map(|t| PendingTaskDto {
-            id: t.id().to_string(),
-            title: t.title().to_string(),
-            priority: t.priority().to_string(),
-            assigned_roles: t.assigned_roles().to_vec(),
+            id: t.id.clone(),
+            title: t.title.clone(),
+            priority: t.priority.clone(),
+            assigned_roles: t.assigned_roles.clone(),
         })
         .collect();
 
     let agent_dto = AgentDto {
-        id: agent.id().to_string(),
-        description: agent.description().to_string(),
-        status: agent.status().to_string(),
-        agent_type: agent.metadata().get("agent_type").cloned(),
-        namespace: agent.namespace().to_string(),
-        last_heartbeat: agent.last_heartbeat().to_rfc3339(),
+        id: agent.id.clone(),
+        description: agent.description.clone(),
+        status: agent.status.clone(),
+        agent_type: agent.metadata.get("agent_type").cloned(),
+        namespace: agent.namespace.clone(),
+        last_heartbeat: agent.last_heartbeat.clone(),
     };
 
     Ok(Json(AgentContextDto {

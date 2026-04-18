@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeStore};
+use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::parse_namespace;
+
+use crate::dto::KnowledgeResponse;
 
 pub struct MoveKnowledgeCommand {
     pub org_id: String,
@@ -24,7 +26,7 @@ impl MoveKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: MoveKnowledgeCommand) -> Result<Knowledge> {
+    pub async fn execute(&self, cmd: MoveKnowledgeCommand) -> Result<KnowledgeResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -40,6 +42,6 @@ impl MoveKnowledge {
 
         entry.move_to(new_namespace)?;
         self.store.save(&mut entry).await?;
-        Ok(entry)
+        Ok(KnowledgeResponse::from(&entry))
     }
 }

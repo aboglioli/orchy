@@ -5,6 +5,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
 
+use crate::dto::TaskResponse;
 use crate::split_task::SubtaskInput;
 
 pub struct ReplaceTaskCommand {
@@ -23,7 +24,10 @@ impl ReplaceTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ReplaceTaskCommand) -> Result<(Task, Vec<Task>)> {
+    pub async fn execute(
+        &self,
+        cmd: ReplaceTaskCommand,
+    ) -> Result<(TaskResponse, Vec<TaskResponse>)> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -81,6 +85,9 @@ impl ReplaceTask {
             new_tasks.push(task);
         }
 
-        Ok((original, new_tasks))
+        Ok((
+            TaskResponse::from(&original),
+            new_tasks.iter().map(TaskResponse::from).collect(),
+        ))
     }
 }

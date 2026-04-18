@@ -8,6 +8,8 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
+use crate::dto::TaskResponse;
+
 pub struct MergeTasksCommand {
     pub task_ids: Vec<String>,
     pub title: String,
@@ -27,7 +29,10 @@ impl MergeTasks {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: MergeTasksCommand) -> Result<(Task, Vec<Task>)> {
+    pub async fn execute(
+        &self,
+        cmd: MergeTasksCommand,
+    ) -> Result<(TaskResponse, Vec<TaskResponse>)> {
         let task_ids = cmd
             .task_ids
             .iter()
@@ -196,7 +201,10 @@ impl MergeTasks {
             }
         }
 
-        Ok((merged, cancelled))
+        Ok((
+            TaskResponse::from(&merged),
+            cancelled.iter().map(TaskResponse::from).collect(),
+        ))
     }
 
     async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {

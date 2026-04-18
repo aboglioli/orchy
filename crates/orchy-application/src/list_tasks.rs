@@ -5,9 +5,10 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::{Page, PageParams};
-use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::pagination::PageParams;
+use orchy_core::task::{TaskFilter, TaskId, TaskStatus, TaskStore};
 
+use crate::dto::{PageResponse, TaskResponse};
 use crate::parse_namespace;
 
 pub struct ListTasksCommand {
@@ -31,7 +32,7 @@ impl ListTasks {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<Page<Task>> {
+    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<PageResponse<TaskResponse>> {
         let org_id = cmd
             .org_id
             .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
@@ -77,6 +78,7 @@ impl ListTasks {
         };
 
         let page = PageParams::new(cmd.after, cmd.limit);
-        self.tasks.list(filter, page).await
+        let result = self.tasks.list(filter, page).await?;
+        Ok(PageResponse::from(result))
     }
 }

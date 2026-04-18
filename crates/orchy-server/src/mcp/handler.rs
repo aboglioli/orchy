@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentId, AgentStatus};
+use orchy_core::agent::AgentId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 
@@ -214,15 +214,17 @@ impl OrchyHandler {
             .container
             .app
             .get_agent
-            .execute(&agent_id.to_string())
+            .execute(orchy_application::GetAgentCommand {
+                agent_id: agent_id.to_string(),
+            })
             .await
             .map_err(mcp_error)?;
 
-        if agent.org_id() != &org || agent.project() != &project {
+        if agent.org_id != org.to_string() || agent.project != project.to_string() {
             return Err(format!("agent not found in current project: '{s}'"));
         }
 
-        if agent.status() == AgentStatus::Disconnected {
+        if agent.status == "disconnected" {
             return Err(format!("agent is disconnected: '{s}'"));
         }
 

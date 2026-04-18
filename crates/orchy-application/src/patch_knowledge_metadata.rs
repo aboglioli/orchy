@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeStore, Version};
+use orchy_core::knowledge::{KnowledgeStore, Version};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::parse_namespace;
+
+use crate::dto::KnowledgeResponse;
 
 pub struct PatchKnowledgeMetadataCommand {
     pub org_id: String,
@@ -27,7 +29,7 @@ impl PatchKnowledgeMetadata {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: PatchKnowledgeMetadataCommand) -> Result<Knowledge> {
+    pub async fn execute(&self, cmd: PatchKnowledgeMetadataCommand) -> Result<KnowledgeResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -51,7 +53,7 @@ impl PatchKnowledgeMetadata {
         }
 
         if cmd.set.is_empty() && cmd.remove.is_empty() {
-            return Ok(entry);
+            return Ok(KnowledgeResponse::from(&entry));
         }
 
         for k in &cmd.remove {
@@ -62,6 +64,6 @@ impl PatchKnowledgeMetadata {
         }
 
         self.store.save(&mut entry).await?;
-        Ok(entry)
+        Ok(KnowledgeResponse::from(&entry))
     }
 }

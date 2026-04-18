@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::message::{Message, MessageStore};
+use orchy_core::message::MessageStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::{Page, PageParams};
+use orchy_core::pagination::PageParams;
 
+use crate::dto::{MessageResponse, PageResponse};
 use crate::parse_namespace;
 
 pub struct CheckSentMessagesCommand {
@@ -28,7 +29,10 @@ impl CheckSentMessages {
         Self { messages }
     }
 
-    pub async fn execute(&self, cmd: CheckSentMessagesCommand) -> Result<Page<Message>> {
+    pub async fn execute(
+        &self,
+        cmd: CheckSentMessagesCommand,
+    ) -> Result<PageResponse<MessageResponse>> {
         let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
@@ -37,8 +41,10 @@ impl CheckSentMessages {
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let page = PageParams::new(cmd.after, cmd.limit);
 
-        self.messages
+        let result = self
+            .messages
             .find_sent(&agent_id, &org_id, &project, &namespace, page)
-            .await
+            .await?;
+        Ok(PageResponse::from(result))
     }
 }

@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::task::{Task, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{TaskId, TaskStatus, TaskStore};
+
+use crate::dto::TaskResponse;
 
 pub struct ClaimTaskCommand {
     pub task_id: String,
@@ -20,7 +22,7 @@ impl ClaimTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ClaimTaskCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: ClaimTaskCommand) -> Result<TaskResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -51,6 +53,6 @@ impl ClaimTask {
         }
 
         self.tasks.save(&mut task).await?;
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 }

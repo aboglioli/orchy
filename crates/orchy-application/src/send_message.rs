@@ -8,6 +8,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 
+use crate::dto::MessageResponse;
 use crate::parse_namespace;
 
 pub struct SendMessageCommand {
@@ -30,7 +31,7 @@ impl SendMessage {
         Self { messages }
     }
 
-    pub async fn execute(&self, cmd: SendMessageCommand) -> Result<Vec<Message>> {
+    pub async fn execute(&self, cmd: SendMessageCommand) -> Result<Vec<MessageResponse>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -75,6 +76,6 @@ impl SendMessage {
         }
 
         self.messages.save(&mut msg).await?;
-        Ok(vec![msg])
+        Ok(vec![MessageResponse::from(&msg)])
     }
 }

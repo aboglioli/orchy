@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::message::{Message, MessageId, MessageStore};
+use orchy_core::message::{MessageId, MessageStore};
+
+use crate::dto::MessageResponse;
 
 pub struct ListConversationCommand {
     pub message_id: String,
@@ -17,13 +19,14 @@ impl ListConversation {
         Self { messages }
     }
 
-    pub async fn execute(&self, cmd: ListConversationCommand) -> Result<Vec<Message>> {
+    pub async fn execute(&self, cmd: ListConversationCommand) -> Result<Vec<MessageResponse>> {
         let message_id = cmd
             .message_id
             .parse::<MessageId>()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let limit = cmd.limit.map(|l| l as usize);
-        self.messages.find_thread(&message_id, limit).await
+        let messages = self.messages.find_thread(&message_id, limit).await?;
+        Ok(messages.iter().map(MessageResponse::from).collect())
     }
 }

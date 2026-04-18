@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
@@ -115,12 +116,15 @@ impl OrchyHandler {
         };
 
         match self.container.app.register_agent.execute(cmd).await {
-            Ok(agent) => {
+            Ok(response) => {
                 let org = orchy_core::organization::OrganizationId::new(&org_id)
                     .map_err(|e| e.to_string())?;
-                self.set_session(agent.id().clone(), org, project, agent.namespace().clone())
-                    .await;
-                Ok(to_json(&agent))
+                let agent_id = orchy_core::agent::AgentId::from_str(&response.id)
+                    .map_err(|e| e.to_string())?;
+                let ns = orchy_core::namespace::Namespace::try_from(response.namespace.clone())
+                    .map_err(|e| e.to_string())?;
+                self.set_session(agent_id, org, project, ns).await;
+                Ok(to_json(&response))
             }
             Err(e) => Err(mcp_error(e)),
         }
@@ -275,12 +279,12 @@ impl OrchyHandler {
         };
 
         match self.container.app.switch_context.execute(cmd).await {
-            Ok(agent) => {
-                self.set_session_project_and_namespace(
-                    agent.project().clone(),
-                    agent.namespace().clone(),
-                );
-                Ok(to_json(&agent))
+            Ok(response) => {
+                let project = parse_project(&response.project)?;
+                let ns = orchy_core::namespace::Namespace::try_from(response.namespace.clone())
+                    .map_err(|e| e.to_string())?;
+                self.set_session_project_and_namespace(project, ns);
+                Ok(to_json(&response))
             }
             Err(e) => Err(mcp_error(e)),
         }
@@ -346,10 +350,12 @@ impl OrchyHandler {
                 .container
                 .app
                 .get_agent
-                .execute(&agent_id.to_string())
+                .execute(orchy_application::GetAgentCommand {
+                    agent_id: agent_id.to_string(),
+                })
                 .await
             {
-                Ok(agent) => agent.roles().to_vec(),
+                Ok(agent) => agent.roles.clone(),
                 Err(e) => return Err(format!("error fetching agent roles: {e}")),
             },
         };
@@ -371,11 +377,15 @@ impl OrchyHandler {
 
         match self.container.app.get_next_task.execute(cmd).await {
             Ok(Some(task)) => {
+                let task_id = task
+                    .id
+                    .parse::<orchy_core::task::TaskId>()
+                    .map_err(|e| e.to_string())?;
                 let ctx = self
                     .container
                     .app
                     .get_task_with_context
-                    .get_with_context(&task.id())
+                    .get_with_context(&task_id)
                     .await
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
@@ -438,11 +448,15 @@ impl OrchyHandler {
 
         match self.container.app.claim_task.execute(cmd).await {
             Ok(task) => {
+                let task_id = task
+                    .id
+                    .parse::<orchy_core::task::TaskId>()
+                    .map_err(|e| e.to_string())?;
                 let ctx = self
                     .container
                     .app
                     .get_task_with_context
-                    .get_with_context(&task.id())
+                    .get_with_context(&task_id)
                     .await
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
@@ -466,11 +480,15 @@ impl OrchyHandler {
 
         match self.container.app.start_task.execute(cmd).await {
             Ok(task) => {
+                let task_id = task
+                    .id
+                    .parse::<orchy_core::task::TaskId>()
+                    .map_err(|e| e.to_string())?;
                 let ctx = self
                     .container
                     .app
                     .get_task_with_context
-                    .get_with_context(&task.id())
+                    .get_with_context(&task_id)
                     .await
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
@@ -1013,7 +1031,7 @@ impl OrchyHandler {
             .map_err(mcp_error)?
             .items
             .into_iter()
-            .filter(|a| a.status() != orchy_core::agent::AgentStatus::Disconnected)
+            .filter(|a| a.status != "disconnected")
             .collect();
 
         let tasks_cmd = ListTasksCommand {
@@ -1038,29 +1056,24 @@ impl OrchyHandler {
 
         let mut by_status = std::collections::HashMap::new();
         for task in &all_tasks {
-            *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
+            *by_status.entry(task.status.clone()).or_insert(0u32) += 1;
         }
 
         let mut recent: Vec<_> = all_tasks
             .iter()
-            .filter(|t| {
-                matches!(
-                    t.status(),
-                    orchy_core::task::TaskStatus::Completed | orchy_core::task::TaskStatus::Failed
-                )
-            })
+            .filter(|t| t.status == "completed" || t.status == "failed")
             .collect();
-        recent.sort_by_key(|b| std::cmp::Reverse(b.updated_at()));
+        recent.sort_by_key(|b| std::cmp::Reverse(&b.updated_at));
         recent.truncate(10);
 
         let recent_items: Vec<_> = recent
             .iter()
             .map(|t| {
                 serde_json::json!({
-                    "id": t.id().to_string(),
-                    "title": t.title(),
-                    "status": t.status().to_string(),
-                    "summary": t.result_summary(),
+                    "id": &t.id,
+                    "title": &t.title,
+                    "status": &t.status,
+                    "summary": &t.result_summary,
                 })
             })
             .collect();
@@ -1069,15 +1082,16 @@ impl OrchyHandler {
         let mut my_workload_by_status: std::collections::HashMap<String, Vec<serde_json::Value>> =
             std::collections::HashMap::new();
         if let Some(ref aid) = agent_id {
+            let aid_str = aid.to_string();
             for task in &all_tasks {
-                if task.assigned_to() == Some(aid) {
+                if task.assigned_to.as_deref() == Some(aid_str.as_str()) {
                     my_workload_by_status
-                        .entry(task.status().to_string())
+                        .entry(task.status.clone())
                         .or_default()
                         .push(serde_json::json!({
-                            "id": task.id().to_string(),
-                            "title": task.title(),
-                            "priority": task.priority().to_string(),
+                            "id": &task.id,
+                            "title": &task.title,
+                            "priority": &task.priority,
                         }));
                 }
             }
@@ -1124,7 +1138,9 @@ impl OrchyHandler {
             .map_err(mcp_error)?;
 
         if let Some(expected) = params.version {
-            let updated = project.updated_at().timestamp() as u64;
+            let updated = chrono::DateTime::parse_from_rfc3339(&project.updated_at)
+                .map(|dt| dt.timestamp() as u64)
+                .unwrap_or(0);
             if expected != updated {
                 return Err(format!(
                     "version mismatch: expected {}, got {}",
@@ -1135,7 +1151,7 @@ impl OrchyHandler {
 
         let description = params
             .description
-            .unwrap_or_else(|| project.description().to_string());
+            .unwrap_or_else(|| project.description.clone());
 
         let cmd = UpdateProjectCommand {
             org_id: org.to_string(),
@@ -1723,8 +1739,7 @@ impl OrchyHandler {
         };
 
         if let Some(p) = params.project {
-            let project = parse_project(&p)?;
-            entries.retain(|e| e.project().map(|ep| *ep == project).unwrap_or(false));
+            entries.retain(|e| e.project.as_deref() == Some(&p));
         }
 
         Ok(to_json(&entries))
@@ -2052,7 +2067,7 @@ impl ServerHandler for OrchyHandler {
 
         let prompts = skills
             .into_iter()
-            .map(|s| Prompt::new(s.title().to_string(), Some(s.title().to_string()), None))
+            .map(|s| Prompt::new(s.title.clone(), Some(s.title.clone()), None))
             .collect();
 
         Ok(ListPromptsResult {
@@ -2090,16 +2105,16 @@ impl ServerHandler for OrchyHandler {
 
         let entry = skills
             .into_iter()
-            .find(|s| s.title() == request.name)
+            .find(|s| s.title == request.name)
             .ok_or_else(|| {
                 ErrorData::invalid_params(format!("skill '{}' not found", request.name), None)
             })?;
 
         let mut result = GetPromptResult::new(vec![PromptMessage::new_text(
             PromptMessageRole::User,
-            entry.content().to_string(),
+            entry.content.clone(),
         )]);
-        result.description = Some(entry.title().to_string());
+        result.description = Some(entry.title.clone());
         Ok(result)
     }
 }

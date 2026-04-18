@@ -5,6 +5,8 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
 
+use crate::dto::TaskResponse;
+
 pub struct DelegateTaskCommand {
     pub task_id: String,
     pub title: String,
@@ -23,7 +25,7 @@ impl DelegateTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: DelegateTaskCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: DelegateTaskCommand) -> Result<TaskResponse> {
         let parent_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -63,6 +65,6 @@ impl DelegateTask {
         )?;
 
         self.tasks.save(&mut subtask).await?;
-        Ok(subtask)
+        Ok(TaskResponse::from(&subtask))
     }
 }

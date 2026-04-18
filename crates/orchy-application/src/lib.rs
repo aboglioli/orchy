@@ -10,7 +10,7 @@ use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::{TaskStore, WatcherStore};
 
-mod dto;
+pub mod dto;
 
 pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
     match ns {
@@ -118,8 +118,8 @@ mod poll_updates;
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
 pub use check_timed_out_agents::CheckTimedOutAgents;
 pub use disconnect_agent::{DisconnectAgent, DisconnectAgentCommand};
-pub use get_agent::GetAgent;
-pub use get_agent_summary::{AgentSummary, GetAgentSummary, GetAgentSummaryCommand};
+pub use get_agent::{GetAgent, GetAgentCommand};
+pub use get_agent_summary::{GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
 pub use register_agent::{RegisterAgent, RegisterAgentCommand};
@@ -133,7 +133,7 @@ pub use claim_task::{ClaimTask, ClaimTaskCommand};
 pub use complete_task::{CompleteTask, CompleteTaskCommand};
 pub use fail_task::{FailTask, FailTaskCommand};
 pub use get_next_task::{GetNextTask, GetNextTaskCommand};
-pub use get_task::GetTask;
+pub use get_task::{GetTask, GetTaskCommand};
 pub use get_task_with_context::GetTaskWithContext;
 pub use list_tasks::{ListTasks, ListTasksCommand};
 pub use post_task::{PostTask, PostTaskCommand, ResourceRefInput};
@@ -190,7 +190,11 @@ pub use check_lock::{CheckLock, CheckLockCommand};
 pub use lock_resource::{LockResource, LockResourceCommand};
 pub use unlock_resource::{UnlockResource, UnlockResourceCommand};
 
-pub use dto::ProjectOverview;
+pub use dto::{
+    AgentResponse, AgentSummaryResponse, KnowledgeResponse, MessageResponse, PageResponse,
+    ProjectOverview, ProjectResponse, ResourceLockResponse, ResourceRefResponse, TaskResponse,
+    TaskWatcherResponse, TaskWithContextResponse,
+};
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
 

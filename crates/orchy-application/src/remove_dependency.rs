@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::task::{Task, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{TaskId, TaskStatus, TaskStore};
+
+use crate::dto::TaskResponse;
 
 pub struct RemoveDependencyCommand {
     pub task_id: String,
@@ -17,7 +19,7 @@ impl RemoveDependency {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: RemoveDependencyCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: RemoveDependencyCommand) -> Result<TaskResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -42,7 +44,7 @@ impl RemoveDependency {
         }
 
         self.tasks.save(&mut task).await?;
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 
     async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {

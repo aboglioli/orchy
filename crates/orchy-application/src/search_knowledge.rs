@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeStore};
+use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::organization::OrganizationId;
 
+use crate::dto::KnowledgeResponse;
 use crate::parse_namespace;
 
 pub struct SearchKnowledgeCommand {
@@ -28,7 +29,7 @@ impl SearchKnowledge {
         Self { store, embeddings }
     }
 
-    pub async fn execute(&self, cmd: SearchKnowledgeCommand) -> Result<Vec<Knowledge>> {
+    pub async fn execute(&self, cmd: SearchKnowledgeCommand) -> Result<Vec<KnowledgeResponse>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
@@ -46,7 +47,8 @@ impl SearchKnowledge {
             None
         };
 
-        self.store
+        let entries = self
+            .store
             .search(
                 &org_id,
                 &cmd.query,
@@ -54,6 +56,7 @@ impl SearchKnowledge {
                 namespace.as_ref(),
                 limit,
             )
-            .await
+            .await?;
+        Ok(entries.iter().map(KnowledgeResponse::from).collect())
     }
 }

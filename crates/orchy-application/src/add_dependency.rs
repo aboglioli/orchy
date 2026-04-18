@@ -2,7 +2,9 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::task::{Task, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{TaskId, TaskStatus, TaskStore};
+
+use crate::dto::TaskResponse;
 
 pub struct AddDependencyCommand {
     pub task_id: String,
@@ -18,7 +20,7 @@ impl AddDependency {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: AddDependencyCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: AddDependencyCommand) -> Result<TaskResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -65,7 +67,7 @@ impl AddDependency {
         }
 
         self.tasks.save(&mut task).await?;
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 
     async fn would_create_cycle(&self, task_id: &TaskId, new_dep_id: &TaskId) -> Result<bool> {

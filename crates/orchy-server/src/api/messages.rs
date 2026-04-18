@@ -73,11 +73,13 @@ pub async fn inbox_for_agent(
     let agent = container
         .app
         .get_agent
-        .execute(&id)
+        .execute(orchy_application::GetAgentCommand {
+            agent_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id() != &org_id || agent.status() == orchy_core::agent::AgentStatus::Disconnected {
+    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
@@ -88,7 +90,7 @@ pub async fn inbox_for_agent(
     let cmd = CheckMailboxCommand {
         agent_id: id,
         org_id: org,
-        project: agent.project().to_string(),
+        project: agent.project.clone(),
         namespace: query.namespace,
         after: None,
         limit: None,
@@ -116,11 +118,13 @@ pub async fn sent_for_agent(
     let agent = container
         .app
         .get_agent
-        .execute(&id)
+        .execute(orchy_application::GetAgentCommand {
+            agent_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id() != &org_id || agent.status() == orchy_core::agent::AgentStatus::Disconnected {
+    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
@@ -131,7 +135,7 @@ pub async fn sent_for_agent(
     let cmd = CheckSentMessagesCommand {
         agent_id: id,
         org_id: org,
-        project: agent.project().to_string(),
+        project: agent.project.clone(),
         namespace: query.namespace,
         after: None,
         limit: None,
@@ -189,11 +193,13 @@ pub async fn mark_read_for_agent(
     let agent = container
         .app
         .get_agent
-        .execute(&id)
+        .execute(orchy_application::GetAgentCommand {
+            agent_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id() != &org_id || agent.status() == orchy_core::agent::AgentStatus::Disconnected {
+    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
@@ -240,7 +246,7 @@ pub async fn thread(
         .map_err(ApiError::from)?;
 
     if let Some(first) = messages.first()
-        && first.project() != &project_id
+        && first.project != project_id.as_ref()
     {
         return Err(ApiError(
             StatusCode::NOT_FOUND,

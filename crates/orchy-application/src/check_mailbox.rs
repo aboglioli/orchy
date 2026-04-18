@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
-use orchy_core::message::{Message, MessageStore};
+use orchy_core::message::MessageStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::{Page, PageParams};
+use orchy_core::pagination::PageParams;
 
+use crate::dto::{MessageResponse, PageResponse};
 use crate::parse_namespace;
 
 pub struct CheckMailboxCommand {
@@ -29,7 +30,7 @@ impl CheckMailbox {
         Self { messages, agents }
     }
 
-    pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<Page<Message>> {
+    pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<PageResponse<MessageResponse>> {
         let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
@@ -55,6 +56,6 @@ impl CheckMailbox {
             }
         }
 
-        Ok(result)
+        Ok(PageResponse::from(result))
     }
 }

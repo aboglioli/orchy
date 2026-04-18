@@ -206,12 +206,9 @@ pub async fn search(
         .await
         .map_err(ApiError::from)?;
 
-    let project_id = orchy_core::namespace::ProjectId::try_from(project)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-
     let filtered: Vec<_> = entries
         .into_iter()
-        .filter(|e| e.project() == Some(&project_id))
+        .filter(|e| e.project.as_deref() == Some(&project))
         .collect();
 
     Ok(Json(serde_json::to_value(&filtered).unwrap_or_default()))

@@ -1,28 +1,22 @@
 use std::sync::Arc;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::agent::{AgentId, AgentStatus, AgentStore};
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgeStore};
-use orchy_core::message::{Message, MessageStore};
+use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
+use orchy_core::message::MessageStore;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
-use orchy_core::project::{Project, ProjectStore};
-use orchy_core::task::{Task, TaskFilter, TaskStatus, TaskStore};
+use orchy_core::project::ProjectStore;
+use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
+
+use crate::dto::{
+    AgentResponse, AgentSummaryResponse, KnowledgeResponse, MessageResponse, ProjectResponse,
+    TaskResponse,
+};
 
 pub struct GetAgentSummaryCommand {
     pub org_id: String,
     pub agent_id: String,
-}
-
-#[derive(serde::Serialize)]
-pub struct AgentSummary {
-    pub agent: Agent,
-    pub project: Option<Project>,
-    pub connected_agents: Vec<Agent>,
-    pub inbox: Vec<Message>,
-    pub pending_tasks: Vec<Task>,
-    pub skills: Vec<Knowledge>,
-    pub handoff_context: Vec<Knowledge>,
 }
 
 pub struct GetAgentSummary {
@@ -50,7 +44,7 @@ impl GetAgentSummary {
         }
     }
 
-    pub async fn execute(&self, cmd: GetAgentSummaryCommand) -> Result<AgentSummary> {
+    pub async fn execute(&self, cmd: GetAgentSummaryCommand) -> Result<AgentSummaryResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let agent_id: AgentId = cmd
@@ -68,21 +62,26 @@ impl GetAgentSummary {
             return Err(Error::NotFound(format!("agent {agent_id}")));
         }
 
-        let project = self.projects.find_by_id(&org_id, agent.project()).await?;
+        let project = self
+            .projects
+            .find_by_id(&org_id, agent.project())
+            .await?
+            .map(|p| ProjectResponse::from(&p));
 
         let all_agents = self
             .agents
             .list(&org_id, PageParams::unbounded())
             .await?
             .items;
-        let connected_agents: Vec<Agent> = all_agents
-            .into_iter()
+        let connected_agents: Vec<AgentResponse> = all_agents
+            .iter()
             .filter(|a| a.id() != agent.id())
             .filter(|a| a.status() != AgentStatus::Disconnected)
             .filter(|a| a.project() == agent.project())
+            .map(AgentResponse::from)
             .collect();
 
-        let inbox = self
+        let inbox: Vec<MessageResponse> = self
             .messages
             .find_pending(
                 agent.id(),
@@ -93,10 +92,10 @@ impl GetAgentSummary {
                 PageParams::unbounded(),
             )
             .await
-            .map(|p| p.items)
+            .map(|p| p.items.iter().map(MessageResponse::from).collect())
             .unwrap_or_default();
 
-        let pending_tasks = self
+        let pending_tasks: Vec<TaskResponse> = self
             .tasks
             .list(
                 TaskFilter {
@@ -108,10 +107,10 @@ impl GetAgentSummary {
                 PageParams::unbounded(),
             )
             .await
-            .map(|p| p.items)
+            .map(|p| p.items.iter().map(TaskResponse::from).collect())
             .unwrap_or_default();
 
-        let skills = self
+        let skills: Vec<KnowledgeResponse> = self
             .knowledge
             .list(
                 KnowledgeFilter {
@@ -124,10 +123,10 @@ impl GetAgentSummary {
                 PageParams::unbounded(),
             )
             .await
-            .map(|p| p.items)
+            .map(|p| p.items.iter().map(KnowledgeResponse::from).collect())
             .unwrap_or_default();
 
-        let handoff_context = self
+        let handoff_context: Vec<KnowledgeResponse> = self
             .knowledge
             .list(
                 KnowledgeFilter {
@@ -140,11 +139,11 @@ impl GetAgentSummary {
                 PageParams::unbounded(),
             )
             .await
-            .map(|p| p.items)
+            .map(|p| p.items.iter().map(KnowledgeResponse::from).collect())
             .unwrap_or_default();
 
-        Ok(AgentSummary {
-            agent,
+        Ok(AgentSummaryResponse {
+            agent: AgentResponse::from(&agent),
             project,
             connected_agents,
             inbox,

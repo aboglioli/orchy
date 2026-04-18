@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgeStore};
+
+use crate::dto::KnowledgeResponse;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
@@ -23,15 +25,17 @@ impl ListSkills {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: ListSkillsCommand) -> Result<Vec<Knowledge>> {
+    pub async fn execute(&self, cmd: ListSkillsCommand) -> Result<Vec<KnowledgeResponse>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
-        self.list_with_inheritance(&org_id, &project, &namespace, KnowledgeKind::Skill)
-            .await
+        let entries = self
+            .list_with_inheritance(&org_id, &project, &namespace, KnowledgeKind::Skill)
+            .await?;
+        Ok(entries.iter().map(KnowledgeResponse::from).collect())
     }
 
     pub(crate) async fn list_with_inheritance(

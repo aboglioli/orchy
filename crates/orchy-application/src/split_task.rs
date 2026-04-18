@@ -5,6 +5,8 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{Priority, SubtaskDef, Task, TaskId, TaskStatus, TaskStore};
 
+use crate::dto::TaskResponse;
+
 pub struct SubtaskInput {
     pub title: String,
     pub description: String,
@@ -28,7 +30,10 @@ impl SplitTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: SplitTaskCommand) -> Result<(Task, Vec<Task>)> {
+    pub async fn execute(
+        &self,
+        cmd: SplitTaskCommand,
+    ) -> Result<(TaskResponse, Vec<TaskResponse>)> {
         let parent_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -114,6 +119,9 @@ impl SplitTask {
         parent.block()?;
         self.tasks.save(&mut parent).await?;
 
-        Ok((parent, children))
+        Ok((
+            TaskResponse::from(&parent),
+            children.iter().map(TaskResponse::from).collect(),
+        ))
     }
 }

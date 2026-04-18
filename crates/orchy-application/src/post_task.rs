@@ -10,6 +10,8 @@ use orchy_core::task::{Priority, Task, TaskId, TaskStore};
 
 use crate::parse_namespace;
 
+use crate::dto::TaskResponse;
+
 pub struct PostTaskCommand {
     pub org_id: String,
     pub project: String,
@@ -39,7 +41,7 @@ impl PostTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: PostTaskCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: PostTaskCommand) -> Result<TaskResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -120,6 +122,6 @@ impl PostTask {
         }
 
         self.tasks.save(&mut task).await?;
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 }

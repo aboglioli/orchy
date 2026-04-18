@@ -9,6 +9,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
+use crate::dto::TaskResponse;
 use crate::parse_namespace;
 
 pub struct GetNextTaskCommand {
@@ -29,7 +30,7 @@ impl GetNextTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: GetNextTaskCommand) -> Result<Option<Task>> {
+    pub async fn execute(&self, cmd: GetNextTaskCommand) -> Result<Option<TaskResponse>> {
         let org_id = cmd
             .org_id
             .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
@@ -54,7 +55,7 @@ impl GetNextTask {
         if !should_claim {
             for task in candidates {
                 if self.all_deps_completed(task.depends_on()).await? {
-                    return Ok(Some(task));
+                    return Ok(Some(TaskResponse::from(&task)));
                 }
             }
             return Ok(None);
@@ -72,7 +73,7 @@ impl GetNextTask {
                 match task.claim(agent_id.clone()) {
                     Ok(()) => {
                         self.tasks.save(&mut task).await?;
-                        return Ok(Some(task));
+                        return Ok(Some(TaskResponse::from(&task)));
                     }
                     Err(Error::InvalidTransition { .. }) => continue,
                     Err(e) => return Err(e),

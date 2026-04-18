@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::task::{Task, TaskId, TaskStore};
+use orchy_core::task::{TaskId, TaskStore};
 
 use crate::parse_namespace;
+
+use crate::dto::TaskResponse;
 
 pub struct MoveTaskCommand {
     pub task_id: String,
@@ -19,7 +21,7 @@ impl MoveTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: MoveTaskCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: MoveTaskCommand) -> Result<TaskResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -35,6 +37,6 @@ impl MoveTask {
 
         task.move_to(namespace)?;
         self.tasks.save(&mut task).await?;
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 }

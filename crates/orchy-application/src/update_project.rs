@@ -5,6 +5,8 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore};
 
+use crate::dto::ProjectResponse;
+
 pub struct UpdateProjectCommand {
     pub org_id: String,
     pub project: String,
@@ -20,7 +22,7 @@ impl UpdateProject {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: UpdateProjectCommand) -> Result<Project> {
+    pub async fn execute(&self, cmd: UpdateProjectCommand) -> Result<ProjectResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -33,6 +35,6 @@ impl UpdateProject {
 
         p.update_description(cmd.description)?;
         self.store.save(&mut p).await?;
-        Ok(p)
+        Ok(ProjectResponse::from(&p))
     }
 }

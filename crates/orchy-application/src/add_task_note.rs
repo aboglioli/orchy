@@ -6,7 +6,9 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::resource_ref::ResourceRef;
-use orchy_core::task::{Task, TaskId, TaskStore};
+use orchy_core::task::{TaskId, TaskStore};
+
+use crate::dto::TaskResponse;
 
 pub struct AddTaskNoteCommand {
     pub task_id: String,
@@ -27,7 +29,7 @@ impl AddTaskNote {
         Self { tasks, knowledge }
     }
 
-    pub async fn execute(&self, cmd: AddTaskNoteCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: AddTaskNoteCommand) -> Result<TaskResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -71,6 +73,6 @@ impl AddTaskNote {
         );
         self.tasks.save(&mut task).await?;
 
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 }

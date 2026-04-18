@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeStore};
+use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::parse_namespace;
+
+use crate::dto::KnowledgeResponse;
 
 pub struct ReadKnowledgeCommand {
     pub org_id: String,
@@ -23,15 +25,17 @@ impl ReadKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: ReadKnowledgeCommand) -> Result<Option<Knowledge>> {
+    pub async fn execute(&self, cmd: ReadKnowledgeCommand) -> Result<Option<KnowledgeResponse>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
-        self.store
+        let entry = self
+            .store
             .find_by_path(&org_id, Some(&project), &namespace, &cmd.path)
-            .await
+            .await?;
+        Ok(entry.map(|e| KnowledgeResponse::from(&e)))
     }
 }

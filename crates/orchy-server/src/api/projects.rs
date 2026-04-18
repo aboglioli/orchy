@@ -43,13 +43,13 @@ pub struct ProjectDto {
     pub updated_at: String,
 }
 
-fn project_to_dto(p: orchy_core::project::Project) -> ProjectDto {
+fn project_to_dto(p: orchy_application::ProjectResponse) -> ProjectDto {
     ProjectDto {
-        id: p.id().to_string(),
-        description: p.description().to_string(),
-        metadata: p.metadata().clone(),
-        created_at: p.created_at().to_rfc3339(),
-        updated_at: p.updated_at().to_rfc3339(),
+        id: p.id,
+        description: p.description,
+        metadata: p.metadata,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
     }
 }
 
@@ -110,7 +110,7 @@ pub async fn get(
 
     let mut by_status = std::collections::HashMap::new();
     for task in &overview.tasks {
-        *by_status.entry(task.status().to_string()).or_insert(0u32) += 1;
+        *by_status.entry(task.status.clone()).or_insert(0u32) += 1;
     }
 
     let project_dto = overview.project.map(project_to_dto);

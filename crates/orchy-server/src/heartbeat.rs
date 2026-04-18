@@ -19,23 +19,23 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
         match container.app.check_timed_out_agents.execute(timeout).await {
             Ok(agents) => {
                 for agent in &agents {
-                    match agent.status() {
-                        AgentStatus::Online | AgentStatus::Busy => {
-                            info!(agent_id = %agent.id(), "agent idle, marking as idle");
+                    match agent.status.as_str() {
+                        "online" | "busy" => {
+                            info!(agent_id = %agent.id, "agent idle, marking as idle");
                             let cmd = UpdateAgentStatusCommand {
-                                agent_id: agent.id().to_string(),
+                                agent_id: agent.id.clone(),
                                 status: AgentStatus::Idle,
                             };
                             let _ = container.app.update_agent_status.execute(cmd).await;
                         }
-                        AgentStatus::Idle => {
-                            info!(agent_id = %agent.id(), "idle agent timed out, disconnecting");
+                        "idle" => {
+                            info!(agent_id = %agent.id, "idle agent timed out, disconnecting");
                             let cmd = DisconnectAgentCommand {
-                                agent_id: agent.id().to_string(),
+                                agent_id: agent.id.clone(),
                             };
                             let _ = container.app.disconnect_agent.execute(cmd).await;
                         }
-                        AgentStatus::Disconnected => {}
+                        _ => {}
                     }
                 }
             }

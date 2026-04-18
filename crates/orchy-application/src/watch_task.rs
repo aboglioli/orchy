@@ -7,6 +7,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::task::{TaskId, TaskStore, TaskWatcher, WatcherStore};
 
+use crate::dto::TaskWatcherResponse;
 use crate::parse_namespace;
 
 pub struct WatchTaskCommand {
@@ -27,7 +28,7 @@ impl WatchTask {
         Self { tasks, watchers }
     }
 
-    pub async fn execute(&self, cmd: WatchTaskCommand) -> Result<TaskWatcher> {
+    pub async fn execute(&self, cmd: WatchTaskCommand) -> Result<TaskWatcherResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -46,6 +47,6 @@ impl WatchTask {
 
         let mut watcher = TaskWatcher::new(task_id, agent_id, org_id, project, namespace)?;
         self.watchers.save(&mut watcher).await?;
-        Ok(watcher)
+        Ok(TaskWatcherResponse::from(&watcher))
     }
 }

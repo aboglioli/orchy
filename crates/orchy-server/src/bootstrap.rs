@@ -1,12 +1,8 @@
 use orchy_application::{
-    Application, GetProjectCommand, ListAgentsCommand, ListOverviewsCommand, ListSkillsCommand,
-    ListTasksCommand,
+    AgentResponse, Application, GetProjectCommand, KnowledgeResponse, ListAgentsCommand,
+    ListOverviewsCommand, ListSkillsCommand, ListTasksCommand, ProjectResponse, TaskResponse,
 };
-use orchy_core::agent::Agent;
-use orchy_core::knowledge::Knowledge;
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::project::Project;
-use orchy_core::task::Task;
 
 pub async fn generate_bootstrap_prompt(
     project_id: &ProjectId,
@@ -46,7 +42,7 @@ pub async fn generate_bootstrap_prompt(
         .await
         .map_err(|e| e.to_string())?;
 
-    let agents: Vec<Agent> = app
+    let agents: Vec<AgentResponse> = app
         .list_agents
         .execute(ListAgentsCommand {
             org_id: Some(default_org.clone()),
@@ -58,7 +54,7 @@ pub async fn generate_bootstrap_prompt(
         .map_err(|e| e.to_string())?
         .items;
 
-    let active_tasks: Vec<Task> = {
+    let active_tasks: Vec<TaskResponse> = {
         let mut all = Vec::new();
         for status in &["pending", "claimed", "in_progress", "blocked"] {
             let cmd = ListTasksCommand {
@@ -96,11 +92,11 @@ fn render(
     namespace: &Namespace,
     host: &str,
     port: u16,
-    project: &Project,
-    overviews: &[Knowledge],
-    skills: &[Knowledge],
-    agents: &[Agent],
-    tasks: &[Task],
+    project: &ProjectResponse,
+    overviews: &[KnowledgeResponse],
+    skills: &[KnowledgeResponse],
+    agents: &[AgentResponse],
+    tasks: &[TaskResponse],
 ) -> String {
     let mut out = format!(
         r#"# Multi-Agent Coordination — Project `{namespace}`
@@ -191,10 +187,9 @@ You must externalize knowledge so future agents can benefit:
 "#
     );
 
-    let description = project.description();
-    if !description.is_empty() {
+    if !project.description.is_empty() {
         out.push_str("\n## Project Description\n\n");
-        out.push_str(description);
+        out.push_str(&project.description);
         out.push_str("\n\n");
     }
 
@@ -207,9 +202,7 @@ You must externalize knowledge so future agents can benefit:
         for entry in overviews {
             out.push_str(&format!(
                 "### {} (`{}`)\n\n{}\n\n",
-                entry.title(),
-                entry.namespace(),
-                entry.content()
+                entry.title, entry.namespace, entry.content
             ));
         }
     }
@@ -220,10 +213,10 @@ You must externalize knowledge so future agents can benefit:
         for agent in agents {
             out.push_str(&format!(
                 "| `{}` | {} | `{}` | {} |\n",
-                agent.id(),
-                agent.roles().join(", "),
-                agent.namespace(),
-                agent.status(),
+                agent.id,
+                agent.roles.join(", "),
+                agent.namespace,
+                agent.status,
             ));
         }
         out.push('\n');
@@ -235,11 +228,12 @@ You must externalize knowledge so future agents can benefit:
         for task in tasks {
             out.push_str(&format!(
                 "| `{}` | {} | {} | {} | {} |\n",
-                task.id(),
-                task.title(),
-                task.status(),
-                task.assigned_roles().join(", "),
-                task.assigned_to()
+                task.id,
+                task.title,
+                task.status,
+                task.assigned_roles.join(", "),
+                task.assigned_to
+                    .as_deref()
                     .map(|a| format!("`{a}`"))
                     .unwrap_or_else(|| "-".to_string()),
             ));
@@ -257,9 +251,7 @@ You must externalize knowledge so future agents can benefit:
         for entry in skills {
             out.push_str(&format!(
                 "### {} ({})\n\n{}\n\n",
-                entry.title(),
-                entry.namespace(),
-                entry.content()
+                entry.title, entry.namespace, entry.content
             ));
         }
     }

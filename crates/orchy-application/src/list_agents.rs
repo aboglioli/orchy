@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
-use orchy_core::agent::{Agent, AgentStore};
+use orchy_core::agent::AgentStore;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::{Page, PageParams};
+use orchy_core::pagination::PageParams;
+
+use crate::dto::{AgentResponse, PageResponse};
 
 pub struct ListAgentsCommand {
     pub org_id: Option<String>,
@@ -22,7 +24,7 @@ impl ListAgents {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: ListAgentsCommand) -> Result<Page<Agent>> {
+    pub async fn execute(&self, cmd: ListAgentsCommand) -> Result<PageResponse<AgentResponse>> {
         let org = cmd
             .org_id
             .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
@@ -37,15 +39,20 @@ impl ListAgents {
         let page = PageParams::new(cmd.after, cmd.limit);
         let result = self.agents.list(&org, page).await?;
 
-        if let Some(project) = project {
-            let filtered: Vec<Agent> = result
+        let items: Vec<_> = if let Some(project) = project {
+            result
                 .items
-                .into_iter()
+                .iter()
                 .filter(|a| *a.project() == project)
-                .collect();
-            Ok(Page::new(filtered, result.next_cursor))
+                .map(AgentResponse::from)
+                .collect()
         } else {
-            Ok(result)
-        }
+            result.items.iter().map(AgentResponse::from).collect()
+        };
+
+        Ok(PageResponse {
+            items,
+            next_cursor: result.next_cursor,
+        })
     }
 }

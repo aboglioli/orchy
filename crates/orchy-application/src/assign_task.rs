@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::task::{Task, TaskId, TaskStore};
+use orchy_core::task::{TaskId, TaskStore};
+
+use crate::dto::TaskResponse;
 
 pub struct AssignTaskCommand {
     pub task_id: String,
@@ -19,7 +21,7 @@ impl AssignTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: AssignTaskCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: AssignTaskCommand) -> Result<TaskResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -34,6 +36,6 @@ impl AssignTask {
 
         task.assign(agent_id)?;
         self.tasks.save(&mut task).await?;
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 }

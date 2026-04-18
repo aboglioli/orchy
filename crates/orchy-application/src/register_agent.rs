@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::{Agent, AgentId, AgentStore, RegisterAgent as DomainRegisterAgent};
+use orchy_core::agent::{AgentId, AgentStore, RegisterAgent as DomainRegisterAgent};
 use orchy_core::error::{Error, Result};
+
+use crate::dto::AgentResponse;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -29,7 +31,7 @@ impl RegisterAgent {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: RegisterAgentCommand) -> Result<Agent> {
+    pub async fn execute(&self, cmd: RegisterAgentCommand) -> Result<AgentResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -64,7 +66,7 @@ impl RegisterAgent {
                 .find_by_id(&parent_id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("agent {parent_id}")))?;
-            let mut agent = Agent::from_parent(
+            let mut agent = orchy_core::agent::Agent::from_parent(
                 &parent,
                 domain_cmd.namespace,
                 domain_cmd.roles,
@@ -72,7 +74,7 @@ impl RegisterAgent {
                 domain_cmd.id,
             )?;
             self.agents.save(&mut agent).await?;
-            return Ok(agent);
+            return Ok(AgentResponse::from(&agent));
         }
 
         if let Some(ref id) = domain_cmd.id
@@ -86,10 +88,10 @@ impl RegisterAgent {
                 domain_cmd.description,
             )?;
             self.agents.save(&mut existing).await?;
-            return Ok(existing);
+            return Ok(AgentResponse::from(&existing));
         }
 
-        let mut agent = Agent::register(
+        let mut agent = orchy_core::agent::Agent::register(
             domain_cmd.org_id,
             domain_cmd.project,
             domain_cmd.namespace,
@@ -99,6 +101,6 @@ impl RegisterAgent {
             domain_cmd.metadata,
         )?;
         self.agents.save(&mut agent).await?;
-        Ok(agent)
+        Ok(AgentResponse::from(&agent))
     }
 }

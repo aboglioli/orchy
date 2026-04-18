@@ -7,6 +7,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 
+use crate::dto::ResourceLockResponse;
 use crate::parse_namespace;
 
 pub struct LockResourceCommand {
@@ -27,7 +28,7 @@ impl LockResource {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: LockResourceCommand) -> Result<ResourceLock> {
+    pub async fn execute(&self, cmd: LockResourceCommand) -> Result<ResourceLockResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -56,6 +57,6 @@ impl LockResource {
         let mut lock =
             ResourceLock::acquire(org_id, project, namespace, cmd.name, holder, ttl_secs)?;
         self.store.save(&mut lock).await?;
-        Ok(lock)
+        Ok(ResourceLockResponse::from(&lock))
     }
 }

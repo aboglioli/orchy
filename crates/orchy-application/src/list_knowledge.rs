@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgeStore};
+use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::{Page, PageParams};
+use orchy_core::pagination::PageParams;
 
+use crate::dto::{KnowledgeResponse, PageResponse};
 use crate::parse_namespace;
 
 pub struct ListKnowledgeCommand {
@@ -32,7 +33,10 @@ impl ListKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: ListKnowledgeCommand) -> Result<Page<Knowledge>> {
+    pub async fn execute(
+        &self,
+        cmd: ListKnowledgeCommand,
+    ) -> Result<PageResponse<KnowledgeResponse>> {
         let org_id = cmd
             .org_id
             .map(|s| OrganizationId::new(&s))
@@ -75,6 +79,7 @@ impl ListKnowledge {
         };
 
         let page = PageParams::new(cmd.after, cmd.limit);
-        self.store.list(filter, page).await
+        let result = self.store.list(filter, page).await?;
+        Ok(PageResponse::from(result))
     }
 }

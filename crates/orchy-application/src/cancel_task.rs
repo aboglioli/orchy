@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::task::{Task, TaskId, TaskStore};
+use orchy_core::task::{TaskId, TaskStore};
+
+use crate::dto::TaskResponse;
 
 pub struct CancelTaskCommand {
     pub task_id: String,
@@ -17,7 +19,7 @@ impl CancelTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: CancelTaskCommand) -> Result<Task> {
+    pub async fn execute(&self, cmd: CancelTaskCommand) -> Result<TaskResponse> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -31,6 +33,6 @@ impl CancelTask {
 
         task.cancel(cmd.reason)?;
         self.tasks.save(&mut task).await?;
-        Ok(task)
+        Ok(TaskResponse::from(&task))
     }
 }

@@ -1,8 +1,14 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
+
+use crate::dto::AgentResponse;
+
+pub struct GetAgentCommand {
+    pub agent_id: String,
+}
 
 pub struct GetAgent {
     agents: Arc<dyn AgentStore>,
@@ -13,11 +19,13 @@ impl GetAgent {
         Self { agents }
     }
 
-    pub async fn execute(&self, agent_id: &str) -> Result<Agent> {
-        let id = AgentId::from_str(agent_id).map_err(Error::InvalidInput)?;
-        self.agents
+    pub async fn execute(&self, cmd: GetAgentCommand) -> Result<AgentResponse> {
+        let id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let agent = self
+            .agents
             .find_by_id(&id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))
+            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
+        Ok(AgentResponse::from(agent))
     }
 }

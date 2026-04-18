@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::agent::{Agent, AgentStore};
+use orchy_core::agent::AgentStore;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
@@ -9,7 +9,9 @@ use orchy_core::pagination::PageParams;
 use orchy_core::project::ProjectStore;
 use orchy_core::task::{TaskFilter, TaskStore};
 
-use crate::dto::ProjectOverview;
+use crate::dto::{
+    AgentResponse, KnowledgeResponse, ProjectOverview, ProjectResponse, TaskResponse,
+};
 
 pub struct GetProjectOverviewCommand {
     pub org_id: String,
@@ -44,19 +46,24 @@ impl GetProjectOverview {
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project_id =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project = self.projects.find_by_id(&org_id, &project_id).await?;
+        let project = self
+            .projects
+            .find_by_id(&org_id, &project_id)
+            .await?
+            .map(|p| ProjectResponse::from(&p));
 
         let all_agents = self
             .agents
             .list(&org_id, PageParams::unbounded())
             .await?
             .items;
-        let agents: Vec<Agent> = all_agents
-            .into_iter()
+        let agents: Vec<AgentResponse> = all_agents
+            .iter()
             .filter(|a| a.project() == &project_id)
+            .map(AgentResponse::from)
             .collect();
 
-        let tasks = self
+        let tasks: Vec<TaskResponse> = self
             .tasks
             .list(
                 TaskFilter {
@@ -67,9 +74,12 @@ impl GetProjectOverview {
                 PageParams::unbounded(),
             )
             .await?
-            .items;
+            .items
+            .iter()
+            .map(TaskResponse::from)
+            .collect();
 
-        let overviews = self
+        let overviews: Vec<KnowledgeResponse> = self
             .knowledge
             .list(
                 KnowledgeFilter {
@@ -82,7 +92,10 @@ impl GetProjectOverview {
                 PageParams::unbounded(),
             )
             .await?
-            .items;
+            .items
+            .iter()
+            .map(KnowledgeResponse::from)
+            .collect();
 
         Ok(ProjectOverview {
             project,

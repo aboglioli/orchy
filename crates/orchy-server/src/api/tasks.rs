@@ -15,9 +15,8 @@ use orchy_application::{
     TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UnwatchTaskCommand, UpdateTaskCommand,
     WatchTaskCommand,
 };
-use orchy_core::namespace::ProjectId;
+use orchy_application::{GetTaskCommand, TaskResponse};
 use orchy_core::organization::OrganizationId;
-use orchy_core::task::Task;
 
 use crate::container::Container;
 
@@ -25,11 +24,6 @@ use super::auth::OrgAuth;
 
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn parse_project(s: &str) -> Result<ProjectId, ApiError> {
-    ProjectId::try_from(s.to_string())
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
@@ -45,12 +39,12 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
     }
 }
 
-fn check_task_project(task: &Task, project_id: &ProjectId) -> Result<(), ApiError> {
-    if task.project() != project_id {
+fn check_task_project(task: &TaskResponse, project: &str) -> Result<(), ApiError> {
+    if task.project != project {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
-            format!("task {} not found in project {project_id}", task.id()),
+            format!("task {} not found in project {project}", task.id),
         ));
     }
     Ok(())
@@ -262,15 +256,16 @@ pub async fn get_task(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let task = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&task, &project_id)?;
+    check_task_project(&task, &project)?;
 
     Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
 }
@@ -283,15 +278,16 @@ pub async fn update_task(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = UpdateTaskCommand {
         task_id: id,
@@ -318,15 +314,16 @@ pub async fn claim(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = ClaimTaskCommand {
         task_id: id,
@@ -352,15 +349,16 @@ pub async fn start(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = StartTaskCommand {
         task_id: id,
@@ -385,15 +383,16 @@ pub async fn complete(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = CompleteTaskCommand {
         task_id: id,
@@ -418,15 +417,16 @@ pub async fn fail(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = FailTaskCommand {
         task_id: id,
@@ -451,15 +451,16 @@ pub async fn cancel(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = CancelTaskCommand {
         task_id: id,
@@ -484,15 +485,16 @@ pub async fn release(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = ReleaseTaskCommand { task_id: id };
 
@@ -513,15 +515,16 @@ pub async fn unblock(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = UnblockTaskCommand { task_id: id };
 
@@ -543,15 +546,16 @@ pub async fn assign(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = AssignTaskCommand {
         task_id: id,
@@ -576,22 +580,23 @@ pub async fn watch(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = WatchTaskCommand {
         task_id: id,
         agent_id: body.agent,
         org_id: org,
         project,
-        namespace: Some(existing.namespace().to_string()),
+        namespace: Some(existing.namespace.clone()),
     };
 
     let watcher = container
@@ -612,15 +617,16 @@ pub async fn unwatch(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = UnwatchTaskCommand {
         task_id: id,
@@ -645,15 +651,16 @@ pub async fn add_note(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = orchy_application::AddTaskNoteCommand {
         task_id: id,
@@ -661,7 +668,7 @@ pub async fn add_note(
         author: body.agent,
         org_id: org,
         project,
-        namespace: Some(existing.namespace().to_string()),
+        namespace: Some(existing.namespace.clone()),
     };
 
     let task = container
@@ -682,15 +689,16 @@ pub async fn add_dep(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = AddDependencyCommand {
         task_id: id,
@@ -714,15 +722,16 @@ pub async fn remove_dep(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = RemoveDependencyCommand {
         task_id: id,
@@ -746,15 +755,16 @@ pub async fn tag_task(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = TagTaskCommand { task_id: id, tag };
 
@@ -775,15 +785,16 @@ pub async fn untag_task(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = UntagTaskCommand { task_id: id, tag };
 
@@ -880,15 +891,16 @@ pub async fn split(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = SplitTaskCommand {
         task_id: id,
@@ -916,15 +928,16 @@ pub async fn replace(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = ReplaceTaskCommand {
         task_id: id,
@@ -953,16 +966,17 @@ pub async fn merge(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     for tid in &body.task_ids {
         let existing = container
             .app
             .get_task
-            .execute(tid)
+            .execute(GetTaskCommand {
+                task_id: tid.clone(),
+            })
             .await
             .map_err(ApiError::from)?;
-        check_task_project(&existing, &project_id)?;
+        check_task_project(&existing, &project)?;
     }
 
     let cmd = MergeTasksCommand {
@@ -995,15 +1009,16 @@ pub async fn delegate(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
-    let project_id = parse_project(&project)?;
 
     let existing = container
         .app
         .get_task
-        .execute(&id)
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
-    check_task_project(&existing, &project_id)?;
+    check_task_project(&existing, &project)?;
 
     let cmd = DelegateTaskCommand {
         task_id: id,
