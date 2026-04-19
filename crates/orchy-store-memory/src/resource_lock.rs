@@ -8,7 +8,12 @@ use orchy_core::resource_lock::{LockStore, ResourceLock};
 
 use crate::MemoryBackend;
 
-fn lock_key(org: &OrganizationId, project: &ProjectId, namespace: &Namespace, name: &str) -> String {
+fn lock_key(
+    org: &OrganizationId,
+    project: &ProjectId,
+    namespace: &Namespace,
+    name: &str,
+) -> String {
     format!("{org}\0{project}\0{namespace}\0{name}")
 }
 

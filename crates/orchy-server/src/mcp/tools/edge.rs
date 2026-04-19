@@ -9,10 +9,7 @@ use crate::mcp::params::{
 
 use super::parse_as_of;
 
-pub(super) async fn add_edge(
-    h: &OrchyHandler,
-    params: AddEdgeParams,
-) -> Result<String, String> {
+pub(super) async fn add_edge(h: &OrchyHandler, params: AddEdgeParams) -> Result<String, String> {
     let (_, org, _, _) = h.require_session().await?;
 
     let cmd = AddEdgeCommand {
@@ -81,10 +78,7 @@ pub(super) async fn get_neighbors(
     }
 }
 
-pub(super) async fn get_graph(
-    h: &OrchyHandler,
-    params: GetGraphParams,
-) -> Result<String, String> {
+pub(super) async fn get_graph(h: &OrchyHandler, params: GetGraphParams) -> Result<String, String> {
     let (_, org, _, _) = h.require_session().await?;
 
     let as_of = parse_as_of(params.as_of)

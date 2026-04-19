@@ -93,13 +93,7 @@ pub(super) async fn patch_knowledge_metadata(
         version: params.version,
     };
 
-    match h
-        .container
-        .app
-        .patch_knowledge_metadata
-        .execute(cmd)
-        .await
-    {
+    match h.container.app.patch_knowledge_metadata.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
         Err(e) => Err(mcp_error(e)),
     }

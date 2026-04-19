@@ -76,8 +76,8 @@ pub(super) async fn register_agent(
         Ok(response) => {
             let org = orchy_core::organization::OrganizationId::new(&org_id)
                 .map_err(|e| e.to_string())?;
-            let agent_id = orchy_core::agent::AgentId::from_str(&response.id)
-                .map_err(|e| e.to_string())?;
+            let agent_id =
+                orchy_core::agent::AgentId::from_str(&response.id).map_err(|e| e.to_string())?;
             let ns = orchy_core::namespace::Namespace::try_from(response.namespace.clone())
                 .map_err(|e| e.to_string())?;
             h.set_session(agent_id, org, project, ns).await;
@@ -357,10 +357,7 @@ pub(super) async fn check_sent_messages(
     }
 }
 
-pub(super) async fn mark_read(
-    h: &OrchyHandler,
-    params: MarkReadParams,
-) -> Result<String, String> {
+pub(super) async fn mark_read(h: &OrchyHandler, params: MarkReadParams) -> Result<String, String> {
     let (agent_id, _, _, _) = h.require_session().await?;
 
     let cmd = MarkReadCommand {

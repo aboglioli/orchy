@@ -36,9 +36,7 @@ pub(super) fn optional_knowledge_metadata(
     }
 }
 
-pub(super) fn parse_as_of(
-    s: Option<String>,
-) -> std::result::Result<Option<DateTime<Utc>>, String> {
+pub(super) fn parse_as_of(s: Option<String>) -> std::result::Result<Option<DateTime<Utc>>, String> {
     s.map(|raw| {
         DateTime::parse_from_rfc3339(&raw)
             .map(|dt| dt.with_timezone(&Utc))

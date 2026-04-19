@@ -18,10 +18,7 @@ use crate::mcp::params::{
 
 use orchy_application::ListTagsCommand;
 
-pub(super) async fn post_task(
-    h: &OrchyHandler,
-    params: PostTaskParams,
-) -> Result<String, String> {
+pub(super) async fn post_task(h: &OrchyHandler, params: PostTaskParams) -> Result<String, String> {
     let (_, org, project, _) = h.require_session().await?;
 
     let namespace = h
@@ -243,10 +240,7 @@ pub(super) async fn complete_task(
     }
 }
 
-pub(super) async fn fail_task(
-    h: &OrchyHandler,
-    params: FailTaskParams,
-) -> Result<String, String> {
+pub(super) async fn fail_task(h: &OrchyHandler, params: FailTaskParams) -> Result<String, String> {
     let _ = h.require_session().await?;
 
     let cmd = FailTaskCommand {
@@ -492,10 +486,7 @@ pub(super) async fn remove_dependency(
     }
 }
 
-pub(super) async fn move_task(
-    h: &OrchyHandler,
-    params: MoveTaskParams,
-) -> Result<String, String> {
+pub(super) async fn move_task(h: &OrchyHandler, params: MoveTaskParams) -> Result<String, String> {
     let _ = h.require_session().await?;
 
     let namespace = h
@@ -513,10 +504,7 @@ pub(super) async fn move_task(
     }
 }
 
-pub(super) async fn tag_task(
-    h: &OrchyHandler,
-    params: TagTaskParams,
-) -> Result<String, String> {
+pub(super) async fn tag_task(h: &OrchyHandler, params: TagTaskParams) -> Result<String, String> {
     let _ = h.require_session().await?;
 
     let cmd = TagTaskCommand {
@@ -563,10 +551,7 @@ pub(super) async fn release_task(
     }
 }
 
-pub(super) async fn get_task(
-    h: &OrchyHandler,
-    params: GetTaskParams,
-) -> Result<String, String> {
+pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<String, String> {
     let _ = h.require_session().await?;
 
     match h
@@ -589,10 +574,7 @@ pub(super) async fn get_task(
     }
 }
 
-pub(super) async fn list_tags(
-    h: &OrchyHandler,
-    params: ListTagsParams,
-) -> Result<String, String> {
+pub(super) async fn list_tags(h: &OrchyHandler, params: ListTagsParams) -> Result<String, String> {
     let (_, org, project, _) = h.require_session().await?;
 
     let namespace = h
