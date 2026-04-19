@@ -265,7 +265,7 @@ impl KnowledgeStore for PgBackend {
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Knowledge>> {
+    ) -> Result<Vec<(Knowledge, Option<f32>)>> {
         if let Some(emb) = embedding {
             return search_by_embedding(&self.pool, org, emb, namespace, limit).await;
         }
@@ -308,7 +308,9 @@ impl KnowledgeStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        rows.iter().map(row_to_entry).collect()
+        rows.iter()
+            .map(|r| row_to_entry(r).map(|k| (k, None)))
+            .collect()
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
@@ -328,11 +330,11 @@ async fn search_by_embedding(
     embedding: &[f32],
     namespace: Option<&Namespace>,
     limit: usize,
-) -> Result<Vec<Knowledge>> {
+) -> Result<Vec<(Knowledge, Option<f32>)>> {
     let vec = Vector::from(embedding.to_vec());
 
     let mut sql = format!(
-        "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE embedding IS NOT NULL AND organization_id = $2"
+        "SELECT {SELECT_COLUMNS}, (1.0 - (embedding <=> $1)) AS score FROM knowledge_entries WHERE embedding IS NOT NULL AND organization_id = $2"
     );
     let mut param_idx = 3u32;
 
@@ -353,7 +355,14 @@ async fn search_by_embedding(
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        return rows.iter().map(row_to_entry).collect();
+        return rows
+            .iter()
+            .map(|r| {
+                let knowledge = row_to_entry(r)?;
+                let score: Option<f64> = r.try_get("score").ok();
+                Ok((knowledge, score.map(|s| s as f32)))
+            })
+            .collect();
     }
 
     sql.push_str(&format!(" ORDER BY embedding <=> $1 LIMIT ${param_idx}"));
@@ -366,7 +375,13 @@ async fn search_by_embedding(
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-    rows.iter().map(row_to_entry).collect()
+    rows.iter()
+        .map(|r| {
+            let knowledge = row_to_entry(r)?;
+            let score: Option<f64> = r.try_get("score").ok();
+            Ok((knowledge, score.map(|s| s as f32)))
+        })
+        .collect()
 }
 
 fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {

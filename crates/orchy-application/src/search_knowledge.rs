@@ -17,6 +17,7 @@ pub struct SearchKnowledgeCommand {
     pub kind: Option<String>,
     pub limit: Option<u32>,
     pub project: Option<String>,
+    pub min_score: Option<f32>,
 }
 
 pub struct SearchKnowledge {
@@ -55,7 +56,7 @@ impl SearchKnowledge {
             .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
             .transpose()?;
 
-        let entries = self
+        let scored = self
             .store
             .search(
                 &org_id,
@@ -66,15 +67,23 @@ impl SearchKnowledge {
             )
             .await?;
 
-        let filtered: Vec<_> = if let Some(ref pid) = project {
-            entries
-                .iter()
-                .filter(|e| e.project().map(|p| p == pid).unwrap_or(false))
-                .map(KnowledgeResponse::from)
-                .collect()
-        } else {
-            entries.iter().map(KnowledgeResponse::from).collect()
-        };
+        let min_score = cmd.min_score;
+        let filtered: Vec<_> = scored
+            .iter()
+            .filter(|(_, score)| {
+                min_score
+                    .and_then(|m| score.map(|s| s >= m))
+                    .unwrap_or(true)
+            })
+            .filter(|(e, _)| {
+                if let Some(ref pid) = project {
+                    e.project().map(|p| p == pid).unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .map(|(k, score)| KnowledgeResponse::with_score(k, *score))
+            .collect();
 
         Ok(filtered)
     }

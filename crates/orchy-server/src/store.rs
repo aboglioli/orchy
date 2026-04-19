@@ -183,7 +183,7 @@ impl KnowledgeStore for StoreBackend {
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Knowledge>> {
+    ) -> Result<Vec<(Knowledge, Option<f32>)>> {
         delegate_trait!(
             self,
             KnowledgeStore::search(org, query, embedding, namespace, limit)

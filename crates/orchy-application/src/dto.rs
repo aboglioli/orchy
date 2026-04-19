@@ -140,6 +140,17 @@ pub struct KnowledgeResponse {
     pub metadata: HashMap<String, String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f32>,
+}
+
+impl KnowledgeResponse {
+    pub fn with_score(k: &Knowledge, score: Option<f32>) -> Self {
+        Self {
+            score,
+            ..Self::from(k)
+        }
+    }
 }
 
 impl From<Knowledge> for KnowledgeResponse {
@@ -165,6 +176,7 @@ impl From<&Knowledge> for KnowledgeResponse {
             metadata: k.metadata().clone(),
             created_at: k.created_at().to_rfc3339(),
             updated_at: k.updated_at().to_rfc3339(),
+            score: None,
         }
     }
 }

@@ -1037,3 +1037,31 @@ async fn delete_by_pair_ignores_different_rel_type() {
             .is_some()
     );
 }
+
+#[tokio::test]
+async fn knowledge_search_returns_score() {
+    let store = backend();
+    let mut entry = Knowledge::new(
+        org(),
+        Some(proj("test")),
+        Namespace::root(),
+        "search-target".into(),
+        KnowledgeKind::Note,
+        "PostgreSQL indexing".into(),
+        "We use GIN indexes for full text search".into(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    let results =
+        KnowledgeStore::search(&store, &org(), "GIN indexes for full text", None, None, 20)
+            .await
+            .unwrap();
+
+    assert!(!results.is_empty());
+    let (_, score) = &results[0];
+    assert!(score.is_some());
+}

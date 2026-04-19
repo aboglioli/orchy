@@ -1676,6 +1676,7 @@ impl OrchyHandler {
             kind: params.kind,
             limit: params.limit,
             project: params.project,
+            min_score: params.min_score,
         };
 
         match self.container.app.search_knowledge.execute(cmd).await {

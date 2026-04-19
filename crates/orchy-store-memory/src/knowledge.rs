@@ -132,7 +132,7 @@ impl KnowledgeStore for MemoryBackend {
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Knowledge>> {
+    ) -> Result<Vec<(Knowledge, Option<f32>)>> {
         let entries = self
             .knowledge_entries
             .read()
@@ -169,7 +169,10 @@ impl KnowledgeStore for MemoryBackend {
 
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(limit);
-        Ok(scored.into_iter().map(|(_, e)| e.clone()).collect())
+        Ok(scored
+            .into_iter()
+            .map(|(score, e)| (e.clone(), Some(score)))
+            .collect())
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {

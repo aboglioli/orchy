@@ -36,7 +36,7 @@ pub trait KnowledgeStore: Send + Sync {
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Knowledge>>;
+    ) -> Result<Vec<(Knowledge, Option<f32>)>>;
     async fn delete(&self, id: &KnowledgeId) -> Result<()>;
 }
 

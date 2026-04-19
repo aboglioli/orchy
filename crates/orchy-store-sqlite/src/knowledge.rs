@@ -275,7 +275,7 @@ impl KnowledgeStore for SqliteBackend {
         embedding: Option<&[f32]>,
         namespace: Option<&Namespace>,
         limit: usize,
-    ) -> Result<Vec<Knowledge>> {
+    ) -> Result<Vec<(Knowledge, Option<f32>)>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         if let Some(emb) = embedding {
@@ -290,7 +290,8 @@ impl KnowledgeStore for SqliteBackend {
                 .is_some();
 
             if vec_ready {
-                return search_knowledge_vec(&conn, org, emb, namespace, limit);
+                return search_knowledge_vec(&conn, org, emb, namespace, limit)
+                    .map(|v| v.into_iter().map(|k| (k, None)).collect());
             }
         }
 
@@ -310,8 +311,10 @@ impl KnowledgeStore for SqliteBackend {
 
         if fts_ready {
             search_knowledge_fts(&conn, org, query, namespace, limit)
+                .map(|v| v.into_iter().map(|k| (k, None)).collect())
         } else {
             search_knowledge_like(&conn, org, query, namespace, limit)
+                .map(|v| v.into_iter().map(|k| (k, None)).collect())
         }
     }
 

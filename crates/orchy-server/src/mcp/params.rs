@@ -370,6 +370,9 @@ pub struct SearchKnowledgeParams {
     pub kind: Option<String>,
     pub limit: Option<u32>,
     pub project: Option<String>,
+    /// Minimum similarity score (0.0–1.0). Only applies when embeddings are configured.
+    /// Results without a score are always included.
+    pub min_score: Option<f32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

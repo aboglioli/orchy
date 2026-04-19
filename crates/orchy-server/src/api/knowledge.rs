@@ -208,6 +208,7 @@ pub async fn search(
         kind: body.kind,
         limit: body.limit,
         project: Some(project),
+        min_score: None,
     };
 
     let entries = container
