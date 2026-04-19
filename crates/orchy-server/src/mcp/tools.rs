@@ -1986,6 +1986,7 @@ impl OrchyHandler {
             rel_type: params.rel_type,
             include_nodes,
             node_content_limit: params.node_content_limit.map(|n| n as usize),
+            only_active: params.only_active.unwrap_or(true),
         };
 
         match self.container.app.get_neighbors.execute(cmd).await {
@@ -2023,6 +2024,7 @@ impl OrchyHandler {
             direction: params.direction,
             include_nodes: params.include_nodes.unwrap_or(false),
             node_content_limit: params.node_content_limit.map(|n| n as usize),
+            only_active: params.only_active.unwrap_or(true),
         };
 
         match self.container.app.get_graph.execute(cmd).await {
@@ -2046,6 +2048,7 @@ impl OrchyHandler {
             rel_type: params.rel_type,
             after: params.after,
             limit: params.limit,
+            only_active: params.only_active.unwrap_or(false),
         };
 
         match self.container.app.list_edges.execute(cmd).await {

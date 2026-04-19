@@ -12,6 +12,7 @@ pub struct ListEdgesCommand {
     pub rel_type: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
+    pub only_active: bool,
 }
 
 pub struct ListEdges {
@@ -35,7 +36,7 @@ impl ListEdges {
         let page = PageParams::new(cmd.after, cmd.limit);
         let result = self
             .store
-            .list_by_org(&org, rel_type.as_ref(), page, false)
+            .list_by_org(&org, rel_type.as_ref(), page, cmd.only_active)
             .await?;
         Ok(PageResponse::from(result))
     }

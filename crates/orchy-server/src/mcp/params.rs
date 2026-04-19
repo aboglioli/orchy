@@ -478,6 +478,8 @@ pub struct GetNeighborsParams {
     pub include_nodes: Option<bool>,
     /// Max characters of content to include per node (default 500). Set to 0 to omit content.
     pub node_content_limit: Option<u32>,
+    /// When true (default), only return currently active edges. Set false to include deleted/expired edges.
+    pub only_active: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -495,6 +497,8 @@ pub struct GetGraphParams {
     pub include_nodes: Option<bool>,
     /// Max characters of content to include per node (default 500). Set to 0 to omit content.
     pub node_content_limit: Option<u32>,
+    /// When true (default), only return currently active edges. Set false to include deleted/expired edges.
+    pub only_active: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -504,4 +508,6 @@ pub struct ListEdgesParams {
     /// Cursor from previous page's next_cursor field.
     pub after: Option<String>,
     pub limit: Option<u32>,
+    /// When true, only return currently active edges. Defaults to false (return all edges).
+    pub only_active: Option<bool>,
 }

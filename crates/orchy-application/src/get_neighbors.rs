@@ -15,11 +15,11 @@ pub struct GetNeighborsCommand {
     pub org_id: String,
     pub kind: String,
     pub id: String,
-    /// None = both directions; "outgoing" | "incoming"
     pub direction: Option<String>,
     pub rel_type: Option<String>,
     pub include_nodes: bool,
     pub node_content_limit: Option<usize>,
+    pub only_active: bool,
 }
 
 pub struct GetNeighbors {
@@ -59,22 +59,22 @@ impl GetNeighbors {
         let edges = match cmd.direction.as_deref() {
             Some("incoming") => {
                 self.store
-                    .find_to(&org, &kind, &cmd.id, rel_type.as_ref(), true)
+                    .find_to(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
                     .await?
             }
             Some("outgoing") => {
                 self.store
-                    .find_from(&org, &kind, &cmd.id, rel_type.as_ref(), true)
+                    .find_from(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
                     .await?
             }
             _ => {
                 let mut out = self
                     .store
-                    .find_from(&org, &kind, &cmd.id, rel_type.as_ref(), true)
+                    .find_from(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
                     .await?;
                 let inc = self
                     .store
-                    .find_to(&org, &kind, &cmd.id, rel_type.as_ref(), true)
+                    .find_to(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
                     .await?;
                 out.extend(inc);
                 out

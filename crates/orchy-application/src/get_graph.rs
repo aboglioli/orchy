@@ -20,6 +20,7 @@ pub struct GetGraphCommand {
     pub direction: Option<String>,
     pub include_nodes: bool,
     pub node_content_limit: Option<usize>,
+    pub only_active: bool,
 }
 
 pub struct GetGraph {
@@ -77,7 +78,7 @@ impl GetGraph {
                 max_depth,
                 rel_types.as_deref(),
                 direction,
-                true,
+                cmd.only_active,
             )
             .await?;
 
