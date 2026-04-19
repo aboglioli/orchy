@@ -12,6 +12,7 @@ use crate::dto::TaskResponse;
 pub struct SubtaskInput {
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
     pub depends_on: Option<Vec<String>>,
@@ -91,6 +92,7 @@ impl SplitTask {
             subtask_defs.push(SubtaskDef {
                 title: input.title,
                 description: input.description,
+                acceptance_criteria: input.acceptance_criteria,
                 priority,
                 assigned_roles: input.assigned_roles.unwrap_or_default(),
                 depends_on,
@@ -108,6 +110,7 @@ impl SplitTask {
                 Some(parent_id),
                 def.title,
                 def.description,
+                def.acceptance_criteria,
                 def.priority,
                 def.assigned_roles,
                 def.depends_on,

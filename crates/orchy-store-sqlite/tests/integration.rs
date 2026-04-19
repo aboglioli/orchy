@@ -141,6 +141,7 @@ async fn task_save_and_get() {
         None,
         "Do thing".into(),
         "Details".into(),
+        None,
         Priority::High,
         vec!["dev".into()],
         vec![],
@@ -172,6 +173,7 @@ async fn task_save_overwrites_existing() {
         None,
         "original".into(),
         "desc".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -190,6 +192,7 @@ async fn task_save_overwrites_existing() {
         parent_id: None,
         title: "updated".into(),
         description: "new desc".into(),
+        acceptance_criteria: None,
         status: TaskStatus::Completed,
         priority: Priority::High,
         assigned_roles: vec![],
@@ -224,6 +227,7 @@ async fn task_dependency_stored() {
         None,
         "dep".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -240,6 +244,7 @@ async fn task_dependency_stored() {
         None,
         "main".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![dep.id()],
@@ -268,6 +273,7 @@ async fn task_list_sorted_by_priority() {
         None,
         "low".into(),
         "".into(),
+        None,
         Priority::Low,
         vec![],
         vec![],
@@ -284,6 +290,7 @@ async fn task_list_sorted_by_priority() {
         None,
         "critical".into(),
         "".into(),
+        None,
         Priority::Critical,
         vec![],
         vec![],
@@ -557,6 +564,7 @@ async fn task_list_filters_by_parent_id() {
         None,
         "parent".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -573,6 +581,7 @@ async fn task_list_filters_by_parent_id() {
         Some(parent.id()),
         "child".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -608,6 +617,7 @@ async fn task_list_filters_by_assigned_to() {
         None,
         "assigned".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -655,7 +665,7 @@ async fn knowledge_search_fts_finds_content() {
         .await
         .unwrap();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].path(), "auth/jwt");
+    assert_eq!(hits[0].0.path(), "auth/jwt");
 }
 
 #[tokio::test]

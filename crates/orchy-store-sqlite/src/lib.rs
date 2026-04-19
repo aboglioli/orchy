@@ -140,6 +140,11 @@ impl SqliteBackend {
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260419-000100_add_edge_source.sql"
         )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260419-000100_add_task_acceptance_criteria.sql"
+        )))
         .map_err(|e| Error::Store(e.to_string()))
     }
 }

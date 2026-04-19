@@ -26,7 +26,7 @@ SELECT
     ke.id AS from_id,
     json_extract(r.value, '$.kind') AS to_kind,
     json_extract(r.value, '$.id') AS to_id,
-    'references' AS rel_type,
+    'related_to' AS rel_type,
     json_extract(r.value, '$.display') AS display,
     ke.updated_at AS created_at
 FROM knowledge_entries ke,
@@ -44,7 +44,7 @@ SELECT
     t.id AS from_id,
     json_extract(r.value, '$.kind') AS to_kind,
     json_extract(r.value, '$.id') AS to_id,
-    'references' AS rel_type,
+    'related_to' AS rel_type,
     json_extract(r.value, '$.display') AS display,
     t.updated_at AS created_at
 FROM tasks t,

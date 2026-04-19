@@ -17,6 +17,7 @@ pub struct MergeTasksCommand {
     pub task_ids: Vec<String>,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub created_by: Option<String>,
 }
 
@@ -130,6 +131,7 @@ impl MergeTasks {
             parent_id,
             cmd.title,
             cmd.description,
+            cmd.acceptance_criteria,
             priority,
             assigned_roles,
             depends_on,
@@ -158,10 +160,7 @@ impl MergeTasks {
                 created_by.clone(),
             );
             if let Err(e) = self.edges.save(&edge).await {
-                tracing::warn!(
-                    "failed to create merged_from edge for {}: {e}",
-                    source.id()
-                );
+                tracing::warn!("failed to create merged_from edge for {}: {e}", source.id());
             }
         }
 

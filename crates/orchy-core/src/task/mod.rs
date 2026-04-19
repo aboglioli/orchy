@@ -191,6 +191,7 @@ pub struct Task {
     parent_id: Option<TaskId>,
     title: String,
     description: String,
+    acceptance_criteria: Option<String>,
     status: TaskStatus,
     priority: Priority,
     assigned_roles: Vec<String>,
@@ -215,6 +216,7 @@ impl Task {
         parent_id: Option<TaskId>,
         title: String,
         description: String,
+        acceptance_criteria: Option<String>,
         priority: Priority,
         assigned_roles: Vec<String>,
         depends_on: Vec<TaskId>,
@@ -234,6 +236,7 @@ impl Task {
             parent_id,
             title,
             description,
+            acceptance_criteria,
             status: if is_blocked {
                 TaskStatus::Blocked
             } else {
@@ -264,6 +267,7 @@ impl Task {
                     namespace: task.namespace.to_string(),
                     title: task.title.clone(),
                     description: task.description.clone(),
+                    acceptance_criteria: task.acceptance_criteria.clone(),
                     priority: task.priority.to_string(),
                     assigned_roles: task.assigned_roles.clone(),
                     depends_on: task.depends_on.iter().map(|id| id.to_string()).collect(),
@@ -286,6 +290,7 @@ impl Task {
             parent_id: r.parent_id,
             title: r.title,
             description: r.description,
+            acceptance_criteria: r.acceptance_criteria,
             status: r.status,
             priority: r.priority,
             assigned_roles: r.assigned_roles,
@@ -546,9 +551,14 @@ impl Task {
         &mut self,
         title: Option<String>,
         description: Option<String>,
+        acceptance_criteria: Option<String>,
         priority: Option<Priority>,
     ) -> Result<()> {
-        if title.is_none() && description.is_none() && priority.is_none() {
+        if title.is_none()
+            && description.is_none()
+            && acceptance_criteria.is_none()
+            && priority.is_none()
+        {
             return Err(Error::InvalidInput("no task fields to update".into()));
         }
         if matches!(
@@ -562,6 +572,7 @@ impl Task {
         }
         let mut new_title = None;
         let mut new_description = None;
+        let mut new_acceptance_criteria = None;
         let mut new_priority = None;
         if let Some(t) = title {
             if t.trim().is_empty() {
@@ -573,6 +584,10 @@ impl Task {
         if let Some(d) = description {
             new_description = Some(d.clone());
             self.description = d;
+        }
+        if let Some(a) = acceptance_criteria {
+            new_acceptance_criteria = Some(a.clone());
+            self.acceptance_criteria = Some(a);
         }
         if let Some(p) = priority {
             new_priority = Some(p.to_string());
@@ -589,6 +604,7 @@ impl Task {
                     task_id: self.id.to_string(),
                     title: new_title,
                     description: new_description,
+                    acceptance_criteria: new_acceptance_criteria,
                     priority: new_priority,
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,
@@ -664,6 +680,9 @@ impl Task {
     }
     pub fn description(&self) -> &str {
         &self.description
+    }
+    pub fn acceptance_criteria(&self) -> Option<&str> {
+        self.acceptance_criteria.as_deref()
     }
     pub fn status(&self) -> TaskStatus {
         self.status
@@ -836,6 +855,7 @@ pub struct RestoreTask {
     pub parent_id: Option<TaskId>,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub status: TaskStatus,
     pub priority: Priority,
     pub assigned_roles: Vec<String>,
@@ -852,6 +872,7 @@ pub struct RestoreTask {
 pub struct SubtaskDef {
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub priority: Priority,
     pub assigned_roles: Vec<String>,
     pub depends_on: Vec<TaskId>,
@@ -883,6 +904,7 @@ mod tests {
             parent_id: None,
             title: "Test Task".to_string(),
             description: "Test".to_string(),
+            acceptance_criteria: None,
             status,
             priority: Priority::default(),
             assigned_roles: vec!["tester".to_string()],
@@ -958,6 +980,43 @@ mod tests {
         assert!(task.complete(Some("done".to_string())).is_ok());
         assert_eq!(task.status(), TaskStatus::Completed);
         assert_eq!(task.result_summary(), Some("done"));
+    }
+
+    #[test]
+    fn acceptance_criteria_is_set_and_updatable() {
+        let mut task = Task::new(
+            OrganizationId::new("test").unwrap(),
+            ProjectId::try_from("test").unwrap(),
+            Namespace::root(),
+            None,
+            "Task with criteria".to_string(),
+            "Implement feature".to_string(),
+            Some("all tests pass and docs updated".to_string()),
+            Priority::default(),
+            vec!["engineer".to_string()],
+            vec![],
+            None,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            task.acceptance_criteria(),
+            Some("all tests pass and docs updated")
+        );
+
+        task.update_details(
+            None,
+            None,
+            Some("tests pass and integration verified".to_string()),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            task.acceptance_criteria(),
+            Some("tests pass and integration verified")
+        );
     }
 
     #[test]
@@ -1088,6 +1147,7 @@ mod tests {
             None,
             "title".to_string(),
             "desc".to_string(),
+            None,
             Priority::High,
             vec![],
             vec![],
@@ -1107,6 +1167,7 @@ mod tests {
             None,
             "title".to_string(),
             "desc".to_string(),
+            None,
             Priority::Normal,
             vec![],
             vec![TaskId::new()],

@@ -30,6 +30,8 @@ enum Tasks {
     Title,
     #[iden = "description"]
     Description,
+    #[iden = "acceptance_criteria"]
+    AcceptanceCriteria,
     #[iden = "status"]
     Status,
     #[iden = "priority"]
@@ -75,8 +77,8 @@ impl TaskStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO tasks (id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            "INSERT INTO tasks (id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
              ON CONFLICT (id) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
@@ -84,6 +86,7 @@ impl TaskStore for PgBackend {
                 parent_id = EXCLUDED.parent_id,
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
+                acceptance_criteria = EXCLUDED.acceptance_criteria,
                 status = EXCLUDED.status,
                 priority = EXCLUDED.priority,
                 assigned_roles = EXCLUDED.assigned_roles,
@@ -101,6 +104,7 @@ impl TaskStore for PgBackend {
         .bind(task.parent_id().map(|id| *id.as_uuid()))
         .bind(task.title())
         .bind(task.description())
+        .bind(task.acceptance_criteria())
         .bind(task.status().to_string())
         .bind(task.priority().to_string())
         .bind(&roles_json)
@@ -125,7 +129,7 @@ impl TaskStore for PgBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, project, namespace, parent_id, title, description, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at
+            "SELECT id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -146,6 +150,7 @@ impl TaskStore for PgBackend {
             Tasks::ParentId,
             Tasks::Title,
             Tasks::Description,
+            Tasks::AcceptanceCriteria,
             Tasks::Status,
             Tasks::Priority,
             Tasks::AssignedRoles,
@@ -244,6 +249,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
     let parent_id: Option<Uuid> = row.get("parent_id");
     let title: String = row.get("title");
     let description: String = row.get("description");
+    let acceptance_criteria: Option<String> = row.get("acceptance_criteria");
     let status: String = row.get("status");
     let priority: String = row.get("priority");
     let assigned_roles: serde_json::Value = row.get("assigned_roles");
@@ -271,6 +277,7 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
         parent_id: parent_id.map(TaskId::from_uuid),
         title,
         description,
+        acceptance_criteria,
         status: status.parse::<TaskStatus>().unwrap_or(TaskStatus::Pending),
         priority: priority.parse::<Priority>().unwrap_or_default(),
         assigned_roles: decode_json_value(assigned_roles, "tasks", "assigned_roles")?,

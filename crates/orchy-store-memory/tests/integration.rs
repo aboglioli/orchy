@@ -139,6 +139,7 @@ async fn task_save_and_get() {
         None,
         "Do thing".into(),
         "Details".into(),
+        None,
         Priority::High,
         vec!["dev".into()],
         vec![],
@@ -171,6 +172,7 @@ async fn task_list_sorted_by_priority() {
         None,
         "low".into(),
         "".into(),
+        None,
         Priority::Low,
         vec![],
         vec![],
@@ -187,6 +189,7 @@ async fn task_list_sorted_by_priority() {
         None,
         "critical".into(),
         "".into(),
+        None,
         Priority::Critical,
         vec![],
         vec![],
@@ -458,6 +461,7 @@ async fn task_list_filters_by_parent_id() {
         None,
         "parent".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -474,6 +478,7 @@ async fn task_list_filters_by_parent_id() {
         Some(parent.id()),
         "child".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -490,6 +495,7 @@ async fn task_list_filters_by_parent_id() {
         None,
         "other".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -525,6 +531,7 @@ async fn task_list_filters_by_assigned_to() {
         None,
         "assigned".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -542,6 +549,7 @@ async fn task_list_filters_by_assigned_to() {
         None,
         "unassigned".into(),
         "".into(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -867,6 +875,7 @@ async fn split_task_creates_spawns_edges() {
         None,
         "Parent task".to_string(),
         "desc".to_string(),
+        None,
         Priority::Normal,
         vec![],
         vec![],
@@ -883,6 +892,7 @@ async fn split_task_creates_spawns_edges() {
             SubtaskInput {
                 title: "Sub A".to_string(),
                 description: "desc".to_string(),
+                acceptance_criteria: None,
                 priority: None,
                 assigned_roles: None,
                 depends_on: None,
@@ -890,6 +900,7 @@ async fn split_task_creates_spawns_edges() {
             SubtaskInput {
                 title: "Sub B".to_string(),
                 description: "desc".to_string(),
+                acceptance_criteria: None,
                 priority: None,
                 assigned_roles: None,
                 depends_on: None,
@@ -972,6 +983,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
             namespace: None,
             title: "Dep".into(),
             description: "desc".into(),
+            acceptance_criteria: None,
             priority: None,
             assigned_roles: None,
             depends_on: None,
@@ -988,6 +1000,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
             namespace: None,
             title: "Parent".into(),
             description: "desc".into(),
+            acceptance_criteria: None,
             priority: None,
             assigned_roles: None,
             depends_on: None,
@@ -1003,6 +1016,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
             subtasks: vec![SubtaskInput {
                 title: "Sub".into(),
                 description: "desc".into(),
+                acceptance_criteria: None,
                 priority: None,
                 assigned_roles: None,
                 depends_on: Some(vec![dep.id.clone()]),
@@ -1115,6 +1129,7 @@ async fn get_graph_include_nodes_hydrates_task_fields() {
         None,
         "Implement login".into(),
         "Build the login endpoint with JWT".into(),
+        None,
         Priority::High,
         vec!["dev".into()],
         vec![],
@@ -1174,5 +1189,99 @@ async fn get_graph_include_nodes_hydrates_task_fields() {
     assert!(
         node.updated_at.is_some(),
         "updated_at should be set for task node"
+    );
+}
+
+#[tokio::test]
+async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
+    use std::sync::Arc;
+
+    use orchy_application::{
+        GetTaskWithContext, GetTaskWithContextCommand, PostTask, PostTaskCommand, WriteKnowledge,
+        WriteKnowledgeCommand,
+    };
+
+    let backend = Arc::new(backend());
+    let tasks: Arc<dyn orchy_core::task::TaskStore> = backend.clone();
+    let edges: Arc<dyn EdgeStore> = backend.clone();
+    let knowledge: Arc<dyn orchy_core::knowledge::KnowledgeStore> = backend.clone();
+
+    let post_task = PostTask::new(tasks.clone(), edges.clone());
+    let write_knowledge = WriteKnowledge::new(knowledge.clone(), edges.clone(), None);
+    let get_task = GetTaskWithContext::new(tasks, edges, knowledge);
+
+    let dep = post_task
+        .execute(PostTaskCommand {
+            org_id: "test-org".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "Dep".into(),
+            description: "Dependency".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            depends_on: None,
+            parent_id: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let task = post_task
+        .execute(PostTaskCommand {
+            org_id: "test-org".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "Main".into(),
+            description: "Main task".into(),
+            acceptance_criteria: Some("Done when tests pass".into()),
+            priority: None,
+            assigned_roles: None,
+            depends_on: Some(vec![dep.id.clone()]),
+            parent_id: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    write_knowledge
+        .execute(WriteKnowledgeCommand {
+            org_id: "test-org".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "tasks/main/ctx".into(),
+            kind: "context".into(),
+            title: "Main context".into(),
+            content: "Long context body for task implementation".into(),
+            tags: Some(vec!["task-context".into()]),
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            task_id: Some(task.id.clone()),
+        })
+        .await
+        .unwrap();
+
+    let ctx = get_task
+        .execute(GetTaskWithContextCommand {
+            task_id: task.id.clone(),
+            include_dependencies: true,
+            include_knowledge: true,
+            knowledge_limit: 5,
+            knowledge_kind: Some("context".into()),
+            knowledge_tag: Some("task-context".into()),
+            knowledge_content_limit: 8,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(ctx.dependencies.len(), 1);
+    assert_eq!(ctx.dependencies[0].id, dep.id);
+    assert_eq!(ctx.knowledge.len(), 1);
+    assert!(ctx.knowledge[0].content.len() <= 8);
+    assert_eq!(
+        ctx.task.acceptance_criteria.as_deref(),
+        Some("Done when tests pass")
     );
 }

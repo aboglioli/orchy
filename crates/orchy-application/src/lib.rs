@@ -73,7 +73,6 @@ mod replace_task;
 mod split_task;
 
 // Task metadata
-mod add_task_note;
 mod list_tags;
 mod move_task;
 mod tag_task;
@@ -162,7 +161,6 @@ pub use remove_dependency::{RemoveDependency, RemoveDependencyCommand};
 pub use replace_task::{ReplaceTask, ReplaceTaskCommand};
 pub use split_task::{SplitTask, SplitTaskCommand, SubtaskInput};
 
-pub use add_task_note::{AddTaskNote, AddTaskNoteCommand};
 pub use list_tags::{ListTags, ListTagsCommand};
 pub use move_task::{MoveTask, MoveTaskCommand};
 pub use tag_task::{TagTask, TagTaskCommand};
@@ -257,7 +255,6 @@ pub struct Application {
     pub add_dependency: AddDependency,
     pub remove_dependency: RemoveDependency,
 
-    pub add_task_note: AddTaskNote,
     pub add_edge: AddEdge,
     pub remove_edge: RemoveEdge,
     pub get_neighbors: GetNeighbors,
@@ -351,7 +348,11 @@ impl Application {
 
             post_task: PostTask::new(tasks.clone(), edges.clone()),
             get_task: GetTask::new(tasks.clone()),
-            get_task_with_context: GetTaskWithContext::new(tasks.clone()),
+            get_task_with_context: GetTaskWithContext::new(
+                tasks.clone(),
+                edges.clone(),
+                knowledge.clone(),
+            ),
             list_tasks: ListTasks::new(tasks.clone()),
             get_next_task: GetNextTask::new(tasks.clone()),
             claim_task: ClaimTask::new(agents.clone(), tasks.clone()),
@@ -371,7 +372,6 @@ impl Application {
             add_dependency: AddDependency::new(tasks.clone(), edges.clone()),
             remove_dependency: RemoveDependency::new(tasks.clone(), edges.clone()),
 
-            add_task_note: AddTaskNote::new(tasks.clone(), knowledge.clone()),
             add_edge: AddEdge::new(edges.clone()),
             remove_edge: RemoveEdge::new(edges.clone()),
             get_neighbors: GetNeighbors::new(

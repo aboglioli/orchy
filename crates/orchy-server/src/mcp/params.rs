@@ -43,6 +43,7 @@ pub struct PostTaskParams {
     pub parent_id: Option<String>,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     /// low, normal (default), high, critical.
     pub priority: Option<String>,
     /// Roles that can claim this task. Empty = any role.
@@ -111,6 +112,7 @@ pub struct UpdateTaskParams {
     pub task_id: String,
     pub title: Option<String>,
     pub description: Option<String>,
+    pub acceptance_criteria: Option<String>,
     /// low, normal, high, critical.
     pub priority: Option<String>,
 }
@@ -127,12 +129,6 @@ pub struct AssignTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct AddTaskNoteParams {
-    pub task_id: String,
-    pub body: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
 pub struct SplitTaskParams {
     pub task_id: String,
     pub subtasks: Vec<SubtaskParam>,
@@ -142,6 +138,7 @@ pub struct SplitTaskParams {
 pub struct SubtaskParam {
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     /// low, normal (default), high, critical.
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
@@ -173,6 +170,7 @@ pub struct MergeTasksParams {
     pub task_ids: Vec<String>,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -181,6 +179,7 @@ pub struct DelegateTaskParams {
     pub task_id: String,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
 }
@@ -301,6 +300,12 @@ pub struct ListTagsParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetTaskParams {
     pub task_id: String,
+    pub include_dependencies: Option<bool>,
+    pub include_knowledge: Option<bool>,
+    pub knowledge_limit: Option<u32>,
+    pub knowledge_kind: Option<String>,
+    pub knowledge_tag: Option<String>,
+    pub knowledge_content_limit: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

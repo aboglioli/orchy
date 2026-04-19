@@ -60,6 +60,7 @@ pub struct TaskResponse {
     pub parent_id: Option<String>,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub status: String,
     pub priority: String,
     pub assigned_roles: Vec<String>,
@@ -89,6 +90,7 @@ impl From<&Task> for TaskResponse {
             parent_id: t.parent_id().map(|id| id.to_string()),
             title: t.title().to_string(),
             description: t.description().to_string(),
+            acceptance_criteria: t.acceptance_criteria().map(|s| s.to_string()),
             status: t.status().to_string(),
             priority: t.priority().to_string(),
             assigned_roles: t.assigned_roles().to_vec(),
@@ -112,6 +114,10 @@ pub struct TaskWithContextResponse {
     pub ancestors: Vec<TaskResponse>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<TaskResponse>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<TaskResponse>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub knowledge: Vec<KnowledgeResponse>,
 }
 
 impl From<TaskWithContext> for TaskWithContextResponse {
@@ -120,6 +126,8 @@ impl From<TaskWithContext> for TaskWithContextResponse {
             task: TaskResponse::from(&ctx.task),
             ancestors: ctx.ancestors.iter().map(TaskResponse::from).collect(),
             children: ctx.children.iter().map(TaskResponse::from).collect(),
+            dependencies: Vec::new(),
+            knowledge: Vec::new(),
         }
     }
 }

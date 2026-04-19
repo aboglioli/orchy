@@ -72,6 +72,7 @@ impl ReplaceTask {
                 .map(|s| s.parse::<TaskId>())
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|e| Error::InvalidInput(e.to_string()))?;
+            let is_blocked = !depends_on.is_empty();
 
             let mut task = Task::new(
                 org_id.clone(),
@@ -80,11 +81,12 @@ impl ReplaceTask {
                 original.parent_id(),
                 input.title,
                 input.description,
+                input.acceptance_criteria,
                 priority,
                 input.assigned_roles.unwrap_or_default(),
                 depends_on,
                 created_by.clone(),
-                false,
+                is_blocked,
             )?;
             self.tasks.save(&mut task).await?;
 

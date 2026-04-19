@@ -30,6 +30,7 @@ pub struct TaskCreatedPayload {
     pub namespace: String,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub priority: String,
     pub assigned_roles: Vec<String>,
     pub depends_on: Vec<String>,
@@ -136,5 +137,6 @@ pub struct TaskUpdatedPayload {
     pub task_id: String,
     pub title: Option<String>,
     pub description: Option<String>,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
 }

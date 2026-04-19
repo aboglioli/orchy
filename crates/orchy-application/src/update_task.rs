@@ -9,6 +9,7 @@ pub struct UpdateTaskCommand {
     pub task_id: String,
     pub title: Option<String>,
     pub description: Option<String>,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
 }
 
@@ -39,7 +40,12 @@ impl UpdateTask {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
-        task.update_details(cmd.title, cmd.description, priority)?;
+        task.update_details(
+            cmd.title,
+            cmd.description,
+            cmd.acceptance_criteria,
+            priority,
+        )?;
 
         self.tasks.save(&mut task).await?;
         Ok(TaskResponse::from(&task))

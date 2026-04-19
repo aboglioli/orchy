@@ -220,7 +220,7 @@ impl OrchyHandler {
             agent_id: agent_id.to_string(),
         };
         match self.container.app.heartbeat.execute(cmd).await {
-            Ok(()) => Ok("ok".to_string()),
+            Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -402,7 +402,7 @@ impl OrchyHandler {
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
             }
-            Ok(None) => Ok("null".to_string()),
+            Ok(None) => Ok(to_json(&serde_json::Value::Null)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -773,7 +773,7 @@ impl OrchyHandler {
         };
 
         match self.container.app.mark_read.execute(cmd).await {
-            Ok(()) => Ok("ok".to_string()),
+            Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1342,7 +1342,7 @@ impl OrchyHandler {
         };
 
         match self.container.app.unlock_resource.execute(cmd).await {
-            Ok(()) => Ok("ok".to_string()),
+            Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1367,7 +1367,7 @@ impl OrchyHandler {
 
         match self.container.app.check_lock.execute(cmd).await {
             Ok(Some(lock)) => Ok(to_json(&lock)),
-            Ok(None) => Ok("null".to_string()),
+            Ok(None) => Ok(to_json(&serde_json::Value::Null)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1617,7 +1617,7 @@ impl OrchyHandler {
 
         match self.container.app.read_knowledge.execute(cmd).await {
             Ok(Some(entry)) => Ok(to_json(&entry)),
-            Ok(None) => Ok("null".to_string()),
+            Ok(None) => Ok(to_json(&serde_json::Value::Null)),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1724,7 +1724,7 @@ impl OrchyHandler {
         };
 
         match self.container.app.delete_knowledge.execute(cmd).await {
-            Ok(()) => Ok("ok".to_string()),
+            Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }

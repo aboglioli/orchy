@@ -24,7 +24,7 @@ SELECT
     id AS from_id,
     r->>'kind' AS to_kind,
     r->>'id' AS to_id,
-    'references' AS rel_type,
+    'related_to' AS rel_type,
     r->>'display' AS display,
     updated_at AS created_at
 FROM knowledge_entries,
@@ -41,7 +41,7 @@ SELECT
     id AS from_id,
     r->>'kind' AS to_kind,
     r->>'id' AS to_id,
-    'references' AS rel_type,
+    'related_to' AS rel_type,
     r->>'display' AS display,
     updated_at AS created_at
 FROM tasks,

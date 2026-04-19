@@ -78,6 +78,7 @@ pub struct NamespaceQuery {
 pub struct PostTaskBody {
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
     pub depends_on: Option<Vec<String>>,
@@ -89,6 +90,7 @@ pub struct PostTaskBody {
 pub struct UpdateTaskBody {
     pub title: Option<String>,
     pub description: Option<String>,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
 }
 
@@ -119,12 +121,6 @@ pub struct CancelBody {
 }
 
 #[derive(Deserialize)]
-pub struct AddNoteBody {
-    pub agent: Option<String>,
-    pub body: String,
-}
-
-#[derive(Deserialize)]
 pub struct AddDepBody {
     pub dependency_id: String,
 }
@@ -138,6 +134,7 @@ pub struct AgentQuery {
 pub struct SubtaskDefBody {
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
     pub depends_on: Option<Vec<String>>,
@@ -159,12 +156,14 @@ pub struct MergeBody {
     pub task_ids: Vec<String>,
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct DelegateBody {
     pub title: String,
     pub description: String,
+    pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
 }
@@ -174,6 +173,7 @@ fn to_subtask_inputs(defs: Vec<SubtaskDefBody>) -> Vec<SubtaskInput> {
         .map(|d| SubtaskInput {
             title: d.title,
             description: d.description,
+            acceptance_criteria: d.acceptance_criteria,
             priority: d.priority,
             assigned_roles: d.assigned_roles,
             depends_on: d.depends_on,
@@ -227,6 +227,7 @@ pub async fn post(
         namespace: body.namespace,
         title: body.title,
         description: body.description,
+        acceptance_criteria: body.acceptance_criteria,
         priority: body.priority,
         assigned_roles: body.assigned_roles,
         depends_on: body.depends_on,
@@ -288,6 +289,7 @@ pub async fn update_task(
         task_id: id,
         title: body.title,
         description: body.description,
+        acceptance_criteria: body.acceptance_criteria,
         priority: body.priority,
     };
 
@@ -560,41 +562,6 @@ pub async fn assign(
     let task = container
         .app
         .assign_task
-        .execute(cmd)
-        .await
-        .map_err(ApiError::from)?;
-
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
-}
-
-pub async fn add_note(
-    State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
-    Json(body): Json<AddNoteBody>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
-    let existing = container
-        .app
-        .get_task
-        .execute(GetTaskCommand {
-            task_id: id.clone(),
-        })
-        .await
-        .map_err(ApiError::from)?;
-    check_task_project(&existing, &project)?;
-
-    let cmd = orchy_application::AddTaskNoteCommand {
-        task_id: id,
-        body: body.body,
-        author: body.agent,
-    };
-
-    let task = container
-        .app
-        .add_task_note
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
@@ -907,6 +874,7 @@ pub async fn merge(
         task_ids: body.task_ids,
         title: body.title,
         description: body.description,
+        acceptance_criteria: body.acceptance_criteria,
         created_by: None,
     };
 
@@ -945,6 +913,7 @@ pub async fn delegate(
         task_id: id,
         title: body.title,
         description: body.description,
+        acceptance_criteria: body.acceptance_criteria,
         priority: body.priority,
         assigned_roles: body.assigned_roles,
         created_by: None,
