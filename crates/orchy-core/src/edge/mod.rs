@@ -24,6 +24,7 @@ pub trait EdgeStore: Send + Sync {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>>;
     async fn find_to(
         &self,
@@ -32,6 +33,7 @@ pub trait EdgeStore: Send + Sync {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>>;
     async fn exists_by_pair(
         &self,
@@ -48,6 +50,7 @@ pub trait EdgeStore: Send + Sync {
         rel_type: Option<&RelationType>,
         page: PageParams,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Page<Edge>>;
     async fn traverse(
         &self,
@@ -58,6 +61,7 @@ pub trait EdgeStore: Send + Sync {
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<TraversalEdge>>;
     async fn delete_all_for(
         &self,
@@ -326,6 +330,10 @@ impl Edge {
         self.valid_until.is_none()
     }
 
+    pub fn is_active_at(&self, ts: DateTime<Utc>) -> bool {
+        self.created_at <= ts && self.valid_until.map_or(true, |vu| vu > ts)
+    }
+
     pub fn valid_until(&self) -> Option<DateTime<Utc>> {
         self.valid_until
     }
@@ -398,6 +406,33 @@ mod tests {
     #[test]
     fn traversal_direction_default_is_outgoing() {
         assert_eq!(TraversalDirection::default(), TraversalDirection::Outgoing);
+    }
+
+    #[test]
+    fn edge_is_active_at() {
+        use chrono::Duration;
+        let org = OrganizationId::new("test").unwrap();
+        let mut edge = Edge::new(
+            org,
+            ResourceKind::Task,
+            "t1".to_string(),
+            ResourceKind::Knowledge,
+            "k1".to_string(),
+            RelationType::Produces,
+            None,
+            None,
+        );
+        let before = edge.created_at() - Duration::seconds(1);
+        let after_create = edge.created_at() + Duration::seconds(1);
+
+        assert!(!edge.is_active_at(before));
+        assert!(edge.is_active_at(after_create));
+
+        edge.invalidate();
+        let valid_until = edge.valid_until().unwrap();
+        let after_invalidate = valid_until + Duration::seconds(1);
+        assert!(edge.is_active_at(edge.created_at()));
+        assert!(!edge.is_active_at(after_invalidate));
     }
 
     #[test]
