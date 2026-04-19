@@ -21,10 +21,12 @@ impl RemoveEdge {
             .edge_id
             .parse::<EdgeId>()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        self.store
+        let mut edge = self
+            .store
             .find_by_id(&id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("edge: {}", cmd.edge_id)))?;
-        self.store.delete(&id).await
+        edge.invalidate();
+        self.store.save(&edge).await
     }
 }

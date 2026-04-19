@@ -52,16 +52,23 @@ impl RemoveDependency {
 
         self.tasks.save(&mut task).await?;
 
-        self.edges
-            .delete_by_pair(
+        let dep_edges = self
+            .edges
+            .find_from(
                 &org_id,
                 &ResourceKind::Task,
                 &task_id.to_string(),
-                &ResourceKind::Task,
-                &dependency_id.to_string(),
-                &RelationType::DependsOn,
+                Some(&RelationType::DependsOn),
+                false,
             )
             .await?;
+        if let Some(mut dep_edge) = dep_edges
+            .into_iter()
+            .find(|e| e.to_id() == dependency_id.to_string() && e.is_active())
+        {
+            dep_edge.invalidate();
+            self.edges.save(&dep_edge).await?;
+        }
 
         Ok(TaskResponse::from(&task))
     }
