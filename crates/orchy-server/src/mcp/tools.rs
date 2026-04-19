@@ -5,11 +5,11 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_application::{
-    AddDependencyCommand, AddEdgeCommand, AddTaskNoteCommand, AppendKnowledgeCommand,
-    AssignTaskCommand, CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand,
-    CheckLockCommand, CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand,
-    CompleteTaskCommand, DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand,
-    FailTaskCommand, GetGraphCommand, GetNeighborsCommand, GetNextTaskCommand, GetProjectCommand,
+    AddDependencyCommand, AddEdgeCommand, AppendKnowledgeCommand, AssignTaskCommand,
+    CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand, CheckLockCommand,
+    CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand, CompleteTaskCommand,
+    DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand, FailTaskCommand,
+    GetGraphCommand, GetNeighborsCommand, GetNextTaskCommand, GetProjectCommand,
     GetTaskWithContextCommand, HeartbeatCommand, ImportKnowledgeCommand, ListAgentsCommand,
     ListConversationCommand, ListEdgesCommand, ListKnowledgeCommand, ListNamespacesCommand,
     ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,
@@ -302,6 +302,7 @@ impl OrchyHandler {
 
     #[tool(description = "Create a task. Use parent_id to create a subtask. \
         Tasks with depends_on are auto-blocked until dependencies complete. \
+        Use acceptance_criteria to define a clear definition of done. \
         Use refs to attach resource references (files, URLs, etc.).")]
     async fn post_task(
         &self,
@@ -319,6 +320,7 @@ impl OrchyHandler {
             namespace: Some(namespace.to_string()),
             title: params.title,
             description: params.description,
+            acceptance_criteria: params.acceptance_criteria,
             priority: params.priority,
             assigned_roles: params.assigned_roles,
             depends_on: params.depends_on,
@@ -389,6 +391,12 @@ impl OrchyHandler {
                     .get_task_with_context
                     .execute(GetTaskWithContextCommand {
                         task_id: task_id.to_string(),
+                        include_dependencies: false,
+                        include_knowledge: false,
+                        knowledge_limit: 20,
+                        knowledge_kind: None,
+                        knowledge_tag: None,
+                        knowledge_content_limit: 500,
                     })
                     .await
                     .map_err(mcp_error)?;
@@ -462,6 +470,12 @@ impl OrchyHandler {
                     .get_task_with_context
                     .execute(GetTaskWithContextCommand {
                         task_id: task_id.to_string(),
+                        include_dependencies: false,
+                        include_knowledge: false,
+                        knowledge_limit: 20,
+                        knowledge_kind: None,
+                        knowledge_tag: None,
+                        knowledge_content_limit: 500,
                     })
                     .await
                     .map_err(mcp_error)?;
@@ -496,6 +510,12 @@ impl OrchyHandler {
                     .get_task_with_context
                     .execute(GetTaskWithContextCommand {
                         task_id: task_id.to_string(),
+                        include_dependencies: false,
+                        include_knowledge: false,
+                        knowledge_limit: 20,
+                        knowledge_kind: None,
+                        knowledge_tag: None,
+                        knowledge_content_limit: 500,
                     })
                     .await
                     .map_err(mcp_error)?;
@@ -577,6 +597,7 @@ impl OrchyHandler {
             task_id: params.task_id,
             title: params.title,
             description: params.description,
+            acceptance_criteria: params.acceptance_criteria,
             priority: params.priority,
         };
 
@@ -783,30 +804,10 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Add a note to a task. Creates a knowledge entry linked to the task via ResourceRef."
-    )]
-    async fn add_task_note(
-        &self,
-        Parameters(params): Parameters<AddTaskNoteParams>,
-    ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
-
-        let cmd = AddTaskNoteCommand {
-            task_id: params.task_id,
-            body: params.body,
-            author: Some(agent_id.to_string()),
-        };
-
-        match self.container.app.add_task_note.execute(cmd).await {
-            Ok(task) => Ok(to_json(&task)),
-            Err(e) => Err(mcp_error(e)),
-        }
-    }
-
-    #[tool(
         description = "Split a task into subtasks. The parent task is blocked and will \
         auto-complete when all subtasks finish. Agents should work on subtasks directly, \
-        not the parent. Returns the parent (with updated status) and all created subtasks."
+        not the parent. Each subtask can have its own acceptance_criteria, priority, and \
+        dependencies. Returns the parent (with updated status) and all created subtasks."
     )]
     async fn split_task(
         &self,
@@ -820,6 +821,7 @@ impl OrchyHandler {
             .map(|sp| SubtaskInput {
                 title: sp.title,
                 description: sp.description,
+                acceptance_criteria: sp.acceptance_criteria,
                 priority: sp.priority,
                 assigned_roles: sp.assigned_roles,
                 depends_on: sp.depends_on,
@@ -860,6 +862,7 @@ impl OrchyHandler {
             .map(|sp| SubtaskInput {
                 title: sp.title,
                 description: sp.description,
+                acceptance_criteria: sp.acceptance_criteria,
                 priority: sp.priority,
                 assigned_roles: sp.assigned_roles,
                 depends_on: sp.depends_on,
@@ -902,6 +905,7 @@ impl OrchyHandler {
             task_ids: params.task_ids,
             title: params.title,
             description: params.description,
+            acceptance_criteria: params.acceptance_criteria,
             created_by: Some(agent_id.to_string()),
         };
 
@@ -931,6 +935,7 @@ impl OrchyHandler {
             task_id: params.task_id,
             title: params.title,
             description: params.description,
+            acceptance_criteria: params.acceptance_criteria,
             priority: params.priority,
             assigned_roles: params.assigned_roles,
             created_by: Some(agent_id.to_string()),
@@ -1408,7 +1413,12 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Get a task by its ID with full context (ancestors and children).")]
+    #[tool(
+        description = "Get a task by its ID with context (ancestors/children). \
+        Use include_dependencies=true to also fetch all blocking dependency tasks. \
+        Use include_knowledge=true to fetch linked knowledge entries. \
+        Avoids N+1 fetch patterns when loading full task context in one call."
+    )]
     async fn get_task(
         &self,
         Parameters(params): Parameters<GetTaskParams>,
@@ -1421,6 +1431,12 @@ impl OrchyHandler {
             .get_task_with_context
             .execute(GetTaskWithContextCommand {
                 task_id: params.task_id.clone(),
+                include_dependencies: params.include_dependencies.unwrap_or(false),
+                include_knowledge: params.include_knowledge.unwrap_or(false),
+                knowledge_limit: params.knowledge_limit.unwrap_or(20),
+                knowledge_kind: params.knowledge_kind,
+                knowledge_tag: params.knowledge_tag,
+                knowledge_content_limit: params.knowledge_content_limit.unwrap_or(500),
             })
             .await
         {
@@ -1657,7 +1673,9 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Search knowledge entries by semantic similarity. \
+    #[tool(description = "Search knowledge entries by semantic similarity or keyword. \
+        Results include score: Option<f32> (0.0–1.0 similarity). \
+        Use min_score to filter low-confidence results (e.g. min_score=0.75). \
         Defaults to session namespace; pass namespace=/ to search all namespaces.")]
     async fn search_knowledge(
         &self,
@@ -1947,7 +1965,10 @@ impl OrchyHandler {
     }
 
     #[tool(description = "Get direct edges (neighbors) for a resource. \
-        Returns edges where the resource is the source (outgoing), target (incoming), or both.")]
+        Returns edges where the resource is the source (outgoing), target (incoming), or both. \
+        Use include_nodes=true to also return a nodes map with title, content snippet, status, \
+        priority, and tags for each connected resource. \
+        Use node_content_limit to control content truncation (default 500 chars).")]
     async fn get_neighbors(
         &self,
         Parameters(params): Parameters<GetNeighborsParams>,
@@ -1980,6 +2001,9 @@ impl OrchyHandler {
     #[tool(
         description = "Traverse the graph from a root resource using recursive BFS. \
         Returns all reachable edges up to max_depth (default 3, max 10) with traversal depth. \
+        Use include_nodes=true to also return NodeSummary for each resource (title, content \
+        snippet, tags, status, priority, updated_at). Use node_content_limit to control \
+        content truncation (default 500 chars). \
         Use to explore dependency chains, knowledge lineage, or agent work trees."
     )]
     async fn get_graph(

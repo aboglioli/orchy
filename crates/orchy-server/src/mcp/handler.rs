@@ -317,10 +317,21 @@ Always claim before starting. If another agent claimed it, move on. \
 without blocking the parent. Use `tag_task` / `untag_task` for labels. \
 On disconnect, claimed tasks return to pending.
 
+**Acceptance criteria:** Every task can have `acceptance_criteria` — a clear definition \
+of done. Set on create (`post_task`) or update (`update_task`). \
+Subtasks created via `split_task` each carry their own `acceptance_criteria`. \
+Visible in `get_task` responses. Helps agents know exactly when work is complete.
+
+**Task context in one call:** `get_task(task_id, include_dependencies=true, \
+include_knowledge=true)` fetches a task with its blocking dependencies and linked \
+knowledge entries together. Use this instead of separate fetches to avoid N+1 patterns.
+
 ## Coordination
 
 - `write_knowledge` — persist decisions, discoveries, patterns. \
   Always `search_knowledge` first to avoid duplicating existing entries. \
+  `search_knowledge` results include a `score` field (0.0–1.0 similarity). \
+  Pass `min_score=0.75` to filter low-relevance results. \
   Call `list_knowledge_types` to see available types. \
   Optional `metadata` (JSON object string) merges; `metadata_remove` drops keys first. \
   `patch_knowledge_metadata` updates metadata only. \
@@ -379,10 +390,14 @@ This builds a shared graph that any agent can traverse.
 
 **Query patterns:**
 - `get_neighbors(kind=task, id=..., direction=outgoing)` — direct connections (1 hop)
+- `get_neighbors(..., include_nodes=true)` — edges plus NodeSummary (title, status, priority, \
+  tags, content snippet) for each connected resource; use node_content_limit to cap length
 - `get_graph(kind=task, id=root, max_depth=3)` — traverse task tree and connected knowledge
-- `get_graph(..., include_nodes=true)` — edges plus title/label for every touched resource in one call
+- `get_graph(..., include_nodes=true)` — edges plus NodeSummary (title, content, tags, status, \
+  priority, updated_at) for every touched resource in one call
 - `get_graph(kind=knowledge, id=..., rel_types=[supersedes], direction=incoming)` — find what supersedes this entry
 - `list_edges(rel_type=spawns)` — browse all edges in the org without a known root
 
-Edges are org-scoped and directed. `get_neighbors` returns direct connections; \
-`get_graph` recurses up to max_depth hops (default 3, max 10).";
+Edges carry `source_kind` and `source_id` provenance fields identifying which tool or \
+agent created them. Edges are org-scoped and directed. `get_neighbors` returns direct \
+connections; `get_graph` recurses up to max_depth hops (default 3, max 10).";
