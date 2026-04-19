@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use orchy_events::Event;
 use orchy_events::io::Writer as EventWriter;
 
@@ -262,10 +263,11 @@ impl EdgeStore for StoreBackend {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
         delegate_trait!(
             self,
-            EdgeStore::find_from(org, kind, id, rel_type, only_active)
+            EdgeStore::find_from(org, kind, id, rel_type, only_active, as_of)
         )
     }
     async fn find_to(
@@ -275,10 +277,11 @@ impl EdgeStore for StoreBackend {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
         delegate_trait!(
             self,
-            EdgeStore::find_to(org, kind, id, rel_type, only_active)
+            EdgeStore::find_to(org, kind, id, rel_type, only_active, as_of)
         )
     }
     async fn exists_by_pair(
@@ -301,10 +304,11 @@ impl EdgeStore for StoreBackend {
         rel_type: Option<&RelationType>,
         page: PageParams,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Page<Edge>> {
         delegate_trait!(
             self,
-            EdgeStore::list_by_org(org, rel_type, page, only_active)
+            EdgeStore::list_by_org(org, rel_type, page, only_active, as_of)
         )
     }
     async fn traverse(
@@ -316,10 +320,20 @@ impl EdgeStore for StoreBackend {
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<TraversalEdge>> {
         delegate_trait!(
             self,
-            EdgeStore::traverse(org, kind, id, max_depth, rel_types, direction, only_active)
+            EdgeStore::traverse(
+                org,
+                kind,
+                id,
+                max_depth,
+                rel_types,
+                direction,
+                only_active,
+                as_of
+            )
         )
     }
     async fn delete_all_for(

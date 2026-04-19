@@ -853,7 +853,7 @@ async fn edge_valid_until_persisted_and_filtered() {
     );
     EdgeStore::save(&store, &edge).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true)
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true, None)
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
@@ -862,12 +862,12 @@ async fn edge_valid_until_persisted_and_filtered() {
     invalidated.invalidate();
     EdgeStore::save(&store, &invalidated).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true)
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true, None)
         .await
         .unwrap();
     assert!(found.is_empty());
 
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, false)
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, false, None)
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
@@ -912,6 +912,7 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         None,
         TraversalDirection::Both,
         false,
+        None,
     )
     .await
     .unwrap();
@@ -922,4 +923,67 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
             .any(|e| e.from_id == "neighbor" && e.to_id == "leaf"),
         "expected traversal to include neighbor -> leaf edge"
     );
+}
+
+#[tokio::test]
+async fn edge_as_of_returns_historical_snapshot() {
+    use chrono::Duration;
+    let store = backend();
+    let org = org("default");
+    let mut edge = Edge::new(
+        org.clone(),
+        ResourceKind::Task,
+        "t1".to_string(),
+        ResourceKind::Knowledge,
+        "k1".to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    let snapshot_time = edge.created_at();
+
+    let found = EdgeStore::find_from(
+        &store,
+        &org,
+        &ResourceKind::Task,
+        "t1",
+        None,
+        false,
+        Some(snapshot_time),
+    )
+    .await
+    .unwrap();
+    assert_eq!(found.len(), 1);
+
+    edge.invalidate();
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    let found = EdgeStore::find_from(
+        &store,
+        &org,
+        &ResourceKind::Task,
+        "t1",
+        None,
+        false,
+        Some(snapshot_time),
+    )
+    .await
+    .unwrap();
+    assert_eq!(found.len(), 1);
+
+    let after = edge.valid_until().unwrap() + Duration::seconds(1);
+    let found = EdgeStore::find_from(
+        &store,
+        &org,
+        &ResourceKind::Task,
+        "t1",
+        None,
+        false,
+        Some(after),
+    )
+    .await
+    .unwrap();
+    assert!(found.is_empty());
 }

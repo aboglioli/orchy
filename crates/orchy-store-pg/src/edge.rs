@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -83,17 +84,15 @@ impl EdgeStore for PgBackend {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let active_clause = if only_active {
-            " AND valid_until IS NULL"
-        } else {
-            ""
-        };
+        let time_clause = build_time_clause(only_active, as_of.as_ref());
         let rows = if let Some(rt) = rel_type {
             let sql = format!(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3 AND rel_type = $4{active_clause}
-                 ORDER BY created_at ASC"
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                 created_at, created_by, source_kind, source_id, valid_until \
+                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3 \
+                 AND rel_type = $4{time_clause} ORDER BY created_at ASC"
             );
             sqlx::query(&sql)
                 .bind(org.to_string())
@@ -105,8 +104,9 @@ impl EdgeStore for PgBackend {
                 .map_err(|e| Error::Store(e.to_string()))?
         } else {
             let sql = format!(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{active_clause}
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                 created_at, created_by, source_kind, source_id, valid_until \
+                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{time_clause} \
                  ORDER BY created_at ASC"
             );
             sqlx::query(&sql)
@@ -127,17 +127,15 @@ impl EdgeStore for PgBackend {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let active_clause = if only_active {
-            " AND valid_until IS NULL"
-        } else {
-            ""
-        };
+        let time_clause = build_time_clause(only_active, as_of.as_ref());
         let rows = if let Some(rt) = rel_type {
             let sql = format!(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3 AND rel_type = $4{active_clause}
-                 ORDER BY created_at ASC"
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                 created_at, created_by, source_kind, source_id, valid_until \
+                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3 \
+                 AND rel_type = $4{time_clause} ORDER BY created_at ASC"
             );
             sqlx::query(&sql)
                 .bind(org.to_string())
@@ -149,8 +147,9 @@ impl EdgeStore for PgBackend {
                 .map_err(|e| Error::Store(e.to_string()))?
         } else {
             let sql = format!(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{active_clause}
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                 created_at, created_by, source_kind, source_id, valid_until \
+                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{time_clause} \
                  ORDER BY created_at ASC"
             );
             sqlx::query(&sql)
@@ -196,20 +195,18 @@ impl EdgeStore for PgBackend {
         rel_type: Option<&RelationType>,
         page: PageParams,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Page<Edge>> {
-        let active_clause = if only_active {
-            " AND valid_until IS NULL"
-        } else {
-            ""
-        };
+        let time_clause = build_time_clause(only_active, as_of.as_ref());
         let fetch_limit = (page.limit as i64) + 1;
 
         let mut rows = if let Some(rt) = rel_type {
             if let Some(ref cursor) = page.after {
                 if let Some(decoded) = decode_cursor(cursor) {
                     let sql = format!(
-                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                         FROM edges WHERE org_id = $1 AND rel_type = $2 AND id > $3{active_clause}
+                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                         created_at, created_by, source_kind, source_id, valid_until \
+                         FROM edges WHERE org_id = $1 AND rel_type = $2 AND id > $3{time_clause} \
                          ORDER BY created_at ASC LIMIT $4"
                     );
                     sqlx::query(&sql)
@@ -225,8 +222,9 @@ impl EdgeStore for PgBackend {
                 }
             } else {
                 let sql = format!(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                     FROM edges WHERE org_id = $1 AND rel_type = $2{active_clause}
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                     created_at, created_by, source_kind, source_id, valid_until \
+                     FROM edges WHERE org_id = $1 AND rel_type = $2{time_clause} \
                      ORDER BY created_at ASC LIMIT $3"
                 );
                 sqlx::query(&sql)
@@ -240,8 +238,9 @@ impl EdgeStore for PgBackend {
         } else if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
                 let sql = format!(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                     FROM edges WHERE org_id = $1 AND id > $2{active_clause}
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                     created_at, created_by, source_kind, source_id, valid_until \
+                     FROM edges WHERE org_id = $1 AND id > $2{time_clause} \
                      ORDER BY created_at ASC LIMIT $3"
                 );
                 sqlx::query(&sql)
@@ -256,8 +255,9 @@ impl EdgeStore for PgBackend {
             }
         } else {
             let sql = format!(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
-                 FROM edges WHERE org_id = $1{active_clause}
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, \
+                 created_at, created_by, source_kind, source_id, valid_until \
+                 FROM edges WHERE org_id = $1{time_clause} \
                  ORDER BY created_at ASC LIMIT $2"
             );
             sqlx::query(&sql)
@@ -293,6 +293,7 @@ impl EdgeStore for PgBackend {
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<TraversalEdge>> {
         let rel_filter = rel_types.map(|rts| {
             rts.iter()
@@ -306,19 +307,19 @@ impl EdgeStore for PgBackend {
                 TraversalSide::Outgoing,
                 rel_filter.as_deref(),
                 only_active,
-                None,
+                as_of.as_ref(),
             ),
             TraversalDirection::Incoming => build_traverse_sql(
                 TraversalSide::Incoming,
                 rel_filter.as_deref(),
                 only_active,
-                None,
+                as_of.as_ref(),
             ),
             TraversalDirection::Both => build_traverse_sql(
                 TraversalSide::Both,
                 rel_filter.as_deref(),
                 only_active,
-                None,
+                as_of.as_ref(),
             ),
         };
 
@@ -387,46 +388,68 @@ enum TraversalSide {
     Both,
 }
 
+fn build_time_clause(only_active: bool, as_of: Option<&DateTime<Utc>>) -> String {
+    if let Some(ts) = as_of {
+        let ts_str = ts.to_rfc3339();
+        format!(
+            " AND created_at <= '{ts_str}' AND (valid_until IS NULL OR valid_until > '{ts_str}')"
+        )
+    } else if only_active {
+        " AND valid_until IS NULL".to_string()
+    } else {
+        String::new()
+    }
+}
+
 fn build_traverse_sql(
     side: TraversalSide,
     rel_filter: Option<&str>,
     only_active: bool,
-    max_results: Option<usize>,
+    as_of: Option<&DateTime<Utc>>,
 ) -> String {
     let rel_clause = rel_filter
         .map(|rts| format!(" AND rel_type IN ({rts})"))
         .unwrap_or_default();
 
-    let active_anchor = if only_active {
-        " AND valid_until IS NULL"
+    let anchor_time = if let Some(ts) = as_of {
+        let ts_str = ts.to_rfc3339();
+        format!(
+            " AND created_at <= '{ts_str}' AND (valid_until IS NULL OR valid_until > '{ts_str}')"
+        )
+    } else if only_active {
+        " AND valid_until IS NULL".to_string()
     } else {
-        ""
-    };
-    let active_recursive = if only_active {
-        " AND e.valid_until IS NULL"
-    } else {
-        ""
+        String::new()
     };
 
-    let limit_clause = max_results
-        .map(|n| format!(" LIMIT {n}"))
-        .unwrap_or_default();
+    let recursive_time = if let Some(ts) = as_of {
+        let ts_str = ts.to_rfc3339();
+        format!(
+            " AND e.created_at <= '{ts_str}' AND (e.valid_until IS NULL OR e.valid_until > '{ts_str}')"
+        )
+    } else if only_active {
+        " AND e.valid_until IS NULL".to_string()
+    } else {
+        String::new()
+    };
+
+    let limit_clause = String::new();
 
     let anchor = match side {
         TraversalSide::Outgoing => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, ARRAY[id::text] AS path, 1 AS depth
              FROM edges
-             WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{rel_clause}{active_anchor}"
+             WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{rel_clause}{anchor_time}"
         ),
         TraversalSide::Incoming => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, ARRAY[id::text] AS path, 1 AS depth
              FROM edges
-             WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{rel_clause}{active_anchor}"
+             WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{rel_clause}{anchor_time}"
         ),
         TraversalSide::Both => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, ARRAY[id::text] AS path, 1 AS depth
              FROM edges
-             WHERE org_id = $1 AND ((from_kind = $2 AND from_id = $3) OR (to_kind = $2 AND to_id = $3)){rel_clause}{active_anchor}"
+             WHERE org_id = $1 AND ((from_kind = $2 AND from_id = $3) OR (to_kind = $2 AND to_id = $3)){rel_clause}{anchor_time}"
         ),
     };
 
@@ -435,13 +458,13 @@ fn build_traverse_sql(
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.path || e.id::text, t.depth + 1
              FROM edges e
              INNER JOIN traversal t ON e.org_id = t.org_id AND e.from_kind = t.to_kind AND e.from_id = t.to_id
-             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{active_recursive}"
+             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{recursive_time}"
         ),
         TraversalSide::Incoming => format!(
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.path || e.id::text, t.depth + 1
              FROM edges e
              INNER JOIN traversal t ON e.org_id = t.org_id AND e.to_kind = t.from_kind AND e.to_id = t.from_id
-             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{active_recursive}"
+             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{recursive_time}"
         ),
         TraversalSide::Both => format!(
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.path || e.id::text, t.depth + 1
@@ -452,7 +475,7 @@ fn build_traverse_sql(
                  (e.from_kind = t.to_kind AND e.from_id = t.from_id) OR
                  (e.to_kind = t.to_kind AND e.to_id = t.from_id)
              )
-             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{active_recursive}"
+             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{recursive_time}"
         ),
     };
 
