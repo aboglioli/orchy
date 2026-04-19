@@ -147,13 +147,13 @@ impl OrchyHandler {
         are unsure whether you still need register_agent."
     )]
     async fn session_status(&self) -> Result<String, String> {
-        let agent_id = self.get_session_agent();
+        let agent_id = self.get_session_agent().await;
         let agent_id_str = agent_id.as_ref().map(|id| id.to_string());
         let payload = serde_json::json!({
             "mcp_session_registered_with_orchy": agent_id.is_some(),
             "id": agent_id_str,
-            "project": self.get_session_project().map(|p| p.to_string()),
-            "namespace": self.get_session_namespace().map(|n| n.to_string()),
+            "project": self.get_session_project().await.map(|p| p.to_string()),
+            "namespace": self.get_session_namespace().await.map(|n| n.to_string()),
             "after_orchy_or_mcp_restart": concat!(
                 "MCP Streamable HTTP session state is ephemeral. After orchy or the MCP client ",
                 "restarts, you get a new MCP session. Persist your agent id from the last ",
@@ -172,7 +172,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListAgentsParams>,
     ) -> Result<String, String> {
-        let (org, project) = match self.require_session() {
+        let (org, project) = match self.require_session().await {
             Ok((_, org, proj, _)) => {
                 let project = match params.project.as_deref() {
                     Some(p) => parse_project(p)?,
@@ -210,7 +210,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ChangeRolesParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let cmd = ChangeRolesCommand {
             agent_id: agent_id.to_string(),
@@ -224,7 +224,7 @@ impl OrchyHandler {
 
     #[tool(description = "Send a heartbeat for the session agent to signal liveness.")]
     async fn heartbeat(&self) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let cmd = HeartbeatCommand {
             agent_id: agent_id.to_string(),
@@ -240,7 +240,7 @@ impl OrchyHandler {
         Call this when your session is ending."
     )]
     async fn disconnect(&self) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let cmd = DisconnectAgentCommand {
             agent_id: agent_id.to_string(),
@@ -262,7 +262,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SwitchContextParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, current_project, _) = self.require_session()?;
+        let (agent_id, org, current_project, _) = self.require_session().await?;
 
         if params.project.is_none() && params.namespace.is_none() {
             return Err("at least one of project or namespace is required".to_string());
@@ -303,7 +303,7 @@ impl OrchyHandler {
                 let project = parse_project(&response.project)?;
                 let ns = orchy_core::namespace::Namespace::try_from(response.namespace.clone())
                     .map_err(|e| e.to_string())?;
-                self.set_session_project_and_namespace(project, ns);
+                self.set_session_project_and_namespace(project, ns).await;
                 Ok(to_json(&response))
             }
             Err(e) => Err(mcp_error(e)),
@@ -318,7 +318,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PostTaskParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
@@ -335,7 +335,7 @@ impl OrchyHandler {
             assigned_roles: params.assigned_roles,
             depends_on: params.depends_on,
             parent_id: params.parent_id,
-            created_by: self.get_session_agent().map(|id| id.to_string()),
+            created_by: self.get_session_agent().await.map(|id| id.to_string()),
         };
 
         match self.container.app.post_task.execute(cmd).await {
@@ -352,7 +352,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetNextTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, project, _) = self.require_session()?;
+        let (agent_id, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
@@ -426,7 +426,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTasksParams>,
     ) -> Result<String, String> {
-        let (_, org, session_project, _) = self.require_session()?;
+        let (_, org, session_project, _) = self.require_session().await?;
 
         let project = params
             .project
@@ -460,7 +460,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ClaimTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let cmd = ClaimTaskCommand {
             task_id: params.task_id.clone(),
@@ -501,7 +501,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<StartTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let cmd = StartTaskCommand {
             task_id: params.task_id.clone(),
@@ -543,7 +543,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CompleteTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = CompleteTaskCommand {
             task_id: params.task_id,
@@ -561,7 +561,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<FailTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = FailTaskCommand {
             task_id: params.task_id,
@@ -582,7 +582,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CancelTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = CancelTaskCommand {
             task_id: params.task_id,
@@ -601,7 +601,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UpdateTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = UpdateTaskCommand {
             task_id: params.task_id,
@@ -624,7 +624,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnblockTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = UnblockTaskCommand {
             task_id: params.task_id,
@@ -644,7 +644,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AssignTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let agent_id = self.resolve_agent_id(&params.agent).await?;
 
@@ -668,7 +668,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SendMessageParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, project, _) = self.require_session()?;
+        let (agent_id, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
@@ -711,7 +711,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckMailboxParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, session_project, _) = self.require_session()?;
+        let (agent_id, org, session_project, _) = self.require_session().await?;
 
         let project = if let Some(p) = params.project {
             p
@@ -743,7 +743,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckSentMessagesParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, session_project, _) = self.require_session()?;
+        let (agent_id, org, session_project, _) = self.require_session().await?;
 
         let project = if let Some(p) = params.project {
             p
@@ -775,7 +775,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MarkReadParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let cmd = MarkReadCommand {
             agent_id: agent_id.to_string(),
@@ -798,7 +798,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListConversationParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let cmd = ListConversationCommand {
             org_id: org.to_string(),
@@ -823,7 +823,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SplitTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let subtasks = params
             .subtasks
@@ -864,7 +864,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReplaceTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let replacements = params
             .replacements
@@ -908,7 +908,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MergeTasksParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, _, _) = self.require_session()?;
+        let (agent_id, org, _, _) = self.require_session().await?;
 
         let cmd = MergeTasksCommand {
             org_id: org.to_string(),
@@ -939,7 +939,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DelegateTaskParams>,
     ) -> Result<String, String> {
-        let (agent_id, _, _, _) = self.require_session()?;
+        let (agent_id, _, _, _) = self.require_session().await?;
 
         let cmd = DelegateTaskCommand {
             task_id: params.task_id,
@@ -965,7 +965,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddDependencyParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let cmd = AddDependencyCommand {
             org_id: org.to_string(),
@@ -987,7 +987,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RemoveDependencyParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let cmd = RemoveDependencyCommand {
             org_id: org.to_string(),
@@ -1009,7 +1009,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetProjectParams>,
     ) -> Result<String, String> {
-        let (_, org, project_id, _) = self.require_session()?;
+        let (_, org, project_id, _) = self.require_session().await?;
 
         let cmd = GetProjectCommand {
             org_id: org.to_string(),
@@ -1090,7 +1090,7 @@ impl OrchyHandler {
             })
             .collect();
 
-        let agent_id = self.get_session_agent();
+        let agent_id = self.get_session_agent().await;
         let mut my_workload_by_status: std::collections::HashMap<String, Vec<serde_json::Value>> =
             std::collections::HashMap::new();
         if let Some(ref aid) = agent_id {
@@ -1135,7 +1135,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UpdateProjectParams>,
     ) -> Result<String, String> {
-        let (_, org, project_id, _) = self.require_session()?;
+        let (_, org, project_id, _) = self.require_session().await?;
 
         let project_cmd = GetProjectCommand {
             org_id: org.to_string(),
@@ -1182,7 +1182,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SetProjectMetadataParams>,
     ) -> Result<String, String> {
-        let (_, org, project_id, _) = self.require_session()?;
+        let (_, org, project_id, _) = self.require_session().await?;
 
         let cmd = SetProjectMetadataCommand {
             org_id: org.to_string(),
@@ -1205,7 +1205,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListNamespacesParams>,
     ) -> Result<String, String> {
-        let (_, org, session_project, _) = self.require_session()?;
+        let (_, org, session_project, _) = self.require_session().await?;
         let project = if let Some(p) = params.project {
             p
         } else {
@@ -1228,7 +1228,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(Some(&params.new_namespace), NamespacePolicy::RegisterIfNew)
@@ -1254,7 +1254,7 @@ impl OrchyHandler {
         &self,
         Parameters(_params): Parameters<GetAgentContextParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, _, _) = self.require_session()?;
+        let (agent_id, org, _, _) = self.require_session().await?;
 
         let cmd = orchy_application::GetAgentSummaryCommand {
             org_id: org.to_string(),
@@ -1272,7 +1272,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<TagTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = TagTaskCommand {
             task_id: params.task_id,
@@ -1290,7 +1290,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UntagTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = UntagTaskCommand {
             task_id: params.task_id,
@@ -1311,7 +1311,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<LockResourceParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, project, _) = self.require_session()?;
+        let (agent_id, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
@@ -1337,7 +1337,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UnlockResourceParams>,
     ) -> Result<String, String> {
-        let (agent_id, org, project, _) = self.require_session()?;
+        let (agent_id, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1362,7 +1362,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<CheckLockParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1387,7 +1387,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReleaseTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         let cmd = ReleaseTaskCommand {
             task_id: params.task_id,
@@ -1405,7 +1405,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListTagsParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
@@ -1433,7 +1433,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetTaskParams>,
     ) -> Result<String, String> {
-        let _ = self.require_session()?;
+        let _ = self.require_session().await?;
 
         match self
             .container
@@ -1464,7 +1464,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PollUpdatesParams>,
     ) -> Result<String, String> {
-        let (_, _, session_project, _) = self.require_session()?;
+        let (_, _, session_project, _) = self.require_session().await?;
         let project = params
             .project
             .unwrap_or_else(|| session_project.to_string());
@@ -1530,7 +1530,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<WriteKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
@@ -1548,7 +1548,7 @@ impl OrchyHandler {
             content: params.content,
             tags: params.tags,
             version: params.version,
-            agent_id: self.get_session_agent().map(|id| id.to_string()),
+            agent_id: self.get_session_agent().await.map(|id| id.to_string()),
             metadata: if metadata.is_empty() {
                 None
             } else {
@@ -1572,7 +1572,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<PatchKnowledgeMetadataParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1609,7 +1609,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ReadKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, session_project, _) = self.require_session()?;
+        let (_, org, session_project, _) = self.require_session().await?;
         let project = params
             .project
             .unwrap_or_else(|| session_project.to_string());
@@ -1640,7 +1640,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let namespace = match params.namespace.as_deref() {
             Some(_) => Some(
@@ -1659,7 +1659,7 @@ impl OrchyHandler {
         let project = if params.project.is_some() {
             params.project
         } else if namespace.is_none() {
-            self.get_session_project().map(|p| p.to_string())
+            self.get_session_project().await.map(|p| p.to_string())
         } else {
             None
         };
@@ -1693,7 +1693,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<SearchKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
@@ -1723,7 +1723,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<DeleteKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1747,7 +1747,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AppendKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
@@ -1763,7 +1763,7 @@ impl OrchyHandler {
             kind: params.kind,
             value: params.value,
             separator: params.separator,
-            agent_id: self.get_session_agent().map(|id| id.to_string()),
+            agent_id: self.get_session_agent().await.map(|id| id.to_string()),
             metadata,
             metadata_remove: params.metadata_remove,
         };
@@ -1779,7 +1779,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<MoveKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1808,7 +1808,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RenameKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1835,7 +1835,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ChangeKnowledgeKindParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1861,7 +1861,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<TagKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1886,7 +1886,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<UntagKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -1911,7 +1911,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ImportKnowledgeParams>,
     ) -> Result<String, String> {
-        let (_, org, project, _) = self.require_session()?;
+        let (_, org, project, _) = self.require_session().await?;
 
         let namespace = self
             .resolve_namespace(None, NamespacePolicy::RegisterIfNew)
@@ -1926,7 +1926,7 @@ impl OrchyHandler {
             target_project: project.to_string(),
             target_namespace: Some(namespace.to_string()),
             target_path: None,
-            agent_id: self.get_session_agent().map(|id| id.to_string()),
+            agent_id: self.get_session_agent().await.map(|id| id.to_string()),
         };
 
         match self.container.app.import_knowledge.execute(cmd).await {
@@ -1943,7 +1943,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AddEdgeParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let cmd = AddEdgeCommand {
             org_id: org.to_string(),
@@ -1953,7 +1953,7 @@ impl OrchyHandler {
             to_id: params.to_id,
             rel_type: params.rel_type,
             display: params.display,
-            created_by: self.get_session_agent().map(|id| id.to_string()),
+            created_by: self.get_session_agent().await.map(|id| id.to_string()),
         };
 
         match self.container.app.add_edge.execute(cmd).await {
@@ -1967,7 +1967,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<RemoveEdgeParams>,
     ) -> Result<String, String> {
-        self.require_session()?;
+        self.require_session().await?;
 
         let cmd = RemoveEdgeCommand {
             edge_id: params.edge_id,
@@ -1988,7 +1988,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetNeighborsParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let include_nodes = params.include_nodes.unwrap_or(false);
         let as_of = parse_as_of(params.as_of)
@@ -2029,7 +2029,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<GetGraphParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let as_of = parse_as_of(params.as_of)
             .map_err(|e| mcp_error(orchy_core::error::Error::InvalidInput(e)))?;
@@ -2061,7 +2061,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<ListEdgesParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let as_of = parse_as_of(params.as_of)
             .map_err(|e| mcp_error(orchy_core::error::Error::InvalidInput(e)))?;
@@ -2091,7 +2091,7 @@ impl OrchyHandler {
         &self,
         Parameters(params): Parameters<AssembleContextParams>,
     ) -> Result<String, String> {
-        let (_, org, _, _) = self.require_session()?;
+        let (_, org, _, _) = self.require_session().await?;
 
         let cmd = AssembleContextCommand {
             org_id: org.to_string(),
@@ -2132,7 +2132,7 @@ impl ServerHandler for OrchyHandler {
         context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::InitializeResult, ErrorData> {
         if let Some(session_id) = extract_session_id(&context) {
-            self.set_mcp_session_id(session_id);
+            self.set_mcp_session_id(session_id).await;
         }
         Ok(rmcp::model::InitializeResult::new(
             self.get_info().capabilities,
@@ -2145,7 +2145,7 @@ impl ServerHandler for OrchyHandler {
         context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, ErrorData> {
         if let Some(session_id) = extract_session_id(&context) {
-            self.set_mcp_session_id(session_id);
+            self.set_mcp_session_id(session_id).await;
         }
         self.touch_heartbeat();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
@@ -2158,7 +2158,7 @@ impl ServerHandler for OrchyHandler {
         context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, ErrorData> {
         if let Some(session_id) = extract_session_id(&context) {
-            self.set_mcp_session_id(session_id);
+            self.set_mcp_session_id(session_id).await;
         }
         self.touch_heartbeat();
         let tools = Self::tool_router()
@@ -2182,10 +2182,10 @@ impl ServerHandler for OrchyHandler {
         context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, ErrorData> {
         if let Some(session_id) = extract_session_id(&context) {
-            self.set_mcp_session_id(session_id);
+            self.set_mcp_session_id(session_id).await;
         }
         self.touch_heartbeat();
-        let (_, org, project, namespace) = match self.require_session() {
+        let (_, org, project, namespace) = match self.require_session().await {
             Ok(s) => s,
             Err(_) => {
                 return Ok(ListPromptsResult {
@@ -2227,11 +2227,12 @@ impl ServerHandler for OrchyHandler {
         context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResult, ErrorData> {
         if let Some(session_id) = extract_session_id(&context) {
-            self.set_mcp_session_id(session_id);
+            self.set_mcp_session_id(session_id).await;
         }
         self.touch_heartbeat();
         let (_, org, project, namespace) = self
             .require_session()
+            .await
             .map_err(|e| ErrorData::internal_error(e, None))?;
 
         let cmd = orchy_application::ListSkillsCommand {

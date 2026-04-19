@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tokio::sync::RwLock;
+
 use orchy_core::agent::AgentId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -22,56 +24,51 @@ pub(crate) enum NamespacePolicy {
 #[derive(Clone)]
 pub struct OrchyHandler {
     pub(crate) container: Arc<Container>,
-    session: Arc<std::sync::RwLock<Option<SessionState>>>,
-    mcp_session_id: Arc<std::sync::RwLock<Option<String>>>,
+    session: Arc<RwLock<Option<SessionState>>>,
+    mcp_session_id: Arc<RwLock<Option<String>>>,
 }
 
 impl OrchyHandler {
     pub fn new(container: Arc<Container>) -> Self {
         Self {
             container,
-            session: Arc::new(std::sync::RwLock::new(None)),
-            mcp_session_id: Arc::new(std::sync::RwLock::new(None)),
+            session: Arc::new(RwLock::new(None)),
+            mcp_session_id: Arc::new(RwLock::new(None)),
         }
     }
 
-    pub(crate) fn set_mcp_session_id(&self, session_id: String) {
-        if let Ok(mut guard) = self.mcp_session_id.write() {
-            *guard = Some(session_id);
-        }
+    pub(crate) async fn set_mcp_session_id(&self, session_id: String) {
+        *self.mcp_session_id.write().await = Some(session_id);
     }
 
-    pub(crate) fn get_session_agent(&self) -> Option<AgentId> {
+    pub(crate) async fn get_session_agent(&self) -> Option<AgentId> {
         self.session
             .read()
-            .ok()?
+            .await
             .as_ref()
             .map(|s| s.agent_id.clone())
     }
 
-    pub(crate) fn get_session_project(&self) -> Option<ProjectId> {
+    pub(crate) async fn get_session_project(&self) -> Option<ProjectId> {
         self.session
             .read()
-            .ok()?
+            .await
             .as_ref()
             .map(|s| s.project.clone())
     }
 
-    pub(crate) fn get_session_namespace(&self) -> Option<Namespace> {
+    pub(crate) async fn get_session_namespace(&self) -> Option<Namespace> {
         self.session
             .read()
-            .ok()?
+            .await
             .as_ref()
             .map(|s| s.namespace.clone())
     }
 
-    pub(crate) fn require_session(
+    pub(crate) async fn require_session(
         &self,
     ) -> Result<(AgentId, OrganizationId, ProjectId, Namespace), String> {
-        let guard = self
-            .session
-            .read()
-            .map_err(|_| "session lock poisoned".to_string())?;
+        let guard = self.session.read().await;
         match guard.as_ref() {
             Some(s) => Ok((
                 s.agent_id.clone(),
@@ -92,21 +89,14 @@ impl OrchyHandler {
         project: ProjectId,
         namespace: Namespace,
     ) {
-        if let Ok(mut guard) = self.session.write() {
-            *guard = Some(SessionState {
-                agent_id: agent_id.clone(),
-                org,
-                project,
-                namespace,
-            });
-        }
+        *self.session.write().await = Some(SessionState {
+            agent_id: agent_id.clone(),
+            org,
+            project,
+            namespace,
+        });
 
-        if let Some(session_id) = self
-            .mcp_session_id
-            .read()
-            .ok()
-            .and_then(|g| g.as_ref().cloned())
-        {
+        if let Some(session_id) = self.mcp_session_id.read().await.as_ref().cloned() {
             self.container
                 .session_agents
                 .write()
@@ -115,29 +105,29 @@ impl OrchyHandler {
         }
     }
 
-    pub(crate) fn set_session_project_and_namespace(
+    pub(crate) async fn set_session_project_and_namespace(
         &self,
         project: ProjectId,
         namespace: Namespace,
     ) {
-        if let Ok(mut guard) = self.session.write()
-            && let Some(state) = guard.as_mut()
-        {
+        let mut guard = self.session.write().await;
+        if let Some(state) = guard.as_mut() {
             state.project = project;
             state.namespace = namespace;
         }
     }
 
     pub(crate) fn touch_heartbeat(&self) {
-        if let Some(agent_id) = self.get_session_agent() {
-            let container = self.container.clone();
-            tokio::spawn(async move {
+        let session = self.session.clone();
+        let container = self.container.clone();
+        tokio::spawn(async move {
+            if let Some(agent_id) = session.read().await.as_ref().map(|s| s.agent_id.clone()) {
                 let cmd = orchy_application::HeartbeatCommand {
                     agent_id: agent_id.to_string(),
                 };
                 let _ = container.app.heartbeat.execute(cmd).await;
-            });
-        }
+            }
+        });
     }
 
     pub(crate) async fn resolve_namespace(
@@ -165,9 +155,10 @@ impl OrchyHandler {
                 Namespace::try_from(normalized).map_err(|e| e.to_string())?
             }
             _ => match policy {
-                NamespacePolicy::SessionDefault => {
-                    self.get_session_namespace().unwrap_or_else(Namespace::root)
-                }
+                NamespacePolicy::SessionDefault => self
+                    .get_session_namespace()
+                    .await
+                    .unwrap_or_else(Namespace::root),
                 _ => Namespace::root(),
             },
         };
@@ -178,14 +169,16 @@ impl OrchyHandler {
                 None => self
                     .session
                     .read()
-                    .ok()
-                    .and_then(|g| g.as_ref().map(|s| s.org.clone()))
+                    .await
+                    .as_ref()
+                    .map(|s| s.org.clone())
                     .ok_or("no session org for namespace registration")?,
             };
             let project = match explicit_project {
                 Some(p) => p.clone(),
                 None => self
                     .get_session_project()
+                    .await
                     .ok_or("no session project for namespace registration")?,
             };
 
@@ -201,13 +194,15 @@ impl OrchyHandler {
 
         let project = self
             .get_session_project()
+            .await
             .ok_or("no session project for agent lookup")?;
 
         let org = self
             .session
             .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(|s| s.org.clone()))
+            .await
+            .as_ref()
+            .map(|s| s.org.clone())
             .unwrap_or_else(default_org);
 
         let agent = self
