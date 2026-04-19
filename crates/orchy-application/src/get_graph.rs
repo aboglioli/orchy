@@ -21,6 +21,7 @@ pub struct GetGraphCommand {
     pub include_nodes: bool,
     pub node_content_limit: Option<usize>,
     pub only_active: bool,
+    pub max_results: Option<usize>,
 }
 
 pub struct GetGraph {
@@ -69,7 +70,7 @@ impl GetGraph {
             _ => TraversalDirection::Outgoing,
         };
 
-        let traversal = self
+        let mut traversal = self
             .store
             .traverse(
                 &org,
@@ -81,6 +82,10 @@ impl GetGraph {
                 cmd.only_active,
             )
             .await?;
+
+        if let Some(max) = cmd.max_results {
+            traversal.truncate(max);
+        }
 
         let mut node_set: HashSet<String> = HashSet::new();
         node_set.insert(format!("{}:{}", kind, cmd.id));

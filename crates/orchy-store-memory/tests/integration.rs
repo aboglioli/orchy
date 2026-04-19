@@ -1167,6 +1167,7 @@ async fn get_graph_include_nodes_hydrates_task_fields() {
             include_nodes: true,
             node_content_limit: Some(200),
             only_active: true,
+            max_results: None,
         })
         .await
         .unwrap();

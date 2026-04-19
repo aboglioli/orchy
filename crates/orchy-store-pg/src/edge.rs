@@ -322,7 +322,9 @@ impl EdgeStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        rows.iter().map(row_to_traversal_edge).collect()
+        rows.iter()
+            .map(row_to_traversal_edge)
+            .collect::<std::result::Result<Vec<_>, _>>()
     }
 
     async fn delete_all_for(
