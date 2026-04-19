@@ -243,5 +243,12 @@ pub async fn get_summary(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&summary).unwrap_or_default()))
+    let v = serde_json::to_value(&summary).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+    Ok(Json(v))
 }

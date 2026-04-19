@@ -104,7 +104,14 @@ pub async fn inbox_for_agent(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&page).unwrap_or_default()))
+    let v = serde_json::to_value(&page).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+    Ok(Json(v))
 }
 
 pub async fn sent_for_agent(
@@ -149,7 +156,14 @@ pub async fn sent_for_agent(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&page).unwrap_or_default()))
+    let v = serde_json::to_value(&page).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+    Ok(Json(v))
 }
 
 pub async fn send(
@@ -178,7 +192,14 @@ pub async fn send(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&message).unwrap_or_default()))
+    let v = serde_json::to_value(&message).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+    Ok(Json(v))
 }
 
 pub async fn mark_read_for_agent(
@@ -245,5 +266,12 @@ pub async fn thread(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&messages).unwrap_or_default()))
+    let v = serde_json::to_value(&messages).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+    Ok(Json(v))
 }

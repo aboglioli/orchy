@@ -19,7 +19,9 @@ impl TaskStore for MemoryBackend {
 
         let events = task.drain_events();
         if !events.is_empty() {
-            let _ = orchy_events::io::Writer::write_all(self, &events).await;
+            if let Err(e) = orchy_events::io::Writer::write_all(self, &events).await {
+                tracing::error!("failed to persist events: {e}");
+            }
         }
 
         Ok(())

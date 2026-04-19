@@ -40,14 +40,14 @@ impl DisconnectAgent {
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
 
-        self.release_tasks(&id).await;
-        self.release_locks(&id, agent.org_id()).await;
+        self.release_tasks(&id).await?;
+        self.release_locks(&id, agent.org_id()).await?;
 
         agent.disconnect()?;
         self.agents.save(&mut agent).await
     }
 
-    async fn release_tasks(&self, agent_id: &AgentId) {
+    async fn release_tasks(&self, agent_id: &AgentId) -> Result<()> {
         let tasks = self
             .tasks
             .list(
@@ -57,30 +57,28 @@ impl DisconnectAgent {
                 },
                 PageParams::unbounded(),
             )
-            .await
-            .map(|p| p.items)
-            .unwrap_or_default();
+            .await?
+            .items;
 
         for mut task in tasks {
-            let _ = task.release();
-            let _ = self.tasks.save(&mut task).await;
+            task.release()?;
+            self.tasks.save(&mut task).await?;
         }
+
+        Ok(())
     }
 
-    async fn release_locks(&self, agent_id: &AgentId, org: &OrganizationId) {
-        let locks = self
-            .locks
-            .find_by_holder(agent_id, org)
-            .await
-            .unwrap_or_default();
+    async fn release_locks(&self, agent_id: &AgentId, org: &OrganizationId) -> Result<()> {
+        let locks = self.locks.find_by_holder(agent_id, org).await?;
 
         for mut lock in locks {
-            let _ = lock.mark_released();
-            let _ = self.locks.save(&mut lock).await;
-            let _ = self
-                .locks
+            lock.mark_released()?;
+            self.locks.save(&mut lock).await?;
+            self.locks
                 .delete(lock.org_id(), lock.project(), lock.namespace(), lock.name())
-                .await;
+                .await?;
         }
+
+        Ok(())
     }
 }

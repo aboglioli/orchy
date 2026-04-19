@@ -93,7 +93,14 @@ pub async fn get(
             .await
             .map_err(ApiError::from)?;
 
-        return Ok(Json(serde_json::to_value(project_to_dto(p)).unwrap()));
+        let v = serde_json::to_value(project_to_dto(p)).map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                e.to_string(),
+            )
+        })?;
+        return Ok(Json(v));
     }
 
     let cmd = GetProjectOverviewCommand {
@@ -117,7 +124,7 @@ pub async fn get(
     let project_dto = overview.project.map(project_to_dto);
 
     Ok(Json(serde_json::json!({
-        "project": project_dto.map(|p| serde_json::to_value(p).unwrap()),
+        "project": project_dto.map(|p| serde_json::to_value(p).unwrap_or_default()),
         "summary": {
             "agents_count": overview.agents.len(),
             "tasks_by_status": by_status,

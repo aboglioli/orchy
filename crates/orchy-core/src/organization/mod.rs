@@ -164,7 +164,9 @@ impl Organization {
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
         self.collector.collect(event);
 
-        Ok(self.api_keys.last().unwrap())
+        self.api_keys
+            .last()
+            .ok_or_else(|| Error::Store("api_keys empty after push".into()))
     }
 
     pub fn revoke_api_key(&mut self, key_id: &ApiKeyId) -> Result<()> {

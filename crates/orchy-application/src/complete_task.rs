@@ -69,7 +69,7 @@ impl CompleteTask {
             .all(|c| matches!(c.status(), TaskStatus::Completed | TaskStatus::Cancelled));
 
         if all_done {
-            let _ = parent.auto_complete("all subtasks completed".to_string());
+            parent.auto_complete("all subtasks completed".to_string())?;
             if let Err(e) = self.tasks.save(&mut parent).await {
                 tracing::warn!("failed to auto-complete parent {}: {e}", parent_id);
             }

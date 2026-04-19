@@ -75,7 +75,14 @@ pub async fn check(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&lock).unwrap_or_default()))
+    let v = serde_json::to_value(&lock).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+    Ok(Json(v))
 }
 
 pub async fn acquire(
@@ -103,7 +110,14 @@ pub async fn acquire(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&lock).unwrap_or_default()))
+    let v = serde_json::to_value(&lock).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            e.to_string(),
+        )
+    })?;
+    Ok(Json(v))
 }
 
 pub async fn release(
