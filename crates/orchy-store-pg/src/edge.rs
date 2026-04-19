@@ -182,7 +182,7 @@ impl EdgeStore for PgBackend {
                     sqlx::query(
                         "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                          FROM edges WHERE org_id = $1 AND rel_type = $2 AND id > $3
-                         ORDER BY id ASC LIMIT $4",
+                         ORDER BY created_at ASC LIMIT $4",
                     )
                     .bind(org.to_string()).bind(rt.to_string()).bind(decoded).bind(fetch_limit)
                     .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
@@ -193,7 +193,7 @@ impl EdgeStore for PgBackend {
                 sqlx::query(
                     "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                      FROM edges WHERE org_id = $1 AND rel_type = $2
-                     ORDER BY id ASC LIMIT $3",
+                     ORDER BY created_at ASC LIMIT $3",
                 )
                 .bind(org.to_string()).bind(rt.to_string()).bind(fetch_limit)
                 .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
@@ -203,7 +203,7 @@ impl EdgeStore for PgBackend {
                 sqlx::query(
                     "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                      FROM edges WHERE org_id = $1 AND id > $2
-                     ORDER BY id ASC LIMIT $3",
+                     ORDER BY created_at ASC LIMIT $3",
                 )
                 .bind(org.to_string()).bind(decoded).bind(fetch_limit)
                 .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
@@ -214,7 +214,7 @@ impl EdgeStore for PgBackend {
             sqlx::query(
                 "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                  FROM edges WHERE org_id = $1
-                 ORDER BY id ASC LIMIT $2",
+                 ORDER BY created_at ASC LIMIT $2",
             )
             .bind(org.to_string()).bind(fetch_limit)
             .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
@@ -288,6 +288,32 @@ impl EdgeStore for PgBackend {
         .bind(org.to_string())
         .bind(kind.to_string())
         .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn delete_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<()> {
+        sqlx::query(
+            "DELETE FROM edges
+             WHERE org_id = $1 AND from_kind = $2 AND from_id = $3
+               AND to_kind = $4 AND to_id = $5 AND rel_type = $6",
+        )
+        .bind(org.to_string())
+        .bind(from_kind.to_string())
+        .bind(from_id)
+        .bind(to_kind.to_string())
+        .bind(to_id)
+        .bind(rel_type.to_string())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;

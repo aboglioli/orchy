@@ -198,7 +198,7 @@ impl EdgeStore for SqliteBackend {
                     let mut stmt = conn.prepare(
                         "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                          FROM edges WHERE org_id = ?1 AND rel_type = ?2 AND id > ?3
-                         ORDER BY id ASC LIMIT ?4",
+                         ORDER BY created_at ASC LIMIT ?4",
                     ).map_err(|e| Error::Store(e.to_string()))?;
                     stmt.query_map(
                         rusqlite::params![org.to_string(), rt.to_string(), decoded, fetch_limit],
@@ -214,7 +214,7 @@ impl EdgeStore for SqliteBackend {
                 let mut stmt = conn.prepare(
                     "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                      FROM edges WHERE org_id = ?1 AND rel_type = ?2
-                     ORDER BY id ASC LIMIT ?3",
+                     ORDER BY created_at ASC LIMIT ?3",
                 ).map_err(|e| Error::Store(e.to_string()))?;
                 stmt.query_map(
                     rusqlite::params![org.to_string(), rt.to_string(), fetch_limit],
@@ -229,7 +229,7 @@ impl EdgeStore for SqliteBackend {
                 let mut stmt = conn.prepare(
                     "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                      FROM edges WHERE org_id = ?1 AND id > ?2
-                     ORDER BY id ASC LIMIT ?3",
+                     ORDER BY created_at ASC LIMIT ?3",
                 ).map_err(|e| Error::Store(e.to_string()))?;
                 stmt.query_map(
                     rusqlite::params![org.to_string(), decoded, fetch_limit],
@@ -245,7 +245,7 @@ impl EdgeStore for SqliteBackend {
             let mut stmt = conn.prepare(
                 "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
                  FROM edges WHERE org_id = ?1
-                 ORDER BY id ASC LIMIT ?2",
+                 ORDER BY created_at ASC LIMIT ?2",
             ).map_err(|e| Error::Store(e.to_string()))?;
             stmt.query_map(rusqlite::params![org.to_string(), fetch_limit], row_to_edge)
                 .map_err(|e| Error::Store(e.to_string()))?
@@ -323,6 +323,33 @@ impl EdgeStore for SqliteBackend {
         conn.execute(
             "DELETE FROM edges WHERE org_id = ?1 AND ((from_kind = ?2 AND from_id = ?3) OR (to_kind = ?2 AND to_id = ?3))",
             rusqlite::params![org.to_string(), kind.to_string(), id],
+        )
+        .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn delete_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM edges
+             WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3
+               AND to_kind = ?4 AND to_id = ?5 AND rel_type = ?6",
+            rusqlite::params![
+                org.to_string(),
+                from_kind.to_string(),
+                from_id,
+                to_kind.to_string(),
+                to_id,
+                rel_type.to_string(),
+            ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

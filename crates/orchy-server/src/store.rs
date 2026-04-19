@@ -317,6 +317,20 @@ impl EdgeStore for StoreBackend {
     ) -> Result<()> {
         delegate_trait!(self, EdgeStore::delete_all_for(org, kind, id))
     }
+    async fn delete_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<()> {
+        delegate_trait!(
+            self,
+            EdgeStore::delete_by_pair(org, from_kind, from_id, to_kind, to_id, rel_type)
+        )
+    }
 }
 
 #[async_trait]

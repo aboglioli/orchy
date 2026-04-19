@@ -887,3 +887,65 @@ async fn split_task_creates_spawns_edges() {
     assert_eq!(edges.items.len(), 2);
     assert!(edges.items.iter().all(|e| e.from_id() == parent_id));
 }
+
+#[tokio::test]
+async fn delete_by_pair_removes_matching_edge() {
+    let store = backend();
+    let o = org();
+    let edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "t1".into(),
+        ResourceKind::Task,
+        "t2".into(),
+        RelationType::DependsOn,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    EdgeStore::delete_by_pair(
+        &store,
+        &o,
+        &ResourceKind::Task,
+        "t1",
+        &ResourceKind::Task,
+        "t2",
+        &RelationType::DependsOn,
+    )
+    .await
+    .unwrap();
+
+    assert!(EdgeStore::find_by_id(&store, &edge.id()).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn delete_by_pair_ignores_different_rel_type() {
+    let store = backend();
+    let o = org();
+    let edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "t1".into(),
+        ResourceKind::Task,
+        "t2".into(),
+        RelationType::Spawns,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    EdgeStore::delete_by_pair(
+        &store,
+        &o,
+        &ResourceKind::Task,
+        "t1",
+        &ResourceKind::Task,
+        "t2",
+        &RelationType::DependsOn,
+    )
+    .await
+    .unwrap();
+
+    assert!(EdgeStore::find_by_id(&store, &edge.id()).await.unwrap().is_some());
+}

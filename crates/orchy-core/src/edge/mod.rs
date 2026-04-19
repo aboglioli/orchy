@@ -61,6 +61,15 @@ pub trait EdgeStore: Send + Sync {
         kind: &ResourceKind,
         id: &str,
     ) -> Result<()>;
+    async fn delete_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
