@@ -23,7 +23,7 @@ impl LockStore for PgBackend {
         sqlx::query(
             "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (project, namespace, name) DO UPDATE SET
+             ON CONFLICT (organization_id, project, namespace, name) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 holder = EXCLUDED.holder,
                 acquired_at = EXCLUDED.acquired_at,

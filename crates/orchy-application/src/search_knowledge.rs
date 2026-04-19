@@ -82,6 +82,13 @@ impl SearchKnowledge {
                     true
                 }
             })
+            .filter(|(e, _)| {
+                if let Some(ref k) = cmd.kind {
+                    e.kind().to_string() == *k
+                } else {
+                    true
+                }
+            })
             .map(|(k, score)| KnowledgeResponse::with_score(k, *score))
             .collect();
 

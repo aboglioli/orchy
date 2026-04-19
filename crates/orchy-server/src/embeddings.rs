@@ -31,7 +31,10 @@ struct EmbeddingData {
 impl OpenAiEmbeddingsProvider {
     pub fn new(url: String, model: String, dimensions: u32) -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest client"),
             url,
             model,
             dimensions,
@@ -54,6 +57,10 @@ impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
             .send()
             .await
             .map_err(|e| Error::Embeddings(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(Error::Embeddings(format!("HTTP {}", response.status())));
+        }
 
         let body: EmbeddingsResponse = response
             .json()
@@ -85,6 +92,10 @@ impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
             .send()
             .await
             .map_err(|e| Error::Embeddings(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(Error::Embeddings(format!("HTTP {}", response.status())));
+        }
 
         let body: EmbeddingsResponse = response
             .json()

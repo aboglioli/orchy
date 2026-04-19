@@ -195,7 +195,7 @@ Use edges to record meaningful relationships between tasks, knowledge entries, a
 - Mapping a task tree: `get_graph(kind=task, id=root, max_depth=3)` — full dependency + knowledge graph.
 - Finding latest decision: `get_graph(kind=knowledge, id=..., rel_types=["supersedes"])`.
 
-**Relationship types:** `derived_from`, `produces`, `references`, `supersedes`, `merged_from`, `summarizes`, `implements`, `spawns`, `related_to`
+**Relationship types:** `derived_from`, `produces`, `supersedes`, `merged_from`, `summarizes`, `implements`, `spawns`, `related_to`, `depends_on`
 "#
     );
 
