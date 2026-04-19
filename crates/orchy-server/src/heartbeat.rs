@@ -9,7 +9,7 @@ use crate::container::Container;
 
 pub async fn run_heartbeat_monitor(container: Arc<Container>) {
     let timeout = container.config.server.heartbeat_timeout_secs;
-    let check_interval = Duration::from_secs(timeout.max(2) / 2);
+    let check_interval = Duration::from_secs(timeout.max(10) / 2);
 
     let mut ticker = interval(check_interval);
 

@@ -41,6 +41,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config: Config =
         toml::from_str(&config_content).map_err(|e| format!("failed to parse config file: {e}"))?;
 
+    config
+        .validate()
+        .map_err(|e| format!("invalid config: {e}"))?;
+
     let host = config.server.host.clone();
     let port = config.server.port;
 

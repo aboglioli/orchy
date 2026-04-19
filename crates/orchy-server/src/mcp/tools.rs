@@ -236,7 +236,7 @@ impl OrchyHandler {
             agent_id: agent_id.to_string(),
         };
         match self.container.app.disconnect_agent.execute(cmd).await {
-            Ok(()) => Ok("disconnected".to_string()),
+            Ok(()) => Ok(r#"{"status":"disconnected"}"#.to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -402,7 +402,7 @@ impl OrchyHandler {
                     .map_err(mcp_error)?;
                 Ok(to_json(&ctx))
             }
-            Ok(None) => Ok("no tasks available".to_string()),
+            Ok(None) => Ok("null".to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1673,10 +1673,12 @@ impl OrchyHandler {
         }
     }
 
-    #[tool(description = "Search knowledge entries by semantic similarity or keyword. \
+    #[tool(
+        description = "Search knowledge entries by semantic similarity or keyword. \
         Results include score: Option<f32> (0.0–1.0 similarity). \
         Use min_score to filter low-confidence results (e.g. min_score=0.75). \
-        Defaults to session namespace; pass namespace=/ to search all namespaces.")]
+        Defaults to session namespace; pass namespace=/ to search all namespaces."
+    )]
     async fn search_knowledge(
         &self,
         Parameters(params): Parameters<SearchKnowledgeParams>,
@@ -1959,7 +1961,7 @@ impl OrchyHandler {
         };
 
         match self.container.app.remove_edge.execute(cmd).await {
-            Ok(()) => Ok("edge deleted".to_string()),
+            Ok(()) => Ok(r#"{"deleted":true}"#.to_string()),
             Err(e) => Err(mcp_error(e)),
         }
     }

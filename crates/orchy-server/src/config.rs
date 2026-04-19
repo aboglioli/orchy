@@ -36,6 +36,18 @@ impl ServerConfig {
     }
 }
 
+impl Config {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.server.heartbeat_timeout_secs < 5 {
+            return Err(format!(
+                "heartbeat_timeout_secs must be at least 5 (got {})",
+                self.server.heartbeat_timeout_secs
+            ));
+        }
+        Ok(())
+    }
+}
+
 fn default_heartbeat_timeout() -> u64 {
     300
 }
