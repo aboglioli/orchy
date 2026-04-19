@@ -68,7 +68,7 @@ pub async fn list(
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ));
     }
 
@@ -127,7 +127,7 @@ pub async fn get_context(
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ));
     }
 
@@ -162,8 +162,8 @@ pub async fn get_context(
         .check_mailbox
         .execute(mailbox_cmd)
         .await
-        .map(|p| p.items)
-        .unwrap_or_default()
+        .map_err(ApiError::from)?
+        .items
         .into_iter()
         .map(|m| InboxMessageDto {
             id: m.id.clone(),
@@ -189,8 +189,8 @@ pub async fn get_context(
         .list_tasks
         .execute(tasks_cmd)
         .await
-        .map(|p| p.items)
-        .unwrap_or_default()
+        .map_err(ApiError::from)?
+        .items
         .into_iter()
         .map(|t| PendingTaskDto {
             id: t.id.clone(),
@@ -227,7 +227,7 @@ pub async fn get_summary(
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ));
     }
 

@@ -70,7 +70,7 @@ pub async fn get(
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ));
     }
     let resp = container
@@ -94,7 +94,7 @@ pub async fn add_api_key(
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ));
     }
     let resp = container
@@ -121,7 +121,7 @@ pub async fn revoke_api_key(
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ));
     }
     let resp = container

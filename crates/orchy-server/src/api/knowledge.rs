@@ -32,7 +32,7 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
         Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ))
     } else {
         Ok(())
@@ -183,7 +183,7 @@ pub async fn list_types(
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
-            "forbidden".to_string(),
+            format!("access denied to organization {}", org_id),
         ));
     }
 

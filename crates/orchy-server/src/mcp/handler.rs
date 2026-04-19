@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
+use tracing::warn;
 
 use orchy_core::agent::AgentId;
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -125,7 +126,9 @@ impl OrchyHandler {
                 let cmd = orchy_application::HeartbeatCommand {
                     agent_id: agent_id.to_string(),
                 };
-                let _ = container.app.heartbeat.execute(cmd).await;
+                if let Err(e) = container.app.heartbeat.execute(cmd).await {
+                    warn!(error = %e, "heartbeat failed");
+                }
             }
         });
     }
@@ -183,7 +186,11 @@ impl OrchyHandler {
             };
 
             use orchy_core::namespace::NamespaceStore;
-            let _ = NamespaceStore::register(&*self.container.store, &org, &project, &ns).await;
+            if let Err(e) =
+                NamespaceStore::register(&*self.container.store, &org, &project, &ns).await
+            {
+                warn!(error = %e, "namespace registration failed");
+            }
         }
 
         Ok(ns)
