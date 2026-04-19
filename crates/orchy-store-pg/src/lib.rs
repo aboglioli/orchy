@@ -8,6 +8,7 @@ mod organization;
 mod project;
 mod resource_lock;
 mod task;
+mod user;
 
 use std::path::Path;
 

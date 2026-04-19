@@ -498,3 +498,51 @@ pub struct AssembleContextResponse {
     pub recent_changes: Vec<KnowledgeResponse>,
     pub risk_flags: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UserResponse {
+    pub id: String,
+    pub email: String,
+    pub is_active: bool,
+    pub is_platform_admin: bool,
+    pub created_at: String,
+}
+
+impl From<&orchy_core::user::User> for UserResponse {
+    fn from(u: &orchy_core::user::User) -> Self {
+        Self {
+            id: u.id().to_string(),
+            email: u.email().as_str().to_string(),
+            is_active: u.is_active(),
+            is_platform_admin: u.is_platform_admin(),
+            created_at: u.created_at().to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OrgMembershipResponse {
+    pub id: String,
+    pub user_id: String,
+    pub org_id: String,
+    pub role: String,
+    pub joined_at: String,
+}
+
+impl From<&orchy_core::user::OrgMembership> for OrgMembershipResponse {
+    fn from(m: &orchy_core::user::OrgMembership) -> Self {
+        Self {
+            id: m.id().to_string(),
+            user_id: m.user_id().to_string(),
+            org_id: m.org_id().to_string(),
+            role: m.role().to_string(),
+            joined_at: m.created_at().to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthResponse {
+    pub user: UserResponse,
+    pub memberships: Vec<OrgMembershipResponse>,
+}

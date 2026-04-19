@@ -17,14 +17,13 @@ export type HttpClient = {
 };
 
 async function request<T>(method: 'get' | 'post' | 'patch' | 'put' | 'delete', path: string, body?: unknown): Promise<T> {
-  const { baseUrl, apiKey } = useAuthStore.getState();
-  const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+  const { baseUrl } = useAuthStore.getState();
 
   try {
     const response = await ky(`${baseUrl}/api${path}`, {
       method,
-      headers,
       json: body,
+      credentials: 'include',
     }).json<unknown>();
 
     if (isApiSuccessEnvelope<T>(response)) {

@@ -4,12 +4,14 @@ mod agent;
 mod edge;
 mod events;
 mod knowledge;
+mod membership;
 mod message;
 mod namespace;
 mod organization;
 mod project;
 mod resource_lock;
 mod task;
+mod user;
 
 use std::path::Path;
 
@@ -154,6 +156,11 @@ impl SqliteBackend {
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260420-000000_add_missing_indexes.sql"
+        )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260420-000100_add_users.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))
     }

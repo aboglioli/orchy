@@ -4,9 +4,11 @@ pub mod events;
 pub mod knowledge;
 pub mod locks;
 pub mod messages;
+pub mod middleware;
 pub mod orgs;
 pub mod projects;
 pub mod tasks;
+pub mod user_auth;
 
 use std::sync::Arc;
 
@@ -73,6 +75,9 @@ impl From<orchy_core::error::Error> for ApiError {
                 "INTERNAL_ERROR",
                 e.to_string(),
             ),
+            Error::AuthenticationFailed(_) => {
+                ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED", e.to_string())
+            }
         }
     }
 }
@@ -93,6 +98,11 @@ pub fn router() -> Router<Arc<Container>> {
     use axum::routing::{delete, get, post};
 
     Router::new()
+        .route("/auth/register", post(user_auth::register))
+        .route("/auth/login", post(user_auth::login))
+        .route("/auth/logout", post(user_auth::logout))
+        .route("/auth/me", get(user_auth::me))
+        .route("/auth/change-password", post(user_auth::change_password))
         .route("/organizations", post(orgs::create).get(orgs::list))
         .route("/organizations/{org}", get(orgs::get))
         .route("/organizations/{org}/api-keys", post(orgs::add_api_key))
@@ -100,6 +110,7 @@ pub fn router() -> Router<Arc<Container>> {
             "/organizations/{org}/api-keys/{key_id}",
             delete(orgs::revoke_api_key),
         )
+        .route("/organizations/{org}/invite", post(user_auth::invite_user))
         .route("/organizations/{org}/agents", get(agents::list))
         .route(
             "/organizations/{org}/agents/{id}/context",

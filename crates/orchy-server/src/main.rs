@@ -17,6 +17,7 @@ use orchy_server::container::Container;
 use orchy_server::heartbeat::run_heartbeat_monitor;
 use orchy_server::mcp::OrchyHandler;
 use orchy_server::skill_loader;
+use tower_cookies::CookieManagerLayer;
 
 #[tokio::main]
 async fn main() {
@@ -88,6 +89,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             Arc::clone(&bootstrap_container),
             heartbeat_middleware,
         ))
+        .layer(CookieManagerLayer::new())
         .with_state(bootstrap_container);
 
     let addr = format!("{host}:{port}");

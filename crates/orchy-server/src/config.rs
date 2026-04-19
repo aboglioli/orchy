@@ -6,6 +6,7 @@ use serde::Deserialize;
 pub struct Config {
     pub server: ServerConfig,
     pub store: StoreConfig,
+    pub auth: AuthConfig,
     pub embeddings: Option<EmbeddingsConfig>,
     pub skills: Option<SkillsConfig>,
 }
@@ -80,4 +81,43 @@ pub struct OpenAiEmbeddingsConfig {
     pub url: String,
     pub model: String,
     pub dimensions: u32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthConfig {
+    #[serde(default = "default_jwt_duration_hours")]
+    pub jwt_duration_hours: i64,
+    #[serde(default = "default_cookie_secure")]
+    pub cookie_secure: bool,
+    #[serde(default = "default_bcrypt_cost")]
+    pub bcrypt_cost: u32,
+    #[serde(default = "default_keys_dir")]
+    pub keys_dir: String,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            jwt_duration_hours: default_jwt_duration_hours(),
+            cookie_secure: default_cookie_secure(),
+            bcrypt_cost: default_bcrypt_cost(),
+            keys_dir: default_keys_dir(),
+        }
+    }
+}
+
+fn default_jwt_duration_hours() -> i64 {
+    24
+}
+
+fn default_cookie_secure() -> bool {
+    false
+}
+
+fn default_bcrypt_cost() -> u32 {
+    10
+}
+
+fn default_keys_dir() -> String {
+    "keys".to_string()
 }

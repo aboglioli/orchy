@@ -261,6 +261,7 @@ pub(crate) fn mcp_error(e: orchy_core::error::Error) -> String {
         Error::Conflict(_) | Error::VersionMismatch { .. } => ("CONFLICT", e.to_string()),
         Error::Embeddings(_) => ("EMBEDDINGS_ERROR", e.to_string()),
         Error::Store(_) => ("INTERNAL_ERROR", e.to_string()),
+        Error::AuthenticationFailed(_) => ("UNAUTHORIZED", e.to_string()),
     };
     serde_json::json!({ "error": { "code": code, "message": message } }).to_string()
 }

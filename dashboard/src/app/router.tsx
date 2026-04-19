@@ -1,4 +1,5 @@
 import {
+  Navigate,
   Outlet,
   RouterProvider,
   createRootRoute,
@@ -17,6 +18,7 @@ import { OrgsPage } from '../features/orgs/orgs-page';
 import { ProjectDashboardPage } from '../features/projects/project-dashboard-page';
 import { TaskDetailPage } from '../features/tasks/task-detail-page';
 import { TasksPage } from '../features/tasks/tasks-page';
+import { useAuthStore } from '../state/auth-store';
 
 export type AppRoute = {
   path: string;
@@ -46,28 +48,64 @@ export const appRoutes: ReadonlyArray<AppRoute> = [
   ...projectScopedRoutes,
 ];
 
-const rootRoute = createRootRoute({
-  component: () => (
+function ProtectedRoute() {
+  const { isAuthenticated } = useAuthStore();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" />;
+  }
+
+  return (
     <AppLayout>
       <Outlet />
     </AppLayout>
-  ),
+  );
+}
+
+function PublicRoute() {
+  const { isAuthenticated } = useAuthStore();
+
+  if (isAuthenticated) {
+    return <Navigate to="/orgs" />;
+  }
+
+  return (
+    <AppLayout>
+      <Outlet />
+    </AppLayout>
+  );
+}
+
+const rootRoute = createRootRoute({
+  component: Outlet,
+});
+
+const publicRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'public',
+  component: PublicRoute,
+});
+
+const protectedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'protected',
+  component: ProtectedRoute,
 });
 
 const loginRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => publicRoute,
   path: '/login',
   component: LoginPage,
 });
 
 const orgsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs',
   component: OrgsPage,
 });
 
 const orgDetailsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org',
   component: () => {
     const { org } = orgDetailsRoute.useParams();
@@ -76,7 +114,7 @@ const orgDetailsRoute = createRoute({
 });
 
 const projectDashboardRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/dashboard',
   component: () => {
     const { org, project } = projectDashboardRoute.useParams();
@@ -85,7 +123,7 @@ const projectDashboardRoute = createRoute({
 });
 
 const tasksRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/tasks',
   component: () => {
     const { org, project } = tasksRoute.useParams();
@@ -94,7 +132,7 @@ const tasksRoute = createRoute({
 });
 
 const taskDetailsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/tasks/$id',
   component: () => {
     const { org, project, id } = taskDetailsRoute.useParams();
@@ -103,7 +141,7 @@ const taskDetailsRoute = createRoute({
 });
 
 const knowledgeRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/knowledge',
   component: () => {
     const { org, project } = knowledgeRoute.useParams();
@@ -112,7 +150,7 @@ const knowledgeRoute = createRoute({
 });
 
 const agentsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/agents',
   component: () => {
     const { org } = agentsRoute.useParams();
@@ -121,7 +159,7 @@ const agentsRoute = createRoute({
 });
 
 const messagesRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/messages',
   component: () => {
     const { org, project } = messagesRoute.useParams();
@@ -130,7 +168,7 @@ const messagesRoute = createRoute({
 });
 
 const locksRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/locks',
   component: () => {
     const { org, project } = locksRoute.useParams();
@@ -139,7 +177,7 @@ const locksRoute = createRoute({
 });
 
 const eventsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => protectedRoute,
   path: '/orgs/$org/projects/$project/events',
   component: () => {
     const { org, project } = eventsRoute.useParams();
@@ -148,17 +186,19 @@ const eventsRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  loginRoute,
-  orgsRoute,
-  orgDetailsRoute,
-  projectDashboardRoute,
-  tasksRoute,
-  taskDetailsRoute,
-  knowledgeRoute,
-  agentsRoute,
-  messagesRoute,
-  locksRoute,
-  eventsRoute,
+  publicRoute.addChildren([loginRoute]),
+  protectedRoute.addChildren([
+    orgsRoute,
+    orgDetailsRoute,
+    projectDashboardRoute,
+    tasksRoute,
+    taskDetailsRoute,
+    knowledgeRoute,
+    agentsRoute,
+    messagesRoute,
+    locksRoute,
+    eventsRoute,
+  ]),
 ]);
 
 export const appRouter = createRouter({ routeTree });

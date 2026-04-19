@@ -11,8 +11,18 @@ use orchy_core::organization::OrganizationStore;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
+use orchy_core::user::{OrgMembershipStore, UserStore};
 
 pub mod dto;
+
+// User/Auth
+mod bootstrap_admin;
+mod change_password;
+mod get_current_user;
+mod invite_user;
+mod list_org_users;
+mod login_user;
+mod register_user;
 
 // Edges
 mod add_edge;
@@ -213,11 +223,20 @@ pub use get_neighbors::{GetNeighbors, GetNeighborsCommand};
 pub use list_edges::{ListEdges, ListEdgesCommand};
 pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
+pub use bootstrap_admin::BootstrapAdmin;
+pub use change_password::{ChangePassword, ChangePasswordCommand};
+pub use get_current_user::{GetCurrentUser, GetCurrentUserCommand};
+pub use invite_user::{InviteUser, InviteUserCommand, InviteUserResponse};
+pub use list_org_users::{ListOrgUsers, ListOrgUsersCommand};
+pub use login_user::{LoginUser, LoginUserCommand};
+pub use register_user::{RegisterUser, RegisterUserCommand, RegisterUserResponse};
+
 pub use dto::{
-    AgentResponse, AgentSummaryResponse, ApiKeyResponse, AssembleContextResponse, EdgeResponse,
-    GetNeighborsResponse, GraphResponse, KnowledgeResponse, MessageResponse, NodeSummary,
-    OrganizationResponse, PageResponse, ProjectOverviewResponse, ProjectResponse,
-    ResourceLockResponse, TaskResponse, TaskWithContextResponse, TraversalEdgeResponse,
+    AgentResponse, AgentSummaryResponse, ApiKeyResponse, AssembleContextResponse, AuthResponse,
+    EdgeResponse, GetNeighborsResponse, GraphResponse, KnowledgeResponse, MessageResponse,
+    NodeSummary, OrgMembershipResponse, OrganizationResponse, PageResponse,
+    ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
+    TaskWithContextResponse, TraversalEdgeResponse, UserResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
@@ -308,6 +327,14 @@ pub struct Application {
     pub add_api_key: AddApiKey,
     pub revoke_api_key: RevokeApiKey,
     pub resolve_api_key: ResolveApiKey,
+
+    pub register_user: RegisterUser,
+    pub login_user: LoginUser,
+    pub get_current_user: GetCurrentUser,
+    pub change_password: ChangePassword,
+    pub invite_user: InviteUser,
+    pub list_org_users: ListOrgUsers,
+    pub bootstrap_admin: BootstrapAdmin,
 }
 
 impl Application {
@@ -324,6 +351,8 @@ impl Application {
         edges: Arc<dyn EdgeStore>,
         embeddings: Option<Arc<dyn EmbeddingsProvider>>,
         event_query: Arc<dyn EventQuery>,
+        users: Arc<dyn UserStore>,
+        memberships: Arc<dyn OrgMembershipStore>,
     ) -> Self {
         Self {
             register_agent: RegisterAgent::new(agents.clone()),
@@ -444,6 +473,14 @@ impl Application {
             add_api_key: AddApiKey::new(orgs.clone()),
             revoke_api_key: RevokeApiKey::new(orgs.clone()),
             resolve_api_key: ResolveApiKey::new(orgs),
+
+            register_user: RegisterUser::new(users.clone(), memberships.clone()),
+            login_user: LoginUser::new(users.clone(), memberships.clone()),
+            get_current_user: GetCurrentUser::new(users.clone(), memberships.clone()),
+            change_password: ChangePassword::new(users.clone()),
+            invite_user: InviteUser::new(users.clone(), memberships.clone()),
+            list_org_users: ListOrgUsers::new(users.clone(), memberships.clone()),
+            bootstrap_admin: BootstrapAdmin::new(users, memberships),
         }
     }
 }

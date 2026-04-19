@@ -4,12 +4,15 @@ mod agent;
 mod edge;
 mod events;
 mod knowledge;
+mod membership;
 mod message;
 mod namespace;
 mod organization;
 mod project;
 mod resource_lock;
 mod task;
+mod user;
+mod user_stores;
 
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
@@ -26,6 +29,7 @@ use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskId};
+use orchy_core::user::{OrgMembership, User, UserId};
 
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
@@ -41,6 +45,12 @@ pub struct MemoryBackend {
     pub(crate) resource_locks: RwLock<HashMap<String, ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String, String)>>,
     pub(crate) organizations: RwLock<HashMap<OrganizationId, Organization>>,
+    pub(crate) users: RwLock<HashMap<UserId, User>>,
+    pub(crate) user_by_email: RwLock<HashMap<String, UserId>>,
+    pub(crate) memberships: RwLock<HashMap<orchy_core::user::MembershipId, OrgMembership>>,
+    pub(crate) memberships_by_user: RwLock<HashMap<UserId, Vec<orchy_core::user::MembershipId>>>,
+    pub(crate) memberships_by_org:
+        RwLock<HashMap<OrganizationId, Vec<orchy_core::user::MembershipId>>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
 }
 
@@ -60,6 +70,11 @@ impl MemoryBackend {
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
             organizations: RwLock::new(HashMap::new()),
+            users: RwLock::new(HashMap::new()),
+            user_by_email: RwLock::new(HashMap::new()),
+            memberships: RwLock::new(HashMap::new()),
+            memberships_by_user: RwLock::new(HashMap::new()),
+            memberships_by_org: RwLock::new(HashMap::new()),
             events: RwLock::new(Vec::new()),
         }
     }
