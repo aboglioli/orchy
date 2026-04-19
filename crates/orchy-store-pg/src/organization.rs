@@ -117,20 +117,13 @@ impl OrganizationStore for PgBackend {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        let all_keys = load_all_api_keys_pg(&self.pool).await?;
-
-        let mut org_api_keys: std::collections::HashMap<String, Vec<ApiKey>> = std::collections::HashMap::new();
-        for key in all_keys {
-            org_api_keys.entry(key.0).or_default().push(key.1);
-        }
-
         let mut orgs = Vec::new();
         for row in rows {
             let org_id_str: String = row.get("id");
             let name: String = row.get("name");
             let created_at: DateTime<Utc> = row.get("created_at");
             let updated_at: DateTime<Utc> = row.get("updated_at");
-            let api_keys = org_api_keys.remove(&org_id_str).unwrap_or_default();
+            let api_keys = load_api_keys_pg(&self.pool, &org_id_str).await?;
             orgs.push(build_org(
                 org_id_str, name, api_keys, created_at, updated_at,
             )?);
