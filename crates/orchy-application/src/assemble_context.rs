@@ -75,7 +75,11 @@ impl AssembleContext {
             }
         }
 
-        all_entries.sort_by_key(|(a, _)| std::cmp::Reverse(a.updated_at()));
+        all_entries.sort_by(|(a, _), (b, _)| {
+            composite_score(b)
+                .partial_cmp(&composite_score(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut used_ids: HashSet<String> = HashSet::new();
 
@@ -181,6 +185,31 @@ impl AssembleContext {
             risk_flags,
         })
     }
+}
+
+fn composite_score(k: &orchy_core::knowledge::Knowledge) -> f64 {
+    let kind_weight = match k.kind() {
+        KnowledgeKind::Skill => 1.0,
+        KnowledgeKind::Decision => 1.0,
+        KnowledgeKind::Plan => 0.9,
+        KnowledgeKind::Pattern => 0.8,
+        KnowledgeKind::Document => 0.8,
+        KnowledgeKind::Discovery => 0.7,
+        KnowledgeKind::Reference => 0.6,
+        KnowledgeKind::Note => 0.5,
+        KnowledgeKind::Summary => 0.5,
+        KnowledgeKind::Report => 0.5,
+        KnowledgeKind::Config => 0.4,
+        KnowledgeKind::Context => 0.4,
+        KnowledgeKind::Overview => 0.4,
+        KnowledgeKind::Log => 0.3,
+    };
+    let days_old = {
+        let duration = chrono::Utc::now() - k.updated_at();
+        duration.num_seconds().max(0) as f64 / 86400.0
+    };
+    let recency = (-days_old / 14.0_f64.ln()).exp();
+    kind_weight * recency
 }
 
 fn truncate_knowledge(k: &orchy_core::knowledge::Knowledge, limit: usize) -> KnowledgeResponse {

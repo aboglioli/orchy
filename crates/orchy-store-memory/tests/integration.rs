@@ -1581,3 +1581,94 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
     .unwrap();
     assert!(found.is_empty());
 }
+
+#[tokio::test]
+async fn assemble_context_surfaces_decision_above_log() {
+    use orchy_application::{AssembleContext, AssembleContextCommand};
+    use std::sync::Arc;
+
+    let store = Arc::new(backend());
+    let o = org();
+    let p = proj("p");
+
+    let mut decision = Knowledge::new(
+        o.clone(),
+        Some(p.clone()),
+        Namespace::root(),
+        "important-decision".to_string(),
+        KnowledgeKind::Decision,
+        "Important Decision".to_string(),
+        "We chose Rust for performance".to_string(),
+        vec![],
+        None,
+        std::collections::HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(store.as_ref(), &mut decision)
+        .await
+        .unwrap();
+
+    let mut log = Knowledge::new(
+        o.clone(),
+        Some(p.clone()),
+        Namespace::root(),
+        "activity-log".to_string(),
+        KnowledgeKind::Log,
+        "Activity Log".to_string(),
+        "Ran some tests".to_string(),
+        vec![],
+        None,
+        std::collections::HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(store.as_ref(), &mut log)
+        .await
+        .unwrap();
+
+    let edge_d = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-x".to_string(),
+        ResourceKind::Knowledge,
+        decision.id().to_string(),
+        RelationType::RelatedTo,
+        None,
+        None,
+    );
+    EdgeStore::save(store.as_ref(), &edge_d).await.unwrap();
+
+    let edge_l = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-x".to_string(),
+        ResourceKind::Knowledge,
+        log.id().to_string(),
+        RelationType::RelatedTo,
+        None,
+        None,
+    );
+    EdgeStore::save(store.as_ref(), &edge_l).await.unwrap();
+
+    let svc = AssembleContext::new(store.clone(), store.clone(), store.clone());
+    let resp = svc
+        .execute(AssembleContextCommand {
+            org_id: o.to_string(),
+            kind: "task".to_string(),
+            id: "task-x".to_string(),
+            max_tokens: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        !resp.relevant_decisions.is_empty(),
+        "expected decision in relevant_decisions"
+    );
+    assert!(
+        resp.relevant_decisions
+            .iter()
+            .any(|k| k.path == "important-decision")
+    );
+
+    assert!(resp.recent_changes.iter().any(|k| k.path == "activity-log"));
+}
