@@ -1,8 +1,8 @@
 # orchy
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
-board, unified knowledge base, messaging, resource locking, and project
-context — exposed as **59** MCP tools over Streamable HTTP.
+board, unified knowledge base, messaging, resource locking, graph edges, and
+project context — exposed as **65** MCP tools over Streamable HTTP.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides
 the coordination layer and enforces the rules.
@@ -48,37 +48,114 @@ path = "orchy.db"
 
 ### Knowledge
 
-All persistent knowledge lives in a unified system with typed entries.
-Each entry has a `kind`, `path`, `title`, `content`, `tags`, and `version`.
+The organization's persistent memory. Agents don't retain state between
+sessions — every insight, decision, or convention must be written to
+knowledge or it's gone. Knowledge entries are the org's wiki.
 
-| Kind | Description |
-|------|-------------|
-| `note` | General observation or record |
-| `decision` | A choice made with rationale |
-| `discovery` | Something found or learned |
-| `pattern` | A recurring approach or convention |
-| `context` | Session summary / agent state snapshot |
-| `document` | Long-form structured content |
+Each entry has a `kind`, a hierarchical `path`, `title`, `content`, `tags`,
+and a `version` for optimistic concurrency control. Two agents writing the
+same entry concurrently will get a conflict error on the stale write.
+
+**Addressing:** entries are looked up by `(project, namespace, path)`. Paths
+use forward slashes for sub-topics: `db-choice`, `auth/jwt-strategy`,
+`api/error-handling`. The path is the canonical identifier — write to it
+to create or update.
+
+**Kinds** categorize the intent of an entry:
+
+| Kind | Use for |
+|------|---------|
+| `note` | General observations and records |
+| `decision` | Choices made with rationale ("we chose RS256 because…") |
+| `discovery` | Things found or learned — gotchas, constraints, findings |
+| `pattern` | Recurring approaches or conventions agents should follow |
+| `context` | Session handoff snapshots — what you were doing, what's left |
+| `document` | Long-form specs, architecture decisions, analysis |
 | `config` | Configuration or setup information |
-| `reference` | External reference or link |
-| `plan` | Strategy, roadmap, or approach |
-| `log` | Activity or change log entry |
-| `skill` | Instruction or convention agents must follow |
-| `overview` | Project summary included in HTTP/bootstrap prompts |
-| `summary` | Compact synthesized output: task summaries, agent rollups, state snapshots |
-| `report` | Richer completion artifact: implementation reports, post-task writeups |
+| `reference` | External references or links |
+| `plan` | Strategies, roadmaps, implementation approaches |
+| `log` | Activity or change log entries |
+| `skill` | Instructions agents must follow, inherited through namespace hierarchy |
+| `overview` | Project summary surfaced in the bootstrap prompt |
+| `summary` | Compact synthesized output: task summaries, agent rollups |
+| `report` | Richer completion artifacts: post-task writeups, implementation reports |
 
-Paths are hierarchical: `db-choice`, `auth/jwt-strategy`, `api-design`.
-Skills (kind=skill) inherit through namespace hierarchy.
+**Skills** (kind=`skill`) are inherited through the namespace hierarchy: an
+agent in `/backend/auth` sees skills from `/`, `/backend`, and
+`/backend/auth`. Child namespaces override parent skills with the same path.
+
+**Search** supports both full-text (FTS) and semantic (embedding-based)
+queries via `search_knowledge`. The hybrid scoring blends embedding similarity
+with keyword overlap and boosts entries linked to the query's anchor resource
+via the edge graph.
+
+**Metadata** is a free-form `HashMap<String, String>` attached to any entry.
+Useful for tagging structured facts (e.g. `{"status": "superseded",
+"ticket": "ORG-42"}`).
 
 ### Tasks
 
+The work board. Tasks are the unit of work agents claim and execute.
+
 ```
-Pending → Claimed → InProgress → Completed/Failed/Cancelled
+Pending → Claimed → InProgress → Completed
+   │         │          │
+   └─────────┴──────────┴──────→ Failed → Cancelled
+                                          ↑
+                           Blocked ───────┘ (also Pending)
 ```
 
-Tasks support hierarchy (`split_task`), dependencies, and tags.
-Parent tasks auto-complete when all subtasks finish.
+**Ownership** is exclusive: only one agent holds a task at a time.
+Claiming reserves it; starting moves it to in-progress; completing,
+failing, or cancelling terminates it. Disconnecting an agent releases
+its claimed and in-progress tasks back to pending automatically.
+
+**Hierarchy:** tasks can have a `parent_id`. `split_task` blocks the parent
+and creates subtasks; the parent auto-completes when all subtasks finish or
+are cancelled. `delegate_task` creates a subtask without blocking the parent.
+
+**Dependencies:** `depends_on` is a list of task IDs that must complete before
+this task can be claimed. A task with unmet dependencies starts as blocked and
+unblocks automatically when its last dependency completes. Failed dependencies
+send a system notification to the waiting task's last assignee.
+
+**Priority:** `low`, `normal` (default), `high`, `critical`. `get_next_task`
+returns the highest-priority available task matching the agent's roles.
+
+**Roles:** `assigned_roles` restricts which agents can claim a task. Empty
+means any agent can claim it. orchy auto-assigns agent roles from the set of
+pending role requirements on startup.
+
+**Tags** are free-form labels for grouping and filtering. Notes can be
+appended without changing the task's content fields.
+
+### Messages
+
+Real-time communication between agents — the coordination bus.
+
+Messages are **immutable** once sent. You reply to a message (creating a
+thread), but you cannot edit or delete one.
+
+**Addressing modes:**
+
+| Target | Syntax | Who receives it |
+|--------|--------|-----------------|
+| Direct | agent UUID | That agent only |
+| Role | `role:reviewer` | All agents with that role |
+| Broadcast | `broadcast` | All agents in the project except the sender |
+
+**Threading:** any message can set `reply_to` pointing at another message ID.
+`list_conversation` walks the full chain up and down from any message in the
+thread.
+
+**Delivery tracking:** messages start as `pending`, move to `delivered` when
+the recipient polls their mailbox, and to `read` when explicitly marked.
+For role and broadcast messages, each recipient is tracked independently via
+`message_receipts`. `check_sent_messages` shows per-message delivery status.
+
+**System messages:** orchy itself sends messages to agent mailboxes for
+dependency failure notifications. Agents should poll `check_mailbox` regularly
+or use `poll_updates` to catch these.
 
 ### Agent lifecycle
 
@@ -103,7 +180,7 @@ Every state change is recorded as a semantic domain event. Query with
 
 ## MCP Tools
 
-Authoritative definitions: `crates/orchy-server/src/mcp/tools.rs` and
+Authoritative definitions: `crates/orchy-server/src/mcp/tools/` and
 `crates/orchy-server/src/mcp/params.rs`. A running server exposes the current
 set via MCP `list_tools`.
 
@@ -204,6 +281,7 @@ Create a task. Tasks with `depends_on` are auto-blocked until dependencies compl
 |-----------|----------|-------------|
 | `title` | yes | Task title |
 | `description` | yes | Task description |
+| `acceptance_criteria` | no | Definition of done for this task |
 | `namespace` | no | Defaults to session namespace |
 | `parent_id` | no | Parent task ID for subtask |
 | `priority` | no | `low`, `normal` (default), `high`, `critical` |
@@ -220,6 +298,7 @@ Unlike `split_task`, the parent keeps its status.
 | `task_id` | yes | Parent task to delegate from (stays claimed) |
 | `title` | yes | Subtask title |
 | `description` | yes | Subtask description |
+| `acceptance_criteria` | no | Definition of done |
 | `priority` | no | Defaults to parent priority |
 | `assigned_roles` | no | Roles that can claim the subtask |
 
@@ -235,6 +314,7 @@ parent.
 | `subtasks` | yes | Array of subtask definitions |
 | `subtasks[].title` | yes | |
 | `subtasks[].description` | yes | |
+| `subtasks[].acceptance_criteria` | no | Definition of done for this subtask |
 | `subtasks[].priority` | no | `low`, `normal` (default), `high`, `critical` |
 | `subtasks[].assigned_roles` | no | |
 | `subtasks[].depends_on` | no | |
@@ -260,6 +340,7 @@ priority, combined roles, combined dependencies, and collected notes.
 | `task_ids` | yes | At least 2 task UUIDs. Must be pending, blocked, or claimed |
 | `title` | yes | Title for the merged task |
 | `description` | yes | Description for the merged task |
+| `acceptance_criteria` | no | Definition of done for the merged task |
 
 ---
 
@@ -299,6 +380,9 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `namespace` | no | Omit for all project tasks |
 | `status` | no | `pending`, `blocked`, `claimed`, `in_progress`, `completed`, `failed`, `cancelled` |
 | `parent_id` | no | Filter by parent task ID to list subtasks |
+| `project` | no | Override session project to query another project |
+| `after` | no | Cursor for pagination (task ID from `next_cursor` of previous page) |
+| `limit` | no | Max items per page |
 
 ### `claim_task`
 
@@ -321,6 +405,20 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `task_id` | yes | |
 | `reason` | no | |
 
+### `get_task`
+
+Get a task by ID with full context (ancestors + children).
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `task_id` | yes | |
+| `include_dependencies` | no | When true, fetches the full dependency task list |
+| `include_knowledge` | no | When true, fetches knowledge entries linked to this task via edges |
+| `knowledge_limit` | no | Max knowledge entries to return (default 5) |
+| `knowledge_kind` | no | Filter linked knowledge by kind |
+| `knowledge_tag` | no | Filter linked knowledge by tag |
+| `knowledge_content_limit` | no | Max characters of content per knowledge entry (default 500) |
+
 ### `update_task`
 
 | Parameter | Required | Description |
@@ -328,6 +426,7 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `task_id` | yes | |
 | `title` | no | |
 | `description` | no | |
+| `acceptance_criteria` | no | |
 | `priority` | no | `low`, `normal`, `high`, `critical` |
 
 ### `assign_task`
@@ -412,6 +511,9 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `namespace` | no | |
+| `project` | no | Override session project |
+| `after` | no | Cursor for pagination (message ID from `next_cursor`) |
+| `limit` | no | Max items per page |
 
 ### `mark_read`
 
@@ -446,6 +548,7 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `tag_knowledge` | yes | Add a tag to a knowledge entry. |
 | `untag_knowledge` | yes | Remove a tag from a knowledge entry. |
 | `import_knowledge` | yes | Import a knowledge entry from a linked project. |
+| `assemble_context` | yes | Assemble rich structured context for a resource by traversing the edge graph. |
 
 ### `write_knowledge`
 
@@ -460,6 +563,7 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `version` | no | Expected version for optimistic concurrency |
 | `metadata` | no | JSON object of string key-value pairs merged on update |
 | `metadata_remove` | no | Metadata keys to remove before applying `metadata` |
+| `task_id` | no | When provided, auto-creates a Task→Knowledge Produces edge |
 
 ### `read_knowledge`
 
@@ -467,6 +571,7 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 |-----------|----------|-------------|
 | `path` | yes | |
 | `namespace` | no | Defaults to root namespace |
+| `project` | no | Override session project |
 
 ### `list_knowledge`
 
@@ -477,6 +582,9 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `tag` | no | Filter by tag |
 | `path_prefix` | no | Filter by path prefix |
 | `agent` | no | Filter by author UUID |
+| `project` | no | Override session project |
+| `after` | no | Cursor for pagination (entry ID from `next_cursor`) |
+| `limit` | no | Max items per page |
 
 ### `search_knowledge`
 
@@ -486,6 +594,11 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 | `namespace` | no | |
 | `kind` | no | Filter results by kind |
 | `limit` | no | Max results (default 10) |
+| `project` | no | Override session project |
+| `min_score` | no | Minimum similarity score 0.0–1.0. Only applied when embeddings are configured |
+| `anchor_kind` | no | Resource kind for proximity boost: `task`, `agent`, `knowledge` |
+| `anchor_id` | no | Resource ID for proximity boost. Linked entries score +0.2 |
+| `task_id` | no | Task ID for task-subgraph proximity boost (BFS depth 3, +0.2) |
 
 ### `append_knowledge`
 
@@ -518,8 +631,6 @@ Merge or remove knowledge entry metadata without changing title, content, or kin
 | `path` | yes | Current path |
 | `new_namespace` | yes | Target namespace |
 | `namespace` | no | Current namespace |
-| `metadata` | no | JSON object merged into entry metadata |
-| `metadata_remove` | no | Metadata keys to remove first |
 
 ### `rename_knowledge`
 
@@ -528,8 +639,6 @@ Merge or remove knowledge entry metadata without changing title, content, or kin
 | `path` | yes | Current path |
 | `new_path` | yes | New path |
 | `namespace` | no | |
-| `metadata` | no | JSON object merged into entry metadata |
-| `metadata_remove` | no | Metadata keys to remove first |
 
 ### `change_knowledge_kind`
 
@@ -542,8 +651,6 @@ updates — use this tool explicitly. Bumps version when the kind actually chang
 | `kind` | yes | Target kind (see `list_knowledge_types`) |
 | `namespace` | no | |
 | `version` | no | Expected version for optimistic concurrency |
-| `metadata` | no | JSON object merged into entry metadata |
-| `metadata_remove` | no | Metadata keys to remove first |
 
 ### `tag_knowledge` / `untag_knowledge`
 
@@ -552,8 +659,6 @@ updates — use this tool explicitly. Bumps version when the kind actually chang
 | `path` | yes | |
 | `tag` | yes | |
 | `namespace` | no | |
-| `metadata` | no | JSON object merged into entry metadata |
-| `metadata_remove` | no | Metadata keys to remove first |
 
 ### `import_knowledge`
 
@@ -562,8 +667,104 @@ updates — use this tool explicitly. Bumps version when the kind actually chang
 | `source_project` | yes | Project to import from |
 | `path` | yes | Entry path in source project |
 | `source_namespace` | no | Namespace in source project |
-| `metadata` | no | JSON object merged into imported entry metadata |
-| `metadata_remove` | no | Metadata keys to remove from imported entry |
+
+### `assemble_context`
+
+Traverse the edge graph from a root resource and assemble a rich structured
+context object: the root node's content, linked tasks with acceptance criteria
+and status, linked knowledge entries (truncated to budget), and the raw edge
+list. Useful for giving an agent the full picture of a task or knowledge cluster
+without manual graph traversal.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `kind` | yes | Root resource kind: `task`, `knowledge`, `agent` |
+| `id` | yes | Root resource ID |
+| `max_tokens` | no | Character budget for all content blocks combined (default 4000) |
+
+---
+
+## Graph
+
+Typed directed edges between resources. Use the graph to model relationships
+between tasks, knowledge entries, and agents: what a task produced, which
+knowledge entry supersedes another, which task spawned which agent.
+
+**Relationship types:** `derived_from`, `produces`, `supersedes`, `merged_from`,
+`summarizes`, `implements`, `spawns`, `related_to`.
+
+**Resource kinds** (source/target): `task`, `knowledge`, `agent`. (`message` is
+not allowed as an edge endpoint.)
+
+Edges can have a `valid_until` expiry (set internally for TTL-based edges) and
+are soft-deleted. Historical state is queryable via `as_of`.
+
+| Tool | Session | Description |
+|------|---------|-------------|
+| `add_edge` | yes | Create a typed directed edge between two resources. |
+| `remove_edge` | yes | Soft-delete an edge by ID. |
+| `get_neighbors` | yes | List direct neighbors of a resource. |
+| `get_graph` | yes | Traverse the graph from a root resource up to a given depth. |
+| `list_edges` | yes | List edges across the project with optional filters and pagination. |
+
+### `add_edge`
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `from_kind` | yes | Source resource kind: `task`, `knowledge`, `agent` |
+| `from_id` | yes | Source resource ID |
+| `to_kind` | yes | Target resource kind: `task`, `knowledge`, `agent` |
+| `to_id` | yes | Target resource ID |
+| `rel_type` | yes | Relationship type (see above) |
+| `display` | no | Human-readable label for the edge |
+
+### `remove_edge`
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `edge_id` | yes | Edge UUID to soft-delete |
+
+### `get_neighbors`
+
+List direct neighbors (one hop) of a resource, with optional node content hydration.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `kind` | yes | Resource kind: `task`, `knowledge`, `agent` |
+| `id` | yes | Resource ID |
+| `direction` | no | `outgoing`, `incoming`, or omit for both (default) |
+| `rel_type` | no | Filter by relationship type |
+| `include_nodes` | no | When true, include a `nodes` map with label/content/status/tags per resource |
+| `node_content_limit` | no | Max characters of content per node (default 500). `0` omits content |
+| `only_active` | no | When true (default), only active edges. `false` includes deleted/expired |
+| `as_of` | no | RFC3339 timestamp. Returns graph state at that moment |
+
+### `get_graph`
+
+Traverse the edge graph from a root resource up to `max_depth` hops.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `kind` | yes | Root resource kind: `task`, `knowledge`, `agent` |
+| `id` | yes | Root resource ID |
+| `max_depth` | no | Max traversal depth (default 3, max 10) |
+| `rel_types` | no | Filter to specific relationship types |
+| `direction` | no | `outgoing` (default), `incoming`, or `both` |
+| `include_nodes` | no | When true, include a `nodes` map per resource |
+| `node_content_limit` | no | Max characters of content per node (default 500). `0` omits content |
+| `only_active` | no | When true (default), only active edges. Set `false` to include deleted/expired |
+| `max_results` | no | Max edges in traversal result (default 1000) |
+| `as_of` | no | RFC3339 timestamp snapshot. Ignores `only_active` when set |
+
+### `list_edges`
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `rel_type` | no | Filter by relationship type. Omit for all types |
+| `after` | no | Cursor from previous page's `next_cursor` |
+| `limit` | no | Max items per page |
+| `only_active` | no | When `true`, only active edges. Defaults to `false` (all edges) |
+| `as_of` | no | RFC3339 timestamp snapshot |
 
 ---
 
@@ -622,7 +823,7 @@ Locks auto-expire after `ttl_secs` (default 300).
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `description` | yes | |
+| `description` | no | New project description |
 | `version` | no | Expected version for optimistic concurrency |
 
 ### `set_project_metadata`
@@ -632,12 +833,19 @@ Locks auto-expire after `ttl_secs` (default 300).
 | `key` | yes | |
 | `value` | yes | |
 
+### `list_namespaces`
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `project` | no | Override session project |
+
 ### `poll_updates`
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `since` | no | ISO 8601 timestamp. Returns events after this time |
 | `limit` | no | Max events to return (default 50) |
+| `project` | no | Override session project |
 
 ---
 
