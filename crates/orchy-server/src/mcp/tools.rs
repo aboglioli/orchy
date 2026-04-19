@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use chrono::{DateTime, Utc};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
@@ -48,6 +49,15 @@ fn optional_knowledge_metadata(
             .map(Some)
             .map_err(|e| format!("invalid {label} JSON: {e}")),
     }
+}
+
+fn parse_as_of(s: Option<String>) -> std::result::Result<Option<DateTime<Utc>>, String> {
+    s.map(|raw| {
+        DateTime::parse_from_rfc3339(&raw)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| format!("invalid as_of timestamp: {e}"))
+    })
+    .transpose()
 }
 
 #[tool_router]
@@ -1981,6 +1991,8 @@ impl OrchyHandler {
         let (_, org, _, _) = self.require_session()?;
 
         let include_nodes = params.include_nodes.unwrap_or(false);
+        let as_of = parse_as_of(params.as_of)
+            .map_err(|e| mcp_error(orchy_core::error::Error::InvalidInput(e)))?;
         let cmd = GetNeighborsCommand {
             org_id: org.to_string(),
             kind: params.kind,
@@ -1990,6 +2002,7 @@ impl OrchyHandler {
             include_nodes,
             node_content_limit: params.node_content_limit.map(|n| n as usize),
             only_active: params.only_active.unwrap_or(true),
+            as_of,
         };
 
         match self.container.app.get_neighbors.execute(cmd).await {
@@ -2018,6 +2031,8 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, _, _) = self.require_session()?;
 
+        let as_of = parse_as_of(params.as_of)
+            .map_err(|e| mcp_error(orchy_core::error::Error::InvalidInput(e)))?;
         let cmd = GetGraphCommand {
             org_id: org.to_string(),
             kind: params.kind,
@@ -2029,6 +2044,7 @@ impl OrchyHandler {
             node_content_limit: params.node_content_limit.map(|n| n as usize),
             only_active: params.only_active.unwrap_or(true),
             max_results: params.max_results,
+            as_of,
         };
 
         match self.container.app.get_graph.execute(cmd).await {
@@ -2047,12 +2063,15 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, _, _) = self.require_session()?;
 
+        let as_of = parse_as_of(params.as_of)
+            .map_err(|e| mcp_error(orchy_core::error::Error::InvalidInput(e)))?;
         let cmd = ListEdgesCommand {
             org_id: org.to_string(),
             rel_type: params.rel_type,
             after: params.after,
             limit: params.limit,
             only_active: params.only_active.unwrap_or(false),
+            as_of,
         };
 
         match self.container.app.list_edges.execute(cmd).await {

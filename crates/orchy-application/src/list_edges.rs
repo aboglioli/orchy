@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use orchy_core::edge::{EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
@@ -13,6 +14,7 @@ pub struct ListEdgesCommand {
     pub after: Option<String>,
     pub limit: Option<u32>,
     pub only_active: bool,
+    pub as_of: Option<DateTime<Utc>>,
 }
 
 pub struct ListEdges {
@@ -36,7 +38,7 @@ impl ListEdges {
         let page = PageParams::new(cmd.after, cmd.limit);
         let result = self
             .store
-            .list_by_org(&org, rel_type.as_ref(), page, cmd.only_active, None)
+            .list_by_org(&org, rel_type.as_ref(), page, cmd.only_active, cmd.as_of)
             .await?;
         Ok(PageResponse::from(result))
     }

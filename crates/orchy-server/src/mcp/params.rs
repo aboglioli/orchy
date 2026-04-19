@@ -486,6 +486,8 @@ pub struct GetNeighborsParams {
     pub node_content_limit: Option<u32>,
     /// When true (default), only return currently active edges. Set false to include deleted/expired edges.
     pub only_active: Option<bool>,
+    /// Point-in-time snapshot: RFC3339 timestamp.
+    pub as_of: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -507,6 +509,9 @@ pub struct GetGraphParams {
     pub only_active: Option<bool>,
     /// Max results to return from traversal (default 1000).
     pub max_results: Option<usize>,
+    /// Point-in-time snapshot: RFC3339 timestamp. Returns graph state as it existed at that moment.
+    /// When set, only_active is ignored.
+    pub as_of: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -518,6 +523,8 @@ pub struct ListEdgesParams {
     pub limit: Option<u32>,
     /// When true, only return currently active edges. Defaults to false (return all edges).
     pub only_active: Option<bool>,
+    /// Point-in-time snapshot: RFC3339 timestamp.
+    pub as_of: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use orchy_core::agent::AgentStore;
 use orchy_core::edge::{EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
@@ -20,6 +21,7 @@ pub struct GetNeighborsCommand {
     pub include_nodes: bool,
     pub node_content_limit: Option<usize>,
     pub only_active: bool,
+    pub as_of: Option<DateTime<Utc>>,
 }
 
 pub struct GetNeighbors {
@@ -65,7 +67,7 @@ impl GetNeighbors {
                         &cmd.id,
                         rel_type.as_ref(),
                         cmd.only_active,
-                        None,
+                        cmd.as_of,
                     )
                     .await?
             }
@@ -77,7 +79,7 @@ impl GetNeighbors {
                         &cmd.id,
                         rel_type.as_ref(),
                         cmd.only_active,
-                        None,
+                        cmd.as_of,
                     )
                     .await?
             }
@@ -90,7 +92,7 @@ impl GetNeighbors {
                         &cmd.id,
                         rel_type.as_ref(),
                         cmd.only_active,
-                        None,
+                        cmd.as_of,
                     )
                     .await?;
                 let inc = self
@@ -101,7 +103,7 @@ impl GetNeighbors {
                         &cmd.id,
                         rel_type.as_ref(),
                         cmd.only_active,
-                        None,
+                        cmd.as_of,
                     )
                     .await?;
                 out.extend(inc);

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use orchy_core::agent::AgentStore;
 use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::error::{Error, Result};
@@ -22,6 +23,7 @@ pub struct GetGraphCommand {
     pub node_content_limit: Option<usize>,
     pub only_active: bool,
     pub max_results: Option<usize>,
+    pub as_of: Option<DateTime<Utc>>,
 }
 
 pub struct GetGraph {
@@ -80,7 +82,7 @@ impl GetGraph {
                 rel_types.as_deref(),
                 direction,
                 cmd.only_active,
-                None,
+                cmd.as_of,
             )
             .await?;
 
