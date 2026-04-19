@@ -1903,8 +1903,8 @@ impl OrchyHandler {
     }
 
     #[tool(description = "Create a typed directed edge between two resources. \
-        Relationship types: derived_from, produces, references, supersedes, merged_from, \
-        summarizes, implements, spawns, related_to. \
+        Relationship types: derived_from, produces, supersedes, merged_from, \
+        summarizes, implements, spawns, related_to, depends_on. \
         Resource kinds: task, knowledge, agent, message.")]
     async fn add_edge(
         &self,
