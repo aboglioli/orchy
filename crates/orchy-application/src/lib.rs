@@ -16,6 +16,7 @@ pub mod dto;
 
 // Edges
 mod add_edge;
+mod assemble_context;
 mod get_graph;
 mod get_neighbors;
 mod list_edges;
@@ -206,16 +207,17 @@ pub use resolve_api_key::{ResolveApiKey, ResolveApiKeyCommand};
 pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 
 pub use add_edge::{AddEdge, AddEdgeCommand};
+pub use assemble_context::{AssembleContext, AssembleContextCommand};
 pub use get_graph::{GetGraph, GetGraphCommand};
 pub use get_neighbors::{GetNeighbors, GetNeighborsCommand};
 pub use list_edges::{ListEdges, ListEdgesCommand};
 pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
 pub use dto::{
-    AgentResponse, AgentSummaryResponse, ApiKeyResponse, EdgeResponse, GetNeighborsResponse,
-    GraphResponse, KnowledgeResponse, MessageResponse, NodeSummary, OrganizationResponse,
-    PageResponse, ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
-    TaskWithContextResponse, TraversalEdgeResponse,
+    AgentResponse, AgentSummaryResponse, ApiKeyResponse, AssembleContextResponse, EdgeResponse,
+    GetNeighborsResponse, GraphResponse, KnowledgeResponse, MessageResponse, NodeSummary,
+    OrganizationResponse, PageResponse, ProjectOverviewResponse, ProjectResponse,
+    ResourceLockResponse, TaskResponse, TaskWithContextResponse, TraversalEdgeResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
@@ -256,6 +258,7 @@ pub struct Application {
     pub remove_dependency: RemoveDependency,
 
     pub add_edge: AddEdge,
+    pub assemble_context: AssembleContext,
     pub remove_edge: RemoveEdge,
     pub get_neighbors: GetNeighbors,
     pub get_graph: GetGraph,
@@ -373,6 +376,7 @@ impl Application {
             remove_dependency: RemoveDependency::new(tasks.clone(), edges.clone()),
 
             add_edge: AddEdge::new(edges.clone()),
+            assemble_context: AssembleContext::new(edges.clone(), tasks.clone(), knowledge.clone()),
             remove_edge: RemoveEdge::new(edges.clone()),
             get_neighbors: GetNeighbors::new(
                 edges.clone(),

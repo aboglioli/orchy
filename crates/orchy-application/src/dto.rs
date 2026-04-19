@@ -487,3 +487,14 @@ pub struct GetNeighborsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nodes: Option<std::collections::HashMap<String, NodeSummary>>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AssembleContextResponse {
+    pub root_kind: String,
+    pub root_id: String,
+    pub core_facts: Vec<KnowledgeResponse>,
+    pub open_dependencies: Vec<TaskResponse>,
+    pub relevant_decisions: Vec<KnowledgeResponse>,
+    pub recent_changes: Vec<KnowledgeResponse>,
+    pub risk_flags: Vec<String>,
+}

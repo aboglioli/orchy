@@ -5,8 +5,9 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
 use orchy_application::{
-    AddDependencyCommand, AddEdgeCommand, AppendKnowledgeCommand, AssignTaskCommand,
-    CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand, CheckLockCommand,
+    AddDependencyCommand, AddEdgeCommand, AppendKnowledgeCommand, AssembleContextCommand,
+    AssignTaskCommand, CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand,
+    CheckLockCommand,
     CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand, CompleteTaskCommand,
     DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand, FailTaskCommand,
     GetGraphCommand, GetNeighborsCommand, GetNextTaskCommand, GetProjectCommand,
@@ -2028,6 +2029,7 @@ impl OrchyHandler {
             include_nodes: params.include_nodes.unwrap_or(false),
             node_content_limit: params.node_content_limit.map(|n| n as usize),
             only_active: params.only_active.unwrap_or(true),
+            max_results: params.max_results,
         };
 
         match self.container.app.get_graph.execute(cmd).await {
@@ -2056,6 +2058,32 @@ impl OrchyHandler {
 
         match self.container.app.list_edges.execute(cmd).await {
             Ok(page) => Ok(to_json(&page)),
+            Err(e) => Err(mcp_error(e)),
+        }
+    }
+
+    #[tool(
+        description = "Assemble structured context for a resource by following its graph edges. \
+        Returns: core_facts (Produces/DerivedFrom linked knowledge), open_dependencies (incomplete task deps), \
+        relevant_decisions (Decision/Plan/Skill knowledge), recent_changes (latest 5 other linked knowledge), \
+        risk_flags (failed/cancelled tasks in dependency path). \
+        Use instead of multiple get_neighbors calls when you need a full context snapshot for a task."
+    )]
+    async fn assemble_context(
+        &self,
+        Parameters(params): Parameters<AssembleContextParams>,
+    ) -> Result<String, String> {
+        let (_, org, _, _) = self.require_session()?;
+
+        let cmd = AssembleContextCommand {
+            org_id: org.to_string(),
+            kind: params.kind,
+            id: params.id,
+            max_tokens: params.max_tokens.map(|n| n as usize),
+        };
+
+        match self.container.app.assemble_context.execute(cmd).await {
+            Ok(resp) => Ok(to_json(&resp)),
             Err(e) => Err(mcp_error(e)),
         }
     }

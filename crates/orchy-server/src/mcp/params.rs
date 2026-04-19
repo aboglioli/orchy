@@ -505,6 +505,8 @@ pub struct GetGraphParams {
     pub node_content_limit: Option<u32>,
     /// When true (default), only return currently active edges. Set false to include deleted/expired edges.
     pub only_active: Option<bool>,
+    /// Max results to return from traversal (default 1000).
+    pub max_results: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -516,4 +518,14 @@ pub struct ListEdgesParams {
     pub limit: Option<u32>,
     /// When true, only return currently active edges. Defaults to false (return all edges).
     pub only_active: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct AssembleContextParams {
+    /// Resource kind: "task", "knowledge", "agent"
+    pub kind: String,
+    /// Resource ID
+    pub id: String,
+    /// Character budget for all content blocks combined. Default: 4000.
+    pub max_tokens: Option<u32>,
 }

@@ -1417,3 +1417,96 @@ async fn edge_invalidate_hides_from_only_active_queries() {
     assert_eq!(found.len(), 1);
     assert!(!found[0].is_active());
 }
+
+#[tokio::test]
+async fn assemble_context_returns_linked_knowledge() {
+    use orchy_application::{AssembleContext, AssembleContextCommand};
+    use std::sync::Arc;
+
+    let store = Arc::new(backend());
+    let o = org();
+    let p = proj("p");
+
+    let mut decision = Knowledge::new(
+        o.clone(),
+        Some(p.clone()),
+        Namespace::root(),
+        "auth-decision".to_string(),
+        KnowledgeKind::Decision,
+        "Auth Decision".to_string(),
+        "We chose JWT for auth".to_string(),
+        vec![],
+        None,
+        std::collections::HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(store.as_ref(), &mut decision).await.unwrap();
+
+    let mut note = Knowledge::new(
+        o.clone(),
+        Some(p.clone()),
+        Namespace::root(),
+        "recent-note".to_string(),
+        KnowledgeKind::Note,
+        "Recent Note".to_string(),
+        "Found a bug in login flow".to_string(),
+        vec![],
+        None,
+        std::collections::HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(store.as_ref(), &mut note).await.unwrap();
+
+    let edge1 = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-abc".to_string(),
+        ResourceKind::Knowledge,
+        decision.id().to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(store.as_ref(), &edge1).await.unwrap();
+
+    let edge2 = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-abc".to_string(),
+        ResourceKind::Knowledge,
+        note.id().to_string(),
+        RelationType::RelatedTo,
+        None,
+        None,
+    );
+    EdgeStore::save(store.as_ref(), &edge2).await.unwrap();
+
+    let svc = AssembleContext::new(
+        store.clone(),
+        store.clone(),
+        store.clone(),
+    );
+    let resp = svc
+        .execute(AssembleContextCommand {
+            org_id: o.to_string(),
+            kind: "task".to_string(),
+            id: "task-abc".to_string(),
+            max_tokens: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(!resp.core_facts.is_empty(), "expected core_facts");
+    assert!(resp.core_facts.iter().any(|k| k.path == "auth-decision"));
+
+    let all_paths: Vec<_> = resp
+        .recent_changes
+        .iter()
+        .chain(resp.relevant_decisions.iter())
+        .map(|k| k.path.clone())
+        .collect();
+    assert!(
+        all_paths.contains(&"recent-note".to_string()),
+        "expected recent-note in output"
+    );
+}

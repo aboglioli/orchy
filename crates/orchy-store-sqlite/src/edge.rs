@@ -323,13 +323,13 @@ impl EdgeStore for SqliteBackend {
 
         let sql = match direction {
             TraversalDirection::Outgoing => {
-                build_traverse_sql(TraversalSide::Outgoing, rel_filter.as_deref(), only_active)
+                build_traverse_sql(TraversalSide::Outgoing, rel_filter.as_deref(), only_active, None)
             }
             TraversalDirection::Incoming => {
-                build_traverse_sql(TraversalSide::Incoming, rel_filter.as_deref(), only_active)
+                build_traverse_sql(TraversalSide::Incoming, rel_filter.as_deref(), only_active, None)
             }
             TraversalDirection::Both => {
-                build_traverse_sql(TraversalSide::Both, rel_filter.as_deref(), only_active)
+                build_traverse_sql(TraversalSide::Both, rel_filter.as_deref(), only_active, None)
             }
         };
 
@@ -398,7 +398,7 @@ enum TraversalSide {
     Both,
 }
 
-fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active: bool) -> String {
+fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active: bool, max_results: Option<usize>) -> String {
     let rel_clause = rel_filter
         .map(|rts| format!(" AND rel_type IN ({rts})"))
         .unwrap_or_default();
@@ -413,6 +413,8 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active
     } else {
         ""
     };
+
+    let limit_clause = max_results.map(|n| format!(" LIMIT {n}")).unwrap_or_default();
 
     let anchor = match side {
         TraversalSide::Outgoing => format!(
@@ -451,7 +453,7 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active
              INNER JOIN traversal t ON e.org_id = t.org_id AND (
                  (e.from_kind = t.from_kind AND e.from_id = t.from_id) OR
                  (e.to_kind = t.from_kind AND e.to_id = t.from_id) OR
-                 (e.from_kind = t.to_kind AND e.from_id = t.to_id) OR
+                 (e.from_kind = t.to_kind AND e.from_id = t.from_id) OR
                  (e.to_kind = t.to_kind AND e.to_id = t.to_id)
              )
              WHERE t.depth < ?4{rel_clause}{active_recursive}"
@@ -467,7 +469,7 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active
          SELECT id, from_kind, from_id, to_kind, to_id, rel_type, display, MIN(depth) AS depth
          FROM traversal
          GROUP BY id
-         ORDER BY depth ASC, from_kind ASC, from_id ASC"
+         ORDER BY depth ASC, from_kind ASC, from_id ASC{limit_clause}"
     )
 }
 
