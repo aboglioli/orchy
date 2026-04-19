@@ -121,10 +121,22 @@ pub async fn get(
         *by_status.entry(task.status.clone()).or_insert(0u32) += 1;
     }
 
-    let project_dto = overview.project.map(project_to_dto);
+    let project_dto = overview
+        .project
+        .map(project_to_dto)
+        .map(|p| {
+            serde_json::to_value(p).map_err(|e| {
+                ApiError(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "SERIALIZATION_ERROR",
+                    e.to_string(),
+                )
+            })
+        })
+        .transpose()?;
 
     Ok(Json(serde_json::json!({
-        "project": project_dto.map(|p| serde_json::to_value(p).unwrap_or_default()),
+        "project": project_dto,
         "summary": {
             "agents_count": overview.agents.len(),
             "tasks_by_status": by_status,

@@ -209,7 +209,13 @@ pub async fn list(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&page).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&page).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn post(
@@ -242,7 +248,13 @@ pub async fn post(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn get_task(
@@ -263,7 +275,13 @@ pub async fn get_task(
         .map_err(ApiError::from)?;
     check_task_project(&task, &project)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn update_task(
@@ -300,7 +318,13 @@ pub async fn update_task(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn claim(
@@ -335,7 +359,13 @@ pub async fn claim(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn start(
@@ -369,7 +399,13 @@ pub async fn start(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn complete(
@@ -403,7 +439,13 @@ pub async fn complete(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn fail(
@@ -437,7 +479,13 @@ pub async fn fail(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn cancel(
@@ -471,7 +519,13 @@ pub async fn cancel(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn release(
@@ -502,7 +556,13 @@ pub async fn release(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn unblock(
@@ -532,7 +592,13 @@ pub async fn unblock(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn assign(
@@ -566,7 +632,13 @@ pub async fn assign(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn add_dep(
@@ -601,7 +673,13 @@ pub async fn add_dep(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn remove_dep(
@@ -635,7 +713,13 @@ pub async fn remove_dep(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn tag_task(
@@ -665,7 +749,13 @@ pub async fn tag_task(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn untag_task(
@@ -695,7 +785,13 @@ pub async fn untag_task(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn list_tags(
@@ -720,7 +816,13 @@ pub async fn list_tags(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&tags).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&tags).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn next_task(
@@ -770,7 +872,13 @@ pub async fn next_task(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn split(
@@ -926,5 +1034,11 @@ pub async fn delegate(
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&task).unwrap_or_default()))
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
