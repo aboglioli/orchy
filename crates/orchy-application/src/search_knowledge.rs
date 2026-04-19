@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use orchy_core::edge::{EdgeStore, TraversalDirection};
+use orchy_core::edge::{EdgeStore, TraversalConfig, TraversalDirection};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
@@ -178,11 +178,13 @@ impl SearchKnowledge {
                 org,
                 &ResourceKind::Task,
                 task_id,
-                3,
-                None,
-                TraversalDirection::Both,
-                true,
-                None,
+                TraversalConfig {
+                    max_depth: 3,
+                    rel_types: None,
+                    direction: TraversalDirection::Both,
+                    only_active: true,
+                    as_of: None,
+                },
             )
             .await?;
 

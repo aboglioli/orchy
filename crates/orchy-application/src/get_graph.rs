@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use orchy_core::agent::AgentStore;
-use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
+use orchy_core::edge::{EdgeStore, RelationType, TraversalConfig, TraversalDirection};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::organization::OrganizationId;
@@ -78,11 +78,13 @@ impl GetGraph {
                 &org,
                 &kind,
                 &cmd.id,
-                max_depth,
-                rel_types.as_deref(),
-                direction,
-                cmd.only_active,
-                cmd.as_of,
+                TraversalConfig {
+                    max_depth,
+                    rel_types: rel_types.as_deref(),
+                    direction,
+                    only_active: cmd.only_active,
+                    as_of: cmd.as_of,
+                },
             )
             .await?;
 

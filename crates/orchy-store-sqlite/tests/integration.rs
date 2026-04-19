@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
-use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
+use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalConfig, TraversalDirection};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -908,11 +908,13 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         &o,
         &ResourceKind::Task,
         "root",
-        3,
-        None,
-        TraversalDirection::Both,
-        false,
-        None,
+        TraversalConfig {
+            max_depth: 3,
+            rel_types: None,
+            direction: TraversalDirection::Both,
+            only_active: false,
+            as_of: None,
+        },
     )
     .await
     .unwrap();

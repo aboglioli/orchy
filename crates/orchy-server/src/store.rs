@@ -5,7 +5,7 @@ use orchy_events::io::Writer as EventWriter;
 
 use orchy_application::EventQuery;
 use orchy_core::agent::{Agent, AgentId, AgentStore};
-use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalEdge};
+use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalConfig, TraversalEdge};
 use orchy_core::error::Result;
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
@@ -35,7 +35,7 @@ impl StoreBackend {
         limit: usize,
     ) -> orchy_core::error::Result<Vec<orchy_events::SerializedEvent>> {
         match self {
-            StoreBackend::Memory(b) => b.query_events(organization, since, limit),
+            StoreBackend::Memory(b) => b.query_events(organization, since, limit).await,
             StoreBackend::Sqlite(b) => b.query_events(organization, since, limit),
             StoreBackend::Postgres(b) => b.query_events(organization, since, limit).await,
         }
@@ -316,25 +316,9 @@ impl EdgeStore for StoreBackend {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        max_depth: u32,
-        rel_types: Option<&[RelationType]>,
-        direction: TraversalDirection,
-        only_active: bool,
-        as_of: Option<DateTime<Utc>>,
+        config: TraversalConfig<'_>,
     ) -> Result<Vec<TraversalEdge>> {
-        delegate_trait!(
-            self,
-            EdgeStore::traverse(
-                org,
-                kind,
-                id,
-                max_depth,
-                rel_types,
-                direction,
-                only_active,
-                as_of
-            )
-        )
+        delegate_trait!(self, EdgeStore::traverse(org, kind, id, config))
     }
     async fn delete_all_for(
         &self,
@@ -380,7 +364,7 @@ impl EventQuery for StoreBackend {
         limit: usize,
     ) -> Result<Vec<orchy_events::SerializedEvent>> {
         match self {
-            StoreBackend::Memory(b) => b.query_events(organization, since, limit),
+            StoreBackend::Memory(b) => b.query_events(organization, since, limit).await,
             StoreBackend::Sqlite(b) => b.query_events(organization, since, limit),
             StoreBackend::Postgres(b) => b.query_events(organization, since, limit).await,
         }

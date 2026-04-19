@@ -3,7 +3,9 @@ use std::collections::{HashMap, VecDeque};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalEdge};
+use orchy_core::edge::{
+    Edge, EdgeId, EdgeStore, RelationType, TraversalConfig, TraversalDirection, TraversalEdge,
+};
 use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
@@ -173,12 +175,15 @@ impl EdgeStore for MemoryBackend {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        max_depth: u32,
-        rel_types: Option<&[RelationType]>,
-        direction: TraversalDirection,
-        only_active: bool,
-        as_of: Option<DateTime<Utc>>,
+        config: TraversalConfig<'_>,
     ) -> Result<Vec<TraversalEdge>> {
+        let TraversalConfig {
+            max_depth,
+            rel_types,
+            direction,
+            only_active,
+            as_of,
+        } = config;
         let store = self.edges.read().await;
         let by_from = self.edges_by_from.read().await;
         let by_to = self.edges_by_to.read().await;

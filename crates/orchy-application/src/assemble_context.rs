@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
+use orchy_core::edge::{EdgeStore, RelationType, TraversalConfig, TraversalDirection};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeId, KnowledgeKind, KnowledgeStore};
 use orchy_core::organization::OrganizationId;
@@ -148,11 +148,13 @@ impl AssembleContext {
                     &org,
                     &kind,
                     &cmd.id,
-                    2,
-                    Some(&[RelationType::DependsOn]),
-                    TraversalDirection::Outgoing,
-                    true,
-                    None,
+                    TraversalConfig {
+                        max_depth: 2,
+                        rel_types: Some(&[RelationType::DependsOn]),
+                        direction: TraversalDirection::Outgoing,
+                        only_active: true,
+                        as_of: None,
+                    },
                 )
                 .await?;
             let mut flags = Vec::new();

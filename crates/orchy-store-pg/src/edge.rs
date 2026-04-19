@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
 use orchy_core::edge::{
-    Edge, EdgeId, EdgeStore, RelationType, RestoreEdge, TraversalDirection, TraversalEdge,
+    Edge, EdgeId, EdgeStore, RelationType, RestoreEdge, TraversalConfig, TraversalDirection,
+    TraversalEdge,
 };
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
@@ -289,12 +290,15 @@ impl EdgeStore for PgBackend {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        max_depth: u32,
-        rel_types: Option<&[RelationType]>,
-        direction: TraversalDirection,
-        only_active: bool,
-        as_of: Option<DateTime<Utc>>,
+        config: TraversalConfig<'_>,
     ) -> Result<Vec<TraversalEdge>> {
+        let TraversalConfig {
+            max_depth,
+            rel_types,
+            direction,
+            only_active,
+            as_of,
+        } = config;
         let rel_filter = rel_types.map(|rts| {
             rts.iter()
                 .map(|rt| format!("'{}'", rt))

@@ -12,6 +12,14 @@ use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 use crate::resource_ref::ResourceKind;
 
+pub struct TraversalConfig<'a> {
+    pub max_depth: u32,
+    pub rel_types: Option<&'a [RelationType]>,
+    pub direction: TraversalDirection,
+    pub only_active: bool,
+    pub as_of: Option<DateTime<Utc>>,
+}
+
 #[async_trait]
 pub trait EdgeStore: Send + Sync {
     async fn save(&self, edge: &Edge) -> Result<()>;
@@ -57,11 +65,7 @@ pub trait EdgeStore: Send + Sync {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        max_depth: u32,
-        rel_types: Option<&[RelationType]>,
-        direction: TraversalDirection,
-        only_active: bool,
-        as_of: Option<DateTime<Utc>>,
+        config: TraversalConfig<'_>,
     ) -> Result<Vec<TraversalEdge>>;
     async fn delete_all_for(
         &self,
