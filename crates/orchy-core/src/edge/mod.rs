@@ -331,7 +331,7 @@ impl Edge {
     }
 
     pub fn is_active_at(&self, ts: DateTime<Utc>) -> bool {
-        self.created_at <= ts && self.valid_until.map_or(true, |vu| vu > ts)
+        self.created_at <= ts && self.valid_until.is_none_or(|vu| vu > ts)
     }
 
     pub fn valid_until(&self) -> Option<DateTime<Utc>> {
