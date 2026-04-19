@@ -150,6 +150,11 @@ impl SqliteBackend {
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260419-000300_add_edge_valid_until.sql"
         )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260420-000000_add_missing_indexes.sql"
+        )))
         .map_err(|e| Error::Store(e.to_string()))
     }
 }
