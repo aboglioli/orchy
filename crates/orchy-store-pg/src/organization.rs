@@ -110,25 +110,44 @@ impl OrganizationStore for PgBackend {
     }
 
     async fn list(&self) -> Result<Vec<Organization>> {
-        let rows = sqlx::query(
+        let org_rows = sqlx::query(
             "SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at",
         )
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut orgs = Vec::new();
-        for row in rows {
-            let org_id_str: String = row.get("id");
+        let key_rows = sqlx::query(
+            "SELECT organization_id, id, name, key, is_active, created_at FROM api_keys",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        let mut keys_by_org: std::collections::HashMap<String, Vec<ApiKey>> =
+            std::collections::HashMap::new();
+        for row in &key_rows {
+            let org_id_str: String = row.get("organization_id");
+            let id: Uuid = row.get("id");
             let name: String = row.get("name");
+            let key: String = row.get("key");
+            let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
-            let updated_at: DateTime<Utc> = row.get("updated_at");
-            let api_keys = load_api_keys_pg(&self.pool, &org_id_str).await?;
-            orgs.push(build_org(
-                org_id_str, name, api_keys, created_at, updated_at,
-            )?);
+            let api_key = build_api_key(ApiKeyId::from_uuid(id), name, key, is_active, created_at)?;
+            keys_by_org.entry(org_id_str).or_default().push(api_key);
         }
-        Ok(orgs)
+
+        org_rows
+            .iter()
+            .map(|row| {
+                let org_id_str: String = row.get("id");
+                let name: String = row.get("name");
+                let created_at: DateTime<Utc> = row.get("created_at");
+                let updated_at: DateTime<Utc> = row.get("updated_at");
+                let api_keys = keys_by_org.remove(&org_id_str).unwrap_or_default();
+                build_org(org_id_str, name, api_keys, created_at, updated_at)
+            })
+            .collect()
     }
 }
 
