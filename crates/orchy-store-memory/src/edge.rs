@@ -15,29 +15,39 @@ use crate::MemoryBackend;
 
 #[async_trait]
 impl EdgeStore for MemoryBackend {
-    async fn save(&self, edge: &Edge) -> Result<()> {
-        let mut store = self.edges.write().await;
-        let mut by_from = self.edges_by_from.write().await;
-        let mut by_to = self.edges_by_to.write().await;
+    async fn save(&self, edge: &mut Edge) -> Result<()> {
+        {
+            let mut store = self.edges.write().await;
+            let mut by_from = self.edges_by_from.write().await;
+            let mut by_to = self.edges_by_to.write().await;
 
-        if let Some(old) = store.get(&edge.id()) {
-            let from_key = (old.from_kind().clone(), old.from_id().to_string());
-            if let Some(ids) = by_from.get_mut(&from_key) {
-                ids.retain(|id| id != &old.id());
+            if let Some(old) = store.get(&edge.id()) {
+                let from_key = (old.from_kind().clone(), old.from_id().to_string());
+                if let Some(ids) = by_from.get_mut(&from_key) {
+                    ids.retain(|id| id != &old.id());
+                }
+                let to_key = (old.to_kind().clone(), old.to_id().to_string());
+                if let Some(ids) = by_to.get_mut(&to_key) {
+                    ids.retain(|id| id != &old.id());
+                }
             }
-            let to_key = (old.to_kind().clone(), old.to_id().to_string());
-            if let Some(ids) = by_to.get_mut(&to_key) {
-                ids.retain(|id| id != &old.id());
+
+            let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
+            by_from.entry(from_key).or_default().push(edge.id());
+
+            let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
+            by_to.entry(to_key).or_default().push(edge.id());
+
+            store.insert(edge.id(), edge.clone());
+        }
+
+        let events = edge.drain_events();
+        if !events.is_empty() {
+            if let Err(e) = orchy_events::io::Writer::write_all(self, &events).await {
+                tracing::error!("failed to persist events: {e}");
             }
         }
 
-        let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
-        by_from.entry(from_key).or_default().push(edge.id());
-
-        let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
-        by_to.entry(to_key).or_default().push(edge.id());
-
-        store.insert(edge.id(), edge.clone());
         Ok(())
     }
 

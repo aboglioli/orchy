@@ -73,7 +73,7 @@ impl AddEdge {
             )));
         }
 
-        let edge = Edge::new(
+        let mut edge = Edge::new(
             org_id,
             from_kind,
             cmd.from_id,
@@ -82,8 +82,8 @@ impl AddEdge {
             rel_type,
             cmd.display,
             created_by,
-        );
-        self.store.save(&edge).await?;
+        )?;
+        self.store.save(&mut edge).await?;
         Ok(EdgeResponse::from(&edge))
     }
 }

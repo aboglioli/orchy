@@ -6,11 +6,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use orchy_events::{Event, EventCollector, Payload};
+
 use crate::agent::AgentId;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 use crate::resource_ref::ResourceKind;
+
+pub mod events;
+
+use self::events as edge_events;
 
 pub struct TraversalConfig<'a> {
     pub max_depth: u32,
@@ -22,7 +28,7 @@ pub struct TraversalConfig<'a> {
 
 #[async_trait]
 pub trait EdgeStore: Send + Sync {
-    async fn save(&self, edge: &Edge) -> Result<()>;
+    async fn save(&self, edge: &mut Edge) -> Result<()>;
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>>;
     async fn delete(&self, id: &EdgeId) -> Result<()>;
     async fn find_from(
@@ -253,6 +259,8 @@ pub struct Edge {
     source_kind: Option<ResourceKind>,
     source_id: Option<String>,
     valid_until: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Edge {
@@ -266,9 +274,10 @@ impl Edge {
         rel_type: RelationType,
         display: Option<String>,
         created_by: Option<AgentId>,
-    ) -> Self {
-        Self {
-            id: EdgeId::new(),
+    ) -> Result<Self> {
+        let id = EdgeId::new();
+        let mut edge = Self {
+            id,
             org_id,
             from_kind,
             from_id,
@@ -281,7 +290,29 @@ impl Edge {
             source_kind: None,
             source_id: None,
             valid_until: None,
-        }
+            collector: EventCollector::new(),
+        };
+
+        let payload = Payload::from_json(&edge_events::EdgeCreatedPayload {
+            org_id: edge.org_id.to_string(),
+            edge_id: edge.id.to_string(),
+            from_kind: edge.from_kind.to_string(),
+            from_id: edge.from_id.clone(),
+            to_kind: edge.to_kind.to_string(),
+            to_id: edge.to_id.clone(),
+            rel_type: edge.rel_type.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            edge.org_id.as_str(),
+            edge_events::NAMESPACE,
+            edge_events::TOPIC_CREATED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        edge.collector.collect(event);
+
+        Ok(edge)
     }
 
     pub fn restore(r: RestoreEdge) -> Self {
@@ -299,6 +330,7 @@ impl Edge {
             source_kind: r.source_kind,
             source_id: r.source_id,
             valid_until: r.valid_until,
+            collector: EventCollector::new(),
         }
     }
 
@@ -356,8 +388,27 @@ impl Edge {
         self.source_id.as_deref()
     }
 
-    pub fn invalidate(&mut self) {
+    pub fn invalidate(&mut self) -> Result<()> {
         self.valid_until = Some(Utc::now());
+
+        let payload = Payload::from_json(&edge_events::EdgeInvalidatedPayload {
+            org_id: self.org_id.to_string(),
+            edge_id: self.id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            edge_events::NAMESPACE,
+            edge_events::TOPIC_INVALIDATED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn is_active(&self) -> bool {
@@ -447,7 +498,8 @@ mod tests {
             RelationType::Produces,
             None,
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(edge.from_kind(), &ResourceKind::Task);
         assert_eq!(edge.to_kind(), &ResourceKind::Knowledge);
         assert_eq!(edge.rel_type(), &RelationType::Produces);
@@ -471,14 +523,15 @@ mod tests {
             RelationType::Produces,
             None,
             None,
-        );
+        )
+        .unwrap();
         let before = edge.created_at() - Duration::seconds(1);
         let after_create = edge.created_at() + Duration::seconds(1);
 
         assert!(!edge.is_active_at(before));
         assert!(edge.is_active_at(after_create));
 
-        edge.invalidate();
+        edge.invalidate().unwrap();
         let valid_until = edge.valid_until().unwrap();
         let after_invalidate = valid_until + Duration::seconds(1);
         assert!(edge.is_active_at(edge.created_at()));
@@ -497,10 +550,11 @@ mod tests {
             RelationType::Produces,
             None,
             None,
-        );
+        )
+        .unwrap();
         assert!(edge.is_active());
         assert!(edge.valid_until().is_none());
-        edge.invalidate();
+        edge.invalidate().unwrap();
         assert!(!edge.is_active());
         assert!(edge.valid_until().is_some());
     }

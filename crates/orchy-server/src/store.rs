@@ -16,6 +16,7 @@ use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::{LockStore, ResourceLock};
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
+use orchy_core::user::{OrgMembership, OrgMembershipStore, User, UserId, UserStore};
 use orchy_store_memory::MemoryBackend;
 use orchy_store_pg::PgBackend;
 use orchy_store_sqlite::SqliteBackend;
@@ -247,7 +248,7 @@ impl NamespaceStore for StoreBackend {
 
 #[async_trait]
 impl EdgeStore for StoreBackend {
-    async fn save(&self, edge: &Edge) -> Result<()> {
+    async fn save(&self, edge: &mut Edge) -> Result<()> {
         delegate_trait!(self, EdgeStore::save(edge))
     }
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
@@ -368,5 +369,53 @@ impl EventQuery for StoreBackend {
             StoreBackend::Sqlite(b) => b.query_events(organization, since, limit),
             StoreBackend::Postgres(b) => b.query_events(organization, since, limit).await,
         }
+    }
+}
+
+#[async_trait]
+impl UserStore for StoreBackend {
+    async fn save(&self, user: &mut User) -> Result<()> {
+        delegate_trait!(self, UserStore::save(user))
+    }
+    async fn find_by_id(&self, id: &UserId) -> Result<Option<User>> {
+        delegate_trait!(self, UserStore::find_by_id(id))
+    }
+    async fn find_by_email(&self, email: &orchy_core::user::Email) -> Result<Option<User>> {
+        delegate_trait!(self, UserStore::find_by_email(email))
+    }
+    async fn list_all(&self) -> Result<Vec<User>> {
+        delegate_trait!(self, UserStore::list_all())
+    }
+}
+
+#[async_trait]
+impl OrgMembershipStore for StoreBackend {
+    async fn save(&self, membership: &OrgMembership) -> Result<()> {
+        delegate_trait!(self, OrgMembershipStore::save(membership))
+    }
+    async fn find_by_id(
+        &self,
+        id: &orchy_core::user::MembershipId,
+    ) -> Result<Option<OrgMembership>> {
+        delegate_trait!(self, OrgMembershipStore::find_by_id(id))
+    }
+    async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>> {
+        delegate_trait!(self, OrgMembershipStore::find_by_user(user_id))
+    }
+    async fn find_by_org(
+        &self,
+        org_id: &orchy_core::organization::OrganizationId,
+    ) -> Result<Vec<OrgMembership>> {
+        delegate_trait!(self, OrgMembershipStore::find_by_org(org_id))
+    }
+    async fn find(
+        &self,
+        user_id: &UserId,
+        org_id: &orchy_core::organization::OrganizationId,
+    ) -> Result<Option<OrgMembership>> {
+        delegate_trait!(self, OrgMembershipStore::find(user_id, org_id))
+    }
+    async fn delete(&self, id: &orchy_core::user::MembershipId) -> Result<()> {
+        delegate_trait!(self, OrgMembershipStore::delete(id))
     }
 }

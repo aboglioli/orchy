@@ -152,7 +152,7 @@ impl WriteKnowledge {
         self.store.save(&mut entry).await?;
 
         if let Some(task_id) = task_id_str.filter(|t| t.parse::<TaskId>().is_ok()) {
-            let edge = Edge::new(
+            let mut edge = match Edge::new(
                 org_id,
                 ResourceKind::Task,
                 task_id.clone(),
@@ -161,9 +161,15 @@ impl WriteKnowledge {
                 RelationType::Produces,
                 None,
                 agent_id,
-            )
+            ) {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!("failed to create edge: {e}");
+                    return Ok(KnowledgeResponse::from(&entry));
+                }
+            }
             .with_source(ResourceKind::Task, task_id);
-            if let Err(e) = self.edges.save(&edge).await {
+            if let Err(e) = self.edges.save(&mut edge).await {
                 tracing::warn!(
                     "failed to create produces edge for knowledge {}: {e}",
                     entry.id()

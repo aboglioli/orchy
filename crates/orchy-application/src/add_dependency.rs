@@ -88,7 +88,7 @@ impl AddDependency {
             .await?;
 
         if !already_exists {
-            let edge = Edge::new(
+            let mut edge = Edge::new(
                 org_id,
                 ResourceKind::Task,
                 task_id.to_string(),
@@ -97,8 +97,8 @@ impl AddDependency {
                 RelationType::DependsOn,
                 None,
                 None,
-            );
-            self.edges.save(&edge).await?;
+            )?;
+            self.edges.save(&mut edge).await?;
         }
 
         Ok(TaskResponse::from(&task))

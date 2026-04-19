@@ -70,7 +70,7 @@ impl DelegateTask {
         )?;
 
         self.tasks.save(&mut subtask).await?;
-        let edge = Edge::new(
+        let mut edge = match Edge::new(
             parent.org_id().clone(),
             ResourceKind::Task,
             parent_id.to_string(),
@@ -79,9 +79,15 @@ impl DelegateTask {
             RelationType::Spawns,
             None,
             created_by,
-        )
+        ) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("failed to create edge: {e}");
+                return Ok(TaskResponse::from(&subtask));
+            }
+        }
         .with_source(ResourceKind::Task, parent_id.to_string());
-        if let Err(e) = self.edges.save(&edge).await {
+        if let Err(e) = self.edges.save(&mut edge).await {
             tracing::warn!(
                 "failed to create spawns edge for delegated task {}: {e}",
                 subtask.id()

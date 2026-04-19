@@ -38,9 +38,13 @@ fn build_time_clause(only_active: bool, as_of: Option<&DateTime<Utc>>) -> String
 
 #[async_trait]
 impl EdgeStore for SqliteBackend {
-    async fn save(&self, edge: &Edge) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
+    async fn save(&self, edge: &mut Edge) -> Result<()> {
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        tx.execute(
             "INSERT OR REPLACE INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             rusqlite::params![
@@ -60,6 +64,11 @@ impl EdgeStore for SqliteBackend {
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = edge.drain_events();
+        crate::write_events_in_tx(&tx, &events)?;
+
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

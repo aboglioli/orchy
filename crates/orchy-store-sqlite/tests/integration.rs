@@ -841,7 +841,7 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
 async fn edge_valid_until_persisted_and_filtered() {
     let store = backend();
     let org = org("default");
-    let edge = Edge::new(
+    let mut edge = Edge::new(
         org.clone(),
         ResourceKind::Task,
         "t1".to_string(),
@@ -850,8 +850,9 @@ async fn edge_valid_until_persisted_and_filtered() {
         RelationType::Produces,
         None,
         None,
-    );
-    EdgeStore::save(&store, &edge).await.unwrap();
+    )
+    .unwrap();
+    EdgeStore::save(&store, &mut edge).await.unwrap();
 
     let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true, None)
         .await
@@ -859,8 +860,8 @@ async fn edge_valid_until_persisted_and_filtered() {
     assert_eq!(found.len(), 1);
 
     let mut invalidated = found.into_iter().next().unwrap();
-    invalidated.invalidate();
-    EdgeStore::save(&store, &invalidated).await.unwrap();
+    invalidated.invalidate().unwrap();
+    EdgeStore::save(&store, &mut invalidated).await.unwrap();
 
     let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true, None)
         .await
@@ -879,7 +880,7 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
     let store = backend();
     let o = org("default");
 
-    let edge_to_root = Edge::new(
+    let mut edge_to_root = Edge::new(
         o.clone(),
         ResourceKind::Task,
         "neighbor".into(),
@@ -888,8 +889,9 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         RelationType::RelatedTo,
         None,
         None,
-    );
-    let edge_from_neighbor = Edge::new(
+    )
+    .unwrap();
+    let mut edge_from_neighbor = Edge::new(
         o.clone(),
         ResourceKind::Task,
         "neighbor".into(),
@@ -898,10 +900,13 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         RelationType::RelatedTo,
         None,
         None,
-    );
+    )
+    .unwrap();
 
-    EdgeStore::save(&store, &edge_to_root).await.unwrap();
-    EdgeStore::save(&store, &edge_from_neighbor).await.unwrap();
+    EdgeStore::save(&store, &mut edge_to_root).await.unwrap();
+    EdgeStore::save(&store, &mut edge_from_neighbor)
+        .await
+        .unwrap();
 
     let edges = EdgeStore::traverse(
         &store,
@@ -941,8 +946,9 @@ async fn edge_as_of_returns_historical_snapshot() {
         RelationType::Produces,
         None,
         None,
-    );
-    EdgeStore::save(&store, &edge).await.unwrap();
+    )
+    .unwrap();
+    EdgeStore::save(&store, &mut edge).await.unwrap();
 
     let snapshot_time = edge.created_at();
 
@@ -959,8 +965,8 @@ async fn edge_as_of_returns_historical_snapshot() {
     .unwrap();
     assert_eq!(found.len(), 1);
 
-    edge.invalidate();
-    EdgeStore::save(&store, &edge).await.unwrap();
+    edge.invalidate().unwrap();
+    EdgeStore::save(&store, &mut edge).await.unwrap();
 
     let found = EdgeStore::find_from(
         &store,

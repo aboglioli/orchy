@@ -67,8 +67,8 @@ impl RemoveDependency {
             .into_iter()
             .find(|e| e.to_id() == dependency_id.to_string() && e.is_active())
         {
-            dep_edge.invalidate();
-            self.edges.save(&dep_edge).await?;
+            dep_edge.invalidate()?;
+            self.edges.save(&mut dep_edge).await?;
         }
 
         Ok(TaskResponse::from(&task))

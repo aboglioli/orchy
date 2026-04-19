@@ -105,7 +105,7 @@ impl PostTask {
                 )
                 .await?;
             if !already_exists {
-                let edge = Edge::new(
+                let mut edge = Edge::new(
                     org_id.clone(),
                     ResourceKind::Task,
                     task.id().to_string(),
@@ -114,8 +114,8 @@ impl PostTask {
                     RelationType::DependsOn,
                     None,
                     created_by.clone(),
-                );
-                self.edges.save(&edge).await?;
+                )?;
+                self.edges.save(&mut edge).await?;
             }
         }
 
@@ -132,7 +132,7 @@ impl PostTask {
                 )
                 .await?;
             if !already_exists {
-                let edge = Edge::new(
+                let mut edge = Edge::new(
                     org_id,
                     ResourceKind::Task,
                     pid.to_string(),
@@ -141,8 +141,8 @@ impl PostTask {
                     RelationType::Spawns,
                     None,
                     created_by,
-                );
-                self.edges.save(&edge).await?;
+                )?;
+                self.edges.save(&mut edge).await?;
             }
         }
 

@@ -103,7 +103,7 @@ impl ReplaceTask {
                     )
                     .await?;
                 if !already_exists {
-                    let dep_edge = Edge::new(
+                    let mut dep_edge = Edge::new(
                         org_id.clone(),
                         ResourceKind::Task,
                         task.id().to_string(),
@@ -112,12 +112,12 @@ impl ReplaceTask {
                         RelationType::DependsOn,
                         None,
                         created_by.clone(),
-                    );
-                    self.edges.save(&dep_edge).await?;
+                    )?;
+                    self.edges.save(&mut dep_edge).await?;
                 }
             }
 
-            let edge = Edge::new(
+            let mut edge = Edge::new(
                 org_id.clone(),
                 ResourceKind::Task,
                 task.id().to_string(),
@@ -126,9 +126,9 @@ impl ReplaceTask {
                 RelationType::Supersedes,
                 None,
                 created_by.clone(),
-            )
+            )?
             .with_source(ResourceKind::Task, task_id.to_string());
-            self.edges.save(&edge).await?;
+            self.edges.save(&mut edge).await?;
 
             new_tasks.push(task);
         }

@@ -119,7 +119,7 @@ impl SplitTask {
             )?;
             self.tasks.save(&mut task).await?;
 
-            let spawns_edge = Edge::new(
+            let mut spawns_edge = Edge::new(
                 parent.org_id().clone(),
                 ResourceKind::Task,
                 parent_id.to_string(),
@@ -128,9 +128,9 @@ impl SplitTask {
                 RelationType::Spawns,
                 None,
                 created_by.clone(),
-            )
+            )?
             .with_source(ResourceKind::Task, parent_id.to_string());
-            self.edges.save(&spawns_edge).await?;
+            self.edges.save(&mut spawns_edge).await?;
 
             for dep_id in &depends_on_ids {
                 let already_exists = self
@@ -145,7 +145,7 @@ impl SplitTask {
                     )
                     .await?;
                 if !already_exists {
-                    let dep_edge = Edge::new(
+                    let mut dep_edge = Edge::new(
                         parent.org_id().clone(),
                         ResourceKind::Task,
                         task.id().to_string(),
@@ -154,8 +154,8 @@ impl SplitTask {
                         RelationType::DependsOn,
                         None,
                         created_by.clone(),
-                    );
-                    self.edges.save(&dep_edge).await?;
+                    )?;
+                    self.edges.save(&mut dep_edge).await?;
                 }
             }
 

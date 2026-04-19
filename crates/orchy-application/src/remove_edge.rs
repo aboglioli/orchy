@@ -26,7 +26,7 @@ impl RemoveEdge {
             .find_by_id(&id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("edge: {}", cmd.edge_id)))?;
-        edge.invalidate();
-        self.store.save(&edge).await
+        edge.invalidate()?;
+        self.store.save(&mut edge).await
     }
 }

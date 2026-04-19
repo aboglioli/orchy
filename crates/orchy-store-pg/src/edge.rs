@@ -19,7 +19,13 @@ use crate::PgBackend;
 
 #[async_trait]
 impl EdgeStore for PgBackend {
-    async fn save(&self, edge: &Edge) -> Result<()> {
+    async fn save(&self, edge: &mut Edge) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -50,9 +56,14 @@ impl EdgeStore for PgBackend {
         .bind(edge.source_kind().map(|k| k.to_string()))
         .bind(edge.source_id())
         .bind(edge.valid_until())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = edge.drain_events();
+        crate::write_events_in_tx(&mut tx, &events).await?;
+
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 
