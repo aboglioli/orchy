@@ -77,6 +77,7 @@ impl GetGraph {
                 max_depth,
                 rel_types.as_deref(),
                 direction,
+                true,
             )
             .await?;
 

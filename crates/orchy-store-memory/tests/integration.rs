@@ -791,7 +791,7 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
     EdgeStore::save(&store, &e1).await.unwrap();
     EdgeStore::save(&store, &e2).await.unwrap();
 
-    let all = EdgeStore::list_by_org(&store, &o, None, PageParams::default())
+    let all = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false)
         .await
         .unwrap();
     assert_eq!(all.items.len(), 2);
@@ -801,6 +801,7 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
         &o,
         Some(&RelationType::Spawns),
         PageParams::default(),
+        false,
     )
     .await
     .unwrap();
@@ -841,7 +842,7 @@ async fn delete_knowledge_cleans_up_associated_edges() {
     );
     EdgeStore::save(&store, &edge).await.unwrap();
 
-    let before = EdgeStore::list_by_org(&store, &o, None, PageParams::default())
+    let before = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false)
         .await
         .unwrap();
     assert_eq!(before.items.len(), 1);
@@ -853,7 +854,7 @@ async fn delete_knowledge_cleans_up_associated_edges() {
         .await
         .unwrap();
 
-    let after = EdgeStore::list_by_org(&store, &o, None, PageParams::default())
+    let after = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false)
         .await
         .unwrap();
     assert_eq!(after.items.len(), 0);
@@ -920,6 +921,7 @@ async fn split_task_creates_spawns_edges() {
         &o,
         Some(&RelationType::Spawns),
         PageParams::default(),
+        false,
     )
     .await
     .unwrap();
@@ -1036,6 +1038,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
         &ResourceKind::Task,
         &sub.id,
         Some(&RelationType::DependsOn),
+        false,
     )
     .await
     .unwrap();
@@ -1284,4 +1287,40 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
         ctx.task.acceptance_criteria.as_deref(),
         Some("Done when tests pass")
     );
+}
+
+#[tokio::test]
+async fn edge_invalidate_hides_from_only_active_queries() {
+    let store = backend();
+    let o = org();
+    let mut edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "t1".to_string(),
+        ResourceKind::Knowledge,
+        "k1".to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true)
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+
+    edge.invalidate();
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true)
+        .await
+        .unwrap();
+    assert!(found.is_empty());
+
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, false)
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert!(!found[0].is_active());
 }

@@ -41,6 +41,7 @@ impl EdgeStore for MemoryBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
         let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
         let mut edges: Vec<Edge> = store
@@ -50,6 +51,7 @@ impl EdgeStore for MemoryBackend {
                     && e.from_kind() == kind
                     && e.from_id() == id
                     && rel_type.is_none_or(|rt| e.rel_type() == rt)
+                    && (!only_active || e.is_active())
             })
             .cloned()
             .collect();
@@ -63,6 +65,7 @@ impl EdgeStore for MemoryBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
         let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
         let mut edges: Vec<Edge> = store
@@ -72,6 +75,7 @@ impl EdgeStore for MemoryBackend {
                     && e.to_kind() == kind
                     && e.to_id() == id
                     && rel_type.is_none_or(|rt| e.rel_type() == rt)
+                    && (!only_active || e.is_active())
             })
             .cloned()
             .collect();
@@ -104,11 +108,16 @@ impl EdgeStore for MemoryBackend {
         org: &OrganizationId,
         rel_type: Option<&RelationType>,
         page: PageParams,
+        only_active: bool,
     ) -> Result<Page<Edge>> {
         let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
         let mut edges: Vec<Edge> = store
             .values()
-            .filter(|e| e.org_id() == org && rel_type.is_none_or(|rt| e.rel_type() == rt))
+            .filter(|e| {
+                e.org_id() == org
+                    && rel_type.is_none_or(|rt| e.rel_type() == rt)
+                    && (!only_active || e.is_active())
+            })
             .cloned()
             .collect();
         edges.sort_by_key(|e| e.created_at());
@@ -125,9 +134,13 @@ impl EdgeStore for MemoryBackend {
         max_depth: u32,
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
+        only_active: bool,
     ) -> Result<Vec<TraversalEdge>> {
         let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
-        let all_edges: Vec<&Edge> = store.values().filter(|e| e.org_id() == org).collect();
+        let all_edges: Vec<&Edge> = store
+            .values()
+            .filter(|e| e.org_id() == org && (!only_active || e.is_active()))
+            .collect();
 
         // BFS from the starting node. Track visited edge IDs to avoid duplicates, keeping minimum depth.
         let mut result: HashMap<EdgeId, TraversalEdge> = HashMap::new();
