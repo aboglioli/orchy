@@ -378,6 +378,12 @@ pub struct SearchKnowledgeParams {
     /// Minimum similarity score (0.0–1.0). Only applies when embeddings are configured.
     /// Results without a score are always included.
     pub min_score: Option<f32>,
+    /// Resource kind for anchor proximity boost (e.g. "task", "agent").
+    pub anchor_kind: Option<String>,
+    /// Resource ID for anchor proximity boost. Entries linked to this resource score +0.2.
+    pub anchor_id: Option<String>,
+    /// Task ID for task-subgraph proximity boost. Entries linked to the task's dependency graph (BFS depth 3) score +0.2.
+    pub task_id: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

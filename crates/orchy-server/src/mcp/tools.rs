@@ -1697,6 +1697,9 @@ impl OrchyHandler {
             limit: params.limit,
             project: params.project,
             min_score: params.min_score,
+            anchor_kind: params.anchor_kind,
+            anchor_id: params.anchor_id,
+            task_id: params.task_id,
         };
 
         match self.container.app.search_knowledge.execute(cmd).await {

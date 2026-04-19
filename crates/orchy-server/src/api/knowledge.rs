@@ -209,6 +209,9 @@ pub async fn search(
         limit: body.limit,
         project: Some(project),
         min_score: None,
+        anchor_kind: None,
+        anchor_id: None,
+        task_id: None,
     };
 
     let entries = container

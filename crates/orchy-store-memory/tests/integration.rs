@@ -1291,6 +1291,97 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
 }
 
 #[tokio::test]
+async fn search_knowledge_task_proximity_boost() {
+    use std::sync::Arc;
+
+    use orchy_application::{SearchKnowledge, SearchKnowledgeCommand};
+
+    let store = Arc::new(backend());
+    let o = org();
+
+    let mut k = Knowledge::new(
+        o.clone(),
+        Some(proj("p")),
+        Namespace::root(),
+        "auth-decision".to_string(),
+        KnowledgeKind::Decision,
+        "Authentication Decision".to_string(),
+        "We chose JWT tokens for authentication".to_string(),
+        vec![],
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(store.as_ref(), &mut k).await.unwrap();
+
+    let edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-123".to_string(),
+        ResourceKind::Knowledge,
+        k.id().to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(store.as_ref(), &edge).await.unwrap();
+
+    let cmd_no_boost = SearchKnowledgeCommand {
+        org_id: o.to_string(),
+        query: "authentication".to_string(),
+        namespace: None,
+        kind: None,
+        limit: Some(10),
+        project: None,
+        min_score: None,
+        anchor_kind: None,
+        anchor_id: None,
+        task_id: None,
+    };
+    let results_no_boost = SearchKnowledge::new(
+        store.clone() as Arc<dyn orchy_core::knowledge::KnowledgeStore>,
+        None,
+        store.clone() as Arc<dyn EdgeStore>,
+    )
+    .execute(cmd_no_boost)
+    .await
+    .unwrap();
+
+    let cmd_with_boost = SearchKnowledgeCommand {
+        org_id: o.to_string(),
+        query: "authentication".to_string(),
+        namespace: None,
+        kind: None,
+        limit: Some(10),
+        project: None,
+        min_score: None,
+        anchor_kind: None,
+        anchor_id: None,
+        task_id: Some("task-123".to_string()),
+    };
+    let results_with_boost = SearchKnowledge::new(
+        store.clone() as Arc<dyn orchy_core::knowledge::KnowledgeStore>,
+        None,
+        store.clone() as Arc<dyn EdgeStore>,
+    )
+    .execute(cmd_with_boost)
+    .await
+    .unwrap();
+
+    assert!(!results_no_boost.is_empty());
+    assert!(!results_with_boost.is_empty());
+
+    let score_no_boost = results_no_boost[0].score.unwrap_or(0.0);
+    let score_with_boost = results_with_boost[0].score.unwrap_or(0.0);
+    assert!(
+        score_with_boost > score_no_boost,
+        "expected boosted score {} > unboosted {}",
+        score_with_boost,
+        score_no_boost
+    );
+}
+
+#[tokio::test]
 async fn edge_invalidate_hides_from_only_active_queries() {
     let store = backend();
     let o = org();
