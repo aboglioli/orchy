@@ -728,6 +728,34 @@ async fn edge_exists_by_pair_detects_duplicate() {
 }
 
 #[tokio::test]
+async fn edge_with_source_persists_and_retrieves_source() {
+    let store = backend();
+    let o = org();
+
+    let edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "task-1".into(),
+        ResourceKind::Knowledge,
+        "know-1".into(),
+        RelationType::Produces,
+        None,
+        None,
+    )
+    .with_source(ResourceKind::Task, "task-1".into());
+
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    let fetched = EdgeStore::find_by_id(&store, &edge.id())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(fetched.source_kind(), Some(&ResourceKind::Task));
+    assert_eq!(fetched.source_id(), Some("task-1"));
+}
+
+#[tokio::test]
 async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
     let store = backend();
     let o = org();

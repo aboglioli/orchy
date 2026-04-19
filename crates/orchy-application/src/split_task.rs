@@ -125,7 +125,8 @@ impl SplitTask {
                 RelationType::Spawns,
                 None,
                 created_by.clone(),
-            );
+            )
+            .with_source(ResourceKind::Task, parent_id.to_string());
             self.edges.save(&spawns_edge).await?;
 
             for dep_id in &depends_on_ids {

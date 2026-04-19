@@ -27,8 +27,8 @@ impl EdgeStore for SqliteBackend {
     async fn save(&self, edge: &Edge) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "INSERT OR REPLACE INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             rusqlite::params![
                 edge.id().to_string(),
                 edge.org_id().to_string(),
@@ -40,6 +40,8 @@ impl EdgeStore for SqliteBackend {
                 edge.display(),
                 edge.created_at().to_rfc3339(),
                 edge.created_by().map(|a| a.to_string()),
+                edge.source_kind().map(|k| k.to_string()),
+                edge.source_id(),
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -50,7 +52,7 @@ impl EdgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                  FROM edges WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -81,7 +83,7 @@ impl EdgeStore for SqliteBackend {
         let edges = if let Some(rt) = rel_type {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3 AND rel_type = ?4
                      ORDER BY created_at ASC",
                 )
@@ -96,7 +98,7 @@ impl EdgeStore for SqliteBackend {
         } else {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3
                      ORDER BY created_at ASC",
                 )
@@ -123,7 +125,7 @@ impl EdgeStore for SqliteBackend {
         let edges = if let Some(rt) = rel_type {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3 AND rel_type = ?4
                      ORDER BY created_at ASC",
                 )
@@ -138,7 +140,7 @@ impl EdgeStore for SqliteBackend {
         } else {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3
                      ORDER BY created_at ASC",
                 )
@@ -196,7 +198,7 @@ impl EdgeStore for SqliteBackend {
             if let Some(ref cursor) = page.after {
                 if let Some(decoded) = decode_cursor(cursor) {
                     let mut stmt = conn.prepare(
-                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                          FROM edges WHERE org_id = ?1 AND rel_type = ?2 AND id > ?3
                          ORDER BY created_at ASC LIMIT ?4",
                     ).map_err(|e| Error::Store(e.to_string()))?;
@@ -212,7 +214,7 @@ impl EdgeStore for SqliteBackend {
                 }
             } else {
                 let mut stmt = conn.prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = ?1 AND rel_type = ?2
                      ORDER BY created_at ASC LIMIT ?3",
                 ).map_err(|e| Error::Store(e.to_string()))?;
@@ -227,7 +229,7 @@ impl EdgeStore for SqliteBackend {
         } else if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
                 let mut stmt = conn.prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = ?1 AND id > ?2
                      ORDER BY created_at ASC LIMIT ?3",
                 ).map_err(|e| Error::Store(e.to_string()))?;
@@ -243,7 +245,7 @@ impl EdgeStore for SqliteBackend {
             }
         } else {
             let mut stmt = conn.prepare(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                  FROM edges WHERE org_id = ?1
                  ORDER BY created_at ASC LIMIT ?2",
             ).map_err(|e| Error::Store(e.to_string()))?;
@@ -435,6 +437,8 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
     let display: Option<String> = row.get(7)?;
     let created_at_str: String = row.get(8)?;
     let created_by_str: Option<String> = row.get(9)?;
+    let source_kind_str: Option<String> = row.get(10).ok().flatten();
+    let source_id: Option<String> = row.get(11).ok().flatten();
 
     let id = EdgeId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
@@ -462,6 +466,7 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
         .map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, str_err(e))
         })?;
+    let source_kind = source_kind_str.and_then(|s| s.parse::<ResourceKind>().ok());
 
     Ok(Edge::restore(RestoreEdge {
         id,
@@ -474,6 +479,8 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
         display,
         created_at,
         created_by,
+        source_kind,
+        source_id,
     }))
 }
 

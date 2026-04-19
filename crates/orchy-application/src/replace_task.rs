@@ -124,7 +124,8 @@ impl ReplaceTask {
                 RelationType::Supersedes,
                 None,
                 created_by.clone(),
-            );
+            )
+            .with_source(ResourceKind::Task, task_id.to_string());
             self.edges.save(&edge).await?;
 
             new_tasks.push(task);

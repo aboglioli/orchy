@@ -208,6 +208,8 @@ pub struct Edge {
     display: Option<String>,
     created_at: DateTime<Utc>,
     created_by: Option<AgentId>,
+    source_kind: Option<ResourceKind>,
+    source_id: Option<String>,
 }
 
 impl Edge {
@@ -233,6 +235,8 @@ impl Edge {
             display,
             created_at: Utc::now(),
             created_by,
+            source_kind: None,
+            source_id: None,
         }
     }
 
@@ -248,7 +252,15 @@ impl Edge {
             display: r.display,
             created_at: r.created_at,
             created_by: r.created_by,
+            source_kind: r.source_kind,
+            source_id: r.source_id,
         }
+    }
+
+    pub fn with_source(mut self, kind: ResourceKind, id: String) -> Self {
+        self.source_kind = Some(kind);
+        self.source_id = Some(id);
+        self
     }
 
     pub fn id(&self) -> EdgeId {
@@ -290,6 +302,14 @@ impl Edge {
     pub fn created_by(&self) -> Option<&AgentId> {
         self.created_by.as_ref()
     }
+
+    pub fn source_kind(&self) -> Option<&ResourceKind> {
+        self.source_kind.as_ref()
+    }
+
+    pub fn source_id(&self) -> Option<&str> {
+        self.source_id.as_deref()
+    }
 }
 
 pub struct RestoreEdge {
@@ -303,6 +323,8 @@ pub struct RestoreEdge {
     pub display: Option<String>,
     pub created_at: DateTime<Utc>,
     pub created_by: Option<AgentId>,
+    pub source_kind: Option<ResourceKind>,
+    pub source_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

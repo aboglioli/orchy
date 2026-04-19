@@ -387,6 +387,10 @@ pub struct EdgeResponse {
     pub display: Option<String>,
     pub created_at: String,
     pub created_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
 }
 
 impl From<Edge> for EdgeResponse {
@@ -407,6 +411,8 @@ impl From<&Edge> for EdgeResponse {
             display: e.display().map(|s| s.to_string()),
             created_at: e.created_at().to_rfc3339(),
             created_by: e.created_by().map(|a| a.to_string()),
+            source_kind: e.source_kind().map(|k| k.to_string()),
+            source_id: e.source_id().map(|s| s.to_string()),
         }
     }
 }

@@ -19,8 +19,8 @@ use crate::PgBackend;
 impl EdgeStore for PgBackend {
     async fn save(&self, edge: &Edge) -> Result<()> {
         sqlx::query(
-            "INSERT INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            "INSERT INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              ON CONFLICT (id) DO UPDATE SET
                 org_id = EXCLUDED.org_id,
                 from_kind = EXCLUDED.from_kind,
@@ -30,7 +30,9 @@ impl EdgeStore for PgBackend {
                 rel_type = EXCLUDED.rel_type,
                 display = EXCLUDED.display,
                 created_at = EXCLUDED.created_at,
-                created_by = EXCLUDED.created_by",
+                created_by = EXCLUDED.created_by,
+                source_kind = EXCLUDED.source_kind,
+                source_id = EXCLUDED.source_id",
         )
         .bind(edge.id().as_uuid())
         .bind(edge.org_id().to_string())
@@ -42,6 +44,8 @@ impl EdgeStore for PgBackend {
         .bind(edge.display())
         .bind(edge.created_at())
         .bind(edge.created_by().map(|a| *a.as_uuid()))
+        .bind(edge.source_kind().map(|k| k.to_string()))
+        .bind(edge.source_id())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -50,7 +54,7 @@ impl EdgeStore for PgBackend {
 
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
         let row = sqlx::query(
-            "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+            "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
              FROM edges WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -79,7 +83,7 @@ impl EdgeStore for PgBackend {
     ) -> Result<Vec<Edge>> {
         let rows = if let Some(rt) = rel_type {
             sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                  FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3 AND rel_type = $4
                  ORDER BY created_at ASC",
             )
@@ -92,7 +96,7 @@ impl EdgeStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
             sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                  FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3
                  ORDER BY created_at ASC",
             )
@@ -115,7 +119,7 @@ impl EdgeStore for PgBackend {
     ) -> Result<Vec<Edge>> {
         let rows = if let Some(rt) = rel_type {
             sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                  FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3 AND rel_type = $4
                  ORDER BY created_at ASC",
             )
@@ -128,7 +132,7 @@ impl EdgeStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
             sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                  FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3
                  ORDER BY created_at ASC",
             )
@@ -180,7 +184,7 @@ impl EdgeStore for PgBackend {
             if let Some(ref cursor) = page.after {
                 if let Some(decoded) = decode_cursor(cursor) {
                     sqlx::query(
-                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                          FROM edges WHERE org_id = $1 AND rel_type = $2 AND id > $3
                          ORDER BY created_at ASC LIMIT $4",
                     )
@@ -191,7 +195,7 @@ impl EdgeStore for PgBackend {
                 }
             } else {
                 sqlx::query(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = $1 AND rel_type = $2
                      ORDER BY created_at ASC LIMIT $3",
                 )
@@ -201,7 +205,7 @@ impl EdgeStore for PgBackend {
         } else if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
                 sqlx::query(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                      FROM edges WHERE org_id = $1 AND id > $2
                      ORDER BY created_at ASC LIMIT $3",
                 )
@@ -212,7 +216,7 @@ impl EdgeStore for PgBackend {
             }
         } else {
             sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
                  FROM edges WHERE org_id = $1
                  ORDER BY created_at ASC LIMIT $2",
             )
@@ -417,6 +421,8 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
     let created_by_uuid: Option<Uuid> = row
         .try_get("created_by")
         .map_err(|e| Error::Store(e.to_string()))?;
+    let source_kind_str: Option<String> = row.try_get("source_kind").unwrap_or(None);
+    let source_id: Option<String> = row.try_get("source_id").unwrap_or(None);
 
     let id = EdgeId::from_uuid(id_uuid);
     let org_id = OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?;
@@ -424,6 +430,7 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
     let to_kind = ResourceKind::from_str(&to_kind_str).map_err(Error::Store)?;
     let rel_type = RelationType::from_str(&rel_type_str).map_err(Error::Store)?;
     let created_by = created_by_uuid.map(AgentId::from_uuid);
+    let source_kind = source_kind_str.and_then(|s| s.parse::<ResourceKind>().ok());
 
     Ok(Edge::restore(RestoreEdge {
         id,
@@ -436,6 +443,8 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
         display,
         created_at,
         created_by,
+        source_kind,
+        source_id,
     }))
 }
 

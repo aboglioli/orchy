@@ -47,7 +47,11 @@ impl WriteKnowledge {
         edges: Arc<dyn EdgeStore>,
         embeddings: Option<Arc<dyn EmbeddingsProvider>>,
     ) -> Self {
-        Self { store, edges, embeddings }
+        Self {
+            store,
+            edges,
+            embeddings,
+        }
     }
 
     pub async fn execute(&self, cmd: WriteKnowledgeCommand) -> Result<KnowledgeResponse> {
@@ -147,21 +151,23 @@ impl WriteKnowledge {
 
         self.store.save(&mut entry).await?;
 
-        if let Some(task_id) = task_id_str {
-            if task_id.parse::<TaskId>().is_ok() {
-                let edge = Edge::new(
-                    org_id,
-                    ResourceKind::Task,
-                    task_id,
-                    ResourceKind::Knowledge,
-                    entry.id().to_string(),
-                    RelationType::Produces,
-                    None,
-                    agent_id,
+        if let Some(task_id) = task_id_str.filter(|t| t.parse::<TaskId>().is_ok()) {
+            let edge = Edge::new(
+                org_id,
+                ResourceKind::Task,
+                task_id.clone(),
+                ResourceKind::Knowledge,
+                entry.id().to_string(),
+                RelationType::Produces,
+                None,
+                agent_id,
+            )
+            .with_source(ResourceKind::Task, task_id);
+            if let Err(e) = self.edges.save(&edge).await {
+                tracing::warn!(
+                    "failed to create produces edge for knowledge {}: {e}",
+                    entry.id()
                 );
-                if let Err(e) = self.edges.save(&edge).await {
-                    tracing::warn!("failed to create produces edge for knowledge {}: {e}", entry.id());
-                }
             }
         }
 

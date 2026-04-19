@@ -77,7 +77,8 @@ impl DelegateTask {
             RelationType::Spawns,
             None,
             created_by,
-        );
+        )
+        .with_source(ResourceKind::Task, parent_id.to_string());
         if let Err(e) = self.edges.save(&edge).await {
             tracing::warn!(
                 "failed to create spawns edge for delegated task {}: {e}",
