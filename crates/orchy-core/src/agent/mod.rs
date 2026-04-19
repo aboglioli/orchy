@@ -356,6 +356,7 @@ impl Agent {
             self.project = p;
         }
         self.namespace = namespace;
+        self.last_heartbeat = Utc::now();
 
         if old_project == self.project.to_string() && old_namespace == self.namespace.to_string() {
             return Ok(());
