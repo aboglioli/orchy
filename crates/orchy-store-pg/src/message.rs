@@ -135,34 +135,27 @@ impl MessageStore for PgBackend {
         let rows = if namespace.is_root() {
             if let Some(cid) = cursor_id {
                 sqlx::query(
-                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-                     FROM messages
-                     WHERE status = 'pending'
-                       AND organization_id = $1
-                       AND project = $2
-                       AND id < $5
+                    "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                     FROM messages m
+                     LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $4
+                     WHERE m.status = 'pending'
+                       AND m.organization_id = $1
+                       AND m.project = $2
+                       AND m.id < $5
                        AND (
-                            to_target = $3
+                            m.to_target = $3
                             OR (
-                                to_target = 'broadcast'
-                                AND from_agent != $4
-                                AND NOT EXISTS (
-                                    SELECT 1 FROM message_receipts
-                                    WHERE message_receipts.message_id = messages.id
-                                      AND message_receipts.agent_id = $4
-                                )
+                                m.to_target = 'broadcast'
+                                AND m.from_agent != $4
+                                AND r.message_id IS NULL
                             )
                             OR (
-                                to_target LIKE 'role:%'
-                                AND from_agent != $4
-                                AND NOT EXISTS (
-                                    SELECT 1 FROM message_receipts
-                                    WHERE message_receipts.message_id = messages.id
-                                      AND message_receipts.agent_id = $4
-                                )
+                                m.to_target LIKE 'role:%'
+                                AND m.from_agent != $4
+                                AND r.message_id IS NULL
                             )
                        )
-                     ORDER BY id DESC LIMIT $6",
+                     ORDER BY m.id DESC LIMIT $6",
                 )
                 .bind(org.to_string())
                 .bind(project.to_string())
@@ -175,33 +168,26 @@ impl MessageStore for PgBackend {
                 .map_err(|e| Error::Store(e.to_string()))?
             } else {
                 sqlx::query(
-                    "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-                     FROM messages
-                     WHERE status = 'pending'
-                       AND organization_id = $1
-                       AND project = $2
+                    "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                     FROM messages m
+                     LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $4
+                     WHERE m.status = 'pending'
+                       AND m.organization_id = $1
+                       AND m.project = $2
                        AND (
-                            to_target = $3
+                            m.to_target = $3
                             OR (
-                                to_target = 'broadcast'
-                                AND from_agent != $4
-                                AND NOT EXISTS (
-                                    SELECT 1 FROM message_receipts
-                                    WHERE message_receipts.message_id = messages.id
-                                      AND message_receipts.agent_id = $4
-                                )
+                                m.to_target = 'broadcast'
+                                AND m.from_agent != $4
+                                AND r.message_id IS NULL
                             )
                             OR (
-                                to_target LIKE 'role:%'
-                                AND from_agent != $4
-                                AND NOT EXISTS (
-                                    SELECT 1 FROM message_receipts
-                                    WHERE message_receipts.message_id = messages.id
-                                      AND message_receipts.agent_id = $4
-                                )
+                                m.to_target LIKE 'role:%'
+                                AND m.from_agent != $4
+                                AND r.message_id IS NULL
                             )
                        )
-                     ORDER BY id DESC LIMIT $5",
+                     ORDER BY m.id DESC LIMIT $5",
                 )
                 .bind(org.to_string())
                 .bind(project.to_string())
@@ -214,35 +200,28 @@ impl MessageStore for PgBackend {
             }
         } else if let Some(cid) = cursor_id {
             sqlx::query(
-                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-                 FROM messages
-                 WHERE status = 'pending'
-                   AND organization_id = $1
-                   AND project = $2
-                   AND (namespace = $3 OR namespace LIKE $3 || '/%')
-                   AND id < $6
+                "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 FROM messages m
+                 LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $5
+                 WHERE m.status = 'pending'
+                   AND m.organization_id = $1
+                   AND m.project = $2
+                   AND (m.namespace = $3 OR m.namespace LIKE $3 || '/%')
+                   AND m.id < $6
                    AND (
-                        to_target = $4
+                        m.to_target = $4
                         OR (
-                            to_target = 'broadcast'
-                            AND from_agent != $5
-                            AND NOT EXISTS (
-                                SELECT 1 FROM message_receipts
-                                WHERE message_receipts.message_id = messages.id
-                                  AND message_receipts.agent_id = $5
-                            )
+                            m.to_target = 'broadcast'
+                            AND m.from_agent != $5
+                            AND r.message_id IS NULL
                         )
                         OR (
-                            to_target LIKE 'role:%'
-                            AND from_agent != $5
-                            AND NOT EXISTS (
-                                SELECT 1 FROM message_receipts
-                                WHERE message_receipts.message_id = messages.id
-                                  AND message_receipts.agent_id = $5
-                            )
+                            m.to_target LIKE 'role:%'
+                            AND m.from_agent != $5
+                            AND r.message_id IS NULL
                         )
                    )
-                 ORDER BY id DESC LIMIT $7",
+                 ORDER BY m.id DESC LIMIT $7",
             )
             .bind(org.to_string())
             .bind(project.to_string())
@@ -256,34 +235,27 @@ impl MessageStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
             sqlx::query(
-                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-                 FROM messages
-                 WHERE status = 'pending'
-                   AND organization_id = $1
-                   AND project = $2
-                   AND (namespace = $3 OR namespace LIKE $3 || '/%')
+                "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+                 FROM messages m
+                 LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $5
+                 WHERE m.status = 'pending'
+                   AND m.organization_id = $1
+                   AND m.project = $2
+                   AND (m.namespace = $3 OR m.namespace LIKE $3 || '/%')
                    AND (
-                        to_target = $4
+                        m.to_target = $4
                         OR (
-                            to_target = 'broadcast'
-                            AND from_agent != $5
-                            AND NOT EXISTS (
-                                SELECT 1 FROM message_receipts
-                                WHERE message_receipts.message_id = messages.id
-                                  AND message_receipts.agent_id = $5
-                            )
+                            m.to_target = 'broadcast'
+                            AND m.from_agent != $5
+                            AND r.message_id IS NULL
                         )
                         OR (
-                            to_target LIKE 'role:%'
-                            AND from_agent != $5
-                            AND NOT EXISTS (
-                                SELECT 1 FROM message_receipts
-                                WHERE message_receipts.message_id = messages.id
-                                  AND message_receipts.agent_id = $5
-                            )
+                            m.to_target LIKE 'role:%'
+                            AND m.from_agent != $5
+                            AND r.message_id IS NULL
                         )
                    )
-                 ORDER BY id DESC LIMIT $6",
+                 ORDER BY m.id DESC LIMIT $6",
             )
             .bind(org.to_string())
             .bind(project.to_string())

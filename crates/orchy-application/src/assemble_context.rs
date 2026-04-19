@@ -29,16 +29,26 @@ impl AssembleContext {
         tasks: Arc<dyn TaskStore>,
         knowledge: Arc<dyn KnowledgeStore>,
     ) -> Self {
-        Self { edges, tasks, knowledge }
+        Self {
+            edges,
+            tasks,
+            knowledge,
+        }
     }
 
     pub async fn execute(&self, cmd: AssembleContextCommand) -> Result<AssembleContextResponse> {
         let org =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let kind = cmd.kind.parse::<ResourceKind>().map_err(Error::InvalidInput)?;
-        let content_limit = 800usize;
+        let kind = cmd
+            .kind
+            .parse::<ResourceKind>()
+            .map_err(Error::InvalidInput)?;
+        let content_limit = cmd.max_tokens.unwrap_or(4000) / 5;
 
-        let from_edges = self.edges.find_from(&org, &kind, &cmd.id, None, true).await?;
+        let from_edges = self
+            .edges
+            .find_from(&org, &kind, &cmd.id, None, true)
+            .await?;
         let to_edges = self.edges.find_to(&org, &kind, &cmd.id, None, true).await?;
 
         let mut knowledge_with_rel: HashMap<KnowledgeId, RelationType> = HashMap::new();
@@ -62,7 +72,7 @@ impl AssembleContext {
             }
         }
 
-        all_entries.sort_by(|(a, _), (b, _)| b.updated_at().cmp(&a.updated_at()));
+        all_entries.sort_by_key(|(a, _)| std::cmp::Reverse(a.updated_at()));
 
         let mut used_ids: HashSet<String> = HashSet::new();
 
@@ -109,16 +119,14 @@ impl AssembleContext {
 
         let open_dependencies = if kind == ResourceKind::Task {
             let mut deps = Vec::new();
-            for e in from_edges
-                .iter()
-                .filter(|e| *e.rel_type() == RelationType::DependsOn && e.to_kind() == &ResourceKind::Task)
-            {
-                if let Ok(dep_id) = e.to_id().parse::<TaskId>() {
-                    if let Some(dep_task) = self.tasks.find_by_id(&dep_id).await? {
-                        if dep_task.status() != TaskStatus::Completed {
-                            deps.push(TaskResponse::from(&dep_task));
-                        }
-                    }
+            for e in from_edges.iter().filter(|e| {
+                *e.rel_type() == RelationType::DependsOn && e.to_kind() == &ResourceKind::Task
+            }) {
+                if let Ok(dep_id) = e.to_id().parse::<TaskId>()
+                    && let Some(dep_task) = self.tasks.find_by_id(&dep_id).await?
+                    && dep_task.status() != TaskStatus::Completed
+                {
+                    deps.push(TaskResponse::from(&dep_task));
                 }
             }
             deps
@@ -141,19 +149,17 @@ impl AssembleContext {
                 .await?;
             let mut flags = Vec::new();
             for te in traversal {
-                if te.to_kind == ResourceKind::Task {
-                    if let Ok(tid) = te.to_id.parse::<TaskId>() {
-                        if let Some(task) = self.tasks.find_by_id(&tid).await? {
-                            if matches!(task.status(), TaskStatus::Failed | TaskStatus::Cancelled) {
-                                flags.push(format!(
-                                    "Dependency '{}' ({}) is {}",
-                                    task.title(),
-                                    task.id(),
-                                    task.status()
-                                ));
-                            }
-                        }
-                    }
+                if te.to_kind == ResourceKind::Task
+                    && let Ok(tid) = te.to_id.parse::<TaskId>()
+                    && let Some(task) = self.tasks.find_by_id(&tid).await?
+                    && matches!(task.status(), TaskStatus::Failed | TaskStatus::Cancelled)
+                {
+                    flags.push(format!(
+                        "Dependency '{}' ({}) is {}",
+                        task.title(),
+                        task.id(),
+                        task.status()
+                    ));
                 }
             }
             flags

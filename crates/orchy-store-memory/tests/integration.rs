@@ -1440,7 +1440,9 @@ async fn assemble_context_returns_linked_knowledge() {
         std::collections::HashMap::new(),
     )
     .unwrap();
-    KnowledgeStore::save(store.as_ref(), &mut decision).await.unwrap();
+    KnowledgeStore::save(store.as_ref(), &mut decision)
+        .await
+        .unwrap();
 
     let mut note = Knowledge::new(
         o.clone(),
@@ -1455,7 +1457,9 @@ async fn assemble_context_returns_linked_knowledge() {
         std::collections::HashMap::new(),
     )
     .unwrap();
-    KnowledgeStore::save(store.as_ref(), &mut note).await.unwrap();
+    KnowledgeStore::save(store.as_ref(), &mut note)
+        .await
+        .unwrap();
 
     let edge1 = Edge::new(
         o.clone(),
@@ -1481,11 +1485,7 @@ async fn assemble_context_returns_linked_knowledge() {
     );
     EdgeStore::save(store.as_ref(), &edge2).await.unwrap();
 
-    let svc = AssembleContext::new(
-        store.clone(),
-        store.clone(),
-        store.clone(),
-    );
+    let svc = AssembleContext::new(store.clone(), store.clone(), store.clone());
     let resp = svc
         .execute(AssembleContextCommand {
             org_id: o.to_string(),

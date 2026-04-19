@@ -7,10 +7,9 @@ use rmcp::{tool, tool_router};
 use orchy_application::{
     AddDependencyCommand, AddEdgeCommand, AppendKnowledgeCommand, AssembleContextCommand,
     AssignTaskCommand, CancelTaskCommand, ChangeKnowledgeKindCommand, ChangeRolesCommand,
-    CheckLockCommand,
-    CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand, CompleteTaskCommand,
-    DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand, FailTaskCommand,
-    GetGraphCommand, GetNeighborsCommand, GetNextTaskCommand, GetProjectCommand,
+    CheckLockCommand, CheckMailboxCommand, CheckSentMessagesCommand, ClaimTaskCommand,
+    CompleteTaskCommand, DelegateTaskCommand, DeleteKnowledgeCommand, DisconnectAgentCommand,
+    FailTaskCommand, GetGraphCommand, GetNeighborsCommand, GetNextTaskCommand, GetProjectCommand,
     GetTaskWithContextCommand, HeartbeatCommand, ImportKnowledgeCommand, ListAgentsCommand,
     ListConversationCommand, ListEdgesCommand, ListKnowledgeCommand, ListNamespacesCommand,
     ListTagsCommand, ListTasksCommand, LockResourceCommand, MarkReadCommand, MergeTasksCommand,

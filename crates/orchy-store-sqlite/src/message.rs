@@ -102,30 +102,23 @@ impl MessageStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to
-             FROM messages
-             WHERE status = ?1
-               AND organization_id = ?3
-               AND project = ?4
+            "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to
+             FROM messages m
+             LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = ?2
+             WHERE m.status = ?1
+               AND m.organization_id = ?3
+               AND m.project = ?4
                AND (
-                    to_target = ?2
+                    m.to_target = ?2
                     OR (
-                        to_target = 'broadcast'
-                        AND from_agent != ?2
-                        AND NOT EXISTS (
-                            SELECT 1 FROM message_receipts
-                            WHERE message_receipts.message_id = messages.id
-                              AND message_receipts.agent_id = ?2
-                        )
+                        m.to_target = 'broadcast'
+                        AND m.from_agent != ?2
+                        AND r.message_id IS NULL
                     )
                     OR (
-                        to_target LIKE 'role:%'
-                        AND from_agent != ?2
-                        AND NOT EXISTS (
-                            SELECT 1 FROM message_receipts
-                            WHERE message_receipts.message_id = messages.id
-                              AND message_receipts.agent_id = ?2
-                        )
+                        m.to_target LIKE 'role:%'
+                        AND m.from_agent != ?2
+                        AND r.message_id IS NULL
                     )
                )",
         );
@@ -140,7 +133,7 @@ impl MessageStore for SqliteBackend {
 
         if !namespace.is_root() {
             sql.push_str(&format!(
-                " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+                " AND (m.namespace = ?{idx} OR m.namespace LIKE ?{idx} || '/%')"
             ));
             params.push(Box::new(namespace.to_string()));
             idx += 1;
@@ -148,14 +141,14 @@ impl MessageStore for SqliteBackend {
 
         if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
-                sql.push_str(&format!(" AND id < ?{idx}"));
+                sql.push_str(&format!(" AND m.id < ?{idx}"));
                 params.push(Box::new(decoded));
                 idx += 1;
             }
         }
 
         let _ = idx;
-        sql.push_str(" ORDER BY id DESC");
+        sql.push_str(" ORDER BY m.id DESC");
         let fetch_limit = (page.limit as u64).saturating_add(1);
         sql.push_str(&format!(" LIMIT {fetch_limit}"));
 

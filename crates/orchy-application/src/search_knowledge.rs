@@ -87,13 +87,13 @@ impl SearchKnowledge {
             });
         }
 
-        if let (Some(ak), Some(ai)) = (cmd.anchor_kind.as_deref(), cmd.anchor_id.as_deref()) {
-            if let Ok(anchor_kind) = ak.parse::<ResourceKind>() {
-                let linked = self.linked_knowledge_ids(&org_id, anchor_kind, ai).await?;
-                for (entry, score) in &mut scored {
-                    if linked.contains(&entry.id().to_string()) {
-                        *score = Some(score.unwrap_or(0.0) + 0.2);
-                    }
+        if let (Some(ak), Some(ai)) = (cmd.anchor_kind.as_deref(), cmd.anchor_id.as_deref())
+            && let Ok(anchor_kind) = ak.parse::<ResourceKind>()
+        {
+            let linked = self.linked_knowledge_ids(&org_id, anchor_kind, ai).await?;
+            for (entry, score) in &mut scored {
+                if linked.contains(&entry.id().to_string()) {
+                    *score = Some(score.unwrap_or(0.0) + 0.2);
                 }
             }
         }

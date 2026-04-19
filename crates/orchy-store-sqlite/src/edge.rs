@@ -322,15 +322,24 @@ impl EdgeStore for SqliteBackend {
         });
 
         let sql = match direction {
-            TraversalDirection::Outgoing => {
-                build_traverse_sql(TraversalSide::Outgoing, rel_filter.as_deref(), only_active, None)
-            }
-            TraversalDirection::Incoming => {
-                build_traverse_sql(TraversalSide::Incoming, rel_filter.as_deref(), only_active, None)
-            }
-            TraversalDirection::Both => {
-                build_traverse_sql(TraversalSide::Both, rel_filter.as_deref(), only_active, None)
-            }
+            TraversalDirection::Outgoing => build_traverse_sql(
+                TraversalSide::Outgoing,
+                rel_filter.as_deref(),
+                only_active,
+                None,
+            ),
+            TraversalDirection::Incoming => build_traverse_sql(
+                TraversalSide::Incoming,
+                rel_filter.as_deref(),
+                only_active,
+                None,
+            ),
+            TraversalDirection::Both => build_traverse_sql(
+                TraversalSide::Both,
+                rel_filter.as_deref(),
+                only_active,
+                None,
+            ),
         };
 
         let mut stmt = conn
@@ -398,7 +407,12 @@ enum TraversalSide {
     Both,
 }
 
-fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active: bool, max_results: Option<usize>) -> String {
+fn build_traverse_sql(
+    side: TraversalSide,
+    rel_filter: Option<&str>,
+    only_active: bool,
+    max_results: Option<usize>,
+) -> String {
     let rel_clause = rel_filter
         .map(|rts| format!(" AND rel_type IN ({rts})"))
         .unwrap_or_default();
@@ -414,7 +428,9 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active
         ""
     };
 
-    let limit_clause = max_results.map(|n| format!(" LIMIT {n}")).unwrap_or_default();
+    let limit_clause = max_results
+        .map(|n| format!(" LIMIT {n}"))
+        .unwrap_or_default();
 
     let anchor = match side {
         TraversalSide::Outgoing => format!(
