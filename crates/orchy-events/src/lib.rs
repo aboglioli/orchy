@@ -19,4 +19,4 @@ pub use payload::{ContentType, Payload};
 pub use serialization::SerializedEvent;
 pub use topic::Topic;
 
-pub use io::{Acker, Handler, Message, Reader, Writer};
+pub use io::{Acker, Writer};
