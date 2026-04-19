@@ -95,7 +95,7 @@ impl AppendKnowledge {
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());
             let vector = emb.embed(&text).await?;
-            entry.set_embedding(vector, emb.model().to_string(), emb.dimensions());
+            entry.set_embedding(vector, emb.model().to_string(), emb.dimensions())?;
         }
 
         self.store.save(&mut entry).await?;

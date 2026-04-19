@@ -381,8 +381,24 @@ impl Agent {
         Ok(())
     }
 
-    pub fn set_metadata(&mut self, metadata: HashMap<String, String>) {
+    pub fn set_metadata(&mut self, metadata: HashMap<String, String>) -> Result<()> {
         self.metadata = metadata;
+
+        let payload = Payload::from_json(&agent_events::AgentMetadataChangedPayload {
+            org_id: self.org_id.to_string(),
+            agent_id: self.id.to_string(),
+            metadata: self.metadata.clone(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_METADATA_CHANGED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {

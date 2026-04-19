@@ -574,10 +574,31 @@ impl Knowledge {
         Ok(())
     }
 
-    pub fn set_embedding(&mut self, embedding: Vec<f32>, model: String, dimensions: u32) {
+    pub fn set_embedding(
+        &mut self,
+        embedding: Vec<f32>,
+        model: String,
+        dimensions: u32,
+    ) -> Result<()> {
         self.embedding = Some(embedding);
-        self.embedding_model = Some(model);
+        self.embedding_model = Some(model.clone());
         self.embedding_dimensions = Some(dimensions);
+
+        let payload = Payload::from_json(&knowledge_events::KnowledgeEmbeddingUpdatedPayload {
+            entry_id: self.id.to_string(),
+            model,
+            dimensions,
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            knowledge_events::NAMESPACE,
+            knowledge_events::TOPIC_EMBEDDING_UPDATED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
 
     pub fn persisted_version(&self) -> Option<Version> {
