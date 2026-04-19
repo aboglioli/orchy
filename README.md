@@ -1,4 +1,4 @@
-# orchy
+# Orchy
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
 board, unified knowledge base, messaging, resource locking, graph edges, and
@@ -45,6 +45,194 @@ path = "orchy.db"
 ```
 
 ## Concepts
+
+### Entity Relationships
+
+Orchy's four main entities — **Agents**, **Tasks**, **Knowledge**, and **Messages** — are connected through two mechanisms:
+
+1. **Direct references** (fields on entities) — runtime state, ownership, hierarchy
+2. **Graph edges** (semantic links) — relationships, provenance, dependencies
+
+#### Direct References
+
+| Entity | Field | Points To | Purpose |
+|--------|-------|-----------|---------|
+| Task | `assigned_to` | Agent | Runtime task assignment (who is working on it) |
+| Task | `parent_id` | Task | Hierarchy (subtasks) |
+| Task | `depends_on` | Task[] | Dependencies (must complete first) |
+| Knowledge | `agent_id` | Agent | Author/creator |
+| Message | `from_agent` | Agent | Sender |
+| Message | `reply_to` | Message | Threading |
+
+#### Graph Edges (Semantic Links)
+
+Edges model relationships that cross entity boundaries. They are:
+- **Typed** (15 relation types)
+- **Directed** (A → B)
+- **Traversable** (multi-hop graph queries)
+- **Temporal** (point-in-time snapshots)
+
+**Resource kinds that can be linked:** `task`, `knowledge`, `agent`
+
+**Messages cannot be graph nodes** — use message threading instead.
+
+---
+
+### Relation Types
+
+#### Task ↔ Task (Work Dependencies)
+
+| Relation | Direction | Meaning | Auto-Created? |
+|----------|-----------|---------|---------------|
+| `depends_on` | Task → Task | Must complete before claiming | `add_dependency`, `post_task` |
+| `spawns` | Task → Task | Parent created child | `split_task`, `delegate_task`, `post_task(parent_id)` |
+| `supersedes` | Task → Task | Replacement for obsolete task | `replace_task` |
+| `merged_from` | Task ← Task | Merged from sources | `merge_tasks` |
+
+#### Task ↔ Knowledge (Work Products)
+
+| Relation | Direction | Meaning | Auto-Created? |
+|----------|-----------|---------|---------------|
+| `produces` | Task → Knowledge | Work produced knowledge | `write_knowledge(task_id=...)` |
+| `implements` | Task → Knowledge | Task executes plan/decision | Manual via `add_edge` |
+| `derived_from` | Knowledge → Task | Knowledge came from work | Manual via `add_edge` |
+
+#### Knowledge ↔ Knowledge (Information Flow)
+
+| Relation | Direction | Meaning |
+|----------|-----------|---------|
+| `summarizes` | Knowledge → Knowledge | Summary covers sources |
+| `merged_from` | Knowledge ← Knowledge | Consolidated from sources |
+| `supersedes` | Knowledge → Knowledge | New version replaces old |
+| `derived_from` | Knowledge → Knowledge | Chained reasoning |
+| `invalidates` | Knowledge → Knowledge | This invalidates that fact |
+| `confirms` | Knowledge → Knowledge | Evidence confirms claim |
+| `supported_by` | Knowledge ← Knowledge | Claim supported by evidence |
+| `contradicted_by` | Knowledge ← Knowledge | Fact contradicted by other |
+| `related_to` | Knowledge ↔ Knowledge | General relationship |
+
+#### Agent ↔ Task/Knowledge (Ownership)
+
+| Relation | Direction | Meaning |
+|----------|-----------|---------|
+| `owned_by` | Task/Knowledge → Agent | Semantic ownership/responsibility |
+| `reviewed_by` | Task/Knowledge → Agent | Reviewed or approved by |
+
+**Note:** `assigned_to` (task field) is **runtime assignment** — who is actively working on the task. `owned_by` edge is **semantic ownership** — who is responsible for the resource long-term. A task can be `assigned_to` agent A while `owned_by` agent B.
+
+---
+
+### Auto-Created Edges
+
+The system automatically creates graph edges during these operations:
+
+```rust
+// Task produces knowledge
+write_knowledge(task_id="task-123", ...)     // Task →[produces]→ Knowledge
+
+// Split task into subtasks
+split_task(parent_id="task-123", subtasks=[...])   // Parent →[spawns]→ Children
+
+// Delegate subtask (non-blocking)
+delegate_task(task_id="task-123", ...)       // Parent →[spawns]→ Subtask
+
+// Replace obsolete task
+replace_task(task_id="task-123", replacements=[...])   // Replacement →[supersedes]→ Original
+
+// Merge multiple tasks
+merge_tasks(task_ids=["a", "b", "c"], ...)    // Merged ←[merged_from]— Sources
+
+// Add dependency
+add_dependency(task_id="task-a", dependency_id="task-b")   // TaskA →[depends_on]→ TaskB
+
+// Create subtask via parent
+post_task(parent_id="task-123", ...)         // Parent →[spawns]→ Child
+
+// Create task with dependencies
+post_task(depends_on=["task-a", "task-b"], ...)   // Task →[depends_on]→ Deps
+```
+
+**Manual edges** for semantic relationships not covered above:
+```rust
+// Task implements a plan
+add_edge(from_kind="task", from_id="impl-123",
+         to_kind="knowledge", to_id="plan-456",
+         rel_type="implements")
+
+// Knowledge derived from task
+add_edge(from_kind="knowledge", from_id="decision-789",
+         to_kind="task", to_id="research-001",
+         rel_type="derived_from")
+
+// Resource ownership
+add_edge(from_kind="task", from_id="task-123",
+         to_kind="agent", to_id="agent-456",
+         rel_type="owned_by")
+
+// Evidence chain
+add_edge(from_kind="knowledge", from_id="evidence-001",
+         to_kind="knowledge", to_id="claim-002",
+         rel_type="supported_by")
+```
+
+---
+
+### Traversal and Context Tools
+
+#### Materializing Referenced Nodes
+
+Several tools can load referenced resources in a single call:
+
+| Tool | Loads | Description |
+|------|-------|-------------|
+| `get_task` | Task + ancestors + children + dependencies (optional) + knowledge (optional) | Full task context |
+| `get_graph` | Multi-hop traversal with node hydration | Explore connected resources |
+| `get_neighbors` | One-hop with optional node content | Direct connections |
+| `assemble_context` | Structured context from graph | Curated context for AI |
+
+**`get_task` materialization flags:**
+```rust
+get_task(
+    task_id: "task-123",
+    include_dependencies: true,      // Load full Task objects for depends_on IDs
+    include_knowledge: true,         // Load linked knowledge entries
+    knowledge_limit: 5,              // Max knowledge entries
+    knowledge_kind: "decision",      // Filter by kind
+    knowledge_tag: "critical",       // Filter by tag
+    knowledge_content_limit: 500     // Truncate content
+)
+```
+
+**`get_graph` vs `get_neighbors`:**
+```rust
+// One hop — direct connections only
+get_neighbors(kind: "task", id: "task-123", include_nodes: true)
+
+// Multi-hop — traverse up to N depth
+get_graph(
+    kind: "task",
+    id: "task-123",
+    max_depth: 3,                    // Up to 3 hops
+    rel_types: ["produces", "derived_from"],  // Filter edge types
+    include_nodes: true,             // Include full node content
+    node_content_limit: 500
+)
+
+// Temporal query — what did the graph look like yesterday?
+get_graph(
+    kind: "task",
+    id: "task-123",
+    as_of: "2026-04-19T12:00:00Z"   // Point-in-time snapshot
+)
+```
+
+**`assemble_context`** — curated context for AI consumption:
+```rust
+assemble_context(kind: "task", id: "task-123", max_tokens: 4000)
+// Returns: core_facts, open_dependencies, relevant_decisions, recent_changes, risk_flags
+```
+
+---
 
 ### Knowledge
 
@@ -102,22 +290,27 @@ Pending → Claimed → InProgress → Completed
    │         │          │
    └─────────┴──────────┴──────→ Failed → Cancelled
                                           ↑
-                           Blocked ───────┘ (also Pending)
+                            Blocked ───────┘ (also Pending)
 ```
 
-**Ownership** is exclusive: only one agent holds a task at a time.
-Claiming reserves it; starting moves it to in-progress; completing,
-failing, or cancelling terminates it. Disconnecting an agent releases
+**Assignment** is exclusive: only one agent holds a task at a time via the
+`assigned_to` field. Claiming reserves it; starting moves it to in-progress;
+completing, failing, or cancelling terminates it. Disconnecting an agent releases
 its claimed and in-progress tasks back to pending automatically.
+
+**Ownership** (via `owned_by` edge) is semantic — who is responsible for the
+resource. This survives task reassignment and persists after completion.
 
 **Hierarchy:** tasks can have a `parent_id`. `split_task` blocks the parent
 and creates subtasks; the parent auto-completes when all subtasks finish or
 are cancelled. `delegate_task` creates a subtask without blocking the parent.
+Both operations auto-create `spawns` edges.
 
 **Dependencies:** `depends_on` is a list of task IDs that must complete before
 this task can be claimed. A task with unmet dependencies starts as blocked and
 unblocks automatically when its last dependency completes. Failed dependencies
-send a system notification to the waiting task's last assignee.
+send a system notification to the waiting task's last assignee. Dependencies
+are also represented as `depends_on` edges in the graph.
 
 **Priority:** `low`, `normal` (default), `high`, `critical`. `get_next_task`
 returns the highest-priority available task matching the agent's roles.
@@ -126,8 +319,7 @@ returns the highest-priority available task matching the agent's roles.
 means any agent can claim it. orchy auto-assigns agent roles from the set of
 pending role requirements on startup.
 
-**Tags** are free-form labels for grouping and filtering. Notes can be
-appended without changing the task's content fields.
+**Tags** are free-form labels for grouping and filtering.
 
 ### Messages
 
@@ -157,11 +349,14 @@ For role and broadcast messages, each recipient is tracked independently via
 dependency failure notifications. Agents should poll `check_mailbox` regularly
 or use `poll_updates` to catch these.
 
+**Note:** Messages are not part of the graph edge system. Use message
+centeric tools (`send_message`, `check_mailbox`, `list_conversation`) instead.
+
 ### Agent lifecycle
 
 1. `register_agent(project, description)` — roles auto-assigned from task demand
 2. `get_agent_context` — everything in one call: agent info, project, inbox, pending tasks, skills, handoff context
-3. `get_next_task` — claim or peek the next available task
+3. `get_next_task` — claim or peek the next available task matching your roles
 4. `heartbeat` every ~30s; on disconnect: tasks released, locks freed
 
 ### Resource locking
@@ -276,6 +471,7 @@ releases claimed tasks and locks in the old project.
 ### `post_task`
 
 Create a task. Tasks with `depends_on` are auto-blocked until dependencies complete.
+Creates `spawns` edge if `parent_id` is set. Creates `depends_on` edges for each dependency.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -283,15 +479,15 @@ Create a task. Tasks with `depends_on` are auto-blocked until dependencies compl
 | `description` | yes | Task description |
 | `acceptance_criteria` | no | Definition of done for this task |
 | `namespace` | no | Defaults to session namespace |
-| `parent_id` | no | Parent task ID for subtask |
+| `parent_id` | no | Parent task ID for subtask. Creates `spawns` edge. |
 | `priority` | no | `low`, `normal` (default), `high`, `critical` |
 | `assigned_roles` | no | Roles that can claim. Empty = any role |
-| `depends_on` | no | Task IDs that must complete before this task can be claimed |
+| `depends_on` | no | Task IDs that must complete before this task can be claimed. Creates `depends_on` edges. |
 
 ### `delegate_task`
 
 Create a subtask under a claimed/in-progress task without blocking the parent.
-Unlike `split_task`, the parent keeps its status.
+Unlike `split_task`, the parent keeps its status. Creates `spawns` edge.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -306,7 +502,7 @@ Unlike `split_task`, the parent keeps its status.
 
 Split a task into subtasks. The parent task is blocked and will auto-complete
 when all subtasks finish. Agents should work on subtasks directly, not the
-parent.
+parent. Creates `spawns` edges from parent to each subtask.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -322,6 +518,7 @@ parent.
 ### `replace_task`
 
 Cancel a task and create replacements that inherit the original's parent (if any).
+Creates `supersedes` edges from each replacement to the original task.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -334,6 +531,7 @@ Cancel a task and create replacements that inherit the original's parent (if any
 Merge multiple tasks into one. Source tasks must be pending, blocked, or claimed.
 They are cancelled and a new consolidated task is created with the highest
 priority, combined roles, combined dependencies, and collected notes.
+Creates `merged_from` edges from new task to each source.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -349,7 +547,7 @@ priority, combined roles, combined dependencies, and collected notes.
 | Tool | Session | Description |
 |------|---------|-------------|
 | `get_next_task` | yes | Claim or peek the next available task matching your roles. |
-| `get_task` | yes | Get a task by ID with full context (ancestors + children). |
+| `get_task` | yes | Get a task by ID with full context (ancestors + children + optional materialization). |
 | `list_tasks` | yes | List tasks filtered by namespace, status, and/or parent. |
 | `claim_task` | yes | Claim a specific task for the session agent. |
 | `start_task` | yes | Start a claimed task (claimed → in_progress). |
@@ -408,6 +606,7 @@ without claiming (peek). Skips tasks with incomplete dependencies.
 ### `get_task`
 
 Get a task by ID with full context (ancestors + children).
+Can materialize referenced dependencies and linked knowledge entries.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -442,7 +641,7 @@ Get a task by ID with full context (ancestors + children).
 
 | Tool | Session | Description |
 |------|---------|-------------|
-| `add_dependency` | yes | Add a dependency. Task blocks until dependency completes. |
+| `add_dependency` | yes | Add a dependency. Task blocks until dependency completes. Creates `depends_on` edge. |
 | `remove_dependency` | yes | Remove a dependency. Unblocks if all remaining deps complete. |
 
 ### `add_dependency` / `remove_dependency`
@@ -535,10 +734,10 @@ Get a task by ID with full context (ancestors + children).
 | Tool | Session | Description |
 |------|---------|-------------|
 | `list_knowledge_types` | no | List available knowledge entry types with descriptions. |
-| `write_knowledge` | yes | Create or update a knowledge entry by path. |
+| `write_knowledge` | yes | Create or update a knowledge entry by path. Can auto-create `produces` edge. |
 | `read_knowledge` | yes | Read a knowledge entry by path. |
 | `list_knowledge` | yes | List knowledge entries with optional filters. |
-| `search_knowledge` | yes | Search knowledge entries by semantic similarity. |
+| `search_knowledge` | yes | Search knowledge entries by semantic similarity. Supports proximity boosts via graph. |
 | `delete_knowledge` | yes | Delete a knowledge entry by path. |
 | `append_knowledge` | yes | Append text to a knowledge entry. Creates if it doesn't exist. |
 | `patch_knowledge_metadata` | yes | Merge or remove metadata without changing content. |
@@ -563,7 +762,7 @@ Get a task by ID with full context (ancestors + children).
 | `version` | no | Expected version for optimistic concurrency |
 | `metadata` | no | JSON object of string key-value pairs merged on update |
 | `metadata_remove` | no | Metadata keys to remove before applying `metadata` |
-| `task_id` | no | When provided, auto-creates a Task→Knowledge Produces edge |
+| `task_id` | no | When provided, auto-creates a Task→Knowledge `produces` edge |
 
 ### `read_knowledge`
 
@@ -691,7 +890,8 @@ between tasks, knowledge entries, and agents: what a task produced, which
 knowledge entry supersedes another, which task spawned which agent.
 
 **Relationship types:** `derived_from`, `produces`, `supersedes`, `merged_from`,
-`summarizes`, `implements`, `spawns`, `related_to`.
+`summarizes`, `implements`, `spawns`, `related_to`, `depends_on`, `invalidates`,
+`confirms`, `supported_by`, `contradicted_by`, `owned_by`, `reviewed_by`.
 
 **Resource kinds** (source/target): `task`, `knowledge`, `agent`. (`message` is
 not allowed as an edge endpoint.)
@@ -699,12 +899,27 @@ not allowed as an edge endpoint.)
 Edges can have a `valid_until` expiry (set internally for TTL-based edges) and
 are soft-deleted. Historical state is queryable via `as_of`.
 
+### Auto-Created Edges
+
+These operations automatically create edges:
+
+| Operation | Edge Created |
+|-----------|--------------|
+| `write_knowledge(task_id=...)` | Task →[produces]→ Knowledge |
+| `split_task` | Parent →[spawns]→ Children |
+| `delegate_task` | Parent →[spawns]→ Subtask |
+| `replace_task` | Replacement →[supersedes]→ Original |
+| `merge_tasks` | Merged ←[merged_from]— Sources |
+| `add_dependency` | Task →[depends_on]→ Dependency |
+| `post_task(parent_id=...)` | Parent →[spawns]→ Child |
+| `post_task(depends_on=[...])` | Task →[depends_on]→ Each dependency |
+
 | Tool | Session | Description |
 |------|---------|-------------|
 | `add_edge` | yes | Create a typed directed edge between two resources. |
 | `remove_edge` | yes | Soft-delete an edge by ID. |
-| `get_neighbors` | yes | List direct neighbors of a resource. |
-| `get_graph` | yes | Traverse the graph from a root resource up to a given depth. |
+| `get_neighbors` | yes | List direct neighbors of a resource. Can hydrate node content. |
+| `get_graph` | yes | Traverse the graph from a root resource up to a given depth. Can hydrate nodes. |
 | `list_edges` | yes | List edges across the project with optional filters and pagination. |
 
 ### `add_edge`
@@ -742,6 +957,7 @@ List direct neighbors (one hop) of a resource, with optional node content hydrat
 ### `get_graph`
 
 Traverse the edge graph from a root resource up to `max_depth` hops.
+Can hydrate full node content for all traversed resources.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|

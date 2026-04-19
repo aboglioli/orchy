@@ -67,11 +67,7 @@ impl PostTask {
             .transpose()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
-        let created_by = cmd
-            .created_by
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
         let is_blocked = !depends_on.is_empty();
 

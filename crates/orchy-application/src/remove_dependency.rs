@@ -27,14 +27,8 @@ impl RemoveDependency {
     pub async fn execute(&self, cmd: RemoveDependencyCommand) -> Result<TaskResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let task_id = cmd
-            .task_id
-            .parse::<TaskId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let dependency_id = cmd
-            .dependency_id
-            .parse::<TaskId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let task_id = cmd.task_id.parse::<TaskId>()?;
+        let dependency_id = cmd.dependency_id.parse::<TaskId>()?;
 
         let mut task = self
             .tasks

@@ -39,10 +39,7 @@ impl GetTaskWithContext {
     }
 
     pub async fn execute(&self, cmd: GetTaskWithContextCommand) -> Result<TaskWithContextResponse> {
-        let id = cmd
-            .task_id
-            .parse::<TaskId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let id = cmd.task_id.parse::<TaskId>()?;
         self.get_with_context(&id, cmd).await
     }
 
@@ -110,9 +107,7 @@ impl GetTaskWithContext {
     async fn load_dependencies(&self, dependency_ids: &[String]) -> Result<Vec<TaskResponse>> {
         let mut dependencies = Vec::new();
         for dep in dependency_ids {
-            let dep_id = dep
-                .parse::<TaskId>()
-                .map_err(|e| Error::InvalidInput(e.to_string()))?;
+            let dep_id = dep.parse::<TaskId>()?;
             let Some(task) = self.tasks.find_by_id(&dep_id).await? else {
                 continue;
             };

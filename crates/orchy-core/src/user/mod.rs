@@ -20,6 +20,14 @@ pub trait PasswordHasher: Send + Sync {
     fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()>;
 }
 
+#[async_trait::async_trait]
+pub trait UserStore: Send + Sync {
+    async fn save(&self, user: &mut User) -> Result<()>;
+    async fn find_by_id(&self, id: &UserId) -> Result<Option<User>>;
+    async fn find_by_email(&self, email: &Email) -> Result<Option<User>>;
+    async fn list_all(&self) -> Result<Vec<User>>;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     id: UserId,
@@ -280,10 +288,12 @@ impl User {
         self.collector.drain()
     }
 
-    /// Record a membership added event for this user.
-    /// This is used by the application layer when creating memberships,
-    /// since OrgMembership is not an aggregate.
-    pub fn record_membership_added(&mut self, membership_id: &str, org_id: &str, role: &str) -> Result<()> {
+    pub fn record_membership_added(
+        &mut self,
+        membership_id: &str,
+        org_id: &str,
+        role: &str,
+    ) -> Result<()> {
         let payload = Payload::from_json(&events::UserMembershipAddedPayload {
             membership_id: membership_id.to_string(),
             user_id: self.id.as_str(),
@@ -303,14 +313,6 @@ impl User {
 
         Ok(())
     }
-}
-
-#[async_trait::async_trait]
-pub trait UserStore: Send + Sync {
-    async fn save(&self, user: &mut User) -> Result<()>;
-    async fn find_by_id(&self, id: &UserId) -> Result<Option<User>>;
-    async fn find_by_email(&self, email: &Email) -> Result<Option<User>>;
-    async fn list_all(&self) -> Result<Vec<User>>;
 }
 
 #[cfg(test)]
@@ -434,11 +436,10 @@ mod tests {
         let id = UserId::new();
         let email = Email::new("admin@example.com").unwrap();
         let password = PlainPassword::new("password123").unwrap();
-        let mut user =
-            User::register_platform_admin(id, email, &password, &hasher).unwrap();
+        let mut user = User::register_platform_admin(id, email, &password, &hasher).unwrap();
 
         assert!(user.is_platform_admin());
-        
+
         // verify event was emitted
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
@@ -456,7 +457,8 @@ mod tests {
         user.drain_events(); // Clear creation event
 
         // Record membership added
-        user.record_membership_added("membership-123", "test-org", "member").unwrap();
+        user.record_membership_added("membership-123", "test-org", "member")
+            .unwrap();
 
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
@@ -480,6 +482,9 @@ mod tests {
 
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].topic().as_str(), events::TOPIC_PLATFORM_ADMIN_GRANTED);
+        assert_eq!(
+            events[0].topic().as_str(),
+            events::TOPIC_PLATFORM_ADMIN_GRANTED
+        );
     }
 }

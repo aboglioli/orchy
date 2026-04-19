@@ -6,6 +6,20 @@ use serde::{Deserialize, Serialize};
 use super::id::{MembershipId, UserId};
 use super::role::OrgRole;
 
+#[async_trait::async_trait]
+pub trait OrgMembershipStore: Send + Sync {
+    async fn save(&self, membership: &OrgMembership) -> Result<()>;
+    async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>>;
+    async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>>;
+    async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>>;
+    async fn find(
+        &self,
+        user_id: &UserId,
+        org_id: &OrganizationId,
+    ) -> Result<Option<OrgMembership>>;
+    async fn delete(&self, id: &MembershipId) -> Result<()>;
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrgMembership {
     id: MembershipId,
@@ -67,20 +81,6 @@ impl OrgMembership {
     pub fn change_role(&mut self, new_role: OrgRole) {
         self.role = new_role;
     }
-}
-
-#[async_trait::async_trait]
-pub trait OrgMembershipStore: Send + Sync {
-    async fn save(&self, membership: &OrgMembership) -> Result<()>;
-    async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>>;
-    async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>>;
-    async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>>;
-    async fn find(
-        &self,
-        user_id: &UserId,
-        org_id: &OrganizationId,
-    ) -> Result<Option<OrgMembership>>;
-    async fn delete(&self, id: &MembershipId) -> Result<()>;
 }
 
 #[cfg(test)]

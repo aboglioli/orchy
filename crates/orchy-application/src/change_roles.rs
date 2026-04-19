@@ -24,7 +24,7 @@ impl ChangeRoles {
         if cmd.roles.is_empty() {
             return Err(Error::InvalidInput("roles must not be empty".to_string()));
         }
-        let id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let id = AgentId::from_str(&cmd.agent_id)?;
         let mut agent = self
             .agents
             .find_by_id(&id)

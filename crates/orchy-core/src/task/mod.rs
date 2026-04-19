@@ -53,10 +53,12 @@ impl fmt::Display for TaskId {
 }
 
 impl FromStr for TaskId {
-    type Err = uuid::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(Self(Uuid::parse_str(s)?))
+        Uuid::parse_str(s)
+            .map(Self)
+            .map_err(|_| Error::invalid_input(format!("invalid task id: {s}")))
     }
 }
 

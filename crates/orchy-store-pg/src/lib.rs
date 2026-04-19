@@ -1,4 +1,5 @@
 mod agent;
+pub(crate) mod consumer;
 mod edge;
 mod events;
 mod knowledge;
@@ -7,8 +8,11 @@ mod namespace;
 mod organization;
 mod project;
 mod resource_lock;
+mod subscriber;
 mod task;
 mod user;
+
+pub use subscriber::{ConsumerConfig, PgSubscriber};
 
 use std::path::Path;
 

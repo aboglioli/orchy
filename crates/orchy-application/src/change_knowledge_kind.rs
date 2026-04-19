@@ -42,7 +42,7 @@ impl ChangeKnowledgeKind {
             .new_kind
             .parse::<KnowledgeKind>()
             .map_err(Error::InvalidInput)?;
-        let expected_version = cmd.version.map(Version::from);
+        let expected_version = cmd.version.map(Version::new);
 
         let mut entry = self
             .store

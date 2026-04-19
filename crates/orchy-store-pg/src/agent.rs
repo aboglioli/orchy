@@ -169,12 +169,10 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
 
-    let parent_id = parent_id_str
-        .map(|s| AgentId::from_str(&s).map_err(Error::Store))
-        .transpose()?;
+    let parent_id = parent_id_str.map(|s| AgentId::from_str(&s)).transpose()?;
 
     Ok(Agent::restore(RestoreAgent {
-        id: AgentId::from_str(&id_str).map_err(Error::Store)?,
+        id: AgentId::from_str(&id_str)?,
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,

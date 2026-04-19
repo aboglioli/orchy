@@ -559,7 +559,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
         title,
         content,
         tags,
-        version: Version::from(version as u64),
+        version: Version::new(version as u64),
         agent_id: agent_id_str.and_then(|s| AgentId::from_str(&s).ok()),
         metadata,
         embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),

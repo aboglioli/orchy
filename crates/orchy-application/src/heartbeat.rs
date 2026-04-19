@@ -18,7 +18,7 @@ impl Heartbeat {
     }
 
     pub async fn execute(&self, cmd: HeartbeatCommand) -> Result<()> {
-        let id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let id = AgentId::from_str(&cmd.agent_id)?;
         let mut agent = self
             .agents
             .find_by_id(&id)

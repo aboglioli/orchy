@@ -17,10 +17,7 @@ impl RemoveEdge {
     }
 
     pub async fn execute(&self, cmd: RemoveEdgeCommand) -> Result<()> {
-        let id = cmd
-            .edge_id
-            .parse::<EdgeId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let id = cmd.edge_id.parse::<EdgeId>()?;
         let mut edge = self
             .store
             .find_by_id(&id)

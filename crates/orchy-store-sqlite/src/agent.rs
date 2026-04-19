@@ -159,10 +159,10 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let parent_id = parent_id_str
         .map(|s| AgentId::from_str(&s))
         .transpose()
-        .map_err(|e| conversion_err(4, e))?;
+        .map_err(|e| conversion_err(4, e.to_string()))?;
 
     Ok(Agent::restore(RestoreAgent {
-        id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e))?,
+        id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e.to_string()))?,
         org_id: OrganizationId::new(&org_id_str).map_err(|e| conversion_err(1, e.to_string()))?,
         project: ProjectId::try_from(project_str).map_err(|e| conversion_err(2, e))?,
         namespace: Namespace::try_from(namespace_str)

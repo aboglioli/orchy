@@ -21,7 +21,7 @@ impl MarkRead {
     }
 
     pub async fn execute(&self, cmd: MarkReadCommand) -> Result<()> {
-        let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let agent_id = AgentId::from_str(&cmd.agent_id)?;
         self.agents
             .find_by_id(&agent_id)
             .await?

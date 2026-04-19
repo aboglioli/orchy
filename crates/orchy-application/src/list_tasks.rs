@@ -58,11 +58,7 @@ impl ListTasks {
             .transpose()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
-        let assigned_to = cmd
-            .assigned_to
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let assigned_to = cmd.assigned_to.map(|s| AgentId::from_str(&s)).transpose()?;
 
         let filter = TaskFilter {
             org_id,

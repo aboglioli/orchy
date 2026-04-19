@@ -49,11 +49,7 @@ impl AppendKnowledge {
             .kind
             .parse::<KnowledgeKind>()
             .map_err(Error::InvalidInput)?;
-        let agent_id = cmd
-            .agent_id
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
         let separator = cmd.separator.as_deref().unwrap_or("\n");
 
         let existing = self

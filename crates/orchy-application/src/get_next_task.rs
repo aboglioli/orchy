@@ -64,8 +64,7 @@ impl GetNextTask {
         let agent_id = cmd
             .agent_id
             .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?
+            .transpose()?
             .ok_or_else(|| Error::InvalidInput("agent_id required when claiming".into()))?;
 
         for mut task in candidates {

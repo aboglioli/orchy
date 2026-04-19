@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::user::{Email, OrgMembershipStore, PlainPassword, User, UserId, UserStore};
+use orchy_core::user::{Email, PlainPassword, User, UserId, UserStore};
 
 use crate::dto::UserResponse;
 
@@ -16,12 +16,11 @@ pub struct RegisterUserResponse {
 
 pub struct RegisterUser {
     users: Arc<dyn UserStore>,
-    memberships: Arc<dyn OrgMembershipStore>,
 }
 
 impl RegisterUser {
-    pub fn new(users: Arc<dyn UserStore>, memberships: Arc<dyn OrgMembershipStore>) -> Self {
-        Self { users, memberships }
+    pub fn new(users: Arc<dyn UserStore>) -> Self {
+        Self { users }
     }
 
     pub async fn execute(

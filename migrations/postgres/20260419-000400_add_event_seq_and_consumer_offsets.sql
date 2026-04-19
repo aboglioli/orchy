@@ -1,0 +1,8 @@
+ALTER TABLE events ADD COLUMN IF NOT EXISTS seq BIGSERIAL;
+CREATE UNIQUE INDEX IF NOT EXISTS events_seq_idx ON events (seq);
+
+CREATE TABLE IF NOT EXISTS consumer_offsets (
+    group_id   TEXT PRIMARY KEY,
+    last_seq   BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

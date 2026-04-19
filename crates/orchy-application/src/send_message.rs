@@ -36,7 +36,7 @@ impl SendMessage {
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let from = AgentId::from_str(&cmd.from_agent_id).map_err(Error::InvalidInput)?;
+        let from = AgentId::from_str(&cmd.from_agent_id)?;
 
         let sender = self
             .agents

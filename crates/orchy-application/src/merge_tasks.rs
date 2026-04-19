@@ -48,11 +48,7 @@ impl MergeTasks {
             ));
         }
 
-        let created_by = cmd
-            .created_by
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
         let mut sources = Vec::with_capacity(task_ids.len());
         for id in &task_ids {

@@ -51,10 +51,12 @@ impl fmt::Display for AgentId {
 }
 
 impl FromStr for AgentId {
-    type Err = String;
+    type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Uuid::parse_str(s).map(Self).map_err(|e| e.to_string())
+        Uuid::parse_str(s)
+            .map(Self)
+            .map_err(|_| Error::invalid_input(format!("invalid agent id: {s}")))
     }
 }
 

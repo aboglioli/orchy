@@ -38,16 +38,8 @@ impl RegisterAgent {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
-        let id = cmd
-            .id
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
-        let parent_id = cmd
-            .parent_id
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let id = cmd.id.map(|s| AgentId::from_str(&s)).transpose()?;
+        let parent_id = cmd.parent_id.map(|s| AgentId::from_str(&s)).transpose()?;
 
         let domain_cmd = DomainRegisterAgent {
             org_id,

@@ -64,12 +64,8 @@ impl WriteKnowledge {
             .kind
             .parse::<KnowledgeKind>()
             .map_err(Error::InvalidInput)?;
-        let agent_id = cmd
-            .agent_id
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
-        let expected_version = cmd.version.map(Version::from);
+        let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
+        let expected_version = cmd.version.map(Version::new);
         let task_id_str = cmd.task_id.clone();
 
         let write_cmd = WriteKnowledgeCmd {

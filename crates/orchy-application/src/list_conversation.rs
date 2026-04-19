@@ -28,10 +28,7 @@ impl ListConversation {
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let message_id = cmd
-            .message_id
-            .parse::<MessageId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let message_id = cmd.message_id.parse::<MessageId>()?;
 
         let limit = cmd.limit.map(|l| l as usize);
         let messages = self.messages.find_thread(&message_id, limit).await?;

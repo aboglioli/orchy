@@ -1,3 +1,5 @@
+pub mod events;
+
 use std::fmt;
 use std::str::FromStr;
 
@@ -13,8 +15,6 @@ use crate::error::{Error, Result};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 use crate::resource_ref::ResourceKind;
-
-pub mod events;
 
 use self::events as edge_events;
 
@@ -121,10 +121,12 @@ impl fmt::Display for EdgeId {
 }
 
 impl FromStr for EdgeId {
-    type Err = uuid::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(Self(Uuid::parse_str(s)?))
+        Uuid::parse_str(s)
+            .map(Self)
+            .map_err(|_| Error::invalid_input(format!("invalid edge id: {s}")))
     }
 }
 

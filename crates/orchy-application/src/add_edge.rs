@@ -49,11 +49,7 @@ impl AddEdge {
             .rel_type
             .parse::<RelationType>()
             .map_err(Error::InvalidInput)?;
-        let created_by = cmd
-            .created_by
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
         if self
             .store

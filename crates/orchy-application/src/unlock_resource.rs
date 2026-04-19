@@ -33,7 +33,7 @@ impl UnlockResource {
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let holder = AgentId::from_str(&cmd.holder_agent_id).map_err(Error::InvalidInput)?;
+        let holder = AgentId::from_str(&cmd.holder_agent_id)?;
 
         self.agents
             .find_by_id(&holder)

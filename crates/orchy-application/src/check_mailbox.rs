@@ -31,7 +31,7 @@ impl CheckMailbox {
     }
 
     pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<PageResponse<MessageResponse>> {
-        let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let agent_id = AgentId::from_str(&cmd.agent_id)?;
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =

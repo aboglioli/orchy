@@ -64,11 +64,7 @@ impl ImportKnowledge {
         let target_namespace = parse_namespace(cmd.target_namespace.as_deref())?;
         let target_path = cmd.target_path.unwrap_or_else(|| source.path().to_string());
 
-        let agent_id = cmd
-            .agent_id
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
 
         let mut entry = Knowledge::new(
             target_org,

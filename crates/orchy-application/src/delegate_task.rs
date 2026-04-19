@@ -30,16 +30,9 @@ impl DelegateTask {
     }
 
     pub async fn execute(&self, cmd: DelegateTaskCommand) -> Result<TaskResponse> {
-        let parent_id = cmd
-            .task_id
-            .parse::<TaskId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let parent_id = cmd.task_id.parse::<TaskId>()?;
 
-        let created_by = cmd
-            .created_by
-            .map(|s| AgentId::from_str(&s))
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
         let parent = self
             .tasks

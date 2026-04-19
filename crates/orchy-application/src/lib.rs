@@ -474,7 +474,7 @@ impl Application {
             revoke_api_key: RevokeApiKey::new(orgs.clone()),
             resolve_api_key: ResolveApiKey::new(orgs),
 
-            register_user: RegisterUser::new(users.clone(), memberships.clone()),
+            register_user: RegisterUser::new(users.clone()),
             login_user: LoginUser::new(users.clone(), memberships.clone()),
             get_current_user: GetCurrentUser::new(users.clone(), memberships.clone()),
             change_password: ChangePassword::new(users.clone()),

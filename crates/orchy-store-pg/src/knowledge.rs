@@ -426,7 +426,7 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
         title,
         content,
         tags: decode_json_value(tags, "knowledge_entries", "tags")?,
-        version: Version::from(version as u64),
+        version: Version::new(version as u64),
         agent_id: agent_id.map(AgentId::from_uuid),
         metadata: decode_json_value(metadata, "knowledge_entries", "metadata")?,
         embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),

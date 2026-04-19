@@ -23,11 +23,8 @@ impl StartTask {
     }
 
     pub async fn execute(&self, cmd: StartTaskCommand) -> Result<TaskResponse> {
-        let task_id = cmd
-            .task_id
-            .parse::<TaskId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let task_id = cmd.task_id.parse::<TaskId>()?;
+        let agent_id = AgentId::from_str(&cmd.agent_id)?;
 
         self.agents
             .find_by_id(&agent_id)

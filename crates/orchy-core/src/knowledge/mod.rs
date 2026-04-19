@@ -71,10 +71,12 @@ impl fmt::Display for KnowledgeId {
 }
 
 impl FromStr for KnowledgeId {
-    type Err = uuid::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(Self(Uuid::parse_str(s)?))
+        Uuid::parse_str(s)
+            .map(Self)
+            .map_err(|_| Error::invalid_input(format!("invalid knowledge id: {s}")))
     }
 }
 
@@ -192,6 +194,10 @@ impl FromStr for KnowledgeKind {
 pub struct Version(u64);
 
 impl Version {
+    pub fn new(v: u64) -> Self {
+        Self(v)
+    }
+
     pub fn initial() -> Self {
         Self(1)
     }
@@ -202,12 +208,6 @@ impl Version {
 
     pub fn as_u64(&self) -> u64 {
         self.0
-    }
-}
-
-impl From<u64> for Version {
-    fn from(v: u64) -> Self {
-        Self(v)
     }
 }
 

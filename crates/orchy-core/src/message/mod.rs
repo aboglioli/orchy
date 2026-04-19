@@ -75,10 +75,12 @@ impl fmt::Display for MessageId {
 }
 
 impl FromStr for MessageId {
-    type Err = uuid::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(Self(Uuid::parse_str(s)?))
+        Uuid::parse_str(s)
+            .map(Self)
+            .map_err(|_| Error::invalid_input(format!("invalid message id: {s}")))
     }
 }
 

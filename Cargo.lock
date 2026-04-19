@@ -1657,6 +1657,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "futures",
  "orchy-core",
  "orchy-events",
  "pgvector",

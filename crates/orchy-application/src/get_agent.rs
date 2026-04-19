@@ -20,7 +20,7 @@ impl GetAgent {
     }
 
     pub async fn execute(&self, cmd: GetAgentCommand) -> Result<AgentResponse> {
-        let id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let id = AgentId::from_str(&cmd.agent_id)?;
         let agent = self
             .agents
             .find_by_id(&id)

@@ -47,10 +47,7 @@ impl GetAgentSummary {
     pub async fn execute(&self, cmd: GetAgentSummaryCommand) -> Result<AgentSummaryResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let agent_id: AgentId = cmd
-            .agent_id
-            .parse()
-            .map_err(|e: String| Error::InvalidInput(e))?;
+        let agent_id: AgentId = cmd.agent_id.parse()?;
 
         let agent = self
             .agents

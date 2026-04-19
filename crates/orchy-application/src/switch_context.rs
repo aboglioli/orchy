@@ -52,7 +52,7 @@ impl SwitchContext {
 
         let org =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let agent_id = AgentId::from_str(&cmd.agent_id).map_err(Error::InvalidInput)?;
+        let agent_id = AgentId::from_str(&cmd.agent_id)?;
 
         let target_project = cmd
             .project

@@ -21,10 +21,7 @@ impl CompleteTask {
     }
 
     pub async fn execute(&self, cmd: CompleteTaskCommand) -> Result<TaskResponse> {
-        let task_id = cmd
-            .task_id
-            .parse::<TaskId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let task_id = cmd.task_id.parse::<TaskId>()?;
 
         let mut task = self
             .tasks

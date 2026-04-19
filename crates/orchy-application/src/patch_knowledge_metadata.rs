@@ -35,7 +35,7 @@ impl PatchKnowledgeMetadata {
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let expected_version = cmd.version.map(Version::from);
+        let expected_version = cmd.version.map(Version::new);
 
         let mut entry = self
             .store

@@ -65,14 +65,14 @@ impl InviteUser {
         }
 
         let membership = OrgMembership::new(*user.id(), org_id.clone(), role);
-        
+
         // Record membership added event through user's event collector
         user.record_membership_added(
             &membership.id().to_string(),
             &org_id.to_string(),
             &role.to_string(),
         )?;
-        
+
         self.memberships.save(&membership).await?;
         self.users.save(&mut user).await?;
 
