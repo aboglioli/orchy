@@ -916,7 +916,90 @@ async fn delete_by_pair_removes_matching_edge() {
     .await
     .unwrap();
 
-    assert!(EdgeStore::find_by_id(&store, &edge.id()).await.unwrap().is_none());
+    assert!(
+        EdgeStore::find_by_id(&store, &edge.id())
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn split_task_creates_depends_on_edges_for_subtask_deps() {
+    use std::sync::Arc;
+
+    use orchy_application::{PostTask, PostTaskCommand, SplitTask, SplitTaskCommand, SubtaskInput};
+
+    let backend = Arc::new(backend());
+    let tasks: Arc<dyn orchy_core::task::TaskStore> = backend.clone();
+    let edges: Arc<dyn EdgeStore> = backend.clone();
+
+    let post = PostTask::new(tasks.clone(), edges.clone());
+    let split = SplitTask::new(tasks.clone(), edges.clone());
+
+    let dep = post
+        .execute(PostTaskCommand {
+            org_id: "test-org".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "Dep".into(),
+            description: "desc".into(),
+            priority: None,
+            assigned_roles: None,
+            depends_on: None,
+            parent_id: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let parent = post
+        .execute(PostTaskCommand {
+            org_id: "test-org".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "Parent".into(),
+            description: "desc".into(),
+            priority: None,
+            assigned_roles: None,
+            depends_on: None,
+            parent_id: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let (_, subtasks) = split
+        .execute(SplitTaskCommand {
+            task_id: parent.id.clone(),
+            subtasks: vec![SubtaskInput {
+                title: "Sub".into(),
+                description: "desc".into(),
+                priority: None,
+                assigned_roles: None,
+                depends_on: Some(vec![dep.id.clone()]),
+            }],
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let sub = &subtasks[0];
+    assert_eq!(sub.status, "blocked");
+
+    let o = OrganizationId::new("test-org").unwrap();
+    let dep_edges = EdgeStore::find_from(
+        backend.as_ref(),
+        &o,
+        &ResourceKind::Task,
+        &sub.id,
+        Some(&RelationType::DependsOn),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(dep_edges.len(), 1);
+    assert_eq!(dep_edges[0].to_id(), dep.id.as_str());
 }
 
 #[tokio::test]
@@ -947,5 +1030,10 @@ async fn delete_by_pair_ignores_different_rel_type() {
     .await
     .unwrap();
 
-    assert!(EdgeStore::find_by_id(&store, &edge.id()).await.unwrap().is_some());
+    assert!(
+        EdgeStore::find_by_id(&store, &edge.id())
+            .await
+            .unwrap()
+            .is_some()
+    );
 }

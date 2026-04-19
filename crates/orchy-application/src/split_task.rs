@@ -99,6 +99,8 @@ impl SplitTask {
 
         let mut children = Vec::with_capacity(subtask_defs.len());
         for def in subtask_defs {
+            let depends_on_ids = def.depends_on.clone();
+            let is_blocked = !depends_on_ids.is_empty();
             let mut task = Task::new(
                 parent.org_id().clone(),
                 parent.project().clone(),
@@ -110,10 +112,11 @@ impl SplitTask {
                 def.assigned_roles,
                 def.depends_on,
                 created_by.clone(),
-                false,
+                is_blocked,
             )?;
             self.tasks.save(&mut task).await?;
-            let edge = Edge::new(
+
+            let spawns_edge = Edge::new(
                 parent.org_id().clone(),
                 ResourceKind::Task,
                 parent_id.to_string(),
@@ -123,9 +126,35 @@ impl SplitTask {
                 None,
                 created_by.clone(),
             );
-            if let Err(e) = self.edges.save(&edge).await {
-                tracing::warn!("failed to create spawns edge for subtask {}: {e}", task.id());
+            self.edges.save(&spawns_edge).await?;
+
+            for dep_id in &depends_on_ids {
+                let already_exists = self
+                    .edges
+                    .exists_by_pair(
+                        parent.org_id(),
+                        &ResourceKind::Task,
+                        &task.id().to_string(),
+                        &ResourceKind::Task,
+                        &dep_id.to_string(),
+                        &RelationType::DependsOn,
+                    )
+                    .await?;
+                if !already_exists {
+                    let dep_edge = Edge::new(
+                        parent.org_id().clone(),
+                        ResourceKind::Task,
+                        task.id().to_string(),
+                        ResourceKind::Task,
+                        dep_id.to_string(),
+                        RelationType::DependsOn,
+                        None,
+                        created_by.clone(),
+                    );
+                    self.edges.save(&dep_edge).await?;
+                }
             }
+
             children.push(task);
         }
 
