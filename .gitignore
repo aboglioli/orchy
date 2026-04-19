@@ -5,6 +5,7 @@ target/
 *.db-shm
 *.db-wal
 .mcp.json
+docs/
 
 # frontend artifacts
 dashboard/node_modules/
