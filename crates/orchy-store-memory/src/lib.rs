@@ -12,7 +12,7 @@ mod resource_lock;
 mod task;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::RwLock;
+use tokio::sync::RwLock;
 
 use orchy_events::SerializedEvent;
 
@@ -24,11 +24,14 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::{Organization, OrganizationId};
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskId};
 
 pub struct MemoryBackend {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
     pub(crate) edges: RwLock<HashMap<EdgeId, Edge>>,
+    pub(crate) edges_by_from: RwLock<HashMap<(ResourceKind, String), Vec<EdgeId>>>,
+    pub(crate) edges_by_to: RwLock<HashMap<(ResourceKind, String), Vec<EdgeId>>>,
     pub(crate) tasks: RwLock<HashMap<TaskId, Task>>,
     pub(crate) messages: RwLock<HashMap<MessageId, Message>>,
     pub(crate) message_receipts: RwLock<HashSet<(MessageId, AgentId)>>,
@@ -45,6 +48,8 @@ impl MemoryBackend {
         Self {
             agents: RwLock::new(HashMap::new()),
             edges: RwLock::new(HashMap::new()),
+            edges_by_from: RwLock::new(HashMap::new()),
+            edges_by_to: RwLock::new(HashMap::new()),
             tasks: RwLock::new(HashMap::new()),
             messages: RwLock::new(HashMap::new()),
             message_receipts: RwLock::new(HashSet::new()),

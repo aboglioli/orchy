@@ -15,6 +15,26 @@ use crate::MemoryBackend;
 impl EdgeStore for MemoryBackend {
     async fn save(&self, edge: &Edge) -> Result<()> {
         let mut store = self.edges.write().await;
+        let mut by_from = self.edges_by_from.write().await;
+        let mut by_to = self.edges_by_to.write().await;
+
+        if let Some(old) = store.get(&edge.id()) {
+            let from_key = (old.from_kind().clone(), old.from_id().to_string());
+            if let Some(ids) = by_from.get_mut(&from_key) {
+                ids.retain(|id| id != &old.id());
+            }
+            let to_key = (old.to_kind().clone(), old.to_id().to_string());
+            if let Some(ids) = by_to.get_mut(&to_key) {
+                ids.retain(|id| id != &old.id());
+            }
+        }
+
+        let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
+        by_from.entry(from_key).or_default().push(edge.id());
+
+        let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
+        by_to.entry(to_key).or_default().push(edge.id());
+
         store.insert(edge.id(), edge.clone());
         Ok(())
     }
@@ -26,7 +46,19 @@ impl EdgeStore for MemoryBackend {
 
     async fn delete(&self, id: &EdgeId) -> Result<()> {
         let mut store = self.edges.write().await;
-        store.remove(id);
+        let mut by_from = self.edges_by_from.write().await;
+        let mut by_to = self.edges_by_to.write().await;
+
+        if let Some(old) = store.remove(id) {
+            let from_key = (old.from_kind().clone(), old.from_id().to_string());
+            if let Some(ids) = by_from.get_mut(&from_key) {
+                ids.retain(|eid| eid != id);
+            }
+            let to_key = (old.to_kind().clone(), old.to_id().to_string());
+            if let Some(ids) = by_to.get_mut(&to_key) {
+                ids.retain(|eid| eid != id);
+            }
+        }
         Ok(())
     }
 
@@ -148,21 +180,10 @@ impl EdgeStore for MemoryBackend {
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<TraversalEdge>> {
         let store = self.edges.read().await;
-        let all_edges: Vec<&Edge> = store
-            .values()
-            .filter(|e| {
-                e.org_id() == org
-                    && if let Some(ts) = as_of {
-                        e.is_active_at(ts)
-                    } else {
-                        !only_active || e.is_active()
-                    }
-            })
-            .collect();
+        let by_from = self.edges_by_from.read().await;
+        let by_to = self.edges_by_to.read().await;
 
-        // BFS from the starting node. Track visited edge IDs to avoid duplicates, keeping minimum depth.
         let mut result: HashMap<EdgeId, TraversalEdge> = HashMap::new();
-        // Queue entries: (current_kind, current_id, depth)
         let mut queue: VecDeque<(ResourceKind, String, u32)> = VecDeque::new();
         queue.push_back((kind.clone(), id.to_string(), 0));
 
@@ -173,41 +194,71 @@ impl EdgeStore for MemoryBackend {
 
             let next_depth = depth + 1;
 
-            for edge in &all_edges {
-                let rel_ok = rel_types.is_none_or(|rts| rts.contains(edge.rel_type()));
-                if !rel_ok {
+            let candidate_ids: Vec<EdgeId> = match direction {
+                TraversalDirection::Outgoing => by_from
+                    .get(&(cur_kind.clone(), cur_id.clone()))
+                    .cloned()
+                    .unwrap_or_default(),
+                TraversalDirection::Incoming => by_to
+                    .get(&(cur_kind.clone(), cur_id.clone()))
+                    .cloned()
+                    .unwrap_or_default(),
+                TraversalDirection::Both => {
+                    let mut ids = by_from
+                        .get(&(cur_kind.clone(), cur_id.clone()))
+                        .cloned()
+                        .unwrap_or_default();
+                    ids.extend(
+                        by_to
+                            .get(&(cur_kind.clone(), cur_id.clone()))
+                            .cloned()
+                            .unwrap_or_default(),
+                    );
+                    ids
+                }
+            };
+
+            for edge_id in candidate_ids {
+                if result.contains_key(&edge_id) {
                     continue;
                 }
 
-                let (matches, next_kind, next_id) = match direction {
+                let Some(edge) = store.get(&edge_id) else {
+                    continue;
+                };
+
+                if edge.org_id() != org {
+                    continue;
+                }
+
+                let passes = if let Some(ts) = as_of {
+                    edge.is_active_at(ts)
+                } else {
+                    !only_active || edge.is_active()
+                };
+                if !passes {
+                    continue;
+                }
+
+                if !rel_types.is_none_or(|rts| rts.contains(edge.rel_type())) {
+                    continue;
+                }
+
+                let (next_kind, next_id) = match direction {
                     TraversalDirection::Outgoing => {
-                        if edge.from_kind() == &cur_kind && edge.from_id() == cur_id {
-                            (true, edge.to_kind().clone(), edge.to_id().to_string())
-                        } else {
-                            (false, cur_kind.clone(), cur_id.clone())
-                        }
+                        (edge.to_kind().clone(), edge.to_id().to_string())
                     }
                     TraversalDirection::Incoming => {
-                        if edge.to_kind() == &cur_kind && edge.to_id() == cur_id {
-                            (true, edge.from_kind().clone(), edge.from_id().to_string())
-                        } else {
-                            (false, cur_kind.clone(), cur_id.clone())
-                        }
+                        (edge.from_kind().clone(), edge.from_id().to_string())
                     }
                     TraversalDirection::Both => {
                         if edge.from_kind() == &cur_kind && edge.from_id() == cur_id {
-                            (true, edge.to_kind().clone(), edge.to_id().to_string())
-                        } else if edge.to_kind() == &cur_kind && edge.to_id() == cur_id {
-                            (true, edge.from_kind().clone(), edge.from_id().to_string())
+                            (edge.to_kind().clone(), edge.to_id().to_string())
                         } else {
-                            (false, cur_kind.clone(), cur_id.clone())
+                            (edge.from_kind().clone(), edge.from_id().to_string())
                         }
                     }
                 };
-
-                if !matches {
-                    continue;
-                }
 
                 let te = TraversalEdge {
                     id: edge.id(),
@@ -220,10 +271,8 @@ impl EdgeStore for MemoryBackend {
                     depth: next_depth,
                 };
 
-                result.entry(edge.id()).or_insert_with(|| {
-                    queue.push_back((next_kind, next_id, next_depth));
-                    te
-                });
+                result.insert(edge_id, te);
+                queue.push_back((next_kind, next_id, next_depth));
             }
         }
 
@@ -240,11 +289,31 @@ impl EdgeStore for MemoryBackend {
         id: &str,
     ) -> Result<()> {
         let mut store = self.edges.write().await;
-        store.retain(|_, e| {
-            !(e.org_id() == org
-                && ((e.from_kind() == kind && e.from_id() == id)
-                    || (e.to_kind() == kind && e.to_id() == id)))
-        });
+        let mut by_from = self.edges_by_from.write().await;
+        let mut by_to = self.edges_by_to.write().await;
+
+        let to_remove: Vec<Edge> = store
+            .values()
+            .filter(|e| {
+                e.org_id() == org
+                    && ((e.from_kind() == kind && e.from_id() == id)
+                        || (e.to_kind() == kind && e.to_id() == id))
+            })
+            .cloned()
+            .collect();
+
+        for old in &to_remove {
+            store.remove(&old.id());
+            let from_key = (old.from_kind().clone(), old.from_id().to_string());
+            if let Some(ids) = by_from.get_mut(&from_key) {
+                ids.retain(|eid| eid != &old.id());
+            }
+            let to_key = (old.to_kind().clone(), old.to_id().to_string());
+            if let Some(ids) = by_to.get_mut(&to_key) {
+                ids.retain(|eid| eid != &old.id());
+            }
+        }
+
         Ok(())
     }
 
@@ -258,14 +327,34 @@ impl EdgeStore for MemoryBackend {
         rel_type: &RelationType,
     ) -> Result<()> {
         let mut store = self.edges.write().await;
-        store.retain(|_, e| {
-            !(e.org_id() == org
-                && e.from_kind() == from_kind
-                && e.from_id() == from_id
-                && e.to_kind() == to_kind
-                && e.to_id() == to_id
-                && e.rel_type() == rel_type)
-        });
+        let mut by_from = self.edges_by_from.write().await;
+        let mut by_to = self.edges_by_to.write().await;
+
+        let to_remove: Vec<Edge> = store
+            .values()
+            .filter(|e| {
+                e.org_id() == org
+                    && e.from_kind() == from_kind
+                    && e.from_id() == from_id
+                    && e.to_kind() == to_kind
+                    && e.to_id() == to_id
+                    && e.rel_type() == rel_type
+            })
+            .cloned()
+            .collect();
+
+        for old in &to_remove {
+            store.remove(&old.id());
+            let fk = (old.from_kind().clone(), old.from_id().to_string());
+            if let Some(ids) = by_from.get_mut(&fk) {
+                ids.retain(|eid| eid != &old.id());
+            }
+            let tk = (old.to_kind().clone(), old.to_id().to_string());
+            if let Some(ids) = by_to.get_mut(&tk) {
+                ids.retain(|eid| eid != &old.id());
+            }
+        }
+
         Ok(())
     }
 }
