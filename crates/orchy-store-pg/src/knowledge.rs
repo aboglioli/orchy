@@ -270,43 +270,47 @@ impl KnowledgeStore for PgBackend {
             return search_by_embedding(&self.pool, org, emb, namespace, limit).await;
         }
 
-        let mut select = Query::select();
-        select
-            .from(KnowledgeEntries::Table)
-            .expr(Expr::cust(SELECT_COLUMNS))
-            .and_where(Expr::cust_with_values(
-                "organization_id = ?",
-                [sea_query::Value::String(Some(Box::new(org.to_string())))],
-            ))
-            .and_where(Expr::cust_with_values(
-                "to_tsvector('english', title || ' ' || content) @@ plainto_tsquery('english', ?)",
-                [sea_query::Value::String(Some(Box::new(query.to_string())))],
-            ));
-
-        if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
-            select.cond_where(
-                Cond::any()
-                    .add(Expr::col(KnowledgeEntries::Namespace).eq(ns.to_string()))
-                    .add(Expr::col(KnowledgeEntries::Namespace).like(format!("{}/%", ns))),
+        let rows = if let Some(ns) = namespace.filter(|ns| !ns.is_root()) {
+            let sql = format!(
+                "WITH search AS (
+                    SELECT {SELECT_COLUMNS}, to_tsvector('english', title || ' ' || content) AS ts
+                    FROM knowledge_entries
+                    WHERE organization_id = $1
+                      AND (namespace = $3 OR namespace LIKE $3 || '/%')
+                )
+                SELECT {SELECT_COLUMNS} FROM search
+                WHERE ts @@ plainto_tsquery('english', $2)
+                ORDER BY ts_rank(ts, plainto_tsquery('english', $2)) DESC
+                LIMIT $4"
             );
-        }
-
-        select
-            .order_by_expr(
-                Expr::cust_with_values(
-                    "ts_rank(to_tsvector('english', title || ' ' || content), plainto_tsquery('english', ?))",
-                    [sea_query::Value::String(Some(Box::new(query.to_string())))],
-                ),
-                sea_query::Order::Desc,
-            )
-            .limit(limit as u64);
-
-        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
-
-        let rows = sqlx::query_with(&sql, values)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(query)
+                .bind(ns.to_string())
+                .bind(limit as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
+        } else {
+            let sql = format!(
+                "WITH search AS (
+                    SELECT {SELECT_COLUMNS}, to_tsvector('english', title || ' ' || content) AS ts
+                    FROM knowledge_entries
+                    WHERE organization_id = $1
+                )
+                SELECT {SELECT_COLUMNS} FROM search
+                WHERE ts @@ plainto_tsquery('english', $2)
+                ORDER BY ts_rank(ts, plainto_tsquery('english', $2)) DESC
+                LIMIT $3"
+            );
+            sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(query)
+                .bind(limit as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
+        };
 
         rows.iter()
             .map(|r| row_to_entry(r).map(|k| (k, None)))
