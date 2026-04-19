@@ -136,11 +136,11 @@ impl GetTaskWithContext {
 
         let mut edges = self
             .edges
-            .find_from(&org, &ResourceKind::Task, task_id, None, true)
+            .find_from(&org, &ResourceKind::Task, task_id, None, true, None)
             .await?;
         edges.extend(
             self.edges
-                .find_to(&org, &ResourceKind::Task, task_id, None, true)
+                .find_to(&org, &ResourceKind::Task, task_id, None, true, None)
                 .await?,
         );
 

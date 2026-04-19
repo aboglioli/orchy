@@ -149,13 +149,16 @@ impl SearchKnowledge {
         id: &str,
     ) -> Result<HashSet<String>> {
         let mut ids = HashSet::new();
-        let from = self.edges.find_from(org, &kind, id, None, true).await?;
+        let from = self
+            .edges
+            .find_from(org, &kind, id, None, true, None)
+            .await?;
         for e in from {
             if e.to_kind() == &ResourceKind::Knowledge {
                 ids.insert(e.to_id().to_string());
             }
         }
-        let to = self.edges.find_to(org, &kind, id, None, true).await?;
+        let to = self.edges.find_to(org, &kind, id, None, true, None).await?;
         for e in to {
             if e.from_kind() == &ResourceKind::Knowledge {
                 ids.insert(e.from_id().to_string());
@@ -179,6 +182,7 @@ impl SearchKnowledge {
                 None,
                 TraversalDirection::Both,
                 true,
+                None,
             )
             .await?;
 

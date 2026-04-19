@@ -13,10 +13,7 @@ use crate::MemoryBackend;
 impl MessageStore for MemoryBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
         {
-            let mut messages = self
-                .messages
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut messages = self.messages.write().await;
             messages.insert(message.id(), message.clone());
         }
 
@@ -31,17 +28,14 @@ impl MessageStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
-        let messages = self
-            .messages
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let messages = self.messages.read().await;
         Ok(messages.get(id).cloned())
     }
 
     async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
         self.message_receipts
             .write()
-            .map_err(|e| Error::Store(e.to_string()))?
+            .await
             .insert((*message_id, agent.clone()));
         Ok(())
     }
@@ -55,14 +49,8 @@ impl MessageStore for MemoryBackend {
         namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let messages = self
-            .messages
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
-        let receipts = self
-            .message_receipts
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let messages = self.messages.read().await;
+        let receipts = self.message_receipts.read().await;
 
         let mut results = Vec::new();
 
@@ -115,10 +103,7 @@ impl MessageStore for MemoryBackend {
         namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let messages = self
-            .messages
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let messages = self.messages.read().await;
 
         let mut results: Vec<Message> = messages
             .values()
@@ -143,10 +128,7 @@ impl MessageStore for MemoryBackend {
         message_id: &MessageId,
         limit: Option<usize>,
     ) -> Result<Vec<Message>> {
-        let messages = self
-            .messages
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let messages = self.messages.read().await;
 
         let start = match messages.get(message_id) {
             Some(m) => m.clone(),

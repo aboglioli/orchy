@@ -14,19 +14,13 @@ impl NamespaceStore for MemoryBackend {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<()> {
-        let mut namespaces = self
-            .namespaces
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut namespaces = self.namespaces.write().await;
         namespaces.insert((org.to_string(), project.to_string(), namespace.to_string()));
         Ok(())
     }
 
     async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
-        let namespaces = self
-            .namespaces
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let namespaces = self.namespaces.read().await;
 
         let org_str = org.to_string();
         let project_str = project.to_string();

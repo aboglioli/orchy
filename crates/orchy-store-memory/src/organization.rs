@@ -9,10 +9,7 @@ use crate::MemoryBackend;
 impl OrganizationStore for MemoryBackend {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         {
-            let mut orgs = self
-                .organizations
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut orgs = self.organizations.write().await;
             orgs.insert(org.id().clone(), org.clone());
         }
 
@@ -27,18 +24,12 @@ impl OrganizationStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &OrganizationId) -> Result<Option<Organization>> {
-        let orgs = self
-            .organizations
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let orgs = self.organizations.read().await;
         Ok(orgs.get(id).cloned())
     }
 
     async fn find_by_api_key(&self, key: &str) -> Result<Option<Organization>> {
-        let orgs = self
-            .organizations
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let orgs = self.organizations.read().await;
         Ok(orgs
             .values()
             .find(|org| {
@@ -50,10 +41,7 @@ impl OrganizationStore for MemoryBackend {
     }
 
     async fn list(&self) -> Result<Vec<Organization>> {
-        let orgs = self
-            .organizations
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let orgs = self.organizations.read().await;
         Ok(orgs.values().cloned().collect())
     }
 }

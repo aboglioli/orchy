@@ -47,9 +47,12 @@ impl AssembleContext {
 
         let from_edges = self
             .edges
-            .find_from(&org, &kind, &cmd.id, None, true)
+            .find_from(&org, &kind, &cmd.id, None, true, None)
             .await?;
-        let to_edges = self.edges.find_to(&org, &kind, &cmd.id, None, true).await?;
+        let to_edges = self
+            .edges
+            .find_to(&org, &kind, &cmd.id, None, true, None)
+            .await?;
 
         let mut knowledge_with_rel: HashMap<KnowledgeId, RelationType> = HashMap::new();
         for e in from_edges.iter().chain(to_edges.iter()) {
@@ -145,6 +148,7 @@ impl AssembleContext {
                     Some(&[RelationType::DependsOn]),
                     TraversalDirection::Outgoing,
                     true,
+                    None,
                 )
                 .await?;
             let mut flags = Vec::new();

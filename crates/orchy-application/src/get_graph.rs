@@ -80,6 +80,7 @@ impl GetGraph {
                 rel_types.as_deref(),
                 direction,
                 cmd.only_active,
+                None,
             )
             .await?;
 

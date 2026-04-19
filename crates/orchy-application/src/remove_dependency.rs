@@ -60,6 +60,7 @@ impl RemoveDependency {
                 &task_id.to_string(),
                 Some(&RelationType::DependsOn),
                 false,
+                None,
             )
             .await?;
         if let Some(mut dep_edge) = dep_edges

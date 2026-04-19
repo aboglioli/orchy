@@ -11,10 +11,7 @@ use crate::MemoryBackend;
 impl ProjectStore for MemoryBackend {
     async fn save(&self, project: &mut Project) -> Result<()> {
         {
-            let mut projects = self
-                .projects
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut projects = self.projects.write().await;
             projects.insert(project.id().clone(), project.clone());
         }
 
@@ -29,10 +26,7 @@ impl ProjectStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
-        let projects = self
-            .projects
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let projects = self.projects.read().await;
         Ok(projects.get(id).filter(|p| p.org_id() == org).cloned())
     }
 }

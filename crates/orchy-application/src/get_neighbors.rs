@@ -59,22 +59,50 @@ impl GetNeighbors {
         let edges = match cmd.direction.as_deref() {
             Some("incoming") => {
                 self.store
-                    .find_to(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
+                    .find_to(
+                        &org,
+                        &kind,
+                        &cmd.id,
+                        rel_type.as_ref(),
+                        cmd.only_active,
+                        None,
+                    )
                     .await?
             }
             Some("outgoing") => {
                 self.store
-                    .find_from(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
+                    .find_from(
+                        &org,
+                        &kind,
+                        &cmd.id,
+                        rel_type.as_ref(),
+                        cmd.only_active,
+                        None,
+                    )
                     .await?
             }
             _ => {
                 let mut out = self
                     .store
-                    .find_from(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
+                    .find_from(
+                        &org,
+                        &kind,
+                        &cmd.id,
+                        rel_type.as_ref(),
+                        cmd.only_active,
+                        None,
+                    )
                     .await?;
                 let inc = self
                     .store
-                    .find_to(&org, &kind, &cmd.id, rel_type.as_ref(), cmd.only_active)
+                    .find_to(
+                        &org,
+                        &kind,
+                        &cmd.id,
+                        rel_type.as_ref(),
+                        cmd.only_active,
+                        None,
+                    )
                     .await?;
                 out.extend(inc);
                 out

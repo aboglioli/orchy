@@ -12,10 +12,7 @@ use crate::MemoryBackend;
 impl LockStore for MemoryBackend {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         {
-            let mut locks = self
-                .resource_locks
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut locks = self.resource_locks.write().await;
             let key = (
                 lock.org_id().to_string(),
                 lock.project().to_string(),
@@ -41,10 +38,7 @@ impl LockStore for MemoryBackend {
         namespace: &Namespace,
         name: &str,
     ) -> Result<Option<ResourceLock>> {
-        let locks = self
-            .resource_locks
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let locks = self.resource_locks.read().await;
         let key = (
             org.to_string(),
             project.to_string(),
@@ -61,10 +55,7 @@ impl LockStore for MemoryBackend {
         namespace: &Namespace,
         name: &str,
     ) -> Result<()> {
-        let mut locks = self
-            .resource_locks
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut locks = self.resource_locks.write().await;
         let key = (
             org.to_string(),
             project.to_string(),
@@ -80,10 +71,7 @@ impl LockStore for MemoryBackend {
         holder: &AgentId,
         org: &OrganizationId,
     ) -> Result<Vec<ResourceLock>> {
-        let locks = self
-            .resource_locks
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let locks = self.resource_locks.read().await;
         Ok(locks
             .values()
             .filter(|lock| *lock.holder() == *holder && lock.org_id() == org)
@@ -92,10 +80,7 @@ impl LockStore for MemoryBackend {
     }
 
     async fn delete_expired(&self) -> Result<u64> {
-        let mut locks = self
-            .resource_locks
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut locks = self.resource_locks.write().await;
         let before = locks.len();
         locks.retain(|_, lock| !lock.is_expired());
         Ok((before - locks.len()) as u64)

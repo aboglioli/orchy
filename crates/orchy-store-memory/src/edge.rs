@@ -1,9 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalEdge};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::resource_ref::ResourceKind;
@@ -13,24 +14,18 @@ use crate::MemoryBackend;
 #[async_trait]
 impl EdgeStore for MemoryBackend {
     async fn save(&self, edge: &Edge) -> Result<()> {
-        let mut store = self
-            .edges
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self.edges.write().await;
         store.insert(edge.id(), edge.clone());
         Ok(())
     }
 
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
-        let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self.edges.read().await;
         Ok(store.get(id).cloned())
     }
 
     async fn delete(&self, id: &EdgeId) -> Result<()> {
-        let mut store = self
-            .edges
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self.edges.write().await;
         store.remove(id);
         Ok(())
     }
@@ -42,8 +37,9 @@ impl EdgeStore for MemoryBackend {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self.edges.read().await;
         let mut edges: Vec<Edge> = store
             .values()
             .filter(|e| {
@@ -51,7 +47,11 @@ impl EdgeStore for MemoryBackend {
                     && e.from_kind() == kind
                     && e.from_id() == id
                     && rel_type.is_none_or(|rt| e.rel_type() == rt)
-                    && (!only_active || e.is_active())
+                    && if let Some(ts) = as_of {
+                        e.is_active_at(ts)
+                    } else {
+                        !only_active || e.is_active()
+                    }
             })
             .cloned()
             .collect();
@@ -66,8 +66,9 @@ impl EdgeStore for MemoryBackend {
         id: &str,
         rel_type: Option<&RelationType>,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self.edges.read().await;
         let mut edges: Vec<Edge> = store
             .values()
             .filter(|e| {
@@ -75,7 +76,11 @@ impl EdgeStore for MemoryBackend {
                     && e.to_kind() == kind
                     && e.to_id() == id
                     && rel_type.is_none_or(|rt| e.rel_type() == rt)
-                    && (!only_active || e.is_active())
+                    && if let Some(ts) = as_of {
+                        e.is_active_at(ts)
+                    } else {
+                        !only_active || e.is_active()
+                    }
             })
             .cloned()
             .collect();
@@ -92,7 +97,7 @@ impl EdgeStore for MemoryBackend {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<bool> {
-        let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self.edges.read().await;
         Ok(store.values().any(|e| {
             e.org_id() == org
                 && e.from_kind() == from_kind
@@ -109,14 +114,19 @@ impl EdgeStore for MemoryBackend {
         rel_type: Option<&RelationType>,
         page: PageParams,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Page<Edge>> {
-        let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self.edges.read().await;
         let mut edges: Vec<Edge> = store
             .values()
             .filter(|e| {
                 e.org_id() == org
                     && rel_type.is_none_or(|rt| e.rel_type() == rt)
-                    && (!only_active || e.is_active())
+                    && if let Some(ts) = as_of {
+                        e.is_active_at(ts)
+                    } else {
+                        !only_active || e.is_active()
+                    }
             })
             .cloned()
             .collect();
@@ -135,11 +145,19 @@ impl EdgeStore for MemoryBackend {
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
         only_active: bool,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<TraversalEdge>> {
-        let store = self.edges.read().map_err(|e| Error::Store(e.to_string()))?;
+        let store = self.edges.read().await;
         let all_edges: Vec<&Edge> = store
             .values()
-            .filter(|e| e.org_id() == org && (!only_active || e.is_active()))
+            .filter(|e| {
+                e.org_id() == org
+                    && if let Some(ts) = as_of {
+                        e.is_active_at(ts)
+                    } else {
+                        !only_active || e.is_active()
+                    }
+            })
             .collect();
 
         // BFS from the starting node. Track visited edge IDs to avoid duplicates, keeping minimum depth.
@@ -221,10 +239,7 @@ impl EdgeStore for MemoryBackend {
         kind: &ResourceKind,
         id: &str,
     ) -> Result<()> {
-        let mut store = self
-            .edges
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self.edges.write().await;
         store.retain(|_, e| {
             !(e.org_id() == org
                 && ((e.from_kind() == kind && e.from_id() == id)
@@ -242,10 +257,7 @@ impl EdgeStore for MemoryBackend {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<()> {
-        let mut store = self
-            .edges
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut store = self.edges.write().await;
         store.retain(|_, e| {
             !(e.org_id() == org
                 && e.from_kind() == from_kind

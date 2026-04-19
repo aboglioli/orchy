@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::Duration;
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
@@ -791,7 +792,7 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
     EdgeStore::save(&store, &e1).await.unwrap();
     EdgeStore::save(&store, &e2).await.unwrap();
 
-    let all = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false)
+    let all = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false, None)
         .await
         .unwrap();
     assert_eq!(all.items.len(), 2);
@@ -802,6 +803,7 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
         Some(&RelationType::Spawns),
         PageParams::default(),
         false,
+        None,
     )
     .await
     .unwrap();
@@ -842,7 +844,7 @@ async fn delete_knowledge_cleans_up_associated_edges() {
     );
     EdgeStore::save(&store, &edge).await.unwrap();
 
-    let before = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false)
+    let before = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false, None)
         .await
         .unwrap();
     assert_eq!(before.items.len(), 1);
@@ -854,7 +856,7 @@ async fn delete_knowledge_cleans_up_associated_edges() {
         .await
         .unwrap();
 
-    let after = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false)
+    let after = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false, None)
         .await
         .unwrap();
     assert_eq!(after.items.len(), 0);
@@ -922,6 +924,7 @@ async fn split_task_creates_spawns_edges() {
         Some(&RelationType::Spawns),
         PageParams::default(),
         false,
+        None,
     )
     .await
     .unwrap();
@@ -1039,6 +1042,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
         &sub.id,
         Some(&RelationType::DependsOn),
         false,
+        None,
     )
     .await
     .unwrap();
@@ -1398,7 +1402,7 @@ async fn edge_invalidate_hides_from_only_active_queries() {
     );
     EdgeStore::save(&store, &edge).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true)
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true, None)
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
@@ -1406,12 +1410,12 @@ async fn edge_invalidate_hides_from_only_active_queries() {
     edge.invalidate();
     EdgeStore::save(&store, &edge).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true)
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true, None)
         .await
         .unwrap();
     assert!(found.is_empty());
 
-    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, false)
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, false, None)
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
@@ -1509,4 +1513,70 @@ async fn assemble_context_returns_linked_knowledge() {
         all_paths.contains(&"recent-note".to_string()),
         "expected recent-note in output"
     );
+}
+
+#[tokio::test]
+async fn edge_as_of_returns_snapshot_at_past_timestamp() {
+    let store = backend();
+    let o = org();
+    let mut edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        "t1".to_string(),
+        ResourceKind::Knowledge,
+        "k1".to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    let midpoint = edge.created_at() + Duration::milliseconds(5);
+    edge.invalidate();
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    // as_of between created_at and valid_until → visible
+    let found = EdgeStore::find_from(
+        &store,
+        &o,
+        &ResourceKind::Task,
+        "t1",
+        None,
+        false,
+        Some(midpoint),
+    )
+    .await
+    .unwrap();
+    assert_eq!(found.len(), 1);
+
+    // as_of after valid_until → not visible
+    let after_invalidation = edge.valid_until().unwrap() + Duration::seconds(1);
+    let found = EdgeStore::find_from(
+        &store,
+        &o,
+        &ResourceKind::Task,
+        "t1",
+        None,
+        false,
+        Some(after_invalidation),
+    )
+    .await
+    .unwrap();
+    assert!(found.is_empty());
+
+    // as_of before created_at → not visible (edge didn't exist yet)
+    let before_creation = edge.created_at() - Duration::seconds(1);
+    let found = EdgeStore::find_from(
+        &store,
+        &o,
+        &ResourceKind::Task,
+        "t1",
+        None,
+        false,
+        Some(before_creation),
+    )
+    .await
+    .unwrap();
+    assert!(found.is_empty());
 }

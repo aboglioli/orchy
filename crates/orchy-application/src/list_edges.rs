@@ -36,7 +36,7 @@ impl ListEdges {
         let page = PageParams::new(cmd.after, cmd.limit);
         let result = self
             .store
-            .list_by_org(&org, rel_type.as_ref(), page, cmd.only_active)
+            .list_by_org(&org, rel_type.as_ref(), page, cmd.only_active, None)
             .await?;
         Ok(PageResponse::from(result))
     }
