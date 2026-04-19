@@ -1,1 +1,1 @@
-ALTER TABLE knowledge_entries ADD COLUMN refs TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE knowledge_entries ADD COLUMN IF NOT EXISTS refs TEXT NOT NULL DEFAULT '[]';

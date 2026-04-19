@@ -1,10 +1,10 @@
 -- Align old DB schema with current codebase (post-refactor)
 
 -- 1. Add refs column to tasks (ResourceRef support)
-ALTER TABLE tasks ADD COLUMN refs TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS refs TEXT NOT NULL DEFAULT '[]';
 
 -- 2. Add refs column to messages (ResourceRef support)
-ALTER TABLE messages ADD COLUMN refs TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS refs TEXT NOT NULL DEFAULT '[]';
 
 -- 3. Create message_receipts table (broadcast + role receipt model)
 CREATE TABLE IF NOT EXISTS message_receipts (
