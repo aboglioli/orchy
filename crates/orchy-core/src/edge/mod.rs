@@ -23,6 +23,7 @@ pub trait EdgeStore: Send + Sync {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>>;
     async fn find_to(
         &self,
@@ -30,6 +31,7 @@ pub trait EdgeStore: Send + Sync {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>>;
     async fn exists_by_pair(
         &self,
@@ -45,6 +47,7 @@ pub trait EdgeStore: Send + Sync {
         org: &OrganizationId,
         rel_type: Option<&RelationType>,
         page: PageParams,
+        only_active: bool,
     ) -> Result<Page<Edge>>;
     async fn traverse(
         &self,
@@ -54,6 +57,7 @@ pub trait EdgeStore: Send + Sync {
         max_depth: u32,
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
+        only_active: bool,
     ) -> Result<Vec<TraversalEdge>>;
     async fn delete_all_for(
         &self,
@@ -210,6 +214,7 @@ pub struct Edge {
     created_by: Option<AgentId>,
     source_kind: Option<ResourceKind>,
     source_id: Option<String>,
+    valid_until: Option<DateTime<Utc>>,
 }
 
 impl Edge {
@@ -237,6 +242,7 @@ impl Edge {
             created_by,
             source_kind: None,
             source_id: None,
+            valid_until: None,
         }
     }
 
@@ -254,6 +260,7 @@ impl Edge {
             created_by: r.created_by,
             source_kind: r.source_kind,
             source_id: r.source_id,
+            valid_until: r.valid_until,
         }
     }
 
@@ -310,6 +317,18 @@ impl Edge {
     pub fn source_id(&self) -> Option<&str> {
         self.source_id.as_deref()
     }
+
+    pub fn invalidate(&mut self) {
+        self.valid_until = Some(Utc::now());
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.valid_until.is_none()
+    }
+
+    pub fn valid_until(&self) -> Option<DateTime<Utc>> {
+        self.valid_until
+    }
 }
 
 pub struct RestoreEdge {
@@ -325,6 +344,7 @@ pub struct RestoreEdge {
     pub created_by: Option<AgentId>,
     pub source_kind: Option<ResourceKind>,
     pub source_id: Option<String>,
+    pub valid_until: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -378,5 +398,25 @@ mod tests {
     #[test]
     fn traversal_direction_default_is_outgoing() {
         assert_eq!(TraversalDirection::default(), TraversalDirection::Outgoing);
+    }
+
+    #[test]
+    fn edge_invalidate_sets_valid_until() {
+        let org = OrganizationId::new("test").unwrap();
+        let mut edge = Edge::new(
+            org,
+            ResourceKind::Task,
+            "t1".to_string(),
+            ResourceKind::Knowledge,
+            "k1".to_string(),
+            RelationType::Produces,
+            None,
+            None,
+        );
+        assert!(edge.is_active());
+        assert!(edge.valid_until().is_none());
+        edge.invalidate();
+        assert!(!edge.is_active());
+        assert!(edge.valid_until().is_some());
     }
 }
