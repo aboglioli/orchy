@@ -119,6 +119,20 @@ impl PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
         }
 
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS tasks_assigned_roles_gin_idx ON tasks USING gin (assigned_roles jsonb_path_ops)",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS knowledge_entries_search_idx ON knowledge_entries USING gin (to_tsvector('english', title || ' ' || content))",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
         Ok(())
     }
 
