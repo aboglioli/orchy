@@ -19,6 +19,7 @@ pub struct GetGraphCommand {
     pub rel_types: Option<Vec<String>>,
     pub direction: Option<String>,
     pub include_nodes: bool,
+    pub node_content_limit: Option<usize>,
 }
 
 pub struct GetGraph {
@@ -35,7 +36,12 @@ impl GetGraph {
         knowledge: Arc<dyn KnowledgeStore>,
         agents: Arc<dyn AgentStore>,
     ) -> Self {
-        Self { store, tasks, knowledge, agents }
+        Self {
+            store,
+            tasks,
+            knowledge,
+            agents,
+        }
     }
 
     pub async fn execute(&self, cmd: GetGraphCommand) -> Result<GraphResponse> {
@@ -87,7 +93,8 @@ impl GetGraph {
             traversal.iter().map(TraversalEdgeResponse::from).collect();
 
         let nodes = if cmd.include_nodes {
-            Some(self.fetch_nodes(&node_ids).await)
+            let limit = cmd.node_content_limit.unwrap_or(500);
+            Some(self.fetch_nodes(&node_ids, limit).await)
         } else {
             None
         };
@@ -101,7 +108,11 @@ impl GetGraph {
         })
     }
 
-    async fn fetch_nodes(&self, node_ids: &[String]) -> HashMap<String, NodeSummary> {
+    async fn fetch_nodes(
+        &self,
+        node_ids: &[String],
+        content_limit: usize,
+    ) -> HashMap<String, NodeSummary> {
         let mut result = HashMap::new();
 
         for node_key in node_ids {
@@ -116,10 +127,27 @@ impl GetGraph {
                 ResourceKind::Task => {
                     if let Ok(task_id) = id.parse() {
                         if let Ok(Some(task)) = self.tasks.find_by_id(&task_id).await {
+                            let content = if content_limit > 0 {
+                                let desc = task.description();
+                                if desc.len() > content_limit {
+                                    let truncated: String =
+                                        desc.chars().take(content_limit).collect();
+                                    Some(format!("{truncated}…"))
+                                } else {
+                                    Some(desc.to_string())
+                                }
+                            } else {
+                                None
+                            };
                             Some(NodeSummary {
                                 kind: "task".to_string(),
                                 id: id.to_string(),
                                 label: task.title().to_string(),
+                                content,
+                                tags: task.tags().to_vec(),
+                                status: Some(task.status().to_string()),
+                                priority: Some(task.priority().to_string()),
+                                updated_at: Some(task.updated_at().to_rfc3339()),
                             })
                         } else {
                             None
@@ -131,10 +159,26 @@ impl GetGraph {
                 ResourceKind::Knowledge => {
                     if let Ok(know_id) = id.parse() {
                         if let Ok(Some(entry)) = self.knowledge.find_by_id(&know_id).await {
+                            let content = if content_limit > 0 {
+                                let c = entry.content();
+                                if c.len() > content_limit {
+                                    let truncated: String = c.chars().take(content_limit).collect();
+                                    Some(format!("{truncated}…"))
+                                } else {
+                                    Some(c.to_string())
+                                }
+                            } else {
+                                None
+                            };
                             Some(NodeSummary {
                                 kind: "knowledge".to_string(),
                                 id: id.to_string(),
                                 label: entry.title().to_string(),
+                                content,
+                                tags: entry.tags().to_vec(),
+                                status: None,
+                                priority: None,
+                                updated_at: Some(entry.updated_at().to_rfc3339()),
                             })
                         } else {
                             None
@@ -150,6 +194,11 @@ impl GetGraph {
                                 kind: "agent".to_string(),
                                 id: id.to_string(),
                                 label: agent.description().to_string(),
+                                content: None,
+                                tags: vec![],
+                                status: Some(agent.status().to_string()),
+                                priority: None,
+                                updated_at: Some(agent.last_heartbeat().to_rfc3339()),
                             })
                         } else {
                             None

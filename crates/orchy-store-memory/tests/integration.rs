@@ -1065,3 +1065,86 @@ async fn knowledge_search_returns_score() {
     let (_, score) = &results[0];
     assert!(score.is_some());
 }
+
+#[tokio::test]
+async fn get_graph_include_nodes_hydrates_task_fields() {
+    use std::sync::Arc;
+
+    use orchy_application::{GetGraph, GetGraphCommand};
+
+    let backend = Arc::new(backend());
+    let tasks: Arc<dyn orchy_core::task::TaskStore> = backend.clone();
+    let edges: Arc<dyn EdgeStore> = backend.clone();
+    let knowledge: Arc<dyn orchy_core::knowledge::KnowledgeStore> = backend.clone();
+    let agents: Arc<dyn orchy_core::agent::AgentStore> = backend.clone();
+
+    let o = org();
+
+    let mut task = Task::new(
+        o.clone(),
+        proj("proj"),
+        Namespace::root(),
+        None,
+        "Implement login".into(),
+        "Build the login endpoint with JWT".into(),
+        Priority::High,
+        vec!["dev".into()],
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(backend.as_ref(), &mut task).await.unwrap();
+    let task_id = task.id().to_string();
+
+    let edge = Edge::new(
+        o.clone(),
+        ResourceKind::Task,
+        task_id.clone(),
+        ResourceKind::Task,
+        task_id.clone(),
+        RelationType::RelatedTo,
+        None,
+        None,
+    );
+    EdgeStore::save(backend.as_ref(), &edge).await.unwrap();
+
+    let get_graph = GetGraph::new(edges, tasks, knowledge, agents);
+    let resp = get_graph
+        .execute(GetGraphCommand {
+            org_id: o.to_string(),
+            kind: "task".into(),
+            id: task_id.clone(),
+            max_depth: None,
+            rel_types: None,
+            direction: None,
+            include_nodes: true,
+            node_content_limit: Some(200),
+        })
+        .await
+        .unwrap();
+
+    let nodes = resp
+        .nodes
+        .expect("nodes should be Some when include_nodes=true");
+    let node_key = format!("task:{task_id}");
+    let node = nodes.get(&node_key).expect("task node should be present");
+
+    assert_eq!(node.kind, "task");
+    assert_eq!(node.label, "Implement login");
+    assert!(node.status.is_some(), "status should be set for task node");
+    assert_eq!(node.status.as_deref(), Some("pending"));
+    assert!(
+        node.priority.is_some(),
+        "priority should be set for task node"
+    );
+    assert!(
+        node.content.is_some(),
+        "content should be set for task node"
+    );
+    assert!(node.content.as_deref().unwrap().contains("JWT"));
+    assert!(
+        node.updated_at.is_some(),
+        "updated_at should be set for task node"
+    );
+}

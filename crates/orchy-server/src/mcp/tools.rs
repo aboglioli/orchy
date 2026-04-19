@@ -1954,16 +1954,25 @@ impl OrchyHandler {
     ) -> Result<String, String> {
         let (_, org, _, _) = self.require_session()?;
 
+        let include_nodes = params.include_nodes.unwrap_or(false);
         let cmd = GetNeighborsCommand {
             org_id: org.to_string(),
             kind: params.kind,
             id: params.id,
             direction: params.direction,
             rel_type: params.rel_type,
+            include_nodes,
+            node_content_limit: params.node_content_limit.map(|n| n as usize),
         };
 
         match self.container.app.get_neighbors.execute(cmd).await {
-            Ok(edges) => Ok(to_json(&edges)),
+            Ok(resp) => {
+                if include_nodes {
+                    Ok(to_json(&resp))
+                } else {
+                    Ok(to_json(&resp.edges))
+                }
+            }
             Err(e) => Err(mcp_error(e)),
         }
     }
@@ -1987,6 +1996,7 @@ impl OrchyHandler {
             rel_types: params.rel_types,
             direction: params.direction,
             include_nodes: params.include_nodes.unwrap_or(false),
+            node_content_limit: params.node_content_limit.map(|n| n as usize),
         };
 
         match self.container.app.get_graph.execute(cmd).await {

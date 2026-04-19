@@ -214,9 +214,9 @@ pub use list_edges::{ListEdges, ListEdgesCommand};
 pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
 pub use dto::{
-    AgentResponse, AgentSummaryResponse, ApiKeyResponse, EdgeResponse, GraphResponse,
-    KnowledgeResponse, MessageResponse, NodeSummary, OrganizationResponse, PageResponse,
-    ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
+    AgentResponse, AgentSummaryResponse, ApiKeyResponse, EdgeResponse, GetNeighborsResponse,
+    GraphResponse, KnowledgeResponse, MessageResponse, NodeSummary, OrganizationResponse,
+    PageResponse, ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
     TaskWithContextResponse, TraversalEdgeResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
@@ -374,7 +374,12 @@ impl Application {
             add_task_note: AddTaskNote::new(tasks.clone(), knowledge.clone()),
             add_edge: AddEdge::new(edges.clone()),
             remove_edge: RemoveEdge::new(edges.clone()),
-            get_neighbors: GetNeighbors::new(edges.clone()),
+            get_neighbors: GetNeighbors::new(
+                edges.clone(),
+                tasks.clone(),
+                knowledge.clone(),
+                agents.clone(),
+            ),
             get_graph: GetGraph::new(
                 edges.clone(),
                 tasks.clone(),

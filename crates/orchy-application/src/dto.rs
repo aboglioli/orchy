@@ -452,4 +452,21 @@ pub struct NodeSummary {
     pub kind: String,
     pub id: String,
     pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GetNeighborsResponse {
+    pub edges: Vec<EdgeResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodes: Option<std::collections::HashMap<String, NodeSummary>>,
 }

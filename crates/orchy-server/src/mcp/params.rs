@@ -469,6 +469,10 @@ pub struct GetNeighborsParams {
     pub direction: Option<String>,
     /// Filter by relationship type.
     pub rel_type: Option<String>,
+    /// When true, include a `nodes` map with label/content/status/tags for each touched resource.
+    pub include_nodes: Option<bool>,
+    /// Max characters of content to include per node (default 500). Set to 0 to omit content.
+    pub node_content_limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -482,8 +486,10 @@ pub struct GetGraphParams {
     pub rel_types: Option<Vec<String>>,
     /// outgoing (default), incoming, or both.
     pub direction: Option<String>,
-    /// When true, include a `nodes` map with title/label for each touched resource.
+    /// When true, include a `nodes` map with label/content/status/tags for each touched resource.
     pub include_nodes: Option<bool>,
+    /// Max characters of content to include per node (default 500). Set to 0 to omit content.
+    pub node_content_limit: Option<u32>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
