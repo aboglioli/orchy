@@ -12,10 +12,7 @@ use crate::MemoryBackend;
 impl KnowledgeStore for MemoryBackend {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         {
-            let mut entries = self
-                .knowledge_entries
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut entries = self.knowledge_entries.write().await;
 
             if let Some(pv) = entry.persisted_version() {
                 if let Some(existing) = entries.get(&entry.id()) {
@@ -42,10 +39,7 @@ impl KnowledgeStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
-        let entries = self
-            .knowledge_entries
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let entries = self.knowledge_entries.read().await;
         Ok(entries.get(id).cloned())
     }
 
@@ -56,10 +50,7 @@ impl KnowledgeStore for MemoryBackend {
         namespace: &Namespace,
         path: &str,
     ) -> Result<Option<Knowledge>> {
-        let entries = self
-            .knowledge_entries
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let entries = self.knowledge_entries.read().await;
         Ok(entries
             .values()
             .find(|e| {
@@ -72,10 +63,7 @@ impl KnowledgeStore for MemoryBackend {
     }
 
     async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
-        let entries = self
-            .knowledge_entries
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let entries = self.knowledge_entries.read().await;
 
         let results: Vec<Knowledge> = entries
             .values()
@@ -135,10 +123,7 @@ impl KnowledgeStore for MemoryBackend {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<(Knowledge, Option<f32>)>> {
-        let entries = self
-            .knowledge_entries
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let entries = self.knowledge_entries.read().await;
 
         let query_lower = query.to_lowercase();
         let mut scored: Vec<(f32, &Knowledge)> = entries
@@ -178,10 +163,7 @@ impl KnowledgeStore for MemoryBackend {
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
-        let mut entries = self
-            .knowledge_entries
-            .write()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut entries = self.knowledge_entries.write().await;
         entries.remove(id);
         Ok(())
     }

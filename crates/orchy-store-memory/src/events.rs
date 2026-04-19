@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_events::io::Writer;
 use orchy_events::{Event, SerializedEvent};
 
@@ -11,34 +11,25 @@ impl Writer for MemoryBackend {
     async fn write(&self, event: &Event) -> orchy_events::Result<()> {
         let serialized = SerializedEvent::from_event(event)
             .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
-        let mut store = self
-            .events
-            .write()
-            .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
+        let mut store = self.events.write().await;
         store.push(serialized);
         Ok(())
     }
 }
 
 impl MemoryBackend {
-    pub fn list_events(&self) -> Result<Vec<SerializedEvent>> {
-        let store = self
-            .events
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+    pub async fn list_events(&self) -> Result<Vec<SerializedEvent>> {
+        let store = self.events.read().await;
         Ok(store.clone())
     }
 
-    pub fn query_events(
+    pub async fn query_events(
         &self,
         organization: &str,
         since: chrono::DateTime<chrono::Utc>,
         limit: usize,
     ) -> Result<Vec<SerializedEvent>> {
-        let store = self
-            .events
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let store = self.events.read().await;
         let mut filtered: Vec<_> = store
             .iter()
             .filter(|e| e.organization == organization && e.timestamp >= since)

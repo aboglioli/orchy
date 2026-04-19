@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 
@@ -10,10 +10,7 @@ use crate::MemoryBackend;
 impl TaskStore for MemoryBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
         {
-            let mut tasks = self
-                .tasks
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut tasks = self.tasks.write().await;
             tasks.insert(task.id(), task.clone());
         }
 
@@ -28,12 +25,12 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
-        let tasks = self.tasks.read().map_err(|e| Error::Store(e.to_string()))?;
+        let tasks = self.tasks.read().await;
         Ok(tasks.get(id).cloned())
     }
 
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
-        let tasks = self.tasks.read().map_err(|e| Error::Store(e.to_string()))?;
+        let tasks = self.tasks.read().await;
 
         let mut results: Vec<Task> = tasks
             .values()

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
 
@@ -11,10 +11,7 @@ use crate::MemoryBackend;
 impl AgentStore for MemoryBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         {
-            let mut agents = self
-                .agents
-                .write()
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut agents = self.agents.write().await;
             agents.insert(agent.id().clone(), agent.clone());
         }
 
@@ -29,18 +26,12 @@ impl AgentStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
-        let agents = self
-            .agents
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let agents = self.agents.read().await;
         Ok(agents.get(id).cloned())
     }
 
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
-        let agents = self
-            .agents
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let agents = self.agents.read().await;
         let items: Vec<Agent> = agents
             .values()
             .filter(|a| a.org_id() == org)
@@ -52,10 +43,7 @@ impl AgentStore for MemoryBackend {
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
-        let agents = self
-            .agents
-            .read()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let agents = self.agents.read().await;
 
         Ok(agents
             .values()
