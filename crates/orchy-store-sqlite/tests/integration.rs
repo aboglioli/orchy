@@ -838,6 +838,43 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
 }
 
 #[tokio::test]
+async fn edge_valid_until_persisted_and_filtered() {
+    let store = backend();
+    let org = org("default");
+    let edge = Edge::new(
+        org.clone(),
+        ResourceKind::Task,
+        "t1".to_string(),
+        ResourceKind::Knowledge,
+        "k1".to_string(),
+        RelationType::Produces,
+        None,
+        None,
+    );
+    EdgeStore::save(&store, &edge).await.unwrap();
+
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true)
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+
+    let mut invalidated = found.into_iter().next().unwrap();
+    invalidated.invalidate();
+    EdgeStore::save(&store, &invalidated).await.unwrap();
+
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true)
+        .await
+        .unwrap();
+    assert!(found.is_empty());
+
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, false)
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert!(found[0].valid_until().is_some());
+}
+
+#[tokio::test]
 async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
     let store = backend();
     let o = org("default");
@@ -874,6 +911,7 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         3,
         None,
         TraversalDirection::Both,
+        false,
     )
     .await
     .unwrap();

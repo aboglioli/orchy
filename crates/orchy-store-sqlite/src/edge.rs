@@ -27,8 +27,8 @@ impl EdgeStore for SqliteBackend {
     async fn save(&self, edge: &Edge) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
-            "INSERT OR REPLACE INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT OR REPLACE INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             rusqlite::params![
                 edge.id().to_string(),
                 edge.org_id().to_string(),
@@ -42,6 +42,7 @@ impl EdgeStore for SqliteBackend {
                 edge.created_by().map(|a| a.to_string()),
                 edge.source_kind().map(|k| k.to_string()),
                 edge.source_id(),
+                edge.valid_until().map(|dt| dt.to_rfc3339()),
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -52,7 +53,7 @@ impl EdgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
                  FROM edges WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -78,15 +79,22 @@ impl EdgeStore for SqliteBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
+        let active_clause = if only_active {
+            " AND valid_until IS NULL"
+        } else {
+            ""
+        };
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let edges = if let Some(rt) = rel_type {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3 AND rel_type = ?4{active_clause}
+                 ORDER BY created_at ASC"
+            );
             let mut stmt = conn
-                .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3 AND rel_type = ?4
-                     ORDER BY created_at ASC",
-                )
+                .prepare(&sql)
                 .map_err(|e| Error::Store(e.to_string()))?;
             stmt.query_map(
                 rusqlite::params![org.to_string(), kind.to_string(), id, rt.to_string()],
@@ -96,12 +104,13 @@ impl EdgeStore for SqliteBackend {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3{active_clause}
+                 ORDER BY created_at ASC"
+            );
             let mut stmt = conn
-                .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3
-                     ORDER BY created_at ASC",
-                )
+                .prepare(&sql)
                 .map_err(|e| Error::Store(e.to_string()))?;
             stmt.query_map(
                 rusqlite::params![org.to_string(), kind.to_string(), id],
@@ -120,15 +129,22 @@ impl EdgeStore for SqliteBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
+        let active_clause = if only_active {
+            " AND valid_until IS NULL"
+        } else {
+            ""
+        };
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let edges = if let Some(rt) = rel_type {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3 AND rel_type = ?4{active_clause}
+                 ORDER BY created_at ASC"
+            );
             let mut stmt = conn
-                .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3 AND rel_type = ?4
-                     ORDER BY created_at ASC",
-                )
+                .prepare(&sql)
                 .map_err(|e| Error::Store(e.to_string()))?;
             stmt.query_map(
                 rusqlite::params![org.to_string(), kind.to_string(), id, rt.to_string()],
@@ -138,12 +154,13 @@ impl EdgeStore for SqliteBackend {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3{active_clause}
+                 ORDER BY created_at ASC"
+            );
             let mut stmt = conn
-                .prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3
-                     ORDER BY created_at ASC",
-                )
+                .prepare(&sql)
                 .map_err(|e| Error::Store(e.to_string()))?;
             stmt.query_map(
                 rusqlite::params![org.to_string(), kind.to_string(), id],
@@ -190,18 +207,27 @@ impl EdgeStore for SqliteBackend {
         org: &OrganizationId,
         rel_type: Option<&RelationType>,
         page: PageParams,
+        only_active: bool,
     ) -> Result<Page<Edge>> {
+        let active_clause = if only_active {
+            " AND valid_until IS NULL"
+        } else {
+            ""
+        };
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let fetch_limit = (page.limit as i64) + 1;
 
         let mut edges = if let Some(rt) = rel_type {
             if let Some(ref cursor) = page.after {
                 if let Some(decoded) = decode_cursor(cursor) {
-                    let mut stmt = conn.prepare(
-                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                         FROM edges WHERE org_id = ?1 AND rel_type = ?2 AND id > ?3
-                         ORDER BY created_at ASC LIMIT ?4",
-                    ).map_err(|e| Error::Store(e.to_string()))?;
+                    let sql = format!(
+                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                         FROM edges WHERE org_id = ?1 AND rel_type = ?2 AND id > ?3{active_clause}
+                         ORDER BY created_at ASC LIMIT ?4"
+                    );
+                    let mut stmt = conn
+                        .prepare(&sql)
+                        .map_err(|e| Error::Store(e.to_string()))?;
                     stmt.query_map(
                         rusqlite::params![org.to_string(), rt.to_string(), decoded, fetch_limit],
                         row_to_edge,
@@ -213,11 +239,14 @@ impl EdgeStore for SqliteBackend {
                     vec![]
                 }
             } else {
-                let mut stmt = conn.prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = ?1 AND rel_type = ?2
-                     ORDER BY created_at ASC LIMIT ?3",
-                ).map_err(|e| Error::Store(e.to_string()))?;
+                let sql = format!(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                     FROM edges WHERE org_id = ?1 AND rel_type = ?2{active_clause}
+                     ORDER BY created_at ASC LIMIT ?3"
+                );
+                let mut stmt = conn
+                    .prepare(&sql)
+                    .map_err(|e| Error::Store(e.to_string()))?;
                 stmt.query_map(
                     rusqlite::params![org.to_string(), rt.to_string(), fetch_limit],
                     row_to_edge,
@@ -228,11 +257,14 @@ impl EdgeStore for SqliteBackend {
             }
         } else if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
-                let mut stmt = conn.prepare(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = ?1 AND id > ?2
-                     ORDER BY created_at ASC LIMIT ?3",
-                ).map_err(|e| Error::Store(e.to_string()))?;
+                let sql = format!(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                     FROM edges WHERE org_id = ?1 AND id > ?2{active_clause}
+                     ORDER BY created_at ASC LIMIT ?3"
+                );
+                let mut stmt = conn
+                    .prepare(&sql)
+                    .map_err(|e| Error::Store(e.to_string()))?;
                 stmt.query_map(
                     rusqlite::params![org.to_string(), decoded, fetch_limit],
                     row_to_edge,
@@ -244,11 +276,14 @@ impl EdgeStore for SqliteBackend {
                 vec![]
             }
         } else {
-            let mut stmt = conn.prepare(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                 FROM edges WHERE org_id = ?1
-                 ORDER BY created_at ASC LIMIT ?2",
-            ).map_err(|e| Error::Store(e.to_string()))?;
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = ?1{active_clause}
+                 ORDER BY created_at ASC LIMIT ?2"
+            );
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| Error::Store(e.to_string()))?;
             stmt.query_map(rusqlite::params![org.to_string(), fetch_limit], row_to_edge)
                 .map_err(|e| Error::Store(e.to_string()))?
                 .collect::<std::result::Result<Vec<_>, _>>()
@@ -275,6 +310,7 @@ impl EdgeStore for SqliteBackend {
         max_depth: u32,
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
+        only_active: bool,
     ) -> Result<Vec<TraversalEdge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
@@ -285,17 +321,15 @@ impl EdgeStore for SqliteBackend {
                 .join(", ")
         });
 
-        // Build the recursive CTE. The anchor selects direct edges from/to the starting node.
-        // Each recursive step follows edges from the frontier, deduplicating by (from_kind, from_id, to_kind, to_id).
         let sql = match direction {
             TraversalDirection::Outgoing => {
-                build_traverse_sql(TraversalSide::Outgoing, rel_filter.as_deref())
+                build_traverse_sql(TraversalSide::Outgoing, rel_filter.as_deref(), only_active)
             }
             TraversalDirection::Incoming => {
-                build_traverse_sql(TraversalSide::Incoming, rel_filter.as_deref())
+                build_traverse_sql(TraversalSide::Incoming, rel_filter.as_deref(), only_active)
             }
             TraversalDirection::Both => {
-                build_traverse_sql(TraversalSide::Both, rel_filter.as_deref())
+                build_traverse_sql(TraversalSide::Both, rel_filter.as_deref(), only_active)
             }
         };
 
@@ -364,26 +398,37 @@ enum TraversalSide {
     Both,
 }
 
-fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>) -> String {
+fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active: bool) -> String {
     let rel_clause = rel_filter
         .map(|rts| format!(" AND rel_type IN ({rts})"))
         .unwrap_or_default();
+
+    let active_anchor = if only_active {
+        " AND valid_until IS NULL"
+    } else {
+        ""
+    };
+    let active_recursive = if only_active {
+        " AND e.valid_until IS NULL"
+    } else {
+        ""
+    };
 
     let anchor = match side {
         TraversalSide::Outgoing => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, 1 AS depth
              FROM edges
-             WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3{rel_clause}"
+             WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3{rel_clause}{active_anchor}"
         ),
         TraversalSide::Incoming => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, 1 AS depth
              FROM edges
-             WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3{rel_clause}"
+             WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3{rel_clause}{active_anchor}"
         ),
         TraversalSide::Both => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, 1 AS depth
              FROM edges
-             WHERE org_id = ?1 AND ((from_kind = ?2 AND from_id = ?3) OR (to_kind = ?2 AND to_id = ?3)){rel_clause}"
+             WHERE org_id = ?1 AND ((from_kind = ?2 AND from_id = ?3) OR (to_kind = ?2 AND to_id = ?3)){rel_clause}{active_anchor}"
         ),
     };
 
@@ -392,13 +437,13 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>) -> String {
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.depth + 1
              FROM edges e
              INNER JOIN traversal t ON e.org_id = t.org_id AND e.from_kind = t.to_kind AND e.from_id = t.to_id
-             WHERE t.depth < ?4{rel_clause}"
+             WHERE t.depth < ?4{rel_clause}{active_recursive}"
         ),
         TraversalSide::Incoming => format!(
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.depth + 1
              FROM edges e
              INNER JOIN traversal t ON e.org_id = t.org_id AND e.to_kind = t.from_kind AND e.to_id = t.from_id
-             WHERE t.depth < ?4{rel_clause}"
+             WHERE t.depth < ?4{rel_clause}{active_recursive}"
         ),
         TraversalSide::Both => format!(
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.depth + 1
@@ -409,7 +454,7 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>) -> String {
                  (e.from_kind = t.to_kind AND e.from_id = t.to_id) OR
                  (e.to_kind = t.to_kind AND e.to_id = t.to_id)
              )
-             WHERE t.depth < ?4{rel_clause}"
+             WHERE t.depth < ?4{rel_clause}{active_recursive}"
         ),
     };
 
@@ -439,6 +484,7 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
     let created_by_str: Option<String> = row.get(9)?;
     let source_kind_str: Option<String> = row.get(10).ok().flatten();
     let source_id: Option<String> = row.get(11).ok().flatten();
+    let valid_until_str: Option<String> = row.get(12).ok().flatten();
 
     let id = EdgeId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
@@ -467,6 +513,19 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
             rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, str_err(e))
         })?;
     let source_kind = source_kind_str.and_then(|s| s.parse::<ResourceKind>().ok());
+    let valid_until = valid_until_str
+        .map(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        12,
+                        rusqlite::types::Type::Text,
+                        str_err(e),
+                    )
+                })
+        })
+        .transpose()?;
 
     Ok(Edge::restore(RestoreEdge {
         id,
@@ -481,6 +540,7 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
         created_by,
         source_kind,
         source_id,
+        valid_until,
     }))
 }
 

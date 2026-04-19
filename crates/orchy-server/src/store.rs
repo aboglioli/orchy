@@ -261,8 +261,12 @@ impl EdgeStore for StoreBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
-        delegate_trait!(self, EdgeStore::find_from(org, kind, id, rel_type))
+        delegate_trait!(
+            self,
+            EdgeStore::find_from(org, kind, id, rel_type, only_active)
+        )
     }
     async fn find_to(
         &self,
@@ -270,8 +274,12 @@ impl EdgeStore for StoreBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
-        delegate_trait!(self, EdgeStore::find_to(org, kind, id, rel_type))
+        delegate_trait!(
+            self,
+            EdgeStore::find_to(org, kind, id, rel_type, only_active)
+        )
     }
     async fn exists_by_pair(
         &self,
@@ -292,8 +300,12 @@ impl EdgeStore for StoreBackend {
         org: &OrganizationId,
         rel_type: Option<&RelationType>,
         page: PageParams,
+        only_active: bool,
     ) -> Result<Page<Edge>> {
-        delegate_trait!(self, EdgeStore::list_by_org(org, rel_type, page))
+        delegate_trait!(
+            self,
+            EdgeStore::list_by_org(org, rel_type, page, only_active)
+        )
     }
     async fn traverse(
         &self,
@@ -303,10 +315,11 @@ impl EdgeStore for StoreBackend {
         max_depth: u32,
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
+        only_active: bool,
     ) -> Result<Vec<TraversalEdge>> {
         delegate_trait!(
             self,
-            EdgeStore::traverse(org, kind, id, max_depth, rel_types, direction)
+            EdgeStore::traverse(org, kind, id, max_depth, rel_types, direction, only_active)
         )
     }
     async fn delete_all_for(

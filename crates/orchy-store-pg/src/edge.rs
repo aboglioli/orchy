@@ -19,8 +19,8 @@ use crate::PgBackend;
 impl EdgeStore for PgBackend {
     async fn save(&self, edge: &Edge) -> Result<()> {
         sqlx::query(
-            "INSERT INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            "INSERT INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              ON CONFLICT (id) DO UPDATE SET
                 org_id = EXCLUDED.org_id,
                 from_kind = EXCLUDED.from_kind,
@@ -32,7 +32,8 @@ impl EdgeStore for PgBackend {
                 created_at = EXCLUDED.created_at,
                 created_by = EXCLUDED.created_by,
                 source_kind = EXCLUDED.source_kind,
-                source_id = EXCLUDED.source_id",
+                source_id = EXCLUDED.source_id,
+                valid_until = EXCLUDED.valid_until",
         )
         .bind(edge.id().as_uuid())
         .bind(edge.org_id().to_string())
@@ -46,6 +47,7 @@ impl EdgeStore for PgBackend {
         .bind(edge.created_by().map(|a| *a.as_uuid()))
         .bind(edge.source_kind().map(|k| k.to_string()))
         .bind(edge.source_id())
+        .bind(edge.valid_until())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -54,7 +56,7 @@ impl EdgeStore for PgBackend {
 
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
         let row = sqlx::query(
-            "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
+            "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
              FROM edges WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -80,32 +82,40 @@ impl EdgeStore for PgBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
-        let rows = if let Some(rt) = rel_type {
-            sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3 AND rel_type = $4
-                 ORDER BY created_at ASC",
-            )
-            .bind(org.to_string())
-            .bind(kind.to_string())
-            .bind(id)
-            .bind(rt.to_string())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
+        let active_clause = if only_active {
+            " AND valid_until IS NULL"
         } else {
-            sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3
-                 ORDER BY created_at ASC",
-            )
-            .bind(org.to_string())
-            .bind(kind.to_string())
-            .bind(id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
+            ""
+        };
+        let rows = if let Some(rt) = rel_type {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3 AND rel_type = $4{active_clause}
+                 ORDER BY created_at ASC"
+            );
+            sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(kind.to_string())
+                .bind(id)
+                .bind(rt.to_string())
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
+        } else {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{active_clause}
+                 ORDER BY created_at ASC"
+            );
+            sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(kind.to_string())
+                .bind(id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
         };
         rows.iter().map(row_to_edge).collect()
     }
@@ -116,32 +126,40 @@ impl EdgeStore for PgBackend {
         kind: &ResourceKind,
         id: &str,
         rel_type: Option<&RelationType>,
+        only_active: bool,
     ) -> Result<Vec<Edge>> {
-        let rows = if let Some(rt) = rel_type {
-            sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3 AND rel_type = $4
-                 ORDER BY created_at ASC",
-            )
-            .bind(org.to_string())
-            .bind(kind.to_string())
-            .bind(id)
-            .bind(rt.to_string())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
+        let active_clause = if only_active {
+            " AND valid_until IS NULL"
         } else {
-            sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3
-                 ORDER BY created_at ASC",
-            )
-            .bind(org.to_string())
-            .bind(kind.to_string())
-            .bind(id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?
+            ""
+        };
+        let rows = if let Some(rt) = rel_type {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3 AND rel_type = $4{active_clause}
+                 ORDER BY created_at ASC"
+            );
+            sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(kind.to_string())
+                .bind(id)
+                .bind(rt.to_string())
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
+        } else {
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{active_clause}
+                 ORDER BY created_at ASC"
+            );
+            sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(kind.to_string())
+                .bind(id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
         };
         rows.iter().map(row_to_edge).collect()
     }
@@ -177,51 +195,77 @@ impl EdgeStore for PgBackend {
         org: &OrganizationId,
         rel_type: Option<&RelationType>,
         page: PageParams,
+        only_active: bool,
     ) -> Result<Page<Edge>> {
+        let active_clause = if only_active {
+            " AND valid_until IS NULL"
+        } else {
+            ""
+        };
         let fetch_limit = (page.limit as i64) + 1;
 
         let mut rows = if let Some(rt) = rel_type {
             if let Some(ref cursor) = page.after {
                 if let Some(decoded) = decode_cursor(cursor) {
-                    sqlx::query(
-                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                         FROM edges WHERE org_id = $1 AND rel_type = $2 AND id > $3
-                         ORDER BY created_at ASC LIMIT $4",
-                    )
-                    .bind(org.to_string()).bind(rt.to_string()).bind(decoded).bind(fetch_limit)
-                    .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+                    let sql = format!(
+                        "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                         FROM edges WHERE org_id = $1 AND rel_type = $2 AND id > $3{active_clause}
+                         ORDER BY created_at ASC LIMIT $4"
+                    );
+                    sqlx::query(&sql)
+                        .bind(org.to_string())
+                        .bind(rt.to_string())
+                        .bind(decoded)
+                        .bind(fetch_limit)
+                        .fetch_all(&self.pool)
+                        .await
+                        .map_err(|e| Error::Store(e.to_string()))?
                 } else {
                     vec![]
                 }
             } else {
-                sqlx::query(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = $1 AND rel_type = $2
-                     ORDER BY created_at ASC LIMIT $3",
-                )
-                .bind(org.to_string()).bind(rt.to_string()).bind(fetch_limit)
-                .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+                let sql = format!(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                     FROM edges WHERE org_id = $1 AND rel_type = $2{active_clause}
+                     ORDER BY created_at ASC LIMIT $3"
+                );
+                sqlx::query(&sql)
+                    .bind(org.to_string())
+                    .bind(rt.to_string())
+                    .bind(fetch_limit)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(|e| Error::Store(e.to_string()))?
             }
         } else if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
-                sqlx::query(
-                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                     FROM edges WHERE org_id = $1 AND id > $2
-                     ORDER BY created_at ASC LIMIT $3",
-                )
-                .bind(org.to_string()).bind(decoded).bind(fetch_limit)
-                .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+                let sql = format!(
+                    "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                     FROM edges WHERE org_id = $1 AND id > $2{active_clause}
+                     ORDER BY created_at ASC LIMIT $3"
+                );
+                sqlx::query(&sql)
+                    .bind(org.to_string())
+                    .bind(decoded)
+                    .bind(fetch_limit)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(|e| Error::Store(e.to_string()))?
             } else {
                 vec![]
             }
         } else {
-            sqlx::query(
-                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id
-                 FROM edges WHERE org_id = $1
-                 ORDER BY created_at ASC LIMIT $2",
-            )
-            .bind(org.to_string()).bind(fetch_limit)
-            .fetch_all(&self.pool).await.map_err(|e| Error::Store(e.to_string()))?
+            let sql = format!(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges WHERE org_id = $1{active_clause}
+                 ORDER BY created_at ASC LIMIT $2"
+            );
+            sqlx::query(&sql)
+                .bind(org.to_string())
+                .bind(fetch_limit)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?
         };
 
         let has_more = rows.len() > page.limit as usize;
@@ -248,6 +292,7 @@ impl EdgeStore for PgBackend {
         max_depth: u32,
         rel_types: Option<&[RelationType]>,
         direction: TraversalDirection,
+        only_active: bool,
     ) -> Result<Vec<TraversalEdge>> {
         let rel_filter = rel_types.map(|rts| {
             rts.iter()
@@ -258,13 +303,13 @@ impl EdgeStore for PgBackend {
 
         let sql = match direction {
             TraversalDirection::Outgoing => {
-                build_traverse_sql(TraversalSide::Outgoing, rel_filter.as_deref())
+                build_traverse_sql(TraversalSide::Outgoing, rel_filter.as_deref(), only_active)
             }
             TraversalDirection::Incoming => {
-                build_traverse_sql(TraversalSide::Incoming, rel_filter.as_deref())
+                build_traverse_sql(TraversalSide::Incoming, rel_filter.as_deref(), only_active)
             }
             TraversalDirection::Both => {
-                build_traverse_sql(TraversalSide::Both, rel_filter.as_deref())
+                build_traverse_sql(TraversalSide::Both, rel_filter.as_deref(), only_active)
             }
         };
 
@@ -331,26 +376,37 @@ enum TraversalSide {
     Both,
 }
 
-fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>) -> String {
+fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>, only_active: bool) -> String {
     let rel_clause = rel_filter
         .map(|rts| format!(" AND rel_type IN ({rts})"))
         .unwrap_or_default();
+
+    let active_anchor = if only_active {
+        " AND valid_until IS NULL"
+    } else {
+        ""
+    };
+    let active_recursive = if only_active {
+        " AND e.valid_until IS NULL"
+    } else {
+        ""
+    };
 
     let anchor = match side {
         TraversalSide::Outgoing => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, ARRAY[id::text] AS path, 1 AS depth
              FROM edges
-             WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{rel_clause}"
+             WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{rel_clause}{active_anchor}"
         ),
         TraversalSide::Incoming => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, ARRAY[id::text] AS path, 1 AS depth
              FROM edges
-             WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{rel_clause}"
+             WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{rel_clause}{active_anchor}"
         ),
         TraversalSide::Both => format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, display, ARRAY[id::text] AS path, 1 AS depth
              FROM edges
-             WHERE org_id = $1 AND ((from_kind = $2 AND from_id = $3) OR (to_kind = $2 AND to_id = $3)){rel_clause}"
+             WHERE org_id = $1 AND ((from_kind = $2 AND from_id = $3) OR (to_kind = $2 AND to_id = $3)){rel_clause}{active_anchor}"
         ),
     };
 
@@ -359,13 +415,13 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>) -> String {
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.path || e.id::text, t.depth + 1
              FROM edges e
              INNER JOIN traversal t ON e.org_id = t.org_id AND e.from_kind = t.to_kind AND e.from_id = t.to_id
-             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}"
+             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{active_recursive}"
         ),
         TraversalSide::Incoming => format!(
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.path || e.id::text, t.depth + 1
              FROM edges e
              INNER JOIN traversal t ON e.org_id = t.org_id AND e.to_kind = t.from_kind AND e.to_id = t.from_id
-             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}"
+             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{active_recursive}"
         ),
         TraversalSide::Both => format!(
             "SELECT e.id, e.org_id, e.from_kind, e.from_id, e.to_kind, e.to_id, e.rel_type, e.display, t.path || e.id::text, t.depth + 1
@@ -376,7 +432,7 @@ fn build_traverse_sql(side: TraversalSide, rel_filter: Option<&str>) -> String {
                  (e.from_kind = t.to_kind AND e.from_id = t.to_id) OR
                  (e.to_kind = t.to_kind AND e.to_id = t.to_id)
              )
-             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}"
+             WHERE t.depth < $4 AND NOT (e.id::text = ANY(t.path)){rel_clause}{active_recursive}"
         ),
     };
 
@@ -423,6 +479,8 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
         .map_err(|e| Error::Store(e.to_string()))?;
     let source_kind_str: Option<String> = row.try_get("source_kind").unwrap_or(None);
     let source_id: Option<String> = row.try_get("source_id").unwrap_or(None);
+    let valid_until: Option<chrono::DateTime<chrono::Utc>> =
+        row.try_get("valid_until").unwrap_or(None);
 
     let id = EdgeId::from_uuid(id_uuid);
     let org_id = OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?;
@@ -445,6 +503,7 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
         created_by,
         source_kind,
         source_id,
+        valid_until,
     }))
 }
 
