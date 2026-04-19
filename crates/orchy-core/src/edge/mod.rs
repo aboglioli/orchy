@@ -139,6 +139,18 @@ pub enum RelationType {
     RelatedTo,
     /// This task depends on that task completing first
     DependsOn,
+    /// This fact/decision invalidates the truth of that fact
+    Invalidates,
+    /// This fact/evidence confirms or corroborates that claim
+    Confirms,
+    /// This claim is supported by that evidence or source
+    SupportedBy,
+    /// This fact contradicts or disputes that fact
+    ContradictedBy,
+    /// This resource is primarily owned/responsible by that agent
+    OwnedBy,
+    /// This work was reviewed or approved by that agent
+    ReviewedBy,
 }
 
 impl RelationType {
@@ -153,6 +165,12 @@ impl RelationType {
             RelationType::Spawns,
             RelationType::RelatedTo,
             RelationType::DependsOn,
+            RelationType::Invalidates,
+            RelationType::Confirms,
+            RelationType::SupportedBy,
+            RelationType::ContradictedBy,
+            RelationType::OwnedBy,
+            RelationType::ReviewedBy,
         ]
     }
 }
@@ -169,6 +187,12 @@ impl fmt::Display for RelationType {
             RelationType::Spawns => "spawns",
             RelationType::RelatedTo => "related_to",
             RelationType::DependsOn => "depends_on",
+            RelationType::Invalidates => "invalidates",
+            RelationType::Confirms => "confirms",
+            RelationType::SupportedBy => "supported_by",
+            RelationType::ContradictedBy => "contradicted_by",
+            RelationType::OwnedBy => "owned_by",
+            RelationType::ReviewedBy => "reviewed_by",
         };
         write!(f, "{s}")
     }
@@ -188,8 +212,14 @@ impl FromStr for RelationType {
             "spawns" => Ok(RelationType::Spawns),
             "related_to" => Ok(RelationType::RelatedTo),
             "depends_on" => Ok(RelationType::DependsOn),
+            "invalidates" => Ok(RelationType::Invalidates),
+            "confirms" => Ok(RelationType::Confirms),
+            "supported_by" => Ok(RelationType::SupportedBy),
+            "contradicted_by" => Ok(RelationType::ContradictedBy),
+            "owned_by" => Ok(RelationType::OwnedBy),
+            "reviewed_by" => Ok(RelationType::ReviewedBy),
             other => Err(format!(
-                "unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on"
+                "unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on, invalidates, confirms, supported_by, contradicted_by, owned_by, reviewed_by"
             )),
         }
     }
@@ -370,6 +400,22 @@ pub struct TraversalEdge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_relation_types_roundtrip() {
+        for rt in &[
+            RelationType::Invalidates,
+            RelationType::Confirms,
+            RelationType::SupportedBy,
+            RelationType::ContradictedBy,
+            RelationType::OwnedBy,
+            RelationType::ReviewedBy,
+        ] {
+            let s = rt.to_string();
+            let parsed: RelationType = s.parse().unwrap();
+            assert_eq!(rt, &parsed, "roundtrip failed for {s}");
+        }
+    }
 
     #[test]
     fn relation_type_roundtrip() {

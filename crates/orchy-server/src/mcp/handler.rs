@@ -375,7 +375,7 @@ This builds a shared graph that any agent can traverse.
 - `write_knowledge` with `task_id` auto-creates a `produces` edge (task → knowledge)
 - `merge_tasks` auto-creates `merged_from` edges (merged ← each source)
 
-**Relationship types (9):**
+**Relationship types (15):**
 - `derived_from` — this was created/informed by that
 - `produces` — completing this produced that as output
 - `supersedes` — this replaces/obsoletes that; auto-created by replace_task
@@ -385,6 +385,12 @@ This builds a shared graph that any agent can traverse.
 - `spawns` — this triggered/created that; auto-created by split_task, delegate_task, and post_task (when parent_id is set)
 - `depends_on` — task A depends on task B completing first; auto-created by add_dependency, post_task (with depends_on list), auto-deleted by remove_dependency
 - `related_to` — general symmetric peer relationship
+- `invalidates` — this fact/decision invalidates the truth of that fact
+- `confirms` — this evidence confirms or corroborates that claim
+- `supported_by` — this claim is supported by that evidence
+- `contradicted_by` — this fact contradicts that fact
+- `owned_by` — this resource is primarily owned by that agent
+- `reviewed_by` — this work was reviewed/approved by that agent
 
 **Deduplication:** `add_edge` returns an error if the same (from, rel_type, to) triple already exists.
 
