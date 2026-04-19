@@ -308,18 +308,21 @@ impl EdgeStore for PgBackend {
                 rel_filter.as_deref(),
                 only_active,
                 as_of.as_ref(),
+                Some(10_000),
             ),
             TraversalDirection::Incoming => build_traverse_sql(
                 TraversalSide::Incoming,
                 rel_filter.as_deref(),
                 only_active,
                 as_of.as_ref(),
+                Some(10_000),
             ),
             TraversalDirection::Both => build_traverse_sql(
                 TraversalSide::Both,
                 rel_filter.as_deref(),
                 only_active,
                 as_of.as_ref(),
+                Some(10_000),
             ),
         };
 
@@ -406,6 +409,7 @@ fn build_traverse_sql(
     rel_filter: Option<&str>,
     only_active: bool,
     as_of: Option<&DateTime<Utc>>,
+    max_results: Option<usize>,
 ) -> String {
     let rel_clause = rel_filter
         .map(|rts| format!(" AND rel_type IN ({rts})"))
@@ -433,7 +437,11 @@ fn build_traverse_sql(
         String::new()
     };
 
-    let limit_clause = String::new();
+    let limit_clause = if let Some(n) = max_results {
+        format!(" LIMIT {n}")
+    } else {
+        String::new()
+    };
 
     let anchor = match side {
         TraversalSide::Outgoing => format!(
