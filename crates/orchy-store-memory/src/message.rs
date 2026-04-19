@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -12,9 +12,22 @@ use crate::MemoryBackend;
 #[async_trait]
 impl MessageStore for MemoryBackend {
     async fn save(&self, message: &mut Message) -> Result<()> {
-        {
+        let is_new = {
             let mut messages = self.messages.write().await;
+            let is_new = !messages.contains_key(&message.id());
             messages.insert(message.id(), message.clone());
+            is_new
+        };
+
+        if is_new {
+            if let Some(parent_id) = message.reply_to() {
+                self.message_replies
+                    .write()
+                    .await
+                    .entry(parent_id)
+                    .or_default()
+                    .push(message.id());
+            }
         }
 
         let events = message.drain_events();
@@ -129,6 +142,7 @@ impl MessageStore for MemoryBackend {
         limit: Option<usize>,
     ) -> Result<Vec<Message>> {
         let messages = self.messages.read().await;
+        let replies = self.message_replies.read().await;
 
         let start = match messages.get(message_id) {
             Some(m) => m.clone(),
@@ -154,10 +168,12 @@ impl MessageStore for MemoryBackend {
         while !frontier.is_empty() {
             let mut next_frontier = Vec::new();
             for parent_id in &frontier {
-                for msg in messages.values() {
-                    if msg.reply_to() == Some(*parent_id) {
-                        thread.push(msg.clone());
-                        next_frontier.push(msg.id());
+                if let Some(children) = replies.get(parent_id) {
+                    for child_id in children {
+                        if let Some(msg) = messages.get(child_id) {
+                            thread.push(msg.clone());
+                            next_frontier.push(*child_id);
+                        }
                     }
                 }
             }
