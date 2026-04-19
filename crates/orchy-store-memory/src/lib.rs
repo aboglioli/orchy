@@ -38,7 +38,7 @@ pub struct MemoryBackend {
     pub(crate) message_receipts: RwLock<HashSet<(MessageId, AgentId)>>,
     pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
     pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
-    pub(crate) resource_locks: RwLock<HashMap<(String, String, String, String), ResourceLock>>,
+    pub(crate) resource_locks: RwLock<HashMap<String, ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String, String)>>,
     pub(crate) organizations: RwLock<HashMap<OrganizationId, Organization>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
