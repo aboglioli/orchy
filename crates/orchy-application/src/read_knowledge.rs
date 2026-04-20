@@ -60,19 +60,41 @@ impl ReadKnowledge {
 
         let relations =
             if let (Some(k), Some(opts), Some(mat)) = (&entry, cmd.relations, &self.materializer) {
-                let neighborhood = mat
+                // Try both UUID and path as anchor — edges may reference knowledge by either
+                let uuid_anchor = k.id().to_string();
+                let path_anchor = k.path().to_string();
+                let project = k.project().map(|p| p.to_string());
+
+                let mut n = mat
                     .execute(MaterializeNeighborhoodCommand {
-                        org_id: cmd.org_id,
+                        org_id: cmd.org_id.clone(),
                         anchor_kind: ResourceKind::Knowledge.to_string(),
-                        anchor_id: k.id().to_string(),
-                        options: opts,
+                        anchor_id: uuid_anchor.clone(),
+                        options: opts.clone(),
                         as_of: None,
-                        project: k.project().map(|p| p.to_string()),
+                        project: project.clone(),
                         namespace: None,
                         semantic_query: None,
                     })
                     .await?;
-                Some(neighborhood.relations)
+
+                if path_anchor != uuid_anchor {
+                    let path_n = mat
+                        .execute(MaterializeNeighborhoodCommand {
+                            org_id: cmd.org_id,
+                            anchor_kind: ResourceKind::Knowledge.to_string(),
+                            anchor_id: path_anchor,
+                            options: opts,
+                            as_of: None,
+                            project,
+                            namespace: None,
+                            semantic_query: None,
+                        })
+                        .await?;
+                    n.relations.extend(path_n.relations);
+                }
+
+                Some(n.relations)
             } else {
                 None
             };
