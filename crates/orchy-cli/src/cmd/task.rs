@@ -457,7 +457,13 @@ pub async fn run(
             let v = client
                 .get_project_json(&format!("/tasks/next{query}"))
                 .await?;
-            if config.json {
+            if v.is_null() {
+                if config.json {
+                    println!("null");
+                } else {
+                    println!("No matching tasks available.");
+                }
+            } else if config.json {
                 output::print_json(config, &v);
             } else {
                 print!("{}", output::format_task(&v));
