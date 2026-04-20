@@ -90,11 +90,13 @@ pub enum KnowledgeSubcommand {
         #[arg(long)]
         namespace: Option<String>,
     },
-    /// Move a knowledge entry to a different namespace
+    /// Move a knowledge entry to a different namespace or project
     Move {
         path: String,
         #[arg(long)]
-        new_namespace: String,
+        new_namespace: Option<String>,
+        #[arg(long)]
+        new_project: Option<String>,
         #[arg(long)]
         namespace: Option<String>,
     },
@@ -359,9 +361,16 @@ pub async fn run(
         KnowledgeSubcommand::Move {
             path,
             new_namespace,
+            new_project,
             namespace,
         } => {
-            let mut body = serde_json::json!({ "new_namespace": new_namespace });
+            let mut body = serde_json::json!({});
+            if let Some(ns) = new_namespace {
+                body["new_namespace"] = serde_json::Value::String(ns.clone());
+            }
+            if let Some(np) = new_project {
+                body["new_project"] = serde_json::Value::String(np.clone());
+            }
             if let Some(ns) = namespace {
                 body["namespace"] = serde_json::Value::String(ns.clone());
             }
@@ -371,7 +380,7 @@ pub async fn run(
             if config.json {
                 output::print_json(config, &v);
             } else {
-                println!("Knowledge entry '{path}' moved to {new_namespace}.");
+                println!("Knowledge entry '{path}' moved.");
             }
         }
 

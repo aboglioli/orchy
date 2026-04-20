@@ -66,6 +66,7 @@ pub struct NextTaskQuery {
     pub namespace: Option<String>,
     pub role: Option<String>,
     pub claim: Option<bool>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -869,20 +870,13 @@ pub async fn next_task(
         None => vec![],
     };
 
-    if roles.is_empty() {
-        return Err(ApiError(
-            StatusCode::BAD_REQUEST,
-            "INVALID_PARAM",
-            "role query param required".to_string(),
-        ));
-    }
-
     let claim = query.claim.unwrap_or(false);
-    if claim {
+    let agent_id = query.agent_id.clone();
+    if claim && agent_id.is_none() {
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
             "INVALID_PARAM",
-            "claim requires agent; use POST /tasks/:id/claim".to_string(),
+            "claim requires agent_id query param".to_string(),
         ));
     }
 
@@ -891,8 +885,8 @@ pub async fn next_task(
         project: Some(project),
         namespace: query.namespace,
         roles,
-        claim: Some(false),
-        agent_id: None,
+        claim: Some(claim),
+        agent_id,
     };
 
     let task = container
