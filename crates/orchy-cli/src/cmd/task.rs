@@ -107,7 +107,7 @@ pub enum TaskSubcommand {
     /// Split a task into subtasks
     Split {
         id: String,
-        #[arg(long)]
+        #[arg(long, value_delimiter = ',')]
         titles: Vec<String>,
     },
     /// Merge multiple tasks into one
@@ -124,7 +124,7 @@ pub enum TaskSubcommand {
         id: String,
         #[arg(long)]
         reason: Option<String>,
-        #[arg(long)]
+        #[arg(long, value_delimiter = ',')]
         titles: Vec<String>,
     },
     /// Create a subtask without blocking the parent

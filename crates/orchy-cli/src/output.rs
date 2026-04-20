@@ -118,13 +118,14 @@ pub fn format_bootstrap(
     let mut out = String::new();
     out.push_str("=== ORCHY AGENT BRIEFING ===\n\n");
 
-    // Identity
-    let agent_id = agent_v.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-    let desc = agent_v
+    // Identity — agent info may be nested under "agent" key (context endpoint)
+    let agent_info = agent_v.get("agent").unwrap_or(agent_v);
+    let agent_id = agent_info.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let desc = agent_info
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("?");
-    let ns = agent_v
+    let ns = agent_info
         .get("namespace")
         .and_then(|v| v.as_str())
         .unwrap_or("/");
