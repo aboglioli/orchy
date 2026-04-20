@@ -6,6 +6,7 @@ use serde::Deserialize;
 pub struct Config {
     pub server: ServerConfig,
     pub store: StoreConfig,
+    #[serde(default)]
     pub auth: AuthConfig,
     pub embeddings: Option<EmbeddingsConfig>,
     pub skills: Option<SkillsConfig>,

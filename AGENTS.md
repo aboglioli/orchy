@@ -363,6 +363,12 @@ path = "orchy.db"
 # [store.postgres]
 # url = "postgres://orchy:orchy@localhost:5432/orchy"
 
+# [auth]
+# jwt_duration_hours = 24
+# cookie_secure = false
+# bcrypt_cost = 10
+# keys_dir = "keys"
+
 # [skills]
 # dir = "skills"
 
