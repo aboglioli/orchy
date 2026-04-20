@@ -114,6 +114,7 @@ pub async fn run(
             if let Some(md) = max_depth {
                 qs.push(format!("max_depth={md}"));
             }
+            qs.push(format!("project={}", config.project));
             let query = format!("?{}", qs.join("&"));
             let v = client.get_json(&format!("/graph/relations{query}")).await?;
             if config.json {

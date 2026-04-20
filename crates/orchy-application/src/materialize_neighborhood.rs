@@ -136,20 +136,24 @@ impl MaterializeNeighborhood {
         // Resolve knowledge paths to entries (edges may store path instead of UUID)
         knowledge_paths.sort();
         knowledge_paths.dedup();
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        for path in &knowledge_paths {
-            if let Ok(Some(entry)) = self
-                .knowledge
-                .find_by_path(
-                    &org_id,
-                    None,
-                    &orchy_core::namespace::Namespace::root(),
-                    path,
-                )
-                .await
-            {
-                knowledge_entries.push(entry);
+        if !knowledge_paths.is_empty() {
+            let project = cmd
+                .project
+                .as_deref()
+                .map(|p| {
+                    orchy_core::namespace::ProjectId::try_from(p.to_string())
+                        .map_err(|e| Error::InvalidInput(e.to_string()))
+                })
+                .transpose()?;
+            let namespace = Namespace::root();
+            for path in &knowledge_paths {
+                if let Ok(Some(entry)) = self
+                    .knowledge
+                    .find_by_path(&org_id, project.as_ref(), &namespace, path)
+                    .await
+                {
+                    knowledge_entries.push(entry);
+                }
             }
         }
 

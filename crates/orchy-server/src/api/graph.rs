@@ -115,6 +115,7 @@ pub struct QueryRelationsQuery {
     pub direction: Option<String>,
     pub max_depth: Option<u32>,
     pub as_of: Option<String>,
+    pub project: Option<String>,
 }
 
 pub async fn query_relations(
@@ -172,7 +173,7 @@ pub async fn query_relations(
         anchor_id: query.anchor_id,
         options,
         as_of,
-        project: None,
+        project: query.project,
         namespace: None,
         semantic_query: None,
     };
