@@ -43,12 +43,14 @@ pub async fn run(
                 if !desc.is_empty() {
                     println!("Description: {desc}");
                 }
-                if let Some(meta) = v.get("metadata").and_then(|v| v.as_object()) {
-                    if !meta.is_empty() {
-                        println!("Metadata:");
-                        for (k, v) in meta {
-                            println!("  {k}: {}", v.as_str().unwrap_or("?"));
-                        }
+                if let Some(meta) = v
+                    .get("metadata")
+                    .and_then(|v| v.as_object())
+                    .filter(|m| !m.is_empty())
+                {
+                    println!("Metadata:");
+                    for (k, v) in meta {
+                        println!("  {k}: {}", v.as_str().unwrap_or("?"));
                     }
                 }
             }

@@ -2,8 +2,11 @@ use crate::client::OrchyClient;
 use crate::config::Config;
 use crate::output;
 
-/// Bootstrap: agent briefing (inbox, tasks, skills, handoff context)
-pub async fn run(client: &OrchyClient, config: &Config) -> crate::client::CliResult<()> {
+pub async fn run(
+    client: &OrchyClient,
+    config: &Config,
+    verbose: bool,
+) -> crate::client::CliResult<()> {
     let agent_id = client
         .agent_id
         .clone()
@@ -21,7 +24,10 @@ pub async fn run(client: &OrchyClient, config: &Config) -> crate::client::CliRes
             }),
         );
     } else {
-        print!("{}", output::format_bootstrap(&agent_v, &project_v));
+        print!(
+            "{}",
+            output::format_bootstrap(&agent_v, &project_v, &config.org, &config.project, verbose,)
+        );
     }
     Ok(())
 }

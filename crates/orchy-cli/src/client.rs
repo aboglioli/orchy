@@ -9,7 +9,6 @@ pub struct OrchyClient {
     api_key: String,
     org: String,
     project: String,
-    pub namespace: String,
     pub agent_id: Option<String>,
 }
 
@@ -22,7 +21,6 @@ impl OrchyClient {
             api_key: config.api_key.clone(),
             org: config.org.clone(),
             project: config.project.clone(),
-            namespace: config.namespace.clone(),
             agent_id: config.agent_id.clone(),
         }
     }
@@ -248,7 +246,6 @@ impl OrchyClient {
 pub enum CliError {
     Request(String),
     Http { status: u16, body: String },
-    Config(String),
     MissingAgentId,
 }
 
@@ -257,7 +254,6 @@ impl std::fmt::Display for CliError {
         match self {
             CliError::Request(e) => write!(f, "request error: {e}"),
             CliError::Http { status, body } => write!(f, "HTTP {status}: {body}"),
-            CliError::Config(e) => write!(f, "config error: {e}"),
             CliError::MissingAgentId => write!(
                 f,
                 "agent_id is required — set it in config or pass --agent <id>"

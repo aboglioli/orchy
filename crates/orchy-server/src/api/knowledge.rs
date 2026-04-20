@@ -56,6 +56,13 @@ pub struct NamespaceQuery {
 }
 
 #[derive(Deserialize)]
+pub struct ReadKnowledgeQuery {
+    pub namespace: Option<String>,
+    #[serde(flatten)]
+    pub relations: super::InlineRelationQuery,
+}
+
+#[derive(Deserialize)]
 pub struct WriteBody {
     #[serde(alias = "ns")]
     pub namespace: Option<String>,
@@ -276,17 +283,19 @@ pub async fn read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, path)): Path<(String, String, String)>,
-    Query(query): Query<NamespaceQuery>,
+    Query(query): Query<ReadKnowledgeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+
+    let relations = query.relations.into_options()?;
 
     let cmd = ReadKnowledgeCommand {
         org_id: org,
         project,
         namespace: query.namespace,
         path,
-        relations: None,
+        relations,
     };
 
     let resp = container
@@ -295,6 +304,16 @@ pub async fn read(
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
+
+    if resp.relations.is_some() {
+        return Ok(Json(serde_json::to_value(&resp).map_err(|e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "SERIALIZATION_ERROR",
+                e.to_string(),
+            )
+        })?));
+    }
 
     Ok(Json(serde_json::to_value(&resp.knowledge).map_err(
         |e| {

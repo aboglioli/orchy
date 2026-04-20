@@ -255,9 +255,12 @@ pub async fn get_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, project, id)): Path<(String, String, String)>,
+    Query(rel_query): Query<super::InlineRelationQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+
+    let relations = rel_query.into_options()?;
 
     let task = container
         .app
@@ -265,7 +268,7 @@ pub async fn get_task(
         .execute(GetTaskCommand {
             task_id: id.clone(),
             org_id: None,
-            relations: None,
+            relations,
         })
         .await
         .map_err(ApiError::from)?;

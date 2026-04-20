@@ -72,6 +72,8 @@ pub enum TaskSubcommand {
         id: String,
         #[arg(long)]
         summary: Option<String>,
+        #[arg(long, help = "Links as kind:id:rel_type (comma-separated)")]
+        links: Option<String>,
     },
     /// Fail a task
     Fail {
@@ -97,6 +99,8 @@ pub enum TaskSubcommand {
     },
     /// Get the next available task matching your roles
     Next {
+        #[arg(long)]
+        claim: Option<bool>,
         #[arg(long)]
         role: Option<String>,
     },
@@ -329,10 +333,28 @@ pub async fn run(
             }
         }
 
-        TaskSubcommand::Complete { id, summary } => {
+        TaskSubcommand::Complete { id, summary, links } => {
             let mut body = serde_json::json!({});
             if let Some(s) = summary {
                 body["summary"] = serde_json::Value::String(s.clone());
+            }
+            if let Some(l) = links {
+                let parsed: Vec<serde_json::Value> = l
+                    .split(',')
+                    .filter_map(|link| {
+                        let parts: Vec<&str> = link.trim().splitn(3, ':').collect();
+                        if parts.len() == 3 {
+                            Some(serde_json::json!({
+                                "to_kind": parts[0],
+                                "to_id": parts[1],
+                                "rel_type": parts[2],
+                            }))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                body["links"] = serde_json::Value::Array(parsed);
             }
             let v = client
                 .post_project_json(&format!("/tasks/{id}/complete"), Some(&body))
@@ -414,8 +436,11 @@ pub async fn run(
             }
         }
 
-        TaskSubcommand::Next { role } => {
+        TaskSubcommand::Next { claim, role } => {
             let mut qs = vec![];
+            if let Some(c) = claim {
+                qs.push(format!("claim={c}"));
+            }
             if let Some(r) = role {
                 qs.push(format!("role={r}"));
             }

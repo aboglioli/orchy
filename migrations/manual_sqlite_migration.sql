@@ -300,20 +300,18 @@ CREATE TABLE agents_new (
     last_heartbeat TEXT NOT NULL,
     connected_at TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}',
-    alias TEXT,
     organization_id TEXT NOT NULL DEFAULT 'default'
 );
 
 INSERT INTO agents_new SELECT
     id, project, namespace, roles, description, status, last_heartbeat,
-    connected_at, metadata, alias, organization_id
+    connected_at, metadata, organization_id
 FROM agents;
 
 DROP TABLE agents;
 ALTER TABLE agents_new RENAME TO agents;
 
 -- Recreate agent indexes
-CREATE UNIQUE INDEX IF NOT EXISTS agents_project_alias_idx ON agents (organization_id, project, alias) WHERE alias IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_heartbeat);
 
 -- ============================================================================

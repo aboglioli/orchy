@@ -492,28 +492,34 @@ pub async fn run(
                         print!("{}", output::format_knowledge(f));
                     }
                 }
-                if let Some(deps) = v.get("open_dependencies").and_then(|v| v.as_array()) {
-                    if !deps.is_empty() {
-                        println!("\nOpen Dependencies:");
-                        for d in deps {
-                            print!("{}", output::format_task(d));
-                        }
+                if let Some(deps) = v
+                    .get("open_dependencies")
+                    .and_then(|v| v.as_array())
+                    .filter(|a| !a.is_empty())
+                {
+                    println!("\nOpen Dependencies:");
+                    for d in deps {
+                        print!("{}", output::format_task(d));
                     }
                 }
-                if let Some(decisions) = v.get("relevant_decisions").and_then(|v| v.as_array()) {
-                    if !decisions.is_empty() {
-                        println!("\nRelevant Decisions:");
-                        for d in decisions {
-                            print!("{}", output::format_knowledge(d));
-                        }
+                if let Some(decisions) = v
+                    .get("relevant_decisions")
+                    .and_then(|v| v.as_array())
+                    .filter(|a| !a.is_empty())
+                {
+                    println!("\nRelevant Decisions:");
+                    for d in decisions {
+                        print!("{}", output::format_knowledge(d));
                     }
                 }
-                if let Some(risks) = v.get("risk_flags").and_then(|v| v.as_array()) {
-                    if !risks.is_empty() {
-                        println!("\nRisk Flags:");
-                        for r in risks {
-                            println!("  ⚠ {}", r.as_str().unwrap_or("?"));
-                        }
+                if let Some(risks) = v
+                    .get("risk_flags")
+                    .and_then(|v| v.as_array())
+                    .filter(|a| !a.is_empty())
+                {
+                    println!("\nRisk Flags:");
+                    for r in risks {
+                        println!("  - {}", r.as_str().unwrap_or("?"));
                     }
                 }
             }

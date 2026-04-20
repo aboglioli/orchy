@@ -34,7 +34,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Bootstrap,
+    Bootstrap {
+        #[arg(long, help = "Show full message bodies and skill content")]
+        verbose: bool,
+    },
     #[command(subcommand)]
     Agent(cmd::agent::AgentSubcommand),
     #[command(subcommand)]
@@ -76,7 +79,7 @@ async fn main() {
     let client = OrchyClient::new(&config);
 
     let result = match cli.command {
-        Commands::Bootstrap => cmd::bootstrap::run(&client, &config).await,
+        Commands::Bootstrap { verbose } => cmd::bootstrap::run(&client, &config, verbose).await,
         Commands::Agent(cmd) => cmd::agent::run(&cmd, &client, &config).await,
         Commands::Task(cmd) => cmd::task::run(&cmd, &client, &config).await,
         Commands::Knowledge(cmd) => cmd::knowledge::run(&cmd, &client, &config).await,

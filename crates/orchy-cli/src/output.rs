@@ -1,29 +1,9 @@
 use crate::config::Config;
 
-/// Print output respecting the --json flag. JSON mode: pretty-print raw server JSON.
-/// Text mode: print the given text string.
-pub fn print_output(config: &Config, json_value: Option<&serde_json::Value>, text: &str) {
-    if config.json {
-        if let Some(v) = json_value {
-            println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
-        }
-    } else {
-        print!("{text}");
-    }
-}
-
 /// Print raw JSON (always used when --json is set, regardless of text).
 pub fn print_json(config: &Config, v: &serde_json::Value) {
     if config.json {
         println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
-    }
-    // In text mode, the caller formats their own output
-}
-
-/// Print plain text message (for confirmed actions).
-pub fn print_text(config: &Config, msg: &str) {
-    if !config.json {
-        println!("{msg}");
     }
 }
 
@@ -127,16 +107,14 @@ pub fn format_agent(v: &serde_json::Value) -> String {
     format!("{id}  {status:>12}  [{roles}]  {desc}\n")
 }
 
-/// Format a lock as readable text.
-pub fn format_lock(v: &serde_json::Value) -> String {
-    let name = v.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-    let holder = v.get("holder").and_then(|v| v.as_str()).unwrap_or("?");
-    let expires = v.get("expires_at").and_then(|v| v.as_str()).unwrap_or("?");
-    format!("{name}  holder={holder}  expires={expires}\n")
-}
-
 /// Format the bootstrap output.
-pub fn format_bootstrap(agent_v: &serde_json::Value, project_v: &serde_json::Value) -> String {
+pub fn format_bootstrap(
+    agent_v: &serde_json::Value,
+    project_v: &serde_json::Value,
+    org: &str,
+    project: &str,
+    verbose: bool,
+) -> String {
     let mut out = String::new();
     out.push_str("=== ORCHY AGENT BRIEFING ===\n\n");
 
@@ -150,9 +128,17 @@ pub fn format_bootstrap(agent_v: &serde_json::Value, project_v: &serde_json::Val
         .get("namespace")
         .and_then(|v| v.as_str())
         .unwrap_or("/");
+    let proj_desc = project_v
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     out.push_str(&format!(
-        "Identity\n  Agent:     {agent_id} ({desc})\n  Namespace: {ns}\n\n"
+        "Identity\n  Agent:     {agent_id} ({desc})\n  Org:       {org}\n  Project:   {project}"
     ));
+    if !proj_desc.is_empty() {
+        out.push_str(&format!(" — {proj_desc}"));
+    }
+    out.push_str(&format!("\n  Namespace: {ns}\n\n"));
 
     // Inbox
     if let Some(inbox) = agent_v.get("inbox").and_then(|v| v.as_array()) {
@@ -164,8 +150,12 @@ pub fn format_bootstrap(agent_v: &serde_json::Value, project_v: &serde_json::Val
                 let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("?");
                 let from = m.get("from").and_then(|v| v.as_str()).unwrap_or("?");
                 let body = m.get("body").and_then(|v| v.as_str()).unwrap_or("?");
-                let truncated = if body.len() > 60 { &body[..60] } else { body };
-                out.push_str(&format!("  [{id}] from {from}: \"{truncated}\"\n"));
+                if verbose {
+                    out.push_str(&format!("  [{id}] from {from}: \"{body}\"\n"));
+                } else {
+                    let truncated = if body.len() > 60 { &body[..60] } else { body };
+                    out.push_str(&format!("  [{id}] from {from}: \"{truncated}\"\n"));
+                }
             }
         }
         out.push('\n');
@@ -189,7 +179,16 @@ pub fn format_bootstrap(agent_v: &serde_json::Value, project_v: &serde_json::Val
         out.push_str(&format!("Skills  ({} active)\n", skills.len()));
         for s in skills {
             let path = s.get("path").and_then(|v| v.as_str()).unwrap_or("?");
-            out.push_str(&format!("  {path}\n"));
+            let title = s.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            out.push_str(&format!("  {path}  {title}\n"));
+            if let Some(content) = verbose
+                .then(|| s.get("content").and_then(|v| v.as_str()))
+                .flatten()
+            {
+                for line in content.lines() {
+                    out.push_str(&format!("    {line}\n"));
+                }
+            }
         }
         out.push('\n');
     }

@@ -17,8 +17,10 @@ use axum::Json;
 use axum::Router;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use orchy_core::edge::{RelationType, TraversalDirection};
+use orchy_core::graph::relation_options::RelationOptions;
 use orchy_core::namespace::Namespace;
 
 use crate::container::Container;
@@ -38,6 +40,47 @@ pub(crate) fn parse_namespace(s: &str) -> Result<Namespace, ApiError> {
             format!("invalid namespace: {e}"),
         )
     })
+}
+
+#[derive(Deserialize, Default)]
+pub struct InlineRelationQuery {
+    pub rel_types: Option<String>,
+    pub direction: Option<String>,
+    pub max_depth: Option<u32>,
+}
+
+impl InlineRelationQuery {
+    pub fn into_options(self) -> Result<Option<RelationOptions>, ApiError> {
+        if self.rel_types.is_none() && self.direction.is_none() && self.max_depth.is_none() {
+            return Ok(None);
+        }
+
+        let rel_types: Option<Vec<RelationType>> = self
+            .rel_types
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.split(',')
+                    .map(|t| t.trim().parse::<RelationType>())
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
+
+        let direction = match self.direction.as_deref() {
+            Some("outgoing") => TraversalDirection::Outgoing,
+            Some("incoming") => TraversalDirection::Incoming,
+            _ => TraversalDirection::Both,
+        };
+
+        Ok(Some(RelationOptions {
+            rel_types,
+            target_kinds: vec![],
+            direction,
+            max_depth: self.max_depth.unwrap_or(1),
+            limit: 50,
+        }))
+    }
 }
 
 #[derive(Serialize)]
