@@ -21,6 +21,7 @@ use crate::pagination::{Page, PageParams};
 pub trait KnowledgeStore: Send + Sync {
     async fn save(&self, entry: &mut Knowledge) -> Result<()>;
     async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>>;
+    async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>>;
     async fn find_by_path(
         &self,
         org: &OrganizationId,

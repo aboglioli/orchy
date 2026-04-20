@@ -64,6 +64,7 @@ impl FromStr for AgentId {
 pub trait AgentStore: Send + Sync {
     async fn save(&self, agent: &mut Agent) -> Result<()>;
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>>;
+    async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>>;
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>>;
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
 }

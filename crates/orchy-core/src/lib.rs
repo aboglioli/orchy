@@ -2,6 +2,7 @@ pub mod agent;
 pub mod edge;
 pub mod embeddings;
 pub mod error;
+pub mod graph;
 pub mod knowledge;
 pub mod message;
 pub mod namespace;

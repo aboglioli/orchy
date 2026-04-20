@@ -19,6 +19,7 @@ use crate::pagination::{Page, PageParams};
 pub trait TaskStore: Send + Sync {
     async fn save(&self, task: &mut Task) -> Result<()>;
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
+    async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>>;
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>>;
 }
 
@@ -824,6 +825,14 @@ impl Task {
 
         Ok(())
     }
+
+    pub fn all_children_completed(children: &[Task]) -> bool {
+        !children.is_empty()
+            && children
+                .iter()
+                .all(|c| matches!(c.status(), TaskStatus::Completed | TaskStatus::Cancelled))
+    }
+
     pub fn drain_events(&mut self) -> Vec<Event> {
         self.collector.drain()
     }
@@ -1178,5 +1187,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(task.status(), TaskStatus::Blocked);
+    }
+
+    #[test]
+    fn all_children_completed_requires_nonempty() {
+        assert!(!Task::all_children_completed(&[]));
     }
 }

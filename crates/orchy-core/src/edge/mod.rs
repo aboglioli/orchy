@@ -14,17 +14,9 @@ use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
-use crate::resource_ref::ResourceKind;
+use crate::resource_ref::{ResourceKind, ResourceRef};
 
 use self::events as edge_events;
-
-pub struct TraversalConfig<'a> {
-    pub max_depth: u32,
-    pub rel_types: Option<&'a [RelationType]>,
-    pub direction: TraversalDirection,
-    pub only_active: bool,
-    pub as_of: Option<DateTime<Utc>>,
-}
 
 #[async_trait]
 pub trait EdgeStore: Send + Sync {
@@ -36,8 +28,7 @@ pub trait EdgeStore: Send + Sync {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        rel_type: Option<&RelationType>,
-        only_active: bool,
+        rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>>;
     async fn find_to(
@@ -45,8 +36,7 @@ pub trait EdgeStore: Send + Sync {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        rel_type: Option<&RelationType>,
-        only_active: bool,
+        rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>>;
     async fn exists_by_pair(
@@ -66,13 +56,18 @@ pub trait EdgeStore: Send + Sync {
         only_active: bool,
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Page<Edge>>;
-    async fn traverse(
+    async fn find_neighbors(
         &self,
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        config: TraversalConfig<'_>,
-    ) -> Result<Vec<TraversalEdge>>;
+        rel_types: &[RelationType],
+        target_kinds: &[ResourceKind],
+        direction: TraversalDirection,
+        max_depth: u32,
+        as_of: Option<DateTime<Utc>>,
+        limit: u32,
+    ) -> Result<Vec<TraversalHop>>;
     async fn delete_all_for(
         &self,
         org: &OrganizationId,
@@ -153,8 +148,6 @@ pub enum RelationType {
     DependsOn,
     /// This fact/decision invalidates the truth of that fact
     Invalidates,
-    /// This fact/evidence confirms or corroborates that claim
-    Confirms,
     /// This claim is supported by that evidence or source
     SupportedBy,
     /// This fact contradicts or disputes that fact
@@ -178,7 +171,6 @@ impl RelationType {
             RelationType::RelatedTo,
             RelationType::DependsOn,
             RelationType::Invalidates,
-            RelationType::Confirms,
             RelationType::SupportedBy,
             RelationType::ContradictedBy,
             RelationType::OwnedBy,
@@ -200,7 +192,6 @@ impl fmt::Display for RelationType {
             RelationType::RelatedTo => "related_to",
             RelationType::DependsOn => "depends_on",
             RelationType::Invalidates => "invalidates",
-            RelationType::Confirms => "confirms",
             RelationType::SupportedBy => "supported_by",
             RelationType::ContradictedBy => "contradicted_by",
             RelationType::OwnedBy => "owned_by",
@@ -225,13 +216,12 @@ impl FromStr for RelationType {
             "related_to" => Ok(RelationType::RelatedTo),
             "depends_on" => Ok(RelationType::DependsOn),
             "invalidates" => Ok(RelationType::Invalidates),
-            "confirms" => Ok(RelationType::Confirms),
             "supported_by" => Ok(RelationType::SupportedBy),
             "contradicted_by" => Ok(RelationType::ContradictedBy),
             "owned_by" => Ok(RelationType::OwnedBy),
             "reviewed_by" => Ok(RelationType::ReviewedBy),
             other => Err(format!(
-                "unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on, invalidates, confirms, supported_by, contradicted_by, owned_by, reviewed_by"
+                "unknown relation type: {other}. valid types: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on, invalidates, supported_by, contradicted_by, owned_by, reviewed_by"
             )),
         }
     }
@@ -240,10 +230,25 @@ impl FromStr for RelationType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TraversalDirection {
-    #[default]
     Outgoing,
     Incoming,
+    #[default]
     Both,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationDirection {
+    Outgoing,
+    Incoming,
+}
+
+#[derive(Debug, Clone)]
+pub struct TraversalHop {
+    pub edge: Edge,
+    pub depth: u32,
+    pub direction: RelationDirection,
+    pub via: Option<ResourceRef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -255,7 +260,6 @@ pub struct Edge {
     to_kind: ResourceKind,
     to_id: String,
     rel_type: RelationType,
-    display: Option<String>,
     created_at: DateTime<Utc>,
     created_by: Option<AgentId>,
     source_kind: Option<ResourceKind>,
@@ -274,7 +278,6 @@ impl Edge {
         to_kind: ResourceKind,
         to_id: String,
         rel_type: RelationType,
-        display: Option<String>,
         created_by: Option<AgentId>,
     ) -> Result<Self> {
         let id = EdgeId::new();
@@ -286,7 +289,6 @@ impl Edge {
             to_kind,
             to_id,
             rel_type,
-            display,
             created_at: Utc::now(),
             created_by,
             source_kind: None,
@@ -326,7 +328,6 @@ impl Edge {
             to_kind: r.to_kind,
             to_id: r.to_id,
             rel_type: r.rel_type,
-            display: r.display,
             created_at: r.created_at,
             created_by: r.created_by,
             source_kind: r.source_kind,
@@ -368,10 +369,6 @@ impl Edge {
 
     pub fn rel_type(&self) -> &RelationType {
         &self.rel_type
-    }
-
-    pub fn display(&self) -> Option<&str> {
-        self.display.as_deref()
     }
 
     pub fn created_at(&self) -> DateTime<Utc> {
@@ -434,24 +431,11 @@ pub struct RestoreEdge {
     pub to_kind: ResourceKind,
     pub to_id: String,
     pub rel_type: RelationType,
-    pub display: Option<String>,
     pub created_at: DateTime<Utc>,
     pub created_by: Option<AgentId>,
     pub source_kind: Option<ResourceKind>,
     pub source_id: Option<String>,
     pub valid_until: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TraversalEdge {
-    pub id: EdgeId,
-    pub from_kind: ResourceKind,
-    pub from_id: String,
-    pub to_kind: ResourceKind,
-    pub to_id: String,
-    pub rel_type: RelationType,
-    pub display: Option<String>,
-    pub depth: u32,
 }
 
 #[cfg(test)]
@@ -462,7 +446,6 @@ mod tests {
     fn new_relation_types_roundtrip() {
         for rt in &[
             RelationType::Invalidates,
-            RelationType::Confirms,
             RelationType::SupportedBy,
             RelationType::ContradictedBy,
             RelationType::OwnedBy,
@@ -499,7 +482,6 @@ mod tests {
             "know-id-1".to_string(),
             RelationType::Produces,
             None,
-            None,
         )
         .unwrap();
         assert_eq!(edge.from_kind(), &ResourceKind::Task);
@@ -508,8 +490,8 @@ mod tests {
     }
 
     #[test]
-    fn traversal_direction_default_is_outgoing() {
-        assert_eq!(TraversalDirection::default(), TraversalDirection::Outgoing);
+    fn traversal_direction_default_is_both() {
+        assert_eq!(TraversalDirection::default(), TraversalDirection::Both);
     }
 
     #[test]
@@ -523,7 +505,6 @@ mod tests {
             ResourceKind::Knowledge,
             "k1".to_string(),
             RelationType::Produces,
-            None,
             None,
         )
         .unwrap();
@@ -550,7 +531,6 @@ mod tests {
             ResourceKind::Knowledge,
             "k1".to_string(),
             RelationType::Produces,
-            None,
             None,
         )
         .unwrap();
