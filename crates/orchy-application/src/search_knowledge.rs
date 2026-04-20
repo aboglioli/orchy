@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use orchy_core::edge::{EdgeStore, TraversalConfig, TraversalDirection};
+use orchy_core::edge::{EdgeStore, TraversalDirection};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
@@ -149,16 +149,13 @@ impl SearchKnowledge {
         id: &str,
     ) -> Result<HashSet<String>> {
         let mut ids = HashSet::new();
-        let from = self
-            .edges
-            .find_from(org, &kind, id, None, true, None)
-            .await?;
+        let from = self.edges.find_from(org, &kind, id, &[], None).await?;
         for e in from {
             if e.to_kind() == &ResourceKind::Knowledge {
                 ids.insert(e.to_id().to_string());
             }
         }
-        let to = self.edges.find_to(org, &kind, id, None, true, None).await?;
+        let to = self.edges.find_to(org, &kind, id, &[], None).await?;
         for e in to {
             if e.from_kind() == &ResourceKind::Knowledge {
                 ids.insert(e.from_id().to_string());
@@ -174,29 +171,28 @@ impl SearchKnowledge {
     ) -> Result<HashSet<String>> {
         let traversal = self
             .edges
-            .traverse(
+            .find_neighbors(
                 org,
                 &ResourceKind::Task,
                 task_id,
-                TraversalConfig {
-                    max_depth: 3,
-                    rel_types: None,
-                    direction: TraversalDirection::Both,
-                    only_active: true,
-                    as_of: None,
-                },
+                &[],
+                &[],
+                TraversalDirection::Both,
+                3,
+                None,
+                500,
             )
             .await?;
 
         let mut task_ids: HashSet<String> = traversal
             .iter()
-            .flat_map(|te| {
+            .flat_map(|hop| {
                 let mut v = Vec::new();
-                if te.from_kind == ResourceKind::Task {
-                    v.push(te.from_id.clone());
+                if hop.edge.from_kind() == &ResourceKind::Task {
+                    v.push(hop.edge.from_id().to_string());
                 }
-                if te.to_kind == ResourceKind::Task {
-                    v.push(te.to_id.clone());
+                if hop.edge.to_kind() == &ResourceKind::Task {
+                    v.push(hop.edge.to_id().to_string());
                 }
                 v
             })

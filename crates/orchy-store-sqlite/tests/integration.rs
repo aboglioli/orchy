@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
-use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalConfig, TraversalDirection};
+use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -849,12 +849,11 @@ async fn edge_valid_until_persisted_and_filtered() {
         "k1".to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true, None)
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", &[], None)
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
@@ -863,16 +862,10 @@ async fn edge_valid_until_persisted_and_filtered() {
     invalidated.invalidate().unwrap();
     EdgeStore::save(&store, &mut invalidated).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, true, None)
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", &[], None)
         .await
         .unwrap();
     assert!(found.is_empty());
-
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", None, false, None)
-        .await
-        .unwrap();
-    assert_eq!(found.len(), 1);
-    assert!(found[0].valid_until().is_some());
 }
 
 #[tokio::test]
@@ -888,7 +881,6 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         "root".into(),
         RelationType::RelatedTo,
         None,
-        None,
     )
     .unwrap();
     let mut edge_from_neighbor = Edge::new(
@@ -899,7 +891,6 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         "leaf".into(),
         RelationType::RelatedTo,
         None,
-        None,
     )
     .unwrap();
 
@@ -908,26 +899,24 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
         .await
         .unwrap();
 
-    let edges = EdgeStore::traverse(
+    let hops = EdgeStore::find_neighbors(
         &store,
         &o,
         &ResourceKind::Task,
         "root",
-        TraversalConfig {
-            max_depth: 3,
-            rel_types: None,
-            direction: TraversalDirection::Both,
-            only_active: false,
-            as_of: None,
-        },
+        &[],
+        &[],
+        TraversalDirection::Both,
+        3,
+        None,
+        100,
     )
     .await
     .unwrap();
 
     assert!(
-        edges
-            .iter()
-            .any(|e| e.from_id == "neighbor" && e.to_id == "leaf"),
+        hops.iter()
+            .any(|h| h.edge.from_id() == "neighbor" && h.edge.to_id() == "leaf"),
         "expected traversal to include neighbor -> leaf edge"
     );
 }
@@ -945,7 +934,6 @@ async fn edge_as_of_returns_historical_snapshot() {
         "k1".to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
@@ -957,8 +945,7 @@ async fn edge_as_of_returns_historical_snapshot() {
         &org,
         &ResourceKind::Task,
         "t1",
-        None,
-        false,
+        &[],
         Some(snapshot_time),
     )
     .await
@@ -973,8 +960,7 @@ async fn edge_as_of_returns_historical_snapshot() {
         &org,
         &ResourceKind::Task,
         "t1",
-        None,
-        false,
+        &[],
         Some(snapshot_time),
     )
     .await
@@ -982,16 +968,8 @@ async fn edge_as_of_returns_historical_snapshot() {
     assert_eq!(found.len(), 1);
 
     let after = edge.valid_until().unwrap() + Duration::seconds(1);
-    let found = EdgeStore::find_from(
-        &store,
-        &org,
-        &ResourceKind::Task,
-        "t1",
-        None,
-        false,
-        Some(after),
-    )
-    .await
-    .unwrap();
+    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", &[], Some(after))
+        .await
+        .unwrap();
     assert!(found.is_empty());
 }

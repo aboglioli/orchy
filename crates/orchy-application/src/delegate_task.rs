@@ -70,7 +70,6 @@ impl DelegateTask {
             ResourceKind::Task,
             subtask.id().to_string(),
             RelationType::Spawns,
-            None,
             created_by,
         ) {
             Ok(e) => e,

@@ -140,6 +140,20 @@ impl AgentStore for PgBackend {
         Ok(Page::new(agents, next_cursor))
     }
 
+    async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let str_ids: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = ANY($1::text[])");
+        let rows = sqlx::query(&sql)
+            .bind(&str_ids)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+        rows.iter().map(row_to_agent).collect()
+    }
+
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 

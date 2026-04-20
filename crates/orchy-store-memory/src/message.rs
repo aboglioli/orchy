@@ -191,4 +191,13 @@ impl MessageStore for MemoryBackend {
 
         Ok(thread)
     }
+
+    async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>> {
+        let messages = self.messages.read().await;
+        Ok(ids
+            .iter()
+            .filter_map(|id| messages.get(id))
+            .cloned()
+            .collect())
+    }
 }

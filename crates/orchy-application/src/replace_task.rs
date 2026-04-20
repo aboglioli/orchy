@@ -103,7 +103,6 @@ impl ReplaceTask {
                         ResourceKind::Task,
                         dep_id.to_string(),
                         RelationType::DependsOn,
-                        None,
                         created_by.clone(),
                     )?;
                     self.edges.save(&mut dep_edge).await?;
@@ -117,7 +116,6 @@ impl ReplaceTask {
                 ResourceKind::Task,
                 task_id.to_string(),
                 RelationType::Supersedes,
-                None,
                 created_by.clone(),
             )?
             .with_source(ResourceKind::Task, task_id.to_string());

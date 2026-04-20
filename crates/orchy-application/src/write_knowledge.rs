@@ -155,7 +155,6 @@ impl WriteKnowledge {
                 ResourceKind::Knowledge,
                 entry.id().to_string(),
                 RelationType::Produces,
-                None,
                 agent_id,
             ) {
                 Ok(e) => e,

@@ -90,7 +90,6 @@ impl AddDependency {
                 dependency_id.to_string(),
                 RelationType::DependsOn,
                 None,
-                None,
             )?;
             self.edges.save(&mut edge).await?;
         }

@@ -75,6 +75,34 @@ impl TaskStore for SqliteBackend {
         Ok(result)
     }
 
+    async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let placeholders: String = std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at \
+             FROM tasks WHERE id IN ({placeholders})"
+        );
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        let tasks = stmt
+            .query_map(param_refs.as_slice(), row_to_task)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(tasks)
+    }
+
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 

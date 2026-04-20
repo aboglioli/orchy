@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use orchy_core::edge::{EdgeStore, RelationType, TraversalConfig, TraversalDirection};
+use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeId, KnowledgeKind, KnowledgeStore};
 use orchy_core::organization::OrganizationId;
@@ -47,12 +47,9 @@ impl AssembleContext {
 
         let from_edges = self
             .edges
-            .find_from(&org, &kind, &cmd.id, None, true, None)
+            .find_from(&org, &kind, &cmd.id, &[], None)
             .await?;
-        let to_edges = self
-            .edges
-            .find_to(&org, &kind, &cmd.id, None, true, None)
-            .await?;
+        let to_edges = self.edges.find_to(&org, &kind, &cmd.id, &[], None).await?;
 
         let mut knowledge_with_rel: HashMap<KnowledgeId, RelationType> = HashMap::new();
         for e in from_edges.iter().chain(to_edges.iter()) {
@@ -144,23 +141,22 @@ impl AssembleContext {
         let risk_flags = if kind == ResourceKind::Task {
             let traversal = self
                 .edges
-                .traverse(
+                .find_neighbors(
                     &org,
                     &kind,
                     &cmd.id,
-                    TraversalConfig {
-                        max_depth: 2,
-                        rel_types: Some(&[RelationType::DependsOn]),
-                        direction: TraversalDirection::Outgoing,
-                        only_active: true,
-                        as_of: None,
-                    },
+                    &[RelationType::DependsOn],
+                    &[],
+                    TraversalDirection::Outgoing,
+                    2,
+                    None,
+                    500,
                 )
                 .await?;
             let mut flags = Vec::new();
-            for te in traversal {
-                if te.to_kind == ResourceKind::Task
-                    && let Ok(tid) = te.to_id.parse::<TaskId>()
+            for hop in traversal {
+                if hop.edge.to_kind() == &ResourceKind::Task
+                    && let Ok(tid) = hop.edge.to_id().parse::<TaskId>()
                     && let Some(task) = self.tasks.find_by_id(&tid).await?
                     && matches!(task.status(), TaskStatus::Failed | TaskStatus::Cancelled)
                 {

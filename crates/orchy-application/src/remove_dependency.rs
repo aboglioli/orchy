@@ -52,8 +52,7 @@ impl RemoveDependency {
                 &org_id,
                 &ResourceKind::Task,
                 &task_id.to_string(),
-                Some(&RelationType::DependsOn),
-                false,
+                &[RelationType::DependsOn],
                 None,
             )
             .await?;

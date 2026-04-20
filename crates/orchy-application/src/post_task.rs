@@ -108,7 +108,6 @@ impl PostTask {
                     ResourceKind::Task,
                     dep_id.to_string(),
                     RelationType::DependsOn,
-                    None,
                     created_by.clone(),
                 )?;
                 self.edges.save(&mut edge).await?;
@@ -135,7 +134,6 @@ impl PostTask {
                     ResourceKind::Task,
                     task.id().to_string(),
                     RelationType::Spawns,
-                    None,
                     created_by,
                 )?;
                 self.edges.save(&mut edge).await?;

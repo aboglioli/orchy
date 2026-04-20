@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use orchy_core::agent::AgentStore;
-use orchy_core::edge::{EdgeStore, RelationType, TraversalConfig, TraversalDirection};
+use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::organization::OrganizationId;
@@ -72,19 +72,20 @@ impl GetGraph {
             _ => TraversalDirection::Outgoing,
         };
 
+        let limit = cmd.max_results.unwrap_or(500) as u32;
+        let rel_type_slice: Vec<RelationType> = rel_types.unwrap_or_default();
         let mut traversal = self
             .store
-            .traverse(
+            .find_neighbors(
                 &org,
                 &kind,
                 &cmd.id,
-                TraversalConfig {
-                    max_depth,
-                    rel_types: rel_types.as_deref(),
-                    direction,
-                    only_active: cmd.only_active,
-                    as_of: cmd.as_of,
-                },
+                &rel_type_slice,
+                &[],
+                direction,
+                max_depth,
+                cmd.as_of,
+                limit,
             )
             .await?;
 
@@ -94,9 +95,9 @@ impl GetGraph {
 
         let mut node_set: HashSet<String> = HashSet::new();
         node_set.insert(format!("{}:{}", kind, cmd.id));
-        for e in &traversal {
-            node_set.insert(format!("{}:{}", e.from_kind, e.from_id));
-            node_set.insert(format!("{}:{}", e.to_kind, e.to_id));
+        for h in &traversal {
+            node_set.insert(format!("{}:{}", h.edge.from_kind(), h.edge.from_id()));
+            node_set.insert(format!("{}:{}", h.edge.to_kind(), h.edge.to_id()));
         }
         let mut node_ids: Vec<String> = node_set.into_iter().collect();
         node_ids.sort();

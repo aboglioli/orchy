@@ -162,6 +162,15 @@ impl KnowledgeStore for MemoryBackend {
             .collect())
     }
 
+    async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>> {
+        let entries = self.knowledge_entries.read().await;
+        Ok(ids
+            .iter()
+            .filter_map(|id| entries.get(id))
+            .cloned()
+            .collect())
+    }
+
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
         let mut entries = self.knowledge_entries.write().await;
         entries.remove(id);

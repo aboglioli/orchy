@@ -111,6 +111,31 @@ impl AgentStore for SqliteBackend {
         Ok(Page::new(agents, next_cursor))
     }
 
+    async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let placeholders: String = std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id IN ({placeholders})");
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        let agents = stmt
+            .query_map(param_refs.as_slice(), row_to_agent)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(agents)
+    }
+
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);

@@ -318,6 +318,34 @@ impl KnowledgeStore for SqliteBackend {
         }
     }
 
+    async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let placeholders: String = std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at \
+             FROM knowledge_entries WHERE id IN ({placeholders})"
+        );
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        let entries = stmt
+            .query_map(param_refs.as_slice(), row_to_entry)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(entries)
+    }
+
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 

@@ -42,6 +42,15 @@ impl AgentStore for MemoryBackend {
         }))
     }
 
+    async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>> {
+        let agents = self.agents.read().await;
+        Ok(ids
+            .iter()
+            .filter_map(|id| agents.get(id))
+            .cloned()
+            .collect())
+    }
+
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let agents = self.agents.read().await;
 

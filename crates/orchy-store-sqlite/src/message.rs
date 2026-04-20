@@ -294,6 +294,34 @@ impl MessageStore for SqliteBackend {
 
         Ok(messages)
     }
+
+    async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let placeholders: String = std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to \
+             FROM messages WHERE id IN ({placeholders})"
+        );
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        let messages = stmt
+            .query_map(param_refs.as_slice(), row_to_message)
+            .map_err(|e| Error::Store(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(messages)
+    }
 }
 
 fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {

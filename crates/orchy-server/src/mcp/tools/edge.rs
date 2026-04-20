@@ -19,7 +19,6 @@ pub(super) async fn add_edge(h: &OrchyHandler, params: AddEdgeParams) -> Result<
         to_kind: params.to_kind,
         to_id: params.to_id,
         rel_type: params.rel_type,
-        display: params.display,
         created_by: h.get_session_agent().await.map(|id| id.to_string()),
     };
 

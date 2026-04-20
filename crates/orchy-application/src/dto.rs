@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use orchy_core::agent::Agent;
-use orchy_core::edge::{Edge, TraversalEdge};
+use orchy_core::edge::{Edge, TraversalHop};
 use orchy_core::knowledge::Knowledge;
 use orchy_core::message::Message;
 use orchy_core::organization::Organization;
@@ -392,7 +392,6 @@ pub struct EdgeResponse {
     pub to_kind: String,
     pub to_id: String,
     pub rel_type: String,
-    pub display: Option<String>,
     pub created_at: String,
     pub created_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -418,7 +417,6 @@ impl From<&Edge> for EdgeResponse {
             to_kind: e.to_kind().to_string(),
             to_id: e.to_id().to_string(),
             rel_type: e.rel_type().to_string(),
-            display: e.display().map(|s| s.to_string()),
             created_at: e.created_at().to_rfc3339(),
             created_by: e.created_by().map(|a| a.to_string()),
             source_kind: e.source_kind().map(|k| k.to_string()),
@@ -436,21 +434,25 @@ pub struct TraversalEdgeResponse {
     pub to_kind: String,
     pub to_id: String,
     pub rel_type: String,
-    pub display: Option<String>,
     pub depth: u32,
+    pub direction: String,
 }
 
-impl From<&TraversalEdge> for TraversalEdgeResponse {
-    fn from(e: &TraversalEdge) -> Self {
+impl From<&TraversalHop> for TraversalEdgeResponse {
+    fn from(h: &TraversalHop) -> Self {
+        use orchy_core::edge::RelationDirection;
         Self {
-            id: e.id.to_string(),
-            from_kind: e.from_kind.to_string(),
-            from_id: e.from_id.clone(),
-            to_kind: e.to_kind.to_string(),
-            to_id: e.to_id.clone(),
-            rel_type: e.rel_type.to_string(),
-            display: e.display.clone(),
-            depth: e.depth,
+            id: h.edge.id().to_string(),
+            from_kind: h.edge.from_kind().to_string(),
+            from_id: h.edge.from_id().to_string(),
+            to_kind: h.edge.to_kind().to_string(),
+            to_id: h.edge.to_id().to_string(),
+            rel_type: h.edge.rel_type().to_string(),
+            depth: h.depth,
+            direction: match h.direction {
+                RelationDirection::Outgoing => "outgoing".to_string(),
+                RelationDirection::Incoming => "incoming".to_string(),
+            },
         }
     }
 }

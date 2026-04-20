@@ -152,7 +152,6 @@ impl MergeTasks {
                 ResourceKind::Task,
                 source.id().to_string(),
                 RelationType::MergedFrom,
-                None,
                 created_by.clone(),
             ) {
                 Ok(e) => e,

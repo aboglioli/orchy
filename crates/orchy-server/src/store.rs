@@ -5,7 +5,7 @@ use orchy_events::io::Writer as EventWriter;
 
 use orchy_application::EventQuery;
 use orchy_core::agent::{Agent, AgentId, AgentStore};
-use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalConfig, TraversalEdge};
+use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalHop};
 use orchy_core::error::Result;
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
@@ -77,6 +77,9 @@ impl TaskStore for StoreBackend {
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         delegate_trait!(self, TaskStore::find_by_id(id))
     }
+    async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>> {
+        delegate_trait!(self, TaskStore::find_by_ids(ids))
+    }
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
         delegate_trait!(self, TaskStore::list(filter, page))
     }
@@ -89,6 +92,9 @@ impl AgentStore for StoreBackend {
     }
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         delegate_trait!(self, AgentStore::find_by_id(id))
+    }
+    async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>> {
+        delegate_trait!(self, AgentStore::find_by_ids(ids))
     }
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
         delegate_trait!(self, AgentStore::list(org, page))
@@ -105,6 +111,9 @@ impl MessageStore for StoreBackend {
     }
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         delegate_trait!(self, MessageStore::find_by_id(id))
+    }
+    async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>> {
+        delegate_trait!(self, MessageStore::find_by_ids(ids))
     }
     async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
         delegate_trait!(self, MessageStore::mark_read_for_agent(message_id, agent))
@@ -162,6 +171,9 @@ impl KnowledgeStore for StoreBackend {
     }
     async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
         delegate_trait!(self, KnowledgeStore::find_by_id(id))
+    }
+    async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>> {
+        delegate_trait!(self, KnowledgeStore::find_by_ids(ids))
     }
     async fn find_by_path(
         &self,
@@ -262,28 +274,20 @@ impl EdgeStore for StoreBackend {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        rel_type: Option<&RelationType>,
-        only_active: bool,
+        rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        delegate_trait!(
-            self,
-            EdgeStore::find_from(org, kind, id, rel_type, only_active, as_of)
-        )
+        delegate_trait!(self, EdgeStore::find_from(org, kind, id, rel_types, as_of))
     }
     async fn find_to(
         &self,
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        rel_type: Option<&RelationType>,
-        only_active: bool,
+        rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        delegate_trait!(
-            self,
-            EdgeStore::find_to(org, kind, id, rel_type, only_active, as_of)
-        )
+        delegate_trait!(self, EdgeStore::find_to(org, kind, id, rel_types, as_of))
     }
     async fn exists_by_pair(
         &self,
@@ -312,14 +316,32 @@ impl EdgeStore for StoreBackend {
             EdgeStore::list_by_org(org, rel_type, page, only_active, as_of)
         )
     }
-    async fn traverse(
+    async fn find_neighbors(
         &self,
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        config: TraversalConfig<'_>,
-    ) -> Result<Vec<TraversalEdge>> {
-        delegate_trait!(self, EdgeStore::traverse(org, kind, id, config))
+        rel_types: &[RelationType],
+        target_kinds: &[ResourceKind],
+        direction: TraversalDirection,
+        max_depth: u32,
+        as_of: Option<DateTime<Utc>>,
+        limit: u32,
+    ) -> Result<Vec<TraversalHop>> {
+        delegate_trait!(
+            self,
+            EdgeStore::find_neighbors(
+                org,
+                kind,
+                id,
+                rel_types,
+                target_kinds,
+                direction,
+                max_depth,
+                as_of,
+                limit
+            )
+        )
     }
     async fn delete_all_for(
         &self,

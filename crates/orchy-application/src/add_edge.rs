@@ -16,7 +16,6 @@ pub struct AddEdgeCommand {
     pub to_kind: String,
     pub to_id: String,
     pub rel_type: String,
-    pub display: Option<String>,
     pub created_by: Option<String>,
 }
 
@@ -76,7 +75,6 @@ impl AddEdge {
             to_kind,
             cmd.to_id,
             rel_type,
-            cmd.display,
             created_by,
         )?;
         self.store.save(&mut edge).await?;

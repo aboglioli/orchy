@@ -140,6 +140,24 @@ impl TaskStore for PgBackend {
         row.map(|r| row_to_task(&r)).transpose()
     }
 
+    async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let uuid_ids: Vec<uuid::Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+        let rows = sqlx::query(
+            "SELECT id, organization_id, project, namespace, parent_id, title, description, \
+             acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, \
+             depends_on, tags, result_summary, created_by, created_at, updated_at \
+             FROM tasks WHERE id = ANY($1::uuid[])",
+        )
+        .bind(&uuid_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+        rows.iter().map(row_to_task).collect()
+    }
+
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
         let mut select = Query::select();
         select.from(Tasks::Table).columns([

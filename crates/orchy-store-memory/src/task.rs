@@ -88,4 +88,9 @@ impl TaskStore for MemoryBackend {
             t.id().to_string()
         }))
     }
+
+    async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>> {
+        let tasks = self.tasks.read().await;
+        Ok(ids.iter().filter_map(|id| tasks.get(id)).cloned().collect())
+    }
 }

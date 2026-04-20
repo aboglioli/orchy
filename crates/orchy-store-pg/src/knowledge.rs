@@ -170,6 +170,21 @@ impl KnowledgeStore for PgBackend {
         row.map(|r| row_to_entry(&r)).transpose()
     }
 
+    async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let uuid_ids: Vec<uuid::Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+        let rows = sqlx::query(&format!(
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE id = ANY($1::uuid[])"
+        ))
+        .bind(&uuid_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+        rows.iter().map(row_to_entry).collect()
+    }
+
     async fn find_by_path(
         &self,
         org: &OrganizationId,

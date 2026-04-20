@@ -119,7 +119,6 @@ impl SplitTask {
                 ResourceKind::Task,
                 task.id().to_string(),
                 RelationType::Spawns,
-                None,
                 created_by.clone(),
             )?
             .with_source(ResourceKind::Task, parent_id.to_string());
@@ -145,7 +144,6 @@ impl SplitTask {
                         ResourceKind::Task,
                         dep_id.to_string(),
                         RelationType::DependsOn,
-                        None,
                         created_by.clone(),
                     )?;
                     self.edges.save(&mut dep_edge).await?;

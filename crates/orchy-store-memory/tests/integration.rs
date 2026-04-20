@@ -703,7 +703,6 @@ async fn edge_exists_by_pair_detects_duplicate() {
         "know-1".to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
@@ -750,7 +749,6 @@ async fn edge_with_source_persists_and_retrieves_source() {
         "know-1".into(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap()
     .with_source(ResourceKind::Task, "task-1".into());
@@ -779,7 +777,6 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
         "k1".to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     let mut e2 = Edge::new(
@@ -789,7 +786,6 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
         ResourceKind::Task,
         "t3".to_string(),
         RelationType::Spawns,
-        None,
         None,
     )
     .unwrap();
@@ -843,7 +839,6 @@ async fn delete_knowledge_cleans_up_associated_edges() {
         ResourceKind::Knowledge,
         kid.clone(),
         RelationType::Produces,
-        None,
         None,
     )
     .unwrap();
@@ -949,7 +944,6 @@ async fn delete_by_pair_removes_matching_edge() {
         "t2".into(),
         RelationType::DependsOn,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
@@ -1046,8 +1040,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
         &o,
         &ResourceKind::Task,
         &sub.id,
-        Some(&RelationType::DependsOn),
-        false,
+        &[RelationType::DependsOn],
         None,
     )
     .await
@@ -1068,7 +1061,6 @@ async fn delete_by_pair_ignores_different_rel_type() {
         ResourceKind::Task,
         "t2".into(),
         RelationType::Spawns,
-        None,
         None,
     )
     .unwrap();
@@ -1161,7 +1153,6 @@ async fn get_graph_include_nodes_hydrates_task_fields() {
         ResourceKind::Task,
         task_id.clone(),
         RelationType::RelatedTo,
-        None,
         None,
     )
     .unwrap();
@@ -1336,7 +1327,6 @@ async fn search_knowledge_task_proximity_boost() {
         k.id().to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(store.as_ref(), &mut edge).await.unwrap();
@@ -1408,12 +1398,11 @@ async fn edge_invalidate_hides_from_only_active_queries() {
         "k1".to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true, None)
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", &[], None)
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
@@ -1421,16 +1410,10 @@ async fn edge_invalidate_hides_from_only_active_queries() {
     edge.invalidate().unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, true, None)
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", &[], None)
         .await
         .unwrap();
     assert!(found.is_empty());
-
-    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", None, false, None)
-        .await
-        .unwrap();
-    assert_eq!(found.len(), 1);
-    assert!(!found[0].is_active());
 }
 
 #[tokio::test]
@@ -1484,7 +1467,6 @@ async fn assemble_context_returns_linked_knowledge() {
         decision.id().to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(store.as_ref(), &mut edge1).await.unwrap();
@@ -1496,7 +1478,6 @@ async fn assemble_context_returns_linked_knowledge() {
         ResourceKind::Knowledge,
         note.id().to_string(),
         RelationType::RelatedTo,
-        None,
         None,
     )
     .unwrap();
@@ -1540,7 +1521,6 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
         "k1".to_string(),
         RelationType::Produces,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
@@ -1551,17 +1531,9 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
     EdgeStore::save(&store, &mut edge).await.unwrap();
 
     // as_of between created_at and valid_until → visible
-    let found = EdgeStore::find_from(
-        &store,
-        &o,
-        &ResourceKind::Task,
-        "t1",
-        None,
-        false,
-        Some(midpoint),
-    )
-    .await
-    .unwrap();
+    let found = EdgeStore::find_from(&store, &o, &ResourceKind::Task, "t1", &[], Some(midpoint))
+        .await
+        .unwrap();
     assert_eq!(found.len(), 1);
 
     // as_of after valid_until → not visible
@@ -1571,8 +1543,7 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
         &o,
         &ResourceKind::Task,
         "t1",
-        None,
-        false,
+        &[],
         Some(after_invalidation),
     )
     .await
@@ -1586,8 +1557,7 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
         &o,
         &ResourceKind::Task,
         "t1",
-        None,
-        false,
+        &[],
         Some(before_creation),
     )
     .await
@@ -1646,7 +1616,6 @@ async fn assemble_context_surfaces_decision_above_log() {
         decision.id().to_string(),
         RelationType::RelatedTo,
         None,
-        None,
     )
     .unwrap();
     EdgeStore::save(store.as_ref(), &mut edge_d).await.unwrap();
@@ -1658,7 +1627,6 @@ async fn assemble_context_surfaces_decision_above_log() {
         ResourceKind::Knowledge,
         log.id().to_string(),
         RelationType::RelatedTo,
-        None,
         None,
     )
     .unwrap();

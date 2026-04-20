@@ -58,53 +58,30 @@ impl GetNeighbors {
             .map(|s| s.parse().map_err(Error::InvalidInput))
             .transpose()?;
 
+        let rel_types: &[RelationType] = if let Some(ref rt) = rel_type {
+            std::slice::from_ref(rt)
+        } else {
+            &[]
+        };
         let edges = match cmd.direction.as_deref() {
             Some("incoming") => {
                 self.store
-                    .find_to(
-                        &org,
-                        &kind,
-                        &cmd.id,
-                        rel_type.as_ref(),
-                        cmd.only_active,
-                        cmd.as_of,
-                    )
+                    .find_to(&org, &kind, &cmd.id, rel_types, cmd.as_of)
                     .await?
             }
             Some("outgoing") => {
                 self.store
-                    .find_from(
-                        &org,
-                        &kind,
-                        &cmd.id,
-                        rel_type.as_ref(),
-                        cmd.only_active,
-                        cmd.as_of,
-                    )
+                    .find_from(&org, &kind, &cmd.id, rel_types, cmd.as_of)
                     .await?
             }
             _ => {
                 let mut out = self
                     .store
-                    .find_from(
-                        &org,
-                        &kind,
-                        &cmd.id,
-                        rel_type.as_ref(),
-                        cmd.only_active,
-                        cmd.as_of,
-                    )
+                    .find_from(&org, &kind, &cmd.id, rel_types, cmd.as_of)
                     .await?;
                 let inc = self
                     .store
-                    .find_to(
-                        &org,
-                        &kind,
-                        &cmd.id,
-                        rel_type.as_ref(),
-                        cmd.only_active,
-                        cmd.as_of,
-                    )
+                    .find_to(&org, &kind, &cmd.id, rel_types, cmd.as_of)
                     .await?;
                 out.extend(inc);
                 out

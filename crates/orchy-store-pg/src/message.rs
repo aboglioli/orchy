@@ -101,6 +101,23 @@ impl MessageStore for PgBackend {
         row.map(|r| row_to_message(&r)).transpose()
     }
 
+    async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let uuid_ids: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+        let rows = sqlx::query(
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, \
+             status, created_at, reply_to \
+             FROM messages WHERE id = ANY($1::uuid[])",
+        )
+        .bind(&uuid_ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+        rows.iter().map(row_to_message).collect()
+    }
+
     async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
         sqlx::query(
             "INSERT INTO message_receipts (message_id, agent_id, read_at)

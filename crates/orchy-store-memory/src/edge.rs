@@ -1,15 +1,15 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use orchy_core::edge::{
-    Edge, EdgeId, EdgeStore, RelationType, TraversalConfig, TraversalDirection, TraversalEdge,
+    Edge, EdgeId, EdgeStore, RelationDirection, RelationType, TraversalDirection, TraversalHop,
 };
 use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
-use orchy_core::resource_ref::ResourceKind;
+use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 
 use crate::MemoryBackend;
 
@@ -79,8 +79,7 @@ impl EdgeStore for MemoryBackend {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        rel_type: Option<&RelationType>,
-        only_active: bool,
+        rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
         let store = self.edges.read().await;
@@ -90,11 +89,11 @@ impl EdgeStore for MemoryBackend {
                 e.org_id() == org
                     && e.from_kind() == kind
                     && e.from_id() == id
-                    && rel_type.is_none_or(|rt| e.rel_type() == rt)
+                    && (rel_types.is_empty() || rel_types.contains(e.rel_type()))
                     && if let Some(ts) = as_of {
                         e.is_active_at(ts)
                     } else {
-                        !only_active || e.is_active()
+                        e.is_active()
                     }
             })
             .cloned()
@@ -108,8 +107,7 @@ impl EdgeStore for MemoryBackend {
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        rel_type: Option<&RelationType>,
-        only_active: bool,
+        rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
         let store = self.edges.read().await;
@@ -119,11 +117,11 @@ impl EdgeStore for MemoryBackend {
                 e.org_id() == org
                     && e.to_kind() == kind
                     && e.to_id() == id
-                    && rel_type.is_none_or(|rt| e.rel_type() == rt)
+                    && (rel_types.is_empty() || rel_types.contains(e.rel_type()))
                     && if let Some(ts) = as_of {
                         e.is_active_at(ts)
                     } else {
-                        !only_active || e.is_active()
+                        e.is_active()
                     }
             })
             .cloned()
@@ -180,34 +178,32 @@ impl EdgeStore for MemoryBackend {
         }))
     }
 
-    async fn traverse(
+    async fn find_neighbors(
         &self,
         org: &OrganizationId,
         kind: &ResourceKind,
         id: &str,
-        config: TraversalConfig<'_>,
-    ) -> Result<Vec<TraversalEdge>> {
-        let TraversalConfig {
-            max_depth,
-            rel_types,
-            direction,
-            only_active,
-            as_of,
-        } = config;
+        rel_types: &[RelationType],
+        target_kinds: &[ResourceKind],
+        direction: TraversalDirection,
+        max_depth: u32,
+        as_of: Option<DateTime<Utc>>,
+        limit: u32,
+    ) -> Result<Vec<TraversalHop>> {
         let store = self.edges.read().await;
         let by_from = self.edges_by_from.read().await;
         let by_to = self.edges_by_to.read().await;
 
-        let mut result: HashMap<EdgeId, TraversalEdge> = HashMap::new();
-        let mut queue: VecDeque<(ResourceKind, String, u32)> = VecDeque::new();
-        queue.push_back((kind.clone(), id.to_string(), 0));
+        let max_depth = max_depth.max(1);
+        let mut result: Vec<TraversalHop> = vec![];
+        let mut visited_edges: HashSet<EdgeId> = HashSet::new();
+        let mut queue: VecDeque<(ResourceKind, String, u32, Option<ResourceRef>)> = VecDeque::new();
+        queue.push_back((kind.clone(), id.to_string(), 0, None));
 
-        while let Some((cur_kind, cur_id, depth)) = queue.pop_front() {
+        'outer: while let Some((cur_kind, cur_id, depth, via)) = queue.pop_front() {
             if depth >= max_depth {
                 continue;
             }
-
-            let next_depth = depth + 1;
 
             let candidate_ids: Vec<EdgeId> = match direction {
                 TraversalDirection::Outgoing => by_from
@@ -234,7 +230,10 @@ impl EdgeStore for MemoryBackend {
             };
 
             for edge_id in candidate_ids {
-                if result.contains_key(&edge_id) {
+                if result.len() >= limit as usize {
+                    break 'outer;
+                }
+                if visited_edges.contains(&edge_id) {
                     continue;
                 }
 
@@ -246,55 +245,67 @@ impl EdgeStore for MemoryBackend {
                     continue;
                 }
 
-                let passes = if let Some(ts) = as_of {
+                let is_active = if let Some(ts) = as_of {
                     edge.is_active_at(ts)
                 } else {
-                    !only_active || edge.is_active()
+                    edge.is_active()
                 };
-                if !passes {
+                if !is_active {
                     continue;
                 }
 
-                if !rel_types.is_none_or(|rts| rts.contains(edge.rel_type())) {
+                if !rel_types.is_empty() && !rel_types.contains(edge.rel_type()) {
                     continue;
                 }
 
-                let (next_kind, next_id) = match direction {
-                    TraversalDirection::Outgoing => {
-                        (edge.to_kind().clone(), edge.to_id().to_string())
-                    }
-                    TraversalDirection::Incoming => {
-                        (edge.from_kind().clone(), edge.from_id().to_string())
-                    }
+                let hop_direction_and_peer = match direction {
+                    TraversalDirection::Outgoing => Some((
+                        RelationDirection::Outgoing,
+                        edge.to_kind().clone(),
+                        edge.to_id().to_string(),
+                    )),
+                    TraversalDirection::Incoming => Some((
+                        RelationDirection::Incoming,
+                        edge.from_kind().clone(),
+                        edge.from_id().to_string(),
+                    )),
                     TraversalDirection::Both => {
                         if edge.from_kind() == &cur_kind && edge.from_id() == cur_id {
-                            (edge.to_kind().clone(), edge.to_id().to_string())
+                            Some((
+                                RelationDirection::Outgoing,
+                                edge.to_kind().clone(),
+                                edge.to_id().to_string(),
+                            ))
                         } else {
-                            (edge.from_kind().clone(), edge.from_id().to_string())
+                            Some((
+                                RelationDirection::Incoming,
+                                edge.from_kind().clone(),
+                                edge.from_id().to_string(),
+                            ))
                         }
                     }
                 };
 
-                let te = TraversalEdge {
-                    id: edge.id(),
-                    from_kind: edge.from_kind().clone(),
-                    from_id: edge.from_id().to_string(),
-                    to_kind: edge.to_kind().clone(),
-                    to_id: edge.to_id().to_string(),
-                    rel_type: *edge.rel_type(),
-                    display: edge.display().map(String::from),
-                    depth: next_depth,
+                let Some((hop_direction, peer_kind, peer_id)) = hop_direction_and_peer else {
+                    continue;
                 };
 
-                result.insert(edge_id, te);
-                queue.push_back((next_kind, next_id, next_depth));
+                if !target_kinds.is_empty() && !target_kinds.contains(&peer_kind) {
+                    continue;
+                }
+
+                visited_edges.insert(edge_id);
+                let next_via = Some(ResourceRef::new(peer_kind.clone(), peer_id.clone()));
+                queue.push_back((peer_kind, peer_id, depth + 1, next_via));
+                result.push(TraversalHop {
+                    edge: edge.clone(),
+                    depth: depth + 1,
+                    direction: hop_direction,
+                    via: via.clone(),
+                });
             }
         }
-
-        let mut traversal: Vec<TraversalEdge> = result.into_values().collect();
-        traversal.sort_by_key(|a| a.depth);
-
-        Ok(traversal)
+        Ok(result)
     }
 
     async fn delete_all_for(
