@@ -27,13 +27,13 @@ impl OrchyClient {
 
     /// Build an org-scoped URL: /organizations/{org}/...
     fn url(&self, path: &str) -> String {
-        format!("{}/organizations/{}{}", self.base_url, self.org, path)
+        format!("{}/api/organizations/{}{}", self.base_url, self.org, path)
     }
 
     /// Build a project-scoped URL: /organizations/{org}/projects/{project}/...
     fn project_url(&self, path: &str) -> String {
         format!(
-            "{}/organizations/{}/projects/{}{}",
+            "{}/api/organizations/{}/projects/{}{}",
             self.base_url, self.org, self.project, path
         )
     }

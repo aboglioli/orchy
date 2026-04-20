@@ -32,7 +32,8 @@ pub async fn run(
 ) -> crate::client::CliResult<()> {
     match cmd {
         LockSubcommand::Acquire { name, ttl } => {
-            let mut body = serde_json::json!({ "name": name });
+            let agent_id = client.agent_id.as_deref().unwrap_or("cli");
+            let mut body = serde_json::json!({ "name": name, "agent_id": agent_id });
             if let Some(t) = ttl {
                 body["ttl_secs"] = serde_json::Value::Number((*t).into());
             }

@@ -267,7 +267,7 @@ pub async fn get_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: Some(org),
             relations,
         })
         .await

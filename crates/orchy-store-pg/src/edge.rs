@@ -362,7 +362,7 @@ fn build_rel_clause(rel_types: &[RelationType]) -> String {
         .map(|r| format!("'{r}'"))
         .collect::<Vec<_>>()
         .join(", ");
-    format!(" AND rel_type IN ({list})")
+    format!(" AND e.rel_type IN ({list})")
 }
 
 fn build_find_neighbors_sql(
