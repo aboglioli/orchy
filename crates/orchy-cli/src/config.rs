@@ -11,6 +11,8 @@ pub struct Config {
     pub project: String,
     pub namespace: String,
     pub agent_id: Option<String>,
+    pub description: Option<String>,
+    pub roles: Vec<String>,
     pub json: bool,
 }
 
@@ -23,6 +25,9 @@ pub struct FileConfig {
     pub project: Option<String>,
     pub namespace: Option<String>,
     pub agent_id: Option<String>,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
 }
 
 impl Config {
@@ -99,6 +104,18 @@ impl Config {
             flag_agent,
         ]);
 
+        let description = pick_opt(&[
+            global.as_ref().and_then(|c| c.description.as_deref()),
+            local.as_ref().and_then(|c| c.description.as_deref()),
+        ]);
+
+        let roles = local
+            .as_ref()
+            .filter(|c| !c.roles.is_empty())
+            .or(global.as_ref().filter(|c| !c.roles.is_empty()))
+            .map(|c| c.roles.clone())
+            .unwrap_or_default();
+
         Ok(Config {
             url,
             api_key,
@@ -106,6 +123,8 @@ impl Config {
             project,
             namespace,
             agent_id,
+            description,
+            roles,
             json,
         })
     }

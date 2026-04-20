@@ -157,6 +157,10 @@ pub fn router() -> Router<Arc<Container>> {
         .route("/organizations/{org}/invite", post(user_auth::invite_user))
         .route("/organizations/{org}/agents", get(agents::list))
         .route(
+            "/organizations/{org}/projects/{project}/agents",
+            post(agents::register),
+        )
+        .route(
             "/organizations/{org}/agents/{id}/context",
             get(agents::get_context),
         )

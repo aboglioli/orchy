@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use orchy_application::{
     ChangeRolesCommand, CheckMailboxCommand, GetAgentCommand, GetAgentSummaryCommand,
-    ListAgentsCommand, ListTasksCommand,
+    ListAgentsCommand, ListTasksCommand, RegisterAgentCommand,
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -114,6 +114,60 @@ pub async fn list(
         .collect();
 
     Ok(Json(body))
+}
+
+#[derive(Deserialize)]
+pub struct RegisterAgentBody {
+    pub description: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    pub id: Option<String>,
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub metadata: std::collections::HashMap<String, String>,
+}
+
+pub async fn register(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project)): Path<(String, String)>,
+    Json(body): Json<RegisterAgentBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = OrganizationId::new(&org)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    if auth.0.id.as_str() != org_id.as_str() {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            format!("access denied to organization {}", org_id),
+        ));
+    }
+
+    let cmd = RegisterAgentCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        roles: body.roles,
+        description: body.description,
+        id: body.id,
+        parent_id: None,
+        metadata: body.metadata,
+    };
+
+    let agent = container
+        .app
+        .register_agent
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&agent).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }
 
 pub async fn get_context(

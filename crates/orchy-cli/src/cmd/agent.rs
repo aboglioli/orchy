@@ -13,6 +13,15 @@ pub struct AgentCommand {
 
 #[derive(Subcommand)]
 pub enum AgentSubcommand {
+    /// Register or resume an agent (creates if new, resumes if id exists)
+    Register {
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long, value_delimiter = ',')]
+        roles: Option<Vec<String>>,
+        #[arg(long)]
+        id: Option<String>,
+    },
     /// List all agents in the org
     List,
     /// Get full agent context
@@ -36,6 +45,34 @@ pub async fn run(
     config: &Config,
 ) -> crate::client::CliResult<()> {
     match cmd {
+        AgentSubcommand::Register {
+            description,
+            roles,
+            id,
+        } => {
+            let desc = description
+                .clone()
+                .or_else(|| config.description.clone())
+                .unwrap_or_default();
+            let agent_roles = roles.clone().unwrap_or_else(|| config.roles.clone());
+            let agent_id = id.clone().or_else(|| config.agent_id.clone());
+            let mut body = serde_json::json!({
+                "description": desc,
+                "roles": agent_roles,
+            });
+            if let Some(aid) = &agent_id {
+                body["id"] = serde_json::Value::String(aid.clone());
+            }
+            let v = client.post_project_json("/agents", Some(&body)).await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                let id = v.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                println!("Agent registered: {id} ({status})");
+                println!("Save this ID in .orchy.toml: agent_id = \"{id}\"");
+            }
+        }
         AgentSubcommand::List => {
             let v = client.get_json("/agents").await?;
             if config.json {
