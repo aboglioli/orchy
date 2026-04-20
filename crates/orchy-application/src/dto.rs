@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use orchy_core::agent::Agent;
-use orchy_core::edge::{Edge, TraversalHop};
+use orchy_core::edge::Edge;
 use orchy_core::knowledge::Knowledge;
 use orchy_core::message::Message;
 use orchy_core::organization::Organization;
@@ -422,70 +422,6 @@ impl From<&Edge> for EdgeResponse {
             valid_until: e.valid_until().map(|dt| dt.to_rfc3339()),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TraversalEdgeResponse {
-    pub id: String,
-    pub from_kind: String,
-    pub from_id: String,
-    pub to_kind: String,
-    pub to_id: String,
-    pub rel_type: String,
-    pub depth: u32,
-    pub direction: String,
-}
-
-impl From<&TraversalHop> for TraversalEdgeResponse {
-    fn from(h: &TraversalHop) -> Self {
-        use orchy_core::edge::RelationDirection;
-        Self {
-            id: h.edge.id().to_string(),
-            from_kind: h.edge.from_kind().to_string(),
-            from_id: h.edge.from_id().to_string(),
-            to_kind: h.edge.to_kind().to_string(),
-            to_id: h.edge.to_id().to_string(),
-            rel_type: h.edge.rel_type().to_string(),
-            depth: h.depth,
-            direction: match h.direction {
-                RelationDirection::Outgoing => "outgoing".to_string(),
-                RelationDirection::Incoming => "incoming".to_string(),
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct GraphResponse {
-    pub root_kind: String,
-    pub root_id: String,
-    pub edges: Vec<TraversalEdgeResponse>,
-    pub node_ids: Vec<String>,
-    pub nodes: Option<std::collections::HashMap<String, NodeSummary>>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct NodeSummary {
-    pub kind: String,
-    pub id: String,
-    pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub tags: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct GetNeighborsResponse {
-    pub edges: Vec<EdgeResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nodes: Option<std::collections::HashMap<String, NodeSummary>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

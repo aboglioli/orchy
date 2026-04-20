@@ -610,7 +610,7 @@ impl OrchyHandler {
         Returns: core_facts (Produces/DerivedFrom linked knowledge), open_dependencies (incomplete task deps), \
         relevant_decisions (Decision/Plan/Skill knowledge), recent_changes (latest 5 other linked knowledge), \
         risk_flags (failed/cancelled tasks in dependency path). \
-        Use instead of multiple get_neighbors calls when you need a full context snapshot for a task."
+        Use instead of multiple query_relations calls when you need a full context snapshot for a task."
     )]
     async fn assemble_context(
         &self,
@@ -703,44 +703,6 @@ impl OrchyHandler {
         Parameters(params): Parameters<RemoveEdgeParams>,
     ) -> Result<String, String> {
         edge::remove_edge(self, params).await
-    }
-
-    #[tool(description = "Get direct edges (neighbors) for a resource. \
-        Returns edges where the resource is the source (outgoing), target (incoming), or both. \
-        Use include_nodes=true to also return a nodes map with title, content snippet, status, \
-        priority, and tags for each connected resource. \
-        Use node_content_limit to control content truncation (default 500 chars).")]
-    async fn get_neighbors(
-        &self,
-        Parameters(params): Parameters<GetNeighborsParams>,
-    ) -> Result<String, String> {
-        edge::get_neighbors(self, params).await
-    }
-
-    #[tool(
-        description = "Traverse the graph from a root resource using recursive BFS. \
-        Returns all reachable edges up to max_depth (default 3, max 10) with traversal depth. \
-        Use include_nodes=true to also return NodeSummary for each resource (title, content \
-        snippet, tags, status, priority, updated_at). Use node_content_limit to control \
-        content truncation (default 500 chars). \
-        Use to explore dependency chains, knowledge lineage, or agent work trees."
-    )]
-    async fn get_graph(
-        &self,
-        Parameters(params): Parameters<GetGraphParams>,
-    ) -> Result<String, String> {
-        edge::get_graph(self, params).await
-    }
-
-    #[tool(
-        description = "List edges across the organization graph. Use to browse the full graph \
-            without a known root. Supports optional rel_type filter and cursor pagination."
-    )]
-    async fn list_edges(
-        &self,
-        Parameters(params): Parameters<ListEdgesParams>,
-    ) -> Result<String, String> {
-        edge::list_edges(self, params).await
     }
 
     #[tool(

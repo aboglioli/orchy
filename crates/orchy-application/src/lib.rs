@@ -27,9 +27,6 @@ mod register_user;
 // Edges
 mod add_edge;
 mod assemble_context;
-mod get_graph;
-mod get_neighbors;
-mod list_edges;
 pub mod materialize_neighborhood;
 mod remove_edge;
 
@@ -220,9 +217,6 @@ pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 
 pub use add_edge::{AddEdge, AddEdgeCommand};
 pub use assemble_context::{AssembleContext, AssembleContextCommand};
-pub use get_graph::{GetGraph, GetGraphCommand};
-pub use get_neighbors::{GetNeighbors, GetNeighborsCommand};
-pub use list_edges::{ListEdges, ListEdgesCommand};
 pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
 pub use bootstrap_admin::BootstrapAdmin;
@@ -235,10 +229,9 @@ pub use register_user::{RegisterUser, RegisterUserCommand, RegisterUserResponse}
 
 pub use dto::{
     AgentResponse, AgentSummaryResponse, ApiKeyResponse, AssembleContextResponse, AuthResponse,
-    EdgeResponse, GetNeighborsResponse, GraphResponse, KnowledgeResponse, MessageResponse,
-    NodeSummary, OrgMembershipResponse, OrganizationResponse, PageResponse,
-    ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
-    TaskWithContextResponse, TraversalEdgeResponse, UserResponse,
+    EdgeResponse, KnowledgeResponse, MessageResponse, OrgMembershipResponse, OrganizationResponse,
+    PageResponse, ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
+    TaskWithContextResponse, UserResponse,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
@@ -281,9 +274,6 @@ pub struct Application {
     pub add_edge: AddEdge,
     pub assemble_context: AssembleContext,
     pub remove_edge: RemoveEdge,
-    pub get_neighbors: GetNeighbors,
-    pub get_graph: GetGraph,
-    pub list_edges: ListEdges,
     pub materialize_neighborhood: Arc<MaterializeNeighborhood>,
     pub tag_task: TagTask,
     pub untag_task: UntagTask,
@@ -418,19 +408,6 @@ impl Application {
             add_edge: AddEdge::new(edges.clone()),
             assemble_context: AssembleContext::new(edges.clone(), tasks.clone(), knowledge.clone()),
             remove_edge: RemoveEdge::new(edges.clone()),
-            get_neighbors: GetNeighbors::new(
-                edges.clone(),
-                tasks.clone(),
-                knowledge.clone(),
-                agents.clone(),
-            ),
-            get_graph: GetGraph::new(
-                edges.clone(),
-                tasks.clone(),
-                knowledge.clone(),
-                agents.clone(),
-            ),
-            list_edges: ListEdges::new(edges.clone()),
             materialize_neighborhood: Arc::clone(&materializer),
             tag_task: TagTask::new(tasks.clone()),
             untag_task: UntagTask::new(tasks.clone()),

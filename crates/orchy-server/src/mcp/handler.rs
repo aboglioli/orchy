@@ -397,18 +397,18 @@ This builds a shared graph that any agent can traverse.
 - `owned_by` — this resource is primarily owned by that agent
 - `reviewed_by` — this work was reviewed/approved by that agent
 
-**Deduplication:** `add_edge` returns an error if the same (from, rel_type, to) triple already exists.
+**Deduplication:** `add_edge` with `if_not_exists: true` (default) silently skips if the edge already exists. Pass `if_not_exists: false` to get an error on duplicate.
 
-**Query patterns:**
-- `get_neighbors(kind=task, id=..., direction=outgoing)` — direct connections (1 hop)
-- `get_neighbors(..., include_nodes=true)` — edges plus NodeSummary (title, status, priority, \
-  tags, content snippet) for each connected resource; use node_content_limit to cap length
-- `get_graph(kind=task, id=root, max_depth=3)` — traverse task tree and connected knowledge
-- `get_graph(..., include_nodes=true)` — edges plus NodeSummary (title, content, tags, status, \
-  priority, updated_at) for every touched resource in one call
-- `get_graph(kind=knowledge, id=..., rel_types=[supersedes], direction=incoming)` — find what supersedes this entry
-- `list_edges(rel_type=spawns)` — browse all edges in the org without a known root
+**Querying relations:** Use `query_relations` to explore entity connections. It returns an `EntityNeighborhood` with inlined peer data (no separate fetches needed).
 
-Edges carry `source_kind` and `source_id` provenance fields identifying which tool or \
-agent created them. Edges are org-scoped and directed. `get_neighbors` returns direct \
-connections; `get_graph` recurses up to max_depth hops (default 3, max 10).";
+- `query_relations(anchor_kind='task', anchor_id='...', rel_types=['depends_on'], direction='outgoing', max_depth=3)` — find what blocks my task transitively
+- `query_relations(anchor_kind='knowledge', anchor_id='auth/jwt', max_depth=2)` — full neighborhood
+- `query_relations(..., semantic_query='authentication failure')` — re-rank knowledge by similarity
+
+anchor_kind: task | knowledge | agent | message
+anchor_id: UUID for task/agent/message; path for knowledge (e.g. 'auth/jwt-strategy')
+rel_types: empty or omit = all types. Supports aliases: blocks→depends_on, creates→produces, etc.
+direction: outgoing (anchor→peer) | incoming (peer→anchor) | both (default)
+max_depth: default 1 (direct neighbors). Max recommended: 5.
+
+Edges carry provenance fields (`source_kind`, `source_id`) identifying which tool or agent created them. Edges are org-scoped and directed.";
