@@ -103,7 +103,7 @@ pub async fn run(
                 .clone()
                 .ok_or(crate::client::CliError::MissingAgentId)?;
             let v = client
-                .get_project_json(&format!("/agents/{agent_id}/inbox{query}"))
+                .get_json(&format!("/agents/{agent_id}/inbox{query}"))
                 .await?;
             if config.json {
                 output::print_json(config, &v);
@@ -131,7 +131,7 @@ pub async fn run(
                 .clone()
                 .ok_or(crate::client::CliError::MissingAgentId)?;
             let v = client
-                .get_project_json(&format!("/agents/{agent_id}/sent-messages{query}"))
+                .get_json(&format!("/agents/{agent_id}/sent-messages{query}"))
                 .await?;
             if config.json {
                 output::print_json(config, &v);
@@ -152,7 +152,7 @@ pub async fn run(
                 .clone()
                 .ok_or(crate::client::CliError::MissingAgentId)?;
             let v = client
-                .post_project_json(&format!("/agents/{agent_id}/messages/read"), Some(&body))
+                .post_json(&format!("/agents/{agent_id}/messages/read"), Some(&body))
                 .await?;
             if config.json {
                 output::print_json(config, &v);

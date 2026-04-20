@@ -97,7 +97,7 @@ impl EdgeStore for PgBackend {
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
         let time_clause = build_time_clause(as_of.as_ref());
-        let rel_clause = build_rel_clause(rel_types);
+        let rel_clause = build_rel_clause(rel_types, "");
         let sql = format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
              created_at, created_by, source_kind, source_id, valid_until \
@@ -123,7 +123,7 @@ impl EdgeStore for PgBackend {
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
         let time_clause = build_time_clause(as_of.as_ref());
-        let rel_clause = build_rel_clause(rel_types);
+        let rel_clause = build_rel_clause(rel_types, "");
         let sql = format!(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
              created_at, created_by, source_kind, source_id, valid_until \
@@ -353,7 +353,7 @@ fn build_time_clause(as_of: Option<&DateTime<Utc>>) -> String {
     }
 }
 
-fn build_rel_clause(rel_types: &[RelationType]) -> String {
+fn build_rel_clause(rel_types: &[RelationType], prefix: &str) -> String {
     if rel_types.is_empty() {
         return String::new();
     }
@@ -362,7 +362,7 @@ fn build_rel_clause(rel_types: &[RelationType]) -> String {
         .map(|r| format!("'{r}'"))
         .collect::<Vec<_>>()
         .join(", ");
-    format!(" AND e.rel_type IN ({list})")
+    format!(" AND {prefix}rel_type IN ({list})")
 }
 
 fn build_find_neighbors_sql(
@@ -372,7 +372,7 @@ fn build_find_neighbors_sql(
     as_of: &Option<DateTime<Utc>>,
     _limit: u32,
 ) -> String {
-    let rel_clause = build_rel_clause(rel_types);
+    let rel_clause = build_rel_clause(rel_types, "e.");
 
     let time_clause = if let Some(ts) = as_of {
         let s = ts.to_rfc3339();

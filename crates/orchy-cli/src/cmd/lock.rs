@@ -45,7 +45,10 @@ pub async fn run(
             }
         }
         LockSubcommand::Release { name } => {
-            client.delete_project(&format!("/locks/{name}")).await?;
+            let agent_id = client.agent_id.as_deref().unwrap_or("cli");
+            client
+                .delete_project(&format!("/locks/{name}?agent_id={agent_id}"))
+                .await?;
             if config.json {
                 println!("{{\"ok\": true}}");
             } else {
