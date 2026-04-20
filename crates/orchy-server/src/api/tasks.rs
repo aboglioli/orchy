@@ -270,6 +270,8 @@ pub async fn get_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -298,6 +300,8 @@ pub async fn update_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -341,6 +345,8 @@ pub async fn claim(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -382,6 +388,8 @@ pub async fn start(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -422,6 +430,8 @@ pub async fn complete(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -429,7 +439,9 @@ pub async fn complete(
 
     let cmd = CompleteTaskCommand {
         task_id: id,
+        org_id: org,
         summary: body.summary,
+        links: vec![],
     };
 
     let task = container
@@ -462,6 +474,8 @@ pub async fn fail(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -502,6 +516,8 @@ pub async fn cancel(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -542,6 +558,8 @@ pub async fn release(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -578,6 +596,8 @@ pub async fn unblock(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -615,6 +635,8 @@ pub async fn assign(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -655,6 +677,8 @@ pub async fn add_dep(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -695,6 +719,8 @@ pub async fn remove_dep(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -735,6 +761,8 @@ pub async fn tag_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -771,6 +799,8 @@ pub async fn untag_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -895,6 +925,8 @@ pub async fn split(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -932,6 +964,8 @@ pub async fn replace(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -971,6 +1005,8 @@ pub async fn merge(
             .get_task
             .execute(GetTaskCommand {
                 task_id: tid.clone(),
+                org_id: None,
+                relations: None,
             })
             .await
             .map_err(ApiError::from)?;
@@ -1012,6 +1048,8 @@ pub async fn delegate(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;

@@ -218,6 +218,8 @@ impl OrchyHandler {
             .get_agent
             .execute(orchy_application::GetAgentCommand {
                 agent_id: agent_id.to_string(),
+                org_id: None,
+                relations: None,
             })
             .await
             .map_err(mcp_error)?;

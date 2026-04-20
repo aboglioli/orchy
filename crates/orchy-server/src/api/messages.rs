@@ -76,6 +76,8 @@ pub async fn inbox_for_agent(
         .get_agent
         .execute(orchy_application::GetAgentCommand {
             agent_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -128,6 +130,8 @@ pub async fn sent_for_agent(
         .get_agent
         .execute(orchy_application::GetAgentCommand {
             agent_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;
@@ -216,6 +220,8 @@ pub async fn mark_read_for_agent(
         .get_agent
         .execute(orchy_application::GetAgentCommand {
             agent_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;

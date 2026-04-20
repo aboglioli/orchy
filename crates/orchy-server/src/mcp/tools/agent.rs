@@ -2,8 +2,9 @@ use std::str::FromStr;
 
 use orchy_application::{
     ChangeRolesCommand, CheckMailboxCommand, CheckSentMessagesCommand, DisconnectAgentCommand,
-    GetAgentSummaryCommand, HeartbeatCommand, ListAgentsCommand, ListConversationCommand,
-    MarkReadCommand, PollUpdatesCommand, RegisterAgentCommand, SwitchContextCommand,
+    GetAgentCommand, GetAgentSummaryCommand, HeartbeatCommand, ListAgentsCommand,
+    ListConversationCommand, MarkReadCommand, PollUpdatesCommand, RegisterAgentCommand,
+    SwitchContextCommand,
 };
 
 use crate::mcp::handler::{
@@ -14,6 +15,8 @@ use crate::mcp::params::{
     ListAgentsParams, ListConversationParams, MarkReadParams, PollUpdatesParams,
     RegisterAgentParams, SwitchContextParams,
 };
+
+use super::parse_relation_options;
 
 pub(super) async fn register_agent(
     h: &OrchyHandler,
@@ -234,9 +237,23 @@ pub(super) async fn switch_context(
 
 pub(super) async fn get_agent_context(
     h: &OrchyHandler,
-    _params: GetAgentContextParams,
+    params: GetAgentContextParams,
 ) -> Result<String, String> {
     let (agent_id, org, _, _) = h.require_session().await?;
+
+    let relations_opts = parse_relation_options(params.relations);
+
+    if let Some(opts) = relations_opts {
+        let cmd = GetAgentCommand {
+            agent_id: agent_id.to_string(),
+            org_id: Some(org.to_string()),
+            relations: Some(opts),
+        };
+        return match h.container.app.get_agent.execute(cmd).await {
+            Ok(resp) => Ok(to_json(&resp)),
+            Err(e) => Err(mcp_error(e)),
+        };
+    }
 
     let cmd = GetAgentSummaryCommand {
         org_id: org.to_string(),

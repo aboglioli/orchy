@@ -30,6 +30,7 @@ mod assemble_context;
 mod get_graph;
 mod get_neighbors;
 mod list_edges;
+pub mod materialize_neighborhood;
 mod remove_edge;
 
 pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
@@ -141,7 +142,7 @@ mod poll_updates;
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
 pub use check_timed_out_agents::CheckTimedOutAgents;
 pub use disconnect_agent::{DisconnectAgent, DisconnectAgentCommand};
-pub use get_agent::{GetAgent, GetAgentCommand};
+pub use get_agent::{GetAgent, GetAgentCommand, GetAgentResponse};
 pub use get_agent_summary::{GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
@@ -156,7 +157,7 @@ pub use claim_task::{ClaimTask, ClaimTaskCommand};
 pub use complete_task::{CompleteTask, CompleteTaskCommand};
 pub use fail_task::{FailTask, FailTaskCommand};
 pub use get_next_task::{GetNextTask, GetNextTaskCommand};
-pub use get_task::{GetTask, GetTaskCommand};
+pub use get_task::{GetTask, GetTaskCommand, GetTaskResponse};
 pub use get_task_with_context::{GetTaskWithContext, GetTaskWithContextCommand};
 pub use list_tasks::{ListTasks, ListTasksCommand};
 pub use post_task::{PostTask, PostTaskCommand};
@@ -188,9 +189,10 @@ pub use change_knowledge_kind::{ChangeKnowledgeKind, ChangeKnowledgeKindCommand}
 pub use delete_knowledge::{DeleteKnowledge, DeleteKnowledgeCommand};
 pub use import_knowledge::{ImportKnowledge, ImportKnowledgeCommand};
 pub use list_knowledge::{ListKnowledge, ListKnowledgeCommand};
+pub use materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborhoodCommand};
 pub use move_knowledge::{MoveKnowledge, MoveKnowledgeCommand};
 pub use patch_knowledge_metadata::{PatchKnowledgeMetadata, PatchKnowledgeMetadataCommand};
-pub use read_knowledge::{ReadKnowledge, ReadKnowledgeCommand};
+pub use read_knowledge::{ReadKnowledge, ReadKnowledgeCommand, ReadKnowledgeResponse};
 pub use rename_knowledge::{RenameKnowledge, RenameKnowledgeCommand};
 pub use search_knowledge::{SearchKnowledge, SearchKnowledgeCommand};
 pub use tag_knowledge::{TagKnowledge, TagKnowledgeCommand};
@@ -282,6 +284,7 @@ pub struct Application {
     pub get_neighbors: GetNeighbors,
     pub get_graph: GetGraph,
     pub list_edges: ListEdges,
+    pub materialize_neighborhood: Arc<MaterializeNeighborhood>,
     pub tag_task: TagTask,
     pub untag_task: UntagTask,
     pub move_task: MoveTask,
@@ -354,6 +357,14 @@ impl Application {
         users: Arc<dyn UserStore>,
         memberships: Arc<dyn OrgMembershipStore>,
     ) -> Self {
+        let materializer = Arc::new(MaterializeNeighborhood::new(
+            edges.clone(),
+            tasks.clone(),
+            knowledge.clone(),
+            agents.clone(),
+            messages.clone(),
+        ));
+
         Self {
             register_agent: RegisterAgent::new(agents.clone()),
             switch_context: SwitchContext::new(
@@ -365,7 +376,7 @@ impl Application {
             disconnect_agent: DisconnectAgent::new(agents.clone(), tasks.clone(), locks.clone()),
             heartbeat: Heartbeat::new(agents.clone()),
             change_roles: ChangeRoles::new(agents.clone()),
-            get_agent: GetAgent::new(agents.clone()),
+            get_agent: GetAgent::new(agents.clone(), Some(Arc::clone(&materializer))),
             get_agent_summary: GetAgentSummary::new(
                 agents.clone(),
                 projects.clone(),
@@ -379,7 +390,7 @@ impl Application {
             update_agent_status: UpdateAgentStatus::new(agents.clone()),
 
             post_task: PostTask::new(tasks.clone(), edges.clone()),
-            get_task: GetTask::new(tasks.clone()),
+            get_task: GetTask::new(tasks.clone(), Some(Arc::clone(&materializer))),
             get_task_with_context: GetTaskWithContext::new(
                 tasks.clone(),
                 edges.clone(),
@@ -389,7 +400,7 @@ impl Application {
             get_next_task: GetNextTask::new(tasks.clone()),
             claim_task: ClaimTask::new(agents.clone(), tasks.clone()),
             start_task: StartTask::new(agents.clone(), tasks.clone()),
-            complete_task: CompleteTask::new(tasks.clone()),
+            complete_task: CompleteTask::new(tasks.clone(), edges.clone()),
             fail_task: FailTask::new(tasks.clone()),
             cancel_task: CancelTask::new(tasks.clone()),
             release_task: ReleaseTask::new(tasks.clone()),
@@ -420,6 +431,7 @@ impl Application {
                 agents.clone(),
             ),
             list_edges: ListEdges::new(edges.clone()),
+            materialize_neighborhood: Arc::clone(&materializer),
             tag_task: TagTask::new(tasks.clone()),
             untag_task: UntagTask::new(tasks.clone()),
             move_task: MoveTask::new(tasks.clone()),
@@ -436,7 +448,7 @@ impl Application {
                 edges.clone(),
                 embeddings.clone(),
             ),
-            read_knowledge: ReadKnowledge::new(knowledge.clone()),
+            read_knowledge: ReadKnowledge::new(knowledge.clone(), Some(Arc::clone(&materializer))),
             list_knowledge: ListKnowledge::new(knowledge.clone()),
             search_knowledge: SearchKnowledge::new(
                 knowledge.clone(),

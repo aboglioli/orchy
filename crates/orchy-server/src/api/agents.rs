@@ -136,6 +136,8 @@ pub async fn get_context(
         .get_agent
         .execute(GetAgentCommand {
             agent_id: id.clone(),
+            org_id: None,
+            relations: None,
         })
         .await
         .map_err(ApiError::from)?;

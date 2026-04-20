@@ -45,6 +45,53 @@ pub(super) fn parse_as_of(s: Option<String>) -> std::result::Result<Option<DateT
     .transpose()
 }
 
+pub(super) fn parse_direction(s: Option<&str>) -> orchy_core::edge::TraversalDirection {
+    match s {
+        Some("outgoing") => orchy_core::edge::TraversalDirection::Outgoing,
+        Some("incoming") => orchy_core::edge::TraversalDirection::Incoming,
+        _ => orchy_core::edge::TraversalDirection::Both,
+    }
+}
+
+pub(super) fn parse_rel_type_alias(
+    s: &str,
+) -> std::result::Result<orchy_core::edge::RelationType, String> {
+    let canonical = match s {
+        "blocks" | "requires" | "needs" => "depends_on",
+        "creates" | "made" | "wrote" => "produces",
+        "fulfills" | "executes" => "implements",
+        "child_of" | "parent_of" => "spawns",
+        "based_on" | "from" => "derived_from",
+        other => other,
+    };
+    canonical
+        .parse::<orchy_core::edge::RelationType>()
+        .map_err(|e| e.to_string())
+}
+
+pub(super) fn parse_relation_options(
+    p: Option<super::params::RelationOptionsParam>,
+) -> Option<orchy_core::graph::relation_options::RelationOptions> {
+    p.map(
+        |opts| orchy_core::graph::relation_options::RelationOptions {
+            rel_types: opts.rel_types.map(|v| {
+                v.into_iter()
+                    .filter_map(|s| parse_rel_type_alias(&s).ok())
+                    .collect()
+            }),
+            target_kinds: opts
+                .target_kinds
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|s| s.parse::<orchy_core::resource_ref::ResourceKind>().ok())
+                .collect(),
+            direction: parse_direction(opts.direction.as_deref()),
+            max_depth: opts.max_depth.unwrap_or(1),
+            limit: opts.limit.unwrap_or(50),
+        },
+    )
+}
+
 #[tool_router]
 impl OrchyHandler {
     #[tool(
@@ -694,6 +741,29 @@ impl OrchyHandler {
         Parameters(params): Parameters<ListEdgesParams>,
     ) -> Result<String, String> {
         edge::list_edges(self, params).await
+    }
+
+    #[tool(
+        description = r#"Query graph relations for an entity. Returns EntityNeighborhood with inlined peer data.
+
+Use when you need to explore what an entity is connected to without fetching the full entity.
+Use semantic_query to re-rank knowledge peers by embedding similarity (requires embeddings config).
+
+anchor_kind: task | knowledge | agent | message
+anchor_id: UUID for task/agent/message; path for knowledge (e.g. "auth/jwt-strategy")
+rel_types: empty or omit = all types. Aliases: blocks→depends_on, creates→produces, etc.
+direction: outgoing (anchor→peer) | incoming (peer→anchor) | both (default)
+max_depth: default 1 (direct neighbors). Max recommended: 5.
+
+Example — find what blocks my task transitively:
+{"anchor_kind":"task","anchor_id":"<uuid>","rel_types":["depends_on"],"direction":"outgoing","max_depth":3}
+"#
+    )]
+    async fn query_relations(
+        &self,
+        Parameters(params): Parameters<QueryRelationsParams>,
+    ) -> Result<String, String> {
+        edge::query_relations(self, params).await
     }
 }
 

@@ -88,6 +88,7 @@ pub struct CompleteTaskParams {
     pub task_id: String,
     /// Visible to other agents and parent tasks.
     pub summary: Option<String>,
+    pub links: Option<Vec<LinkParamInput>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -229,7 +230,9 @@ pub struct ListConversationParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetAgentContextParams {}
+pub struct GetAgentContextParams {
+    pub relations: Option<RelationOptionsParam>,
+}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct GetProjectParams {
@@ -306,6 +309,7 @@ pub struct GetTaskParams {
     pub knowledge_kind: Option<String>,
     pub knowledge_tag: Option<String>,
     pub knowledge_content_limit: Option<usize>,
+    pub relations: Option<RelationOptionsParam>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -351,6 +355,7 @@ pub struct ReadKnowledgeParams {
     pub namespace: Option<String>,
     pub path: String,
     pub project: Option<String>,
+    pub relations: Option<RelationOptionsParam>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -460,10 +465,10 @@ pub struct AddEdgeParams {
     /// Target resource kind: task, knowledge, agent. (message not allowed)
     pub to_kind: String,
     pub to_id: String,
-    /// Relationship type: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to.
+    /// Relationship type: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on.
     pub rel_type: String,
-    /// Optional human-readable label for the edge.
-    pub display: Option<String>,
+    /// When true (default), skip creating if an identical edge already exists.
+    pub if_not_exists: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -535,4 +540,59 @@ pub struct AssembleContextParams {
     pub id: String,
     /// Character budget for all content blocks combined. Default: 4000.
     pub max_tokens: Option<u32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct RelationOptionsParam {
+    /// Relation type filter. Omit = kind-aware defaults. Empty array = all types.
+    /// Values: derived_from, produces, implements, spawns, summarizes, merged_from,
+    ///         depends_on, supersedes, supported_by, contradicted_by, invalidates,
+    ///         owned_by, reviewed_by, related_to.
+    /// Aliases: blocks/requires/needs → depends_on, creates/made/wrote → produces,
+    ///          fulfills/executes → implements, child_of/parent_of → spawns, based_on/from → derived_from.
+    pub rel_types: Option<Vec<String>>,
+    /// Entity kinds to include. Empty = all. Values: task, knowledge, agent, message.
+    pub target_kinds: Option<Vec<String>>,
+    /// outgoing, incoming, or both (default).
+    pub direction: Option<String>,
+    /// Max hops from anchor (default 1, max recommended 5).
+    pub max_depth: Option<u32>,
+    /// Max relations returned (default 50).
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct QueryRelationsParams {
+    /// Resource kind: task, knowledge, agent, message.
+    pub anchor_kind: String,
+    /// UUID for task/agent/message; path for knowledge (e.g. "auth/jwt-strategy").
+    pub anchor_id: String,
+    /// Relation types to filter. Empty or omit = all. See aliases above.
+    pub rel_types: Option<Vec<String>>,
+    /// Entity kinds to include. Empty = all.
+    pub target_kinds: Option<Vec<String>>,
+    /// outgoing, incoming, or both (default).
+    pub direction: Option<String>,
+    /// Point-in-time snapshot: RFC3339 timestamp.
+    pub as_of: Option<String>,
+    /// Max hops (default 1).
+    pub max_depth: Option<u32>,
+    /// Max relations returned (default 50).
+    pub limit: Option<u32>,
+    /// Re-rank Knowledge peers by semantic similarity to this query (requires embeddings).
+    pub semantic_query: Option<String>,
+    pub namespace: Option<String>,
+    pub project: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct LinkParamInput {
+    /// Resource kind: task, knowledge, agent, message.
+    pub to_kind: String,
+    /// Path for knowledge; UUID for other kinds.
+    pub to_id: String,
+    /// Relation type. Supports aliases: "blocks"/"requires"/"needs" → depends_on,
+    /// "creates"/"made"/"wrote" → produces, "fulfills"/"executes" → implements,
+    /// "child_of"/"parent_of" → spawns, "based_on"/"from" → derived_from.
+    pub rel_type: String,
 }

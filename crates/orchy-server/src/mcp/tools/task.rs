@@ -1,6 +1,6 @@
 use orchy_application::{
     AddDependencyCommand, AssignTaskCommand, CancelTaskCommand, ClaimTaskCommand,
-    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand,
+    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, GetTaskCommand,
     GetTaskWithContextCommand, ListTasksCommand, MergeTasksCommand, MoveTaskCommand,
     PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand, ReplaceTaskCommand,
     SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand, UnblockTaskCommand,
@@ -15,6 +15,8 @@ use crate::mcp::params::{
     RemoveDependencyParams, ReplaceTaskParams, SplitTaskParams, StartTaskParams, TagTaskParams,
     UnblockTaskParams, UntagTaskParams, UpdateTaskParams,
 };
+
+use super::parse_relation_options;
 
 use orchy_application::ListTagsCommand;
 
@@ -63,6 +65,8 @@ pub(super) async fn get_next_task(
             .get_agent
             .execute(orchy_application::GetAgentCommand {
                 agent_id: agent_id.to_string(),
+                org_id: None,
+                relations: None,
             })
             .await
         {
@@ -227,11 +231,26 @@ pub(super) async fn complete_task(
     h: &OrchyHandler,
     params: CompleteTaskParams,
 ) -> Result<String, String> {
-    let _ = h.require_session().await?;
-
+    let (_, org, _, _) = h.require_session().await?;
     let cmd = CompleteTaskCommand {
         task_id: params.task_id,
+        org_id: org.to_string(),
         summary: params.summary,
+        links: params
+            .links
+            .unwrap_or_default()
+            .into_iter()
+            .map(|l| {
+                let rel_type = super::parse_rel_type_alias(&l.rel_type)
+                    .map(|r| r.to_string())
+                    .unwrap_or(l.rel_type);
+                orchy_core::graph::neighborhood::LinkParam {
+                    to_kind: l.to_kind,
+                    to_id: l.to_id,
+                    rel_type,
+                }
+            })
+            .collect(),
     };
 
     match h.container.app.complete_task.execute(cmd).await {
@@ -552,7 +571,28 @@ pub(super) async fn release_task(
 }
 
 pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<String, String> {
-    let _ = h.require_session().await?;
+    let (_, org, _, _) = h.require_session().await?;
+
+    let relations = parse_relation_options(params.relations);
+    if relations.is_some()
+        || (!params.include_dependencies.unwrap_or(false)
+            && !params.include_knowledge.unwrap_or(false))
+    {
+        match h
+            .container
+            .app
+            .get_task
+            .execute(GetTaskCommand {
+                task_id: params.task_id.clone(),
+                org_id: Some(org.to_string()),
+                relations,
+            })
+            .await
+        {
+            Ok(resp) => return Ok(to_json(&resp)),
+            Err(e) => return Err(mcp_error(e)),
+        }
+    }
 
     match h
         .container

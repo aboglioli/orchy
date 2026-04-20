@@ -14,7 +14,9 @@ use crate::mcp::params::{
     SearchKnowledgeParams, TagKnowledgeParams, UntagKnowledgeParams, WriteKnowledgeParams,
 };
 
-use super::{knowledge_metadata_from_json_str, optional_knowledge_metadata};
+use super::{
+    knowledge_metadata_from_json_str, optional_knowledge_metadata, parse_relation_options,
+};
 
 pub(super) async fn list_knowledge_types(
     _h: &OrchyHandler,
@@ -112,16 +114,17 @@ pub(super) async fn read_knowledge(
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
         .await?;
 
+    let relations = parse_relation_options(params.relations);
     let cmd = ReadKnowledgeCommand {
         org_id: org.to_string(),
         project,
         namespace: Some(namespace.to_string()),
         path: params.path,
+        relations,
     };
 
     match h.container.app.read_knowledge.execute(cmd).await {
-        Ok(Some(entry)) => Ok(to_json(&entry)),
-        Ok(None) => Ok(to_json(&serde_json::Value::Null)),
+        Ok(resp) => Ok(to_json(&resp)),
         Err(e) => Err(mcp_error(e)),
     }
 }

@@ -2,10 +2,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
-use orchy_core::edge::{Edge, EdgeStore, RelationType};
+use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::rules::check_no_cycle;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
+use orchy_core::task::TaskId;
 
 use crate::dto::EdgeResponse;
 
@@ -17,6 +19,7 @@ pub struct AddEdgeCommand {
     pub to_id: String,
     pub rel_type: String,
     pub created_by: Option<String>,
+    pub if_not_exists: bool,
 }
 
 pub struct AddEdge {
@@ -39,15 +42,7 @@ impl AddEdge {
             .to_kind
             .parse::<ResourceKind>()
             .map_err(Error::InvalidInput)?;
-        if from_kind == ResourceKind::Message || to_kind == ResourceKind::Message {
-            return Err(Error::InvalidInput(
-                "message resources cannot be graph nodes — edges connect task, knowledge, and agent only".into(),
-            ));
-        }
-        let rel_type = cmd
-            .rel_type
-            .parse::<RelationType>()
-            .map_err(Error::InvalidInput)?;
+        let rel_type = parse_rel_type_with_aliases(&cmd.rel_type)?;
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
         if self
@@ -62,10 +57,60 @@ impl AddEdge {
             )
             .await?
         {
+            if cmd.if_not_exists {
+                return Ok(EdgeResponse {
+                    id: String::new(),
+                    from_kind: cmd.from_kind,
+                    from_id: cmd.from_id,
+                    to_kind: cmd.to_kind,
+                    to_id: cmd.to_id,
+                    rel_type: cmd.rel_type,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    created_by: None,
+                    source_kind: None,
+                    source_id: None,
+                    valid_until: None,
+                });
+            }
             return Err(Error::Conflict(format!(
                 "edge {from_kind}:{} --{rel_type}--> {to_kind}:{} already exists",
                 cmd.from_id, cmd.to_id
             )));
+        }
+
+        if rel_type == RelationType::DependsOn
+            && from_kind == ResourceKind::Task
+            && to_kind == ResourceKind::Task
+        {
+            let from_task_id: TaskId = cmd
+                .from_id
+                .parse()
+                .map_err(|_| Error::InvalidInput("invalid task id in from_id".to_string()))?;
+            let reachable = self
+                .store
+                .find_neighbors(
+                    &org_id,
+                    &ResourceKind::Task,
+                    &cmd.to_id,
+                    &[RelationType::DependsOn],
+                    &[ResourceKind::Task],
+                    TraversalDirection::Outgoing,
+                    10,
+                    None,
+                    200,
+                )
+                .await?;
+            let reachable_ids: Vec<TaskId> = reachable
+                .iter()
+                .filter_map(|hop| {
+                    let peer_id = match hop.direction {
+                        orchy_core::edge::RelationDirection::Outgoing => hop.edge.to_id(),
+                        orchy_core::edge::RelationDirection::Incoming => hop.edge.from_id(),
+                    };
+                    peer_id.parse::<TaskId>().ok()
+                })
+                .collect();
+            check_no_cycle(&from_task_id, &reachable_ids)?;
         }
 
         let mut edge = Edge::new(
@@ -80,4 +125,18 @@ impl AddEdge {
         self.store.save(&mut edge).await?;
         Ok(EdgeResponse::from(&edge))
     }
+}
+
+fn parse_rel_type_with_aliases(s: &str) -> Result<RelationType> {
+    let canonical = match s {
+        "blocks" | "requires" | "needs" => "depends_on",
+        "creates" | "made" | "wrote" => "produces",
+        "fulfills" | "executes" => "implements",
+        "child_of" | "parent_of" => "spawns",
+        "based_on" | "from" => "derived_from",
+        other => other,
+    };
+    canonical
+        .parse::<RelationType>()
+        .map_err(Error::InvalidInput)
 }

@@ -287,22 +287,25 @@ pub async fn read(
         project,
         namespace: query.namespace,
         path,
+        relations: None,
     };
 
-    let entry = container
+    let resp = container
         .app
         .read_knowledge
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    Ok(Json(serde_json::to_value(&entry).map_err(|e| {
-        ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "SERIALIZATION_ERROR",
-            e.to_string(),
-        )
-    })?))
+    Ok(Json(serde_json::to_value(&resp.knowledge).map_err(
+        |e| {
+            ApiError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "SERIALIZATION_ERROR",
+                e.to_string(),
+            )
+        },
+    )?))
 }
 
 pub async fn write(
