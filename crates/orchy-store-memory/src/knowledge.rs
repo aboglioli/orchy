@@ -100,11 +100,6 @@ impl KnowledgeStore for MemoryBackend {
                         return false;
                     }
                 }
-                if let Some(ref agent_id) = filter.agent_id {
-                    if e.agent_id().map(|id| id.as_str()) != Some(agent_id.as_str()) {
-                        return false;
-                    }
-                }
                 true
             })
             .cloned()

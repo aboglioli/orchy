@@ -56,7 +56,6 @@ pub(super) async fn get_project(
         project: Some(project_id.to_string()),
         namespace: None,
         status: None,
-        parent_id: None,
         assigned_to: None,
         tag: None,
         after: None,

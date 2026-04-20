@@ -62,7 +62,6 @@ pub async fn generate_bootstrap_prompt(
                 project: Some(project_id.to_string()),
                 namespace: None,
                 status: Some(status.to_string()),
-                parent_id: None,
                 assigned_to: None,
                 tag: None,
                 after: None,

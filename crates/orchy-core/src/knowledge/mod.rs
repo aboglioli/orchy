@@ -11,7 +11,6 @@ use uuid::Uuid;
 use orchy_events::{Event, EventCollector, Payload};
 
 use self::events as knowledge_events;
-use crate::agent::AgentId;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
@@ -258,7 +257,6 @@ pub struct Knowledge {
     content: String,
     tags: Vec<String>,
     version: Version,
-    agent_id: Option<AgentId>,
     metadata: HashMap<String, String>,
     embedding: Option<Vec<f32>>,
     embedding_model: Option<String>,
@@ -282,7 +280,6 @@ impl Knowledge {
         title: String,
         content: String,
         tags: Vec<String>,
-        agent_id: Option<AgentId>,
         metadata: HashMap<String, String>,
     ) -> Result<Self> {
         validate_path(&path)?;
@@ -302,7 +299,6 @@ impl Knowledge {
             content,
             tags,
             version: Version::initial(),
-            agent_id,
             metadata,
             embedding: None,
             embedding_model: None,
@@ -328,7 +324,6 @@ impl Knowledge {
                     title: entry.title.clone(),
                     content: entry.content.clone(),
                     tags: entry.tags.clone(),
-                    agent_id: entry.agent_id.as_ref().map(|a| a.to_string()),
                     metadata: entry.metadata.clone(),
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,
@@ -351,7 +346,6 @@ impl Knowledge {
             content: r.content,
             tags: r.tags,
             version: r.version,
-            agent_id: r.agent_id,
             metadata: r.metadata,
             embedding: r.embedding,
             embedding_model: r.embedding_model,
@@ -363,18 +357,10 @@ impl Knowledge {
         }
     }
 
-    pub fn update(
-        &mut self,
-        title: String,
-        content: String,
-        agent_id: Option<AgentId>,
-    ) -> Result<()> {
+    pub fn update(&mut self, title: String, content: String) -> Result<()> {
         self.title = title;
         self.content = content;
         self.version = self.version.next();
-        if let Some(agent) = agent_id {
-            self.agent_id = Some(agent);
-        }
         self.updated_at = Utc::now();
 
         let payload = Payload::from_json(&knowledge_events::KnowledgeUpdatedPayload {
@@ -383,7 +369,6 @@ impl Knowledge {
             title: self.title.clone(),
             content: self.content.clone(),
             version: self.version.as_u64(),
-            agent_id: self.agent_id.as_ref().map(|a| a.to_string()),
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
         let event = Event::create(
@@ -644,9 +629,6 @@ impl Knowledge {
     pub fn version(&self) -> Version {
         self.version
     }
-    pub fn agent_id(&self) -> Option<&AgentId> {
-        self.agent_id.as_ref()
-    }
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }
@@ -678,7 +660,6 @@ pub struct RestoreKnowledge {
     pub content: String,
     pub tags: Vec<String>,
     pub version: Version,
-    pub agent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
     pub embedding: Option<Vec<f32>>,
     pub embedding_model: Option<String>,
@@ -697,7 +678,6 @@ pub struct WriteKnowledge {
     pub content: String,
     pub tags: Vec<String>,
     pub expected_version: Option<Version>,
-    pub agent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
     pub metadata_remove: Vec<String>,
 }
@@ -711,7 +691,6 @@ pub struct KnowledgeFilter {
     pub kind: Option<KnowledgeKind>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
-    pub agent_id: Option<AgentId>,
 }
 
 #[cfg(test)]
@@ -757,7 +736,6 @@ mod tests {
             "Database choice".into(),
             "We chose PostgreSQL".into(),
             vec!["infra".into()],
-            None,
             HashMap::new(),
         )
         .unwrap();
@@ -778,7 +756,6 @@ mod tests {
             "".into(),
             "content".into(),
             vec![],
-            None,
             HashMap::new(),
         );
         assert!(result.is_err());
@@ -806,7 +783,6 @@ mod tests {
             "title".into(),
             "c".into(),
             vec![],
-            None,
             md,
         )
         .unwrap();
@@ -826,11 +802,10 @@ mod tests {
             "title".into(),
             "v1".into(),
             vec![],
-            None,
             HashMap::new(),
         )
         .unwrap();
-        entry.update("title".into(), "v2".into(), None).unwrap();
+        entry.update("title".into(), "v2".into()).unwrap();
         assert_eq!(entry.version().as_u64(), 2);
         assert_eq!(entry.content(), "v2");
     }
@@ -846,7 +821,6 @@ mod tests {
             "title".into(),
             "body".into(),
             vec![],
-            None,
             HashMap::new(),
         )
         .unwrap();

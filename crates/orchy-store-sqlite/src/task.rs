@@ -13,6 +13,8 @@ use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStat
 
 use crate::SqliteBackend;
 
+const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at";
+
 #[async_trait]
 impl TaskStore for SqliteBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
@@ -22,14 +24,13 @@ impl TaskStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             rusqlite::params![
                 task.id().to_string(),
                 task.org_id().to_string(),
                 task.project().to_string(),
                 task.namespace().to_string(),
-                task.parent_id().map(|id| id.to_string()),
                 task.title(),
                 task.description(),
                 task.acceptance_criteria().map(|s| s.to_string()),
@@ -39,8 +40,6 @@ impl TaskStore for SqliteBackend {
                     .map_err(|e| Error::Store(format!("failed to serialize assigned_roles: {e}")))?,
                 task.assigned_to().map(|a| a.to_string()),
                 task.assigned_at().map(|dt| dt.to_rfc3339()),
-                serde_json::to_string(&task.depends_on().iter().map(|t| t.to_string()).collect::<Vec<_>>())
-                    .map_err(|e| Error::Store(format!("failed to serialize depends_on: {e}")))?,
                 serde_json::to_string(task.tags())
                     .map_err(|e| Error::Store(format!("failed to serialize tags: {e}")))?,
                 task.result_summary().map(|s| s.to_string()),
@@ -60,11 +59,9 @@ impl TaskStore for SqliteBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id = ?1");
         let mut stmt = conn
-            .prepare(
-                "SELECT id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at
-                 FROM tasks WHERE id = ?1",
-            )
+            .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let result = stmt
@@ -82,10 +79,7 @@ impl TaskStore for SqliteBackend {
         let placeholders: String = std::iter::repeat_n("?", ids.len())
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!(
-            "SELECT id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at \
-             FROM tasks WHERE id IN ({placeholders})"
-        );
+        let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id IN ({placeholders})");
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(&sql)
@@ -106,9 +100,7 @@ impl TaskStore for SqliteBackend {
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at FROM tasks WHERE 1=1",
-        );
+        let mut sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
 
@@ -146,11 +138,6 @@ impl TaskStore for SqliteBackend {
         if let Some(ref assigned) = filter.assigned_to {
             sql.push_str(&format!(" AND assigned_to = ?{idx}"));
             params.push(Box::new(assigned.to_string()));
-            idx += 1;
-        }
-        if let Some(ref pid) = filter.parent_id {
-            sql.push_str(&format!(" AND parent_id = ?{idx}"));
-            params.push(Box::new(pid.to_string()));
             idx += 1;
         }
         if let Some(ref tag) = filter.tag {
@@ -204,27 +191,19 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let org_id_str: String = row.get(1)?;
     let project_str: String = row.get(2)?;
     let namespace_str: String = row.get(3)?;
-    let parent_id_str: Option<String> = row.get(4)?;
-    let title: String = row.get(5)?;
-    let description: String = row.get(6)?;
-    let acceptance_criteria: Option<String> = row.get(7)?;
-    let status_str: String = row.get(8)?;
-    let priority_str: String = row.get(9)?;
-    let roles_str: String = row.get(10)?;
-    let assigned_to_str: Option<String> = row.get(11)?;
-    let assigned_at_str: Option<String> = row.get(12)?;
-    let depends_on_str: String = row.get(13)?;
-    let tags_str: String = row.get(14)?;
-    let result_summary: Option<String> = row.get(15)?;
-    let created_by_str: Option<String> = row.get(16)?;
-    let created_at_str: String = row.get(17)?;
-    let updated_at_str: String = row.get(18)?;
-
-    let depends_on_strs: Vec<String> = crate::decode_json(&depends_on_str, "depends_on")?;
-    let depends_on: Vec<TaskId> = depends_on_strs
-        .iter()
-        .filter_map(|s| TaskId::from_str(s).ok())
-        .collect();
+    let title: String = row.get(4)?;
+    let description: String = row.get(5)?;
+    let acceptance_criteria: Option<String> = row.get(6)?;
+    let status_str: String = row.get(7)?;
+    let priority_str: String = row.get(8)?;
+    let roles_str: String = row.get(9)?;
+    let assigned_to_str: Option<String> = row.get(10)?;
+    let assigned_at_str: Option<String> = row.get(11)?;
+    let tags_str: String = row.get(12)?;
+    let result_summary: Option<String> = row.get(13)?;
+    let created_by_str: Option<String> = row.get(14)?;
+    let created_at_str: String = row.get(15)?;
+    let updated_at_str: String = row.get(16)?;
 
     let tags: Vec<String> = crate::decode_json(&tags_str, "tags")?;
 
@@ -260,7 +239,6 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         .unwrap_or(TaskStatus::Pending);
     let priority = priority_str.parse::<Priority>().unwrap_or_default();
     let assigned_roles: Vec<String> = crate::decode_json(&roles_str, "assigned_roles")?;
-    let parent_id = parent_id_str.and_then(|s| TaskId::from_str(&s).ok());
     let assigned_to = assigned_to_str.and_then(|s| AgentId::from_str(&s).ok());
     let assigned_at = assigned_at_str
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
@@ -269,12 +247,12 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(17, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(18, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Task::restore(RestoreTask {
@@ -282,7 +260,6 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         org_id,
         project,
         namespace,
-        parent_id,
         title,
         description,
         acceptance_criteria,
@@ -291,7 +268,6 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         assigned_roles,
         assigned_to,
         assigned_at,
-        depends_on,
         tags,
         result_summary,
         created_by,

@@ -39,8 +39,6 @@ pub struct SwitchContextParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct PostTaskParams {
     pub namespace: Option<String>,
-    /// Parent task ID to create a subtask.
-    pub parent_id: Option<String>,
     pub title: String,
     pub description: String,
     pub acceptance_criteria: Option<String>,
@@ -48,8 +46,6 @@ pub struct PostTaskParams {
     pub priority: Option<String>,
     /// Roles that can claim this task. Empty = any role.
     pub assigned_roles: Option<Vec<String>>,
-    /// Task IDs that must complete before this task can be claimed.
-    pub depends_on: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -66,8 +62,6 @@ pub struct ListTasksParams {
     pub namespace: Option<String>,
     /// pending, blocked, claimed, in_progress, completed, failed, cancelled.
     pub status: Option<String>,
-    /// Filter by parent task ID to list subtasks.
-    pub parent_id: Option<String>,
     /// Override the session project to query another project.
     pub project: Option<String>,
     /// Cursor for pagination (task ID from next_cursor of previous page).
@@ -365,7 +359,6 @@ pub struct ListKnowledgeParams {
     pub kind: Option<String>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
-    pub agent: Option<String>,
     pub project: Option<String>,
     /// Cursor for pagination (entry ID from next_cursor of previous page).
     pub after: Option<String>,

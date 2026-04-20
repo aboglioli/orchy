@@ -67,11 +67,6 @@ impl TaskStore for MemoryBackend {
                         _ => {}
                     }
                 }
-                if let Some(ref pid) = filter.parent_id {
-                    if t.parent_id().as_ref() != Some(pid) {
-                        return false;
-                    }
-                }
                 if let Some(ref tag) = filter.tag {
                     if !t.tags().contains(tag) {
                         return false;

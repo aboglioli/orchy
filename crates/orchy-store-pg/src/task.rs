@@ -24,8 +24,6 @@ enum Tasks {
     Project,
     #[iden = "namespace"]
     Namespace,
-    #[iden = "parent_id"]
-    ParentId,
     #[iden = "title"]
     Title,
     #[iden = "description"]
@@ -42,8 +40,6 @@ enum Tasks {
     AssignedTo,
     #[iden = "assigned_at"]
     AssignedAt,
-    #[iden = "depends_on"]
-    DependsOn,
     #[iden = "tags"]
     Tags,
     #[iden = "result_summary"]
@@ -61,13 +57,6 @@ impl TaskStore for PgBackend {
     async fn save(&self, task: &mut Task) -> Result<()> {
         let roles_json = serde_json::to_value(task.assigned_roles())
             .map_err(|e| Error::Store(format!("failed to serialize tasks.assigned_roles: {e}")))?;
-        let depends_json = serde_json::to_value(
-            task.depends_on()
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|e| Error::Store(format!("failed to serialize tasks.depends_on: {e}")))?;
         let tags_json = serde_json::to_value(task.tags())
             .map_err(|e| Error::Store(format!("failed to serialize tasks.tags: {e}")))?;
         let mut tx = self
@@ -77,13 +66,12 @@ impl TaskStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO tasks (id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            "INSERT INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              ON CONFLICT (id) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
-                parent_id = EXCLUDED.parent_id,
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
                 acceptance_criteria = EXCLUDED.acceptance_criteria,
@@ -92,7 +80,6 @@ impl TaskStore for PgBackend {
                 assigned_roles = EXCLUDED.assigned_roles,
                 assigned_to = EXCLUDED.assigned_to,
                 assigned_at = EXCLUDED.assigned_at,
-                depends_on = EXCLUDED.depends_on,
                 tags = EXCLUDED.tags,
                 result_summary = EXCLUDED.result_summary,
                 updated_at = EXCLUDED.updated_at",
@@ -101,7 +88,6 @@ impl TaskStore for PgBackend {
         .bind(task.org_id().to_string())
         .bind(task.project().to_string())
         .bind(task.namespace().to_string())
-        .bind(task.parent_id().map(|id| *id.as_uuid()))
         .bind(task.title())
         .bind(task.description())
         .bind(task.acceptance_criteria())
@@ -110,7 +96,6 @@ impl TaskStore for PgBackend {
         .bind(&roles_json)
         .bind(task.assigned_to().map(|a| *a.as_uuid()))
         .bind(task.assigned_at())
-        .bind(&depends_json)
         .bind(&tags_json)
         .bind(task.result_summary())
         .bind(task.created_by().map(|a| *a.as_uuid()))
@@ -129,7 +114,7 @@ impl TaskStore for PgBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, project, namespace, parent_id, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, depends_on, tags, result_summary, created_by, created_at, updated_at
+            "SELECT id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -146,9 +131,9 @@ impl TaskStore for PgBackend {
         }
         let uuid_ids: Vec<uuid::Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
         let rows = sqlx::query(
-            "SELECT id, organization_id, project, namespace, parent_id, title, description, \
+            "SELECT id, organization_id, project, namespace, title, description, \
              acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, \
-             depends_on, tags, result_summary, created_by, created_at, updated_at \
+             tags, result_summary, created_by, created_at, updated_at \
              FROM tasks WHERE id = ANY($1::uuid[])",
         )
         .bind(&uuid_ids)
@@ -165,7 +150,6 @@ impl TaskStore for PgBackend {
             Tasks::OrganizationId,
             Tasks::Project,
             Tasks::Namespace,
-            Tasks::ParentId,
             Tasks::Title,
             Tasks::Description,
             Tasks::AcceptanceCriteria,
@@ -174,7 +158,6 @@ impl TaskStore for PgBackend {
             Tasks::AssignedRoles,
             Tasks::AssignedTo,
             Tasks::AssignedAt,
-            Tasks::DependsOn,
             Tasks::Tags,
             Tasks::ResultSummary,
             Tasks::CreatedBy,
@@ -208,9 +191,6 @@ impl TaskStore for PgBackend {
         }
         if let Some(ref assigned) = filter.assigned_to {
             select.and_where(Expr::col(Tasks::AssignedTo).eq(*assigned.as_uuid()));
-        }
-        if let Some(ref pid) = filter.parent_id {
-            select.and_where(Expr::col(Tasks::ParentId).eq(*pid.as_uuid()));
         }
         if let Some(ref tag) = filter.tag {
             select.and_where(Expr::cust_with_values(
@@ -264,7 +244,6 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
     let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
-    let parent_id: Option<Uuid> = row.get("parent_id");
     let title: String = row.get("title");
     let description: String = row.get("description");
     let acceptance_criteria: Option<String> = row.get("acceptance_criteria");
@@ -273,18 +252,11 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
     let assigned_roles: serde_json::Value = row.get("assigned_roles");
     let assigned_to: Option<Uuid> = row.get("assigned_to");
     let assigned_at: Option<DateTime<Utc>> = row.get("assigned_at");
-    let depends_on: serde_json::Value = row.get("depends_on");
     let tags: serde_json::Value = row.get("tags");
     let result_summary: Option<String> = row.get("result_summary");
     let created_by: Option<Uuid> = row.get("created_by");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
-
-    let depends_on_strs: Vec<String> = decode_json_value(depends_on, "tasks", "depends_on")?;
-    let depends_on_ids: Vec<TaskId> = depends_on_strs
-        .iter()
-        .filter_map(|s| s.parse().ok())
-        .collect();
 
     Ok(Task::restore(RestoreTask {
         id: TaskId::from_uuid(id),
@@ -292,7 +264,6 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
             .map_err(|e| Error::Store(format!("invalid tasks.organization_id: {e}")))?,
         project: parse_project_id(project, "tasks", "project")?,
         namespace: parse_namespace(namespace, "tasks", "namespace")?,
-        parent_id: parent_id.map(TaskId::from_uuid),
         title,
         description,
         acceptance_criteria,
@@ -301,7 +272,6 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
         assigned_roles: decode_json_value(assigned_roles, "tasks", "assigned_roles")?,
         assigned_to: assigned_to.map(AgentId::from_uuid),
         assigned_at,
-        depends_on: depends_on_ids,
         tags: decode_json_value(tags, "tasks", "tags")?,
         result_summary,
         created_by: created_by.map(AgentId::from_uuid),

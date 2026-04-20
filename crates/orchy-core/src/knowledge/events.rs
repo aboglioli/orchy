@@ -27,7 +27,6 @@ pub struct KnowledgeCreatedPayload {
     pub title: String,
     pub content: String,
     pub tags: Vec<String>,
-    pub agent_id: Option<String>,
     pub metadata: HashMap<String, String>,
 }
 
@@ -38,7 +37,6 @@ pub struct KnowledgeUpdatedPayload {
     pub title: String,
     pub content: String,
     pub version: u64,
-    pub agent_id: Option<String>,
 }
 
 #[derive(Serialize)]

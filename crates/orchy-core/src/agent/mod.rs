@@ -111,7 +111,6 @@ pub struct Agent {
     org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
-    parent_id: Option<AgentId>,
     roles: Vec<String>,
     description: String,
     status: AgentStatus,
@@ -139,7 +138,6 @@ impl Agent {
             org_id,
             project,
             namespace,
-            parent_id: None,
             roles,
             description,
             status: AgentStatus::Online,
@@ -183,7 +181,6 @@ impl Agent {
             org_id: parent.org_id.clone(),
             project: parent.project.clone(),
             namespace,
-            parent_id: Some(parent.id.clone()),
             roles,
             description,
             status: AgentStatus::Online,
@@ -220,7 +217,6 @@ impl Agent {
             org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
-            parent_id: r.parent_id,
             roles: r.roles,
             description: r.description,
             status: r.status,
@@ -426,9 +422,6 @@ impl Agent {
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
-    pub fn parent_id(&self) -> Option<&AgentId> {
-        self.parent_id.as_ref()
-    }
     pub fn roles(&self) -> &[String] {
         &self.roles
     }
@@ -454,7 +447,6 @@ pub struct RestoreAgent {
     pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
-    pub parent_id: Option<AgentId>,
     pub roles: Vec<String>,
     pub description: String,
     pub status: AgentStatus,
@@ -471,7 +463,6 @@ pub struct RegisterAgent {
     pub roles: Vec<String>,
     pub description: String,
     pub id: Option<AgentId>,
-    pub parent_id: Option<AgentId>,
     pub metadata: HashMap<String, String>,
 }
 
@@ -511,11 +502,10 @@ mod tests {
         let agent = make_agent();
         assert_eq!(agent.status(), AgentStatus::Online);
         assert_eq!(agent.roles(), &["coder"]);
-        assert!(agent.parent_id().is_none());
     }
 
     #[test]
-    fn from_parent_inherits_project_and_sets_parent() {
+    fn from_parent_inherits_project() {
         let parent = make_agent();
         let child = Agent::from_parent(
             &parent,
@@ -526,7 +516,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(child.project(), parent.project());
-        assert_eq!(child.parent_id(), Some(parent.id()));
         assert_eq!(child.roles(), &["reviewer"]);
         assert_eq!(child.status(), AgentStatus::Online);
     }

@@ -13,12 +13,8 @@ pub const TOPIC_ASSIGNED: &str = "task.assigned";
 pub const TOPIC_BLOCKED: &str = "task.blocked";
 pub const TOPIC_UNBLOCKED: &str = "task.unblocked";
 pub const TOPIC_CANCELLED: &str = "task.cancelled";
-pub const TOPIC_DEPENDENCY_ADDED: &str = "task.dependency_added";
-pub const TOPIC_DEPENDENCY_REMOVED: &str = "task.dependency_removed";
 pub const TOPIC_TAGGED: &str = "task.tagged";
 pub const TOPIC_TAG_REMOVED: &str = "task.tag_removed";
-pub const TOPIC_PARENT_CHANGED: &str = "task.parent_changed";
-pub const TOPIC_DEPENDENCY_REPLACED: &str = "task.dependency_replaced";
 pub const TOPIC_MOVED: &str = "task.moved";
 pub const TOPIC_UPDATED: &str = "task.updated";
 
@@ -33,8 +29,6 @@ pub struct TaskCreatedPayload {
     pub acceptance_criteria: Option<String>,
     pub priority: String,
     pub assigned_roles: Vec<String>,
-    pub depends_on: Vec<String>,
-    pub parent_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -89,18 +83,6 @@ pub struct TaskCancelledPayload {
 }
 
 #[derive(Serialize)]
-pub struct TaskDependencyAddedPayload {
-    pub task_id: String,
-    pub dependency_id: String,
-}
-
-#[derive(Serialize)]
-pub struct TaskDependencyRemovedPayload {
-    pub task_id: String,
-    pub dependency_id: String,
-}
-
-#[derive(Serialize)]
 pub struct TaskTaggedPayload {
     pub task_id: String,
     pub tag: String,
@@ -110,19 +92,6 @@ pub struct TaskTaggedPayload {
 pub struct TaskTagRemovedPayload {
     pub task_id: String,
     pub tag: String,
-}
-
-#[derive(Serialize)]
-pub struct TaskParentChangedPayload {
-    pub task_id: String,
-    pub parent_id: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct TaskDependencyReplacedPayload {
-    pub task_id: String,
-    pub old_dependency_id: String,
-    pub new_dependency_id: String,
 }
 
 #[derive(Serialize)]

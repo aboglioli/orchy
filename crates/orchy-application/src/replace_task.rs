@@ -71,19 +71,17 @@ impl ReplaceTask {
                 org_id.clone(),
                 original.project().clone(),
                 original.namespace().clone(),
-                original.parent_id(),
                 input.title,
                 input.description,
                 input.acceptance_criteria,
                 priority,
                 input.assigned_roles.unwrap_or_default(),
-                depends_on,
                 created_by.clone(),
                 is_blocked,
             )?;
             self.tasks.save(&mut task).await?;
 
-            for dep_id in task.depends_on() {
+            for dep_id in &depends_on {
                 let already_exists = self
                     .edges
                     .exists_by_pair(

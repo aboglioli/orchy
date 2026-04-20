@@ -1,4 +1,3 @@
-use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use orchy_core::edge::{Edge, EdgeStore, RelationType};
@@ -36,9 +35,9 @@ impl AddDependency {
             .await?
             .ok_or_else(|| Error::NotFound(format!("dependency task {dependency_id}")))?;
 
-        if self.would_create_cycle(&task_id, &dependency_id).await? {
+        if task_id == dependency_id {
             return Err(Error::Conflict(format!(
-                "adding dependency {dependency_id} to task {task_id} would create a cycle"
+                "task {task_id} cannot depend on itself"
             )));
         }
 
@@ -59,16 +58,6 @@ impl AddDependency {
             )));
         }
 
-        task.add_dependency(dependency_id)?;
-
-        if !self.all_deps_completed(task.depends_on()).await?
-            && task.status() == TaskStatus::Pending
-        {
-            task.block()?;
-        }
-
-        self.tasks.save(&mut task).await?;
-
         let already_exists = self
             .edges
             .exists_by_pair(
@@ -81,65 +70,51 @@ impl AddDependency {
             )
             .await?;
 
-        if !already_exists {
-            let mut edge = Edge::new(
-                org_id,
-                ResourceKind::Task,
-                task_id.to_string(),
-                ResourceKind::Task,
-                dependency_id.to_string(),
-                RelationType::DependsOn,
-                None,
-            )?;
-            self.edges.save(&mut edge).await?;
+        if already_exists {
+            return Ok(TaskResponse::from(&task));
+        }
+
+        let mut edge = Edge::new(
+            org_id.clone(),
+            ResourceKind::Task,
+            task_id.to_string(),
+            ResourceKind::Task,
+            dependency_id.to_string(),
+            RelationType::DependsOn,
+            None,
+        )?;
+        self.edges.save(&mut edge).await?;
+
+        if !self.all_deps_completed(&org_id, &task_id).await?
+            && task.status() == TaskStatus::Pending
+        {
+            task.block()?;
+            self.tasks.save(&mut task).await?;
         }
 
         Ok(TaskResponse::from(&task))
     }
 
-    async fn would_create_cycle(&self, task_id: &TaskId, new_dep_id: &TaskId) -> Result<bool> {
-        if task_id == new_dep_id {
-            return Ok(true);
-        }
+    async fn all_deps_completed(&self, org: &OrganizationId, task_id: &TaskId) -> Result<bool> {
+        let dep_edges = self
+            .edges
+            .find_from(
+                org,
+                &ResourceKind::Task,
+                &task_id.to_string(),
+                &[RelationType::DependsOn],
+                None,
+            )
+            .await?;
 
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(*new_dep_id);
-
-        const MAX_TRAVERSAL: usize = 100;
-
-        while let Some(current) = queue.pop_front() {
-            if current == *task_id {
-                return Ok(true);
-            }
-
-            if !visited.insert(current) {
-                continue;
-            }
-
-            if visited.len() > MAX_TRAVERSAL {
-                return Err(Error::InvalidInput(
-                    "dependency graph too large to validate".into(),
-                ));
-            }
-
-            if let Some(task) = self.tasks.find_by_id(&current).await? {
-                for dep in task.depends_on() {
-                    if !visited.contains(dep) {
-                        queue.push_back(*dep);
-                    }
-                }
-            }
-        }
-
-        Ok(false)
-    }
-
-    async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
-        for dep_id in deps {
+        for edge in &dep_edges {
+            let dep_id: TaskId = match edge.to_id().parse() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             let dep = self
                 .tasks
-                .find_by_id(dep_id)
+                .find_by_id(&dep_id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
             if dep.status() != TaskStatus::Completed {

@@ -182,7 +182,8 @@ impl EdgeStore for SqliteBackend {
             .query_row(
                 "SELECT COUNT(*) FROM edges
                  WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3
-                   AND to_kind = ?4 AND to_id = ?5 AND rel_type = ?6",
+                   AND to_kind = ?4 AND to_id = ?5 AND rel_type = ?6
+                   AND valid_until IS NULL",
                 rusqlite::params![
                     org.to_string(),
                     from_kind.to_string(),
@@ -461,7 +462,7 @@ fn build_find_neighbors_sql(
                    {base_peer_id} AS peer_id,
                    NULL AS via_kind,
                    NULL AS via_id,
-                   CAST(e.id AS TEXT) AS visited
+                   ',' || CAST(e.id AS TEXT) || ',' AS visited
             FROM edges e
             WHERE e.org_id = ?1 AND {anchor_match}
 
@@ -475,11 +476,11 @@ fn build_find_neighbors_sql(
                    {rec_peer_id},
                    t.peer_kind,
                    t.peer_id,
-                   t.visited || ',' || CAST(e.id AS TEXT)
+                   t.visited || CAST(e.id AS TEXT) || ','
             FROM edges e
             {recursive_join}
             WHERE t.depth < ?4
-              AND INSTR(t.visited, CAST(e.id AS TEXT)) = 0
+              AND INSTR(t.visited, ',' || CAST(e.id AS TEXT) || ',') = 0
               {rec_time}
               {rel_clause}
         )

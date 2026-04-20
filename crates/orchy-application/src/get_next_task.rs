@@ -3,10 +3,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
+use orchy_core::edge::{EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::dto::TaskResponse;
@@ -23,11 +25,12 @@ pub struct GetNextTaskCommand {
 
 pub struct GetNextTask {
     tasks: Arc<dyn TaskStore>,
+    edges: Arc<dyn EdgeStore>,
 }
 
 impl GetNextTask {
-    pub fn new(tasks: Arc<dyn TaskStore>) -> Self {
-        Self { tasks }
+    pub fn new(tasks: Arc<dyn TaskStore>, edges: Arc<dyn EdgeStore>) -> Self {
+        Self { tasks, edges }
     }
 
     pub async fn execute(&self, cmd: GetNextTaskCommand) -> Result<Option<TaskResponse>> {
@@ -47,14 +50,14 @@ impl GetNextTask {
             .transpose()?;
 
         let candidates = self
-            .sorted_pending_for_roles(&cmd.roles, org_id, project, namespace)
+            .sorted_pending_for_roles(&cmd.roles, org_id.clone(), project, namespace)
             .await?;
 
         let should_claim = cmd.claim.unwrap_or(true);
 
         if !should_claim {
             for task in candidates {
-                if self.all_deps_completed(task.depends_on()).await? {
+                if self.all_deps_completed(org_id.as_ref(), &task).await? {
                     return Ok(Some(TaskResponse::from(&task)));
                 }
             }
@@ -68,7 +71,7 @@ impl GetNextTask {
             .ok_or_else(|| Error::InvalidInput("agent_id required when claiming".into()))?;
 
         for mut task in candidates {
-            if self.all_deps_completed(task.depends_on()).await? {
+            if self.all_deps_completed(org_id.as_ref(), &task).await? {
                 match task.claim(agent_id.clone()) {
                     Ok(()) => {
                         self.tasks.save(&mut task).await?;
@@ -116,11 +119,33 @@ impl GetNextTask {
         Ok(candidates)
     }
 
-    async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
-        for dep_id in deps {
+    async fn all_deps_completed(
+        &self,
+        org_id: Option<&OrganizationId>,
+        task: &Task,
+    ) -> Result<bool> {
+        let Some(org) = org_id else {
+            return Ok(true);
+        };
+        let dep_edges = self
+            .edges
+            .find_from(
+                org,
+                &ResourceKind::Task,
+                &task.id().to_string(),
+                &[RelationType::DependsOn],
+                None,
+            )
+            .await?;
+
+        for edge in &dep_edges {
+            let dep_id: TaskId = match edge.to_id().parse() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             let dep = self
                 .tasks
-                .find_by_id(dep_id)
+                .find_by_id(&dep_id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
             if dep.status() != TaskStatus::Completed {

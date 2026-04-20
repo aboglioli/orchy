@@ -1,7 +1,5 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeStore};
@@ -21,7 +19,6 @@ pub struct ImportKnowledgeCommand {
     pub target_project: String,
     pub target_namespace: Option<String>,
     pub target_path: Option<String>,
-    pub agent_id: Option<String>,
 }
 
 pub struct ImportKnowledge {
@@ -64,8 +61,6 @@ impl ImportKnowledge {
         let target_namespace = parse_namespace(cmd.target_namespace.as_deref())?;
         let target_path = cmd.target_path.unwrap_or_else(|| source.path().to_string());
 
-        let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
-
         let mut entry = Knowledge::new(
             target_org,
             Some(target_project),
@@ -75,7 +70,6 @@ impl ImportKnowledge {
             source.title().to_string(),
             source.content().to_string(),
             source.tags().to_vec(),
-            agent_id,
             source.metadata().clone(),
         )?;
 

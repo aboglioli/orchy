@@ -137,13 +137,11 @@ async fn task_save_and_get() {
         org(),
         proj("proj"),
         Namespace::root(),
-        None,
         "Do thing".into(),
         "Details".into(),
         None,
         Priority::High,
         vec!["dev".into()],
-        vec![],
         None,
         false,
     )
@@ -170,12 +168,10 @@ async fn task_list_sorted_by_priority() {
         org(),
         proj("proj"),
         Namespace::root(),
-        None,
         "low".into(),
         "".into(),
         None,
         Priority::Low,
-        vec![],
         vec![],
         None,
         false,
@@ -187,12 +183,10 @@ async fn task_list_sorted_by_priority() {
         org(),
         proj("proj"),
         Namespace::root(),
-        None,
         "critical".into(),
         "".into(),
         None,
         Priority::Critical,
-        vec![],
         vec![],
         None,
         false,
@@ -451,76 +445,6 @@ async fn message_find_pending_includes_broadcast() {
 }
 
 #[tokio::test]
-async fn task_list_filters_by_parent_id() {
-    let store = backend();
-    let p = proj("proj");
-
-    let mut parent = Task::new(
-        org(),
-        p.clone(),
-        Namespace::root(),
-        None,
-        "parent".into(),
-        "".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        vec![],
-        None,
-        false,
-    )
-    .unwrap();
-    TaskStore::save(&store, &mut parent).await.unwrap();
-
-    let mut child = Task::new(
-        org(),
-        p.clone(),
-        Namespace::root(),
-        Some(parent.id()),
-        "child".into(),
-        "".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        vec![],
-        None,
-        false,
-    )
-    .unwrap();
-    TaskStore::save(&store, &mut child).await.unwrap();
-
-    let mut unrelated = Task::new(
-        org(),
-        p.clone(),
-        Namespace::root(),
-        None,
-        "other".into(),
-        "".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        vec![],
-        None,
-        false,
-    )
-    .unwrap();
-    TaskStore::save(&store, &mut unrelated).await.unwrap();
-
-    let children = TaskStore::list(
-        &store,
-        TaskFilter {
-            parent_id: Some(parent.id()),
-            ..Default::default()
-        },
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(children.items.len(), 1);
-    assert_eq!(children.items[0].title(), "child");
-}
-
-#[tokio::test]
 async fn task_list_filters_by_assigned_to() {
     let store = backend();
     let agent = AgentId::new();
@@ -529,12 +453,10 @@ async fn task_list_filters_by_assigned_to() {
         org(),
         proj("proj"),
         Namespace::root(),
-        None,
         "assigned".into(),
         "".into(),
         None,
         Priority::Normal,
-        vec![],
         vec![],
         None,
         false,
@@ -547,12 +469,10 @@ async fn task_list_filters_by_assigned_to() {
         org(),
         proj("proj"),
         Namespace::root(),
-        None,
         "unassigned".into(),
         "".into(),
         None,
         Priority::Normal,
-        vec![],
         vec![],
         None,
         false,
@@ -586,7 +506,6 @@ async fn knowledge_save_and_find() {
         "Database choice".into(),
         "We chose PostgreSQL".into(),
         vec!["infra".into()],
-        None,
         HashMap::new(),
     )
     .unwrap();
@@ -614,7 +533,6 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
         "v1 title".into(),
         "v1 content".into(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
@@ -622,7 +540,7 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
     assert_eq!(entry.version().as_u64(), 1);
 
     entry
-        .update("v2 title".into(), "v2 content".into(), None)
+        .update("v2 title".into(), "v2 content".into())
         .unwrap();
     assert_eq!(entry.version().as_u64(), 2);
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
@@ -634,14 +552,12 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
     assert_eq!(stale.version().as_u64(), 2);
 
     entry
-        .update("v3 title".into(), "v3 content".into(), None)
+        .update("v3 title".into(), "v3 content".into())
         .unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 3);
 
-    stale
-        .update("stale update".into(), "stale".into(), None)
-        .unwrap();
+    stale.update("stale update".into(), "stale".into()).unwrap();
     assert_eq!(stale.version().as_u64(), 3);
     let err = KnowledgeStore::save(&store, &mut stale).await.unwrap_err();
     assert!(
@@ -668,17 +584,16 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
         "v1".into(),
         "v1".into(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
 
-    entry.update("v2".into(), "v2".into(), None).unwrap();
+    entry.update("v2".into(), "v2".into()).unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 2);
 
-    entry.update("v3".into(), "v3".into(), None).unwrap();
+    entry.update("v3".into(), "v3".into()).unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 3);
 
@@ -825,7 +740,6 @@ async fn delete_knowledge_cleans_up_associated_edges() {
         "Test".to_string(),
         "content".to_string(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
@@ -875,12 +789,10 @@ async fn split_task_creates_spawns_edges() {
         o.clone(),
         proj("myapp"),
         ns("/"),
-        None,
         "Parent task".to_string(),
         "desc".to_string(),
         None,
         Priority::Normal,
-        vec![],
         vec![],
         None,
         false,
@@ -978,7 +890,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
     let tasks: Arc<dyn orchy_core::task::TaskStore> = backend.clone();
     let edges: Arc<dyn EdgeStore> = backend.clone();
 
-    let post = PostTask::new(tasks.clone(), edges.clone());
+    let post = PostTask::new(tasks.clone());
     let split = SplitTask::new(tasks.clone(), edges.clone());
 
     let dep = post
@@ -991,8 +903,6 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
             acceptance_criteria: None,
             priority: None,
             assigned_roles: None,
-            depends_on: None,
-            parent_id: None,
             created_by: None,
         })
         .await
@@ -1008,8 +918,6 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
             acceptance_criteria: None,
             priority: None,
             assigned_roles: None,
-            depends_on: None,
-            parent_id: None,
             created_by: None,
         })
         .await
@@ -1098,7 +1006,6 @@ async fn knowledge_search_returns_score() {
         "PostgreSQL indexing".into(),
         "We use GIN indexes for full text search".into(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
@@ -1132,13 +1039,11 @@ async fn get_graph_include_nodes_hydrates_task_fields() {
         o.clone(),
         proj("proj"),
         Namespace::root(),
-        None,
         "Implement login".into(),
         "Build the login endpoint with JWT".into(),
         None,
         Priority::High,
         vec!["dev".into()],
-        vec![],
         None,
         false,
     )
@@ -1206,8 +1111,8 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
     use std::sync::Arc;
 
     use orchy_application::{
-        GetTaskWithContext, GetTaskWithContextCommand, PostTask, PostTaskCommand, WriteKnowledge,
-        WriteKnowledgeCommand,
+        AddEdge, AddEdgeCommand, GetTaskWithContext, GetTaskWithContextCommand, PostTask,
+        PostTaskCommand, WriteKnowledge, WriteKnowledgeCommand,
     };
 
     let backend = Arc::new(backend());
@@ -1215,7 +1120,8 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
     let edges: Arc<dyn EdgeStore> = backend.clone();
     let knowledge: Arc<dyn orchy_core::knowledge::KnowledgeStore> = backend.clone();
 
-    let post_task = PostTask::new(tasks.clone(), edges.clone());
+    let post_task = PostTask::new(tasks.clone());
+    let add_edge = AddEdge::new(edges.clone());
     let write_knowledge = WriteKnowledge::new(knowledge.clone(), edges.clone(), None);
     let get_task = GetTaskWithContext::new(tasks, edges, knowledge);
 
@@ -1229,8 +1135,6 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
             acceptance_criteria: None,
             priority: None,
             assigned_roles: None,
-            depends_on: None,
-            parent_id: None,
             created_by: None,
         })
         .await
@@ -1246,9 +1150,21 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
             acceptance_criteria: Some("Done when tests pass".into()),
             priority: None,
             assigned_roles: None,
-            depends_on: Some(vec![dep.id.clone()]),
-            parent_id: None,
             created_by: None,
+        })
+        .await
+        .unwrap();
+
+    add_edge
+        .execute(AddEdgeCommand {
+            org_id: "test-org".into(),
+            from_kind: "task".into(),
+            from_id: task.id.clone(),
+            to_kind: "task".into(),
+            to_id: dep.id.clone(),
+            rel_type: "depends_on".into(),
+            created_by: None,
+            if_not_exists: false,
         })
         .await
         .unwrap();
@@ -1275,6 +1191,7 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
     let ctx = get_task
         .execute(GetTaskWithContextCommand {
             task_id: task.id.clone(),
+            org_id: "test-org".into(),
             include_dependencies: true,
             include_knowledge: true,
             knowledge_limit: 5,
@@ -1313,7 +1230,6 @@ async fn search_knowledge_task_proximity_boost() {
         "Authentication Decision".to_string(),
         "We chose JWT tokens for authentication".to_string(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
@@ -1434,7 +1350,6 @@ async fn assemble_context_returns_linked_knowledge() {
         "Auth Decision".to_string(),
         "We chose JWT for auth".to_string(),
         vec![],
-        None,
         std::collections::HashMap::new(),
     )
     .unwrap();
@@ -1451,7 +1366,6 @@ async fn assemble_context_returns_linked_knowledge() {
         "Recent Note".to_string(),
         "Found a bug in login flow".to_string(),
         vec![],
-        None,
         std::collections::HashMap::new(),
     )
     .unwrap();
@@ -1583,7 +1497,6 @@ async fn assemble_context_surfaces_decision_above_log() {
         "Important Decision".to_string(),
         "We chose Rust for performance".to_string(),
         vec![],
-        None,
         std::collections::HashMap::new(),
     )
     .unwrap();
@@ -1600,7 +1513,6 @@ async fn assemble_context_surfaces_decision_above_log() {
         "Activity Log".to_string(),
         "Ran some tests".to_string(),
         vec![],
-        None,
         std::collections::HashMap::new(),
     )
     .unwrap();

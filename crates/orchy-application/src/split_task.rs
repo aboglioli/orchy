@@ -5,7 +5,7 @@ use orchy_core::agent::AgentId;
 use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::resource_ref::ResourceKind;
-use orchy_core::task::{Priority, SubtaskDef, Task, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Priority, Task, TaskId, TaskStatus, TaskStore};
 
 use crate::dto::TaskResponse;
 
@@ -59,7 +59,16 @@ impl SplitTask {
             )));
         }
 
-        let mut subtask_defs = Vec::with_capacity(cmd.subtasks.len());
+        struct SubtaskSpec {
+            title: String,
+            description: String,
+            acceptance_criteria: Option<String>,
+            priority: Priority,
+            assigned_roles: Vec<String>,
+            depends_on_ids: Vec<TaskId>,
+        }
+
+        let mut specs = Vec::with_capacity(cmd.subtasks.len());
         for input in cmd.subtasks {
             let priority = input
                 .priority
@@ -68,7 +77,7 @@ impl SplitTask {
                 .map_err(Error::InvalidInput)?
                 .unwrap_or_default();
 
-            let depends_on = input
+            let depends_on_ids = input
                 .depends_on
                 .unwrap_or_default()
                 .into_iter()
@@ -76,37 +85,34 @@ impl SplitTask {
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
-            if depends_on.contains(&parent_id) {
+            if depends_on_ids.contains(&parent_id) {
                 return Err(Error::Conflict(format!(
                     "subtask depends on parent {parent_id}, which would create a cycle"
                 )));
             }
 
-            subtask_defs.push(SubtaskDef {
+            specs.push(SubtaskSpec {
                 title: input.title,
                 description: input.description,
                 acceptance_criteria: input.acceptance_criteria,
                 priority,
                 assigned_roles: input.assigned_roles.unwrap_or_default(),
-                depends_on,
+                depends_on_ids,
             });
         }
 
-        let mut children = Vec::with_capacity(subtask_defs.len());
-        for def in subtask_defs {
-            let depends_on_ids = def.depends_on.clone();
-            let is_blocked = !depends_on_ids.is_empty();
+        let mut children = Vec::with_capacity(specs.len());
+        for spec in specs {
+            let is_blocked = !spec.depends_on_ids.is_empty();
             let mut task = Task::new(
                 parent.org_id().clone(),
                 parent.project().clone(),
                 parent.namespace().clone(),
-                Some(parent_id),
-                def.title,
-                def.description,
-                def.acceptance_criteria,
-                def.priority,
-                def.assigned_roles,
-                def.depends_on,
+                spec.title,
+                spec.description,
+                spec.acceptance_criteria,
+                spec.priority,
+                spec.assigned_roles,
                 created_by.clone(),
                 is_blocked,
             )?;
@@ -124,7 +130,7 @@ impl SplitTask {
             .with_source(ResourceKind::Task, parent_id.to_string());
             self.edges.save(&mut spawns_edge).await?;
 
-            for dep_id in &depends_on_ids {
+            for dep_id in &spec.depends_on_ids {
                 let already_exists = self
                     .edges
                     .exists_by_pair(
@@ -153,9 +159,6 @@ impl SplitTask {
             children.push(task);
         }
 
-        for child in &children {
-            parent.add_dependency(child.id())?;
-        }
         parent.block()?;
         self.tasks.save(&mut parent).await?;
 

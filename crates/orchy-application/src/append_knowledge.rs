@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
@@ -21,7 +19,6 @@ pub struct AppendKnowledgeCommand {
     pub kind: String,
     pub value: String,
     pub separator: Option<String>,
-    pub agent_id: Option<String>,
     pub metadata: Option<HashMap<String, String>>,
     pub metadata_remove: Option<Vec<String>>,
 }
@@ -49,7 +46,6 @@ impl AppendKnowledge {
             .kind
             .parse::<KnowledgeKind>()
             .map_err(Error::InvalidInput)?;
-        let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
         let separator = cmd.separator.as_deref().unwrap_or("\n");
 
         let existing = self
@@ -59,7 +55,7 @@ impl AppendKnowledge {
 
         let mut entry = if let Some(mut existing) = existing {
             let new_content = format!("{}{}{}", existing.content(), separator, cmd.value);
-            existing.update(existing.title().to_string(), new_content, agent_id)?;
+            existing.update(existing.title().to_string(), new_content)?;
             existing
         } else {
             let title = cmd.path.clone();
@@ -72,7 +68,6 @@ impl AppendKnowledge {
                 title,
                 cmd.value,
                 vec![],
-                agent_id,
                 HashMap::new(),
             )?
         };

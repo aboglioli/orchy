@@ -179,7 +179,6 @@ pub async fn get_context(
         project: Some(agent.project.clone()),
         namespace: Some(agent.namespace.clone()),
         status: Some("pending".to_string()),
-        parent_id: None,
         assigned_to: None,
         tag: None,
         after: None,

@@ -1,0 +1,4 @@
+ALTER TABLE tasks DROP COLUMN IF EXISTS parent_id;
+ALTER TABLE tasks DROP COLUMN IF EXISTS depends_on;
+ALTER TABLE knowledge_entries DROP COLUMN IF EXISTS agent_id;
+ALTER TABLE agents DROP COLUMN IF EXISTS parent_id;

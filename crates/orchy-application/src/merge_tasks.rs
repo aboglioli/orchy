@@ -6,9 +6,8 @@ use orchy_core::agent::AgentId;
 use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::PageParams;
 use orchy_core::resource_ref::ResourceKind;
-use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Task, TaskId, TaskStatus, TaskStore};
 
 use crate::dto::TaskResponse;
 
@@ -49,6 +48,9 @@ impl MergeTasks {
         }
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
+
+        let org_id =
+            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let mut sources = Vec::with_capacity(task_ids.len());
         for id in &task_ids {
@@ -96,46 +98,56 @@ impl MergeTasks {
         let assigned_roles: Vec<String> = roles_set.into_iter().collect();
 
         let mut deps_set = HashSet::new();
-        for task in &sources {
-            for dep in task.depends_on() {
-                if !source_ids.contains(dep) {
-                    deps_set.insert(*dep);
+        for source_id in &source_ids {
+            let dep_edges = self
+                .edges
+                .find_from(
+                    &org_id,
+                    &ResourceKind::Task,
+                    &source_id.to_string(),
+                    &[RelationType::DependsOn],
+                    None,
+                )
+                .await?;
+            for edge in dep_edges {
+                if let Ok(dep_id) = edge.to_id().parse::<TaskId>() {
+                    if !source_ids.contains(&dep_id) {
+                        deps_set.insert(dep_id);
+                    }
                 }
             }
         }
-        let depends_on: Vec<TaskId> = deps_set.into_iter().collect();
-
-        let parent_id = {
-            let first_parent = sources[0].parent_id();
-            if sources.iter().all(|t| t.parent_id() == first_parent) {
-                first_parent
-            } else {
-                None
-            }
-        };
 
         let namespace = sources[0].namespace().clone();
-        let is_blocked = !depends_on.is_empty() && !self.all_deps_completed(&depends_on).await?;
-
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let is_blocked = !deps_set.is_empty() && !self.all_deps_completed(&deps_set).await?;
 
         let mut merged = Task::new(
-            org_id,
+            org_id.clone(),
             sources[0].project().clone(),
             namespace,
-            parent_id,
             cmd.title,
             cmd.description,
             cmd.acceptance_criteria,
             priority,
             assigned_roles,
-            depends_on,
             created_by.clone(),
             is_blocked,
         )?;
 
         self.tasks.save(&mut merged).await?;
+
+        for dep_id in &deps_set {
+            let mut dep_edge = Edge::new(
+                org_id.clone(),
+                ResourceKind::Task,
+                merged.id().to_string(),
+                ResourceKind::Task,
+                dep_id.to_string(),
+                RelationType::DependsOn,
+                created_by.clone(),
+            )?;
+            self.edges.save(&mut dep_edge).await?;
+        }
 
         let mut cancelled = Vec::with_capacity(sources.len());
         for mut task in sources {
@@ -146,7 +158,7 @@ impl MergeTasks {
 
         for source in &cancelled {
             let mut edge = match Edge::new(
-                merged.org_id().clone(),
+                org_id.clone(),
                 ResourceKind::Task,
                 merged.id().to_string(),
                 ResourceKind::Task,
@@ -166,58 +178,28 @@ impl MergeTasks {
         }
 
         for source_id in &source_ids {
-            let children = self
-                .tasks
-                .list(
-                    TaskFilter {
-                        parent_id: Some(*source_id),
-                        ..Default::default()
-                    },
-                    PageParams::unbounded(),
+            let child_edges = self
+                .edges
+                .find_from(
+                    &org_id,
+                    &ResourceKind::Task,
+                    &source_id.to_string(),
+                    &[RelationType::Spawns],
+                    None,
                 )
-                .await?
-                .items;
-
-            for mut child in children {
-                child.set_parent_id(Some(merged.id()))?;
-                self.tasks.save(&mut child).await?;
-            }
-        }
-
-        for status in [
-            TaskStatus::Pending,
-            TaskStatus::Blocked,
-            TaskStatus::Claimed,
-        ] {
-            let tasks = self
-                .tasks
-                .list(
-                    TaskFilter {
-                        project: Some(merged.project().clone()),
-                        status: Some(status),
-                        ..Default::default()
-                    },
-                    PageParams::unbounded(),
-                )
-                .await?
-                .items;
-
-            for mut task in tasks {
-                if source_ids.contains(&task.id()) || task.id() == merged.id() {
-                    continue;
-                }
-
-                let mut changed = false;
-                for source_id in &source_ids {
-                    if task.depends_on().contains(source_id) {
-                        task.replace_dependency(source_id, merged.id())?;
-                        changed = true;
-                    }
-                }
-
-                if changed {
-                    self.tasks.save(&mut task).await?;
-                }
+                .await?;
+            for child_edge in child_edges {
+                let child_id = child_edge.to_id().to_string();
+                let mut new_edge = Edge::new(
+                    org_id.clone(),
+                    ResourceKind::Task,
+                    merged.id().to_string(),
+                    ResourceKind::Task,
+                    child_id,
+                    RelationType::Spawns,
+                    created_by.clone(),
+                )?;
+                self.edges.save(&mut new_edge).await?;
             }
         }
 
@@ -227,7 +209,7 @@ impl MergeTasks {
         ))
     }
 
-    async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
+    async fn all_deps_completed(&self, deps: &HashSet<TaskId>) -> Result<bool> {
         for dep_id in deps {
             let dep = self
                 .tasks

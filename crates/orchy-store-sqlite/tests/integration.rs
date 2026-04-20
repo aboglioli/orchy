@@ -138,13 +138,11 @@ async fn task_save_and_get() {
         org("default"),
         proj("proj"),
         Namespace::root(),
-        None,
         "Do thing".into(),
         "Details".into(),
         None,
         Priority::High,
         vec!["dev".into()],
-        vec![],
         None,
         false,
     )
@@ -170,12 +168,10 @@ async fn task_save_overwrites_existing() {
         org("default"),
         proj("proj"),
         Namespace::root(),
-        None,
         "original".into(),
         "desc".into(),
         None,
         Priority::Normal,
-        vec![],
         vec![],
         None,
         false,
@@ -189,7 +185,6 @@ async fn task_save_overwrites_existing() {
         org_id: org("default"),
         project: proj("proj"),
         namespace: Namespace::root(),
-        parent_id: None,
         title: "updated".into(),
         description: "new desc".into(),
         acceptance_criteria: None,
@@ -198,7 +193,6 @@ async fn task_save_overwrites_existing() {
         assigned_roles: vec![],
         assigned_to: None,
         assigned_at: None,
-        depends_on: vec![],
         tags: vec![],
         result_summary: Some("done".into()),
         created_by: None,
@@ -217,52 +211,6 @@ async fn task_save_overwrites_existing() {
 }
 
 #[tokio::test]
-async fn task_dependency_stored() {
-    let store = backend();
-
-    let mut dep = Task::new(
-        org("default"),
-        proj("proj"),
-        Namespace::root(),
-        None,
-        "dep".into(),
-        "".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        vec![],
-        None,
-        false,
-    )
-    .unwrap();
-    TaskStore::save(&store, &mut dep).await.unwrap();
-
-    let mut task = Task::new(
-        org("default"),
-        proj("proj"),
-        Namespace::root(),
-        None,
-        "main".into(),
-        "".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        vec![dep.id()],
-        None,
-        true,
-    )
-    .unwrap();
-    TaskStore::save(&store, &mut task).await.unwrap();
-
-    let fetched = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(fetched.status(), TaskStatus::Blocked);
-    assert_eq!(fetched.depends_on(), &[dep.id()]);
-}
-
-#[tokio::test]
 async fn task_list_sorted_by_priority() {
     let store = backend();
 
@@ -270,12 +218,10 @@ async fn task_list_sorted_by_priority() {
         org("default"),
         proj("proj"),
         Namespace::root(),
-        None,
         "low".into(),
         "".into(),
         None,
         Priority::Low,
-        vec![],
         vec![],
         None,
         false,
@@ -287,12 +233,10 @@ async fn task_list_sorted_by_priority() {
         org("default"),
         proj("proj"),
         Namespace::root(),
-        None,
         "critical".into(),
         "".into(),
         None,
         Priority::Critical,
-        vec![],
         vec![],
         None,
         false,
@@ -553,59 +497,6 @@ async fn message_find_pending_includes_broadcast() {
 }
 
 #[tokio::test]
-async fn task_list_filters_by_parent_id() {
-    let store = backend();
-    let p = proj("proj");
-
-    let mut parent = Task::new(
-        org("default"),
-        p.clone(),
-        Namespace::root(),
-        None,
-        "parent".into(),
-        "".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        vec![],
-        None,
-        false,
-    )
-    .unwrap();
-    TaskStore::save(&store, &mut parent).await.unwrap();
-
-    let mut child = Task::new(
-        org("default"),
-        p.clone(),
-        Namespace::root(),
-        Some(parent.id()),
-        "child".into(),
-        "".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        vec![],
-        None,
-        false,
-    )
-    .unwrap();
-    TaskStore::save(&store, &mut child).await.unwrap();
-
-    let children = TaskStore::list(
-        &store,
-        TaskFilter {
-            parent_id: Some(parent.id()),
-            ..Default::default()
-        },
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(children.items.len(), 1);
-    assert_eq!(children.items[0].title(), "child");
-}
-
-#[tokio::test]
 async fn task_list_filters_by_assigned_to() {
     let store = backend();
     let agent = AgentId::new();
@@ -614,12 +505,10 @@ async fn task_list_filters_by_assigned_to() {
         org("default"),
         proj("proj"),
         Namespace::root(),
-        None,
         "assigned".into(),
         "".into(),
         None,
         Priority::Normal,
-        vec![],
         vec![],
         None,
         false,
@@ -655,7 +544,6 @@ async fn knowledge_search_fts_finds_content() {
         "JWT notes".into(),
         "Use RS256 for asymmetric cryptography verification.".into(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
@@ -684,7 +572,6 @@ async fn knowledge_metadata_merge_and_remove() {
         "t".into(),
         "body".into(),
         vec![],
-        None,
         md,
     )
     .unwrap();
@@ -700,7 +587,7 @@ async fn knowledge_metadata_merge_and_remove() {
     .await
     .unwrap()
     .unwrap();
-    entry.update("t".into(), "body2".into(), None).unwrap();
+    entry.update("t".into(), "body2".into()).unwrap();
     entry.remove_metadata("a").unwrap();
     entry.set_metadata("b".into(), "2".into()).unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
@@ -760,7 +647,6 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
         "v1 title".into(),
         "v1 content".into(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
@@ -768,7 +654,7 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
     assert_eq!(entry.version().as_u64(), 1);
 
     entry
-        .update("v2 title".into(), "v2 content".into(), None)
+        .update("v2 title".into(), "v2 content".into())
         .unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 2);
@@ -780,14 +666,12 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
     assert_eq!(stale.version().as_u64(), 2);
 
     entry
-        .update("v3 title".into(), "v3 content".into(), None)
+        .update("v3 title".into(), "v3 content".into())
         .unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 3);
 
-    stale
-        .update("stale update".into(), "stale".into(), None)
-        .unwrap();
+    stale.update("stale update".into(), "stale".into()).unwrap();
     assert_eq!(stale.version().as_u64(), 3);
     let err = KnowledgeStore::save(&store, &mut stale).await.unwrap_err();
     assert!(
@@ -815,17 +699,16 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
         "v1".into(),
         "v1".into(),
         vec![],
-        None,
         HashMap::new(),
     )
     .unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
 
-    entry.update("v2".into(), "v2".into(), None).unwrap();
+    entry.update("v2".into(), "v2".into()).unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 2);
 
-    entry.update("v3".into(), "v3".into(), None).unwrap();
+    entry.update("v3".into(), "v3".into()).unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 3);
 

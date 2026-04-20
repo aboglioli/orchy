@@ -1,7 +1,5 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
@@ -19,7 +17,6 @@ pub struct ListKnowledgeCommand {
     pub kind: Option<String>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
-    pub agent_id: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
 }
@@ -58,8 +55,6 @@ impl ListKnowledge {
             .transpose()
             .map_err(Error::InvalidInput)?;
 
-        let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
-
         let filter = KnowledgeFilter {
             org_id,
             project,
@@ -68,7 +63,6 @@ impl ListKnowledge {
             kind,
             tag: cmd.tag,
             path_prefix: cmd.path_prefix,
-            agent_id,
         };
 
         let page = PageParams::new(cmd.after, cmd.limit);

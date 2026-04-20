@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
-use orchy_core::edge::EdgeStore;
+use orchy_core::edge::{EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeId, KnowledgeKind, KnowledgeStore};
-use orchy_core::pagination::PageParams;
+use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
-use orchy_core::task::{TaskFilter, TaskId, TaskStore, TaskWithContext};
+use orchy_core::task::{TaskId, TaskStore, TaskWithContext};
 
 use crate::dto::{KnowledgeResponse, TaskResponse, TaskWithContextResponse};
 
 pub struct GetTaskWithContextCommand {
     pub task_id: String,
+    pub org_id: String,
     pub include_dependencies: bool,
     pub include_knowledge: bool,
     pub knowledge_limit: u32,
@@ -40,12 +41,15 @@ impl GetTaskWithContext {
 
     pub async fn execute(&self, cmd: GetTaskWithContextCommand) -> Result<TaskWithContextResponse> {
         let id = cmd.task_id.parse::<TaskId>()?;
-        self.get_with_context(&id, cmd).await
+        let org_id =
+            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        self.get_with_context(&id, &org_id, cmd).await
     }
 
     async fn get_with_context(
         &self,
         id: &TaskId,
+        org_id: &OrganizationId,
         cmd: GetTaskWithContextCommand,
     ) -> Result<TaskWithContextResponse> {
         let task = self
@@ -55,28 +59,50 @@ impl GetTaskWithContext {
             .ok_or_else(|| Error::NotFound(format!("task {id}")))?;
 
         let mut ancestors = Vec::new();
-        let mut current_parent_id = task.parent_id();
-        while let Some(pid) = current_parent_id {
-            match self.tasks.find_by_id(&pid).await? {
+        let mut current_id = id.to_string();
+        loop {
+            let parent_edges = self
+                .edges
+                .find_to(
+                    org_id,
+                    &ResourceKind::Task,
+                    &current_id,
+                    &[RelationType::Spawns],
+                    None,
+                )
+                .await?;
+            let Some(parent_edge) = parent_edges.first() else {
+                break;
+            };
+            let parent_id_str = parent_edge.from_id().to_string();
+            let parent_task_id: TaskId = match parent_id_str.parse() {
+                Ok(tid) => tid,
+                Err(_) => break,
+            };
+            match self.tasks.find_by_id(&parent_task_id).await? {
                 Some(parent) => {
-                    current_parent_id = parent.parent_id();
+                    current_id = parent_task_id.to_string();
                     ancestors.push(parent);
                 }
                 None => break,
             }
         }
 
-        let children = self
-            .tasks
-            .list(
-                TaskFilter {
-                    parent_id: Some(*id),
-                    ..Default::default()
-                },
-                PageParams::unbounded(),
+        let child_edges = self
+            .edges
+            .find_from(
+                org_id,
+                &ResourceKind::Task,
+                &id.to_string(),
+                &[RelationType::Spawns],
+                None,
             )
-            .await?
-            .items;
+            .await?;
+        let child_ids: Vec<TaskId> = child_edges
+            .iter()
+            .filter_map(|e| e.to_id().parse::<TaskId>().ok())
+            .collect();
+        let children = self.tasks.find_by_ids(&child_ids).await?;
 
         let mut response = TaskWithContextResponse::from(TaskWithContext {
             task,
@@ -85,7 +111,18 @@ impl GetTaskWithContext {
         });
 
         if cmd.include_dependencies {
-            response.dependencies = self.load_dependencies(&response.task.depends_on).await?;
+            let dep_edges = self
+                .edges
+                .find_from(
+                    org_id,
+                    &ResourceKind::Task,
+                    &id.to_string(),
+                    &[RelationType::DependsOn],
+                    None,
+                )
+                .await?;
+            let dep_ids: Vec<String> = dep_edges.iter().map(|e| e.to_id().to_string()).collect();
+            response.dependencies = self.load_dependencies(&dep_ids).await?;
         }
 
         if cmd.include_knowledge {
@@ -126,8 +163,7 @@ impl GetTaskWithContext {
         tag_filter: Option<&str>,
         content_limit: usize,
     ) -> Result<Vec<KnowledgeResponse>> {
-        let org = orchy_core::organization::OrganizationId::new(org_id)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org = OrganizationId::new(org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let mut edges = self
             .edges

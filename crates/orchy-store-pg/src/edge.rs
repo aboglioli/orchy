@@ -152,7 +152,8 @@ impl EdgeStore for PgBackend {
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM edges
              WHERE org_id = $1 AND from_kind = $2 AND from_id = $3
-               AND to_kind = $4 AND to_id = $5 AND rel_type = $6",
+               AND to_kind = $4 AND to_id = $5 AND rel_type = $6
+               AND valid_until IS NULL",
         )
         .bind(org.to_string())
         .bind(from_kind.to_string())

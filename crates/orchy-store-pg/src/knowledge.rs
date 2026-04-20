@@ -8,7 +8,6 @@ use sea_query_binder::SqlxBinder;
 use sqlx::Row;
 use uuid::Uuid;
 
-use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, RestoreKnowledge,
@@ -45,8 +44,6 @@ enum KnowledgeEntries {
     Tags,
     #[iden = "version"]
     Version,
-    #[iden = "agent_id"]
-    AgentId,
     #[iden = "metadata"]
     Metadata,
     #[iden = "embedding_model"]
@@ -59,7 +56,7 @@ enum KnowledgeEntries {
     UpdatedAt,
 }
 
-const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
+const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
 
 #[async_trait]
 impl KnowledgeStore for PgBackend {
@@ -81,8 +78,8 @@ impl KnowledgeStore for PgBackend {
 
         if let Some(pv) = entry.persisted_version() {
             let result = sqlx::query(
-                "UPDATE knowledge_entries SET organization_id = $2, project = $3, namespace = $4, path = $5, kind = $6, title = $7, content = $8, tags = $9, version = $10, agent_id = $11, metadata = $12, embedding = $13, embedding_model = $14, embedding_dimensions = $15, updated_at = $16
-                 WHERE id = $1 AND version = $17",
+                "UPDATE knowledge_entries SET organization_id = $2, project = $3, namespace = $4, path = $5, kind = $6, title = $7, content = $8, tags = $9, version = $10, metadata = $11, embedding = $12, embedding_model = $13, embedding_dimensions = $14, updated_at = $15
+                 WHERE id = $1 AND version = $16",
             )
             .bind(entry.id().as_uuid())
             .bind(entry.org_id().to_string())
@@ -94,7 +91,6 @@ impl KnowledgeStore for PgBackend {
             .bind(entry.content())
             .bind(&tags_json)
             .bind(entry.version().as_u64() as i64)
-            .bind(entry.agent_id().map(|a| *a.as_uuid()))
             .bind(&metadata_json)
             .bind(vec_binding.as_ref())
             .bind(entry.embedding_model())
@@ -123,8 +119,8 @@ impl KnowledgeStore for PgBackend {
             }
         } else {
             sqlx::query(
-                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, agent_id, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
             )
             .bind(entry.id().as_uuid())
             .bind(entry.org_id().to_string())
@@ -136,7 +132,6 @@ impl KnowledgeStore for PgBackend {
             .bind(entry.content())
             .bind(&tags_json)
             .bind(entry.version().as_u64() as i64)
-            .bind(entry.agent_id().map(|a| *a.as_uuid()))
             .bind(&metadata_json)
             .bind(vec_binding.as_ref())
             .bind(entry.embedding_model())
@@ -236,10 +231,6 @@ impl KnowledgeStore for PgBackend {
         if let Some(ref prefix) = filter.path_prefix {
             select.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{prefix}%")));
         }
-        if let Some(ref agent_id) = filter.agent_id {
-            select.and_where(Expr::col(KnowledgeEntries::AgentId).eq(agent_id.to_string()));
-        }
-
         if let Some(ref cursor) = page.after
             && let Some(decoded) = decode_cursor(cursor)
             && let Ok(cursor_uuid) = decoded.parse::<Uuid>()
@@ -414,7 +405,6 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     let content: String = row.get("content");
     let tags: serde_json::Value = row.get("tags");
     let version: i64 = row.get("version");
-    let agent_id: Option<Uuid> = row.get("agent_id");
     let metadata: serde_json::Value = row.get("metadata");
     let embedding_str: Option<String> = row.get("embedding");
     let embedding_model: Option<String> = row.get("embedding_model");
@@ -442,7 +432,6 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
         content,
         tags: decode_json_value(tags, "knowledge_entries", "tags")?,
         version: Version::new(version as u64),
-        agent_id: agent_id.map(AgentId::from_uuid),
         metadata: decode_json_value(metadata, "knowledge_entries", "metadata")?,
         embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,

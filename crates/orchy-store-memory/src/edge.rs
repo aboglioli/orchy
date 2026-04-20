@@ -147,6 +147,7 @@ impl EdgeStore for MemoryBackend {
                 && e.to_kind() == to_kind
                 && e.to_id() == to_id
                 && e.rel_type() == rel_type
+                && e.is_active()
         }))
     }
 

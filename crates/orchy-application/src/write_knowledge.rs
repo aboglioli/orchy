@@ -78,7 +78,6 @@ impl WriteKnowledge {
             content: cmd.content,
             tags: cmd.tags.unwrap_or_default(),
             expected_version,
-            agent_id: agent_id.clone(),
             metadata: cmd.metadata.unwrap_or_default(),
             metadata_remove: cmd.metadata_remove.unwrap_or_default(),
         };
@@ -103,7 +102,7 @@ impl WriteKnowledge {
                     actual: existing.version().as_u64(),
                 });
             }
-            existing.update(write_cmd.title, write_cmd.content, write_cmd.agent_id)?;
+            existing.update(write_cmd.title, write_cmd.content)?;
             for tag in &write_cmd.tags {
                 existing.add_tag(tag.clone())?;
             }
@@ -130,7 +129,6 @@ impl WriteKnowledge {
                 write_cmd.title,
                 write_cmd.content,
                 write_cmd.tags,
-                write_cmd.agent_id,
                 write_cmd.metadata,
             )?;
             for k in &write_cmd.metadata_remove {

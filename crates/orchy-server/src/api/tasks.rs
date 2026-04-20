@@ -57,7 +57,6 @@ type OrgProject = (String, String);
 pub struct ListTasksQuery {
     pub status: Option<String>,
     pub namespace: Option<String>,
-    pub parent_id: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
 }
@@ -81,8 +80,6 @@ pub struct PostTaskBody {
     pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
-    pub depends_on: Option<Vec<String>>,
-    pub parent_id: Option<String>,
     pub namespace: Option<String>,
 }
 
@@ -195,7 +192,6 @@ pub async fn list(
         project: Some(project),
         namespace: query.namespace,
         status: query.status,
-        parent_id: query.parent_id,
         assigned_to: None,
         tag: None,
         after: query.after,
@@ -236,8 +232,6 @@ pub async fn post(
         acceptance_criteria: body.acceptance_criteria,
         priority: body.priority,
         assigned_roles: body.assigned_roles,
-        depends_on: body.depends_on,
-        parent_id: body.parent_id,
         created_by: None,
     };
 
@@ -355,6 +349,7 @@ pub async fn claim(
     let cmd = ClaimTaskCommand {
         task_id: id,
         agent_id: body.agent,
+        org_id: org,
         start: body.start,
     };
 
@@ -483,6 +478,7 @@ pub async fn fail(
 
     let cmd = FailTaskCommand {
         task_id: id,
+        org_id: org,
         reason: body.reason,
     };
 
@@ -525,6 +521,7 @@ pub async fn cancel(
 
     let cmd = CancelTaskCommand {
         task_id: id,
+        org_id: org,
         reason: body.reason,
     };
 

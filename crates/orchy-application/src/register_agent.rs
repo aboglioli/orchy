@@ -48,11 +48,10 @@ impl RegisterAgent {
             roles: cmd.roles,
             description: cmd.description,
             id,
-            parent_id,
             metadata: cmd.metadata,
         };
 
-        if let Some(parent_id) = domain_cmd.parent_id {
+        if let Some(parent_id) = parent_id {
             let parent = self
                 .agents
                 .find_by_id(&parent_id)

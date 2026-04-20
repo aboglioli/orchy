@@ -36,16 +36,6 @@ impl RemoveDependency {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
-        task.remove_dependency(&dependency_id)?;
-
-        if task.status() == TaskStatus::Blocked
-            && self.all_deps_completed(task.depends_on()).await?
-        {
-            task.unblock()?;
-        }
-
-        self.tasks.save(&mut task).await?;
-
         let dep_edges = self
             .edges
             .find_from(
@@ -64,14 +54,36 @@ impl RemoveDependency {
             self.edges.save(&mut dep_edge).await?;
         }
 
+        if task.status() == TaskStatus::Blocked
+            && self.all_deps_completed(&org_id, &task_id).await?
+        {
+            task.unblock()?;
+            self.tasks.save(&mut task).await?;
+        }
+
         Ok(TaskResponse::from(&task))
     }
 
-    async fn all_deps_completed(&self, deps: &[TaskId]) -> Result<bool> {
-        for dep_id in deps {
+    async fn all_deps_completed(&self, org: &OrganizationId, task_id: &TaskId) -> Result<bool> {
+        let dep_edges = self
+            .edges
+            .find_from(
+                org,
+                &ResourceKind::Task,
+                &task_id.to_string(),
+                &[RelationType::DependsOn],
+                None,
+            )
+            .await?;
+
+        for edge in &dep_edges {
+            let dep_id: TaskId = match edge.to_id().parse() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
             let dep = self
                 .tasks
-                .find_by_id(dep_id)
+                .find_by_id(&dep_id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
             if dep.status() != TaskStatus::Completed {

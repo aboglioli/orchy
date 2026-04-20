@@ -6,7 +6,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
-use orchy_core::task::{TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 
 use crate::dto::{PageResponse, TaskResponse};
 use crate::parse_namespace;
@@ -16,7 +16,6 @@ pub struct ListTasksCommand {
     pub project: Option<String>,
     pub namespace: Option<String>,
     pub status: Option<String>,
-    pub parent_id: Option<String>,
     pub assigned_to: Option<String>,
     pub tag: Option<String>,
     pub after: Option<String>,
@@ -52,12 +51,6 @@ impl ListTasks {
             .transpose()
             .map_err(Error::InvalidInput)?;
 
-        let parent_id = cmd
-            .parent_id
-            .map(|s| s.parse::<TaskId>())
-            .transpose()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-
         let assigned_to = cmd.assigned_to.map(|s| AgentId::from_str(&s)).transpose()?;
 
         let filter = TaskFilter {
@@ -65,7 +58,6 @@ impl ListTasks {
             project,
             namespace,
             status,
-            parent_id,
             assigned_to,
             tag: cmd.tag,
             ..Default::default()

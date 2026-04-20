@@ -51,13 +51,11 @@ impl DelegateTask {
             parent.org_id().clone(),
             parent.project().clone(),
             parent.namespace().clone(),
-            Some(parent_id),
             cmd.title,
             cmd.description,
             cmd.acceptance_criteria,
             priority,
             cmd.assigned_roles.unwrap_or_default(),
-            vec![],
             created_by.clone(),
             false,
         )?;

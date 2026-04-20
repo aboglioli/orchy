@@ -229,10 +229,10 @@ impl OrchyHandler {
         agent::list_conversation(self, params).await
     }
 
-    #[tool(description = "Create a task. Use parent_id to create a subtask. \
-        Tasks with depends_on are auto-blocked until dependencies complete. \
+    #[tool(description = "Create a task. \
         Use acceptance_criteria to define a clear definition of done. \
-        Use refs to attach resource references (files, URLs, etc.).")]
+        Set hierarchy and dependencies afterwards with add_edge \
+        (spawns for parent-child, depends_on for dependencies).")]
     async fn post_task(
         &self,
         Parameters(params): Parameters<PostTaskParams>,

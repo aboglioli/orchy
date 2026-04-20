@@ -387,8 +387,8 @@ This builds a shared graph that any agent can traverse.
 - `merged_from` — N-to-1 consolidation (merged task ← source tasks); auto-created by merge_tasks
 - `summarizes` — 1-to-1 distillation of another entry
 - `implements` — this executes/fulfills that (task implementing a plan)
-- `spawns` — this triggered/created that; auto-created by split_task, delegate_task, and post_task (when parent_id is set)
-- `depends_on` — task A depends on task B completing first; auto-created by add_dependency, post_task (with depends_on list), auto-deleted by remove_dependency
+- `spawns` — this triggered/created that; auto-created by split_task and delegate_task
+- `depends_on` — task A depends on task B completing first; auto-created by add_dependency, auto-deleted by remove_dependency
 - `related_to` — general symmetric peer relationship
 - `invalidates` — this fact/decision invalidates the truth of that fact
 - `confirms` — this evidence confirms or corroborates that claim

@@ -191,7 +191,6 @@ pub struct Task {
     org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
-    parent_id: Option<TaskId>,
     title: String,
     description: String,
     acceptance_criteria: Option<String>,
@@ -200,7 +199,6 @@ pub struct Task {
     assigned_roles: Vec<String>,
     assigned_to: Option<AgentId>,
     assigned_at: Option<DateTime<Utc>>,
-    depends_on: Vec<TaskId>,
     tags: Vec<String>,
     result_summary: Option<String>,
     created_by: Option<AgentId>,
@@ -216,13 +214,11 @@ impl Task {
         org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
-        parent_id: Option<TaskId>,
         title: String,
         description: String,
         acceptance_criteria: Option<String>,
         priority: Priority,
         assigned_roles: Vec<String>,
-        depends_on: Vec<TaskId>,
         created_by: Option<AgentId>,
         is_blocked: bool,
     ) -> Result<Self> {
@@ -236,7 +232,6 @@ impl Task {
             org_id,
             project,
             namespace,
-            parent_id,
             title,
             description,
             acceptance_criteria,
@@ -249,7 +244,6 @@ impl Task {
             assigned_roles,
             assigned_to: None,
             assigned_at: None,
-            depends_on,
             tags: Vec::new(),
             result_summary: None,
             created_by,
@@ -273,8 +267,6 @@ impl Task {
                     acceptance_criteria: task.acceptance_criteria.clone(),
                     priority: task.priority.to_string(),
                     assigned_roles: task.assigned_roles.clone(),
-                    depends_on: task.depends_on.iter().map(|id| id.to_string()).collect(),
-                    parent_id: task.parent_id.map(|id| id.to_string()),
                 })
                 .map_err(|e| Error::InvalidInput(e.to_string()))?,
             )
@@ -290,7 +282,6 @@ impl Task {
             org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
-            parent_id: r.parent_id,
             title: r.title,
             description: r.description,
             acceptance_criteria: r.acceptance_criteria,
@@ -299,7 +290,6 @@ impl Task {
             assigned_roles: r.assigned_roles,
             assigned_to: r.assigned_to,
             assigned_at: r.assigned_at,
-            depends_on: r.depends_on,
             tags: r.tags,
             result_summary: r.result_summary,
             created_by: r.created_by,
@@ -618,51 +608,6 @@ impl Task {
         Ok(())
     }
 
-    pub fn add_dependency(&mut self, dep: TaskId) -> Result<()> {
-        if self.depends_on.contains(&dep) {
-            return Ok(());
-        }
-        self.depends_on.push(dep);
-        self.updated_at = Utc::now();
-
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_DEPENDENCY_ADDED,
-                Payload::from_json(&task_events::TaskDependencyAddedPayload {
-                    task_id: self.id.to_string(),
-                    dependency_id: dep.to_string(),
-                })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
-            )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
-        );
-
-        Ok(())
-    }
-
-    pub fn remove_dependency(&mut self, dep: &TaskId) -> Result<()> {
-        self.depends_on.retain(|d| d != dep);
-        self.updated_at = Utc::now();
-
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_DEPENDENCY_REMOVED,
-                Payload::from_json(&task_events::TaskDependencyRemovedPayload {
-                    task_id: self.id.to_string(),
-                    dependency_id: dep.to_string(),
-                })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
-            )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
-        );
-
-        Ok(())
-    }
-
     pub fn id(&self) -> TaskId {
         self.id
     }
@@ -674,9 +619,6 @@ impl Task {
     }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
-    }
-    pub fn parent_id(&self) -> Option<TaskId> {
-        self.parent_id
     }
     pub fn title(&self) -> &str {
         &self.title
@@ -701,9 +643,6 @@ impl Task {
     }
     pub fn assigned_at(&self) -> Option<DateTime<Utc>> {
         self.assigned_at
-    }
-    pub fn depends_on(&self) -> &[TaskId] {
-        &self.depends_on
     }
     pub fn tags(&self) -> &[String] {
         &self.tags
@@ -757,52 +696,6 @@ impl Task {
     pub fn result_summary(&self) -> Option<&str> {
         self.result_summary.as_deref()
     }
-    pub fn set_parent_id(&mut self, parent_id: Option<TaskId>) -> Result<()> {
-        self.parent_id = parent_id;
-        self.updated_at = Utc::now();
-
-        let payload = Payload::from_json(&task_events::TaskParentChangedPayload {
-            task_id: self.id.to_string(),
-            parent_id: self.parent_id.map(|id| id.to_string()),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_PARENT_CHANGED,
-            payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
-        self.collector.collect(event);
-        Ok(())
-    }
-
-    pub fn replace_dependency(&mut self, old: &TaskId, new: TaskId) -> Result<()> {
-        for dep in &mut self.depends_on {
-            if dep == old {
-                *dep = new;
-            }
-        }
-        self.depends_on.dedup();
-        self.updated_at = Utc::now();
-
-        let payload = Payload::from_json(&task_events::TaskDependencyReplacedPayload {
-            task_id: self.id.to_string(),
-            old_dependency_id: old.to_string(),
-            new_dependency_id: new.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_DEPENDENCY_REPLACED,
-            payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
-        self.collector.collect(event);
-        Ok(())
-    }
-
     pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
         let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
@@ -863,7 +756,6 @@ pub struct RestoreTask {
     pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
-    pub parent_id: Option<TaskId>,
     pub title: String,
     pub description: String,
     pub acceptance_criteria: Option<String>,
@@ -872,7 +764,6 @@ pub struct RestoreTask {
     pub assigned_roles: Vec<String>,
     pub assigned_to: Option<AgentId>,
     pub assigned_at: Option<DateTime<Utc>>,
-    pub depends_on: Vec<TaskId>,
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
     pub created_by: Option<AgentId>,
@@ -886,7 +777,6 @@ pub struct SubtaskDef {
     pub acceptance_criteria: Option<String>,
     pub priority: Priority,
     pub assigned_roles: Vec<String>,
-    pub depends_on: Vec<TaskId>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -897,7 +787,6 @@ pub struct TaskFilter {
     pub status: Option<TaskStatus>,
     pub assigned_role: Option<String>,
     pub assigned_to: Option<AgentId>,
-    pub parent_id: Option<TaskId>,
     pub tag: Option<String>,
 }
 
@@ -912,7 +801,6 @@ mod tests {
             org_id: OrganizationId::new("test").unwrap(),
             project: ProjectId::try_from("test").unwrap(),
             namespace: Namespace::root(),
-            parent_id: None,
             title: "Test Task".to_string(),
             description: "Test".to_string(),
             acceptance_criteria: None,
@@ -921,7 +809,6 @@ mod tests {
             assigned_roles: vec!["tester".to_string()],
             assigned_to,
             assigned_at: None,
-            depends_on: vec![],
             tags: vec![],
             result_summary: None,
             created_by: None,
@@ -999,13 +886,11 @@ mod tests {
             OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
-            None,
             "Task with criteria".to_string(),
             "Implement feature".to_string(),
             Some("all tests pass and docs updated".to_string()),
             Priority::default(),
             vec!["engineer".to_string()],
-            vec![],
             None,
             false,
         )
@@ -1119,48 +1004,15 @@ mod tests {
     }
 
     #[test]
-    fn set_parent_id_updates_field() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        let parent = TaskId::new();
-        task.set_parent_id(Some(parent)).unwrap();
-        assert_eq!(task.parent_id(), Some(parent));
-    }
-
-    #[test]
-    fn replace_dependency_swaps_id() {
-        let old_dep = TaskId::new();
-        let new_dep = TaskId::new();
-        let mut task = make_task(TaskStatus::Pending, None);
-        task.add_dependency(old_dep).unwrap();
-        task.replace_dependency(&old_dep, new_dep).unwrap();
-        assert!(!task.depends_on().contains(&old_dep));
-        assert!(task.depends_on().contains(&new_dep));
-    }
-
-    #[test]
-    fn replace_dependency_deduplicates() {
-        let dep_a = TaskId::new();
-        let dep_b = TaskId::new();
-        let mut task = make_task(TaskStatus::Pending, None);
-        task.add_dependency(dep_a).unwrap();
-        task.add_dependency(dep_b).unwrap();
-        task.replace_dependency(&dep_a, dep_b).unwrap();
-        assert_eq!(task.depends_on().len(), 1);
-        assert!(task.depends_on().contains(&dep_b));
-    }
-
-    #[test]
     fn new_creates_pending_task() {
         let task = Task::new(
             OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
-            None,
             "title".to_string(),
             "desc".to_string(),
             None,
             Priority::High,
-            vec![],
             vec![],
             None,
             false,
@@ -1175,13 +1027,11 @@ mod tests {
             OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
-            None,
             "title".to_string(),
             "desc".to_string(),
             None,
             Priority::Normal,
             vec![],
-            vec![TaskId::new()],
             None,
             true,
         )
@@ -1192,5 +1042,41 @@ mod tests {
     #[test]
     fn all_children_completed_requires_nonempty() {
         assert!(!Task::all_children_completed(&[]));
+    }
+
+    #[test]
+    fn all_children_completed_when_all_completed() {
+        let children = vec![
+            make_task(TaskStatus::Completed, None),
+            make_task(TaskStatus::Completed, None),
+        ];
+        assert!(Task::all_children_completed(&children));
+    }
+
+    #[test]
+    fn all_children_completed_when_all_cancelled() {
+        let children = vec![
+            make_task(TaskStatus::Cancelled, None),
+            make_task(TaskStatus::Cancelled, None),
+        ];
+        assert!(Task::all_children_completed(&children));
+    }
+
+    #[test]
+    fn all_children_completed_with_mixed_completed_and_cancelled() {
+        let children = vec![
+            make_task(TaskStatus::Completed, None),
+            make_task(TaskStatus::Cancelled, None),
+        ];
+        assert!(Task::all_children_completed(&children));
+    }
+
+    #[test]
+    fn all_children_completed_false_when_any_pending() {
+        let children = vec![
+            make_task(TaskStatus::Completed, None),
+            make_task(TaskStatus::Pending, None),
+        ];
+        assert!(!Task::all_children_completed(&children));
     }
 }

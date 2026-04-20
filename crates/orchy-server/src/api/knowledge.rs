@@ -45,7 +45,6 @@ pub struct ListQuery {
     pub tag: Option<String>,
     pub namespace: Option<String>,
     pub path_prefix: Option<String>,
-    pub author_agent_id: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
 }
@@ -153,7 +152,6 @@ pub async fn list(
         kind: query.kind,
         tag: query.tag,
         path_prefix: query.path_prefix,
-        agent_id: query.author_agent_id,
         after: query.after,
         limit: query.limit,
     };
@@ -254,7 +252,6 @@ pub async fn import(
         target_project: project,
         target_namespace: body.namespace,
         target_path: None,
-        agent_id: None,
     };
 
     let entry = container
@@ -417,7 +414,6 @@ pub async fn append(
         kind: body.kind,
         value: body.value,
         separator: body.separator,
-        agent_id: None,
         metadata: body.metadata,
         metadata_remove: None,
     };

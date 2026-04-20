@@ -12,7 +12,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
-const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata";
 
 #[async_trait]
 impl AgentStore for PgBackend {
@@ -29,13 +29,12 @@ impl AgentStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO agents (id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "INSERT INTO agents (id, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
-                parent_id = EXCLUDED.parent_id,
                 roles = EXCLUDED.roles,
                 description = EXCLUDED.description,
                 status = EXCLUDED.status,
@@ -47,7 +46,6 @@ impl AgentStore for PgBackend {
         .bind(agent.org_id().to_string())
         .bind(agent.project().to_string())
         .bind(agent.namespace().to_string())
-        .bind(agent.parent_id().map(|id| *id.as_uuid()))
         .bind(&roles_json)
         .bind(agent.description())
         .bind(agent.status().to_string())
@@ -175,7 +173,6 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
-    let parent_id_str: Option<String> = row.get("parent_id");
     let roles: serde_json::Value = row.get("roles");
     let description: String = row.get("description");
     let status: String = row.get("status");
@@ -183,15 +180,12 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
 
-    let parent_id = parent_id_str.map(|s| AgentId::from_str(&s)).transpose()?;
-
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str)?,
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,
         namespace: parse_namespace(namespace, "agents", "namespace")?,
-        parent_id,
         roles: decode_json_value(roles, "agents", "roles")?,
         description,
         status: status.parse::<AgentStatus>().unwrap_or_default(),

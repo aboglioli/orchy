@@ -144,11 +144,6 @@ pub(super) async fn list_knowledge(
         None => None,
     };
 
-    let agent_id = match params.agent.as_deref() {
-        Some(s) => Some(h.resolve_agent_id(s).await?.to_string()),
-        None => None,
-    };
-
     let project = if params.project.is_some() {
         params.project
     } else if namespace.is_none() {
@@ -165,7 +160,6 @@ pub(super) async fn list_knowledge(
         kind: params.kind,
         tag: params.tag,
         path_prefix: params.path_prefix,
-        agent_id,
         after: params.after,
         limit: params.limit,
     };
@@ -248,7 +242,6 @@ pub(super) async fn append_knowledge(
         kind: params.kind,
         value: params.value,
         separator: params.separator,
-        agent_id: h.get_session_agent().await.map(|id| id.to_string()),
         metadata,
         metadata_remove: params.metadata_remove,
     };
@@ -403,7 +396,6 @@ pub(super) async fn import_knowledge(
         target_project: project.to_string(),
         target_namespace: Some(namespace.to_string()),
         target_path: None,
-        agent_id: h.get_session_agent().await.map(|id| id.to_string()),
     };
 
     match h.container.app.import_knowledge.execute(cmd).await {

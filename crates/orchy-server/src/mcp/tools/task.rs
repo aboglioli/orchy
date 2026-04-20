@@ -36,8 +36,6 @@ pub(super) async fn post_task(h: &OrchyHandler, params: PostTaskParams) -> Resul
         acceptance_criteria: params.acceptance_criteria,
         priority: params.priority,
         assigned_roles: params.assigned_roles,
-        depends_on: params.depends_on,
-        parent_id: params.parent_id,
         created_by: h.get_session_agent().await.map(|id| id.to_string()),
     };
 
@@ -102,6 +100,7 @@ pub(super) async fn get_next_task(
                 .get_task_with_context
                 .execute(GetTaskWithContextCommand {
                     task_id: task_id.to_string(),
+                    org_id: org.to_string(),
                     include_dependencies: false,
                     include_knowledge: false,
                     knowledge_limit: 20,
@@ -137,7 +136,6 @@ pub(super) async fn list_tasks(
         project: Some(project),
         namespace: Some(namespace.to_string()),
         status: params.status,
-        parent_id: params.parent_id,
         assigned_to: None,
         tag: None,
         after: params.after,
@@ -154,11 +152,12 @@ pub(super) async fn claim_task(
     h: &OrchyHandler,
     params: ClaimTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
+    let (agent_id, org, _, _) = h.require_session().await?;
 
     let cmd = ClaimTaskCommand {
         task_id: params.task_id.clone(),
         agent_id: agent_id.to_string(),
+        org_id: org.to_string(),
         start: params.start,
     };
 
@@ -174,6 +173,7 @@ pub(super) async fn claim_task(
                 .get_task_with_context
                 .execute(GetTaskWithContextCommand {
                     task_id: task_id.to_string(),
+                    org_id: org.to_string(),
                     include_dependencies: false,
                     include_knowledge: false,
                     knowledge_limit: 20,
@@ -193,7 +193,7 @@ pub(super) async fn start_task(
     h: &OrchyHandler,
     params: StartTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
+    let (agent_id, org, _, _) = h.require_session().await?;
 
     let cmd = StartTaskCommand {
         task_id: params.task_id.clone(),
@@ -212,6 +212,7 @@ pub(super) async fn start_task(
                 .get_task_with_context
                 .execute(GetTaskWithContextCommand {
                     task_id: task_id.to_string(),
+                    org_id: org.to_string(),
                     include_dependencies: false,
                     include_knowledge: false,
                     knowledge_limit: 20,
@@ -260,10 +261,11 @@ pub(super) async fn complete_task(
 }
 
 pub(super) async fn fail_task(h: &OrchyHandler, params: FailTaskParams) -> Result<String, String> {
-    let _ = h.require_session().await?;
+    let (_, org, _, _) = h.require_session().await?;
 
     let cmd = FailTaskCommand {
         task_id: params.task_id,
+        org_id: org.to_string(),
         reason: params.reason,
     };
 
@@ -277,10 +279,11 @@ pub(super) async fn cancel_task(
     h: &OrchyHandler,
     params: CancelTaskParams,
 ) -> Result<String, String> {
-    let _ = h.require_session().await?;
+    let (_, org, _, _) = h.require_session().await?;
 
     let cmd = CancelTaskCommand {
         task_id: params.task_id,
+        org_id: org.to_string(),
         reason: params.reason,
     };
 
@@ -600,6 +603,7 @@ pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<
         .get_task_with_context
         .execute(GetTaskWithContextCommand {
             task_id: params.task_id.clone(),
+            org_id: org.to_string(),
             include_dependencies: params.include_dependencies.unwrap_or(false),
             include_knowledge: params.include_knowledge.unwrap_or(false),
             knowledge_limit: params.knowledge_limit.unwrap_or(20),

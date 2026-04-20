@@ -12,7 +12,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::SqliteBackend;
 
-const SELECT_COLS: &str = "id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata";
 
 #[async_trait]
 impl AgentStore for SqliteBackend {
@@ -23,14 +23,13 @@ impl AgentStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO agents (id, organization_id, project, namespace, parent_id, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO agents (id, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 agent.id().to_string(),
                 agent.org_id().to_string(),
                 agent.project().to_string(),
                 agent.namespace().to_string(),
-                agent.parent_id().map(|id| id.to_string()),
                 serde_json::to_string(agent.roles())
                     .map_err(|e| Error::Store(format!("failed to serialize roles: {e}")))?,
                 agent.description(),
@@ -173,18 +172,12 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let org_id_str: String = row.get(1)?;
     let project_str: String = row.get(2)?;
     let namespace_str: String = row.get(3)?;
-    let parent_id_str: Option<String> = row.get(4)?;
-    let roles_str: String = row.get(5)?;
-    let description: String = row.get(6)?;
-    let status_str: String = row.get(7)?;
-    let heartbeat_str: String = row.get(8)?;
-    let connected_str: String = row.get(9)?;
-    let metadata_str: String = row.get(10)?;
-
-    let parent_id = parent_id_str
-        .map(|s| AgentId::from_str(&s))
-        .transpose()
-        .map_err(|e| conversion_err(4, e.to_string()))?;
+    let roles_str: String = row.get(4)?;
+    let description: String = row.get(5)?;
+    let status_str: String = row.get(6)?;
+    let heartbeat_str: String = row.get(7)?;
+    let connected_str: String = row.get(8)?;
+    let metadata_str: String = row.get(9)?;
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e.to_string()))?,
@@ -192,7 +185,6 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
         project: ProjectId::try_from(project_str).map_err(|e| conversion_err(2, e))?,
         namespace: Namespace::try_from(namespace_str)
             .map_err(|e| conversion_err(3, e.to_string()))?,
-        parent_id,
         roles: crate::decode_json(&roles_str, "roles")?,
         description,
         status: status_str.parse::<AgentStatus>().unwrap_or_default(),
@@ -200,7 +192,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    9,
+                    7,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
@@ -209,7 +201,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    10,
+                    8,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
