@@ -146,27 +146,42 @@ impl WriteKnowledge {
         self.store.save(&mut entry).await?;
 
         if let Some(task_id) = task_id_str.filter(|t| t.parse::<TaskId>().is_ok()) {
-            let mut edge = match Edge::new(
-                org_id,
-                ResourceKind::Task,
-                task_id.clone(),
-                ResourceKind::Knowledge,
-                entry.id().to_string(),
-                RelationType::Produces,
-                agent_id,
-            ) {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::warn!("failed to create edge: {e}");
-                    return Ok(KnowledgeResponse::from(&entry));
+            let edge_exists = self
+                .edges
+                .exists_by_pair(
+                    &org_id,
+                    &ResourceKind::Task,
+                    &task_id,
+                    &ResourceKind::Knowledge,
+                    &entry.id().to_string(),
+                    &RelationType::Produces,
+                )
+                .await
+                .unwrap_or(false);
+
+            if !edge_exists {
+                let mut edge = match Edge::new(
+                    org_id,
+                    ResourceKind::Task,
+                    task_id.clone(),
+                    ResourceKind::Knowledge,
+                    entry.id().to_string(),
+                    RelationType::Produces,
+                    agent_id,
+                ) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        tracing::warn!("failed to create edge: {e}");
+                        return Ok(KnowledgeResponse::from(&entry));
+                    }
                 }
-            }
-            .with_source(ResourceKind::Task, task_id);
-            if let Err(e) = self.edges.save(&mut edge).await {
-                tracing::warn!(
-                    "failed to create produces edge for knowledge {}: {e}",
-                    entry.id()
-                );
+                .with_source(ResourceKind::Task, task_id);
+                if let Err(e) = self.edges.save(&mut edge).await {
+                    tracing::warn!(
+                        "failed to create produces edge for knowledge {}: {e}",
+                        entry.id()
+                    );
+                }
             }
         }
 
