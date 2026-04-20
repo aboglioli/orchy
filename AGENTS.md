@@ -6,9 +6,10 @@ together on complex goals — like a company operating system for agents.
 
 ## What Orchy Does
 
-Orchy exposes **65** MCP tools over Streamable HTTP. Agents connect, register,
-and use these tools to coordinate. Orchy enforces the rules; agents bring
-the intelligence.
+Orchy exposes **62** MCP tools over Streamable HTTP and a stateless CLI
+(`orchy`) for agents without MCP support. Agents connect, register, and use
+these tools to coordinate. Orchy enforces the rules; agents bring the
+intelligence.
 
 Think of orchy as the operating system for a company made of agents. Every
 company needs three things to function: people need to **talk** to each other,
@@ -108,7 +109,9 @@ crates/
 ├── orchy-store-sqlite/    # SQLite + sea-query backend (single-node)
 ├── orchy-store-pg/        # PostgreSQL + pgvector backend (production)
 │
-└── orchy-server/          # MCP server binary
+├── orchy-cli/             # stateless CLI binary (`orchy`) — REST client for non-MCP agents
+│
+└── orchy-server/          # MCP + REST API server binary
     └── src/
         ├── main.rs        # HTTP server + MCP routing
         ├── container.rs   # DI container wiring all services
@@ -116,10 +119,13 @@ crates/
         ├── store.rs       # StoreBackend enum delegation
         ├── bootstrap.rs   # Dynamic bootstrap prompt generation
         ├── heartbeat.rs   # Agent timeout monitor
+        ├── api/           # REST handlers (axum)
+        │   ├── graph.rs   # Graph endpoints: add_edge, remove_edge, query_relations, assemble_context
+        │   └── ...
         └── mcp/
             ├── handler.rs # Session state + ServerHandler + INSTRUCTIONS
             ├── params.rs  # MCP tool parameter structs
-            └── tools.rs   # MCP tool implementations
+            └── tools/     # MCP tool implementations (one file per domain)
 ```
 
 ### Layer Rules
@@ -219,6 +225,8 @@ When an agent disconnects (or times out via heartbeat monitor):
 
 ## Agent Lifecycle
 
+### MCP agents
+
 **Startup:**
 1. `register_agent(project, description)` — roles auto-assigned from task demand
 2. `get_agent_context` — everything in one call: agent info, project, inbox, pending tasks, skills, handoff context
@@ -237,6 +245,40 @@ When an agent disconnects (or times out via heartbeat monitor):
 **Disconnecting:**
 - `write_knowledge(kind: "context", path: "handoff")` with: task ID, progress, blockers, decisions
 - `disconnect` — tasks released to pending, locks freed
+
+### CLI agents (stateless, no MCP)
+
+For agents without MCP support (pi coding agent, Codex CLI, shell scripts). Each call is an independent REST request — no session, no heartbeat.
+
+**Config** (lowest → highest priority):
+1. `~/.orchy/config.toml` — global
+2. `.orchy.toml` — repo-local (walk up from cwd)
+3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_ORG`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_AGENT_ID`
+4. Per-call flags
+
+**Startup:**
+```bash
+orchy bootstrap --json      # briefing: inbox, tasks, skills, handoff context
+```
+
+**Working:**
+```bash
+orchy task next --json                          # peek or claim next task
+orchy task claim <id>
+orchy task start <id>
+orchy knowledge write <path> --kind decision --title "..." --content "..." --task-id <id>
+orchy message send --to broadcast --body "..."
+orchy lock acquire <name> --ttl 300
+orchy event poll --json
+```
+
+**Completing:**
+```bash
+orchy task complete <id> --summary "..."
+orchy knowledge write handoff --kind context --title "Handoff" --content "..."
+```
+
+`register_agent`, `heartbeat`, `disconnect`, and `session_status` do not exist in the CLI — they are session-lifecycle tools. Use `ORCHY_AGENT_ID` (or `--agent`) to identify yourself across calls.
 
 ## Knowledge Module
 
@@ -296,6 +338,13 @@ A "janitor" agent can compact and reorganize:
 - All tools require a registered session except `register_agent`,
   `session_status`, `list_knowledge_types`, and `list_agents` (when `project`
   is passed).
+- `Task.parent_id`, `Task.depends_on[]`, and `Knowledge.agent_id` were removed
+  as first-class DB columns. Relationships now live in the Edge graph layer:
+  `spawns` (parent→child), `depends_on` (task→task), `owned_by` (knowledge→agent).
+  Edge creation is automatic for `split_task`, `delegate_task`, `merge_tasks`,
+  `add_dependency`, and `write_knowledge` with `task_id`.
+- `get_neighbors`, `get_graph`, `list_edges` MCP tools removed — superseded by
+  `query_relations` (richer neighborhood traversal with semantic re-ranking).
 
 ## Configuration
 
@@ -339,6 +388,7 @@ path = "orchy.db"
 
 ```bash
 cargo run -p orchy-server          # start MCP server (default: config.toml)
+cargo run -p orchy-cli -- --help   # CLI binary (orchy)
 cargo test -p orchy-core           # domain tests
 cargo test -p orchy-events         # event library tests
 cargo test -p orchy-application    # application layer tests

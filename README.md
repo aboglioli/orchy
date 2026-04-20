@@ -2,7 +2,8 @@
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
 board, unified knowledge base, messaging, resource locking, graph edges, and
-project context — exposed as **65** MCP tools over Streamable HTTP.
+project context — exposed as **62** MCP tools over Streamable HTTP and as a
+stateless **CLI** (`orchy`) for agents without MCP support.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides
 the coordination layer and enforces the rules.
@@ -10,11 +11,29 @@ the coordination layer and enforces the rules.
 ## Quick start
 
 ```bash
-cargo run -p orchy-server
+cargo run -p orchy-server   # MCP + REST API
+cargo run -p orchy-cli      # CLI binary (requires a running server)
 ```
 
 MCP server at `http://127.0.0.1:3100/mcp`. Bootstrap prompt at
 `http://127.0.0.1:3100/bootstrap/<project>`.
+
+CLI quickstart:
+```bash
+# Configure once (or use env vars: ORCHY_URL, ORCHY_API_KEY, ORCHY_ORG, ORCHY_PROJECT, ORCHY_AGENT_ID)
+cat > ~/.orchy/config.toml <<EOF
+url      = "http://localhost:3100"
+api_key  = "your-key"
+org      = "myorg"
+project  = "myproject"
+agent_id = "your-agent-uuid"
+EOF
+
+orchy bootstrap              # agent briefing: inbox, tasks, skills, handoff context
+orchy task list --json       # machine-readable output for agents
+orchy task claim <id>
+orchy knowledge write auth/decision --kind decision --title "..." --content "..."
+```
 
 ## Configuration
 
@@ -58,11 +77,12 @@ Orchy's four main entities — **Agents**, **Tasks**, **Knowledge**, and **Messa
 | Entity | Field | Points To | Purpose |
 |--------|-------|-----------|---------|
 | Task | `assigned_to` | Agent | Runtime task assignment (who is working on it) |
-| Task | `parent_id` | Task | Hierarchy (subtasks) |
-| Task | `depends_on` | Task[] | Dependencies (must complete first) |
-| Knowledge | `agent_id` | Agent | Author/creator |
 | Message | `from_agent` | Agent | Sender |
 | Message | `reply_to` | Message | Threading |
+
+`Task.parent_id`, `Task.depends_on`, and `Knowledge.agent_id` were migrated to
+graph edges (`spawns`, `depends_on`, `owned_by`) in Phase 2/3 of the graph rollout.
+They no longer exist as columns.
 
 #### Graph Edges (Semantic Links)
 
@@ -348,6 +368,50 @@ Projects can link to other projects to share knowledge entries.
 Every state change is recorded as a semantic domain event. Query with
 `poll_updates`.
 
+## REST Graph Endpoints
+
+Graph operations are available under `/organizations/{org}/graph/` for REST clients and the CLI.
+
+```
+POST   /organizations/{org}/graph/edges                    add_edge
+DELETE /organizations/{org}/graph/edges/{edge_id}          remove_edge
+GET    /organizations/{org}/graph/relations                 query_relations (query params: anchor_kind, anchor_id, rel_types, direction, max_depth, as_of)
+GET    /organizations/{org}/graph/edges                     list edges (admin/debug)
+POST   /organizations/{org}/graph/context                   assemble_context
+```
+
+`GET /tasks/{id}`, `GET /knowledge/{*path}`, and `GET /agents/{id}` also accept
+`rel_types`, `direction`, and `max_depth` query params to inline an
+`EntityNeighborhood` in the response without a separate call.
+
+## CLI
+
+`orchy` is a stateless CLI client targeting agents without MCP support (e.g. pi coding agent, Codex). Every invocation is a single REST request — no session, no heartbeat required.
+
+**Config resolution** (lowest → highest priority):
+1. `~/.orchy/config.toml` — global defaults
+2. `.orchy.toml` — repo-local config (walked up from cwd, like mise)
+3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_ORG`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_AGENT_ID`
+4. Per-call flags: `--url`, `--api-key`, `--org`, `--project`, `--namespace`, `--agent`
+
+**Output:** text by default, `--json` on every command for machine-parseable output.
+
+**Key commands:**
+```bash
+orchy bootstrap --json          # full agent briefing (inbox, tasks, skills, handoff)
+orchy task list --json
+orchy task claim <id>
+orchy task complete <id> --summary "..."
+orchy knowledge write <path> --kind decision --title "..." --content "..."
+orchy knowledge read <path> --json
+orchy message send --to broadcast --body "..."
+orchy edge add --from-kind task --from-id <id> --to-kind knowledge --to-id <id> --rel-type produces
+orchy edge query --anchor-kind task --anchor-id <id> --json
+orchy lock acquire myfile.rs --ttl 120
+```
+
+Full command reference: `orchy --help` / `orchy <domain> --help`.
+
 ## MCP Tools
 
 Authoritative definitions: `crates/orchy-server/src/mcp/tools/` and
@@ -632,18 +696,10 @@ Can materialize referenced dependencies and linked knowledge entries.
 
 | Tool | Session | Description |
 |------|---------|-------------|
-| `add_task_note` | yes | Add a timestamped note to a task. |
 | `tag_task` | yes | Add a tag to a task. |
 | `untag_task` | yes | Remove a tag from a task. |
 | `list_tags` | yes | List all unique tags used across tasks in the project. |
 | `move_task` | yes | Move a task to a different namespace within the same project. |
-
-### `add_task_note`
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `task_id` | yes | |
-| `body` | yes | Note content |
 
 ### `tag_task` / `untag_task`
 
@@ -679,6 +735,7 @@ Can materialize referenced dependencies and linked knowledge entries.
 | `body` | yes | Message body |
 | `namespace` | no | |
 | `reply_to` | no | Message ID to thread the message |
+| `refs` | no | Array of `{kind, id, display?}` resource pointers. Context hints for the recipient — not graph edges. |
 
 ### `check_mailbox` / `check_sent_messages`
 
@@ -756,6 +813,7 @@ Can materialize referenced dependencies and linked knowledge entries.
 | `tag` | no | Filter by tag |
 | `path_prefix` | no | Filter by path prefix |
 | `agent` | no | Filter by author UUID |
+| `orphaned` | no | `true` — entries with no incoming `produces` or `owned_by` edge. `false` — entries that have at least one such edge. Omit for all. |
 | `project` | no | Override session project |
 | `after` | no | Cursor for pagination (entry ID from `next_cursor`) |
 | `limit` | no | Max items per page |
@@ -893,6 +951,7 @@ These operations automatically create edges:
 |------|---------|-------------|
 | `add_edge` | yes | Create a typed directed edge between two resources. |
 | `remove_edge` | yes | Soft-delete an edge by ID. |
+| `query_relations` | yes | Traverse the graph from an anchor resource and return an `EntityNeighborhood` with inlined peer data. |
 
 ### `add_edge`
 
@@ -902,14 +961,28 @@ These operations automatically create edges:
 | `from_id` | yes | Source resource ID |
 | `to_kind` | yes | Target resource kind: `task`, `knowledge`, `agent` |
 | `to_id` | yes | Target resource ID |
-| `rel_type` | yes | Relationship type (see above) |
-| `display` | no | Human-readable label for the edge |
+| `rel_type` | yes | Relationship type (see above). Aliases accepted: `blocks`→`depends_on`, `creates`→`produces`, `fulfills`→`implements`, `child_of`→`spawns`, `based_on`→`derived_from` |
+| `if_not_exists` | no | `true` (default) — silently skip if the edge already exists. `false` — error on duplicate. |
 
 ### `remove_edge`
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `edge_id` | yes | Edge UUID to soft-delete |
+
+### `query_relations`
+
+Traverse the graph from an anchor resource and return an `EntityNeighborhood`
+with inlined peer data (no separate fetches needed).
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `anchor_kind` | yes | `task`, `knowledge`, `agent`, `message` |
+| `anchor_id` | yes | UUID for task/agent/message; path for knowledge |
+| `rel_types` | no | Filter relation types. Empty or omit = all. Aliases accepted. |
+| `direction` | no | `outgoing`, `incoming`, `both` (default) |
+| `max_depth` | no | Hop limit (default 1, max recommended 5) |
+| `as_of` | no | ISO8601 timestamp — see graph state at a past point in time |
 
 ---
 
