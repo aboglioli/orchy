@@ -193,6 +193,7 @@ pub struct MessageResponse {
     pub reply_to: Option<String>,
     pub status: String,
     pub created_at: String,
+    pub refs: Vec<serde_json::Value>,
 }
 
 impl From<Message> for MessageResponse {
@@ -219,6 +220,11 @@ impl From<&Message> for MessageResponse {
             }
             .to_string(),
             created_at: m.created_at().to_rfc3339(),
+            refs: m
+                .refs()
+                .iter()
+                .map(|r| serde_json::to_value(r).unwrap_or_default())
+                .collect(),
         }
     }
 }

@@ -50,6 +50,7 @@ pub struct SendBody {
     #[serde(alias = "ns")]
     pub namespace: Option<String>,
     pub reply_to: Option<String>,
+    pub refs: Option<Vec<orchy_core::resource_ref::ResourceRef>>,
 }
 
 #[derive(Deserialize)]
@@ -187,6 +188,7 @@ pub async fn send(
         to: body.to,
         body: body.body,
         reply_to: body.reply_to,
+        refs: body.refs.unwrap_or_default(),
     };
 
     let message = container

@@ -269,6 +269,7 @@ async fn message_save_and_find_pending() {
         MessageTarget::Agent(to.clone()),
         "hello".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
@@ -325,6 +326,7 @@ async fn message_find_by_id_and_mark_read() {
         MessageTarget::Agent(to.clone()),
         "hi".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
@@ -359,6 +361,7 @@ async fn message_find_sent() {
         MessageTarget::Agent(receiver.clone()),
         "hello".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
@@ -405,6 +408,7 @@ async fn message_find_thread() {
         MessageTarget::Agent(b.clone()),
         "first".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg1).await.unwrap();
@@ -447,6 +451,7 @@ async fn message_find_pending_includes_broadcast() {
         MessageTarget::Broadcast,
         "to all".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();

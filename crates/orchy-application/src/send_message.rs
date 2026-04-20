@@ -6,6 +6,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::ResourceRef;
 
 use crate::dto::MessageResponse;
 use crate::parse_namespace;
@@ -18,6 +19,7 @@ pub struct SendMessageCommand {
     pub to: String,
     pub body: String,
     pub reply_to: Option<String>,
+    pub refs: Vec<ResourceRef>,
 }
 
 pub struct SendMessage {
@@ -60,7 +62,9 @@ impl SendMessage {
             .transpose()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
-        let mut msg = Message::new(org_id, project, namespace, from, to, cmd.body, reply_to)?;
+        let mut msg = Message::new(
+            org_id, project, namespace, from, to, cmd.body, reply_to, cmd.refs,
+        )?;
 
         self.messages.save(&mut msg).await?;
         Ok(MessageResponse::from(&msg))

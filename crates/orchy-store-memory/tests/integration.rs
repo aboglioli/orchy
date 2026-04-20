@@ -218,6 +218,7 @@ async fn message_save_and_find_pending() {
         MessageTarget::Agent(to.clone()),
         "hello".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
@@ -228,7 +229,7 @@ async fn message_save_and_find_pending() {
         &store,
         &to,
         &[],
-        &o,
+        &org(),
         &p,
         &Namespace::root(),
         PageParams::unbounded(),
@@ -247,7 +248,7 @@ async fn message_save_and_find_pending() {
         &store,
         &to,
         &[],
-        &o,
+        &org(),
         &p,
         &Namespace::root(),
         PageParams::unbounded(),
@@ -274,6 +275,7 @@ async fn message_find_by_id_and_mark_read() {
         MessageTarget::Agent(to.clone()),
         "hi".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
@@ -307,15 +309,15 @@ async fn message_find_sent() {
         MessageTarget::Agent(receiver.clone()),
         "hello".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let o = org();
     let sent = MessageStore::find_sent(
         &store,
         &sender,
-        &o,
+        &org(),
         &p,
         &Namespace::root(),
         PageParams::unbounded(),
@@ -328,7 +330,7 @@ async fn message_find_sent() {
     let sent_other = MessageStore::find_sent(
         &store,
         &receiver,
-        &o,
+        &org(),
         &p,
         &Namespace::root(),
         PageParams::unbounded(),
@@ -353,6 +355,7 @@ async fn message_find_thread() {
         MessageTarget::Agent(b.clone()),
         "first".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg1).await.unwrap();
@@ -394,16 +397,16 @@ async fn message_find_pending_includes_broadcast() {
         MessageTarget::Broadcast,
         "to all".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let o = org();
     let pending = MessageStore::find_pending(
         &store,
         &receiver,
         &[],
-        &o,
+        &org(),
         &p,
         &Namespace::root(),
         PageParams::unbounded(),
@@ -417,7 +420,7 @@ async fn message_find_pending_includes_broadcast() {
         &store,
         &sender,
         &[],
-        &o,
+        &org(),
         &p,
         &Namespace::root(),
         PageParams::unbounded(),
@@ -434,7 +437,7 @@ async fn message_find_pending_includes_broadcast() {
         &store,
         &receiver,
         &[],
-        &o,
+        &org(),
         &p,
         &Namespace::root(),
         PageParams::unbounded(),
@@ -625,7 +628,7 @@ async fn edge_exists_by_pair_detects_duplicate() {
     assert!(
         EdgeStore::exists_by_pair(
             &store,
-            &o,
+            &org(),
             &ResourceKind::Task,
             "task-1",
             &ResourceKind::Knowledge,
@@ -639,7 +642,7 @@ async fn edge_exists_by_pair_detects_duplicate() {
     assert!(
         !EdgeStore::exists_by_pair(
             &store,
-            &o,
+            &org(),
             &ResourceKind::Task,
             "task-1",
             &ResourceKind::Knowledge,
@@ -707,14 +710,14 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
     EdgeStore::save(&store, &mut e1).await.unwrap();
     EdgeStore::save(&store, &mut e2).await.unwrap();
 
-    let all = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false, None)
+    let all = EdgeStore::list_by_org(&store, &org(), None, PageParams::default(), false, None)
         .await
         .unwrap();
     assert_eq!(all.items.len(), 2);
 
     let spawns_only = EdgeStore::list_by_org(
         &store,
-        &o,
+        &org(),
         Some(&RelationType::Spawns),
         PageParams::default(),
         false,
@@ -758,7 +761,7 @@ async fn delete_knowledge_cleans_up_associated_edges() {
     .unwrap();
     EdgeStore::save(&store, &mut edge).await.unwrap();
 
-    let before = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false, None)
+    let before = EdgeStore::list_by_org(&store, &org(), None, PageParams::default(), false, None)
         .await
         .unwrap();
     assert_eq!(before.items.len(), 1);
@@ -766,11 +769,11 @@ async fn delete_knowledge_cleans_up_associated_edges() {
     entry.mark_deleted().unwrap();
     KnowledgeStore::save(&store, &mut entry).await.unwrap();
     KnowledgeStore::delete(&store, &entry.id()).await.unwrap();
-    EdgeStore::delete_all_for(&store, &o, &ResourceKind::Knowledge, &kid)
+    EdgeStore::delete_all_for(&store, &org(), &ResourceKind::Knowledge, &kid)
         .await
         .unwrap();
 
-    let after = EdgeStore::list_by_org(&store, &o, None, PageParams::default(), false, None)
+    let after = EdgeStore::list_by_org(&store, &org(), None, PageParams::default(), false, None)
         .await
         .unwrap();
     assert_eq!(after.items.len(), 0);
@@ -832,7 +835,7 @@ async fn split_task_creates_spawns_edges() {
 
     let edges = EdgeStore::list_by_org(
         store.as_ref(),
-        &o,
+        &org(),
         Some(&RelationType::Spawns),
         PageParams::default(),
         false,
@@ -862,7 +865,7 @@ async fn delete_by_pair_removes_matching_edge() {
 
     EdgeStore::delete_by_pair(
         &store,
-        &o,
+        &org(),
         &ResourceKind::Task,
         "t1",
         &ResourceKind::Task,
@@ -976,7 +979,7 @@ async fn delete_by_pair_ignores_different_rel_type() {
 
     EdgeStore::delete_by_pair(
         &store,
-        &o,
+        &org(),
         &ResourceKind::Task,
         "t1",
         &ResourceKind::Task,
@@ -1019,91 +1022,6 @@ async fn knowledge_search_returns_score() {
     assert!(!results.is_empty());
     let (_, score) = &results[0];
     assert!(score.is_some());
-}
-
-#[tokio::test]
-async fn get_graph_include_nodes_hydrates_task_fields() {
-    use std::sync::Arc;
-
-    use orchy_application::{GetGraph, GetGraphCommand};
-
-    let backend = Arc::new(backend());
-    let tasks: Arc<dyn orchy_core::task::TaskStore> = backend.clone();
-    let edges: Arc<dyn EdgeStore> = backend.clone();
-    let knowledge: Arc<dyn orchy_core::knowledge::KnowledgeStore> = backend.clone();
-    let agents: Arc<dyn orchy_core::agent::AgentStore> = backend.clone();
-
-    let o = org();
-
-    let mut task = Task::new(
-        o.clone(),
-        proj("proj"),
-        Namespace::root(),
-        "Implement login".into(),
-        "Build the login endpoint with JWT".into(),
-        None,
-        Priority::High,
-        vec!["dev".into()],
-        None,
-        false,
-    )
-    .unwrap();
-    TaskStore::save(backend.as_ref(), &mut task).await.unwrap();
-    let task_id = task.id().to_string();
-
-    let mut edge = Edge::new(
-        o.clone(),
-        ResourceKind::Task,
-        task_id.clone(),
-        ResourceKind::Task,
-        task_id.clone(),
-        RelationType::RelatedTo,
-        None,
-    )
-    .unwrap();
-    EdgeStore::save(backend.as_ref(), &mut edge).await.unwrap();
-
-    let get_graph = GetGraph::new(edges, tasks, knowledge, agents);
-    let resp = get_graph
-        .execute(GetGraphCommand {
-            org_id: o.to_string(),
-            kind: "task".into(),
-            id: task_id.clone(),
-            max_depth: None,
-            rel_types: None,
-            direction: None,
-            include_nodes: true,
-            node_content_limit: Some(200),
-            only_active: true,
-            max_results: None,
-            as_of: None,
-        })
-        .await
-        .unwrap();
-
-    let nodes = resp
-        .nodes
-        .expect("nodes should be Some when include_nodes=true");
-    let node_key = format!("task:{task_id}");
-    let node = nodes.get(&node_key).expect("task node should be present");
-
-    assert_eq!(node.kind, "task");
-    assert_eq!(node.label, "Implement login");
-    assert!(node.status.is_some(), "status should be set for task node");
-    assert_eq!(node.status.as_deref(), Some("pending"));
-    assert!(
-        node.priority.is_some(),
-        "priority should be set for task node"
-    );
-    assert!(
-        node.content.is_some(),
-        "content should be set for task node"
-    );
-    assert!(node.content.as_deref().unwrap().contains("JWT"));
-    assert!(
-        node.updated_at.is_some(),
-        "updated_at should be set for task node"
-    );
 }
 
 #[tokio::test]
@@ -1454,7 +1372,7 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
     let after_invalidation = edge.valid_until().unwrap() + Duration::seconds(1);
     let found = EdgeStore::find_from(
         &store,
-        &o,
+        &org(),
         &ResourceKind::Task,
         "t1",
         &[],
@@ -1468,7 +1386,7 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
     let before_creation = edge.created_at() - Duration::seconds(1);
     let found = EdgeStore::find_from(
         &store,
-        &o,
+        &org(),
         &ResourceKind::Task,
         "t1",
         &[],

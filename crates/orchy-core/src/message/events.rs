@@ -16,6 +16,7 @@ pub struct MessageSentPayload {
     pub to: String,
     pub body: String,
     pub reply_to: Option<String>,
+    pub refs: Vec<serde_json::Value>,
 }
 
 #[derive(Serialize)]

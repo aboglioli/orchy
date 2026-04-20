@@ -1,0 +1,1 @@
+ALTER TABLE messages ADD COLUMN refs TEXT NOT NULL DEFAULT '[]';

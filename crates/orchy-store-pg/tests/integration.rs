@@ -237,6 +237,7 @@ async fn message_save_and_find_pending() {
         MessageTarget::Agent(to_agent.id().clone()),
         "hello".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
@@ -313,6 +314,7 @@ async fn message_find_by_id_and_mark_read() {
         MessageTarget::Agent(to_agent.id().clone()),
         "hi".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
@@ -347,6 +349,7 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
         MessageTarget::Broadcast,
         "to all".into(),
         None,
+        vec![],
     )
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();

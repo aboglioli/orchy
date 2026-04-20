@@ -14,6 +14,7 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
+use crate::resource_ref::ResourceRef;
 
 #[async_trait::async_trait]
 pub trait MessageStore: Send + Sync {
@@ -172,6 +173,7 @@ pub struct Message {
     reply_to: Option<MessageId>,
     status: MessageStatus,
     created_at: DateTime<Utc>,
+    refs: Vec<ResourceRef>,
     #[serde(skip)]
     collector: EventCollector,
 }
@@ -185,6 +187,7 @@ impl Message {
         to: MessageTarget,
         body: String,
         reply_to: Option<MessageId>,
+        refs: Vec<ResourceRef>,
     ) -> Result<Self> {
         let mut msg = Self {
             id: MessageId::new(),
@@ -197,6 +200,7 @@ impl Message {
             reply_to,
             status: MessageStatus::Pending,
             created_at: Utc::now(),
+            refs,
             collector: EventCollector::new(),
         };
 
@@ -209,6 +213,11 @@ impl Message {
             to: msg.to.to_string(),
             body: msg.body.clone(),
             reply_to: msg.reply_to.map(|id| id.to_string()),
+            refs: msg
+                .refs
+                .iter()
+                .map(|r| serde_json::to_value(r).unwrap_or_default())
+                .collect(),
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
         let event = Event::create(
@@ -235,6 +244,7 @@ impl Message {
             reply_to: r.reply_to,
             status: r.status,
             created_at: r.created_at,
+            refs: r.refs,
             collector: EventCollector::new(),
         }
     }
@@ -248,6 +258,7 @@ impl Message {
             MessageTarget::Agent(self.from.clone()),
             body,
             Some(self.id),
+            vec![], // Replies don't inherit refs
         )
     }
 
@@ -346,6 +357,9 @@ impl Message {
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
+    pub fn refs(&self) -> &[ResourceRef] {
+        &self.refs
+    }
 }
 
 pub struct RestoreMessage {
@@ -359,6 +373,7 @@ pub struct RestoreMessage {
     pub reply_to: Option<MessageId>,
     pub status: MessageStatus,
     pub created_at: DateTime<Utc>,
+    pub refs: Vec<ResourceRef>,
 }
 
 #[cfg(test)]
@@ -410,6 +425,7 @@ mod tests {
             MessageTarget::Broadcast,
             "hi".into(),
             None,
+            vec![],
         )
         .unwrap();
         assert_eq!(msg.status(), MessageStatus::Pending);
@@ -425,6 +441,7 @@ mod tests {
             MessageTarget::Broadcast,
             "hi".into(),
             None,
+            vec![],
         )
         .unwrap();
         msg.deliver().unwrap();
@@ -441,6 +458,7 @@ mod tests {
             MessageTarget::Broadcast,
             "hi".into(),
             None,
+            vec![],
         )
         .unwrap();
         msg.mark_read().unwrap();
@@ -459,11 +477,37 @@ mod tests {
             MessageTarget::Agent(receiver.clone()),
             "hello".into(),
             None,
+            vec![],
         )
         .unwrap();
         let reply = original.reply(receiver.clone(), "hey back".into()).unwrap();
         assert_eq!(reply.reply_to(), Some(original.id()));
         assert_eq!(reply.from(), &receiver);
         assert_eq!(reply.to(), &MessageTarget::Agent(sender.clone()));
+    }
+
+    #[test]
+    fn message_preserves_refs() {
+        use crate::resource_ref::ResourceRef;
+        let org = OrganizationId::new("org").unwrap();
+        let project = ProjectId::try_from("proj").unwrap();
+        let namespace = Namespace::root();
+        let from = AgentId::new();
+        let refs = vec![
+            ResourceRef::task("task-1"),
+            ResourceRef::knowledge("auth/decision").with_display("JWT decision"),
+        ];
+        let msg = Message::new(
+            org,
+            project,
+            namespace,
+            from,
+            MessageTarget::Broadcast,
+            "check this out".to_string(),
+            None,
+            refs.clone(),
+        )
+        .unwrap();
+        assert_eq!(msg.refs(), &refs);
     }
 }

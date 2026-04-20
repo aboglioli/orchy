@@ -186,6 +186,16 @@ pub struct MoveTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct RefParam {
+    /// Resource kind: "task", "knowledge", "agent", "message"
+    pub kind: String,
+    /// UUID for task/agent/message; path for knowledge (e.g. "auth/jwt-decision")
+    pub id: String,
+    /// Optional human-readable label shown to recipient
+    pub display: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct SendMessageParams {
     /// Agent UUID, "role:name", or "broadcast".
     pub to: String,
@@ -193,6 +203,9 @@ pub struct SendMessageParams {
     pub namespace: Option<String>,
     /// Creates a thread.
     pub reply_to: Option<String>,
+    /// Context pointers for the recipient. Not graph edges — annotations saying "look at these."
+    /// Example: [{"kind":"task","id":"<uuid>","display":"fix auth bug"},{"kind":"knowledge","id":"auth/jwt-strategy"}]
+    pub refs: Option<Vec<RefParam>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
