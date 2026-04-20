@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod auth;
 pub mod events;
+pub mod graph;
 pub mod knowledge;
 pub mod locks;
 pub mod messages;
@@ -121,6 +122,10 @@ pub fn router() -> Router<Arc<Container>> {
             get(agents::get_summary),
         )
         .route(
+            "/organizations/{org}/agents/{id}/roles",
+            axum::routing::patch(agents::change_roles),
+        )
+        .route(
             "/organizations/{org}/agents/{id}/inbox",
             get(messages::inbox_for_agent),
         )
@@ -209,6 +214,10 @@ pub fn router() -> Router<Arc<Container>> {
             post(tasks::tag_task).delete(tasks::untag_task),
         )
         .route(
+            "/organizations/{org}/projects/{project}/tasks/{id}/move",
+            post(tasks::move_task),
+        )
+        .route(
             "/organizations/{org}/projects/{project}/tasks/{id}/split",
             post(tasks::split),
         )
@@ -232,6 +241,23 @@ pub fn router() -> Router<Arc<Container>> {
             "/organizations/{org}/projects/{project}/knowledge",
             get(knowledge::list),
         )
+        // Graph endpoints
+        .route(
+            "/organizations/{org}/graph/edges",
+            post(graph::add_edge).get(graph::list_edges),
+        )
+        .route(
+            "/organizations/{org}/graph/edges/{edge_id}",
+            delete(graph::remove_edge),
+        )
+        .route(
+            "/organizations/{org}/graph/relations",
+            get(graph::query_relations),
+        )
+        .route(
+            "/organizations/{org}/graph/context",
+            post(graph::assemble_context),
+        )
         .route(
             "/organizations/{org}/projects/{project}/knowledge/types",
             get(knowledge::list_types),
@@ -251,6 +277,11 @@ pub fn router() -> Router<Arc<Container>> {
                 .delete(knowledge::delete)
                 .post(knowledge::knowledge_action)
                 .patch(knowledge::knowledge_patch),
+        )
+        // Explicit untag knowledge route (path-based DELETE with tag segment)
+        .route(
+            "/organizations/{org}/projects/{project}/knowledge/{*path}/tags/{tag}",
+            delete(knowledge::untag),
         )
         .route(
             "/organizations/{org}/projects/{project}/locks",

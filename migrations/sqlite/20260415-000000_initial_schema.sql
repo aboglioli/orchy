@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS agents (
     organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
-    parent_id TEXT,
     roles TEXT NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
@@ -36,7 +35,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
-    parent_id TEXT,
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
@@ -44,10 +42,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     assigned_roles TEXT NOT NULL DEFAULT '[]',
     assigned_to TEXT,
     assigned_at TEXT,
-    depends_on TEXT NOT NULL DEFAULT '[]',
     tags TEXT NOT NULL DEFAULT '[]',
     result_summary TEXT,
-    refs TEXT NOT NULL DEFAULT '[]',
     created_by TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -103,9 +99,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     content TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     version INTEGER NOT NULL DEFAULT 1,
-    agent_id TEXT,
     metadata TEXT NOT NULL DEFAULT '{}',
-    refs TEXT NOT NULL DEFAULT '[]',
     embedding BLOB,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
@@ -119,7 +113,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_org_path_idx
     ON knowledge_entries (organization_id, namespace, path)
     WHERE project IS NULL;
 CREATE INDEX IF NOT EXISTS knowledge_entries_type_idx ON knowledge_entries (kind);
-CREATE INDEX IF NOT EXISTS knowledge_entries_agent_idx ON knowledge_entries (agent_id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_entries_fts USING fts5(
     knowledge_id UNINDEXED,
@@ -170,3 +163,20 @@ CREATE INDEX IF NOT EXISTS events_topic_idx ON events (topic);
 CREATE INDEX IF NOT EXISTS events_namespace_idx ON events (namespace);
 CREATE INDEX IF NOT EXISTS events_timestamp_idx ON events (timestamp);
 CREATE INDEX IF NOT EXISTS events_organization_idx ON events (organization);
+
+-- Edges table for graph relationships
+CREATE TABLE IF NOT EXISTS edges (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    from_kind TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    to_kind TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    rel_type TEXT NOT NULL,
+    display TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_edges_from ON edges (org_id, from_kind, from_id);
+CREATE INDEX IF NOT EXISTS idx_edges_to ON edges (org_id, to_kind, to_id);
+CREATE INDEX IF NOT EXISTS idx_edges_rel_type ON edges (org_id, rel_type);

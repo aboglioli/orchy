@@ -128,16 +128,20 @@ impl SqliteBackend {
 
     pub fn apply_schema(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        // Initial schema includes edges table (clean, no legacy columns)
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260415-000000_initial_schema.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))?;
+        // Adds message_receipts, orgs, api_keys; skips refs (already in initial)
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260419-000000_add_edges.sql"
+            "/../../migrations/sqlite/20260418-000000_align_schema.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))?;
+        // Note: 20260419-000000_add_edges.sql is skipped - edges created in initial schema
+        // and it contains data migrations for old columns that don't exist in clean schema
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260419-000100_add_edge_source.sql"
@@ -161,6 +165,12 @@ impl SqliteBackend {
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260420-000100_add_users.sql"
+        )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        // Note: 20260420-000400_add_message_refs.sql is skipped - refs already in initial schema
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260420-000700_add_edge_indexes.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))
     }

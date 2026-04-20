@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS agents (
     organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
-    parent_id UUID REFERENCES agents(id),
     roles JSONB NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
@@ -39,7 +38,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',
-    parent_id UUID REFERENCES tasks(id),
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
@@ -47,10 +45,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     assigned_roles JSONB NOT NULL DEFAULT '[]',
     assigned_to UUID REFERENCES agents(id),
     assigned_at TIMESTAMPTZ,
-    depends_on JSONB NOT NULL DEFAULT '[]',
     tags JSONB NOT NULL DEFAULT '[]',
     result_summary TEXT,
-    refs JSONB NOT NULL DEFAULT '[]',
     created_by UUID REFERENCES agents(id),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
@@ -106,9 +102,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     content TEXT NOT NULL DEFAULT '',
     tags JSONB NOT NULL DEFAULT '[]',
     version BIGINT NOT NULL DEFAULT 1,
-    agent_id UUID REFERENCES agents(id),
     metadata JSONB NOT NULL DEFAULT '{}',
-    refs JSONB NOT NULL DEFAULT '[]',
     embedding VECTOR,
     embedding_model TEXT,
     embedding_dimensions INTEGER,
@@ -122,7 +116,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_org_path_idx
     ON knowledge_entries (organization_id, namespace, path)
     WHERE project IS NULL;
 CREATE INDEX IF NOT EXISTS knowledge_entries_type_idx ON knowledge_entries (kind);
-CREATE INDEX IF NOT EXISTS knowledge_entries_agent_idx ON knowledge_entries (agent_id);
 
 CREATE TABLE IF NOT EXISTS resource_locks (
     organization_id TEXT NOT NULL DEFAULT 'default',

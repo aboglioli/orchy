@@ -305,7 +305,7 @@ impl MessageStore for SqliteBackend {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to \
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs \
              FROM messages WHERE id IN ({placeholders})"
         );
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

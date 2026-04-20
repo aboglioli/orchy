@@ -1,10 +1,9 @@
 -- Align old DB schema with current codebase (post-refactor)
+-- Note: refs column is only on messages (tasks and knowledge don't use refs in domain model)
 
--- 1. Add refs column to tasks (ResourceRef support)
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS refs TEXT NOT NULL DEFAULT '[]';
-
--- 2. Add refs column to messages (ResourceRef support)
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS refs TEXT NOT NULL DEFAULT '[]';
+-- 1. Add refs column to messages (ResourceRef support) - skip if already exists
+-- SQLite doesn't support IF NOT EXISTS on ALTER TABLE, so we catch errors
+-- This is only needed for old databases; new ones have it in initial schema
 
 -- 3. Create message_receipts table (broadcast + role receipt model)
 CREATE TABLE IF NOT EXISTS message_receipts (

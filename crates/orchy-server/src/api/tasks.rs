@@ -10,7 +10,7 @@ use serde::Deserialize;
 use orchy_application::{
     AddDependencyCommand, AssignTaskCommand, CancelTaskCommand, ClaimTaskCommand,
     CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, ListTagsCommand,
-    ListTasksCommand, MergeTasksCommand, PostTaskCommand, ReleaseTaskCommand,
+    ListTasksCommand, MergeTasksCommand, MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand,
     RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
     TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
 };
@@ -1065,6 +1065,53 @@ pub async fn delegate(
     let task = container
         .app
         .delegate_task
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}
+
+#[derive(Deserialize)]
+pub struct MoveTaskBody {
+    pub new_namespace: String,
+}
+
+pub async fn move_task(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, id)): Path<(String, String, String)>,
+    Json(body): Json<MoveTaskBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let existing = container
+        .app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+            org_id: None,
+            relations: None,
+        })
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project)?;
+
+    let cmd = MoveTaskCommand {
+        task_id: id,
+        new_namespace: body.new_namespace,
+    };
+
+    let task = container
+        .app
+        .move_task
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
