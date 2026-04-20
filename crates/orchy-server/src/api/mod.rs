@@ -321,11 +321,6 @@ pub fn router() -> Router<Arc<Container>> {
                 .post(knowledge::knowledge_action)
                 .patch(knowledge::knowledge_patch),
         )
-        // Explicit untag knowledge route (path-based DELETE with tag segment)
-        .route(
-            "/organizations/{org}/projects/{project}/knowledge/{*path}/tags/{tag}",
-            delete(knowledge::untag),
-        )
         .route(
             "/organizations/{org}/projects/{project}/locks",
             post(locks::acquire),
