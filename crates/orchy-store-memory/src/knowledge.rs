@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 
+use orchy_core::edge::RelationType;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
+use orchy_core::resource_ref::ResourceKind;
 
 use crate::MemoryBackend;
 
@@ -63,47 +65,70 @@ impl KnowledgeStore for MemoryBackend {
     }
 
     async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
-        let entries = self.knowledge_entries.read().await;
+        let results: Vec<Knowledge> = {
+            let entries = self.knowledge_entries.read().await;
+            entries
+                .values()
+                .filter(|e| {
+                    if let Some(ref org_id) = filter.org_id {
+                        if e.org_id() != org_id {
+                            return false;
+                        }
+                    }
+                    if let Some(ref project) = filter.project {
+                        let project_matches = e.project() == Some(project);
+                        let org_level = e.project().is_none();
+                        if !(project_matches || filter.include_org_level && org_level) {
+                            return false;
+                        }
+                    }
+                    if let Some(ref ns) = filter.namespace {
+                        if !e.namespace().starts_with(ns) {
+                            return false;
+                        }
+                    }
+                    if let Some(ref kind) = filter.kind {
+                        if e.kind() != *kind {
+                            return false;
+                        }
+                    }
+                    if let Some(ref tag) = filter.tag {
+                        if !e.tags().contains(tag) {
+                            return false;
+                        }
+                    }
+                    if let Some(ref prefix) = filter.path_prefix {
+                        if !e.path().starts_with(prefix.as_str()) {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .cloned()
+                .collect()
+        };
 
-        let results: Vec<Knowledge> = entries
-            .values()
-            .filter(|e| {
-                if let Some(ref org_id) = filter.org_id {
-                    if e.org_id() != org_id {
-                        return false;
-                    }
-                }
-                if let Some(ref project) = filter.project {
-                    let project_matches = e.project() == Some(project);
-                    let org_level = e.project().is_none();
-                    if !(project_matches || filter.include_org_level && org_level) {
-                        return false;
-                    }
-                }
-                if let Some(ref ns) = filter.namespace {
-                    if !e.namespace().starts_with(ns) {
-                        return false;
-                    }
-                }
-                if let Some(ref kind) = filter.kind {
-                    if e.kind() != *kind {
-                        return false;
-                    }
-                }
-                if let Some(ref tag) = filter.tag {
-                    if !e.tags().contains(tag) {
-                        return false;
-                    }
-                }
-                if let Some(ref prefix) = filter.path_prefix {
-                    if !e.path().starts_with(prefix.as_str()) {
-                        return false;
-                    }
-                }
-                true
-            })
-            .cloned()
-            .collect();
+        let results = if let Some(orphaned) = filter.orphaned {
+            let edges = self.edges.read().await;
+            results
+                .into_iter()
+                .filter(|entry| {
+                    let id_str = entry.id().to_string();
+                    let has_link = edges.values().any(|e| {
+                        e.to_kind() == &ResourceKind::Knowledge
+                            && e.to_id() == id_str
+                            && matches!(
+                                e.rel_type(),
+                                RelationType::Produces | RelationType::OwnedBy
+                            )
+                            && e.is_active()
+                    });
+                    if orphaned { !has_link } else { has_link }
+                })
+                .collect()
+        } else {
+            results
+        };
 
         Ok(crate::apply_cursor_pagination(results, &page, |e| {
             e.id().to_string()

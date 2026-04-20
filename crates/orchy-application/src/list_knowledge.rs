@@ -19,6 +19,7 @@ pub struct ListKnowledgeCommand {
     pub path_prefix: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
+    pub orphaned: Option<bool>,
 }
 
 pub struct ListKnowledge {
@@ -63,6 +64,7 @@ impl ListKnowledge {
             kind,
             tag: cmd.tag,
             path_prefix: cmd.path_prefix,
+            orphaned: cmd.orphaned,
         };
 
         let page = PageParams::new(cmd.after, cmd.limit);

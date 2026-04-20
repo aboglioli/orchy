@@ -691,6 +691,10 @@ pub struct KnowledgeFilter {
     pub kind: Option<KnowledgeKind>,
     pub tag: Option<String>,
     pub path_prefix: Option<String>,
+    /// When Some(true): only entries with no incoming produces/owned_by edges.
+    /// When Some(false): only entries with at least one such edge.
+    /// When None: no filter.
+    pub orphaned: Option<bool>,
 }
 
 #[cfg(test)]

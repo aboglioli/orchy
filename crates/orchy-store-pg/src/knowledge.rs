@@ -231,6 +231,21 @@ impl KnowledgeStore for PgBackend {
         if let Some(ref prefix) = filter.path_prefix {
             select.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{prefix}%")));
         }
+        if let Some(orphaned) = filter.orphaned {
+            let exists_sql = "EXISTS (
+                SELECT 1 FROM edges e
+                WHERE e.org_id = knowledge_entries.organization_id
+                  AND e.to_kind = 'knowledge'
+                  AND e.to_id = knowledge_entries.id::text
+                  AND e.rel_type IN ('produces', 'owned_by')
+                  AND e.valid_until IS NULL
+            )";
+            if orphaned {
+                select.and_where(Expr::cust(format!("NOT {exists_sql}")));
+            } else {
+                select.and_where(Expr::cust(exists_sql));
+            }
+        }
         if let Some(ref cursor) = page.after
             && let Some(decoded) = decode_cursor(cursor)
             && let Ok(cursor_uuid) = decoded.parse::<Uuid>()

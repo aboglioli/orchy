@@ -222,6 +222,21 @@ impl KnowledgeStore for SqliteBackend {
             params.push(Box::new(format!("{prefix}%")));
             idx += 1;
         }
+        if let Some(orphaned) = filter.orphaned {
+            let exists_sql = "EXISTS (
+                SELECT 1 FROM edges e
+                WHERE e.org_id = knowledge_entries.organization_id
+                  AND e.to_kind = 'knowledge'
+                  AND e.to_id = CAST(knowledge_entries.id AS TEXT)
+                  AND e.rel_type IN ('produces', 'owned_by')
+                  AND e.valid_until IS NULL
+            )";
+            if orphaned {
+                sql.push_str(&format!(" AND NOT {exists_sql}"));
+            } else {
+                sql.push_str(&format!(" AND {exists_sql}"));
+            }
+        }
         if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
                 sql.push_str(&format!(" AND id < ?{idx}"));

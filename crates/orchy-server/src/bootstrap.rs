@@ -190,9 +190,9 @@ Use edges to record meaningful relationships between tasks, knowledge entries, a
 - Knowledge supersedes an older entry → `add_edge(from=new, to=old, rel_type=supersedes)`
 
 **When to traverse:**
-- Before starting a task: `get_neighbors(kind=task, id=..., direction=both)` — see linked decisions and prior work.
-- Mapping a task tree: `get_graph(kind=task, id=root, max_depth=3)` — full dependency + knowledge graph.
-- Finding latest decision: `get_graph(kind=knowledge, id=..., rel_types=["supersedes"])`.
+- Before starting a task: query edges with `list_knowledge(orphaned=false)` and `add_edge/from_kind=task` lookups — see linked decisions and prior work.
+- Mapping a task tree: use `add_edge` relations and recursive subtask lookups — full dependency + knowledge graph.
+- Finding latest decision: query edges with `rel_type=supersedes` to trace supersession chains.
 
 **Relationship types:** `derived_from`, `produces`, `supersedes`, `merged_from`, `summarizes`, `implements`, `spawns`, `related_to`, `depends_on`
 "#

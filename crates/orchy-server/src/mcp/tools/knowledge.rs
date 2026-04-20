@@ -162,6 +162,7 @@ pub(super) async fn list_knowledge(
         path_prefix: params.path_prefix,
         after: params.after,
         limit: params.limit,
+        orphaned: params.orphaned,
     };
 
     match h.container.app.list_knowledge.execute(cmd).await {

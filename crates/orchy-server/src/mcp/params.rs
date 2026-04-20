@@ -377,6 +377,10 @@ pub struct ListKnowledgeParams {
     pub after: Option<String>,
     /// Max items per page.
     pub limit: Option<u32>,
+    /// When true: only entries with no incoming produces/owned_by edges (unlinked knowledge).
+    /// When false: only entries with at least one such link.
+    /// Omit to return all entries regardless of link status.
+    pub orphaned: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -480,62 +484,6 @@ pub struct AddEdgeParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct RemoveEdgeParams {
     pub edge_id: String,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetNeighborsParams {
-    /// Resource kind: task, knowledge, agent.
-    pub kind: String,
-    pub id: String,
-    /// outgoing, incoming, or omit for both (default).
-    pub direction: Option<String>,
-    /// Filter by relationship type.
-    pub rel_type: Option<String>,
-    /// When true, include a `nodes` map with label/content/status/tags for each touched resource.
-    pub include_nodes: Option<bool>,
-    /// Max characters of content to include per node (default 500). Set to 0 to omit content.
-    pub node_content_limit: Option<u32>,
-    /// When true (default), only return currently active edges. Set false to include deleted/expired edges.
-    pub only_active: Option<bool>,
-    /// Point-in-time snapshot: RFC3339 timestamp.
-    pub as_of: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct GetGraphParams {
-    /// Resource kind: task, knowledge, agent.
-    pub kind: String,
-    pub id: String,
-    /// Max traversal depth (default 3, max 10).
-    pub max_depth: Option<u32>,
-    /// Filter to specific relationship types.
-    pub rel_types: Option<Vec<String>>,
-    /// outgoing (default), incoming, or both.
-    pub direction: Option<String>,
-    /// When true, include a `nodes` map with label/content/status/tags for each touched resource.
-    pub include_nodes: Option<bool>,
-    /// Max characters of content to include per node (default 500). Set to 0 to omit content.
-    pub node_content_limit: Option<u32>,
-    /// When true (default), only return currently active edges. Set false to include deleted/expired edges.
-    pub only_active: Option<bool>,
-    /// Max results to return from traversal (default 1000).
-    pub max_results: Option<usize>,
-    /// Point-in-time snapshot: RFC3339 timestamp. Returns graph state as it existed at that moment.
-    /// When set, only_active is ignored.
-    pub as_of: Option<String>,
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub struct ListEdgesParams {
-    /// Filter by relationship type. Omit to list all edge types.
-    pub rel_type: Option<String>,
-    /// Cursor from previous page's next_cursor field.
-    pub after: Option<String>,
-    pub limit: Option<u32>,
-    /// When true, only return currently active edges. Defaults to false (return all edges).
-    pub only_active: Option<bool>,
-    /// Point-in-time snapshot: RFC3339 timestamp.
-    pub as_of: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

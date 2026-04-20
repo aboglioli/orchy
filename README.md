@@ -186,8 +186,6 @@ Several tools can load referenced resources in a single call:
 | Tool | Loads | Description |
 |------|-------|-------------|
 | `get_task` | Task + ancestors + children + dependencies (optional) + knowledge (optional) | Full task context |
-| `get_graph` | Multi-hop traversal with node hydration | Explore connected resources |
-| `get_neighbors` | One-hop with optional node content | Direct connections |
 | `assemble_context` | Structured context from graph | Curated context for AI |
 
 **`get_task` materialization flags:**
@@ -200,29 +198,6 @@ get_task(
     knowledge_kind: "decision",      // Filter by kind
     knowledge_tag: "critical",       // Filter by tag
     knowledge_content_limit: 500     // Truncate content
-)
-```
-
-**`get_graph` vs `get_neighbors`:**
-```rust
-// One hop — direct connections only
-get_neighbors(kind: "task", id: "task-123", include_nodes: true)
-
-// Multi-hop — traverse up to N depth
-get_graph(
-    kind: "task",
-    id: "task-123",
-    max_depth: 3,                    // Up to 3 hops
-    rel_types: ["produces", "derived_from"],  // Filter edge types
-    include_nodes: true,             // Include full node content
-    node_content_limit: 500
-)
-
-// Temporal query — what did the graph look like yesterday?
-get_graph(
-    kind: "task",
-    id: "task-123",
-    as_of: "2026-04-19T12:00:00Z"   // Point-in-time snapshot
 )
 ```
 
@@ -918,9 +893,6 @@ These operations automatically create edges:
 |------|---------|-------------|
 | `add_edge` | yes | Create a typed directed edge between two resources. |
 | `remove_edge` | yes | Soft-delete an edge by ID. |
-| `get_neighbors` | yes | List direct neighbors of a resource. Can hydrate node content. |
-| `get_graph` | yes | Traverse the graph from a root resource up to a given depth. Can hydrate nodes. |
-| `list_edges` | yes | List edges across the project with optional filters and pagination. |
 
 ### `add_edge`
 
@@ -938,49 +910,6 @@ These operations automatically create edges:
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `edge_id` | yes | Edge UUID to soft-delete |
-
-### `get_neighbors`
-
-List direct neighbors (one hop) of a resource, with optional node content hydration.
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `kind` | yes | Resource kind: `task`, `knowledge`, `agent` |
-| `id` | yes | Resource ID |
-| `direction` | no | `outgoing`, `incoming`, or omit for both (default) |
-| `rel_type` | no | Filter by relationship type |
-| `include_nodes` | no | When true, include a `nodes` map with label/content/status/tags per resource |
-| `node_content_limit` | no | Max characters of content per node (default 500). `0` omits content |
-| `only_active` | no | When true (default), only active edges. `false` includes deleted/expired |
-| `as_of` | no | RFC3339 timestamp. Returns graph state at that moment |
-
-### `get_graph`
-
-Traverse the edge graph from a root resource up to `max_depth` hops.
-Can hydrate full node content for all traversed resources.
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `kind` | yes | Root resource kind: `task`, `knowledge`, `agent` |
-| `id` | yes | Root resource ID |
-| `max_depth` | no | Max traversal depth (default 3, max 10) |
-| `rel_types` | no | Filter to specific relationship types |
-| `direction` | no | `outgoing` (default), `incoming`, or `both` |
-| `include_nodes` | no | When true, include a `nodes` map per resource |
-| `node_content_limit` | no | Max characters of content per node (default 500). `0` omits content |
-| `only_active` | no | When true (default), only active edges. Set `false` to include deleted/expired |
-| `max_results` | no | Max edges in traversal result (default 1000) |
-| `as_of` | no | RFC3339 timestamp snapshot. Ignores `only_active` when set |
-
-### `list_edges`
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `rel_type` | no | Filter by relationship type. Omit for all types |
-| `after` | no | Cursor from previous page's `next_cursor` |
-| `limit` | no | Max items per page |
-| `only_active` | no | When `true`, only active edges. Defaults to `false` (all edges) |
-| `as_of` | no | RFC3339 timestamp snapshot |
 
 ---
 

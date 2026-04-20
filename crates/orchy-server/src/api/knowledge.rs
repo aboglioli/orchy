@@ -47,6 +47,7 @@ pub struct ListQuery {
     pub path_prefix: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
+    pub orphaned: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -154,6 +155,7 @@ pub async fn list(
         path_prefix: query.path_prefix,
         after: query.after,
         limit: query.limit,
+        orphaned: query.orphaned,
     };
 
     let page = container
