@@ -68,7 +68,7 @@ impl GetTask {
                     anchor_id: task_id.to_string(),
                     options: opts,
                     as_of: None,
-                    project: None,
+                    project: Some(task.project().to_string()),
                     namespace: None,
                     semantic_query: None,
                 })

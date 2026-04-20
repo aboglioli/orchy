@@ -67,7 +67,7 @@ impl ReadKnowledge {
                         anchor_id: k.id().to_string(),
                         options: opts,
                         as_of: None,
-                        project: None,
+                        project: k.project().map(|p| p.to_string()),
                         namespace: None,
                         semantic_query: None,
                     })
