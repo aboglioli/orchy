@@ -11,6 +11,7 @@ use orchy_core::graph::neighborhood::{
 use orchy_core::graph::relation_options::RelationOptions;
 use orchy_core::knowledge::{Knowledge, KnowledgeId, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore};
+use orchy_core::namespace::Namespace;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 use orchy_core::task::{Task, TaskId, TaskStore};
@@ -81,6 +82,7 @@ impl MaterializeNeighborhood {
 
         let mut task_ids: Vec<TaskId> = vec![];
         let mut knowledge_ids: Vec<KnowledgeId> = vec![];
+        let mut knowledge_paths: Vec<String> = vec![];
         let mut agent_ids: Vec<AgentId> = vec![];
         let mut message_ids: Vec<MessageId> = vec![];
 
@@ -98,6 +100,8 @@ impl MaterializeNeighborhood {
                 ResourceKind::Knowledge => {
                     if let Ok(id) = peer_id.parse::<KnowledgeId>() {
                         knowledge_ids.push(id);
+                    } else {
+                        knowledge_paths.push(peer_id.to_string());
                     }
                 }
                 ResourceKind::Agent => {
@@ -127,14 +131,38 @@ impl MaterializeNeighborhood {
             self.agents.find_by_ids(&agent_ids),
             self.messages.find_by_ids(&message_ids),
         )?;
-        let knowledge_entries = self.knowledge.find_by_ids(&knowledge_ids).await?;
+        let mut knowledge_entries = self.knowledge.find_by_ids(&knowledge_ids).await?;
+
+        // Resolve knowledge paths to entries (edges may store path instead of UUID)
+        knowledge_paths.sort();
+        knowledge_paths.dedup();
+        let org_id =
+            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        for path in &knowledge_paths {
+            if let Ok(Some(entry)) = self
+                .knowledge
+                .find_by_path(
+                    &org_id,
+                    None,
+                    &orchy_core::namespace::Namespace::root(),
+                    path,
+                )
+                .await
+            {
+                knowledge_entries.push(entry);
+            }
+        }
 
         let task_map: HashMap<String, &Task> =
             tasks.iter().map(|t| (t.id().to_string(), t)).collect();
-        let knowledge_map: HashMap<String, &Knowledge> = knowledge_entries
+        let mut knowledge_map: HashMap<String, &Knowledge> = knowledge_entries
             .iter()
             .map(|k| (k.id().to_string(), k))
             .collect();
+        // Also index by path for path-based edge lookups
+        for k in &knowledge_entries {
+            knowledge_map.insert(k.path().to_string(), k);
+        }
         let agent_map: HashMap<String, &Agent> =
             agents.iter().map(|a| (a.id().to_string(), a)).collect();
         let message_map: HashMap<String, &Message> =

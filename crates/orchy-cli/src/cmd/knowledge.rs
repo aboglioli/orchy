@@ -224,6 +224,9 @@ pub async fn run(
             if let Some(tid) = task_id {
                 body["task_id"] = serde_json::Value::String(tid.clone());
             }
+            if let Some(aid) = &client.agent_id {
+                body["agent_id"] = serde_json::Value::String(aid.clone());
+            }
             let v = client
                 .put_project_json(&format!("/knowledge/{path}"), Some(&body))
                 .await?;

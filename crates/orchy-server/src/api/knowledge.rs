@@ -72,6 +72,8 @@ pub struct WriteBody {
     pub tags: Option<Vec<String>>,
     pub version: Option<u64>,
     pub metadata: Option<HashMap<String, String>>,
+    pub task_id: Option<String>,
+    pub agent_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -345,10 +347,10 @@ pub async fn write(
         content: body.content,
         tags: body.tags,
         version: body.version,
-        agent_id: None,
+        agent_id: body.agent_id,
         metadata: body.metadata,
         metadata_remove: None,
-        task_id: None,
+        task_id: body.task_id,
     };
 
     let entry = container
