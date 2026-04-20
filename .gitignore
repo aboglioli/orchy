@@ -12,4 +12,6 @@ dashboard/node_modules/
 dashboard/dist/
 dashboard/.vite/
 dashboard/coverage/
+keys/
 .worktrees/
+.orchy.toml
