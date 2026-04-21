@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -12,7 +12,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::SqliteBackend;
 
-const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, status, last_seen, connected_at, metadata";
+const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata";
 
 #[async_trait]
 impl AgentStore for SqliteBackend {
@@ -23,8 +23,8 @@ impl AgentStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO agents (id, alias, organization_id, project, namespace, roles, description, status, last_seen, connected_at, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 agent.id().to_string(),
                 agent.alias().as_str(),
@@ -34,7 +34,6 @@ impl AgentStore for SqliteBackend {
                 serde_json::to_string(agent.roles())
                     .map_err(|e| Error::Store(format!("failed to serialize roles: {e}")))?,
                 agent.description(),
-                agent.status().to_string(),
                 agent.last_seen().to_rfc3339(),
                 agent.connected_at().to_rfc3339(),
                 serde_json::to_string(agent.metadata())
@@ -157,7 +156,7 @@ impl AgentStore for SqliteBackend {
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 
         let sql = format!(
-            "SELECT {SELECT_COLS} FROM agents WHERE status != 'disconnected' AND last_seen < ?1"
+            "SELECT {SELECT_COLS} FROM agents WHERE last_seen < ?1"
         );
         let mut stmt = conn
             .prepare(&sql)
@@ -192,10 +191,9 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let namespace_str: String = row.get(4)?;
     let roles_str: String = row.get(5)?;
     let description: String = row.get(6)?;
-    let status_str: String = row.get(7)?;
-    let heartbeat_str: String = row.get(8)?;
-    let connected_str: String = row.get(9)?;
-    let metadata_str: String = row.get(10)?;
+    let last_seen_str: String = row.get(7)?;
+    let connected_str: String = row.get(8)?;
+    let metadata_str: String = row.get(9)?;
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e.to_string()))?,
@@ -206,12 +204,11 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map_err(|e| conversion_err(4, e.to_string()))?,
         roles: crate::decode_json(&roles_str, "roles")?,
         description,
-        status: status_str.parse::<AgentStatus>().unwrap_or_default(),
-        last_seen: DateTime::parse_from_rfc3339(&heartbeat_str)
+        last_seen: DateTime::parse_from_rfc3339(&last_seen_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    8,
+                    7,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )
@@ -220,7 +217,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    9,
+                    8,
                     rusqlite::types::Type::Text,
                     Box::new(e),
                 )

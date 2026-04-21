@@ -56,7 +56,6 @@ mod rename_alias;
 mod resolve_agent;
 mod suggest_roles;
 mod switch_context;
-mod update_agent_status;
 
 // Task lifecycle
 mod assign_task;
@@ -152,7 +151,6 @@ pub use rename_alias::{RenameAlias, RenameAliasCommand};
 pub use resolve_agent::resolve_agent;
 pub use suggest_roles::{SuggestRoles, SuggestRolesCommand};
 pub use switch_context::{SwitchContext, SwitchContextCommand};
-pub use update_agent_status::{UpdateAgentStatus, UpdateAgentStatusCommand};
 
 pub use assign_task::{AssignTask, AssignTaskCommand};
 pub use cancel_task::{CancelTask, CancelTaskCommand};
@@ -255,7 +253,6 @@ pub struct Application {
     pub list_agents: ListAgents,
     pub suggest_roles: SuggestRoles,
     pub check_timed_out_agents: CheckTimedOutAgents,
-    pub update_agent_status: UpdateAgentStatus,
     pub rename_alias: RenameAlias,
 
     pub post_task: PostTask,
@@ -389,7 +386,6 @@ impl Application {
             list_agents: ListAgents::new(agents.clone()),
             suggest_roles: SuggestRoles::new(tasks.clone()),
             check_timed_out_agents: CheckTimedOutAgents::new(agents.clone()),
-            update_agent_status: UpdateAgentStatus::new(agents.clone()),
 
             post_task: PostTask::new(tasks.clone()),
             get_task: GetTask::new(tasks.clone(), Some(Arc::clone(&materializer))),

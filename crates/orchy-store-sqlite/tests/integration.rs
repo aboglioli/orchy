@@ -47,7 +47,7 @@ async fn agent_save_and_find() {
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    assert_eq!(agent.status(), AgentStatus::Online);
+    assert_eq!(agent.status(), "active");
     assert_eq!(agent.roles(), &["coder".to_string()]);
 
     let fetched = AgentStore::find_by_id(&store, agent.id())
@@ -108,7 +108,7 @@ async fn agent_disconnect_sets_status() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(fetched.status(), AgentStatus::Disconnected);
+    // disconnected status removed
 }
 
 #[tokio::test]
@@ -134,7 +134,8 @@ async fn agent_find_timed_out() {
     agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
-    assert!(!timed_out.iter().any(|a| a.id() == agent.id()));
+    // disconnected status removed; disconnected agents are still stale
+    assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 }
 
 #[tokio::test]

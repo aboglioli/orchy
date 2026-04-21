@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentId, AgentStatus, AgentStore};
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::MessageStore;
@@ -73,7 +73,6 @@ impl GetAgentSummary {
         let connected_agents: Vec<AgentResponse> = all_agents
             .iter()
             .filter(|a| a.id() != agent.id())
-            .filter(|a| a.status() != AgentStatus::Disconnected)
             .filter(|a| a.project() == agent.project())
             .map(AgentResponse::from)
             .collect();

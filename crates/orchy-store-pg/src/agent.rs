@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -13,7 +13,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
-const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, status, last_seen, connected_at, metadata";
+const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata";
 
 #[async_trait]
 impl AgentStore for PgBackend {
@@ -30,8 +30,8 @@ impl AgentStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, status, last_seen, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (id) DO UPDATE SET
                 alias = EXCLUDED.alias,
                 organization_id = EXCLUDED.organization_id,
@@ -39,7 +39,6 @@ impl AgentStore for PgBackend {
                 namespace = EXCLUDED.namespace,
                 roles = EXCLUDED.roles,
                 description = EXCLUDED.description,
-                status = EXCLUDED.status,
                 last_seen = EXCLUDED.last_seen,
                 connected_at = EXCLUDED.connected_at,
                 metadata = EXCLUDED.metadata",
@@ -51,7 +50,6 @@ impl AgentStore for PgBackend {
         .bind(agent.namespace().to_string())
         .bind(&roles_json)
         .bind(agent.description())
-        .bind(agent.status().to_string())
         .bind(agent.last_seen())
         .bind(agent.connected_at())
         .bind(&metadata_json)
@@ -177,9 +175,7 @@ impl AgentStore for PgBackend {
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 
-        let sql = format!(
-            "SELECT {SELECT_COLS} FROM agents WHERE status != 'disconnected' AND last_seen < $1"
-        );
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE last_seen < $1");
         let rows = sqlx::query(&sql)
             .bind(cutoff)
             .fetch_all(&self.pool)
@@ -198,7 +194,6 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let namespace: String = row.get("namespace");
     let roles: serde_json::Value = row.get("roles");
     let description: String = row.get("description");
-    let status: String = row.get("status");
     let last_seen: DateTime<Utc> = row.get("last_seen");
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
@@ -212,7 +207,6 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
         namespace: parse_namespace(namespace, "agents", "namespace")?,
         roles: decode_json_value(roles, "agents", "roles")?,
         description,
-        status: status.parse::<AgentStatus>().unwrap_or_default(),
         last_seen,
         connected_at,
         metadata: decode_json_value::<HashMap<String, String>>(metadata, "agents", "metadata")?,

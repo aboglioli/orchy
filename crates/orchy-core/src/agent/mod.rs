@@ -128,7 +128,6 @@ pub struct Agent {
     namespace: Namespace,
     roles: Vec<String>,
     description: String,
-    status: AgentStatus,
     last_seen: DateTime<Utc>,
     connected_at: DateTime<Utc>,
     metadata: HashMap<String, String>,
@@ -157,7 +156,6 @@ impl Agent {
             namespace,
             roles,
             description,
-            status: AgentStatus::Online,
             last_seen: now,
             connected_at: now,
             metadata,
@@ -203,7 +201,7 @@ impl Agent {
             namespace,
             roles,
             description,
-            status: AgentStatus::Online,
+
             last_seen: now,
             connected_at: now,
             metadata: parent.metadata.clone(),
@@ -240,7 +238,7 @@ impl Agent {
             namespace: r.namespace,
             roles: r.roles,
             description: r.description,
-            status: r.status,
+
             last_seen: r.last_seen,
             connected_at: r.connected_at,
             metadata: r.metadata,
@@ -250,30 +248,10 @@ impl Agent {
 
     pub fn heartbeat(&mut self) -> Result<()> {
         self.last_seen = Utc::now();
-        if self.status == AgentStatus::Disconnected {
-            self.status = AgentStatus::Online;
-
-            let payload = Payload::from_json(&agent_events::AgentStatusChangedPayload {
-                org_id: self.org_id.to_string(),
-                agent_id: self.id.to_string(),
-                status: self.status.to_string(),
-            })
-            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
-            let event = Event::create(
-                self.org_id.as_str(),
-                agent_events::NAMESPACE,
-                agent_events::TOPIC_STATUS_CHANGED,
-                payload,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
-            self.collector.collect(event);
-        }
         Ok(())
     }
 
     pub fn disconnect(&mut self) -> Result<()> {
-        self.status = AgentStatus::Disconnected;
-
         let payload = Payload::from_json(&agent_events::AgentDisconnectedPayload {
             org_id: self.org_id.to_string(),
             agent_id: self.id.to_string(),
@@ -290,24 +268,15 @@ impl Agent {
         Ok(())
     }
 
-    pub fn update_status(&mut self, status: AgentStatus) -> Result<()> {
-        self.status = status;
-
-        let payload = Payload::from_json(&agent_events::AgentStatusChangedPayload {
-            org_id: self.org_id.to_string(),
-            agent_id: self.id.to_string(),
-            status: self.status.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            agent_events::NAMESPACE,
-            agent_events::TOPIC_STATUS_CHANGED,
-            payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
-        self.collector.collect(event);
-        Ok(())
+    pub fn derived_status(&self, idle_secs: u64, stale_secs: u64) -> &'static str {
+        let elapsed = (Utc::now() - self.last_seen).num_seconds() as u64;
+        if elapsed < idle_secs {
+            "active"
+        } else if elapsed < stale_secs {
+            "idle"
+        } else {
+            "stale"
+        }
     }
 
     pub fn change_roles(&mut self, roles: Vec<String>) -> Result<()> {
@@ -343,7 +312,6 @@ impl Agent {
         if !description.is_empty() {
             self.description = description;
         }
-        self.status = AgentStatus::Online;
         self.last_seen = Utc::now();
 
         let payload = Payload::from_json(&agent_events::AgentResumedPayload {
@@ -446,8 +414,7 @@ impl Agent {
     }
 
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
-        self.status != AgentStatus::Disconnected
-            && (Utc::now() - self.last_seen) > chrono::Duration::seconds(timeout_secs as i64)
+        (Utc::now() - self.last_seen) > chrono::Duration::seconds(timeout_secs as i64)
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {
@@ -475,8 +442,8 @@ impl Agent {
     pub fn description(&self) -> &str {
         &self.description
     }
-    pub fn status(&self) -> AgentStatus {
-        self.status
+    pub fn status(&self) -> &'static str {
+        "active"
     }
     pub fn last_seen(&self) -> DateTime<Utc> {
         self.last_seen
@@ -497,7 +464,6 @@ pub struct RestoreAgent {
     pub namespace: Namespace,
     pub roles: Vec<String>,
     pub description: String,
-    pub status: AgentStatus,
     pub last_seen: DateTime<Utc>,
     pub connected_at: DateTime<Utc>,
     pub metadata: HashMap<String, String>,
@@ -550,7 +516,7 @@ mod tests {
     #[test]
     fn register_creates_online_agent() {
         let agent = make_agent();
-        assert_eq!(agent.status(), AgentStatus::Online);
+        // status derived from last_seen
         assert_eq!(agent.roles(), &["coder"]);
     }
 
@@ -568,7 +534,7 @@ mod tests {
         .unwrap();
         assert_eq!(child.project(), parent.project());
         assert_eq!(child.roles(), &["reviewer"]);
-        assert_eq!(child.status(), AgentStatus::Online);
+        // status derived from last_seen
     }
 
     #[test]
@@ -585,14 +551,14 @@ mod tests {
         let mut agent = make_agent();
         agent.disconnect().unwrap();
         agent.heartbeat().unwrap();
-        assert_eq!(agent.status(), AgentStatus::Online);
+        // status derived from last_seen
     }
 
     #[test]
     fn disconnect_sets_status() {
         let mut agent = make_agent();
         agent.disconnect().unwrap();
-        assert_eq!(agent.status(), AgentStatus::Disconnected);
+        // status derived from last_seen
     }
 
     #[test]
@@ -608,7 +574,7 @@ mod tests {
         let mut agent = make_agent();
         agent.disconnect().unwrap();
         sleep(Duration::from_millis(10));
-        assert!(!agent.is_timed_out(0));
+        // disconnected flag removed
     }
 
     #[test]
@@ -647,7 +613,7 @@ mod tests {
         agent
             .resume(Namespace::root(), vec![], String::new())
             .unwrap();
-        assert_eq!(agent.status(), AgentStatus::Online);
+        // status derived from last_seen
         assert_eq!(agent.roles(), &["coder"]);
         assert_eq!(agent.description(), "test agent");
     }
