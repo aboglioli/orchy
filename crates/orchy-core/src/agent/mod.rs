@@ -423,7 +423,25 @@ impl Agent {
     }
 
     pub fn set_alias(&mut self, alias: Alias) -> Result<()> {
-        self.alias = alias;
+        if self.alias == alias {
+            return Ok(());
+        }
+        self.alias = alias.clone();
+
+        let payload = Payload::from_json(&agent_events::AgentAliasChangedPayload {
+            org_id: self.org_id.to_string(),
+            agent_id: self.id.to_string(),
+            new_alias: alias.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            agent_events::NAMESPACE,
+            agent_events::TOPIC_ALIAS_CHANGED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
         Ok(())
     }
 

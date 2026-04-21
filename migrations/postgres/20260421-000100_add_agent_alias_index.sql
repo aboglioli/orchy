@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_alias_unique ON agents (organization_id, project, alias);
