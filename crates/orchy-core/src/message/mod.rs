@@ -21,7 +21,11 @@ pub trait MessageStore: Send + Sync {
     async fn save(&self, message: &mut Message) -> Result<()>;
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>>;
     async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>>;
-    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()>;
+    async fn mark_read_for_agent(
+        &self,
+        message_id: &MessageId,
+        agent: &AgentId,
+    ) -> Result<()>;
     async fn find_pending(
         &self,
         agent: &AgentId,

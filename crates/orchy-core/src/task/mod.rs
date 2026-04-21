@@ -97,6 +97,7 @@ impl TaskStatus {
                 | (Claimed, Pending)
                 | (Claimed, Failed)
                 | (Claimed, Cancelled)
+                | (InProgress, Claimed)
                 | (InProgress, Blocked)
                 | (InProgress, Completed)
                 | (InProgress, Failed)
@@ -310,6 +311,7 @@ impl Task {
         self.assigned_to = Some(agent.clone());
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
+        self.touch();
 
         self.collector.collect(
             Event::create(
@@ -337,6 +339,7 @@ impl Task {
         }
         self.status = self.status.transition_to(TaskStatus::InProgress)?;
         self.updated_at = Utc::now();
+        self.touch();
 
         self.collector.collect(
             Event::create(
@@ -359,6 +362,7 @@ impl Task {
         self.status = self.status.transition_to(TaskStatus::Completed)?;
         self.result_summary = summary.clone();
         self.updated_at = Utc::now();
+        self.touch();
 
         self.collector.collect(
             Event::create(
@@ -403,6 +407,7 @@ impl Task {
         self.status = self.status.transition_to(TaskStatus::Failed)?;
         self.result_summary = reason.clone();
         self.updated_at = Utc::now();
+        self.touch();
 
         self.collector.collect(
             Event::create(
@@ -853,6 +858,7 @@ mod tests {
         assert!(TaskStatus::Blocked.can_transition_to(&TaskStatus::Pending));
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::InProgress));
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Failed));
+        assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Claimed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Completed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Failed));
     }

@@ -53,6 +53,19 @@ impl ClaimTask {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
+        let can_claim = match task.status() {
+            TaskStatus::Pending => true,
+            TaskStatus::InProgress => task.is_stale(),
+            _ => false,
+        };
+
+        if !can_claim {
+            return Err(Error::InvalidTransition {
+                from: task.status().to_string(),
+                to: TaskStatus::Claimed.to_string(),
+            });
+        }
+
         let dep_edges = self
             .edges
             .find_from(
