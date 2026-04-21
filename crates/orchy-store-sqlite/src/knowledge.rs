@@ -53,7 +53,7 @@ impl KnowledgeStore for SqliteBackend {
         if let Some(pv) = entry.persisted_version() {
             let rows = tx.execute(
                 "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, metadata = ?11, embedding = ?12, embedding_model = ?13, embedding_dimensions = ?14, valid_from = ?15, valid_until = ?16, created_at = ?17, updated_at = ?18
-                 WHERE id = ?1 AND version = ?17",
+                 WHERE id = ?1 AND version = ?19",
                 rusqlite::params![
                     entry.id().to_string(),
                     entry.org_id().to_string(),
@@ -98,7 +98,7 @@ impl KnowledgeStore for SqliteBackend {
             }
         } else {
             tx.execute(
-                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
+                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 params,
             )
@@ -119,7 +119,7 @@ impl KnowledgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at
                  FROM knowledge_entries WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -144,7 +144,7 @@ impl KnowledgeStore for SqliteBackend {
         let result = if let Some(proj) = project {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at
                      FROM knowledge_entries WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND path = ?4",
                 )
                 .map_err(|e| Error::Store(e.to_string()))?;
@@ -163,7 +163,7 @@ impl KnowledgeStore for SqliteBackend {
         } else {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at
+                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at
                      FROM knowledge_entries WHERE organization_id = ?1 AND project IS NULL AND namespace = ?2 AND path = ?3",
                 )
                 .map_err(|e| Error::Store(e.to_string()))?;
@@ -336,7 +336,7 @@ impl KnowledgeStore for SqliteBackend {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
-            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at \
+            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at \
              FROM knowledge_entries WHERE id IN ({placeholders})"
         );
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
@@ -379,7 +379,7 @@ fn search_knowledge_vec(
     let emb_bytes = embedding_to_bytes(embedding);
 
     let mut sql = String::from(
-        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.created_at, e.updated_at
          FROM knowledge_vec kv
          JOIN knowledge_entries e ON e.rowid = kv.rowid
          WHERE kv.embedding MATCH ?1 AND kv.k = ?2 AND e.organization_id = ?3",
@@ -430,7 +430,7 @@ fn search_knowledge_fts(
     limit: usize,
 ) -> Result<Vec<Knowledge>> {
     let mut sql = String::from(
-        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.created_at, e.updated_at
          FROM knowledge_entries_fts
          JOIN knowledge_entries AS e ON e.id = knowledge_entries_fts.knowledge_id
          WHERE knowledge_entries_fts MATCH ?1 AND e.organization_id = ?2",
@@ -477,7 +477,7 @@ fn search_knowledge_like(
     limit: usize,
 ) -> Result<Vec<Knowledge>> {
     let mut sql = String::from(
-        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.created_at, e.updated_at
          FROM knowledge_entries e
          WHERE e.organization_id = ?1 AND (e.title LIKE ?2 OR e.content LIKE ?2 OR e.path LIKE ?2)",
     );
