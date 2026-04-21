@@ -635,6 +635,31 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Promote a knowledge entry (decision, discovery, or pattern) to a skill. \
+        Creates a new kind=skill entry derived from the source, with an optional instruction prefix. \
+        Establishes a DerivedFrom edge from the new skill to the source entry."
+    )]
+    async fn promote_knowledge(
+        &self,
+        Parameters(params): Parameters<PromoteKnowledgeParams>,
+    ) -> Result<String, String> {
+        knowledge::promote_knowledge(self, params).await
+    }
+
+    #[tool(
+        description = "Consolidate multiple knowledge entries into a single new entry. \
+        Concatenates source contents, creates a new entry with MergedFrom edges \
+        pointing to each source, then deletes the original entries. \
+        Requires at least 2 source paths."
+    )]
+    async fn consolidate_knowledge(
+        &self,
+        Parameters(params): Parameters<ConsolidateKnowledgeParams>,
+    ) -> Result<String, String> {
+        knowledge::consolidate_knowledge(self, params).await
+    }
+
+    #[tool(
         description = "Get the project metadata for the current session's project. \
         Set include_summary to add agent/task overview (same data as the former get_project_summary)."
     )]

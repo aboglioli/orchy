@@ -1,17 +1,21 @@
 use orchy_application::{
     AppendKnowledgeCommand, AssembleContextCommand, ChangeKnowledgeKindCommand,
-    DeleteKnowledgeCommand, ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
-    PatchKnowledgeMetadataCommand, ReadKnowledgeCommand, RenameKnowledgeCommand,
-    SearchKnowledgeCommand, TagKnowledgeCommand, UntagKnowledgeCommand, WriteKnowledgeCommand,
+    ConsolidateKnowledgeCommand, DeleteKnowledgeCommand, ImportKnowledgeCommand,
+    ListKnowledgeCommand, MoveKnowledgeCommand, PatchKnowledgeMetadataCommand,
+    PromoteKnowledgeCommand, ReadKnowledgeCommand, RenameKnowledgeCommand,
+    SearchKnowledgeCommand, TagKnowledgeCommand, UntagKnowledgeCommand,
+    WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 
 use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
 use crate::mcp::params::{
-    AppendKnowledgeParams, AssembleContextParams, ChangeKnowledgeKindParams, DeleteKnowledgeParams,
-    ImportKnowledgeParams, ListKnowledgeParams, ListKnowledgeTypesParams, MoveKnowledgeParams,
-    PatchKnowledgeMetadataParams, ReadKnowledgeParams, RenameKnowledgeParams,
-    SearchKnowledgeParams, TagKnowledgeParams, UntagKnowledgeParams, WriteKnowledgeParams,
+    AppendKnowledgeParams, AssembleContextParams, ChangeKnowledgeKindParams,
+    ConsolidateKnowledgeParams, DeleteKnowledgeParams, ImportKnowledgeParams,
+    ListKnowledgeParams, ListKnowledgeTypesParams, MoveKnowledgeParams,
+    PatchKnowledgeMetadataParams, PromoteKnowledgeParams, ReadKnowledgeParams,
+    RenameKnowledgeParams, SearchKnowledgeParams, TagKnowledgeParams,
+    UntagKnowledgeParams, WriteKnowledgeParams,
 };
 
 use super::{
@@ -422,6 +426,58 @@ pub(super) async fn assemble_context(
 
     match h.container.app.assemble_context.execute(cmd).await {
         Ok(resp) => Ok(to_json(&resp)),
+        Err(e) => Err(mcp_error(e)),
+    }
+}
+
+pub(super) async fn promote_knowledge(
+    h: &OrchyHandler,
+    params: PromoteKnowledgeParams,
+) -> Result<String, String> {
+    let (_, org, project, _) = h.require_session().await?;
+
+    let namespace = h
+        .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+        .await?;
+
+    let cmd = PromoteKnowledgeCommand {
+        org_id: org.to_string(),
+        project: project.to_string(),
+        namespace: Some(namespace.to_string()),
+        source_path: params.source_path,
+        target_path: params.target_path,
+        target_title: params.target_title,
+        instruction: params.instruction,
+    };
+
+    match h.container.app.promote_knowledge.execute(cmd).await {
+        Ok(entry) => Ok(to_json(&entry)),
+        Err(e) => Err(mcp_error(e)),
+    }
+}
+
+pub(super) async fn consolidate_knowledge(
+    h: &OrchyHandler,
+    params: ConsolidateKnowledgeParams,
+) -> Result<String, String> {
+    let (_, org, project, _) = h.require_session().await?;
+
+    let namespace = h
+        .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
+        .await?;
+
+    let cmd = ConsolidateKnowledgeCommand {
+        org_id: org.to_string(),
+        project: project.to_string(),
+        namespace: Some(namespace.to_string()),
+        source_paths: params.source_paths,
+        target_path: params.target_path,
+        target_title: params.target_title,
+        target_kind: params.target_kind,
+    };
+
+    match h.container.app.consolidate_knowledge.execute(cmd).await {
+        Ok(entry) => Ok(to_json(&entry)),
         Err(e) => Err(mcp_error(e)),
     }
 }

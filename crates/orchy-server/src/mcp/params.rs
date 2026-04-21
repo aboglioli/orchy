@@ -560,3 +560,21 @@ pub struct LinkParamInput {
     /// "child_of"/"parent_of" → spawns, "based_on"/"from" → derived_from.
     pub rel_type: String,
 }
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct PromoteKnowledgeParams {
+    pub source_path: String,
+    pub target_path: String,
+    pub target_title: Option<String>,
+    pub instruction: Option<String>,
+    pub namespace: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ConsolidateKnowledgeParams {
+    pub source_paths: Vec<String>,
+    pub target_path: String,
+    pub target_title: String,
+    pub target_kind: Option<String>,
+    pub namespace: Option<String>,
+}

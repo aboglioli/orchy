@@ -99,10 +99,12 @@ mod send_message;
 mod append_knowledge;
 mod change_knowledge_kind;
 mod delete_knowledge;
+mod consolidate_knowledge;
 mod import_knowledge;
 mod list_knowledge;
 mod move_knowledge;
 mod patch_knowledge_metadata;
+mod promote_knowledge;
 mod read_knowledge;
 mod rename_knowledge;
 mod search_knowledge;
@@ -191,6 +193,8 @@ pub use list_knowledge::{ListKnowledge, ListKnowledgeCommand};
 pub use materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborhoodCommand};
 pub use move_knowledge::{MoveKnowledge, MoveKnowledgeCommand};
 pub use patch_knowledge_metadata::{PatchKnowledgeMetadata, PatchKnowledgeMetadataCommand};
+pub use promote_knowledge::{PromoteKnowledge, PromoteKnowledgeCommand};
+pub use consolidate_knowledge::{ConsolidateKnowledge, ConsolidateKnowledgeCommand};
 pub use read_knowledge::{ReadKnowledge, ReadKnowledgeCommand, ReadKnowledgeResponse};
 pub use rename_knowledge::{RenameKnowledge, RenameKnowledgeCommand};
 pub use search_knowledge::{SearchKnowledge, SearchKnowledgeCommand};
@@ -301,6 +305,8 @@ pub struct Application {
     pub tag_knowledge: TagKnowledge,
     pub untag_knowledge: UntagKnowledge,
     pub patch_knowledge_metadata: PatchKnowledgeMetadata,
+    pub promote_knowledge: PromoteKnowledge,
+    pub consolidate_knowledge: ConsolidateKnowledge,
     pub import_knowledge: ImportKnowledge,
     pub list_skills: ListSkills,
     pub list_overviews: ListOverviews,
@@ -444,6 +450,8 @@ impl Application {
             tag_knowledge: TagKnowledge::new(knowledge.clone()),
             untag_knowledge: UntagKnowledge::new(knowledge.clone()),
             patch_knowledge_metadata: PatchKnowledgeMetadata::new(knowledge.clone()),
+            promote_knowledge: PromoteKnowledge::new(knowledge.clone(), edges.clone()),
+            consolidate_knowledge: ConsolidateKnowledge::new(knowledge.clone(), edges.clone()),
             import_knowledge: ImportKnowledge::new(knowledge.clone(), embeddings),
             list_skills: ListSkills::new(knowledge.clone()),
             list_overviews: ListOverviews::new(knowledge.clone()),
