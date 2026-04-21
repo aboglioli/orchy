@@ -98,7 +98,6 @@ impl MessageStore for SqliteBackend {
         agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
-        namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
@@ -130,16 +129,9 @@ impl MessageStore for SqliteBackend {
             Box::new(org.to_string()),
             Box::new(project.to_string()),
         ];
-        let mut idx = 5;
         let role_set: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
 
-        if !namespace.is_root() {
-            sql.push_str(&format!(
-                " AND (m.namespace = ?{idx} OR m.namespace LIKE ?{idx} || '/%')"
-            ));
-            params.push(Box::new(namespace.to_string()));
-            idx += 1;
-        }
+        let mut idx = 5;
 
         if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {

@@ -59,7 +59,6 @@ impl MessageStore for MemoryBackend {
         agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
-        namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
         let messages = self.messages.read().await;
@@ -88,10 +87,6 @@ impl MessageStore for MemoryBackend {
             }
 
             if msg.project() != project {
-                continue;
-            }
-
-            if !msg.namespace().starts_with(namespace) {
                 continue;
             }
 

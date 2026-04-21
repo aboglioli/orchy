@@ -32,7 +32,6 @@ pub trait MessageStore: Send + Sync {
         agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
-        namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>>;
     async fn find_sent(

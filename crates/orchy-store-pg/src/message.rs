@@ -143,7 +143,6 @@ impl MessageStore for PgBackend {
         agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
-        namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
         let fetch_limit = (page.limit as i64).saturating_add(1);
@@ -154,100 +153,32 @@ impl MessageStore for PgBackend {
             .and_then(|s| s.parse::<Uuid>().ok());
         let role_set: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
 
-        let rows = if namespace.is_root() {
-            if let Some(cid) = cursor_id {
-                sqlx::query(
-                    "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
-                     FROM messages m
-                     LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $4
-                     WHERE m.status = 'pending'
-                       AND m.organization_id = $1
-                       AND m.project = $2
-                       AND m.id < $5
-                       AND (
-                            m.to_target = $3
-                            OR (
-                                m.to_target = 'broadcast'
-                                AND m.from_agent != $4
-                                AND r.message_id IS NULL
-                            )
-                            OR (
-                                m.to_target LIKE 'role:%'
-                                AND m.from_agent != $4
-                                AND r.message_id IS NULL
-                            )
-                       )
-                     ORDER BY m.id DESC LIMIT $6",
-                )
-                .bind(org.to_string())
-                .bind(project.to_string())
-                .bind(agent.to_string())
-                .bind(agent.as_uuid())
-                .bind(cid)
-                .bind(fetch_limit)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| Error::Store(e.to_string()))?
-            } else {
-                sqlx::query(
-                    "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
-                     FROM messages m
-                     LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $4
-                     WHERE m.status = 'pending'
-                       AND m.organization_id = $1
-                       AND m.project = $2
-                       AND (
-                            m.to_target = $3
-                            OR (
-                                m.to_target = 'broadcast'
-                                AND m.from_agent != $4
-                                AND r.message_id IS NULL
-                            )
-                            OR (
-                                m.to_target LIKE 'role:%'
-                                AND m.from_agent != $4
-                                AND r.message_id IS NULL
-                            )
-                       )
-                     ORDER BY m.id DESC LIMIT $5",
-                )
-                .bind(org.to_string())
-                .bind(project.to_string())
-                .bind(agent.to_string())
-                .bind(agent.as_uuid())
-                .bind(fetch_limit)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| Error::Store(e.to_string()))?
-            }
-        } else if let Some(cid) = cursor_id {
+        let rows = if let Some(cid) = cursor_id {
             sqlx::query(
                 "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
                  FROM messages m
-                 LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $5
+                 LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $4
                  WHERE m.status = 'pending'
                    AND m.organization_id = $1
                    AND m.project = $2
-                   AND (m.namespace = $3 OR m.namespace LIKE $3 || '/%')
-                   AND m.id < $6
+                   AND m.id < $5
                    AND (
-                        m.to_target = $4
+                        m.to_target = $3
                         OR (
                             m.to_target = 'broadcast'
-                            AND m.from_agent != $5
+                            AND m.from_agent != $4
                             AND r.message_id IS NULL
                         )
                         OR (
                             m.to_target LIKE 'role:%'
-                            AND m.from_agent != $5
+                            AND m.from_agent != $4
                             AND r.message_id IS NULL
                         )
                    )
-                 ORDER BY m.id DESC LIMIT $7",
+                 ORDER BY m.id DESC LIMIT $6",
             )
             .bind(org.to_string())
             .bind(project.to_string())
-            .bind(namespace.to_string())
             .bind(agent.to_string())
             .bind(agent.as_uuid())
             .bind(cid)
@@ -259,29 +190,27 @@ impl MessageStore for PgBackend {
             sqlx::query(
                 "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
                  FROM messages m
-                 LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $5
+                 LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $4
                  WHERE m.status = 'pending'
                    AND m.organization_id = $1
                    AND m.project = $2
-                   AND (m.namespace = $3 OR m.namespace LIKE $3 || '/%')
                    AND (
-                        m.to_target = $4
+                        m.to_target = $3
                         OR (
                             m.to_target = 'broadcast'
-                            AND m.from_agent != $5
+                            AND m.from_agent != $4
                             AND r.message_id IS NULL
                         )
                         OR (
                             m.to_target LIKE 'role:%'
-                            AND m.from_agent != $5
+                            AND m.from_agent != $4
                             AND r.message_id IS NULL
                         )
                    )
-                 ORDER BY m.id DESC LIMIT $6",
+                 ORDER BY m.id DESC LIMIT $5",
             )
             .bind(org.to_string())
             .bind(project.to_string())
-            .bind(namespace.to_string())
             .bind(agent.to_string())
             .bind(agent.as_uuid())
             .bind(fetch_limit)
@@ -309,6 +238,7 @@ impl MessageStore for PgBackend {
         } else {
             None
         };
+
         Ok(Page::new(messages, next_cursor))
     }
 

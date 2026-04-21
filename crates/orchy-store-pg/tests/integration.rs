@@ -256,7 +256,6 @@ async fn message_save_and_find_pending() {
         &[],
         &org(),
         &p,
-        &Namespace::root(),
         PageParams::unbounded(),
     )
     .await
@@ -275,7 +274,6 @@ async fn message_save_and_find_pending() {
         &[],
         &org(),
         &p,
-        &Namespace::root(),
         PageParams::unbounded(),
     )
     .await
@@ -368,7 +366,6 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
         &[],
         &org(),
         &p,
-        &Namespace::root(),
         PageParams::unbounded(),
     )
     .await
@@ -381,7 +378,6 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
         &[],
         &org(),
         &p,
-        &Namespace::root(),
         PageParams::unbounded(),
     )
     .await
@@ -398,7 +394,6 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
         &[],
         &org(),
         &p,
-        &Namespace::root(),
         PageParams::unbounded(),
     )
     .await

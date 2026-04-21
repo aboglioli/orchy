@@ -15,7 +15,6 @@ pub struct CheckMailboxCommand {
     pub agent_id: String,
     pub org_id: String,
     pub project: String,
-    pub namespace: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
 }
@@ -36,7 +35,6 @@ impl CheckMailbox {
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let page = PageParams::new(cmd.after, cmd.limit);
 
         let agent = self
@@ -48,7 +46,7 @@ impl CheckMailbox {
 
         let mut result = self
             .messages
-            .find_pending(&agent_id, &agent_roles, &org_id, &project, &namespace, page)
+            .find_pending(&agent_id, &agent_roles, &org_id, &project, page)
             .await?;
 
         for msg in &mut result.items {

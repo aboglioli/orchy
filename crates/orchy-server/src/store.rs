@@ -132,12 +132,11 @@ impl MessageStore for StoreBackend {
         agent_roles: &[String],
         org: &OrganizationId,
         project: &ProjectId,
-        namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
         delegate_trait!(
             self,
-            MessageStore::find_pending(agent, agent_roles, org, project, namespace, page)
+            MessageStore::find_pending(agent, agent_roles, org, project, page)
         )
     }
     async fn find_sent(

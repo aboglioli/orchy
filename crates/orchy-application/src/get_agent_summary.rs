@@ -85,7 +85,6 @@ impl GetAgentSummary {
                 agent.roles(),
                 &org_id,
                 agent.project(),
-                agent.namespace(),
                 PageParams::unbounded(),
             )
             .await?

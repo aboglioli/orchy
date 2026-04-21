@@ -332,7 +332,6 @@ pub(super) async fn check_mailbox(
         agent_id: agent_id.to_string(),
         org_id: org.to_string(),
         project,
-        namespace: Some(namespace.to_string()),
         after: params.after,
         limit: params.limit,
     };

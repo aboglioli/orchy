@@ -209,7 +209,6 @@ pub async fn get_context(
         agent_id: id.clone(),
         org_id: org.clone(),
         project: agent.project.clone(),
-        namespace: Some(agent.namespace.clone()),
         after: None,
         limit: None,
     };

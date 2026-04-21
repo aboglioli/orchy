@@ -95,7 +95,6 @@ pub async fn inbox_for_agent(
         agent_id: id,
         org_id: org,
         project: agent.project.clone(),
-        namespace: query.namespace,
         after: query.after,
         limit: query.limit,
     };
