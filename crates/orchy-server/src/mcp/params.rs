@@ -21,6 +21,11 @@ pub struct ChangeRolesParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct RenameAliasParams {
+    pub new_alias: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListAgentsParams {
     /// Required if not registered yet.
     pub project: Option<String>,

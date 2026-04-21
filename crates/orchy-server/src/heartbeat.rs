@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_application::{DisconnectAgentCommand, UpdateAgentStatusCommand};
+use orchy_application::UpdateAgentStatusCommand;
 use orchy_core::agent::AgentStatus;
 use tokio::time::{Duration, interval};
 use tracing::info;
@@ -29,11 +29,7 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
                             let _ = container.app.update_agent_status.execute(cmd).await;
                         }
                         "idle" => {
-                            info!(agent_id = %agent.id, "idle agent timed out, disconnecting");
-                            let cmd = DisconnectAgentCommand {
-                                agent_id: agent.id.clone(),
-                            };
-                            let _ = container.app.disconnect_agent.execute(cmd).await;
+                            info!(agent_id = %agent.id, "agent stale (no disconnect)");
                         }
                         _ => {}
                     }

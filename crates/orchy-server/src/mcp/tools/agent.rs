@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
 use orchy_application::{
-    ChangeRolesCommand, CheckMailboxCommand, CheckSentMessagesCommand, DisconnectAgentCommand,
+    ChangeRolesCommand, CheckMailboxCommand, CheckSentMessagesCommand,
     GetAgentCommand, GetAgentSummaryCommand, HeartbeatCommand, ListAgentsCommand,
     ListConversationCommand, MarkReadCommand, PollUpdatesCommand, RegisterAgentCommand,
-    SwitchContextCommand,
+    RenameAliasCommand, SwitchContextCommand,
 };
 
 use crate::mcp::handler::{
@@ -171,14 +171,14 @@ pub(super) async fn heartbeat(h: &OrchyHandler) -> Result<String, String> {
     }
 }
 
-pub(super) async fn disconnect(h: &OrchyHandler) -> Result<String, String> {
+pub(super) async fn rename_alias(h: &OrchyHandler, new_alias: String) -> Result<String, String> {
     let (agent_id, _, _, _) = h.require_session().await?;
-
-    let cmd = DisconnectAgentCommand {
+    let cmd = RenameAliasCommand {
         agent_id: agent_id.to_string(),
+        new_alias,
     };
-    match h.container.app.disconnect_agent.execute(cmd).await {
-        Ok(()) => Ok(r#"{"status":"disconnected"}"#.to_string()),
+    match h.container.app.rename_alias.execute(cmd).await {
+        Ok(response) => Ok(to_json(&response)),
         Err(e) => Err(mcp_error(e)),
     }
 }

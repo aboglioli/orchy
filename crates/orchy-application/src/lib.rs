@@ -47,7 +47,6 @@ pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
 // Agent
 mod change_roles;
 mod check_timed_out_agents;
-mod disconnect_agent;
 mod get_agent;
 mod get_agent_summary;
 mod heartbeat;
@@ -139,7 +138,6 @@ mod poll_updates;
 
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
 pub use check_timed_out_agents::CheckTimedOutAgents;
-pub use disconnect_agent::{DisconnectAgent, DisconnectAgentCommand};
 pub use get_agent::{GetAgent, GetAgentCommand, GetAgentResponse};
 pub use get_agent_summary::{GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
@@ -241,7 +239,6 @@ pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
 pub struct Application {
     pub register_agent: RegisterAgent,
     pub switch_context: SwitchContext,
-    pub disconnect_agent: DisconnectAgent,
     pub heartbeat: Heartbeat,
     pub change_roles: ChangeRoles,
     pub get_agent: GetAgent,
@@ -250,6 +247,7 @@ pub struct Application {
     pub suggest_roles: SuggestRoles,
     pub check_timed_out_agents: CheckTimedOutAgents,
     pub update_agent_status: UpdateAgentStatus,
+    pub rename_alias: RenameAlias,
 
     pub post_task: PostTask,
     pub get_task: GetTask,
@@ -365,8 +363,8 @@ impl Application {
                 tasks.clone(),
                 locks.clone(),
             ),
-            disconnect_agent: DisconnectAgent::new(agents.clone(), tasks.clone(), locks.clone()),
             heartbeat: Heartbeat::new(agents.clone()),
+            rename_alias: RenameAlias::new(agents.clone()),
             change_roles: ChangeRoles::new(agents.clone()),
             get_agent: GetAgent::new(agents.clone(), Some(Arc::clone(&materializer))),
             get_agent_summary: GetAgentSummary::new(

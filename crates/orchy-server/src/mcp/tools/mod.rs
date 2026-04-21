@@ -144,11 +144,15 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "Disconnect and release all claimed tasks back to pending. \
-        Call this when your session is ending."
+        description = "Rename your agent's alias. Since all internal references use UUID, nothing breaks. \
+        Only affects: future register_agent lookups, message display, config. \
+        New alias must be unique per (org, project) and pass format validation."
     )]
-    async fn disconnect(&self) -> Result<String, String> {
-        agent::disconnect(self).await
+    async fn rename_alias(
+        &self,
+        Parameters(params): Parameters<RenameAliasParams>,
+    ) -> Result<String, String> {
+        agent::rename_alias(self, params.new_alias).await
     }
 
     #[tool(
