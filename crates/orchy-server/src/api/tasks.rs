@@ -1121,3 +1121,30 @@ pub async fn move_task(
         )
     })?))
 }
+
+pub async fn touch(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, _project, id)): Path<(String, String, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let task = container
+        .app
+        .touch_task
+        .execute(orchy_application::TouchTaskCommand {
+            task_id: id,
+            agent_id: None,
+        })
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}

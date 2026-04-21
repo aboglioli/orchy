@@ -775,3 +775,93 @@ pub async fn knowledge_patch(
         "unknown knowledge patch action".to_string(),
     ))
 }
+
+#[derive(Deserialize)]
+pub struct PromoteBody {
+    pub source_path: String,
+    pub target_path: Option<String>,
+    pub target_title: Option<String>,
+    pub instruction: Option<String>,
+    pub namespace: Option<String>,
+}
+
+pub async fn promote(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project)): Path<(String, String)>,
+    Json(body): Json<PromoteBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let cmd = orchy_application::PromoteKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        source_path: body.source_path.clone(),
+        target_path: body
+            .target_path
+            .unwrap_or_else(|| format!("{}/skill", body.source_path)),
+        target_title: body.target_title,
+        instruction: body.instruction,
+    };
+
+    let entry = container
+        .app
+        .promote_knowledge
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&entry).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}
+
+#[derive(Deserialize)]
+pub struct ConsolidateBody {
+    pub source_paths: Vec<String>,
+    pub target_path: String,
+    pub target_title: String,
+    pub target_kind: Option<String>,
+    pub namespace: Option<String>,
+}
+
+pub async fn consolidate(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project)): Path<(String, String)>,
+    Json(body): Json<ConsolidateBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let cmd = orchy_application::ConsolidateKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: body.namespace,
+        source_paths: body.source_paths,
+        target_path: body.target_path,
+        target_title: body.target_title,
+        target_kind: body.target_kind,
+    };
+
+    let entry = container
+        .app
+        .consolidate_knowledge
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&entry).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}

@@ -287,6 +287,7 @@ async fn message_save_and_find_unread() {
         &store,
         to_agent.id(),
         &[],
+        &Namespace::root(),
         &org(),
         &p,
         PageParams::unbounded(),
