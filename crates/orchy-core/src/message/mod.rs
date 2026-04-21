@@ -116,9 +116,6 @@ impl MessageTarget {
                 .map(MessageTarget::Namespace)
                 .map_err(|e| Error::InvalidInput(e.to_string()));
         }
-        if let Some(alias) = s.strip_prefix('@') {
-            return Ok(MessageTarget::Agent(AgentId::from_str(alias)?));
-        }
         match AgentId::from_str(s) {
             Ok(id) => Ok(MessageTarget::Agent(id)),
             Err(_) => Err(Error::InvalidInput(format!(

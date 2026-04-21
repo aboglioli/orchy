@@ -55,7 +55,17 @@ impl SendMessage {
                 "agent {from} belongs to a different project"
             )));
         }
-        let to = MessageTarget::parse(&cmd.to)?;
+
+        let to = if let Some(alias) = cmd.to.strip_prefix('@') {
+            let target_agent = self
+                .agents
+                .find_by_alias(&org_id, &project, alias)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("agent alias @{alias}")))?;
+            MessageTarget::Agent(target_agent.id().clone())
+        } else {
+            MessageTarget::parse(&cmd.to)?
+        };
         let reply_to = cmd
             .reply_to
             .map(|s| s.parse::<MessageId>())
