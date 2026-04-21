@@ -198,7 +198,7 @@ CREATE INDEX IF NOT EXISTS idx_memberships_org ON org_memberships(org_id);
 -- STEP 8: Add missing indexes (from 20260420-000000)
 -- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_heartbeat);
+CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_seen);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks (assigned_to);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks (parent_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status_priority ON tasks (status, priority);
@@ -297,14 +297,14 @@ CREATE TABLE agents_new (
     roles TEXT NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
-    last_heartbeat TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
     connected_at TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}',
     organization_id TEXT NOT NULL DEFAULT 'default'
 );
 
 INSERT INTO agents_new SELECT
-    id, project, namespace, roles, description, status, last_heartbeat,
+    id, project, namespace, roles, description, status, last_seen,
     connected_at, metadata, organization_id
 FROM agents;
 
@@ -312,7 +312,7 @@ DROP TABLE agents;
 ALTER TABLE agents_new RENAME TO agents;
 
 -- Recreate agent indexes
-CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_heartbeat);
+CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_seen);
 
 -- ============================================================================
 -- STEP 10: Recreate FTS triggers (they were dropped with tables)

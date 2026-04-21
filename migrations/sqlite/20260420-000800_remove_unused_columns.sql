@@ -64,19 +64,19 @@ CREATE TABLE agents_new (
     roles TEXT NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
-    last_heartbeat TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
     connected_at TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}'
 );
 INSERT INTO agents_new SELECT
-    id, organization_id, project, namespace, roles, description, status, last_heartbeat,
+    id, organization_id, project, namespace, roles, description, status, last_seen,
     connected_at, metadata
 FROM agents;
 DROP TABLE agents;
 ALTER TABLE agents_new RENAME TO agents;
 
 -- Recreate indexes
-CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_heartbeat);
+CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_seen);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks (assigned_to);
 CREATE INDEX IF NOT EXISTS idx_tasks_status_priority ON tasks (status, priority);
 CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_project_path_idx

@@ -12,7 +12,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::SqliteBackend;
 
-const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, status, last_seen, connected_at, metadata";
 
 #[async_trait]
 impl AgentStore for SqliteBackend {
@@ -23,7 +23,7 @@ impl AgentStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO agents (id, alias, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
+            "INSERT OR REPLACE INTO agents (id, alias, organization_id, project, namespace, roles, description, status, last_seen, connected_at, metadata)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 agent.id().to_string(),
@@ -35,7 +35,7 @@ impl AgentStore for SqliteBackend {
                     .map_err(|e| Error::Store(format!("failed to serialize roles: {e}")))?,
                 agent.description(),
                 agent.status().to_string(),
-                agent.last_heartbeat().to_rfc3339(),
+                agent.last_seen().to_rfc3339(),
                 agent.connected_at().to_rfc3339(),
                 serde_json::to_string(agent.metadata())
                     .map_err(|e| Error::Store(format!("failed to serialize metadata: {e}")))?,
@@ -157,7 +157,7 @@ impl AgentStore for SqliteBackend {
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 
         let sql = format!(
-            "SELECT {SELECT_COLS} FROM agents WHERE status != 'disconnected' AND last_heartbeat < ?1"
+            "SELECT {SELECT_COLS} FROM agents WHERE status != 'disconnected' AND last_seen < ?1"
         );
         let mut stmt = conn
             .prepare(&sql)
@@ -207,7 +207,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
         roles: crate::decode_json(&roles_str, "roles")?,
         description,
         status: status_str.parse::<AgentStatus>().unwrap_or_default(),
-        last_heartbeat: DateTime::parse_from_rfc3339(&heartbeat_str)
+        last_seen: DateTime::parse_from_rfc3339(&heartbeat_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(

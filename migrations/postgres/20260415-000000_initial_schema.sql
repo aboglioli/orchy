@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS agents (
     roles JSONB NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
-    last_heartbeat TIMESTAMPTZ NOT NULL,
+    last_seen TIMESTAMPTZ NOT NULL,
     connected_at TIMESTAMPTZ NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'
 );

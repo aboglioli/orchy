@@ -22,7 +22,7 @@ pub struct AgentResponse {
     pub roles: Vec<String>,
     pub description: String,
     pub status: String,
-    pub last_heartbeat: String,
+    pub last_seen: String,
     pub connected_at: String,
     pub metadata: HashMap<String, String>,
 }
@@ -44,7 +44,7 @@ impl From<&Agent> for AgentResponse {
             roles: a.roles().to_vec(),
             description: a.description().to_string(),
             status: a.status().to_string(),
-            last_heartbeat: a.last_heartbeat().to_rfc3339(),
+            last_seen: a.last_seen().to_rfc3339(),
             connected_at: a.connected_at().to_rfc3339(),
             metadata: a.metadata().clone(),
         }

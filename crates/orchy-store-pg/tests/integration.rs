@@ -68,7 +68,7 @@ async fn agent_save_updates_existing() {
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    let before = agent.last_heartbeat();
+    let before = agent.last_seen();
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     agent.heartbeat().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -77,7 +77,7 @@ async fn agent_save_updates_existing() {
         .await
         .unwrap()
         .unwrap();
-    assert!(updated.last_heartbeat() > before);
+    assert!(updated.last_seen() > before);
 }
 
 #[tokio::test]

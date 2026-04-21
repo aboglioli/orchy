@@ -31,7 +31,7 @@ pub struct AgentDto {
     pub status: String,
     pub agent_type: Option<String>,
     pub namespace: String,
-    pub last_heartbeat: String,
+    pub last_seen: String,
 }
 
 #[derive(Serialize)]
@@ -109,7 +109,7 @@ pub async fn list(
             status: a.status.clone(),
             agent_type: a.metadata.get("agent_type").cloned(),
             namespace: a.namespace.clone(),
-            last_heartbeat: a.last_heartbeat.clone(),
+            last_seen: a.last_seen.clone(),
         })
         .collect();
 
@@ -261,7 +261,7 @@ pub async fn get_context(
         status: agent.status.clone(),
         agent_type: agent.metadata.get("agent_type").cloned(),
         namespace: agent.namespace.clone(),
-        last_heartbeat: agent.last_heartbeat.clone(),
+        last_seen: agent.last_seen.clone(),
     };
 
     Ok(Json(AgentContextDto {

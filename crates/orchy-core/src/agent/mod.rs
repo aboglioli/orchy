@@ -129,7 +129,7 @@ pub struct Agent {
     roles: Vec<String>,
     description: String,
     status: AgentStatus,
-    last_heartbeat: DateTime<Utc>,
+    last_seen: DateTime<Utc>,
     connected_at: DateTime<Utc>,
     metadata: HashMap<String, String>,
     #[serde(skip)]
@@ -158,7 +158,7 @@ impl Agent {
             roles,
             description,
             status: AgentStatus::Online,
-            last_heartbeat: now,
+            last_seen: now,
             connected_at: now,
             metadata,
             collector: EventCollector::new(),
@@ -204,7 +204,7 @@ impl Agent {
             roles,
             description,
             status: AgentStatus::Online,
-            last_heartbeat: now,
+            last_seen: now,
             connected_at: now,
             metadata: parent.metadata.clone(),
             collector: EventCollector::new(),
@@ -241,7 +241,7 @@ impl Agent {
             roles: r.roles,
             description: r.description,
             status: r.status,
-            last_heartbeat: r.last_heartbeat,
+            last_seen: r.last_seen,
             connected_at: r.connected_at,
             metadata: r.metadata,
             collector: EventCollector::new(),
@@ -249,7 +249,7 @@ impl Agent {
     }
 
     pub fn heartbeat(&mut self) -> Result<()> {
-        self.last_heartbeat = Utc::now();
+        self.last_seen = Utc::now();
         if self.status == AgentStatus::Disconnected {
             self.status = AgentStatus::Online;
 
@@ -344,7 +344,7 @@ impl Agent {
             self.description = description;
         }
         self.status = AgentStatus::Online;
-        self.last_heartbeat = Utc::now();
+        self.last_seen = Utc::now();
 
         let payload = Payload::from_json(&agent_events::AgentResumedPayload {
             org_id: self.org_id.to_string(),
@@ -376,7 +376,7 @@ impl Agent {
             self.project = p;
         }
         self.namespace = namespace;
-        self.last_heartbeat = Utc::now();
+        self.last_seen = Utc::now();
 
         if old_project == self.project.to_string() && old_namespace == self.namespace.to_string() {
             return Ok(());
@@ -429,7 +429,7 @@ impl Agent {
 
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
         self.status != AgentStatus::Disconnected
-            && (Utc::now() - self.last_heartbeat) > chrono::Duration::seconds(timeout_secs as i64)
+            && (Utc::now() - self.last_seen) > chrono::Duration::seconds(timeout_secs as i64)
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {
@@ -460,8 +460,8 @@ impl Agent {
     pub fn status(&self) -> AgentStatus {
         self.status
     }
-    pub fn last_heartbeat(&self) -> DateTime<Utc> {
-        self.last_heartbeat
+    pub fn last_seen(&self) -> DateTime<Utc> {
+        self.last_seen
     }
     pub fn connected_at(&self) -> DateTime<Utc> {
         self.connected_at
@@ -480,7 +480,7 @@ pub struct RestoreAgent {
     pub roles: Vec<String>,
     pub description: String,
     pub status: AgentStatus,
-    pub last_heartbeat: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
     pub connected_at: DateTime<Utc>,
     pub metadata: HashMap<String, String>,
 }
@@ -556,10 +556,10 @@ mod tests {
     #[test]
     fn heartbeat_updates_timestamp() {
         let mut agent = make_agent();
-        let before = agent.last_heartbeat();
+        let before = agent.last_seen();
         sleep(Duration::from_millis(10));
         agent.heartbeat().unwrap();
-        assert!(agent.last_heartbeat() > before);
+        assert!(agent.last_seen() > before);
     }
 
     #[test]

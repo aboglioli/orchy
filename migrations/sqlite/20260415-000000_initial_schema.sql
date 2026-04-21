@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS agents (
     roles TEXT NOT NULL DEFAULT '[]',
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'online',
-    last_heartbeat TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
     connected_at TEXT NOT NULL,
     metadata TEXT NOT NULL DEFAULT '{}'
 );
