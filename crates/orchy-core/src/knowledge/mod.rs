@@ -261,6 +261,8 @@ pub struct Knowledge {
     embedding: Option<Vec<f32>>,
     embedding_model: Option<String>,
     embedding_dimensions: Option<u32>,
+    valid_from: Option<DateTime<Utc>>,
+    valid_until: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(skip)]
@@ -303,6 +305,8 @@ impl Knowledge {
             embedding: None,
             embedding_model: None,
             embedding_dimensions: None,
+            valid_from: None,
+            valid_until: None,
             created_at: now,
             updated_at: now,
             persisted_version: None,
@@ -350,6 +354,8 @@ impl Knowledge {
             embedding: r.embedding,
             embedding_model: r.embedding_model,
             embedding_dimensions: r.embedding_dimensions,
+            valid_from: r.valid_from,
+            valid_until: r.valid_until,
             created_at: r.created_at,
             updated_at: r.updated_at,
             persisted_version: Some(r.version),
@@ -641,6 +647,12 @@ impl Knowledge {
     pub fn embedding_dimensions(&self) -> Option<u32> {
         self.embedding_dimensions
     }
+    pub fn valid_from(&self) -> Option<DateTime<Utc>> {
+        self.valid_from
+    }
+    pub fn valid_until(&self) -> Option<DateTime<Utc>> {
+        self.valid_until
+    }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
@@ -664,6 +676,8 @@ pub struct RestoreKnowledge {
     pub embedding: Option<Vec<f32>>,
     pub embedding_model: Option<String>,
     pub embedding_dimensions: Option<u32>,
+    pub valid_from: Option<DateTime<Utc>>,
+    pub valid_until: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
