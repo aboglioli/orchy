@@ -720,6 +720,8 @@ pub struct KnowledgeFilter {
     /// When Some(false): only entries with at least one such edge.
     /// When None: no filter.
     pub orphaned: Option<bool>,
+    /// When Some(true): include entries whose valid_until is in the past.
+    pub include_expired: Option<bool>,
 }
 
 #[cfg(test)]

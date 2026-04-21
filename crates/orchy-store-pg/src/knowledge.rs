@@ -50,13 +50,17 @@ enum KnowledgeEntries {
     EmbeddingModel,
     #[iden = "embedding_dimensions"]
     EmbeddingDimensions,
+    #[iden = "valid_from"]
+    ValidFrom,
+    #[iden = "valid_until"]
+    ValidUntil,
     #[iden = "created_at"]
     CreatedAt,
     #[iden = "updated_at"]
     UpdatedAt,
 }
 
-const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding::text, embedding_model, embedding_dimensions, created_at, updated_at";
+const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding::text, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at";
 
 #[async_trait]
 impl KnowledgeStore for PgBackend {
@@ -78,8 +82,8 @@ impl KnowledgeStore for PgBackend {
 
         if let Some(pv) = entry.persisted_version() {
             let result = sqlx::query(
-                "UPDATE knowledge_entries SET organization_id = $2, project = $3, namespace = $4, path = $5, kind = $6, title = $7, content = $8, tags = $9, version = $10, metadata = $11, embedding = $12, embedding_model = $13, embedding_dimensions = $14, updated_at = $15
-                 WHERE id = $1 AND version = $16",
+                "UPDATE knowledge_entries SET organization_id = $2, project = $3, namespace = $4, path = $5, kind = $6, title = $7, content = $8, tags = $9, version = $10, metadata = $11, embedding = $12, embedding_model = $13, embedding_dimensions = $14, valid_from = $15, valid_until = $16, updated_at = $17
+                 WHERE id = $1 AND version = $18",
             )
             .bind(entry.id().as_uuid())
             .bind(entry.org_id().to_string())
@@ -95,6 +99,8 @@ impl KnowledgeStore for PgBackend {
             .bind(vec_binding.as_ref())
             .bind(entry.embedding_model())
             .bind(entry.embedding_dimensions().map(|d| d as i32))
+            .bind(entry.valid_from())
+            .bind(entry.valid_until())
             .bind(entry.updated_at())
             .bind(pv.as_u64() as i64)
             .execute(&mut *tx)
@@ -119,8 +125,8 @@ impl KnowledgeStore for PgBackend {
             }
         } else {
             sqlx::query(
-                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
+                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)",
             )
             .bind(entry.id().as_uuid())
             .bind(entry.org_id().to_string())
@@ -136,6 +142,8 @@ impl KnowledgeStore for PgBackend {
             .bind(vec_binding.as_ref())
             .bind(entry.embedding_model())
             .bind(entry.embedding_dimensions().map(|d| d as i32))
+            .bind(entry.valid_from())
+            .bind(entry.valid_until())
             .bind(entry.created_at())
             .bind(entry.updated_at())
             .execute(&mut *tx)
@@ -230,6 +238,11 @@ impl KnowledgeStore for PgBackend {
         }
         if let Some(ref prefix) = filter.path_prefix {
             select.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{prefix}%")));
+        }
+        if !filter.include_expired.unwrap_or(false) {
+            select.and_where(Expr::cust(
+                "(valid_until IS NULL OR valid_until > NOW())",
+            ));
         }
         if let Some(orphaned) = filter.orphaned {
             let exists_sql = "EXISTS (
@@ -424,6 +437,8 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     let embedding_str: Option<String> = row.get("embedding");
     let embedding_model: Option<String> = row.get("embedding_model");
     let embedding_dimensions: Option<i32> = row.get("embedding_dimensions");
+    let valid_from: Option<DateTime<Utc>> = row.get("valid_from");
+    let valid_until: Option<DateTime<Utc>> = row.get("valid_until");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
@@ -451,8 +466,8 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
         embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
-        valid_from: None,
-        valid_until: None,
+        valid_from,
+        valid_until,
         created_at,
         updated_at,
     }))

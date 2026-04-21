@@ -65,6 +65,7 @@ impl ListKnowledge {
             tag: cmd.tag,
             path_prefix: cmd.path_prefix,
             orphaned: cmd.orphaned,
+            ..Default::default()
         };
 
         let page = PageParams::new(cmd.after, cmd.limit);

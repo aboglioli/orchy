@@ -226,6 +226,9 @@ impl KnowledgeStore for SqliteBackend {
             params.push(Box::new(format!("{prefix}%")));
             idx += 1;
         }
+        if !filter.include_expired.unwrap_or(false) {
+            sql.push_str(" AND (valid_until IS NULL OR valid_until > datetime('now'))");
+        }
         if let Some(orphaned) = filter.orphaned {
             let exists_sql = "EXISTS (
                 SELECT 1 FROM edges e

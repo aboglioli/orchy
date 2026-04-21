@@ -102,6 +102,13 @@ impl KnowledgeStore for MemoryBackend {
                             return false;
                         }
                     }
+                    if !filter.include_expired.unwrap_or(false) {
+                        if let Some(until) = e.valid_until() {
+                            if until < chrono::Utc::now() {
+                                return false;
+                            }
+                        }
+                    }
                     true
                 })
                 .cloned()
