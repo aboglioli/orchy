@@ -325,7 +325,7 @@ pub(super) async fn check_mailbox(
         session_project.to_string()
     };
 
-    let namespace = h
+    let _namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
         .await?;
 

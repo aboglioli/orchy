@@ -30,6 +30,32 @@ pub struct FileConfig {
     pub roles: Vec<String>,
 }
 
+/// CLI config validation errors.
+#[derive(Debug, Clone)]
+pub enum ConfigError {
+    MissingField {
+        field: String,
+        source: String,
+    },
+    InvalidField {
+        field: String,
+        message: String,
+    },
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::MissingField { field, source } => {
+                write!(f, "{field} is required — set it in {source}")
+            }
+            ConfigError::InvalidField { field, message } => {
+                write!(f, "invalid {field}: {message}")
+            }
+        }
+    }
+}
+
 impl Config {
     /// Resolve config from all layers:
     /// 1. Global file (~/.orchy/config.toml)
@@ -44,7 +70,7 @@ impl Config {
         flag_namespace: Option<&str>,
         flag_agent: Option<&str>,
         json: bool,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, ConfigError> {
         let global = read_global_config();
         let local = read_repo_config();
 
@@ -57,6 +83,8 @@ impl Config {
                 flag_url,
             ],
             "url",
+            "ORCHY_URL",
+            "config file, env (ORCHY_URL), or --url",
         )?;
 
         let api_key = pick(
@@ -67,6 +95,8 @@ impl Config {
                 flag_api_key,
             ],
             "api_key",
+            "ORCHY_API_KEY",
+            "config file, env (ORCHY_API_KEY), or --api-key",
         )?;
 
         let org = pick(
@@ -77,6 +107,8 @@ impl Config {
                 flag_org,
             ],
             "org",
+            "ORCHY_ORG",
+            "config file, env (ORCHY_ORG), or --org",
         )?;
 
         let project = pick(
@@ -87,6 +119,8 @@ impl Config {
                 flag_project,
             ],
             "project",
+            "ORCHY_PROJECT",
+            "config file, env (ORCHY_PROJECT), or --project",
         )?;
 
         let namespace = pick_opt(&[
@@ -116,17 +150,99 @@ impl Config {
             .map(|c| c.roles.clone())
             .unwrap_or_default();
 
-        Ok(Config {
-            url,
-            api_key,
-            org,
-            project,
-            namespace,
+        let config = Config {
+            url: url.clone(),
+            api_key: api_key.clone(),
+            org: org.clone(),
+            project: project.clone(),
+            namespace: namespace.clone(),
             alias,
             description,
             roles,
             json,
-        })
+        };
+
+        // Validate resolved values
+        config.validate()?;
+
+        Ok(config)
+    }
+
+    fn validate(&self) -> Result<(), ConfigError> {
+        // URL validation
+        if !self.url.starts_with("http://") && !self.url.starts_with("https://") {
+            return Err(ConfigError::InvalidField {
+                field: "url".into(),
+                message: "must start with 'http://' or 'https://'".into(),
+            });
+        }
+
+        // Basic URL structure check
+        if !self.url.contains("://") || self.url.ends_with("://") {
+            return Err(ConfigError::InvalidField {
+                field: "url".into(),
+                message: "must be a valid URL (e.g., http://localhost:3100)".into(),
+            });
+        }
+
+        // API key validation
+        if self.api_key.is_empty() {
+            return Err(ConfigError::InvalidField {
+                field: "api_key".into(),
+                message: "must not be empty".into(),
+            });
+        }
+
+        // Organization validation
+        if self.org.is_empty() {
+            return Err(ConfigError::InvalidField {
+                field: "org".into(),
+                message: "must not be empty".into(),
+            });
+        }
+
+        if self.org.len() > 64 {
+            return Err(ConfigError::InvalidField {
+                field: "org".into(),
+                message: "must be 64 characters or less".into(),
+            });
+        }
+
+        // Project validation
+        if self.project.is_empty() {
+            return Err(ConfigError::InvalidField {
+                field: "project".into(),
+                message: "must not be empty".into(),
+            });
+        }
+
+        if self.project.len() > 64 {
+            return Err(ConfigError::InvalidField {
+                field: "project".into(),
+                message: "must be 64 characters or less".into(),
+            });
+        }
+
+        // Namespace validation
+        if !self.namespace.is_empty() && self.namespace != "/" {
+            if !self.namespace.starts_with('/') {
+                return Err(ConfigError::InvalidField {
+                    field: "namespace".into(),
+                    message: "must start with '/' (e.g., '/backend' or '/')".into(),
+                });
+            }
+
+            // Check for valid namespace characters
+            let ns = &self.namespace[1..]; // Skip leading '/'
+            if !ns.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '/') {
+                return Err(ConfigError::InvalidField {
+                    field: "namespace".into(),
+                    message: "contains invalid characters (use alphanumeric, '-', '_', '/')".into(),
+                });
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -134,25 +250,14 @@ fn env(key: &str) -> Option<&'static str> {
     std::env::var(key).ok().map(|s| s.leak() as &_)
 }
 
-fn pick(opts: &[Option<&str>], name: &str) -> Result<String, String> {
+fn pick(opts: &[Option<&str>], name: &str, _env_var: &str, source_hint: &str) -> Result<String, ConfigError> {
     opts.iter()
         .rev()
         .find_map(|o| *o)
         .map(|s| s.to_string())
-        .ok_or_else(|| {
-            let name_upper = match name {
-                "api_key" => "API_KEY",
-                "url" => "URL",
-                n => n,
-            };
-            let flag = match name {
-                "api_key" => "api-key",
-                "url" => "url",
-                n => n,
-            };
-            format!(
-                "{name} is required — set it in config, env (ORCHY_{name_upper}), or pass --{flag}"
-            )
+        .ok_or_else(|| ConfigError::MissingField {
+            field: name.to_string(),
+            source: source_hint.to_string(),
         })
 }
 

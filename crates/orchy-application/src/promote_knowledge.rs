@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
-use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 

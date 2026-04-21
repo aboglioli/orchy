@@ -9,7 +9,6 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
 use crate::dto::{MessageResponse, PageResponse};
-use crate::parse_namespace;
 
 pub struct CheckMailboxCommand {
     pub agent_id: String,
