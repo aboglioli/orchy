@@ -279,7 +279,7 @@ You bring the intelligence; orchy enforces the rules.
 ## On Session Start
 
 1. `register_agent` — project, roles (optional), description. \
-   Pass `id` to resume the same orchy agent after a **new MCP session** (orchy or client \
+   Pass `alias` to resume the same orchy agent after a **new MCP session** (orchy or client \
    restarted). Persist that id from the last registration or from `kind: \"context\"` handoff. \
    `session_status` explains reconnect if unsure. \
    `list_agents` accepts optional `project` before you register.
@@ -294,8 +294,7 @@ MCP session ids are **in-memory** and do not survive a restart. The client must 
 handshake; you may see **Session not found** until it does.
 
 Your **orchy agent** (`id`) lives in the database — it is **not** auto-attached to a new MCP \
-session. After reconnect, call **`register_agent` again with the same `id`** you used before \
-(save it in the workspace or a handoff note). Tasks and knowledge remain under that id.
+session. After reconnect, call **`register_agent` again with the same `alias`** you used before \
 
 `register_agent`, `session_status`, `list_knowledge_types`, and `list_agents` (when \
 `project` is passed) do not require a registered orchy session; most other tools do.
@@ -318,9 +317,8 @@ Writes default to your current namespace. Namespaces are auto-created on first u
 pending → claimed → in_progress → completed/failed. \
 Always claim before starting. If another agent claimed it, move on. \
 `split_task` breaks a task into subtasks — parent auto-completes when all finish. \
-`merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
+`touch_task` keeps a claimed task alive (staleness). `merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
 without blocking the parent. Use `tag_task` / `untag_task` for labels. \
-On disconnect, claimed tasks return to pending.
 
 **Acceptance criteria:** Every task can have `acceptance_criteria` — a clear definition \
 of done. Set on create (`post_task`) or update (`update_task`). \
@@ -340,7 +338,9 @@ knowledge entries together. Use this instead of separate fetches to avoid N+1 pa
   Call `list_knowledge_types` to see available types. \
   Optional `metadata` (JSON object string) merges; `metadata_remove` drops keys first. \
   `patch_knowledge_metadata` updates metadata only. \
-  Use `change_knowledge_kind` to change an entry's kind (not via `write_knowledge` updates).
+  Use `change_knowledge_kind` to change an entry's kind; \
+  `promote_knowledge` to promote a decision/discovery to a skill; \
+  `consolidate_knowledge` to merge multiple entries into one. (not via `write_knowledge` updates).
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.
