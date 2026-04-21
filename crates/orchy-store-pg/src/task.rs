@@ -10,8 +10,11 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_events::io::Writer;
 
-use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
+use crate::{
+    PgBackend, decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id,
+};
 
 #[derive(Iden)]
 enum Tasks {
@@ -114,7 +117,10 @@ impl TaskStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = task.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

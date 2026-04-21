@@ -7,8 +7,9 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::{
     ApiKey, ApiKeyId, Organization, OrganizationId, OrganizationStore, RestoreOrganization,
 };
+use orchy_events::io::Writer;
 
-use crate::PgBackend;
+use crate::{PgBackend, events::PgEventWriter};
 
 #[async_trait]
 impl OrganizationStore for PgBackend {
@@ -57,7 +58,10 @@ impl OrganizationStore for PgBackend {
         }
 
         let events = org.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

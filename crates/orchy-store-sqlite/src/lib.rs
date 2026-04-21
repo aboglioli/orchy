@@ -181,33 +181,6 @@ impl SqliteBackend {
     }
 }
 
-pub(crate) fn write_events_in_tx(
-    tx: &rusqlite::Transaction,
-    events: &[orchy_events::Event],
-) -> Result<()> {
-    for event in events {
-        let serialized = orchy_events::SerializedEvent::from_event(event)
-            .map_err(|e| Error::Store(e.to_string()))?;
-        tx.execute(
-            "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                serialized.id,
-                serialized.organization,
-                serialized.namespace,
-                serialized.topic,
-                serde_json::to_string(&serialized.payload).map_err(|e| Error::Store(e.to_string()))?,
-                serialized.content_type,
-                serde_json::to_string(&serialized.metadata).map_err(|e| Error::Store(e.to_string()))?,
-                serialized.timestamp.to_rfc3339(),
-                serialized.version,
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
-    }
-    Ok(())
-}
-
 pub(crate) fn decode_json<T: serde::de::DeserializeOwned>(
     raw: &str,
     col: &str,

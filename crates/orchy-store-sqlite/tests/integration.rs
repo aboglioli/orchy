@@ -169,6 +169,37 @@ async fn task_save_and_get() {
 }
 
 #[tokio::test]
+async fn task_save_persists_event_log() {
+    let store = backend();
+    let organization = org("default");
+    let mut task = Task::new(
+        organization.clone(),
+        proj("proj"),
+        Namespace::root(),
+        "Write event".into(),
+        "verify tx writer".into(),
+        None,
+        Priority::Normal,
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+
+    TaskStore::save(&store, &mut task).await.unwrap();
+
+    let events = store
+        .query_events(
+            organization.as_str(),
+            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            10,
+        )
+        .unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].topic, "task.created");
+}
+
+#[tokio::test]
 async fn task_save_overwrites_existing() {
     let store = backend();
     let mut task = Task::new(
@@ -284,6 +315,7 @@ async fn message_save_and_find_unread() {
     MessageStore::save(&store, &mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
+
     let page = MessageStore::find_unread(
         &store,
         &to,
@@ -301,6 +333,7 @@ async fn message_save_and_find_unread() {
     let mut delivered = page.items.into_iter().next().unwrap();
     delivered.deliver().unwrap();
     MessageStore::save(&store, &mut delivered).await.unwrap();
+
 
     let page = MessageStore::find_unread(
         &store,
@@ -463,6 +496,7 @@ async fn message_find_unread_includes_broadcast() {
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
+
     let pending = MessageStore::find_unread(
         &store,
         &receiver,
@@ -475,6 +509,7 @@ async fn message_find_unread_includes_broadcast() {
     .unwrap();
     assert_eq!(pending.items.len(), 1);
     assert_eq!(pending.items[0].body(), "to all");
+
 
     let sender_pending = MessageStore::find_unread(
         &store,
@@ -491,6 +526,7 @@ async fn message_find_unread_includes_broadcast() {
     MessageStore::mark_read(&store, &receiver, &[msg.id()])
         .await
         .unwrap();
+
 
     let after_read = MessageStore::find_unread(
         &store,

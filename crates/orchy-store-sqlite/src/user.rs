@@ -32,7 +32,7 @@ impl UserStore for SqliteBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = user.drain_events();
-        crate::write_events_in_tx(&tx, &events)?;
+        crate::events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

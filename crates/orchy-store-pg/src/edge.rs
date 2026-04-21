@@ -14,8 +14,9 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
+use orchy_events::io::Writer;
 
-use crate::PgBackend;
+use crate::{PgBackend, events::PgEventWriter};
 
 #[async_trait]
 impl EdgeStore for PgBackend {
@@ -59,7 +60,10 @@ impl EdgeStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = edge.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

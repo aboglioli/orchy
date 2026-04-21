@@ -7,12 +7,19 @@ use orchy_core::user::{
     Email, HashedPassword, MembershipId, OrgMembership, OrgMembershipStore, OrgRole,
     RestoreOrgMembership, RestoreUser, User, UserId, UserStore,
 };
+use orchy_events::io::Writer;
 
-use crate::PgBackend;
+use crate::{PgBackend, events::PgEventWriter};
 
 #[async_trait]
 impl UserStore for PgBackend {
     async fn save(&self, user: &mut User) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             r#"
             INSERT INTO users (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at)
@@ -32,11 +39,17 @@ impl UserStore for PgBackend {
         .bind(user.is_platform_admin())
         .bind(user.created_at())
         .bind(user.updated_at())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        user.drain_events();
+        let events = user.drain_events();
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

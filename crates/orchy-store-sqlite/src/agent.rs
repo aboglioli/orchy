@@ -43,7 +43,7 @@ impl AgentStore for SqliteBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = agent.drain_events();
-        crate::write_events_in_tx(&tx, &events)?;
+        crate::events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
@@ -74,10 +74,15 @@ impl AgentStore for SqliteBackend {
         let sql = format!(
             "SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1 AND project = ?2 AND alias = ?3"
         );
-        let mut stmt = conn.prepare(&sql).map_err(|e| Error::Store(e.to_string()))?;
-        stmt.query_row(rusqlite::params![org.to_string(), project.to_string(), alias], row_to_agent)
-            .optional()
-            .map_err(|e| Error::Store(e.to_string()))
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        stmt.query_row(
+            rusqlite::params![org.to_string(), project.to_string(), alias],
+            row_to_agent,
+        )
+        .optional()
+        .map_err(|e| Error::Store(e.to_string()))
     }
 
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {

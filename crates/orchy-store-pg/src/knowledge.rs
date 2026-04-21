@@ -17,9 +17,11 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+use orchy_events::io::Writer;
 
 use crate::{
-    PgBackend, decode_json_value, parse_namespace, parse_pg_vector_text, parse_project_id,
+    PgBackend, decode_json_value, events::PgEventWriter, parse_namespace, parse_pg_vector_text,
+    parse_project_id,
 };
 
 #[derive(Iden)]
@@ -152,7 +154,10 @@ impl KnowledgeStore for PgBackend {
         }
 
         let events = entry.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
 

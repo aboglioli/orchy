@@ -8,8 +8,9 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
+use orchy_events::io::Writer;
 
-use crate::{PgBackend, decode_json_value, parse_project_id};
+use crate::{PgBackend, decode_json_value, events::PgEventWriter, parse_project_id};
 
 #[async_trait]
 impl ProjectStore for PgBackend {
@@ -42,7 +43,10 @@ impl ProjectStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = project.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

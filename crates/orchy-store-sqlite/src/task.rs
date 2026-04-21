@@ -53,7 +53,7 @@ impl TaskStore for SqliteBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = task.drain_events();
-        crate::write_events_in_tx(&tx, &events)?;
+        crate::events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
@@ -250,30 +250,18 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let last_activity_at = DateTime::parse_from_rfc3339(&last_activity_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                13,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(13, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let created_by = created_by_str.and_then(|s| AgentId::from_str(&s).ok());
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                17,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(17, rusqlite::types::Type::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                18,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(18, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
     Ok(Task::restore(RestoreTask {

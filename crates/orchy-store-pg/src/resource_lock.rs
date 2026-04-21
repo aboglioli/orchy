@@ -8,8 +8,9 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
+use orchy_events::io::Writer;
 
-use crate::{PgBackend, parse_namespace, parse_project_id};
+use crate::{PgBackend, events::PgEventWriter, parse_namespace, parse_project_id};
 
 #[async_trait]
 impl LockStore for PgBackend {
@@ -41,7 +42,10 @@ impl LockStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = lock.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

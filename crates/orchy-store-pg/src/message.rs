@@ -14,8 +14,9 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::ResourceRef;
+use orchy_events::io::Writer;
 
-use crate::{PgBackend, parse_namespace, parse_project_id};
+use crate::{PgBackend, events::PgEventWriter, parse_namespace, parse_project_id};
 
 #[derive(Iden)]
 enum Messages {
@@ -87,7 +88,10 @@ impl MessageStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = message.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

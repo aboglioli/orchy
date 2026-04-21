@@ -10,8 +10,11 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+use orchy_events::io::Writer;
 
-use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
+use crate::{
+    PgBackend, decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id,
+};
 
 const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata";
 
@@ -58,7 +61,10 @@ impl AgentStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = agent.drain_events();
-        crate::write_events_in_tx(&mut tx, &events).await?;
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
@@ -200,7 +206,8 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str)?,
-        alias: Alias::new(&alias).map_err(|e| Error::Store(format!("invalid agents.alias: {e}")))?,
+        alias: Alias::new(&alias)
+            .map_err(|e| Error::Store(format!("invalid agents.alias: {e}")))?,
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,
