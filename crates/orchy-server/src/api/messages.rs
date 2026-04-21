@@ -207,7 +207,7 @@ pub async fn send(
     Ok(Json(v))
 }
 
-pub async fn mark_read_for_agent(
+pub async fn mark_read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, id)): Path<(String, String)>,

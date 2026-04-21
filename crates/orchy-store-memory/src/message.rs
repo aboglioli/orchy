@@ -45,15 +45,15 @@ impl MessageStore for MemoryBackend {
         Ok(messages.get(id).cloned())
     }
 
-    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
-        self.message_receipts
-            .write()
-            .await
-            .insert((*message_id, agent.clone()));
+    async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
+        let mut receipts = self.message_receipts.write().await;
+        for id in message_ids {
+            receipts.insert((*id, agent.clone()));
+        }
         Ok(())
     }
 
-    async fn find_pending(
+    async fn find_unread(
         &self,
         agent: &AgentId,
         agent_roles: &[String],

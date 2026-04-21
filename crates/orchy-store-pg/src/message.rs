@@ -123,21 +123,23 @@ impl MessageStore for PgBackend {
         rows.iter().map(row_to_message).collect()
     }
 
-    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO message_receipts (message_id, agent_id, read_at)
-             VALUES ($1, $2, NOW())
-             ON CONFLICT (message_id, agent_id) DO UPDATE SET read_at = EXCLUDED.read_at",
-        )
-        .bind(message_id.as_uuid())
-        .bind(agent.as_uuid())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+    async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
+        for id in message_ids {
+            sqlx::query(
+                "INSERT INTO message_receipts (message_id, agent_id, read_at)
+                 VALUES ($1, $2, NOW())
+                 ON CONFLICT (message_id, agent_id) DO UPDATE SET read_at = EXCLUDED.read_at",
+            )
+            .bind(id.as_uuid())
+            .bind(agent.as_uuid())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
         Ok(())
     }
 
-    async fn find_pending(
+    async fn find_unread(
         &self,
         agent: &AgentId,
         agent_roles: &[String],

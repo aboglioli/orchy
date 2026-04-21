@@ -182,7 +182,7 @@ pub fn router() -> Router<Arc<Container>> {
         )
         .route(
             "/organizations/{org}/agents/{id}/messages/read",
-            post(messages::mark_read_for_agent),
+            post(messages::mark_read),
         )
         .route(
             "/organizations/{org}/projects/{project}",

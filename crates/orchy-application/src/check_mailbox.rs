@@ -46,7 +46,7 @@ impl CheckMailbox {
 
         let mut result = self
             .messages
-            .find_pending(&agent_id, &agent_roles, &org_id, &project, page)
+            .find_unread(&agent_id, &agent_roles, &org_id, &project, page)
             .await?;
 
         for msg in &mut result.items {

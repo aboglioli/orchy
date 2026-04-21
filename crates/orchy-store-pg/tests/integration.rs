@@ -206,7 +206,7 @@ async fn task_list_sorted_by_priority() {
 
 #[tokio::test]
 #[ignore]
-async fn message_save_and_find_pending() {
+async fn message_save_and_find_unread() {
     let store = backend().await;
 
     let mut from_agent = Agent::register(
@@ -250,7 +250,7 @@ async fn message_save_and_find_pending() {
     assert_eq!(msg.status(), MessageStatus::Pending);
 
     let p = proj("test-project");
-    let messages = MessageStore::find_pending(
+    let messages = MessageStore::find_unread(
         &store,
         to_agent.id(),
         &[],
@@ -268,7 +268,7 @@ async fn message_save_and_find_pending() {
     delivered.deliver().unwrap();
     MessageStore::save(&store, &mut delivered).await.unwrap();
 
-    let messages = MessageStore::find_pending(
+    let messages = MessageStore::find_unread(
         &store,
         to_agent.id(),
         &[],
@@ -341,7 +341,7 @@ async fn message_find_by_id_and_mark_read() {
 
 #[tokio::test]
 #[ignore]
-async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
+async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
     let store = backend().await;
     let sender = AgentId::new();
     let receiver = AgentId::new();
@@ -360,7 +360,7 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-    let pending = MessageStore::find_pending(
+    let pending = MessageStore::find_unread(
         &store,
         &receiver,
         &[],
@@ -372,7 +372,7 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
     .unwrap();
     assert_eq!(pending.items.len(), 1);
 
-    let sender_pending = MessageStore::find_pending(
+    let sender_pending = MessageStore::find_unread(
         &store,
         &sender,
         &[],
@@ -384,11 +384,11 @@ async fn message_find_pending_includes_broadcast_until_agent_reads_it() {
     .unwrap();
     assert!(sender_pending.items.is_empty());
 
-    MessageStore::mark_read_for_agent(&store, &msg.id(), &receiver)
+    MessageStore::mark_read(&store, &receiver, &[msg.id()])
         .await
         .unwrap();
 
-    let after_read = MessageStore::find_pending(
+    let after_read = MessageStore::find_unread(
         &store,
         &receiver,
         &[],

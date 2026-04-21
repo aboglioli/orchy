@@ -80,7 +80,7 @@ impl GetAgentSummary {
 
         let inbox: Vec<MessageResponse> = self
             .messages
-            .find_pending(
+            .find_unread(
                 agent.id(),
                 agent.roles(),
                 &org_id,

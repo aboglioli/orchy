@@ -100,7 +100,7 @@ impl RegisterAgent {
 
         let inbox = self
             .messages
-            .find_pending(&agent_id, &agent_roles, &org_id, &project, PageParams::unbounded())
+            .find_unread(&agent_id, &agent_roles, &org_id, &project, PageParams::unbounded())
             .await?;
 
         let pending_tasks = self

@@ -78,21 +78,22 @@ impl MessageStore for SqliteBackend {
         Ok(result)
     }
 
-    async fn mark_read_for_agent(&self, message_id: &MessageId, agent: &AgentId) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT OR REPLACE INTO message_receipts (message_id, agent_id, read_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![
-                message_id.to_string(),
-                agent.to_string(),
-                Utc::now().to_rfc3339(),
-            ],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
+    async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn.transaction().map_err(|e| Error::Store(e.to_string()))?;
+        let now = Utc::now().to_rfc3339();
+        for id in message_ids {
+            tx.execute(
+                "INSERT OR REPLACE INTO message_receipts (message_id, agent_id, read_at) VALUES (?1, ?2, ?3)",
+                rusqlite::params![id.to_string(), agent.to_string(), &now],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        }
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 
-    async fn find_pending(
+    async fn find_unread(
         &self,
         agent: &AgentId,
         agent_roles: &[String],
