@@ -1522,3 +1522,189 @@ async fn assemble_context_surfaces_decision_above_log() {
 
     assert!(resp.recent_changes.iter().any(|k| k.path == "activity-log"));
 }
+
+// --- Plan B: Cross-surface consistency tests ---
+
+#[tokio::test]
+async fn agent_resume_preserves_identity() {
+    let store = backend();
+    let alias = Alias::new("coder-1").unwrap();
+
+    let mut agent = Agent::register(
+        org(),
+        proj("myapp"),
+        Namespace::root(),
+        alias.clone(),
+        vec!["dev".into()],
+        "first session".into(),
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
+    let original_id = agent.id().clone();
+
+    let found = AgentStore::find_by_alias(&store, &org(), &proj("myapp"), &alias)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.id(), &original_id);
+
+    let mut resumed = found;
+    resumed
+        .resume(
+            Namespace::root(),
+            vec!["dev".into(), "reviewer".into()],
+            "second session".into(),
+        )
+        .unwrap();
+    AgentStore::save(&store, &mut resumed).await.unwrap();
+
+    assert_eq!(resumed.id(), &original_id);
+    assert_eq!(resumed.roles(), &["dev", "reviewer"]);
+    assert_eq!(resumed.description(), "second session");
+}
+
+#[tokio::test]
+async fn agent_status_derived_from_last_seen() {
+    let store = backend();
+    let mut agent = Agent::register(
+        org(),
+        proj("myapp"),
+        Namespace::root(),
+        Alias::new("worker").unwrap(),
+        vec![],
+        "".into(),
+        None,
+        HashMap::new(),
+    )
+    .unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
+    assert_eq!(agent.status(), "active");
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
+    assert!(
+        timed_out.iter().any(|a| a.id() == agent.id()),
+        "agent should appear in timed-out list when timeout=0"
+    );
+
+    agent.heartbeat().unwrap();
+    AgentStore::save(&store, &mut agent).await.unwrap();
+
+    let fetched = AgentStore::find_by_id(&store, agent.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.status(), "active");
+}
+
+#[tokio::test]
+async fn task_claim_start_touch_complete_lifecycle() {
+    let store = backend();
+    let agent_id = AgentId::new();
+
+    let mut task = Task::new(
+        org(),
+        proj("proj"),
+        Namespace::root(),
+        "lifecycle test".into(),
+        "full lifecycle".into(),
+        None,
+        Priority::Normal,
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+    assert_eq!(task.status(), TaskStatus::Pending);
+
+    task.claim(agent_id.clone()).unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+    assert_eq!(task.status(), TaskStatus::Claimed);
+
+    task.start(&agent_id).unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+    assert_eq!(task.status(), TaskStatus::InProgress);
+
+    task.touch();
+    TaskStore::save(&store, &mut task).await.unwrap();
+
+    task.complete(Some("done".into())).unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+    assert_eq!(task.status(), TaskStatus::Completed);
+    assert_eq!(task.result_summary(), Some("done"));
+}
+
+#[tokio::test]
+async fn task_without_staleness_config_is_never_stale() {
+    let store = backend();
+    let agent_id = AgentId::new();
+
+    let mut task = Task::new(
+        org(),
+        proj("proj"),
+        Namespace::root(),
+        "no-stale test".into(),
+        "".into(),
+        None,
+        Priority::Normal,
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+
+    task.claim(agent_id).unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    let fetched = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        !fetched.is_stale(),
+        "task without stale_after_secs should never be stale"
+    );
+    assert_eq!(fetched.stale_after_secs(), None);
+}
+
+#[tokio::test]
+async fn knowledge_path_roundtrip_through_store() {
+    let store = backend();
+    let path = KnowledgePath::new("auth/jwt-strategy").unwrap();
+
+    let mut entry = Knowledge::new(
+        org(),
+        Some(proj("myapp")),
+        Namespace::root(),
+        path.clone(),
+        KnowledgeKind::Decision,
+        "JWT Strategy".into(),
+        "We chose RS256".into(),
+        vec!["auth".into()],
+        HashMap::new(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    let fetched = KnowledgeStore::find_by_path(
+        &store,
+        &org(),
+        Some(&proj("myapp")),
+        &Namespace::root(),
+        &path,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(fetched.path(), &path);
+    assert_eq!(fetched.path().as_str(), "auth/jwt-strategy");
+    assert_eq!(fetched.kind(), KnowledgeKind::Decision);
+    assert_eq!(fetched.title(), "JWT Strategy");
+    assert_eq!(fetched.content(), "We chose RS256");
+}

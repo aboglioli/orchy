@@ -31,6 +31,10 @@ impl PgSubscriber {
         }
     }
 
+    fn lock_handles(&self) -> std::sync::MutexGuard<'_, HashMap<String, SubscriptionHandle>> {
+        self.handles.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn subscribe<H, F>(
         &self,
         group_id: impl Into<String>,
@@ -78,21 +82,19 @@ impl PgSubscriber {
             }
         });
 
-        self.handles
-            .lock()
-            .unwrap()
+        self.lock_handles()
             .insert(group_id, SubscriptionHandle { join: task });
         Ok(())
     }
 
     pub fn unsubscribe(&self, group_id: &str) {
-        if let Some(handle) = self.handles.lock().unwrap().remove(group_id) {
+        if let Some(handle) = self.lock_handles().remove(group_id) {
             handle.join.abort();
         }
     }
 
     pub async fn close(&self) {
-        let handles: HashMap<_, _> = std::mem::take(&mut *self.handles.lock().unwrap());
+        let handles: HashMap<_, _> = std::mem::take(&mut *self.lock_handles());
         for (_, handle) in handles {
             handle.join.abort();
             let _ = handle.join.await;
