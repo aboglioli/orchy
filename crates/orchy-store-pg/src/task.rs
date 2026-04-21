@@ -40,6 +40,10 @@ enum Tasks {
     AssignedTo,
     #[iden = "assigned_at"]
     AssignedAt,
+    #[iden = "stale_after_secs"]
+    StaleAfterSecs,
+    #[iden = "last_activity_at"]
+    LastActivityAt,
     #[iden = "tags"]
     Tags,
     #[iden = "result_summary"]
@@ -66,8 +70,8 @@ impl TaskStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            "INSERT INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, created_by, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
              ON CONFLICT (id) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
@@ -80,6 +84,8 @@ impl TaskStore for PgBackend {
                 assigned_roles = EXCLUDED.assigned_roles,
                 assigned_to = EXCLUDED.assigned_to,
                 assigned_at = EXCLUDED.assigned_at,
+                stale_after_secs = EXCLUDED.stale_after_secs,
+                last_activity_at = EXCLUDED.last_activity_at,
                 tags = EXCLUDED.tags,
                 result_summary = EXCLUDED.result_summary,
                 updated_at = EXCLUDED.updated_at",
@@ -96,6 +102,8 @@ impl TaskStore for PgBackend {
         .bind(&roles_json)
         .bind(task.assigned_to().map(|a| *a.as_uuid()))
         .bind(task.assigned_at())
+        .bind(task.stale_after_secs().map(|v| v as i64))
+        .bind(task.last_activity_at())
         .bind(&tags_json)
         .bind(task.result_summary())
         .bind(task.created_by().map(|a| *a.as_uuid()))
@@ -114,7 +122,7 @@ impl TaskStore for PgBackend {
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at
+            "SELECT id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, created_by, created_at, updated_at
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -133,7 +141,7 @@ impl TaskStore for PgBackend {
         let rows = sqlx::query(
             "SELECT id, organization_id, project, namespace, title, description, \
              acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, \
-             tags, result_summary, created_by, created_at, updated_at \
+             stale_after_secs, last_activity_at, tags, result_summary, created_by, created_at, updated_at \
              FROM tasks WHERE id = ANY($1::uuid[])",
         )
         .bind(&uuid_ids)
@@ -158,6 +166,8 @@ impl TaskStore for PgBackend {
             Tasks::AssignedRoles,
             Tasks::AssignedTo,
             Tasks::AssignedAt,
+            Tasks::StaleAfterSecs,
+            Tasks::LastActivityAt,
             Tasks::Tags,
             Tasks::ResultSummary,
             Tasks::CreatedBy,
@@ -252,6 +262,8 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
     let assigned_roles: serde_json::Value = row.get("assigned_roles");
     let assigned_to: Option<Uuid> = row.get("assigned_to");
     let assigned_at: Option<DateTime<Utc>> = row.get("assigned_at");
+    let stale_after_secs: Option<i64> = row.get("stale_after_secs");
+    let last_activity_at: DateTime<Utc> = row.get("last_activity_at");
     let tags: serde_json::Value = row.get("tags");
     let result_summary: Option<String> = row.get("result_summary");
     let created_by: Option<Uuid> = row.get("created_by");
@@ -272,6 +284,8 @@ fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
         assigned_roles: decode_json_value(assigned_roles, "tasks", "assigned_roles")?,
         assigned_to: assigned_to.map(AgentId::from_uuid),
         assigned_at,
+        stale_after_secs: stale_after_secs.map(|v| v as u64),
+        last_activity_at,
         tags: decode_json_value(tags, "tasks", "tags")?,
         result_summary,
         created_by: created_by.map(AgentId::from_uuid),

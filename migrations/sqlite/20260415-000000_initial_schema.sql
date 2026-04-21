@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     namespace TEXT NOT NULL DEFAULT '/',
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    acceptance_criteria TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     priority TEXT NOT NULL DEFAULT 'normal',
     assigned_roles TEXT NOT NULL DEFAULT '[]',

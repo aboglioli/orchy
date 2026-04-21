@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use chrono::Utc;
+
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
 use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
@@ -197,6 +199,8 @@ async fn task_save_overwrites_existing() {
         assigned_roles: vec![],
         assigned_to: None,
         assigned_at: None,
+        stale_after_secs: None,
+        last_activity_at: Utc::now(),
         tags: vec![],
         result_summary: Some("done".into()),
         created_by: None,

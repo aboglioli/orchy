@@ -13,7 +13,7 @@ use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStat
 
 use crate::SqliteBackend;
 
-const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at";
+const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, created_by, created_at, updated_at";
 
 #[async_trait]
 impl TaskStore for SqliteBackend {
@@ -24,8 +24,8 @@ impl TaskStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, tags, result_summary, created_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, created_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             rusqlite::params![
                 task.id().to_string(),
                 task.org_id().to_string(),
@@ -40,6 +40,8 @@ impl TaskStore for SqliteBackend {
                     .map_err(|e| Error::Store(format!("failed to serialize assigned_roles: {e}")))?,
                 task.assigned_to().map(|a| a.to_string()),
                 task.assigned_at().map(|dt| dt.to_rfc3339()),
+                task.stale_after_secs(),
+                task.last_activity_at().to_rfc3339(),
                 serde_json::to_string(task.tags())
                     .map_err(|e| Error::Store(format!("failed to serialize tags: {e}")))?,
                 task.result_summary().map(|s| s.to_string()),
@@ -199,11 +201,13 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let roles_str: String = row.get(9)?;
     let assigned_to_str: Option<String> = row.get(10)?;
     let assigned_at_str: Option<String> = row.get(11)?;
-    let tags_str: String = row.get(12)?;
-    let result_summary: Option<String> = row.get(13)?;
-    let created_by_str: Option<String> = row.get(14)?;
-    let created_at_str: String = row.get(15)?;
-    let updated_at_str: String = row.get(16)?;
+    let stale_after_secs: Option<u64> = row.get(12)?;
+    let last_activity_at_str: String = row.get(13)?;
+    let tags_str: String = row.get(14)?;
+    let result_summary: Option<String> = row.get(15)?;
+    let created_by_str: Option<String> = row.get(16)?;
+    let created_at_str: String = row.get(17)?;
+    let updated_at_str: String = row.get(18)?;
 
     let tags: Vec<String> = crate::decode_json(&tags_str, "tags")?;
 
@@ -243,16 +247,33 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let assigned_at = assigned_at_str
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
         .map(|dt| dt.with_timezone(&Utc));
+    let last_activity_at = DateTime::parse_from_rfc3339(&last_activity_at_str)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                13,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            )
+        })?;
     let created_by = created_by_str.and_then(|s| AgentId::from_str(&s).ok());
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(
+                17,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            )
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
+            rusqlite::Error::FromSqlConversionFailure(
+                18,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            )
         })?;
 
     Ok(Task::restore(RestoreTask {
@@ -268,6 +289,8 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         assigned_roles,
         assigned_to,
         assigned_at,
+        stale_after_secs,
+        last_activity_at,
         tags,
         result_summary,
         created_by,
