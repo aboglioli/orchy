@@ -76,6 +76,7 @@ impl MessageStore for MemoryBackend {
                 MessageTarget::Agent(id) => id == agent,
                 MessageTarget::Broadcast => msg.from() != agent,
                 MessageTarget::Role(role) => msg.from() != agent && agent_roles.contains(role),
+                MessageTarget::Namespace(_) => false,
             };
 
             if !targets_agent {

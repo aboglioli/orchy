@@ -91,6 +91,7 @@ impl FromStr for MessageId {
 pub enum MessageTarget {
     Agent(AgentId),
     Role(String),
+    Namespace(Namespace),
     Broadcast,
 }
 
@@ -106,6 +107,14 @@ impl MessageTarget {
                 ));
             }
             return Ok(MessageTarget::Role(role.to_string()));
+        }
+        if let Some(ns) = s.strip_prefix("ns:") {
+            return Namespace::try_from(ns.to_string())
+                .map(MessageTarget::Namespace)
+                .map_err(|e| Error::InvalidInput(e.to_string()));
+        }
+        if let Some(alias) = s.strip_prefix('@') {
+            return Ok(MessageTarget::Agent(AgentId::from_str(alias)?));
         }
         match AgentId::from_str(s) {
             Ok(id) => Ok(MessageTarget::Agent(id)),
@@ -135,6 +144,7 @@ impl fmt::Display for MessageTarget {
         match self {
             MessageTarget::Broadcast => write!(f, "broadcast"),
             MessageTarget::Role(r) => write!(f, "role:{r}"),
+            MessageTarget::Namespace(ns) => write!(f, "ns:{ns}"),
             MessageTarget::Agent(id) => write!(f, "{id}"),
         }
     }

@@ -429,6 +429,12 @@ impl Agent {
         Ok(())
     }
 
+    pub fn set_alias(&mut self, alias: String) -> Result<()> {
+        validate_alias(&alias)?;
+        self.alias = alias;
+        Ok(())
+    }
+
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
         self.status != AgentStatus::Disconnected
             && (Utc::now() - self.last_heartbeat) > chrono::Duration::seconds(timeout_secs as i64)
