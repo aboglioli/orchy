@@ -44,13 +44,15 @@ impl KnowledgeStore for SqliteBackend {
             embedding_bytes,
             entry.embedding_model(),
             entry.embedding_dimensions().map(|d| d as i64),
+            entry.valid_from().map(|d| d.to_rfc3339()),
+            entry.valid_until().map(|d| d.to_rfc3339()),
             entry.created_at().to_rfc3339(),
             entry.updated_at().to_rfc3339(),
         ];
 
         if let Some(pv) = entry.persisted_version() {
             let rows = tx.execute(
-                "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, metadata = ?11, embedding = ?12, embedding_model = ?13, embedding_dimensions = ?14, created_at = ?15, updated_at = ?16
+                "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, metadata = ?11, embedding = ?12, embedding_model = ?13, embedding_dimensions = ?14, valid_from = ?15, valid_until = ?16, created_at = ?17, updated_at = ?18
                  WHERE id = ?1 AND version = ?17",
                 rusqlite::params![
                     entry.id().to_string(),
@@ -67,6 +69,8 @@ impl KnowledgeStore for SqliteBackend {
                     embedding_bytes,
                     entry.embedding_model(),
                     entry.embedding_dimensions().map(|d| d as i64),
+                    entry.valid_from().map(|d| d.to_rfc3339()),
+                    entry.valid_until().map(|d| d.to_rfc3339()),
                     entry.created_at().to_rfc3339(),
                     entry.updated_at().to_rfc3339(),
                     pv.as_u64() as i64,
@@ -95,7 +99,7 @@ impl KnowledgeStore for SqliteBackend {
         } else {
             tx.execute(
                 "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 params,
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -179,7 +183,7 @@ impl KnowledgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, created_at, updated_at FROM knowledge_entries WHERE 1=1",
+            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at FROM knowledge_entries WHERE 1=1",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
@@ -525,8 +529,10 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
     let embedding_bytes: Option<Vec<u8>> = row.get(11)?;
     let embedding_model: Option<String> = row.get(12)?;
     let embedding_dimensions: Option<i64> = row.get(13)?;
-    let created_at_str: String = row.get(14)?;
-    let updated_at_str: String = row.get(15)?;
+    let valid_from_str: Option<String> = row.get(14)?;
+    let valid_until_str: Option<String> = row.get(15)?;
+    let created_at_str: String = row.get(16)?;
+    let updated_at_str: String = row.get(17)?;
 
     let id = KnowledgeId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -582,6 +588,15 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
             rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
+    let valid_from = valid_from_str
+        .as_ref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&Utc));
+    let valid_until = valid_until_str
+        .as_ref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&Utc));
+
     Ok(Knowledge::restore(RestoreKnowledge {
         id,
         org_id,
@@ -597,8 +612,8 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
         embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
-        valid_from: None,
-        valid_until: None,
+        valid_from,
+        valid_until,
         created_at,
         updated_at,
     }))

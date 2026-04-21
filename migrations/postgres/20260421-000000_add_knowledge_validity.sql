@@ -1,0 +1,2 @@
+ALTER TABLE knowledge_entries ADD COLUMN valid_from TIMESTAMP WITH TIME ZONE;
+ALTER TABLE knowledge_entries ADD COLUMN valid_until TIMESTAMP WITH TIME ZONE;
