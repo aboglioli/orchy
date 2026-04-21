@@ -10,7 +10,7 @@ pub struct Config {
     pub org: String,
     pub project: String,
     pub namespace: String,
-    pub agent_id: Option<String>,
+    pub alias: Option<String>,
     pub description: Option<String>,
     pub roles: Vec<String>,
     pub json: bool,
@@ -24,7 +24,7 @@ pub struct FileConfig {
     pub org: Option<String>,
     pub project: Option<String>,
     pub namespace: Option<String>,
-    pub agent_id: Option<String>,
+    pub alias: Option<String>,
     pub description: Option<String>,
     #[serde(default)]
     pub roles: Vec<String>,
@@ -97,10 +97,10 @@ impl Config {
         ])
         .unwrap_or_else(|| "/".to_string());
 
-        let agent_id = pick_opt(&[
-            global.as_ref().and_then(|c| c.agent_id.as_deref()),
-            local.as_ref().and_then(|c| c.agent_id.as_deref()),
-            env("ORCHY_AGENT_ID"),
+        let alias = pick_opt(&[
+            global.as_ref().and_then(|c| c.alias.as_deref()),
+            local.as_ref().and_then(|c| c.alias.as_deref()),
+            env("ORCHY_ALIAS"),
             flag_agent,
         ]);
 
@@ -122,7 +122,7 @@ impl Config {
             org,
             project,
             namespace,
-            agent_id,
+            alias,
             description,
             roles,
             json,
@@ -184,9 +184,9 @@ fn read_toml_file(path: &PathBuf) -> Option<FileConfig> {
     toml::from_str(&content).ok()
 }
 
-/// Write or update `agent_id` in the nearest `.orchy.toml`.
+/// Write or update `alias` in the nearest `.orchy.toml`.
 /// If no `.orchy.toml` exists, creates one in the current directory.
-pub fn save_agent_id(agent_id: &str) {
+pub fn save_alias(alias: &str) {
     let path = find_repo_config_path().unwrap_or_else(|| {
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
@@ -195,13 +195,13 @@ pub fn save_agent_id(agent_id: &str) {
 
     let content = std::fs::read_to_string(&path).unwrap_or_default();
 
-    let updated = if content.contains("agent_id") {
-        // Replace existing agent_id line
+    let updated = if content.contains("alias") {
+        // Replace existing alias line
         content
             .lines()
             .map(|line| {
-                if line.trim_start().starts_with("agent_id") {
-                    format!("agent_id  = \"{agent_id}\"")
+                if line.trim_start().starts_with("alias") {
+                    format!("alias  = \"{alias}\"")
                 } else {
                     line.to_string()
                 }
@@ -210,13 +210,13 @@ pub fn save_agent_id(agent_id: &str) {
             .join("\n")
             + "\n"
     } else {
-        // Append agent_id
-        format!("{content}agent_id  = \"{agent_id}\"\n")
+        // Append alias
+        format!("{content}alias  = \"{alias}\"\n")
     };
 
     if let Err(e) = std::fs::write(&path, updated) {
         eprintln!(
-            "Warning: could not save agent_id to {}: {e}",
+            "Warning: could not save alias to {}: {e}",
             path.display()
         );
     }

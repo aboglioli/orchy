@@ -163,9 +163,9 @@ pub enum TaskSubcommand {
     },
 }
 
-fn require_agent_id(client: &OrchyClient) -> Result<String, crate::client::CliError> {
+fn require_alias(client: &OrchyClient) -> Result<String, crate::client::CliError> {
     client
-        .agent_id
+        .alias
         .clone()
         .ok_or(crate::client::CliError::MissingAgentId)
 }
@@ -305,8 +305,8 @@ pub async fn run(
         }
 
         TaskSubcommand::Claim { id, start } => {
-            let agent_id = require_agent_id(client)?;
-            let mut body = serde_json::json!({ "agent": agent_id });
+            let alias = require_alias(client)?;
+            let mut body = serde_json::json!({ "agent": alias });
             if let Some(s) = start {
                 body["start"] = serde_json::Value::Bool(*s);
             }
@@ -321,8 +321,8 @@ pub async fn run(
         }
 
         TaskSubcommand::Start { id } => {
-            let agent_id = require_agent_id(client)?;
-            let body = serde_json::json!({ "agent": agent_id });
+            let alias = require_alias(client)?;
+            let body = serde_json::json!({ "agent": alias });
             let v = client
                 .post_project_json(&format!("/tasks/{id}/start"), Some(&body))
                 .await?;
@@ -441,8 +441,8 @@ pub async fn run(
             if let Some(c) = claim {
                 qs.push(format!("claim={c}"));
                 if *c {
-                    if let Some(aid) = &client.agent_id {
-                        qs.push(format!("agent_id={aid}"));
+                    if let Some(aid) = &client.alias {
+                        qs.push(format!("alias={aid}"));
                     }
                 }
             }

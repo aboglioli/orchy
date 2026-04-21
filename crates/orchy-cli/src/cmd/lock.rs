@@ -32,8 +32,8 @@ pub async fn run(
 ) -> crate::client::CliResult<()> {
     match cmd {
         LockSubcommand::Acquire { name, ttl } => {
-            let agent_id = client.agent_id.as_deref().unwrap_or("cli");
-            let mut body = serde_json::json!({ "name": name, "agent_id": agent_id });
+            let alias = client.alias.as_deref().unwrap_or("cli");
+            let mut body = serde_json::json!({ "name": name, "alias": alias });
             if let Some(t) = ttl {
                 body["ttl_secs"] = serde_json::Value::Number((*t).into());
             }
@@ -45,9 +45,9 @@ pub async fn run(
             }
         }
         LockSubcommand::Release { name } => {
-            let agent_id = client.agent_id.as_deref().unwrap_or("cli");
+            let alias = client.alias.as_deref().unwrap_or("cli");
             client
-                .delete_project(&format!("/locks/{name}?agent_id={agent_id}"))
+                .delete_project(&format!("/locks/{name}?alias={alias}"))
                 .await?;
             if config.json {
                 println!("{{\"ok\": true}}");

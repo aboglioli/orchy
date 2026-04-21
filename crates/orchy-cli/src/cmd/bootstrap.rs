@@ -7,11 +7,11 @@ pub async fn run(
     config: &Config,
     verbose: bool,
 ) -> crate::client::CliResult<()> {
-    let agent_id = client
-        .agent_id
+    let alias = client
+        .alias
         .clone()
         .ok_or(crate::client::CliError::MissingAgentId)?;
-    let path = format!("/agents/{agent_id}/context");
+    let path = format!("/agents/{alias}/context");
     let (agent_v, project_v) =
         tokio::try_join!(client.get_json(&path), client.get_project_json(""),)?;
 

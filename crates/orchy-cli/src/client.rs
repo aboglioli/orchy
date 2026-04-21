@@ -9,7 +9,7 @@ pub struct OrchyClient {
     api_key: String,
     org: String,
     project: String,
-    pub agent_id: Option<String>,
+    pub alias: Option<String>,
 }
 
 impl OrchyClient {
@@ -21,7 +21,7 @@ impl OrchyClient {
             api_key: config.api_key.clone(),
             org: config.org.clone(),
             project: config.project.clone(),
-            agent_id: config.agent_id.clone(),
+            alias: config.alias.clone(),
         }
     }
 
@@ -256,7 +256,7 @@ impl std::fmt::Display for CliError {
             CliError::Http { status, body } => write!(f, "HTTP {status}: {body}"),
             CliError::MissingAgentId => write!(
                 f,
-                "agent_id is required — set it in config or pass --agent <id>"
+                "alias is required — set it in config or pass --agent <id>"
             ),
         }
     }

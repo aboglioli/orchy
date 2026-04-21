@@ -53,9 +53,9 @@ pub async fn run(
             reply_to,
             refs,
         } => {
-            let agent_id = client.agent_id.as_deref().unwrap_or("cli");
+            let alias = client.alias.as_deref().unwrap_or("cli");
             let mut body_json =
-                serde_json::json!({ "from_agent_id": agent_id, "to": to, "body": body });
+                serde_json::json!({ "from_alias": alias, "to": to, "body": body });
             if let Some(rt) = reply_to {
                 body_json["reply_to"] = serde_json::Value::String(rt.clone());
             }
@@ -98,12 +98,12 @@ pub async fn run(
             } else {
                 format!("?{}", qs.join("&"))
             };
-            let agent_id = client
-                .agent_id
+            let alias = client
+                .alias
                 .clone()
                 .ok_or(crate::client::CliError::MissingAgentId)?;
             let v = client
-                .get_json(&format!("/agents/{agent_id}/inbox{query}"))
+                .get_json(&format!("/agents/{alias}/inbox{query}"))
                 .await?;
             if config.json {
                 output::print_json(config, &v);
@@ -126,12 +126,12 @@ pub async fn run(
             } else {
                 format!("?{}", qs.join("&"))
             };
-            let agent_id = client
-                .agent_id
+            let alias = client
+                .alias
                 .clone()
                 .ok_or(crate::client::CliError::MissingAgentId)?;
             let v = client
-                .get_json(&format!("/agents/{agent_id}/sent-messages{query}"))
+                .get_json(&format!("/agents/{alias}/sent-messages{query}"))
                 .await?;
             if config.json {
                 output::print_json(config, &v);
@@ -147,12 +147,12 @@ pub async fn run(
         MessageSubcommand::MarkRead { ids } => {
             let id_vec: Vec<String> = ids.split(',').map(|s| s.trim().to_string()).collect();
             let body = serde_json::json!({ "message_ids": id_vec });
-            let agent_id = client
-                .agent_id
+            let alias = client
+                .alias
                 .clone()
                 .ok_or(crate::client::CliError::MissingAgentId)?;
             let v = client
-                .post_json(&format!("/agents/{agent_id}/messages/read"), Some(&body))
+                .post_json(&format!("/agents/{alias}/messages/read"), Some(&body))
                 .await?;
             if config.json {
                 output::print_json(config, &v);

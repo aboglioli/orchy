@@ -55,20 +55,20 @@ pub async fn run(
                 .or_else(|| config.description.clone())
                 .unwrap_or_default();
             let agent_roles = roles.clone().unwrap_or_else(|| config.roles.clone());
-            let agent_id = id.clone().or_else(|| config.agent_id.clone());
+            let alias = id.clone().or_else(|| config.alias.clone());
             let mut body = serde_json::json!({
                 "description": desc,
                 "roles": agent_roles,
             });
-            if let Some(aid) = &agent_id {
+            if let Some(aid) = &alias {
                 body["id"] = serde_json::Value::String(aid.clone());
             }
             let v = client.post_project_json("/agents", Some(&body)).await?;
             let new_id = v.get("id").and_then(|v| v.as_str()).unwrap_or("?");
 
-            // Auto-save agent_id to .orchy.toml
+            // Auto-save alias to .orchy.toml
             if new_id != "?" {
-                crate::config::save_agent_id(new_id);
+                crate::config::save_alias(new_id);
             }
 
             if config.json {
@@ -76,7 +76,7 @@ pub async fn run(
             } else {
                 let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("?");
                 println!("Agent registered: {new_id} ({status})");
-                println!("Saved agent_id to .orchy.toml");
+                println!("Saved alias to .orchy.toml");
             }
         }
         AgentSubcommand::List => {
