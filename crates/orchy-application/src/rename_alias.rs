@@ -33,13 +33,12 @@ impl RenameAlias {
                 .agents
                 .find_by_alias(agent.org_id(), agent.project(), &cmd.new_alias)
                 .await?
+                && existing.id() != &agent_id
             {
-                if existing.id() != &agent_id {
-                    return Err(Error::Conflict(format!(
-                        "alias '{}' already taken",
-                        cmd.new_alias
-                    )));
-                }
+                return Err(Error::Conflict(format!(
+                    "alias '{}' already taken",
+                    cmd.new_alias
+                )));
             }
             agent.set_alias(cmd.new_alias)?;
             self.agents.save(&mut agent).await?;

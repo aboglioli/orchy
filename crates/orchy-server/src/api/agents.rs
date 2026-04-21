@@ -261,7 +261,7 @@ pub async fn get_context(
     }
 
     let mailbox_cmd = CheckMailboxCommand {
-        agent_id: agent_id,
+        agent_id,
         org_id: org.clone(),
         project: agent.project.clone(),
         after: None,

@@ -444,10 +444,8 @@ pub async fn run(
             let mut qs = vec![];
             if let Some(c) = claim {
                 qs.push(format!("claim={c}"));
-                if *c {
-                    if let Some(aid) = &client.alias {
-                        qs.push(format!("agent_id={aid}"));
-                    }
+                if *c && let Some(aid) = &client.alias {
+                    qs.push(format!("agent_id={aid}"));
                 }
             }
             if let Some(r) = role {

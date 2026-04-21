@@ -223,15 +223,13 @@ impl User {
 
         if let Ok(payload) = Payload::from_json(&events::UserDeactivatedPayload {
             user_id: self.id.as_str(),
-        }) {
-            if let Ok(event) = Event::create(
-                self.id.as_str(),
-                events::NAMESPACE,
-                events::TOPIC_DEACTIVATED,
-                payload,
-            ) {
-                self.collector.collect(event);
-            }
+        }) && let Ok(event) = Event::create(
+            self.id.as_str(),
+            events::NAMESPACE,
+            events::TOPIC_DEACTIVATED,
+            payload,
+        ) {
+            self.collector.collect(event);
         }
     }
 

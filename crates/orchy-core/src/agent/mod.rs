@@ -215,6 +215,10 @@ impl Agent {
         Ok(())
     }
 
+    pub fn status(&self) -> &'static str {
+        self.derived_status(30, 300)
+    }
+
     pub fn derived_status(&self, idle_secs: u64, stale_secs: u64) -> &'static str {
         let elapsed = (Utc::now() - self.last_seen).num_seconds() as u64;
         if elapsed < idle_secs {
@@ -388,9 +392,6 @@ impl Agent {
     }
     pub fn description(&self) -> &str {
         &self.description
-    }
-    pub fn status(&self) -> &'static str {
-        "active"
     }
     pub fn last_seen(&self) -> DateTime<Utc> {
         self.last_seen

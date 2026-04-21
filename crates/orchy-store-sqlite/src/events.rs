@@ -60,7 +60,7 @@ impl Writer for SqliteEventWriter<'_> {
             .conn
             .lock()
             .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
-        append_event(&*conn, event)
+        append_event(&conn, event)
     }
 }
 

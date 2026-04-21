@@ -147,14 +147,13 @@ impl MaterializeNeighborhood {
                 .transpose()?;
             let namespace = Namespace::root();
             for path_str in &knowledge_paths {
-                if let Ok(path) = path_str.parse::<KnowledgePath>() {
-                    if let Ok(Some(entry)) = self
+                if let Ok(path) = path_str.parse::<KnowledgePath>()
+                    && let Ok(Some(entry)) = self
                         .knowledge
                         .find_by_path(&org_id, project.as_ref(), &namespace, &path)
                         .await
-                    {
-                        knowledge_entries.push(entry);
-                    }
+                {
+                    knowledge_entries.push(entry);
                 }
             }
         }
@@ -229,7 +228,7 @@ impl MaterializeNeighborhood {
 
                 Some(Relation {
                     edge_id: hop.edge.id().to_string(),
-                    rel_type: hop.edge.rel_type().clone(),
+                    rel_type: *hop.edge.rel_type(),
                     direction: hop.direction,
                     depth: hop.depth,
                     via: hop.via,

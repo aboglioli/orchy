@@ -90,7 +90,7 @@ pub async fn run(
                 .get("agent")
                 .and_then(|a| a.get("alias"))
                 .and_then(|v| v.as_str())
-                .or_else(|| alias.as_deref())
+                .or(alias.as_deref())
                 .unwrap_or("?");
 
             // Auto-save alias to .orchy.toml

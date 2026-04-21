@@ -110,10 +110,10 @@ impl MergeTasks {
                 )
                 .await?;
             for edge in dep_edges {
-                if let Ok(dep_id) = edge.to_id().parse::<TaskId>() {
-                    if !source_ids.contains(&dep_id) {
-                        deps_set.insert(dep_id);
-                    }
+                if let Ok(dep_id) = edge.to_id().parse::<TaskId>()
+                    && !source_ids.contains(&dep_id)
+                {
+                    deps_set.insert(dep_id);
                 }
             }
         }
