@@ -42,18 +42,19 @@ impl CheckMailbox {
             .await?
             .ok_or(Error::NotFound("agent not found".to_string()))?;
         let agent_roles = agent.roles().to_vec();
+        let agent_namespace = agent.namespace().clone();
 
-        let mut result = self
+        let result = self
             .messages
-            .find_unread(&agent_id, &agent_roles, &org_id, &project, page)
+            .find_unread(
+                &agent_id,
+                &agent_roles,
+                &agent_namespace,
+                &org_id,
+                &project,
+                page,
+            )
             .await?;
-
-        for msg in &mut result.items {
-            if msg.is_directed_to(&agent_id) {
-                msg.deliver()?;
-                self.messages.save(msg).await?;
-            }
-        }
 
         Ok(PageResponse::from(result))
     }

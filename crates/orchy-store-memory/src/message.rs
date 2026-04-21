@@ -57,6 +57,7 @@ impl MessageStore for MemoryBackend {
         &self,
         agent: &AgentId,
         agent_roles: &[String],
+        agent_namespace: &Namespace,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
@@ -67,7 +68,12 @@ impl MessageStore for MemoryBackend {
         let mut results = Vec::new();
 
         for msg in messages.values() {
-            if msg.status() != MessageStatus::Pending {
+            if msg.org_id() != org || msg.project() != project {
+                continue;
+            }
+
+            // Already read by this agent
+            if receipts.contains(&(msg.id(), agent.clone())) {
                 continue;
             }
 
@@ -75,24 +81,12 @@ impl MessageStore for MemoryBackend {
                 MessageTarget::Agent(id) => id == agent,
                 MessageTarget::Broadcast => msg.from() != agent,
                 MessageTarget::Role(role) => msg.from() != agent && agent_roles.contains(role),
-                MessageTarget::Namespace(_) => false,
+                MessageTarget::Namespace(ns) => {
+                    msg.from() != agent && agent_namespace.starts_with(ns)
+                }
             };
 
             if !targets_agent {
-                continue;
-            }
-
-            if msg.org_id() != org {
-                continue;
-            }
-
-            if msg.project() != project {
-                continue;
-            }
-
-            if (msg.is_broadcast() || msg.is_role_targeted())
-                && receipts.contains(&(msg.id(), agent.clone()))
-            {
                 continue;
             }
 

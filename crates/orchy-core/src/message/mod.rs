@@ -26,6 +26,7 @@ pub trait MessageStore: Send + Sync {
         &self,
         agent: &AgentId,
         agent_roles: &[String],
+        agent_namespace: &Namespace,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,

@@ -82,6 +82,7 @@ impl GetAgentSummary {
             .find_unread(
                 agent.id(),
                 agent.roles(),
+                agent.namespace(),
                 &org_id,
                 agent.project(),
                 PageParams::unbounded(),

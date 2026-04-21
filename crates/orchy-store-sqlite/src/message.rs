@@ -80,7 +80,9 @@ impl MessageStore for SqliteBackend {
 
     async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn.transaction().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Store(e.to_string()))?;
         let now = Utc::now().to_rfc3339();
         for id in message_ids {
             tx.execute(
@@ -97,42 +99,38 @@ impl MessageStore for SqliteBackend {
         &self,
         agent: &AgentId,
         agent_roles: &[String],
+        agent_namespace: &Namespace,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
     ) -> Result<Page<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
+        // Unread = not in message_receipts for this agent.
+        // Match: direct to agent UUID, broadcast, role:*, ns:*
         let mut sql = String::from(
             "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
              FROM messages m
-             LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = ?2
-             WHERE m.status = ?1
-               AND m.organization_id = ?3
-               AND m.project = ?4
+             LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = ?1
+             WHERE r.message_id IS NULL
+               AND m.organization_id = ?2
+               AND m.project = ?3
                AND (
-                    m.to_target = ?2
-                    OR (
-                        m.to_target = 'broadcast'
-                        AND m.from_agent != ?2
-                        AND r.message_id IS NULL
-                    )
-                    OR (
-                        m.to_target LIKE 'role:%'
-                        AND m.from_agent != ?2
-                        AND r.message_id IS NULL
-                    )
+                    m.to_target = ?1
+                    OR (m.to_target = 'broadcast' AND m.from_agent != ?1)
+                    OR (m.to_target LIKE 'role:%' AND m.from_agent != ?1)
+                    OR (m.to_target LIKE 'ns:%' AND m.from_agent != ?1)
                )",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
-            Box::new("pending".to_string()),
             Box::new(agent.to_string()),
             Box::new(org.to_string()),
             Box::new(project.to_string()),
         ];
         let role_set: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
+        let ns_str = agent_namespace.to_string();
 
-        let mut idx = 5;
+        let mut idx = 4;
 
         if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
@@ -158,8 +156,10 @@ impl MessageStore for SqliteBackend {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
+        // App-layer filtering: role match + namespace hierarchy
         messages.retain(|m| match m.to() {
             MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
+            MessageTarget::Namespace(ns) => ns_str.starts_with(&ns.to_string()),
             _ => true,
         });
 

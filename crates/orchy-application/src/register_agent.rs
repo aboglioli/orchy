@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchy_core::agent::{validate_alias, AgentStore, Alias};
+use orchy_core::agent::{AgentStore, Alias, validate_alias};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore};
 use orchy_core::message::MessageStore;
@@ -46,9 +46,7 @@ impl RegisterAgent {
         }
     }
 
-    pub async fn execute(&self,
-        cmd: RegisterAgentCommand,
-    ) -> Result<RegisterAgentResponse> {
+    pub async fn execute(&self, cmd: RegisterAgentCommand) -> Result<RegisterAgentResponse> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -63,7 +61,11 @@ impl RegisterAgent {
             .find_by_alias(&org_id, &project, &cmd.alias)
             .await?
         {
-            existing.resume(namespace.clone(), cmd.roles.clone(), cmd.description.clone())?;
+            existing.resume(
+                namespace.clone(),
+                cmd.roles.clone(),
+                cmd.description.clone(),
+            )?;
             if let Some(agent_type) = &cmd.agent_type {
                 let mut meta = existing.metadata().clone();
                 meta.insert("agent_type".to_string(), agent_type.clone());
@@ -97,10 +99,18 @@ impl RegisterAgent {
 
         let agent_id = agent.id().clone();
         let agent_roles = agent.roles().to_vec();
+        let agent_namespace = agent.namespace().clone();
 
         let inbox = self
             .messages
-            .find_unread(&agent_id, &agent_roles, &org_id, &project, PageParams::unbounded())
+            .find_unread(
+                &agent_id,
+                &agent_roles,
+                &agent_namespace,
+                &org_id,
+                &project,
+                PageParams::unbounded(),
+            )
             .await?;
 
         let pending_tasks = self
@@ -135,11 +145,7 @@ impl RegisterAgent {
             )
             .await?;
 
-        let stale_tasks: Vec<_> = my_tasks
-            .items
-            .iter()
-            .filter(|t| t.is_stale())
-            .collect();
+        let stale_tasks: Vec<_> = my_tasks.items.iter().filter(|t| t.is_stale()).collect();
 
         Ok(RegisterAgentResponse {
             agent: AgentResponse::from(&agent),

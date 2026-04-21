@@ -123,24 +123,21 @@ impl MessageStore for StoreBackend {
     async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>> {
         delegate_trait!(self, MessageStore::find_by_ids(ids))
     }
-    async fn mark_read(
-        &self,
-        agent: &AgentId,
-        message_ids: &[MessageId],
-    ) -> Result<()> {
+    async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
         delegate_trait!(self, MessageStore::mark_read(agent, message_ids))
     }
     async fn find_unread(
         &self,
         agent: &AgentId,
         agent_roles: &[String],
+        agent_namespace: &Namespace,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
     ) -> Result<Page<Message>> {
         delegate_trait!(
             self,
-            MessageStore::find_unread(agent, agent_roles, org, project, page)
+            MessageStore::find_unread(agent, agent_roles, agent_namespace, org, project, page)
         )
     }
     async fn find_sent(

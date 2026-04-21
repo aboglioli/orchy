@@ -297,14 +297,16 @@ async fn message_save_and_find_unread() {
     assert_eq!(messages.items[0].body(), "hello");
     assert_eq!(messages.items[0].status(), MessageStatus::Pending);
 
-    let mut delivered = messages.items.into_iter().next().unwrap();
-    delivered.deliver().unwrap();
-    MessageStore::save(&store, &mut delivered).await.unwrap();
+    let msg_id = messages.items[0].id();
+    MessageStore::mark_read(&store, to_agent.id(), &[msg_id])
+        .await
+        .unwrap();
 
     let messages = MessageStore::find_unread(
         &store,
         to_agent.id(),
         &[],
+        &Namespace::root(),
         &org(),
         &p,
         PageParams::unbounded(),
@@ -393,11 +395,11 @@ async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
 
-
     let pending = MessageStore::find_unread(
         &store,
         &receiver,
         &[],
+        &Namespace::root(),
         &org(),
         &p,
         PageParams::unbounded(),
@@ -406,11 +408,11 @@ async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
     .unwrap();
     assert_eq!(pending.items.len(), 1);
 
-
     let sender_pending = MessageStore::find_unread(
         &store,
         &sender,
         &[],
+        &Namespace::root(),
         &org(),
         &p,
         PageParams::unbounded(),
@@ -423,11 +425,11 @@ async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
         .await
         .unwrap();
 
-
     let after_read = MessageStore::find_unread(
         &store,
         &receiver,
         &[],
+        &Namespace::root(),
         &org(),
         &p,
         PageParams::unbounded(),
