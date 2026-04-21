@@ -8,7 +8,7 @@ pub struct OrchyClient {
     base_url: String,
     api_key: String,
     org: String,
-    project: String,
+    pub project: String,
     pub alias: Option<String>,
 }
 

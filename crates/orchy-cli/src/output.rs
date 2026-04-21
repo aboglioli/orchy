@@ -107,6 +107,58 @@ pub fn format_agent(v: &serde_json::Value) -> String {
     format!("@{alias}  {status:>12}  [{roles}]  {desc}\n")
 }
 
+pub fn format_agent_summary(v: &serde_json::Value) -> String {
+    let mut out = String::new();
+    let agent = v.get("agent").unwrap_or(v);
+    let alias = agent.get("alias").and_then(|v| v.as_str()).unwrap_or("?");
+    let status = agent.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+    let project = agent.get("project").and_then(|v| v.as_str()).unwrap_or("?");
+    let namespace = agent
+        .get("namespace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("/");
+    out.push_str(&format!("Agent @{alias}  {status}\n"));
+    out.push_str(&format!("Project: {project}\nNamespace: {namespace}\n"));
+
+    if let Some(counts) = v.get("counts") {
+        let connected_agents = counts
+            .get("connected_agents")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let inbox_messages = counts
+            .get("inbox_messages")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let pending_tasks = counts
+            .get("pending_tasks")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let skills = counts.get("skills").and_then(|v| v.as_u64()).unwrap_or(0);
+        out.push_str(&format!(
+            "Connected agents: {connected_agents}\nInbox: {inbox_messages}\nPending tasks: {pending_tasks}\nSkills: {skills}\n"
+        ));
+    }
+
+    if let Some(inbox) = v.get("inbox").and_then(|v| v.as_array()) {
+        out.push_str("\nInbox\n");
+        out.push_str(&format_message_list(inbox));
+    }
+    if let Some(tasks) = v.get("pending_tasks").and_then(|v| v.as_array()) {
+        out.push_str("\nPending tasks\n");
+        out.push_str(&format_task_list(tasks));
+    }
+    if let Some(skills) = v.get("skills").and_then(|v| v.as_array()) {
+        out.push_str("\nSkills\n");
+        out.push_str(&format_knowledge_list(skills));
+    }
+    if let Some(handoff) = v.get("handoff_context").and_then(|v| v.as_array()) {
+        out.push_str("\nHandoff context\n");
+        out.push_str(&format_knowledge_list(handoff));
+    }
+
+    out
+}
+
 /// Format the bootstrap output.
 pub fn format_bootstrap(
     agent_v: &serde_json::Value,

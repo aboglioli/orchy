@@ -37,6 +37,28 @@ pub enum AgentSubcommand {
         #[arg(long)]
         roles: String,
     },
+    /// Rename an agent's alias
+    Rename {
+        /// Current agent alias or ID
+        alias: String,
+        /// New alias
+        #[arg(long)]
+        new_alias: String,
+    },
+    /// Switch agent to a different project or namespace
+    Switch {
+        /// Agent alias or ID
+        alias: String,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
+    },
+    /// Get agent summary (tasks, knowledge, activity)
+    Summary {
+        /// Agent alias or ID
+        alias: String,
+    },
 }
 
 pub async fn run(
@@ -101,7 +123,12 @@ pub async fn run(
             }
         }
         AgentSubcommand::Context { alias } => {
-            let v = client.get_json(&format!("/agents/{alias}/context")).await?;
+            let v = client
+                .get_json(&format!(
+                    "/agents/{alias}/context?project={}",
+                    client.project
+                ))
+                .await?;
             if config.json {
                 output::print_json(config, &v);
             } else {
@@ -133,12 +160,68 @@ pub async fn run(
         AgentSubcommand::ChangeRoles { alias, roles } => {
             let body = serde_json::json!({ "roles": roles.split(',').map(|s| s.trim()).collect::<Vec<_>>() });
             let v = client
-                .patch_json(&format!("/agents/{alias}/roles"), Some(&body))
+                .patch_json(
+                    &format!("/agents/{alias}/roles?project={}", client.project),
+                    Some(&body),
+                )
                 .await?;
             if config.json {
                 output::print_json(config, &v);
             } else {
                 println!("Roles updated for agent {alias}.");
+            }
+        }
+        AgentSubcommand::Rename { alias, new_alias } => {
+            let body = serde_json::json!({ "new_alias": new_alias });
+            let v = client
+                .post_json(
+                    &format!("/agents/{alias}/rename?project={}", client.project),
+                    Some(&body),
+                )
+                .await?;
+            crate::config::save_alias(new_alias);
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Agent '{alias}' renamed to '{new_alias}'.");
+                println!("Saved alias to .orchy.toml");
+            }
+        }
+        AgentSubcommand::Switch {
+            alias,
+            project,
+            namespace,
+        } => {
+            let mut body = serde_json::json!({});
+            if let Some(p) = project {
+                body["project"] = serde_json::Value::String(p.clone());
+            }
+            if let Some(ns) = namespace {
+                body["namespace"] = serde_json::Value::String(ns.clone());
+            }
+            let v = client
+                .post_json(
+                    &format!("/agents/{alias}/switch-context?project={}", client.project),
+                    Some(&body),
+                )
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Agent '{alias}' context switched.");
+            }
+        }
+        AgentSubcommand::Summary { alias } => {
+            let v = client
+                .get_json(&format!(
+                    "/agents/{alias}/summary?project={}",
+                    client.project
+                ))
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                print!("{}", output::format_agent_summary(&v));
             }
         }
     }

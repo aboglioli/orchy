@@ -3,9 +3,7 @@ use std::sync::Mutex;
 
 use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
-use orchy_core::user::{
-    MembershipId, OrgMembership, OrgMembershipStore, OrgRole, RestoreOrgMembership, UserId,
-};
+use orchy_core::user::{MembershipId, OrgMembership, OrgMembershipStore, OrgRole, UserId};
 
 pub struct InMemoryMembershipStore {
     memberships: Mutex<HashMap<MembershipId, OrgMembership>>,

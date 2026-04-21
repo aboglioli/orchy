@@ -149,6 +149,10 @@ pub enum TaskSubcommand {
     Tag { id: String, tag: String },
     /// Remove a tag from a task
     Untag { id: String, tag: String },
+    /// Keep a task alive (prevent staleness)
+    Touch { id: String },
+    /// List all unique tags used across project tasks
+    ListTags,
     /// Add a dependency
     AddDep {
         id: String,
@@ -442,7 +446,7 @@ pub async fn run(
                 qs.push(format!("claim={c}"));
                 if *c {
                     if let Some(aid) = &client.alias {
-                        qs.push(format!("alias={aid}"));
+                        qs.push(format!("agent_id={aid}"));
                     }
                 }
             }
@@ -587,6 +591,32 @@ pub async fn run(
                 println!("{{\"ok\": true}}");
             } else {
                 println!("Tag '{tag}' removed from task {id}.");
+            }
+        }
+
+        TaskSubcommand::Touch { id } => {
+            let v = client
+                .post_project_json(&format!("/tasks/{id}/touch"), Some(&serde_json::json!({})))
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Task {id} touched.");
+            }
+        }
+
+        TaskSubcommand::ListTags => {
+            let v = client.get_project_json("/tasks/tags").await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                let empty = vec![];
+                let tags = v.as_array().unwrap_or(&empty);
+                for tag in tags {
+                    if let Some(s) = tag.as_str() {
+                        println!("{s}");
+                    }
+                }
             }
         }
 

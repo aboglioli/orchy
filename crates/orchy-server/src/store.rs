@@ -7,7 +7,9 @@ use orchy_application::EventQuery;
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalHop};
 use orchy_core::error::Result;
-use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgePath, KnowledgeStore};
+use orchy_core::knowledge::{
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgePath, KnowledgeStore,
+};
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};

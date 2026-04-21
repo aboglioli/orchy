@@ -9,12 +9,13 @@ use serde::Deserialize;
 
 use orchy_application::{
     AddDependencyCommand, AssignTaskCommand, CancelTaskCommand, ClaimTaskCommand,
-    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, ListTagsCommand,
-    ListTasksCommand, MergeTasksCommand, MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand,
-    RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
-    TagTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
+    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, GetTaskCommand,
+    ListTagsCommand, ListTasksCommand, MergeTasksCommand, MoveTaskCommand, PostTaskCommand,
+    ReleaseTaskCommand, RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand,
+    StartTaskCommand, SubtaskInput, TagTaskCommand, TaskResponse, UnblockTaskCommand,
+    UntagTaskCommand, UpdateTaskCommand, resolve_agent,
 };
-use orchy_application::{GetTaskCommand, TaskResponse};
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -47,6 +48,20 @@ fn check_task_project(task: &TaskResponse, project: &str) -> Result<(), ApiError
         ));
     }
     Ok(())
+}
+
+async fn resolve_agent_id(
+    container: &Arc<Container>,
+    org: &OrganizationId,
+    project: &str,
+    id_or_alias: &str,
+) -> Result<String, ApiError> {
+    let project = ProjectId::try_from(project.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let agent = resolve_agent(container.store.as_ref(), org, &project, id_or_alias)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(agent.id().to_string())
 }
 
 use super::ApiError;
@@ -350,9 +365,11 @@ pub async fn claim(
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project)?;
 
+    let agent_id = resolve_agent_id(&container, &org_id, &project, &body.agent).await?;
+
     let cmd = ClaimTaskCommand {
         task_id: id,
-        agent_id: body.agent,
+        agent_id,
         org_id: org,
         start: body.start,
     };
@@ -394,9 +411,11 @@ pub async fn start(
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project)?;
 
+    let agent_id = resolve_agent_id(&container, &org_id, &project, &body.agent).await?;
+
     let cmd = StartTaskCommand {
         task_id: id,
-        agent_id: body.agent,
+        agent_id,
     };
 
     let task = container
@@ -643,9 +662,11 @@ pub async fn assign(
         .map_err(ApiError::from)?;
     check_task_project(&existing, &project)?;
 
+    let agent_id = resolve_agent_id(&container, &org_id, &project, &body.agent).await?;
+
     let cmd = AssignTaskCommand {
         task_id: id,
-        agent_id: body.agent,
+        agent_id,
     };
 
     let task = container
@@ -871,14 +892,19 @@ pub async fn next_task(
     };
 
     let claim = query.claim.unwrap_or(false);
-    let agent_id = query.agent_id.clone();
-    if claim && agent_id.is_none() {
-        return Err(ApiError(
-            StatusCode::BAD_REQUEST,
-            "INVALID_PARAM",
-            "claim requires agent_id query param".to_string(),
-        ));
-    }
+    let agent_id = match (claim, query.agent_id.as_deref()) {
+        (true, Some(id_or_alias)) => {
+            Some(resolve_agent_id(&container, &org_id, &project, id_or_alias).await?)
+        }
+        (true, None) => {
+            return Err(ApiError(
+                StatusCode::BAD_REQUEST,
+                "INVALID_PARAM",
+                "claim requires agent_id query param".to_string(),
+            ));
+        }
+        (false, _) => None,
+    };
 
     let cmd = GetNextTaskCommand {
         org_id: Some(org),
@@ -1125,10 +1151,22 @@ pub async fn move_task(
 pub async fn touch(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project, id)): Path<(String, String, String)>,
+    Path((org, project, id)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
+
+    let existing = container
+        .app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: id.clone(),
+            org_id: None,
+            relations: None,
+        })
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project)?;
 
     let task = container
         .app

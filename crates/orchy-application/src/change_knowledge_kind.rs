@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore, RestoreKnowledge, Version};
+use orchy_core::knowledge::{KnowledgeKind, KnowledgePath, KnowledgeStore, Version};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 

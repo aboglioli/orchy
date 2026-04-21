@@ -131,6 +131,32 @@ pub enum KnowledgeSubcommand {
         #[arg(long)]
         namespace: Option<String>,
     },
+    /// Promote a knowledge entry to a skill
+    Promote {
+        #[arg(long)]
+        source_path: String,
+        #[arg(long)]
+        target_path: Option<String>,
+        #[arg(long)]
+        target_title: Option<String>,
+        #[arg(long)]
+        instruction: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
+    },
+    /// Consolidate multiple knowledge entries into one
+    Consolidate {
+        #[arg(long, value_delimiter = ',')]
+        source_paths: Vec<String>,
+        #[arg(long)]
+        target_path: String,
+        #[arg(long)]
+        target_title: String,
+        #[arg(long)]
+        target_kind: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
+    },
     /// Assemble rich context from the edge graph
     Context {
         /// Resource kind: task, knowledge, agent
@@ -482,6 +508,67 @@ pub async fn run(
                 output::print_json(config, &v);
             } else {
                 println!("Metadata patched for '{path}'.");
+            }
+        }
+
+        KnowledgeSubcommand::Promote {
+            source_path,
+            target_path,
+            target_title,
+            instruction,
+            namespace,
+        } => {
+            let mut body = serde_json::json!({ "source_path": source_path });
+            if let Some(tp) = target_path {
+                body["target_path"] = serde_json::Value::String(tp.clone());
+            }
+            if let Some(tt) = target_title {
+                body["target_title"] = serde_json::Value::String(tt.clone());
+            }
+            if let Some(i) = instruction {
+                body["instruction"] = serde_json::Value::String(i.clone());
+            }
+            if let Some(ns) = namespace {
+                body["namespace"] = serde_json::Value::String(ns.clone());
+            }
+            let v = client
+                .post_project_json("/knowledge/promote", Some(&body))
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Knowledge entry '{source_path}' promoted to skill.");
+            }
+        }
+
+        KnowledgeSubcommand::Consolidate {
+            source_paths,
+            target_path,
+            target_title,
+            target_kind,
+            namespace,
+        } => {
+            let mut body = serde_json::json!({
+                "source_paths": source_paths,
+                "target_path": target_path,
+                "target_title": target_title,
+            });
+            if let Some(tk) = target_kind {
+                body["target_kind"] = serde_json::Value::String(tk.clone());
+            }
+            if let Some(ns) = namespace {
+                body["namespace"] = serde_json::Value::String(ns.clone());
+            }
+            let v = client
+                .post_project_json("/knowledge/consolidate", Some(&body))
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!(
+                    "Consolidated {} entries into '{target_path}'.",
+                    source_paths.len()
+                );
             }
         }
 

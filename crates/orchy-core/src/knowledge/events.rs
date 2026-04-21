@@ -15,6 +15,7 @@ pub const TOPIC_METADATA_SET: &str = "knowledge.metadata_set";
 pub const TOPIC_METADATA_REMOVED: &str = "knowledge.metadata_removed";
 pub const TOPIC_KIND_CHANGED: &str = "knowledge.kind_changed";
 pub const TOPIC_EMBEDDING_UPDATED: &str = "knowledge.embedding_updated";
+pub const TOPIC_VALIDITY_CHANGED: &str = "knowledge.validity_changed";
 
 #[derive(Serialize)]
 pub struct KnowledgeCreatedPayload {
@@ -98,4 +99,12 @@ pub struct KnowledgeEmbeddingUpdatedPayload {
     pub entry_id: String,
     pub model: String,
     pub dimensions: u32,
+}
+
+#[derive(Serialize)]
+pub struct KnowledgeValidityChangedPayload {
+    pub entry_id: String,
+    pub path: String,
+    pub valid_from: Option<String>,
+    pub valid_until: Option<String>,
 }

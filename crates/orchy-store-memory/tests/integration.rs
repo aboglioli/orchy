@@ -104,7 +104,7 @@ async fn agent_disconnect_sets_status() {
         .await
         .unwrap()
         .unwrap();
-    // disconnected status removed
+    assert_eq!(fetched.alias().as_str(), "test-agent");
 }
 
 #[tokio::test]
@@ -258,8 +258,6 @@ async fn message_save_and_find_unread() {
     .unwrap();
     MessageStore::save(&store, &mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
-
-    let o = org();
 
     let page = MessageStore::find_unread(
         &store,

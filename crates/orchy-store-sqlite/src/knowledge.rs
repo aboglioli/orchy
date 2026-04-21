@@ -8,8 +8,8 @@ use rusqlite::OptionalExtension;
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore, RestoreKnowledge,
-    Version,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore,
+    RestoreKnowledge, Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;

@@ -220,34 +220,6 @@ impl fmt::Display for Version {
     }
 }
 
-fn validate_path(path: &str) -> Result<()> {
-    if path.is_empty() {
-        return Err(Error::InvalidInput("path must not be empty".into()));
-    }
-    if path.starts_with('/') || path.ends_with('/') {
-        return Err(Error::InvalidInput(
-            "path must not start or end with '/'".into(),
-        ));
-    }
-    if path.contains("//") {
-        return Err(Error::InvalidInput("path must not contain '//'".into()));
-    }
-    for segment in path.split('/') {
-        if segment.is_empty() {
-            return Err(Error::InvalidInput("path contains empty segment".into()));
-        }
-        if !segment
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
-            return Err(Error::InvalidInput(format!(
-                "invalid character in path segment: {segment}"
-            )));
-        }
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Knowledge {
     id: KnowledgeId,
@@ -290,7 +262,6 @@ impl Knowledge {
         if title.trim().is_empty() {
             return Err(Error::InvalidInput("title must not be empty".into()));
         }
-
 
         let now = Utc::now();
         let mut entry = Self {
@@ -655,10 +626,31 @@ impl Knowledge {
     pub fn valid_until(&self) -> Option<DateTime<Utc>> {
         self.valid_until
     }
-    pub fn set_validity(&mut self, from: Option<DateTime<Utc>>, until: Option<DateTime<Utc>>) {
+    pub fn set_validity(
+        &mut self,
+        from: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) -> Result<()> {
         self.valid_from = from;
         self.valid_until = until;
         self.updated_at = Utc::now();
+
+        let payload = Payload::from_json(&knowledge_events::KnowledgeValidityChangedPayload {
+            entry_id: self.id.to_string(),
+            path: self.path.to_string(),
+            valid_from: self.valid_from.map(|dt| dt.to_rfc3339()),
+            valid_until: self.valid_until.map(|dt| dt.to_rfc3339()),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            knowledge_events::NAMESPACE,
+            knowledge_events::TOPIC_VALIDITY_CHANGED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -737,21 +729,21 @@ mod tests {
 
     #[test]
     fn valid_paths() {
-        assert!(validate_path("decisions/db-choice").is_ok());
-        assert!(validate_path("context/session-1").is_ok());
-        assert!(validate_path("specs/auth-design").is_ok());
-        assert!(validate_path("simple-key").is_ok());
-        assert!(validate_path("a/b/c/d").is_ok());
+        assert!(KnowledgePath::new("decisions/db-choice").is_ok());
+        assert!(KnowledgePath::new("context/session-1").is_ok());
+        assert!(KnowledgePath::new("specs/auth-design").is_ok());
+        assert!(KnowledgePath::new("simple-key").is_ok());
+        assert!(KnowledgePath::new("a/b/c/d").is_ok());
     }
 
     #[test]
     fn invalid_paths() {
-        assert!(validate_path("").is_err());
-        assert!(validate_path("/leading").is_err());
-        assert!(validate_path("trailing/").is_err());
-        assert!(validate_path("double//slash").is_err());
-        assert!(validate_path("has spaces").is_err());
-        assert!(validate_path("has.dots").is_err());
+        assert!(KnowledgePath::new("").is_err());
+        assert!(KnowledgePath::new("/leading").is_err());
+        assert!(KnowledgePath::new("trailing/").is_err());
+        assert!(KnowledgePath::new("double//slash").is_err());
+        assert!(KnowledgePath::new("has spaces").is_err());
+        assert!(KnowledgePath::new("has.dots").is_err());
     }
 
     #[test]

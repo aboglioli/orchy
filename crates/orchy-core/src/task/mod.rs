@@ -93,6 +93,7 @@ impl TaskStatus {
                 | (Blocked, Pending)
                 | (Blocked, Cancelled)
                 | (Claimed, InProgress)
+                | (Claimed, Completed)
                 | (Claimed, Blocked)
                 | (Claimed, Pending)
                 | (Claimed, Failed)
@@ -382,7 +383,7 @@ impl Task {
     }
 
     pub fn auto_complete(&mut self, summary: String) -> Result<()> {
-        self.status = TaskStatus::Completed;
+        self.status = self.status.transition_to(TaskStatus::Completed)?;
         self.result_summary = Some(summary.clone());
         self.updated_at = Utc::now();
 
@@ -395,9 +396,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     summary: Some(summary),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event serialization: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -461,7 +462,6 @@ impl Task {
                 self.id, self.status
             )));
         }
-        self.status = TaskStatus::Claimed;
         self.assigned_to = Some(new_agent.clone());
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
@@ -510,7 +510,7 @@ impl Task {
         if self.status != TaskStatus::Blocked {
             return Ok(());
         }
-        self.status = TaskStatus::Pending;
+        self.status = self.status.transition_to(TaskStatus::Pending)?;
         self.updated_at = Utc::now();
 
         self.collector.collect(

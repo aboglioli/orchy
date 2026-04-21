@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use orchy_application::{
     ChangeRolesCommand, CheckMailboxCommand, GetAgentCommand, GetAgentSummaryCommand,
-    ListAgentsCommand, ListTasksCommand, RegisterAgentCommand,
+    ListAgentsCommand, ListTasksCommand, RegisterAgentCommand, RenameAliasCommand,
+    SwitchContextCommand, resolve_agent,
 };
-use orchy_core::agent::Alias;
+use orchy_core::agent::{AgentId, AgentStore, Alias};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -22,6 +23,11 @@ use super::auth::OrgAuth;
 
 #[derive(Deserialize)]
 pub struct ListAgentsQuery {
+    pub project: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct AgentRefQuery {
     pub project: Option<String>,
 }
 
@@ -56,6 +62,50 @@ pub struct PendingTaskDto {
     pub title: String,
     pub priority: String,
     pub assigned_roles: Vec<String>,
+}
+
+async fn resolve_agent_id(
+    container: &Arc<Container>,
+    org: &OrganizationId,
+    id_or_alias: &str,
+    project: Option<&str>,
+) -> Result<String, ApiError> {
+    if let Ok(agent_id) = id_or_alias.parse::<AgentId>() {
+        let agent = container
+            .store
+            .find_by_id(&agent_id)
+            .await
+            .map_err(ApiError::from)?
+            .ok_or_else(|| {
+                ApiError(
+                    StatusCode::NOT_FOUND,
+                    "NOT_FOUND",
+                    "agent not found".to_string(),
+                )
+            })?;
+        if agent.org_id() != org {
+            return Err(ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                "agent not found".to_string(),
+            ));
+        }
+        return Ok(agent.id().to_string());
+    }
+
+    let project = project.ok_or_else(|| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            "project query param is required when addressing agent by alias".to_string(),
+        )
+    })?;
+    let project = ProjectId::try_from(project.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let agent = resolve_agent(container.store.as_ref(), org, &project, id_or_alias)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(agent.id().to_string())
 }
 
 pub async fn list(
@@ -98,7 +148,6 @@ pub async fn list(
     let body: Vec<AgentDto> = agents
         .items
         .into_iter()
-        .filter(|a| a.status != "disconnected")
         .filter(|a| {
             project_filter
                 .as_ref()
@@ -178,6 +227,7 @@ pub async fn get_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, id)): Path<(String, String)>,
+    Query(query): Query<AgentRefQuery>,
 ) -> Result<Json<AgentContextDto>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
@@ -189,11 +239,13 @@ pub async fn get_context(
         ));
     }
 
+    let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
+
     let agent = container
         .app
         .get_agent
         .execute(GetAgentCommand {
-            agent_id: id.clone(),
+            agent_id: agent_id.clone(),
             org_id: None,
             relations: None,
         })
@@ -209,7 +261,7 @@ pub async fn get_context(
     }
 
     let mailbox_cmd = CheckMailboxCommand {
-        agent_id: id.clone(),
+        agent_id: agent_id,
         org_id: org.clone(),
         project: agent.project.clone(),
         after: None,
@@ -278,6 +330,7 @@ pub async fn get_context(
 pub async fn get_summary(
     auth: OrgAuth,
     Path((org, id)): Path<(String, String)>,
+    Query(query): Query<AgentRefQuery>,
     State(container): State<Arc<Container>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
@@ -290,9 +343,11 @@ pub async fn get_summary(
         ));
     }
 
+    let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
+
     let cmd = GetAgentSummaryCommand {
         org_id: org,
-        agent_id: id,
+        agent_id,
     };
 
     let summary = container
@@ -321,6 +376,7 @@ pub async fn change_roles(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, id)): Path<(String, String)>,
+    Query(query): Query<AgentRefQuery>,
     Json(body): Json<ChangeRolesBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
@@ -333,8 +389,10 @@ pub async fn change_roles(
         ));
     }
 
+    let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
+
     let cmd = ChangeRolesCommand {
-        agent_id: id,
+        agent_id,
         roles: body.roles,
     };
 
@@ -353,4 +411,97 @@ pub async fn change_roles(
         )
     })?;
     Ok(Json(v))
+}
+
+#[derive(Deserialize)]
+pub struct RenameAliasBody {
+    pub new_alias: String,
+}
+
+pub async fn rename_alias(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, id)): Path<(String, String)>,
+    Query(query): Query<AgentRefQuery>,
+    Json(body): Json<RenameAliasBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = OrganizationId::new(&org)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    if auth.0.id.as_str() != org_id.as_str() {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            format!("access denied to organization {}", org_id),
+        ));
+    }
+
+    let new_alias = Alias::new(&body.new_alias).map_err(ApiError::from)?;
+    let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
+    let cmd = RenameAliasCommand {
+        agent_id,
+        new_alias,
+    };
+
+    let agent = container
+        .app
+        .rename_alias
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&agent).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}
+
+#[derive(Deserialize)]
+pub struct SwitchContextBody {
+    pub project: Option<String>,
+    pub namespace: Option<String>,
+}
+
+pub async fn switch_context(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, id)): Path<(String, String)>,
+    Query(query): Query<AgentRefQuery>,
+    Json(body): Json<SwitchContextBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = OrganizationId::new(&org)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    if auth.0.id.as_str() != org_id.as_str() {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "FORBIDDEN",
+            format!("access denied to organization {}", org_id),
+        ));
+    }
+
+    let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
+
+    let cmd = SwitchContextCommand {
+        org_id: org,
+        agent_id,
+        project: body.project,
+        namespace: body.namespace,
+    };
+
+    let agent = container
+        .app
+        .switch_context
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&agent).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
 }

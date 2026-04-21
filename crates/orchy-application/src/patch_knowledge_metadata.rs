@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgePath, KnowledgeStore, Version};
@@ -45,20 +45,16 @@ impl PatchKnowledgeMetadata {
             .map_err(|e: Error| Error::InvalidInput(e.to_string()))?;
         let expected_version = cmd.version.map(Version::new);
 
+        let has_valid_from = cmd.valid_from.is_some();
         let valid_from = cmd
             .valid_from
-            .map(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .map(|d| d.with_timezone(&Utc))
-            })
+            .map(|s| chrono::DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
             .map_err(|e| Error::InvalidInput(format!("invalid valid_from: {e}")))?;
+        let has_valid_until = cmd.valid_until.is_some();
         let valid_until = cmd
             .valid_until
-            .map(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .map(|d| d.with_timezone(&Utc))
-            })
+            .map(|s| chrono::DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
             .map_err(|e| Error::InvalidInput(format!("invalid valid_until: {e}")))?;
 
@@ -77,11 +73,28 @@ impl PatchKnowledgeMetadata {
             });
         }
 
-        if cmd.set.is_empty() && cmd.remove.is_empty() && valid_from.is_none() && valid_until.is_none() {
+        if cmd.set.is_empty()
+            && cmd.remove.is_empty()
+            && valid_from.is_none()
+            && valid_until.is_none()
+        {
             return Ok(KnowledgeResponse::from(&entry));
         }
 
-        entry.set_validity(valid_from, valid_until);
+        if has_valid_from || has_valid_until {
+            entry.set_validity(
+                if has_valid_from {
+                    valid_from
+                } else {
+                    entry.valid_from()
+                },
+                if has_valid_until {
+                    valid_until
+                } else {
+                    entry.valid_until()
+                },
+            )?;
+        }
 
         for (k, v) in &cmd.set {
             entry.set_metadata(k.clone(), v.clone())?;

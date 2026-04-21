@@ -9,7 +9,8 @@ use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore, Version, WriteKnowledge as WriteKnowledgeCmd,
+    Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore, Version,
+    WriteKnowledge as WriteKnowledgeCmd,
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -70,13 +71,14 @@ impl WriteKnowledge {
             .map_err(Error::InvalidInput)?;
         let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
         let expected_version = cmd.version.map(Version::new);
-        let task_id_str = cmd.task_id.clone();
-
+        let task_id = cmd.task_id.as_deref().map(TaskId::from_str).transpose()?;
+        let has_valid_from = cmd.valid_from.is_some();
         let valid_from = cmd
             .valid_from
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
             .map_err(|e| Error::InvalidInput(format!("invalid valid_from: {e}")))?;
+        let has_valid_until = cmd.valid_until.is_some();
         let valid_until = cmd
             .valid_until
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
@@ -87,8 +89,7 @@ impl WriteKnowledge {
             org_id: org_id.clone(),
             project: Some(project),
             namespace,
-            path: KnowledgePath::new(&cmd.path)
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            path: KnowledgePath::new(&cmd.path).map_err(|e| Error::InvalidInput(e.to_string()))?,
             kind,
             title: cmd.title,
             content: cmd.content,
@@ -130,7 +131,20 @@ impl WriteKnowledge {
             for (k, v) in &write_cmd.metadata {
                 existing.set_metadata(k.clone(), v.clone())?;
             }
-            existing.set_validity(write_cmd.valid_from, write_cmd.valid_until);
+            if has_valid_from || has_valid_until {
+                existing.set_validity(
+                    if has_valid_from {
+                        write_cmd.valid_from
+                    } else {
+                        existing.valid_from()
+                    },
+                    if has_valid_until {
+                        write_cmd.valid_until
+                    } else {
+                        existing.valid_until()
+                    },
+                )?;
+            }
             existing
         } else {
             if let Some(expected) = write_cmd.expected_version {
@@ -153,7 +167,7 @@ impl WriteKnowledge {
             for k in &write_cmd.metadata_remove {
                 created.remove_metadata(k)?;
             }
-            created.set_validity(write_cmd.valid_from, write_cmd.valid_until);
+            created.set_validity(write_cmd.valid_from, write_cmd.valid_until)?;
             created
         };
 
@@ -165,13 +179,14 @@ impl WriteKnowledge {
 
         self.store.save(&mut entry).await?;
 
-        if let Some(task_id) = task_id_str.filter(|t| t.parse::<TaskId>().is_ok()) {
+        if let Some(task_id) = task_id {
+            let task_id_str = task_id.to_string();
             let edge_exists = self
                 .edges
                 .exists_by_pair(
                     &org_id,
                     &ResourceKind::Task,
-                    &task_id,
+                    &task_id_str,
                     &ResourceKind::Knowledge,
                     &entry.id().to_string(),
                     &RelationType::Produces,
@@ -183,7 +198,7 @@ impl WriteKnowledge {
                 let mut edge = match Edge::new(
                     org_id,
                     ResourceKind::Task,
-                    task_id.clone(),
+                    task_id_str.clone(),
                     ResourceKind::Knowledge,
                     entry.id().to_string(),
                     RelationType::Produces,
@@ -195,7 +210,7 @@ impl WriteKnowledge {
                         return Ok(KnowledgeResponse::from(&entry));
                     }
                 }
-                .with_source(ResourceKind::Task, task_id);
+                .with_source(ResourceKind::Task, task_id_str);
                 if let Err(e) = self.edges.save(&mut edge).await {
                     tracing::warn!(
                         "failed to create produces edge for knowledge {}: {e}",

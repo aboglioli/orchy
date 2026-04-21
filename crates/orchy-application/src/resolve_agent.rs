@@ -9,10 +9,12 @@ pub async fn resolve_agent(
     project: &ProjectId,
     id_or_alias: &str,
 ) -> Result<Agent> {
-    if let Ok(agent_id) = id_or_alias.parse::<AgentId>() {
-        if let Some(agent) = agents.find_by_id(&agent_id).await? {
-            return Ok(agent);
-        }
+    if let Ok(agent_id) = id_or_alias.parse::<AgentId>()
+        && let Some(agent) = agents.find_by_id(&agent_id).await?
+        && agent.org_id() == org
+        && agent.project() == project
+    {
+        return Ok(agent);
     }
     let alias = Alias::new(id_or_alias)?;
     agents

@@ -365,11 +365,7 @@ impl Application {
         ));
 
         Self {
-            register_agent: RegisterAgent::new(
-                agents.clone(),
-                messages.clone(),
-                tasks.clone(),
-            ),
+            register_agent: RegisterAgent::new(agents.clone(), messages.clone(), tasks.clone()),
             switch_context: SwitchContext::new(
                 agents.clone(),
                 projects.clone(),

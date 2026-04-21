@@ -12,6 +12,9 @@ use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
 use orchy_core::task::{Task, TaskWithContext};
 
+const AGENT_IDLE_SECS: u64 = 30;
+const AGENT_STALE_SECS: u64 = 300;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentResponse {
     pub id: String,
@@ -43,7 +46,9 @@ impl From<&Agent> for AgentResponse {
             namespace: a.namespace().to_string(),
             roles: a.roles().to_vec(),
             description: a.description().to_string(),
-            status: a.status().to_string(),
+            status: a
+                .derived_status(AGENT_IDLE_SECS, AGENT_STALE_SECS)
+                .to_string(),
             last_seen: a.last_seen().to_rfc3339(),
             connected_at: a.connected_at().to_rfc3339(),
             metadata: a.metadata().clone(),
@@ -141,6 +146,10 @@ pub struct KnowledgeResponse {
     pub tags: Vec<String>,
     pub version: u64,
     pub metadata: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -176,6 +185,8 @@ impl From<&Knowledge> for KnowledgeResponse {
             tags: k.tags().to_vec(),
             version: k.version().as_u64(),
             metadata: k.metadata().clone(),
+            valid_from: k.valid_from().map(|dt| dt.to_rfc3339()),
+            valid_until: k.valid_until().map(|dt| dt.to_rfc3339()),
             created_at: k.created_at().to_rfc3339(),
             updated_at: k.updated_at().to_rfc3339(),
             score: None,
@@ -376,6 +387,7 @@ impl From<&orchy_core::organization::ApiKey> for ApiKeyResponse {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
 pub struct ProjectOverviewResponse {
     pub project: Option<ProjectResponse>,
     pub agents: Vec<AgentResponse>,

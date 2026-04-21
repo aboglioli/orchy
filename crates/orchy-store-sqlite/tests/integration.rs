@@ -107,7 +107,7 @@ async fn agent_disconnect_sets_status() {
         .await
         .unwrap()
         .unwrap();
-    // disconnected status removed
+    assert_eq!(fetched.alias().as_str(), "test-agent");
 }
 
 #[tokio::test]

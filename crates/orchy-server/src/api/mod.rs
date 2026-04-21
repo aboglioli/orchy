@@ -173,6 +173,14 @@ pub fn router() -> Router<Arc<Container>> {
             axum::routing::patch(agents::change_roles),
         )
         .route(
+            "/organizations/{org}/agents/{id}/rename",
+            post(agents::rename_alias),
+        )
+        .route(
+            "/organizations/{org}/agents/{id}/switch-context",
+            post(agents::switch_context),
+        )
+        .route(
             "/organizations/{org}/agents/{id}/inbox",
             get(messages::inbox_for_agent),
         )
@@ -277,6 +285,10 @@ pub fn router() -> Router<Arc<Container>> {
             post(tasks::delegate),
         )
         .route(
+            "/organizations/{org}/projects/{project}/tasks/{id}/touch",
+            post(tasks::touch),
+        )
+        .route(
             "/organizations/{org}/projects/{project}/messages",
             post(messages::send),
         )
@@ -316,6 +328,14 @@ pub fn router() -> Router<Arc<Container>> {
         .route(
             "/organizations/{org}/projects/{project}/knowledge/import",
             post(knowledge::import),
+        )
+        .route(
+            "/organizations/{org}/projects/{project}/knowledge/promote",
+            post(knowledge::promote),
+        )
+        .route(
+            "/organizations/{org}/projects/{project}/knowledge/consolidate",
+            post(knowledge::consolidate),
         )
         .route(
             "/organizations/{org}/projects/{project}/knowledge/{*path}",
