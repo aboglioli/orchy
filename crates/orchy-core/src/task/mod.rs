@@ -199,6 +199,8 @@ pub struct Task {
     assigned_roles: Vec<String>,
     assigned_to: Option<AgentId>,
     assigned_at: Option<DateTime<Utc>>,
+    stale_after_secs: Option<u64>,
+    last_activity_at: DateTime<Utc>,
     tags: Vec<String>,
     result_summary: Option<String>,
     created_by: Option<AgentId>,
@@ -244,6 +246,8 @@ impl Task {
             assigned_roles,
             assigned_to: None,
             assigned_at: None,
+            stale_after_secs: None,
+            last_activity_at: now,
             tags: Vec::new(),
             result_summary: None,
             created_by,
@@ -290,6 +294,8 @@ impl Task {
             assigned_roles: r.assigned_roles,
             assigned_to: r.assigned_to,
             assigned_at: r.assigned_at,
+            stale_after_secs: r.stale_after_secs,
+            last_activity_at: r.last_activity_at,
             tags: r.tags,
             result_summary: r.result_summary,
             created_by: r.created_by,
@@ -644,6 +650,25 @@ impl Task {
     pub fn assigned_at(&self) -> Option<DateTime<Utc>> {
         self.assigned_at
     }
+    pub fn stale_after_secs(&self) -> Option<u64> {
+        self.stale_after_secs
+    }
+    pub fn last_activity_at(&self) -> DateTime<Utc> {
+        self.last_activity_at
+    }
+    pub fn is_stale(&self) -> bool {
+        match self.stale_after_secs {
+            None => false,
+            Some(secs) => {
+                let elapsed = (Utc::now() - self.last_activity_at).num_seconds() as u64;
+                elapsed > secs
+            }
+        }
+    }
+    pub fn touch(&mut self) {
+        self.last_activity_at = Utc::now();
+        self.updated_at = Utc::now();
+    }
     pub fn tags(&self) -> &[String] {
         &self.tags
     }
@@ -764,6 +789,8 @@ pub struct RestoreTask {
     pub assigned_roles: Vec<String>,
     pub assigned_to: Option<AgentId>,
     pub assigned_at: Option<DateTime<Utc>>,
+    pub stale_after_secs: Option<u64>,
+    pub last_activity_at: DateTime<Utc>,
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
     pub created_by: Option<AgentId>,
@@ -809,6 +836,8 @@ mod tests {
             assigned_roles: vec!["tester".to_string()],
             assigned_to,
             assigned_at: None,
+            stale_after_secs: None,
+            last_activity_at: Utc::now(),
             tags: vec![],
             result_summary: None,
             created_by: None,
