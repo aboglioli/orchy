@@ -451,6 +451,8 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
         embedding: embedding_str.and_then(|s| parse_pg_vector_text(&s)),
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        valid_from: None,
+        valid_until: None,
         created_at,
         updated_at,
     }))

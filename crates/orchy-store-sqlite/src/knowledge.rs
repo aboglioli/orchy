@@ -597,6 +597,8 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
         embedding: embedding_bytes.map(|b| bytes_to_embedding(&b)),
         embedding_model,
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
+        valid_from: None,
+        valid_until: None,
         created_at,
         updated_at,
     }))
