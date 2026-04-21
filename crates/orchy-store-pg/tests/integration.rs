@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -32,7 +32,7 @@ async fn agent_save_and_find() {
         org(),
         proj("myapp"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec!["coder".into()],
         "test agent".into(),
         None,
@@ -59,7 +59,7 @@ async fn agent_save_updates_existing() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec!["dev".into()],
         "original".into(),
         None,
@@ -88,7 +88,7 @@ async fn agent_disconnect_sets_status() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "".into(),
         None,
@@ -115,7 +115,7 @@ async fn agent_find_timed_out() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "".into(),
         None,
@@ -213,7 +213,7 @@ async fn message_save_and_find_pending() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "sender".into(),
         None,
@@ -226,7 +226,7 @@ async fn message_save_and_find_pending() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "receiver".into(),
         None,
@@ -292,7 +292,7 @@ async fn message_find_by_id_and_mark_read() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "".into(),
         None,
@@ -305,7 +305,7 @@ async fn message_find_by_id_and_mark_read() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "".into(),
         None,

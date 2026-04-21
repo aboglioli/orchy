@@ -40,7 +40,7 @@ impl AgentStore for MemoryBackend {
         let agents = self.agents.read().await;
         Ok(agents
             .values()
-            .find(|a| a.org_id() == org && a.project() == project && a.alias() == alias)
+            .find(|a| a.org_id() == org && a.project() == project && a.alias().as_str() == alias)
             .cloned())
     }
 

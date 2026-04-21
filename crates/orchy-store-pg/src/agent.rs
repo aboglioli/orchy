@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -45,7 +45,7 @@ impl AgentStore for PgBackend {
                 metadata = EXCLUDED.metadata",
         )
         .bind(agent.id().to_string())
-        .bind(agent.alias())
+        .bind(agent.alias().as_str())
         .bind(agent.org_id().to_string())
         .bind(agent.project().to_string())
         .bind(agent.namespace().to_string())
@@ -205,7 +205,7 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str)?,
-        alias,
+        alias: Alias::new(&alias).map_err(|e| Error::Store(format!("invalid agents.alias: {e}")))?,
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,

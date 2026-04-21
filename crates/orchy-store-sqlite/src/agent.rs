@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -27,7 +27,7 @@ impl AgentStore for SqliteBackend {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 agent.id().to_string(),
-                agent.alias(),
+                agent.alias().as_str(),
                 agent.org_id().to_string(),
                 agent.project().to_string(),
                 agent.namespace().to_string(),
@@ -199,7 +199,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e.to_string()))?,
-        alias,
+        alias: Alias::new(&alias).map_err(|e| conversion_err(1, e.to_string()))?,
         org_id: OrganizationId::new(&org_id_str).map_err(|e| conversion_err(2, e.to_string()))?,
         project: ProjectId::try_from(project_str).map_err(|e| conversion_err(3, e))?,
         namespace: Namespace::try_from(namespace_str)

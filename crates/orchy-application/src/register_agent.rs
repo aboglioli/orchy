@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchy_core::agent::{validate_alias, AgentStore};
+use orchy_core::agent::{validate_alias, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 
 use crate::dto::AgentResponse;
@@ -37,6 +37,8 @@ impl RegisterAgent {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
+        let alias = Alias::new(&cmd.alias)?;
+
         validate_alias(&cmd.alias)?;
 
         if let Some(mut existing) = self
@@ -67,7 +69,7 @@ impl RegisterAgent {
             org_id,
             project,
             namespace,
-            cmd.alias,
+            alias,
             cmd.roles,
             cmd.description,
             None,

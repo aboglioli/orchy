@@ -1,4 +1,7 @@
+pub mod alias;
 pub mod events;
+
+pub use alias::Alias;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -76,15 +79,7 @@ pub trait AgentStore: Send + Sync {
 }
 
 pub fn validate_alias(alias: &str) -> Result<()> {
-    if alias.len() < 2 {
-        return Err(Error::invalid_input("alias must be at least 2 characters"));
-    }
-    if !alias.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-        return Err(Error::invalid_input("alias must be lowercase alphanumeric with hyphens only"));
-    }
-    if alias.starts_with('-') || alias.ends_with('-') {
-        return Err(Error::invalid_input("alias must not start or end with hyphen"));
-    }
+    Alias::new(alias)?;
     Ok(())
 }
 
@@ -127,7 +122,7 @@ impl FromStr for AgentStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     id: AgentId,
-    alias: String,
+    alias: Alias,
     org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
@@ -146,13 +141,12 @@ impl Agent {
         org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
-        alias: String,
+        alias: Alias,
         roles: Vec<String>,
         description: String,
         id: Option<AgentId>,
         metadata: HashMap<String, String>,
     ) -> Result<Self> {
-        validate_alias(&alias)?;
         let now = Utc::now();
         let id = id.unwrap_or_default();
         let mut agent = Self {
@@ -173,7 +167,7 @@ impl Agent {
         let payload = Payload::from_json(&agent_events::AgentRegisteredPayload {
             org_id: agent.org_id.to_string(),
             agent_id: agent.id.to_string(),
-            alias: agent.alias.clone(),
+            alias: agent.alias.to_string(),
             project: agent.project.to_string(),
             namespace: agent.namespace.to_string(),
             roles: agent.roles.clone(),
@@ -192,14 +186,13 @@ impl Agent {
     }
 
     pub fn from_parent(
-        alias: String,
+        alias: Alias,
         parent: &Agent,
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
         id: Option<AgentId>,
     ) -> Result<Self> {
-        validate_alias(&alias)?;
         let now = Utc::now();
         let id = id.unwrap_or_default();
         let mut agent = Self {
@@ -429,8 +422,7 @@ impl Agent {
         Ok(())
     }
 
-    pub fn set_alias(&mut self, alias: String) -> Result<()> {
-        validate_alias(&alias)?;
+    pub fn set_alias(&mut self, alias: Alias) -> Result<()> {
         self.alias = alias;
         Ok(())
     }
@@ -447,7 +439,7 @@ impl Agent {
     pub fn id(&self) -> &AgentId {
         &self.id
     }
-    pub fn alias(&self) -> &str {
+    pub fn alias(&self) -> &Alias {
         &self.alias
     }
     pub fn org_id(&self) -> &OrganizationId {
@@ -481,7 +473,7 @@ impl Agent {
 
 pub struct RestoreAgent {
     pub id: AgentId,
-    pub alias: String,
+    pub alias: Alias,
     pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
@@ -498,7 +490,7 @@ pub struct RegisterAgent {
     pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
-    pub alias: String,
+    pub alias: Alias,
     pub roles: Vec<String>,
     pub description: String,
     pub id: Option<AgentId>,
@@ -528,7 +520,7 @@ mod tests {
             test_org(),
             test_project(),
             test_namespace(),
-            "test-coder".to_string(),
+            Alias::new("test-coder").unwrap(),
             vec!["coder".to_string()],
             "test agent".to_string(),
             None,
@@ -548,7 +540,7 @@ mod tests {
     fn from_parent_inherits_project() {
         let parent = make_agent();
         let child = Agent::from_parent(
-            "child-agent".to_string(),
+            Alias::new("child-agent").unwrap(),
             &parent,
             test_namespace(),
             vec!["reviewer".to_string()],

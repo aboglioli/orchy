@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::{validate_alias, AgentId, AgentStore};
+use orchy_core::agent::{AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 
 use crate::dto::AgentResponse;
@@ -28,9 +28,9 @@ impl RenameAlias {
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
 
-        validate_alias(&cmd.new_alias)?;
+        let new_alias = Alias::new(&cmd.new_alias)?;
 
-        if agent.alias() != cmd.new_alias {
+        if agent.alias().as_str() != cmd.new_alias {
             if let Some(existing) = self
                 .agents
                 .find_by_alias(agent.org_id(), agent.project(), &cmd.new_alias)
@@ -43,7 +43,7 @@ impl RenameAlias {
                     )));
                 }
             }
-            agent.set_alias(cmd.new_alias)?;
+            agent.set_alias(new_alias)?;
             self.agents.save(&mut agent).await?;
         }
 

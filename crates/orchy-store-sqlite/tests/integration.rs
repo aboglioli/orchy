@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias};
 use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
@@ -38,7 +38,7 @@ async fn agent_save_and_find() {
         org("default"),
         proj("myapp"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec!["coder".into()],
         "test agent".into(),
         None,
@@ -64,7 +64,7 @@ async fn agent_save_updates_existing() {
         org("default"),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec!["dev".into()],
         "original".into(),
         None,
@@ -92,7 +92,7 @@ async fn agent_disconnect_sets_status() {
         org("default"),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "".into(),
         None,
@@ -118,7 +118,7 @@ async fn agent_find_timed_out() {
         org("default"),
         proj("test-project"),
         Namespace::root(),
-        "test-agent".into(),
+        Alias::new("test-agent").unwrap(),
         vec![],
         "".into(),
         None,
