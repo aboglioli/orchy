@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -46,11 +46,15 @@ impl AppendKnowledge {
             .kind
             .parse::<KnowledgeKind>()
             .map_err(Error::InvalidInput)?;
+        let path: KnowledgePath = cmd
+            .path
+            .parse::<KnowledgePath>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let separator = cmd.separator.as_deref().unwrap_or("\n");
 
         let existing = self
             .store
-            .find_by_path(&org_id, Some(&project), &namespace, &cmd.path)
+            .find_by_path(&org_id, Some(&project), &namespace, &path)
             .await?;
 
         let mut entry = if let Some(mut existing) = existing {
@@ -63,7 +67,7 @@ impl AppendKnowledge {
                 org_id,
                 Some(project),
                 namespace,
-                cmd.path,
+                path.clone(),
                 kind,
                 title,
                 cmd.value,

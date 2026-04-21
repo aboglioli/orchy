@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use orchy_core::agent::AgentId;
 use orchy_core::error::Result;
-use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
+use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};

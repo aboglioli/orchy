@@ -72,7 +72,7 @@ pub trait AgentStore: Send + Sync {
         &self,
         org: &OrganizationId,
         project: &ProjectId,
-        alias: &str,
+        alias: &Alias,
     ) -> Result<Option<Agent>>;
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>>;
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
@@ -81,42 +81,6 @@ pub trait AgentStore: Send + Sync {
 pub fn validate_alias(alias: &str) -> Result<()> {
     Alias::new(alias)?;
     Ok(())
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentStatus {
-    #[default]
-    Online,
-    Busy,
-    Idle,
-    Disconnected,
-}
-
-impl fmt::Display for AgentStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            AgentStatus::Online => "online",
-            AgentStatus::Busy => "busy",
-            AgentStatus::Idle => "idle",
-            AgentStatus::Disconnected => "disconnected",
-        };
-        write!(f, "{s}")
-    }
-}
-
-impl FromStr for AgentStatus {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "online" => Ok(AgentStatus::Online),
-            "busy" => Ok(AgentStatus::Busy),
-            "idle" => Ok(AgentStatus::Idle),
-            "disconnected" => Ok(AgentStatus::Disconnected),
-            other => Err(format!("unknown agent status: {other}")),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,23 +212,6 @@ impl Agent {
 
     pub fn heartbeat(&mut self) -> Result<()> {
         self.last_seen = Utc::now();
-        Ok(())
-    }
-
-    pub fn disconnect(&mut self) -> Result<()> {
-        let payload = Payload::from_json(&agent_events::AgentDisconnectedPayload {
-            org_id: self.org_id.to_string(),
-            agent_id: self.id.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            agent_events::NAMESPACE,
-            agent_events::TOPIC_DISCONNECTED,
-            payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
-        self.collector.collect(event);
         Ok(())
     }
 
@@ -549,15 +496,7 @@ mod tests {
     #[test]
     fn heartbeat_reconnects_disconnected() {
         let mut agent = make_agent();
-        agent.disconnect().unwrap();
         agent.heartbeat().unwrap();
-        // status derived from last_seen
-    }
-
-    #[test]
-    fn disconnect_sets_status() {
-        let mut agent = make_agent();
-        agent.disconnect().unwrap();
         // status derived from last_seen
     }
 
@@ -567,14 +506,6 @@ mod tests {
         agent.heartbeat().unwrap();
         sleep(Duration::from_millis(10));
         assert!(agent.is_timed_out(0));
-    }
-
-    #[test]
-    fn is_timed_out_false_when_disconnected() {
-        let mut agent = make_agent();
-        agent.disconnect().unwrap();
-        sleep(Duration::from_millis(10));
-        // disconnected flag removed
     }
 
     #[test]
@@ -609,7 +540,6 @@ mod tests {
     fn resume_preserves_roles_when_empty() {
         let mut agent = make_agent();
         assert_eq!(agent.roles(), &["coder"]);
-        agent.disconnect().unwrap();
         agent
             .resume(Namespace::root(), vec![], String::new())
             .unwrap();
@@ -621,7 +551,6 @@ mod tests {
     #[test]
     fn resume_overwrites_roles_when_provided() {
         let mut agent = make_agent();
-        agent.disconnect().unwrap();
         agent
             .resume(
                 Namespace::root(),

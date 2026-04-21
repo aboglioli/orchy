@@ -4,6 +4,7 @@ mod agent;
 mod edge;
 mod events;
 mod knowledge;
+#[cfg(test)]
 mod membership;
 mod message;
 mod namespace;
@@ -11,6 +12,7 @@ mod organization;
 mod project;
 mod resource_lock;
 mod task;
+#[cfg(test)]
 mod user;
 mod user_stores;
 

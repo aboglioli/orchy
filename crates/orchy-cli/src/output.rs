@@ -91,7 +91,7 @@ pub fn format_edge(v: &serde_json::Value) -> String {
 
 /// Format an agent as readable text.
 pub fn format_agent(v: &serde_json::Value) -> String {
-    let id = v.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let alias = v.get("alias").and_then(|v| v.as_str()).unwrap_or("?");
     let desc = v.get("description").and_then(|v| v.as_str()).unwrap_or("?");
     let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("?");
     let roles = v
@@ -104,7 +104,7 @@ pub fn format_agent(v: &serde_json::Value) -> String {
                 .join(",")
         })
         .unwrap_or_default();
-    format!("{id}  {status:>12}  [{roles}]  {desc}\n")
+    format!("@{alias}  {status:>12}  [{roles}]  {desc}\n")
 }
 
 /// Format the bootstrap output.
@@ -120,7 +120,10 @@ pub fn format_bootstrap(
 
     // Identity — agent info may be nested under "agent" key (context endpoint)
     let agent_info = agent_v.get("agent").unwrap_or(agent_v);
-    let agent_id = agent_info.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let alias = agent_info
+        .get("alias")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
     let desc = agent_info
         .get("description")
         .and_then(|v| v.as_str())
@@ -134,7 +137,7 @@ pub fn format_bootstrap(
         .and_then(|v| v.as_str())
         .unwrap_or("");
     out.push_str(&format!(
-        "Identity\n  Agent:     {agent_id} ({desc})\n  Org:       {org}\n  Project:   {project}"
+        "Identity\n  Agent:     @{alias} ({desc})\n  Org:       {org}\n  Project:   {project}"
     ));
     if !proj_desc.is_empty() {
         out.push_str(&format!(" — {proj_desc}"));

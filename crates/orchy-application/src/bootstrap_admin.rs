@@ -1,18 +1,17 @@
 use std::sync::Arc;
 
 use orchy_core::error::Result;
-use orchy_core::user::{Email, OrgMembershipStore, PlainPassword, User, UserId, UserStore};
+use orchy_core::user::{Email, PlainPassword, User, UserId, UserStore};
 
 use crate::dto::UserResponse;
 
 pub struct BootstrapAdmin {
     users: Arc<dyn UserStore>,
-    memberships: Arc<dyn OrgMembershipStore>,
 }
 
 impl BootstrapAdmin {
-    pub fn new(users: Arc<dyn UserStore>, memberships: Arc<dyn OrgMembershipStore>) -> Self {
-        Self { users, memberships }
+    pub fn new(users: Arc<dyn UserStore>) -> Self {
+        Self { users }
     }
 
     pub async fn execute(

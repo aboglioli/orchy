@@ -11,6 +11,7 @@ use orchy_application::{
     ChangeRolesCommand, CheckMailboxCommand, GetAgentCommand, GetAgentSummaryCommand,
     ListAgentsCommand, ListTasksCommand, RegisterAgentCommand,
 };
+use orchy_core::agent::Alias;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -27,6 +28,7 @@ pub struct ListAgentsQuery {
 #[derive(Serialize)]
 pub struct AgentDto {
     pub id: String,
+    pub alias: String,
     pub description: String,
     pub status: String,
     pub agent_type: Option<String>,
@@ -105,6 +107,7 @@ pub async fn list(
         })
         .map(|a| AgentDto {
             id: a.id.clone(),
+            alias: a.alias.clone(),
             description: a.description.clone(),
             status: a.status.clone(),
             agent_type: a.metadata.get("agent_type").cloned(),
@@ -148,7 +151,7 @@ pub async fn register(
         org_id: org,
         project,
         namespace: body.namespace,
-        alias: body.alias,
+        alias: Alias::new(&body.alias).map_err(ApiError::from)?,
         roles: body.roles,
         description: body.description,
         agent_type: body.agent_type,
@@ -257,6 +260,7 @@ pub async fn get_context(
 
     let agent_dto = AgentDto {
         id: agent.id.clone(),
+        alias: agent.alias.clone(),
         description: agent.description.clone(),
         status: agent.status.clone(),
         agent_type: agent.metadata.get("agent_type").cloned(),

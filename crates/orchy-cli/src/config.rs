@@ -33,14 +33,8 @@ pub struct FileConfig {
 /// CLI config validation errors.
 #[derive(Debug, Clone)]
 pub enum ConfigError {
-    MissingField {
-        field: String,
-        source: String,
-    },
-    InvalidField {
-        field: String,
-        message: String,
-    },
+    MissingField { field: String, source: String },
+    InvalidField { field: String, message: String },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -234,7 +228,10 @@ impl Config {
 
             // Check for valid namespace characters
             let ns = &self.namespace[1..]; // Skip leading '/'
-            if !ns.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '/') {
+            if !ns
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '/')
+            {
                 return Err(ConfigError::InvalidField {
                     field: "namespace".into(),
                     message: "contains invalid characters (use alphanumeric, '-', '_', '/')".into(),
@@ -250,7 +247,12 @@ fn env(key: &str) -> Option<&'static str> {
     std::env::var(key).ok().map(|s| s.leak() as &_)
 }
 
-fn pick(opts: &[Option<&str>], name: &str, _env_var: &str, source_hint: &str) -> Result<String, ConfigError> {
+fn pick(
+    opts: &[Option<&str>],
+    name: &str,
+    _env_var: &str,
+    source_hint: &str,
+) -> Result<String, ConfigError> {
     opts.iter()
         .rev()
         .find_map(|o| *o)
@@ -320,10 +322,7 @@ pub fn save_alias(alias: &str) {
     };
 
     if let Err(e) = std::fs::write(&path, updated) {
-        eprintln!(
-            "Warning: could not save alias to {}: {e}",
-            path.display()
-        );
+        eprintln!("Warning: could not save alias to {}: {e}", path.display());
     }
 }
 

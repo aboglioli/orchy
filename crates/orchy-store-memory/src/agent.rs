@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::error::Result;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -35,12 +35,12 @@ impl AgentStore for MemoryBackend {
         &self,
         org: &OrganizationId,
         project: &ProjectId,
-        alias: &str,
+        alias: &Alias,
     ) -> Result<Option<Agent>> {
         let agents = self.agents.read().await;
         Ok(agents
             .values()
-            .find(|a| a.org_id() == org && a.project() == project && a.alias().as_str() == alias)
+            .find(|a| a.org_id() == org && a.project() == project && a.alias() == alias)
             .cloned())
     }
 

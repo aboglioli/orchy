@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentId, AgentStore};
+use orchy_core::agent::{AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::ProjectId;
@@ -56,12 +56,13 @@ impl SendMessage {
             )));
         }
 
-        let to = if let Some(alias) = cmd.to.strip_prefix('@') {
+        let to = if let Some(alias_str) = cmd.to.strip_prefix('@') {
+            let alias = Alias::new(alias_str)?;
             let target_agent = self
                 .agents
-                .find_by_alias(&org_id, &project, alias)
+                .find_by_alias(&org_id, &project, &alias)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("agent alias @{alias}")))?;
+                .ok_or_else(|| Error::NotFound(format!("agent alias @{alias_str}")))?;
             MessageTarget::Agent(target_agent.id().clone())
         } else {
             MessageTarget::parse(&cmd.to)?

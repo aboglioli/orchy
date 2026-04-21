@@ -8,7 +8,7 @@ use crate::dto::AgentResponse;
 
 pub struct RenameAliasCommand {
     pub agent_id: String,
-    pub new_alias: String,
+    pub new_alias: Alias,
 }
 
 pub struct RenameAlias {
@@ -28,9 +28,7 @@ impl RenameAlias {
             .await?
             .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
 
-        let new_alias = Alias::new(&cmd.new_alias)?;
-
-        if agent.alias().as_str() != cmd.new_alias {
+        if agent.alias() != &cmd.new_alias {
             if let Some(existing) = self
                 .agents
                 .find_by_alias(agent.org_id(), agent.project(), &cmd.new_alias)
@@ -43,7 +41,7 @@ impl RenameAlias {
                     )));
                 }
             }
-            agent.set_alias(new_alias)?;
+            agent.set_alias(cmd.new_alias)?;
             self.agents.save(&mut agent).await?;
         }
 

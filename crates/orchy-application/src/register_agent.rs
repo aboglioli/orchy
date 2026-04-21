@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentStore, Alias, validate_alias};
+use orchy_core::agent::{AgentStore, Alias};
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore};
 use orchy_core::message::MessageStore;
-use orchy_core::namespace::{Namespace, ProjectId};
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
@@ -17,7 +16,7 @@ pub struct RegisterAgentCommand {
     pub org_id: String,
     pub project: String,
     pub namespace: Option<String>,
-    pub alias: String,
+    pub alias: Alias,
     pub roles: Vec<String>,
     pub description: String,
     pub agent_type: Option<String>,
@@ -28,7 +27,6 @@ pub struct RegisterAgent {
     agents: Arc<dyn AgentStore>,
     messages: Arc<dyn MessageStore>,
     tasks: Arc<dyn TaskStore>,
-    knowledge: Arc<dyn KnowledgeStore>,
 }
 
 impl RegisterAgent {
@@ -36,13 +34,11 @@ impl RegisterAgent {
         agents: Arc<dyn AgentStore>,
         messages: Arc<dyn MessageStore>,
         tasks: Arc<dyn TaskStore>,
-        knowledge: Arc<dyn KnowledgeStore>,
     ) -> Self {
         Self {
             agents,
             messages,
             tasks,
-            knowledge,
         }
     }
 
@@ -53,10 +49,7 @@ impl RegisterAgent {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
-        let alias = Alias::new(&cmd.alias)?;
-        validate_alias(&cmd.alias)?;
-
-        let mut agent = if let Some(mut existing) = self
+        let agent = if let Some(mut existing) = self
             .agents
             .find_by_alias(&org_id, &project, &cmd.alias)
             .await?
@@ -87,7 +80,7 @@ impl RegisterAgent {
                 org_id.clone(),
                 project.clone(),
                 namespace.clone(),
-                alias,
+                cmd.alias.clone(),
                 cmd.roles,
                 cmd.description,
                 None,

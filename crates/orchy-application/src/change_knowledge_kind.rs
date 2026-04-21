@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore, Version};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore, RestoreKnowledge, Version};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -42,13 +42,17 @@ impl ChangeKnowledgeKind {
             .new_kind
             .parse::<KnowledgeKind>()
             .map_err(Error::InvalidInput)?;
+        let path: KnowledgePath = cmd
+            .path
+            .parse::<KnowledgePath>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let expected_version = cmd.version.map(Version::new);
 
         let mut entry = self
             .store
-            .find_by_path(&org_id, Some(&project), &namespace, &cmd.path)
+            .find_by_path(&org_id, Some(&project), &namespace, &path)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {}", cmd.path)))?;
+            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {path}")))?;
 
         if let Some(expected) = expected_version
             && entry.version() != expected

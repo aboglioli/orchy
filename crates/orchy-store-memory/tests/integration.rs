@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::Duration;
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::edge::{Edge, EdgeStore, RelationType};
-use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -98,7 +98,6 @@ async fn agent_disconnect_sets_status() {
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
     let fetched = AgentStore::find_by_id(&store, agent.id())
@@ -128,7 +127,6 @@ async fn agent_find_timed_out() {
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
-    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     // disconnected status removed; disconnected agents are still stale
@@ -543,7 +541,7 @@ async fn knowledge_save_and_find() {
         org(),
         Some(proj("test")),
         Namespace::root(),
-        "decisions/db".into(),
+        KnowledgePath::new("decisions/db").unwrap(),
         KnowledgeKind::Decision,
         "Database choice".into(),
         "We chose PostgreSQL".into(),
@@ -570,7 +568,7 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
         org(),
         Some(proj("test")),
         Namespace::root(),
-        "my-note".into(),
+        KnowledgePath::new("my-note").unwrap(),
         KnowledgeKind::Note,
         "v1 title".into(),
         "v1 content".into(),
@@ -621,7 +619,7 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
         org(),
         Some(proj("test")),
         Namespace::root(),
-        "my-note".into(),
+        KnowledgePath::new("my-note").unwrap(),
         KnowledgeKind::Note,
         "v1".into(),
         "v1".into(),
@@ -777,7 +775,7 @@ async fn delete_knowledge_cleans_up_associated_edges() {
         o.clone(),
         Some(proj("myapp")),
         ns("/"),
-        "test-decision".to_string(),
+        KnowledgePath::new("test-decision").unwrap(),
         KnowledgeKind::Decision,
         "Test".to_string(),
         "content".to_string(),
@@ -1043,7 +1041,7 @@ async fn knowledge_search_returns_score() {
         org(),
         Some(proj("test")),
         Namespace::root(),
-        "search-target".into(),
+        KnowledgePath::new("search-target").unwrap(),
         KnowledgeKind::Note,
         "PostgreSQL indexing".into(),
         "We use GIN indexes for full text search".into(),
@@ -1184,7 +1182,7 @@ async fn search_knowledge_task_proximity_boost() {
         o.clone(),
         Some(proj("p")),
         Namespace::root(),
-        "auth-decision".to_string(),
+        KnowledgePath::new("auth-decision").unwrap(),
         KnowledgeKind::Decision,
         "Authentication Decision".to_string(),
         "We chose JWT tokens for authentication".to_string(),
@@ -1304,7 +1302,7 @@ async fn assemble_context_returns_linked_knowledge() {
         o.clone(),
         Some(p.clone()),
         Namespace::root(),
-        "auth-decision".to_string(),
+        KnowledgePath::new("auth-decision").unwrap(),
         KnowledgeKind::Decision,
         "Auth Decision".to_string(),
         "We chose JWT for auth".to_string(),
@@ -1320,7 +1318,7 @@ async fn assemble_context_returns_linked_knowledge() {
         o.clone(),
         Some(p.clone()),
         Namespace::root(),
-        "recent-note".to_string(),
+        KnowledgePath::new("recent-note").unwrap(),
         KnowledgeKind::Note,
         "Recent Note".to_string(),
         "Found a bug in login flow".to_string(),
@@ -1451,7 +1449,7 @@ async fn assemble_context_surfaces_decision_above_log() {
         o.clone(),
         Some(p.clone()),
         Namespace::root(),
-        "important-decision".to_string(),
+        KnowledgePath::new("important-decision").unwrap(),
         KnowledgeKind::Decision,
         "Important Decision".to_string(),
         "We chose Rust for performance".to_string(),
@@ -1467,7 +1465,7 @@ async fn assemble_context_surfaces_decision_above_log() {
         o.clone(),
         Some(p.clone()),
         Namespace::root(),
-        "activity-log".to_string(),
+        KnowledgePath::new("activity-log").unwrap(),
         KnowledgeKind::Log,
         "Activity Log".to_string(),
         "Ran some tests".to_string(),

@@ -213,6 +213,25 @@ Also: `Claimed -> Blocked`, `InProgress -> Blocked` (for split_task).
 **Value objects** — Immutable, validated on creation, never direct-cast.
 UUID v7 for all IDs (time-ordered).
 
+**Value Object Pattern** — Value objects are used from `execute()` downward, NOT in command DTOs:
+
+```
+API/MCP Handler (String input)
+    ↓ parse with value object constructors
+Command DTO (String fields) ✅ OK as-is
+    ↓ parse to value objects inside execute()
+Application Service: execute() ✅ PARSE HERE
+    ↓
+Store Trait: method(&VO) ✅ REQUIRED
+    ↓
+Domain Entity
+```
+
+Key value objects:
+- `Alias` — agent identity: lowercase alphanumeric + hyphens, 2-32 chars
+- `KnowledgePath` — knowledge entry path: no slashes at edges, alphanumeric segments
+- UUID-based IDs (`AgentId`, `TaskId`, `MessageId`, etc.) — already have FromStr
+
 **Namespace hierarchy** — `/` (root), `/backend`, `/backend/auth`. Reads without
 namespace see everything. Writes default to agent's current namespace.
 
@@ -412,6 +431,16 @@ path = "orchy.db"
 # model = "text-embedding-3-small"
 # dimensions = 1536
 ```
+
+## Documentation Policy
+
+- `docs/` is tracked in git and is for durable, human-facing project documentation.
+- Agents MUST NOT write to `docs/` or commit into it unless explicitly requested by a human.
+- Commit only docs written for humans: architecture notes, operator/user docs, ADRs, status docs, migration notes, and similar long-lived references.
+- Never commit `docs/superpowers/**`.
+- Never commit agent-only artifacts anywhere under `docs/`: plans for agents, scratch analysis, investigation dumps, validation reports, prompt/session artifacts, or internal execution notes.
+- If agent work produces useful insight, rewrite it into a concise human-facing document before committing it under `docs/`.
+- When in doubt, do not commit the doc until it is clearly useful to a human reader who is not reconstructing agent context.
 
 ## Code Style
 

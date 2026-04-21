@@ -54,8 +54,7 @@ pub async fn run(
             refs,
         } => {
             let alias = client.alias.as_deref().unwrap_or("cli");
-            let mut body_json =
-                serde_json::json!({ "from_alias": alias, "to": to, "body": body });
+            let mut body_json = serde_json::json!({ "from_alias": alias, "to": to, "body": body });
             if let Some(rt) = reply_to {
                 body_json["reply_to"] = serde_json::Value::String(rt.clone());
             }

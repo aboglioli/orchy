@@ -14,6 +14,9 @@ CREATE TABLE tasks_new (
     assigned_roles TEXT NOT NULL DEFAULT '[]',
     assigned_to TEXT,
     assigned_at TEXT,
+    acceptance_criteria TEXT,
+    stale_after_secs INTEGER,
+    last_activity_at TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]',
     result_summary TEXT,
     created_by TEXT,
@@ -22,8 +25,8 @@ CREATE TABLE tasks_new (
 );
 INSERT INTO tasks_new SELECT
     id, organization_id, project, namespace, title, description, status, priority,
-    assigned_roles, assigned_to, assigned_at, tags, result_summary,
-    created_by, created_at, updated_at
+    assigned_roles, assigned_to, assigned_at, acceptance_criteria, stale_after_secs,
+    last_activity_at, tags, result_summary, created_by, created_at, updated_at
 FROM tasks;
 DROP TABLE tasks;
 ALTER TABLE tasks_new RENAME TO tasks;
@@ -55,28 +58,8 @@ FROM knowledge_entries;
 DROP TABLE knowledge_entries;
 ALTER TABLE knowledge_entries_new RENAME TO knowledge_entries;
 
--- Remove alias from agents (not in Agent model)
-CREATE TABLE agents_new (
-    id TEXT PRIMARY KEY,
-    organization_id TEXT NOT NULL DEFAULT 'default',
-    project TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT '/',
-    roles TEXT NOT NULL DEFAULT '[]',
-    description TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'online',
-    last_seen TEXT NOT NULL,
-    connected_at TEXT NOT NULL,
-    metadata TEXT NOT NULL DEFAULT '{}'
-);
-INSERT INTO agents_new SELECT
-    id, organization_id, project, namespace, roles, description, status, last_seen,
-    connected_at, metadata
-FROM agents;
-DROP TABLE agents;
-ALTER TABLE agents_new RENAME TO agents;
-
 -- Recreate indexes
-CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_seen);
+CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_heartbeat);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks (assigned_to);
 CREATE INDEX IF NOT EXISTS idx_tasks_status_priority ON tasks (status, priority);
 CREATE UNIQUE INDEX IF NOT EXISTS knowledge_entries_project_path_idx

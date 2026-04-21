@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -97,14 +97,12 @@ async fn agent_disconnect_sets_status() {
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    let fetched = AgentStore::find_by_id(&store, agent.id())
+    let _fetched = AgentStore::find_by_id(&store, agent.id())
         .await
         .unwrap()
         .unwrap();
-    // disconnected status removed
 }
 
 #[tokio::test]
@@ -128,7 +126,6 @@ async fn agent_find_timed_out() {
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
-    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     // disconnected status removed; disconnected agents are still stale

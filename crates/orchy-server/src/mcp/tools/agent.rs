@@ -1,10 +1,12 @@
 use std::str::FromStr;
 
+use orchy_core::agent::Alias;
+
 use orchy_application::{
-    ChangeRolesCommand, CheckMailboxCommand, CheckSentMessagesCommand,
-    GetAgentCommand, GetAgentSummaryCommand, HeartbeatCommand, ListAgentsCommand,
-    ListConversationCommand, MarkReadCommand, PollUpdatesCommand, RegisterAgentCommand,
-    RenameAliasCommand, SwitchContextCommand,
+    ChangeRolesCommand, CheckMailboxCommand, CheckSentMessagesCommand, GetAgentCommand,
+    GetAgentSummaryCommand, HeartbeatCommand, ListAgentsCommand, ListConversationCommand,
+    MarkReadCommand, PollUpdatesCommand, RegisterAgentCommand, RenameAliasCommand,
+    SwitchContextCommand,
 };
 
 use crate::mcp::handler::{
@@ -68,7 +70,7 @@ pub(super) async fn register_agent(
         org_id: org_id.clone(),
         project: params.project.clone(),
         namespace: namespace.clone(),
-        alias: params.alias.clone(),
+        alias: Alias::new(&params.alias).map_err(mcp_error)?,
         roles,
         description: params.description.clone(),
         agent_type: params.agent_type.clone(),
@@ -176,7 +178,7 @@ pub(super) async fn rename_alias(h: &OrchyHandler, new_alias: String) -> Result<
     let (agent_id, _, _, _) = h.require_session().await?;
     let cmd = RenameAliasCommand {
         agent_id: agent_id.to_string(),
-        new_alias,
+        new_alias: Alias::new(&new_alias).map_err(mcp_error)?,
     };
     match h.container.app.rename_alias.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),

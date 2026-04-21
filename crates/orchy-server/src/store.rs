@@ -4,10 +4,10 @@ use orchy_events::Event;
 use orchy_events::io::Writer as EventWriter;
 
 use orchy_application::EventQuery;
-use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalHop};
 use orchy_core::error::Result;
-use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgePath, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStore};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
@@ -100,7 +100,7 @@ impl AgentStore for StoreBackend {
         &self,
         org: &OrganizationId,
         project: &ProjectId,
-        alias: &str,
+        alias: &Alias,
     ) -> Result<Option<Agent>> {
         delegate_trait!(self, AgentStore::find_by_alias(org, project, alias))
     }
@@ -188,7 +188,7 @@ impl KnowledgeStore for StoreBackend {
         org: &OrganizationId,
         project: Option<&ProjectId>,
         namespace: &Namespace,
-        path: &str,
+        path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
         delegate_trait!(
             self,

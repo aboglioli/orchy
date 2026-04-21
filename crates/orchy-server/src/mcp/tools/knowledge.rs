@@ -2,20 +2,18 @@ use orchy_application::{
     AppendKnowledgeCommand, AssembleContextCommand, ChangeKnowledgeKindCommand,
     ConsolidateKnowledgeCommand, DeleteKnowledgeCommand, ImportKnowledgeCommand,
     ListKnowledgeCommand, MoveKnowledgeCommand, PatchKnowledgeMetadataCommand,
-    PromoteKnowledgeCommand, ReadKnowledgeCommand, RenameKnowledgeCommand,
-    SearchKnowledgeCommand, TagKnowledgeCommand, UntagKnowledgeCommand,
-    WriteKnowledgeCommand,
+    PromoteKnowledgeCommand, ReadKnowledgeCommand, RenameKnowledgeCommand, SearchKnowledgeCommand,
+    TagKnowledgeCommand, UntagKnowledgeCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 
 use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
 use crate::mcp::params::{
     AppendKnowledgeParams, AssembleContextParams, ChangeKnowledgeKindParams,
-    ConsolidateKnowledgeParams, DeleteKnowledgeParams, ImportKnowledgeParams,
-    ListKnowledgeParams, ListKnowledgeTypesParams, MoveKnowledgeParams,
-    PatchKnowledgeMetadataParams, PromoteKnowledgeParams, ReadKnowledgeParams,
-    RenameKnowledgeParams, SearchKnowledgeParams, TagKnowledgeParams,
-    UntagKnowledgeParams, WriteKnowledgeParams,
+    ConsolidateKnowledgeParams, DeleteKnowledgeParams, ImportKnowledgeParams, ListKnowledgeParams,
+    ListKnowledgeTypesParams, MoveKnowledgeParams, PatchKnowledgeMetadataParams,
+    PromoteKnowledgeParams, ReadKnowledgeParams, RenameKnowledgeParams, SearchKnowledgeParams,
+    TagKnowledgeParams, UntagKnowledgeParams, WriteKnowledgeParams,
 };
 
 use super::{
@@ -99,6 +97,8 @@ pub(super) async fn patch_knowledge_metadata(
         set,
         remove,
         version: params.version,
+        valid_from: None,
+        valid_until: None,
     };
 
     match h.container.app.patch_knowledge_metadata.execute(cmd).await {

@@ -5,7 +5,7 @@ use serde::Serialize;
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::neighborhood::Relation;
 use orchy_core::graph::relation_options::RelationOptions;
-use orchy_core::knowledge::KnowledgeStore;
+use orchy_core::knowledge::{KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
@@ -52,10 +52,14 @@ impl ReadKnowledge {
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
+        let path: KnowledgePath = cmd
+            .path
+            .parse::<KnowledgePath>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let entry = self
             .store
-            .find_by_path(&org_id, Some(&project), &namespace, &cmd.path)
+            .find_by_path(&org_id, Some(&project), &namespace, &path)
             .await?;
 
         let relations =

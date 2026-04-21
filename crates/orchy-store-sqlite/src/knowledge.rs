@@ -8,7 +8,7 @@ use rusqlite::OptionalExtension;
 use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, RestoreKnowledge,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore, RestoreKnowledge,
     Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -34,7 +34,7 @@ impl KnowledgeStore for SqliteBackend {
             entry.org_id().to_string(),
             entry.project().map(|p| p.to_string()),
             entry.namespace().to_string(),
-            entry.path(),
+            entry.path().as_str(),
             entry.kind().to_string(),
             entry.title(),
             entry.content(),
@@ -59,7 +59,7 @@ impl KnowledgeStore for SqliteBackend {
                     entry.org_id().to_string(),
                     entry.project().map(|p| p.to_string()),
                     entry.namespace().to_string(),
-                    entry.path(),
+                    entry.path().as_str(),
                     entry.kind().to_string(),
                     entry.title(),
                     entry.content(),
@@ -137,7 +137,7 @@ impl KnowledgeStore for SqliteBackend {
         org: &OrganizationId,
         project: Option<&ProjectId>,
         namespace: &Namespace,
-        path: &str,
+        path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
@@ -154,7 +154,7 @@ impl KnowledgeStore for SqliteBackend {
                     org.to_string(),
                     proj.to_string(),
                     namespace.to_string(),
-                    path
+                    path.as_str()
                 ],
                 row_to_entry,
             )
@@ -169,7 +169,7 @@ impl KnowledgeStore for SqliteBackend {
                 .map_err(|e| Error::Store(e.to_string()))?;
 
             stmt.query_row(
-                rusqlite::params![org.to_string(), namespace.to_string(), path],
+                rusqlite::params![org.to_string(), namespace.to_string(), path.as_str()],
                 row_to_entry,
             )
             .optional()

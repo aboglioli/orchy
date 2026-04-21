@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use orchy_core::edge::RelationType;
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeId, KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
@@ -50,7 +50,7 @@ impl KnowledgeStore for MemoryBackend {
         org: &OrganizationId,
         project: Option<&ProjectId>,
         namespace: &Namespace,
-        path: &str,
+        path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
         let entries = self.knowledge_entries.read().await;
         Ok(entries
@@ -59,7 +59,7 @@ impl KnowledgeStore for MemoryBackend {
                 e.org_id() == org
                     && e.project() == project
                     && e.namespace() == namespace
-                    && e.path() == path
+                    && e.path().as_str() == path.as_str()
             })
             .cloned())
     }
@@ -98,7 +98,7 @@ impl KnowledgeStore for MemoryBackend {
                         }
                     }
                     if let Some(ref prefix) = filter.path_prefix {
-                        if !e.path().starts_with(prefix.as_str()) {
+                        if !e.path().as_str().starts_with(prefix.as_str()) {
                             return false;
                         }
                     }

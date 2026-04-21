@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::{Knowledge, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -40,6 +40,10 @@ impl ImportKnowledge {
         let source_project = ProjectId::try_from(cmd.source_project)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let source_namespace = parse_namespace(cmd.source_namespace.as_deref())?;
+        let source_path: KnowledgePath = cmd
+            .source_path
+            .parse::<KnowledgePath>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let source = self
             .store
@@ -47,11 +51,11 @@ impl ImportKnowledge {
                 &source_org,
                 Some(&source_project),
                 &source_namespace,
-                &cmd.source_path,
+                &source_path,
             )
             .await?
             .ok_or_else(|| {
-                Error::NotFound(format!("source knowledge entry: {}", cmd.source_path))
+                Error::NotFound(format!("source knowledge entry: {source_path}"))
             })?;
 
         let target_org = OrganizationId::new(&cmd.target_org_id)
@@ -59,7 +63,10 @@ impl ImportKnowledge {
         let target_project = ProjectId::try_from(cmd.target_project)
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         let target_namespace = parse_namespace(cmd.target_namespace.as_deref())?;
-        let target_path = cmd.target_path.unwrap_or_else(|| source.path().to_string());
+        let target_path_str = cmd.target_path.unwrap_or_else(|| source.path().as_str().to_string());
+        let target_path: KnowledgePath = target_path_str
+            .parse::<KnowledgePath>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let mut entry = Knowledge::new(
             target_org,

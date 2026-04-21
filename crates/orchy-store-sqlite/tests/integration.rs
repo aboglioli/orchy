@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 
-use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, Alias};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
-use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -101,7 +101,6 @@ async fn agent_disconnect_sets_status() {
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
     let fetched = AgentStore::find_by_id(&store, agent.id())
@@ -131,7 +130,6 @@ async fn agent_find_timed_out() {
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
-    agent.disconnect().unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
     // disconnected status removed; disconnected agents are still stale
@@ -585,7 +583,7 @@ async fn knowledge_search_fts_finds_content() {
         o.clone(),
         Some(proj("p")),
         Namespace::root(),
-        "auth/jwt".into(),
+        KnowledgePath::new("auth/jwt").unwrap(),
         KnowledgeKind::Note,
         "JWT notes".into(),
         "Use RS256 for asymmetric cryptography verification.".into(),
@@ -599,7 +597,7 @@ async fn knowledge_search_fts_finds_content() {
         .await
         .unwrap();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].0.path(), "auth/jwt");
+    assert_eq!(hits[0].0.path().as_str(), "auth/jwt");
 }
 
 #[tokio::test]
@@ -613,7 +611,7 @@ async fn knowledge_metadata_merge_and_remove() {
         o.clone(),
         Some(proj("p")),
         Namespace::root(),
-        "meta-test".into(),
+        KnowledgePath::new("meta-test").unwrap(),
         KnowledgeKind::Note,
         "t".into(),
         "body".into(),
@@ -628,7 +626,7 @@ async fn knowledge_metadata_merge_and_remove() {
         &o,
         Some(&proj("p")),
         &Namespace::root(),
-        "meta-test",
+        &KnowledgePath::new("meta-test").unwrap(),
     )
     .await
     .unwrap()
@@ -643,7 +641,7 @@ async fn knowledge_metadata_merge_and_remove() {
         &o,
         Some(&proj("p")),
         &Namespace::root(),
-        "meta-test",
+        &KnowledgePath::new("meta-test").unwrap(),
     )
     .await
     .unwrap()
@@ -656,7 +654,7 @@ async fn knowledge_metadata_merge_and_remove() {
         &o,
         Some(&proj("p")),
         &Namespace::root(),
-        "meta-test",
+        &KnowledgePath::new("meta-test").unwrap(),
     )
     .await
     .unwrap()
@@ -670,7 +668,7 @@ async fn knowledge_metadata_merge_and_remove() {
         &o,
         Some(&proj("p")),
         &Namespace::root(),
-        "meta-test",
+        &KnowledgePath::new("meta-test").unwrap(),
     )
     .await
     .unwrap()
@@ -688,7 +686,7 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
         o.clone(),
         Some(proj("p")),
         Namespace::root(),
-        "my-note".into(),
+        KnowledgePath::new("my-note").unwrap(),
         KnowledgeKind::Note,
         "v1 title".into(),
         "v1 content".into(),
@@ -740,7 +738,7 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
         org("default"),
         Some(proj("p")),
         Namespace::root(),
-        "my-note".into(),
+        KnowledgePath::new("my-note").unwrap(),
         KnowledgeKind::Note,
         "v1".into(),
         "v1".into(),

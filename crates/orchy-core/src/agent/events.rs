@@ -6,10 +6,8 @@ pub const NAMESPACE: &str = "/agent";
 
 pub const TOPIC_REGISTERED: &str = "agent.registered";
 pub const TOPIC_SPAWNED: &str = "agent.spawned";
-pub const TOPIC_DISCONNECTED: &str = "agent.disconnected";
 pub const TOPIC_ROLES_CHANGED: &str = "agent.roles_changed";
 pub const TOPIC_RESUMED: &str = "agent.resumed";
-pub const TOPIC_STATUS_CHANGED: &str = "agent.status_changed";
 pub const TOPIC_CONTEXT_SWITCHED: &str = "agent.context_switched";
 pub const TOPIC_METADATA_CHANGED: &str = "agent.metadata_changed";
 pub const TOPIC_ALIAS_CHANGED: &str = "agent.alias_changed";
@@ -35,12 +33,6 @@ pub struct AgentSpawnedPayload {
 }
 
 #[derive(Serialize)]
-pub struct AgentDisconnectedPayload {
-    pub org_id: String,
-    pub agent_id: String,
-}
-
-#[derive(Serialize)]
 pub struct AgentRolesChangedPayload {
     pub org_id: String,
     pub agent_id: String,
@@ -63,13 +55,6 @@ pub struct AgentContextSwitchedPayload {
     pub new_project: String,
     pub old_namespace: String,
     pub new_namespace: String,
-}
-
-#[derive(Serialize)]
-pub struct AgentStatusChangedPayload {
-    pub org_id: String,
-    pub agent_id: String,
-    pub status: String,
 }
 
 #[derive(Serialize)]

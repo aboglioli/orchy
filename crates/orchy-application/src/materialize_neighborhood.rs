@@ -9,7 +9,7 @@ use orchy_core::graph::neighborhood::{
     TaskSummary,
 };
 use orchy_core::graph::relation_options::RelationOptions;
-use orchy_core::knowledge::{Knowledge, KnowledgeId, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeId, KnowledgePath, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore};
 use orchy_core::namespace::Namespace;
 use orchy_core::organization::OrganizationId;
@@ -146,13 +146,15 @@ impl MaterializeNeighborhood {
                 })
                 .transpose()?;
             let namespace = Namespace::root();
-            for path in &knowledge_paths {
-                if let Ok(Some(entry)) = self
-                    .knowledge
-                    .find_by_path(&org_id, project.as_ref(), &namespace, path)
-                    .await
-                {
-                    knowledge_entries.push(entry);
+            for path_str in &knowledge_paths {
+                if let Ok(path) = path_str.parse::<KnowledgePath>() {
+                    if let Ok(Some(entry)) = self
+                        .knowledge
+                        .find_by_path(&org_id, project.as_ref(), &namespace, &path)
+                        .await
+                    {
+                        knowledge_entries.push(entry);
+                    }
                 }
             }
         }

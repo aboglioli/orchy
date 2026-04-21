@@ -22,7 +22,10 @@ impl TouchTask {
 
     pub async fn execute(&self, cmd: TouchTaskCommand) -> Result<TaskResponse> {
         let task_id = TaskId::from_str(&cmd.task_id)?;
-        let mut task = self.tasks.find_by_id(&task_id).await?
+        let mut task = self
+            .tasks
+            .find_by_id(&task_id)
+            .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
         task.touch();

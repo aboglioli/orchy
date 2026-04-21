@@ -98,8 +98,8 @@ mod send_message;
 // Knowledge
 mod append_knowledge;
 mod change_knowledge_kind;
-mod delete_knowledge;
 mod consolidate_knowledge;
+mod delete_knowledge;
 mod import_knowledge;
 mod list_knowledge;
 mod move_knowledge;
@@ -141,12 +141,12 @@ mod poll_updates;
 
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
 pub use check_timed_out_agents::CheckTimedOutAgents;
+pub use dto::RegisterAgentResponse;
 pub use get_agent::{GetAgent, GetAgentCommand, GetAgentResponse};
 pub use get_agent_summary::{GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
 pub use register_agent::{RegisterAgent, RegisterAgentCommand};
-pub use dto::RegisterAgentResponse;
 pub use rename_alias::{RenameAlias, RenameAliasCommand};
 pub use resolve_agent::resolve_agent;
 pub use suggest_roles::{SuggestRoles, SuggestRolesCommand};
@@ -188,6 +188,7 @@ pub use send_message::{SendMessage, SendMessageCommand};
 
 pub use append_knowledge::{AppendKnowledge, AppendKnowledgeCommand};
 pub use change_knowledge_kind::{ChangeKnowledgeKind, ChangeKnowledgeKindCommand};
+pub use consolidate_knowledge::{ConsolidateKnowledge, ConsolidateKnowledgeCommand};
 pub use delete_knowledge::{DeleteKnowledge, DeleteKnowledgeCommand};
 pub use import_knowledge::{ImportKnowledge, ImportKnowledgeCommand};
 pub use list_knowledge::{ListKnowledge, ListKnowledgeCommand};
@@ -195,7 +196,6 @@ pub use materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborh
 pub use move_knowledge::{MoveKnowledge, MoveKnowledgeCommand};
 pub use patch_knowledge_metadata::{PatchKnowledgeMetadata, PatchKnowledgeMetadataCommand};
 pub use promote_knowledge::{PromoteKnowledge, PromoteKnowledgeCommand};
-pub use consolidate_knowledge::{ConsolidateKnowledge, ConsolidateKnowledgeCommand};
 pub use read_knowledge::{ReadKnowledge, ReadKnowledgeCommand, ReadKnowledgeResponse};
 pub use rename_knowledge::{RenameKnowledge, RenameKnowledgeCommand};
 pub use search_knowledge::{SearchKnowledge, SearchKnowledgeCommand};
@@ -365,7 +365,11 @@ impl Application {
         ));
 
         Self {
-            register_agent: RegisterAgent::new(agents.clone(), messages.clone(), tasks.clone(), knowledge.clone()),
+            register_agent: RegisterAgent::new(
+                agents.clone(),
+                messages.clone(),
+                tasks.clone(),
+            ),
             switch_context: SwitchContext::new(
                 agents.clone(),
                 projects.clone(),
@@ -480,7 +484,7 @@ impl Application {
             change_password: ChangePassword::new(users.clone()),
             invite_user: InviteUser::new(users.clone(), memberships.clone()),
             list_org_users: ListOrgUsers::new(users.clone(), memberships.clone()),
-            bootstrap_admin: BootstrapAdmin::new(users, memberships),
+            bootstrap_admin: BootstrapAdmin::new(users),
         }
     }
 }

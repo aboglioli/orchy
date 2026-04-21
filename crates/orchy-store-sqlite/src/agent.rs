@@ -68,7 +68,7 @@ impl AgentStore for SqliteBackend {
         &self,
         org: &OrganizationId,
         project: &ProjectId,
-        alias: &str,
+        alias: &Alias,
     ) -> Result<Option<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let sql = format!(
@@ -78,7 +78,7 @@ impl AgentStore for SqliteBackend {
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;
         stmt.query_row(
-            rusqlite::params![org.to_string(), project.to_string(), alias],
+            rusqlite::params![org.to_string(), project.to_string(), alias.as_str()],
             row_to_agent,
         )
         .optional()
@@ -160,9 +160,7 @@ impl AgentStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 
-        let sql = format!(
-            "SELECT {SELECT_COLS} FROM agents WHERE last_seen < ?1"
-        );
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE last_seen < ?1");
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Store(e.to_string()))?;

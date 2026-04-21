@@ -294,7 +294,7 @@ MCP session ids are **in-memory** and do not survive a restart. The client must 
 handshake; you may see **Session not found** until it does.
 
 Your **orchy agent** (`id`) lives in the database — it is **not** auto-attached to a new MCP \
-session. After reconnect, call **`register_agent` again with the same `alias`** you used before \
+session. After reconnect, call **`register_agent` again with the same `alias`** you used before.
 
 `register_agent`, `session_status`, `list_knowledge_types`, and `list_agents` (when \
 `project` is passed) do not require a registered orchy session; most other tools do.
@@ -318,7 +318,7 @@ pending → claimed → in_progress → completed/failed. \
 Always claim before starting. If another agent claimed it, move on. \
 `split_task` breaks a task into subtasks — parent auto-completes when all finish. \
 `touch_task` keeps a claimed task alive (staleness). `merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
-without blocking the parent. Use `tag_task` / `untag_task` for labels. \
+without blocking the parent. Use `tag_task` / `untag_task` for labels.
 
 **Acceptance criteria:** Every task can have `acceptance_criteria` — a clear definition \
 of done. Set on create (`post_task`) or update (`update_task`). \

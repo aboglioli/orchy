@@ -3,8 +3,7 @@ use async_trait::async_trait;
 use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::{
-    Email, MembershipId, OrgMembership, OrgMembershipStore, OrgRole, RestoreOrgMembership,
-    RestoreUser, User, UserId, UserStore,
+    Email, MembershipId, OrgMembership, OrgMembershipStore, User, UserId, UserStore,
 };
 
 use crate::MemoryBackend;

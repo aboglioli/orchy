@@ -87,7 +87,9 @@ impl ServerConfig {
             });
         }
 
-        if let Some(keep_alive) = self.mcp_session_keep_alive_secs && keep_alive > 86400 {
+        if let Some(keep_alive) = self.mcp_session_keep_alive_secs
+            && keep_alive > 86400
+        {
             return Err(ConfigError::InvalidField {
                 field: "server.mcp_session_keep_alive_secs".into(),
                 message: "mcp_session_keep_alive_secs should not exceed 86400 (24 hours)".into(),
@@ -126,7 +128,8 @@ impl StoreConfig {
                 let Some(ref postgres) = self.postgres else {
                     return Err(ConfigError::MissingField {
                         section: "store.postgres".into(),
-                        message: "backend is 'postgres' but [store.postgres] section is missing".into(),
+                        message: "backend is 'postgres' but [store.postgres] section is missing"
+                            .into(),
                     });
                 };
                 postgres.validate()?;
@@ -353,14 +356,8 @@ fn default_keys_dir() -> String {
 /// Configuration validation errors with detailed context.
 #[derive(Debug, Clone)]
 pub enum ConfigError {
-    InvalidField {
-        field: String,
-        message: String,
-    },
-    MissingField {
-        section: String,
-        message: String,
-    },
+    InvalidField { field: String, message: String },
+    MissingField { section: String, message: String },
 }
 
 impl std::fmt::Display for ConfigError {

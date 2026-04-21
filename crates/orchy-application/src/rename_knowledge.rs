@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::knowledge::KnowledgeStore;
+use orchy_core::knowledge::{KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -32,14 +32,22 @@ impl RenameKnowledge {
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
+        let path: KnowledgePath = cmd
+            .path
+            .parse::<KnowledgePath>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let new_path: KnowledgePath = cmd
+            .new_path
+            .parse::<KnowledgePath>()
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let mut entry = self
             .store
-            .find_by_path(&org_id, Some(&project), &namespace, &cmd.path)
+            .find_by_path(&org_id, Some(&project), &namespace, &path)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {}", cmd.path)))?;
+            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {path}")))?;
 
-        entry.rename(cmd.new_path)?;
+        entry.rename(new_path)?;
         self.store.save(&mut entry).await?;
         Ok(KnowledgeResponse::from(&entry))
     }

@@ -1,4 +1,7 @@
 pub mod events;
+pub mod path;
+
+pub use path::KnowledgePath;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -26,7 +29,7 @@ pub trait KnowledgeStore: Send + Sync {
         org: &OrganizationId,
         project: Option<&ProjectId>,
         namespace: &Namespace,
-        path: &str,
+        path: &KnowledgePath,
     ) -> Result<Option<Knowledge>>;
     async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>>;
     async fn search(
@@ -251,7 +254,7 @@ pub struct Knowledge {
     org_id: OrganizationId,
     project: Option<ProjectId>,
     namespace: Namespace,
-    path: String,
+    path: KnowledgePath,
     kind: KnowledgeKind,
     title: String,
     content: String,
@@ -277,17 +280,17 @@ impl Knowledge {
         org_id: OrganizationId,
         project: Option<ProjectId>,
         namespace: Namespace,
-        path: String,
+        path: KnowledgePath,
         kind: KnowledgeKind,
         title: String,
         content: String,
         tags: Vec<String>,
         metadata: HashMap<String, String>,
     ) -> Result<Self> {
-        validate_path(&path)?;
         if title.trim().is_empty() {
             return Err(Error::InvalidInput("title must not be empty".into()));
         }
+
 
         let now = Utc::now();
         let mut entry = Self {
@@ -323,7 +326,7 @@ impl Knowledge {
                     entry_id: entry.id.to_string(),
                     project: entry.project.as_ref().map(|p| p.to_string()),
                     namespace: entry.namespace.to_string(),
-                    path: entry.path.clone(),
+                    path: entry.path.to_string(),
                     kind: entry.kind.to_string(),
                     title: entry.title.clone(),
                     content: entry.content.clone(),
@@ -344,7 +347,7 @@ impl Knowledge {
             org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
-            path: r.path,
+            path: KnowledgePath::new(&r.path).expect("invalid path in restore"),
             kind: r.kind,
             title: r.title,
             content: r.content,
@@ -371,7 +374,7 @@ impl Knowledge {
 
         let payload = Payload::from_json(&knowledge_events::KnowledgeUpdatedPayload {
             entry_id: self.id.to_string(),
-            path: self.path.clone(),
+            path: self.path.to_string(),
             title: self.title.clone(),
             content: self.content.clone(),
             version: self.version.as_u64(),
@@ -399,7 +402,7 @@ impl Knowledge {
 
         let payload = Payload::from_json(&knowledge_events::KnowledgeKindChangedPayload {
             entry_id: self.id.to_string(),
-            path: self.path.clone(),
+            path: self.path.to_string(),
             old_kind: old_kind.to_string(),
             new_kind: self.kind.to_string(),
             version: self.version.as_u64(),
@@ -482,16 +485,15 @@ impl Knowledge {
         Ok(())
     }
 
-    pub fn rename(&mut self, path: String) -> Result<()> {
-        validate_path(&path)?;
-        let old_path = self.path.clone();
+    pub fn rename(&mut self, path: KnowledgePath) -> Result<()> {
+        let old_path = self.path.as_str().to_string();
         self.path = path;
         self.updated_at = Utc::now();
 
         let payload = Payload::from_json(&knowledge_events::KnowledgeRenamedPayload {
             entry_id: self.id.to_string(),
             old_path,
-            new_path: self.path.clone(),
+            new_path: self.path.to_string(),
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
         let event = Event::create(
@@ -552,7 +554,7 @@ impl Knowledge {
     pub fn mark_deleted(&mut self) -> Result<()> {
         let payload = Payload::from_json(&knowledge_events::KnowledgeDeletedPayload {
             entry_id: self.id.to_string(),
-            path: self.path.clone(),
+            path: self.path.to_string(),
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
         let event = Event::create(
@@ -617,7 +619,7 @@ impl Knowledge {
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
-    pub fn path(&self) -> &str {
+    pub fn path(&self) -> &KnowledgePath {
         &self.path
     }
     pub fn kind(&self) -> KnowledgeKind {
@@ -653,11 +655,7 @@ impl Knowledge {
     pub fn valid_until(&self) -> Option<DateTime<Utc>> {
         self.valid_until
     }
-    pub fn set_validity(
-        &mut self,
-        from: Option<DateTime<Utc>>,
-        until: Option<DateTime<Utc>>,
-    ) {
+    pub fn set_validity(&mut self, from: Option<DateTime<Utc>>, until: Option<DateTime<Utc>>) {
         self.valid_from = from;
         self.valid_until = until;
         self.updated_at = Utc::now();
@@ -695,7 +693,7 @@ pub struct WriteKnowledge {
     pub org_id: OrganizationId,
     pub project: Option<ProjectId>,
     pub namespace: Namespace,
-    pub path: String,
+    pub path: KnowledgePath,
     pub kind: KnowledgeKind,
     pub title: String,
     pub content: String,
@@ -762,7 +760,7 @@ mod tests {
             test_org(),
             Some(proj("test")),
             Namespace::root(),
-            "decisions/db".into(),
+            "decisions/db".parse().unwrap(),
             KnowledgeKind::Decision,
             "Database choice".into(),
             "We chose PostgreSQL".into(),
@@ -771,7 +769,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entry.kind(), KnowledgeKind::Decision);
-        assert_eq!(entry.path(), "decisions/db");
+        assert_eq!(entry.path().as_str(), "decisions/db");
         assert_eq!(entry.version().as_u64(), 1);
         assert_eq!(entry.tags(), &["infra"]);
     }
@@ -782,7 +780,7 @@ mod tests {
             test_org(),
             Some(proj("test")),
             Namespace::root(),
-            "path".into(),
+            "path".parse().unwrap(),
             KnowledgeKind::Note,
             "".into(),
             "content".into(),
@@ -809,7 +807,7 @@ mod tests {
             test_org(),
             Some(proj("test")),
             Namespace::root(),
-            "path".into(),
+            "path".parse().unwrap(),
             KnowledgeKind::Note,
             "title".into(),
             "c".into(),
@@ -828,7 +826,7 @@ mod tests {
             test_org(),
             Some(proj("test")),
             Namespace::root(),
-            "key".into(),
+            "key".parse().unwrap(),
             KnowledgeKind::Note,
             "title".into(),
             "v1".into(),
@@ -847,7 +845,7 @@ mod tests {
             test_org(),
             Some(proj("test")),
             Namespace::root(),
-            "key".into(),
+            "key".parse().unwrap(),
             KnowledgeKind::Note,
             "title".into(),
             "body".into(),

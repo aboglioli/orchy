@@ -139,6 +139,8 @@ pub struct PatchMetadataBody {
     pub set: Option<HashMap<String, String>>,
     pub remove: Option<Vec<String>>,
     pub version: Option<u64>,
+    pub valid_from: Option<String>,
+    pub valid_until: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -578,6 +580,8 @@ pub async fn patch_metadata(
         set: body.set.unwrap_or_default(),
         remove: body.remove.unwrap_or_default(),
         version: body.version,
+        valid_from: body.valid_from,
+        valid_until: body.valid_until,
     };
 
     let entry = container

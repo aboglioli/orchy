@@ -9,7 +9,7 @@ use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeKind, KnowledgeStore, Version, WriteKnowledge as WriteKnowledgeCmd,
+    Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore, Version, WriteKnowledge as WriteKnowledgeCmd,
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -87,7 +87,8 @@ impl WriteKnowledge {
             org_id: org_id.clone(),
             project: Some(project),
             namespace,
-            path: cmd.path,
+            path: KnowledgePath::new(&cmd.path)
+                .map_err(|e| Error::InvalidInput(e.to_string()))?,
             kind,
             title: cmd.title,
             content: cmd.content,

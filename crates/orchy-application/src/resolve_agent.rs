@@ -1,4 +1,4 @@
-use orchy_core::agent::{Agent, AgentId, AgentStore};
+use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -14,8 +14,9 @@ pub async fn resolve_agent(
             return Ok(agent);
         }
     }
+    let alias = Alias::new(id_or_alias)?;
     agents
-        .find_by_alias(org, project, id_or_alias)
+        .find_by_alias(org, project, &alias)
         .await?
         .ok_or_else(|| Error::NotFound(format!("agent '{id_or_alias}'")))
 }

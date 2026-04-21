@@ -85,7 +85,7 @@ impl AgentStore for PgBackend {
         &self,
         org: &OrganizationId,
         project: &ProjectId,
-        alias: &str,
+        alias: &Alias,
     ) -> Result<Option<Agent>> {
         let sql = format!(
             "SELECT {SELECT_COLS} FROM agents WHERE organization_id = $1 AND project = $2 AND alias = $3"
@@ -93,7 +93,7 @@ impl AgentStore for PgBackend {
         let row = sqlx::query(&sql)
             .bind(org.to_string())
             .bind(project.to_string())
-            .bind(alias)
+            .bind(alias.as_str())
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;

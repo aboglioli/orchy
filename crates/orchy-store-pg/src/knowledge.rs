@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgeStore, RestoreKnowledge,
+    Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore, RestoreKnowledge,
     Version,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -91,7 +91,7 @@ impl KnowledgeStore for PgBackend {
             .bind(entry.org_id().to_string())
             .bind(entry.project().map(|p| p.to_string()))
             .bind(entry.namespace().to_string())
-            .bind(entry.path())
+            .bind(entry.path().as_str())
             .bind(entry.kind().to_string())
             .bind(entry.title())
             .bind(entry.content())
@@ -134,7 +134,7 @@ impl KnowledgeStore for PgBackend {
             .bind(entry.org_id().to_string())
             .bind(entry.project().map(|p| p.to_string()))
             .bind(entry.namespace().to_string())
-            .bind(entry.path())
+            .bind(entry.path().as_str())
             .bind(entry.kind().to_string())
             .bind(entry.title())
             .bind(entry.content())
@@ -198,7 +198,7 @@ impl KnowledgeStore for PgBackend {
         org: &OrganizationId,
         project: Option<&ProjectId>,
         namespace: &Namespace,
-        path: &str,
+        path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
         let row = sqlx::query(&format!(
             "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE organization_id = $1 AND project IS NOT DISTINCT FROM $2 AND namespace = $3 AND path = $4"
@@ -206,7 +206,7 @@ impl KnowledgeStore for PgBackend {
         .bind(org.to_string())
         .bind(project.map(|p| p.to_string()))
         .bind(namespace.to_string())
-        .bind(path)
+        .bind(path.as_str())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -245,9 +245,7 @@ impl KnowledgeStore for PgBackend {
             select.and_where(Expr::col(KnowledgeEntries::Path).like(format!("{prefix}%")));
         }
         if !filter.include_expired.unwrap_or(false) {
-            select.and_where(Expr::cust(
-                "(valid_until IS NULL OR valid_until > NOW())",
-            ));
+            select.and_where(Expr::cust("(valid_until IS NULL OR valid_until > NOW())"));
         }
         if let Some(orphaned) = filter.orphaned {
             let exists_sql = "EXISTS (
