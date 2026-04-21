@@ -7,12 +7,13 @@ use sqlx::Row;
 
 use orchy_core::agent::{Agent, AgentId, AgentStatus, AgentStore, RestoreAgent};
 use orchy_core::error::{Error, Result};
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
 use crate::{PgBackend, decode_json_value, parse_namespace, parse_project_id};
 
-const SELECT_COLS: &str = "id, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata";
+const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata";
 
 #[async_trait]
 impl AgentStore for PgBackend {
@@ -29,9 +30,10 @@ impl AgentStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO agents (id, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT (id) DO UPDATE SET
+                alias = EXCLUDED.alias,
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
                 namespace = EXCLUDED.namespace,
@@ -43,6 +45,7 @@ impl AgentStore for PgBackend {
                 metadata = EXCLUDED.metadata",
         )
         .bind(agent.id().to_string())
+        .bind(agent.alias())
         .bind(agent.org_id().to_string())
         .bind(agent.project().to_string())
         .bind(agent.namespace().to_string())
@@ -71,6 +74,25 @@ impl AgentStore for PgBackend {
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
+        row.map(|r| row_to_agent(&r)).transpose()
+    }
+
+    async fn find_by_alias(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        alias: &str,
+    ) -> Result<Option<Agent>> {
+        let sql = format!(
+            "SELECT {SELECT_COLS} FROM agents WHERE organization_id = $1 AND project = $2 AND alias = $3"
+        );
+        let row = sqlx::query(&sql)
+            .bind(org.to_string())
+            .bind(project.to_string())
+            .bind(alias)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
         row.map(|r| row_to_agent(&r)).transpose()
     }
 
@@ -170,6 +192,7 @@ impl AgentStore for PgBackend {
 
 fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let id_str: String = row.get("id");
+    let alias: String = row.get("alias");
     let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");
@@ -182,6 +205,7 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str)?,
+        alias,
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,

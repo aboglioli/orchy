@@ -15,6 +15,7 @@ use orchy_core::task::{Task, TaskWithContext};
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentResponse {
     pub id: String,
+    pub alias: String,
     pub org_id: String,
     pub project: String,
     pub namespace: String,
@@ -36,6 +37,7 @@ impl From<&Agent> for AgentResponse {
     fn from(a: &Agent) -> Self {
         Self {
             id: a.id().to_string(),
+            alias: a.alias().to_string(),
             org_id: a.org_id().to_string(),
             project: a.project().to_string(),
             namespace: a.namespace().to_string(),

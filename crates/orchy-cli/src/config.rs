@@ -183,3 +183,54 @@ fn read_toml_file(path: &PathBuf) -> Option<FileConfig> {
     let content = std::fs::read_to_string(path).ok()?;
     toml::from_str(&content).ok()
 }
+
+/// Write or update `agent_id` in the nearest `.orchy.toml`.
+/// If no `.orchy.toml` exists, creates one in the current directory.
+pub fn save_agent_id(agent_id: &str) {
+    let path = find_repo_config_path().unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(".orchy.toml")
+    });
+
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let updated = if content.contains("agent_id") {
+        // Replace existing agent_id line
+        content
+            .lines()
+            .map(|line| {
+                if line.trim_start().starts_with("agent_id") {
+                    format!("agent_id  = \"{agent_id}\"")
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    } else {
+        // Append agent_id
+        format!("{content}agent_id  = \"{agent_id}\"\n")
+    };
+
+    if let Err(e) = std::fs::write(&path, updated) {
+        eprintln!(
+            "Warning: could not save agent_id to {}: {e}",
+            path.display()
+        );
+    }
+}
+
+fn find_repo_config_path() -> Option<PathBuf> {
+    let mut dir = std::env::current_dir().ok()?;
+    loop {
+        let path = dir.join(".orchy.toml");
+        if path.is_file() {
+            return Some(path);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}

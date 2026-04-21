@@ -3,17 +3,15 @@ use serde::Deserialize;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct RegisterAgentParams {
+    pub alias: String,
     pub project: String,
     pub namespace: Option<String>,
     pub organization: Option<String>,
+    pub description: String,
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
-    pub description: Option<String>,
-    /// Human-readable agent id. Stable reconnection key: if an agent with this id already exists
-    /// in the project, the session resumes it. Auto-generated if omitted.
-    pub id: Option<String>,
-    /// Create as a child of this parent agent.
-    pub parent_id: Option<String>,
+    /// Informative only (e.g. claude-code, opencode, pi). Not part of identity.
+    pub agent_type: Option<String>,
     pub metadata: Option<std::collections::HashMap<String, String>>,
 }
 

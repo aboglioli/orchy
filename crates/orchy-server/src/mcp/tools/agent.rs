@@ -22,9 +22,9 @@ pub(super) async fn register_agent(
     h: &OrchyHandler,
     params: RegisterAgentParams,
 ) -> Result<String, String> {
-    if params.project.is_empty() {
+    if params.alias.is_empty() {
         return Err(
-            "project is required: call register_agent with project=\"<name>\" and description=\"<what this agent does>\""
+            "alias is required: call register_agent with alias='<name>' (lowercase alphanumeric with hyphens, e.g. 'coder-1')"
                 .to_string(),
         );
     }
@@ -68,10 +68,10 @@ pub(super) async fn register_agent(
         org_id: org_id.clone(),
         project: params.project.clone(),
         namespace: namespace.clone(),
+        alias: params.alias.clone(),
         roles,
-        description: params.description.unwrap_or_default(),
-        id: params.id.clone(),
-        parent_id: params.parent_id.clone(),
+        description: params.description.clone(),
+        agent_type: params.agent_type.clone(),
         metadata: params.metadata.unwrap_or_default(),
     };
 

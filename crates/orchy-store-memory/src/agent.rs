@@ -2,6 +2,7 @@ use async_trait::async_trait;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore};
 use orchy_core::error::Result;
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
 
@@ -28,6 +29,19 @@ impl AgentStore for MemoryBackend {
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         let agents = self.agents.read().await;
         Ok(agents.get(id).cloned())
+    }
+
+    async fn find_by_alias(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        alias: &str,
+    ) -> Result<Option<Agent>> {
+        let agents = self.agents.read().await;
+        Ok(agents
+            .values()
+            .find(|a| a.org_id() == org && a.project() == project && a.alias() == alias)
+            .cloned())
     }
 
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {

@@ -118,10 +118,11 @@ pub async fn list(
 
 #[derive(Deserialize)]
 pub struct RegisterAgentBody {
+    pub alias: String,
     pub description: String,
     #[serde(default)]
     pub roles: Vec<String>,
-    pub id: Option<String>,
+    pub agent_type: Option<String>,
     pub namespace: Option<String>,
     #[serde(default)]
     pub metadata: std::collections::HashMap<String, String>,
@@ -147,10 +148,10 @@ pub async fn register(
         org_id: org,
         project,
         namespace: body.namespace,
+        alias: body.alias,
         roles: body.roles,
         description: body.description,
-        id: body.id,
-        parent_id: None,
+        agent_type: body.agent_type,
         metadata: body.metadata,
     };
 

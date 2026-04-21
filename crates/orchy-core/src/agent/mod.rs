@@ -65,8 +65,27 @@ pub trait AgentStore: Send + Sync {
     async fn save(&self, agent: &mut Agent) -> Result<()>;
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>>;
     async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>>;
+    async fn find_by_alias(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        alias: &str,
+    ) -> Result<Option<Agent>>;
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>>;
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
+}
+
+pub fn validate_alias(alias: &str) -> Result<()> {
+    if alias.len() < 2 {
+        return Err(Error::invalid_input("alias must be at least 2 characters"));
+    }
+    if !alias.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return Err(Error::invalid_input("alias must be lowercase alphanumeric with hyphens only"));
+    }
+    if alias.starts_with('-') || alias.ends_with('-') {
+        return Err(Error::invalid_input("alias must not start or end with hyphen"));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +127,7 @@ impl FromStr for AgentStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     id: AgentId,
+    alias: String,
     org_id: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
@@ -126,15 +146,18 @@ impl Agent {
         org_id: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
+        alias: String,
         roles: Vec<String>,
         description: String,
         id: Option<AgentId>,
         metadata: HashMap<String, String>,
     ) -> Result<Self> {
+        validate_alias(&alias)?;
         let now = Utc::now();
         let id = id.unwrap_or_default();
         let mut agent = Self {
             id,
+            alias,
             org_id,
             project,
             namespace,
@@ -150,6 +173,7 @@ impl Agent {
         let payload = Payload::from_json(&agent_events::AgentRegisteredPayload {
             org_id: agent.org_id.to_string(),
             agent_id: agent.id.to_string(),
+            alias: agent.alias.clone(),
             project: agent.project.to_string(),
             namespace: agent.namespace.to_string(),
             roles: agent.roles.clone(),
@@ -168,16 +192,19 @@ impl Agent {
     }
 
     pub fn from_parent(
+        alias: String,
         parent: &Agent,
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
         id: Option<AgentId>,
     ) -> Result<Self> {
+        validate_alias(&alias)?;
         let now = Utc::now();
         let id = id.unwrap_or_default();
         let mut agent = Self {
             id,
+            alias,
             org_id: parent.org_id.clone(),
             project: parent.project.clone(),
             namespace,
@@ -214,6 +241,7 @@ impl Agent {
     pub fn restore(r: RestoreAgent) -> Self {
         Self {
             id: r.id,
+            alias: r.alias,
             org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
@@ -413,6 +441,9 @@ impl Agent {
     pub fn id(&self) -> &AgentId {
         &self.id
     }
+    pub fn alias(&self) -> &str {
+        &self.alias
+    }
     pub fn org_id(&self) -> &OrganizationId {
         &self.org_id
     }
@@ -444,6 +475,7 @@ impl Agent {
 
 pub struct RestoreAgent {
     pub id: AgentId,
+    pub alias: String,
     pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
@@ -460,6 +492,7 @@ pub struct RegisterAgent {
     pub org_id: OrganizationId,
     pub project: ProjectId,
     pub namespace: Namespace,
+    pub alias: String,
     pub roles: Vec<String>,
     pub description: String,
     pub id: Option<AgentId>,
@@ -489,6 +522,7 @@ mod tests {
             test_org(),
             test_project(),
             test_namespace(),
+            "test-coder".to_string(),
             vec!["coder".to_string()],
             "test agent".to_string(),
             None,
@@ -508,6 +542,7 @@ mod tests {
     fn from_parent_inherits_project() {
         let parent = make_agent();
         let child = Agent::from_parent(
+            "child-agent".to_string(),
             &parent,
             test_namespace(),
             vec!["reviewer".to_string()],

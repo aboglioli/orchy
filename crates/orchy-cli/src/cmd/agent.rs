@@ -64,13 +64,19 @@ pub async fn run(
                 body["id"] = serde_json::Value::String(aid.clone());
             }
             let v = client.post_project_json("/agents", Some(&body)).await?;
+            let new_id = v.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+
+            // Auto-save agent_id to .orchy.toml
+            if new_id != "?" {
+                crate::config::save_agent_id(new_id);
+            }
+
             if config.json {
                 output::print_json(config, &v);
             } else {
-                let id = v.get("id").and_then(|v| v.as_str()).unwrap_or("?");
                 let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("?");
-                println!("Agent registered: {id} ({status})");
-                println!("Save this ID in .orchy.toml: agent_id = \"{id}\"");
+                println!("Agent registered: {new_id} ({status})");
+                println!("Saved agent_id to .orchy.toml");
             }
         }
         AgentSubcommand::List => {

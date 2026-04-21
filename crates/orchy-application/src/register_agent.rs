@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentId, AgentStore, RegisterAgent as DomainRegisterAgent};
+use orchy_core::agent::{validate_alias, AgentStore};
 use orchy_core::error::{Error, Result};
 
 use crate::dto::AgentResponse;
@@ -15,10 +14,10 @@ pub struct RegisterAgentCommand {
     pub org_id: String,
     pub project: String,
     pub namespace: Option<String>,
+    pub alias: String,
     pub roles: Vec<String>,
     pub description: String,
-    pub id: Option<String>,
-    pub parent_id: Option<String>,
+    pub agent_type: Option<String>,
     pub metadata: HashMap<String, String>,
 }
 
@@ -38,76 +37,41 @@ impl RegisterAgent {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
-        let id = cmd.id.map(|s| AgentId::from_str(&s)).transpose()?;
-        let parent_id = cmd.parent_id.map(|s| AgentId::from_str(&s)).transpose()?;
+        validate_alias(&cmd.alias)?;
 
-        let domain_cmd = DomainRegisterAgent {
-            org_id,
-            project,
-            namespace,
-            roles: cmd.roles,
-            description: cmd.description,
-            id,
-            metadata: cmd.metadata,
-        };
-
-        if let Some(parent_id) = parent_id {
-            let parent = self
-                .agents
-                .find_by_id(&parent_id)
-                .await?
-                .ok_or_else(|| Error::NotFound(format!("agent {parent_id}")))?;
-
-            if *parent.org_id() != domain_cmd.org_id {
-                return Err(Error::InvalidInput(format!(
-                    "parent agent {} belongs to org {}, expected {}",
-                    parent_id,
-                    parent.org_id(),
-                    domain_cmd.org_id,
-                )));
-            }
-            if *parent.project() != domain_cmd.project {
-                return Err(Error::InvalidInput(format!(
-                    "parent agent {} belongs to project {}, expected {}",
-                    parent_id,
-                    parent.project(),
-                    domain_cmd.project,
-                )));
-            }
-
-            let mut agent = orchy_core::agent::Agent::from_parent(
-                &parent,
-                domain_cmd.namespace,
-                domain_cmd.roles,
-                domain_cmd.description,
-                domain_cmd.id,
-            )?;
-            self.agents.save(&mut agent).await?;
-            return Ok(AgentResponse::from(&agent));
-        }
-
-        if let Some(ref id) = domain_cmd.id
-            && let Some(mut existing) = self.agents.find_by_id(id).await?
-            && *existing.org_id() == domain_cmd.org_id
-            && *existing.project() == domain_cmd.project
+        if let Some(mut existing) = self
+            .agents
+            .find_by_alias(&org_id, &project, &cmd.alias)
+            .await?
         {
-            existing.resume(
-                domain_cmd.namespace,
-                domain_cmd.roles,
-                domain_cmd.description,
-            )?;
+            existing.resume(namespace, cmd.roles.clone(), cmd.description.clone())?;
+            if let Some(agent_type) = cmd.agent_type {
+                let mut meta = existing.metadata().clone();
+                meta.insert("agent_type".to_string(), agent_type);
+                existing.set_metadata(meta)?;
+            }
+            if !cmd.metadata.is_empty() {
+                let mut meta = existing.metadata().clone();
+                meta.extend(cmd.metadata);
+                existing.set_metadata(meta)?;
+            }
             self.agents.save(&mut existing).await?;
             return Ok(AgentResponse::from(&existing));
         }
 
+        let mut metadata = cmd.metadata;
+        if let Some(agent_type) = cmd.agent_type {
+            metadata.insert("agent_type".to_string(), agent_type);
+        }
         let mut agent = orchy_core::agent::Agent::register(
-            domain_cmd.org_id,
-            domain_cmd.project,
-            domain_cmd.namespace,
-            domain_cmd.roles,
-            domain_cmd.description,
-            domain_cmd.id,
-            domain_cmd.metadata,
+            org_id,
+            project,
+            namespace,
+            cmd.alias,
+            cmd.roles,
+            cmd.description,
+            None,
+            metadata,
         )?;
         self.agents.save(&mut agent).await?;
         Ok(AgentResponse::from(&agent))

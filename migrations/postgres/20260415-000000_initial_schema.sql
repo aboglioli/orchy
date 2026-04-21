@@ -22,6 +22,7 @@ CREATE INDEX IF NOT EXISTS api_keys_organization_idx ON api_keys (organization_i
 
 CREATE TABLE IF NOT EXISTS agents (
     id UUID PRIMARY KEY,
+    alias TEXT NOT NULL DEFAULT '',
     organization_id TEXT NOT NULL DEFAULT 'default',
     project TEXT NOT NULL,
     namespace TEXT NOT NULL DEFAULT '/',

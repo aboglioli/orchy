@@ -96,6 +96,14 @@ impl AgentStore for StoreBackend {
     async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>> {
         delegate_trait!(self, AgentStore::find_by_ids(ids))
     }
+    async fn find_by_alias(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        alias: &str,
+    ) -> Result<Option<Agent>> {
+        delegate_trait!(self, AgentStore::find_by_alias(org, project, alias))
+    }
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
         delegate_trait!(self, AgentStore::list(org, page))
     }

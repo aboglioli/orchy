@@ -17,6 +17,7 @@ pub const TOPIC_METADATA_CHANGED: &str = "agent.metadata_changed";
 pub struct AgentRegisteredPayload {
     pub org_id: String,
     pub agent_id: String,
+    pub alias: String,
     pub project: String,
     pub namespace: String,
     pub roles: Vec<String>,

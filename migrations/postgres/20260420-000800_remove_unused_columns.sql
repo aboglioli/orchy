@@ -10,9 +10,6 @@ ALTER TABLE knowledge_entries DROP COLUMN IF EXISTS refs;
 -- Remove agent_id from knowledge_entries (legacy column)
 ALTER TABLE knowledge_entries DROP COLUMN IF EXISTS agent_id;
 
--- Remove alias from agents (not in Agent model)
-ALTER TABLE agents DROP COLUMN IF EXISTS alias;
-
 -- Remove parent_id from agents (legacy column)
 ALTER TABLE agents DROP COLUMN IF EXISTS parent_id;
 
