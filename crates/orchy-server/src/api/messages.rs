@@ -44,7 +44,8 @@ pub struct AgentNamespaceQuery {
 
 #[derive(Deserialize)]
 pub struct SendBody {
-    pub from_agent_id: String,
+    #[serde(alias = "from_agent_id")]
+    pub from_alias: String,
     pub to: String,
     pub body: String,
     #[serde(alias = "ns")]
@@ -183,7 +184,7 @@ pub async fn send(
         org_id: org,
         project,
         namespace: body.namespace,
-        from_agent_id: body.from_agent_id,
+        from_agent_id: body.from_alias,
         to: body.to,
         body: body.body,
         reply_to: body.reply_to,
