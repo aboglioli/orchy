@@ -197,7 +197,7 @@ pub async fn get_context(
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
+    if agent.org_id != org_id.to_string() {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",

@@ -83,7 +83,7 @@ pub async fn inbox_for_agent(
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
+    if agent.org_id != org_id.to_string() {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
@@ -136,7 +136,7 @@ pub async fn sent_for_agent(
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
+    if agent.org_id != org_id.to_string() {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
@@ -227,7 +227,7 @@ pub async fn mark_read(
         .await
         .map_err(ApiError::from)?;
 
-    if agent.org_id != org_id.to_string() || agent.status == "disconnected" {
+    if agent.org_id != org_id.to_string() {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
