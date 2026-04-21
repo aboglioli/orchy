@@ -13,26 +13,26 @@ pub struct AgentCommand {
 
 #[derive(Subcommand)]
 pub enum AgentSubcommand {
-    /// Register or resume an agent (creates if new, resumes if id exists)
+    /// Register or resume an agent (creates if new, resumes if alias exists)
     Register {
         #[arg(long)]
         description: Option<String>,
         #[arg(long, value_delimiter = ',')]
         roles: Option<Vec<String>>,
         #[arg(long)]
-        id: Option<String>,
+        alias: Option<String>,
     },
     /// List all agents in the org
     List,
-    /// Get full agent context
+    /// Get full agent context by alias
     Context {
-        /// Agent ID
-        id: String,
+        /// Agent alias
+        alias: String,
     },
     /// Change an agent's roles
     ChangeRoles {
-        /// Agent ID
-        id: String,
+        /// Agent alias
+        alias: String,
         /// New roles (comma-separated)
         #[arg(long)]
         roles: String,
@@ -48,34 +48,43 @@ pub async fn run(
         AgentSubcommand::Register {
             description,
             roles,
-            id,
+            alias,
         } => {
             let desc = description
                 .clone()
                 .or_else(|| config.description.clone())
                 .unwrap_or_default();
             let agent_roles = roles.clone().unwrap_or_else(|| config.roles.clone());
-            let alias = id.clone().or_else(|| config.alias.clone());
+            let alias = alias.clone().or_else(|| config.alias.clone());
             let mut body = serde_json::json!({
                 "description": desc,
                 "roles": agent_roles,
             });
-            if let Some(aid) = &alias {
-                body["id"] = serde_json::Value::String(aid.clone());
+            if let Some(a) = &alias {
+                body["alias"] = serde_json::Value::String(a.clone());
             }
             let v = client.post_project_json("/agents", Some(&body)).await?;
-            let new_id = v.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+            let new_alias = v
+                .get("agent")
+                .and_then(|a| a.get("alias"))
+                .and_then(|v| v.as_str())
+                .or_else(|| alias.as_deref())
+                .unwrap_or("?");
 
             // Auto-save alias to .orchy.toml
-            if new_id != "?" {
-                crate::config::save_alias(new_id);
+            if new_alias != "?" {
+                crate::config::save_alias(new_alias);
             }
 
             if config.json {
                 output::print_json(config, &v);
             } else {
-                let status = v.get("status").and_then(|v| v.as_str()).unwrap_or("?");
-                println!("Agent registered: {new_id} ({status})");
+                let status = v
+                    .get("agent")
+                    .and_then(|a| a.get("status"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                println!("Agent registered: {new_alias} ({status})");
                 println!("Saved alias to .orchy.toml");
             }
         }
@@ -91,8 +100,8 @@ pub async fn run(
                 }
             }
         }
-        AgentSubcommand::Context { id } => {
-            let v = client.get_json(&format!("/agents/{id}/context")).await?;
+        AgentSubcommand::Context { alias } => {
+            let v = client.get_json(&format!("/agents/{alias}/context")).await?;
             if config.json {
                 output::print_json(config, &v);
             } else {
@@ -106,7 +115,7 @@ pub async fn run(
                     .and_then(|a| a.get("status"))
                     .and_then(|s| s.as_str())
                     .unwrap_or("?");
-                println!("Agent: {id} ({desc})  Status: {status}");
+                println!("Agent: {alias} ({desc})  Status: {status}");
                 if let Some(inbox) = v.get("inbox").and_then(|v| v.as_array()) {
                     println!("Inbox ({}):", inbox.len());
                     for m in inbox {
@@ -121,15 +130,15 @@ pub async fn run(
                 }
             }
         }
-        AgentSubcommand::ChangeRoles { id, roles } => {
+        AgentSubcommand::ChangeRoles { alias, roles } => {
             let body = serde_json::json!({ "roles": roles.split(',').map(|s| s.trim()).collect::<Vec<_>>() });
             let v = client
-                .patch_json(&format!("/agents/{id}/roles"), Some(&body))
+                .patch_json(&format!("/agents/{alias}/roles"), Some(&body))
                 .await?;
             if config.json {
                 output::print_json(config, &v);
             } else {
-                println!("Roles updated for agent {id}.");
+                println!("Roles updated for agent {alias}.");
             }
         }
     }

@@ -20,9 +20,10 @@ needs to **remember** what it has learned. Orchy provides all three.
 
 How agents coordinate in real time.
 
-- **Direct messages** — send to a specific agent by ID
+- **Direct messages** — send to a specific agent by alias (`@coder-1`)
 - **Role broadcasts** — send to all agents with a role (`role:reviewer`)
-- **Project broadcasts** — send to everyone except yourself
+- **Namespace broadcasts** — send to all agents in a namespace (`ns:/backend`)
+- **Project broadcasts** — send to everyone except yourself (`broadcast`)
 - **Threading** — reply to messages, walk full conversation threads
 - **Delivery tracking** — pending, delivered, read status
 - **System notifications** — dependency failures are delivered as messages to
@@ -42,6 +43,8 @@ How agents organize, claim, and complete work.
   spec first, then create implementation tasks from it.
 - **Resource locks** — prevent two agents from editing the same file or area.
   TTL-based, auto-released on disconnect.
+- **Task staleness** — tasks become stale after inactivity, claimable by other
+  agents. No automatic release on disconnect.
 
 ### Knowledge (Notion/Wiki for agents)
 
@@ -68,6 +71,10 @@ organization and `tags` for cross-cutting labels.
   "global" project serves as a shared resource pool across all projects.
 - **Semantic search** — `search_knowledge` finds relevant entries by meaning,
   not just exact match. Powered by embeddings when configured.
+- **Temporal validity** — knowledge entries have optional `valid_from`/`valid_until`.
+  Expired entries excluded from search by default.
+- **Promotion** — promote a decision/discovery/pattern into a reusable `skill`.
+- **Consolidation** — merge related knowledge entries into one, deleting sources.
 
 ## Architecture
 
@@ -214,37 +221,44 @@ namespace see everything. Writes default to agent's current namespace.
 **Resource locking** — TTL-based. Released on disconnect. Use for files, not data.
 
 **Session continuity** — `write_knowledge(kind: "context")` before disconnect.
-On startup, `get_agent_context` returns skills, handoff context, inbox, and
+On startup, `register_agent` returns skills, handoff context, inbox, and
 pending tasks in one call.
 
 ### Agent Disconnect Cleanup
 
-When an agent disconnects (or times out via heartbeat monitor):
-1. Claimed/in-progress tasks released back to Pending
-2. Resource locks held by agent released
+When an agent stops heartbeating or times out:
+1. Agent status becomes `stale` (derived from `last_seen`)
+2. Stale tasks become claimable by other agents (first-writer-wins)
+3. Resource locks are released
+
+No automatic task release on disconnect. Tasks must be explicitly released
+or become stale through inactivity.
 
 ## Agent Lifecycle
 
 ### MCP agents
 
 **Startup:**
-1. `register_agent(project, description)` — roles auto-assigned from task demand
-2. `get_agent_context` — everything in one call: agent info, project, inbox, pending tasks, skills, handoff context
-3. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
-4. `heartbeat` every ~30s
+1. `register_agent(alias="coder-1", project, description)` — roles auto-assigned from task demand. Returns full context: agent info, inbox, pending tasks, skills, handoff context, rescue info.
+2. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
+3. `heartbeat` every ~30s (updates `last_seen`)
 
 **Working:**
 - `poll_updates` + `check_mailbox` for reactivity
 - `lock_resource` before editing shared files
 - `write_knowledge` for decisions, discoveries, patterns
+- `touch_task` for long-running work (prevents staleness)
 
 **Completing:**
 - `complete_task` with actionable summary (never just "done")
 - `write_knowledge` for each key decision or discovery
 
+**Renaming:**
+- `rename_alias(new_alias)` — change alias, all internal references use UUID so nothing breaks
+
 **Disconnecting:**
 - `write_knowledge(kind: "context", path: "handoff")` with: task ID, progress, blockers, decisions
-- `disconnect` — tasks released to pending, locks freed
+- No `disconnect` tool — agents just stop calling. Tasks become stale, locks released.
 
 ### CLI agents (stateless, no MCP)
 
@@ -253,12 +267,13 @@ For agents without MCP support (pi coding agent, Codex CLI, shell scripts). Each
 **Config** (lowest → highest priority):
 1. `~/.orchy/config.toml` — global
 2. `.orchy.toml` — repo-local (walk up from cwd)
-3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_ORG`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_AGENT_ID`
+3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_ORG`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_ALIAS`
 4. Per-call flags
 
 **Startup:**
 ```bash
 orchy bootstrap --json      # briefing: inbox, tasks, skills, handoff context
+orchy agent register --alias coder-1 --description "Backend dev"
 ```
 
 **Working:**
@@ -266,7 +281,11 @@ orchy bootstrap --json      # briefing: inbox, tasks, skills, handoff context
 orchy task next --json                          # peek or claim next task
 orchy task claim <id>
 orchy task start <id>
+orchy task touch <id>                           # keep-alive for long-running work
 orchy knowledge write <path> --kind decision --title "..." --content "..." --task-id <id>
+orchy message send --to @architect --body "..."
+orchy message send --to role:reviewer --body "..."
+orchy message send --to ns:/backend --body "..."
 orchy message send --to broadcast --body "..."
 orchy lock acquire <name> --ttl 300
 orchy event poll --json
@@ -278,7 +297,7 @@ orchy task complete <id> --summary "..."
 orchy knowledge write handoff --kind context --title "Handoff" --content "..."
 ```
 
-`register_agent`, `heartbeat`, `disconnect`, and `session_status` do not exist in the CLI — they are session-lifecycle tools. Use `ORCHY_AGENT_ID` (or `--agent`) to identify yourself across calls.
+`register_agent`, `heartbeat`, `disconnect`, and `session_status` do not exist in the CLI. Use `ORCHY_ALIAS` (or `--alias`) to identify yourself across calls.
 
 ## Knowledge Module
 
@@ -310,7 +329,7 @@ the path — the kind already categorizes. Scoped by `(project, namespace, path)
 override parent skills with the same path.
 
 A new agent joining the project should:
-1. `get_agent_context` after registration — returns skills, handoff context, inbox, and pending tasks
+1. `register_agent` returns skills, handoff context, inbox, and pending tasks
 2. `search_knowledge` to find decisions and discoveries relevant to the assigned work
 
 ## Maintenance Patterns
@@ -318,7 +337,9 @@ A new agent joining the project should:
 A "janitor" agent can compact and reorganize:
 
 - **Compact knowledge** — list related entries, merge into one, delete old ones
+  via `consolidate_knowledge`
 - **Extract skills** — find recurring patterns in knowledge, create kind=skill entries
+  via `promote_knowledge`
 - **Reorganize tasks** — merge related items, move to correct namespace
 - **Lock during compaction** — `lock_resource("compaction")` to prevent conflicts
 
@@ -345,6 +366,18 @@ A "janitor" agent can compact and reorganize:
   `add_dependency`, and `write_knowledge` with `task_id`.
 - `get_neighbors`, `get_graph`, `list_edges` MCP tools removed — superseded by
   `query_relations` (richer neighborhood traversal with semantic re-ranking).
+- **Alias-based identity** replaces UUID-based registration. Agents register
+  and reconnect via `(org, project, alias)`. UUID is internal only.
+- **Last-writer-wins on registration** — re-registering with same alias resumes
+  existing agent. No lockouts.
+- **Status derived from `last_seen`** — no stored state machine. Status is
+  computed as active/idle/stale from elapsed time since last heartbeat.
+- **Task staleness replaces auto-release** — tasks stay claimed but become
+  claimable after `stale_after_secs` of inactivity. `touch_task` keeps alive.
+- **Messages resolved at read time** — role/ns/broadcast targets stored as raw
+  strings, resolved dynamically when reading inbox.
+- **No disconnect tool** — agents stop calling. Tasks become stale naturally.
+  Resource locks released via heartbeat monitor.
 
 ## Configuration
 
