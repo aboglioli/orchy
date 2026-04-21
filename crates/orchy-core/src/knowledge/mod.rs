@@ -653,6 +653,15 @@ impl Knowledge {
     pub fn valid_until(&self) -> Option<DateTime<Utc>> {
         self.valid_until
     }
+    pub fn set_validity(
+        &mut self,
+        from: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) {
+        self.valid_from = from;
+        self.valid_until = until;
+        self.updated_at = Utc::now();
+    }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
@@ -694,6 +703,8 @@ pub struct WriteKnowledge {
     pub expected_version: Option<Version>,
     pub metadata: HashMap<String, String>,
     pub metadata_remove: Vec<String>,
+    pub valid_from: Option<DateTime<Utc>>,
+    pub valid_until: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Default)]

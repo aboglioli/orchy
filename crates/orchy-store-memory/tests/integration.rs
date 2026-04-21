@@ -1100,6 +1100,8 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
             agent_id: None,
             metadata: None,
             metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
             task_id: Some(task.id.clone()),
         })
         .await

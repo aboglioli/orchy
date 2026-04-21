@@ -64,6 +64,8 @@ pub(super) async fn write_knowledge(
         },
         metadata_remove: params.metadata_remove,
         task_id: params.task_id,
+        valid_from: params.valid_from,
+        valid_until: params.valid_until,
     };
 
     match h.container.app.write_knowledge.execute(cmd).await {

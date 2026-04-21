@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
+
 use orchy_core::agent::AgentId;
 use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::embeddings::EmbeddingsProvider;
@@ -31,6 +33,8 @@ pub struct WriteKnowledgeCommand {
     pub agent_id: Option<String>,
     pub metadata: Option<HashMap<String, String>>,
     pub metadata_remove: Option<Vec<String>>,
+    pub valid_from: Option<String>,
+    pub valid_until: Option<String>,
     /// If set, auto-creates a Task→Knowledge Produces edge after writing.
     pub task_id: Option<String>,
 }
@@ -68,6 +72,17 @@ impl WriteKnowledge {
         let expected_version = cmd.version.map(Version::new);
         let task_id_str = cmd.task_id.clone();
 
+        let valid_from = cmd
+            .valid_from
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
+            .transpose()
+            .map_err(|e| Error::InvalidInput(format!("invalid valid_from: {e}")))?;
+        let valid_until = cmd
+            .valid_until
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
+            .transpose()
+            .map_err(|e| Error::InvalidInput(format!("invalid valid_until: {e}")))?;
+
         let write_cmd = WriteKnowledgeCmd {
             org_id: org_id.clone(),
             project: Some(project),
@@ -80,6 +95,8 @@ impl WriteKnowledge {
             expected_version,
             metadata: cmd.metadata.unwrap_or_default(),
             metadata_remove: cmd.metadata_remove.unwrap_or_default(),
+            valid_from,
+            valid_until,
         };
 
         let existing = self
@@ -112,6 +129,7 @@ impl WriteKnowledge {
             for (k, v) in &write_cmd.metadata {
                 existing.set_metadata(k.clone(), v.clone())?;
             }
+            existing.set_validity(write_cmd.valid_from, write_cmd.valid_until);
             existing
         } else {
             if let Some(expected) = write_cmd.expected_version {
@@ -134,6 +152,7 @@ impl WriteKnowledge {
             for k in &write_cmd.metadata_remove {
                 created.remove_metadata(k)?;
             }
+            created.set_validity(write_cmd.valid_from, write_cmd.valid_until);
             created
         };
 

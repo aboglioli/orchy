@@ -353,6 +353,8 @@ pub struct WriteKnowledgeParams {
     pub metadata_remove: Option<Vec<String>>,
     /// Optional task ID. When provided, auto-creates a Task→Knowledge Produces edge.
     pub task_id: Option<String>,
+    pub valid_from: Option<String>,
+    pub valid_until: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

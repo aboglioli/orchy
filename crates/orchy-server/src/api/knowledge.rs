@@ -74,6 +74,8 @@ pub struct WriteBody {
     pub metadata: Option<HashMap<String, String>>,
     pub task_id: Option<String>,
     pub agent_id: Option<String>,
+    pub valid_from: Option<String>,
+    pub valid_until: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -351,6 +353,8 @@ pub async fn write(
         metadata: body.metadata,
         metadata_remove: None,
         task_id: body.task_id,
+        valid_from: body.valid_from,
+        valid_until: body.valid_until,
     };
 
     let entry = container
