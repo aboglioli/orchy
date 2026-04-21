@@ -94,6 +94,11 @@ pub struct StartTaskParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct TouchTaskParams {
+    pub task_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct FailTaskParams {
     pub task_id: String,
     pub reason: Option<String>,

@@ -286,6 +286,17 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Update the last_activity_at timestamp on a task to keep it from going stale. \
+        Call this periodically for long-running work."
+    )]
+    async fn touch_task(
+        &self,
+        Parameters(params): Parameters<TouchTaskParams>,
+    ) -> Result<String, String> {
+        task::touch_task(self, params.task_id).await
+    }
+
+    #[tool(
         description = "Mark a task as completed. Always include a summary: what was done, \
         what was learned, key decisions. Write important findings to memory/documents too."
     )]

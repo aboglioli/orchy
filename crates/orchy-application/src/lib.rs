@@ -70,6 +70,7 @@ mod list_tasks;
 mod post_task;
 mod release_task;
 mod start_task;
+mod touch_task;
 mod unblock_task;
 mod update_task;
 
@@ -160,6 +161,7 @@ pub use list_tasks::{ListTasks, ListTasksCommand};
 pub use post_task::{PostTask, PostTaskCommand};
 pub use release_task::{ReleaseTask, ReleaseTaskCommand};
 pub use start_task::{StartTask, StartTaskCommand};
+pub use touch_task::{TouchTask, TouchTaskCommand};
 pub use unblock_task::{UnblockTask, UnblockTaskCommand};
 pub use update_task::{UpdateTask, UpdateTaskCommand};
 
@@ -256,6 +258,7 @@ pub struct Application {
     pub get_next_task: GetNextTask,
     pub claim_task: ClaimTask,
     pub start_task: StartTask,
+    pub touch_task: TouchTask,
     pub complete_task: CompleteTask,
     pub fail_task: FailTask,
     pub cancel_task: CancelTask,
@@ -390,6 +393,7 @@ impl Application {
             get_next_task: GetNextTask::new(tasks.clone(), edges.clone()),
             claim_task: ClaimTask::new(agents.clone(), tasks.clone(), edges.clone()),
             start_task: StartTask::new(agents.clone(), tasks.clone()),
+            touch_task: TouchTask::new(tasks.clone()),
             complete_task: CompleteTask::new(tasks.clone(), edges.clone()),
             fail_task: FailTask::new(tasks.clone(), edges.clone()),
             cancel_task: CancelTask::new(tasks.clone(), edges.clone()),

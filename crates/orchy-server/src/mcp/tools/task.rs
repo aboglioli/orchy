@@ -636,3 +636,15 @@ pub(super) async fn list_tags(h: &OrchyHandler, params: ListTagsParams) -> Resul
         Err(e) => Err(mcp_error(e)),
     }
 }
+
+pub(super) async fn touch_task(h: &OrchyHandler, task_id: String) -> Result<String, String> {
+    let (agent_id, _org, _project, _ns) = h.require_session().await?;
+    let cmd = orchy_application::TouchTaskCommand {
+        task_id,
+        agent_id: Some(agent_id.to_string()),
+    };
+    match h.container.app.touch_task.execute(cmd).await {
+        Ok(response) => Ok(to_json(&response)),
+        Err(e) => Err(mcp_error(e)),
+    }
+}
