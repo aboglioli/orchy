@@ -147,6 +147,7 @@ pub use get_agent_summary::{GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
 pub use register_agent::{RegisterAgent, RegisterAgentCommand};
+pub use dto::RegisterAgentResponse;
 pub use rename_alias::{RenameAlias, RenameAliasCommand};
 pub use resolve_agent::resolve_agent;
 pub use suggest_roles::{SuggestRoles, SuggestRolesCommand};
@@ -367,7 +368,7 @@ impl Application {
         ));
 
         Self {
-            register_agent: RegisterAgent::new(agents.clone()),
+            register_agent: RegisterAgent::new(agents.clone(), messages.clone(), tasks.clone(), knowledge.clone()),
             switch_context: SwitchContext::new(
                 agents.clone(),
                 projects.clone(),

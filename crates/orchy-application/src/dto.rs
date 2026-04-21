@@ -484,3 +484,12 @@ pub struct AuthResponse {
     pub user: UserResponse,
     pub memberships: Vec<OrgMembershipResponse>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RegisterAgentResponse {
+    pub agent: AgentResponse,
+    pub inbox_count: usize,
+    pub pending_tasks_count: usize,
+    pub my_tasks_count: usize,
+    pub stale_tasks_count: usize,
+}

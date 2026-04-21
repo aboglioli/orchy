@@ -77,11 +77,12 @@ pub(super) async fn register_agent(
 
     match h.container.app.register_agent.execute(cmd).await {
         Ok(response) => {
+            let agent = &response.agent;
             let org = orchy_core::organization::OrganizationId::new(&org_id)
                 .map_err(|e| e.to_string())?;
             let agent_id =
-                orchy_core::agent::AgentId::from_str(&response.id).map_err(|e| e.to_string())?;
-            let ns = orchy_core::namespace::Namespace::try_from(response.namespace.clone())
+                orchy_core::agent::AgentId::from_str(&agent.id).map_err(|e| e.to_string())?;
+            let ns = orchy_core::namespace::Namespace::try_from(agent.namespace.clone())
                 .map_err(|e| e.to_string())?;
             h.set_session(agent_id, org, project, ns).await;
             Ok(to_json(&response))
