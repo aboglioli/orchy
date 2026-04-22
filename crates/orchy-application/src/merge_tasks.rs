@@ -152,6 +152,7 @@ impl MergeTasks {
         let mut cancelled = Vec::with_capacity(sources.len());
         for mut task in sources {
             task.cancel(Some(format!("merged into {}", merged.id())))?;
+            task.archive(Some(format!("merged into {}", merged.id())))?;
             self.tasks.save(&mut task).await?;
             cancelled.push(task);
         }

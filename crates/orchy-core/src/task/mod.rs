@@ -83,6 +83,10 @@ impl TaskStatus {
         )
     }
 
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled)
+    }
+
     pub fn can_transition_to(&self, target: &TaskStatus) -> bool {
         use TaskStatus::*;
         matches!(
@@ -555,6 +559,15 @@ impl Task {
     }
 
     pub fn archive(&mut self, reason: Option<String>) -> Result<()> {
+        if self.archived_at.is_some() {
+            return Err(Error::InvalidInput("task is already archived".into()));
+        }
+        if !self.status().is_terminal() {
+            return Err(Error::InvalidInput(format!(
+                "can only archive terminal tasks, got {}",
+                self.status()
+            )));
+        }
         self.archived_at = Some(Utc::now());
         self.updated_at = Utc::now();
         let payload = Payload::from_json(&task_events::TaskArchivedPayload {
@@ -574,6 +587,9 @@ impl Task {
     }
 
     pub fn unarchive(&mut self) -> Result<()> {
+        if self.archived_at.is_none() {
+            return Err(Error::InvalidInput("task is not archived".into()));
+        }
         self.archived_at = None;
         self.updated_at = Utc::now();
         let payload = Payload::from_json(&task_events::TaskRestoredPayload {
@@ -1047,12 +1063,35 @@ mod tests {
     }
 
     #[test]
+    fn archive_is_idempotent() {
+        let mut task = make_completed_task();
+        task.archive(Some("first".into())).unwrap();
+        assert!(task.is_archived());
+        let err = task.archive(Some("second".into())).unwrap_err();
+        assert!(err.to_string().contains("already archived"));
+    }
+
+    #[test]
+    fn archive_fails_for_non_terminal() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        let err = task.archive(None).unwrap_err();
+        assert!(err.to_string().contains("terminal"));
+    }
+
+    #[test]
     fn unarchive_clears_archived_at() {
         let mut task = make_completed_task();
         task.archive(None).unwrap();
         assert!(task.is_archived());
         task.unarchive().unwrap();
         assert!(!task.is_archived());
+    }
+
+    #[test]
+    fn unarchive_fails_when_not_archived() {
+        let mut task = make_task(TaskStatus::Pending, None);
+        let err = task.unarchive().unwrap_err();
+        assert!(err.to_string().contains("not archived"));
     }
 
     #[test]

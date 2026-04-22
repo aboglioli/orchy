@@ -47,6 +47,7 @@ impl ReplaceTask {
             .reason
             .unwrap_or_else(|| "replaced by new tasks".to_string());
         original.cancel(Some(cancel_reason))?;
+        original.archive(Some(format!("replaced by {} new task(s)", cmd.replacements.len())))?;
         self.tasks.save(&mut original).await?;
 
         let mut new_tasks = Vec::with_capacity(cmd.replacements.len());

@@ -543,6 +543,9 @@ impl Knowledge {
     }
 
     pub fn archive(&mut self, reason: Option<String>) -> Result<()> {
+        if self.archived_at.is_some() {
+            return Err(Error::InvalidInput("knowledge entry is already archived".into()));
+        }
         self.archived_at = Some(Utc::now());
         self.updated_at = Utc::now();
 
@@ -563,6 +566,9 @@ impl Knowledge {
         Ok(())
     }
     pub fn unarchive(&mut self) -> Result<()> {
+        if self.archived_at.is_none() {
+            return Err(Error::InvalidInput("knowledge entry is not archived".into()));
+        }
         self.archived_at = None;
         self.updated_at = Utc::now();
         let payload = Payload::from_json(&knowledge_events::KnowledgeRestoredPayload {
@@ -904,5 +910,63 @@ mod tests {
         assert_eq!(entry.version().as_u64(), 2);
         entry.change_kind(KnowledgeKind::Overview).unwrap();
         assert_eq!(entry.version().as_u64(), 2);
+    }
+
+    #[test]
+    fn archive_is_idempotent() {
+        let mut entry = Knowledge::new(
+            test_org(),
+            Some(proj("test")),
+            Namespace::root(),
+            "test/path".parse().unwrap(),
+            KnowledgeKind::Note,
+            "title".into(),
+            "body".into(),
+            vec![],
+            HashMap::new(),
+        )
+        .unwrap();
+        entry.archive(Some("first".into())).unwrap();
+        assert!(entry.is_archived());
+        let err = entry.archive(Some("second".into())).unwrap_err();
+        assert!(err.to_string().contains("already archived"));
+    }
+
+    #[test]
+    fn unarchive_restores_active_state() {
+        let mut entry = Knowledge::new(
+            test_org(),
+            Some(proj("test")),
+            Namespace::root(),
+            "test/path".parse().unwrap(),
+            KnowledgeKind::Note,
+            "title".into(),
+            "body".into(),
+            vec![],
+            HashMap::new(),
+        )
+        .unwrap();
+        entry.archive(None).unwrap();
+        assert!(entry.is_archived());
+        entry.unarchive().unwrap();
+        assert!(!entry.is_archived());
+    }
+
+    #[test]
+    fn unarchive_fails_when_not_archived() {
+        let mut entry = Knowledge::new(
+            test_org(),
+            Some(proj("test")),
+            Namespace::root(),
+            "test/path".parse().unwrap(),
+            KnowledgeKind::Note,
+            "title".into(),
+            "body".into(),
+            vec![],
+            HashMap::new(),
+        )
+        .unwrap();
+        let err = entry.unarchive().unwrap_err();
+        assert!(err.to_string().contains("not archived"));
     }
 }
