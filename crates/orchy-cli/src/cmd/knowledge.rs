@@ -26,6 +26,8 @@ pub enum KnowledgeSubcommand {
         #[arg(long)]
         orphaned: Option<bool>,
         #[arg(long)]
+        archived: bool,
+        #[arg(long)]
         after: Option<String>,
         #[arg(long)]
         limit: Option<u32>,
@@ -61,6 +63,20 @@ pub enum KnowledgeSubcommand {
     },
     /// Delete a knowledge entry
     Delete {
+        path: String,
+        #[arg(long)]
+        namespace: Option<String>,
+    },
+    /// Archive a knowledge entry
+    Archive {
+        path: String,
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Unarchive a knowledge entry
+    Unarchive {
         path: String,
         #[arg(long)]
         namespace: Option<String>,
@@ -184,6 +200,7 @@ pub async fn run(
             path_prefix,
             namespace,
             orphaned,
+            archived,
             after,
             limit,
         } => {
@@ -202,6 +219,9 @@ pub async fn run(
             }
             if let Some(o) = orphaned {
                 qs.push(format!("orphaned={o}"));
+            }
+            if *archived {
+                qs.push("archived=true".to_string());
             }
             if let Some(a) = after {
                 qs.push(format!("after={a}"));
@@ -321,6 +341,53 @@ pub async fn run(
                 println!("{{\"ok\": true}}");
             } else {
                 println!("Knowledge entry '{path}' deleted.");
+            }
+        }
+
+        KnowledgeSubcommand::Archive {
+            path,
+            namespace,
+            reason,
+        } => {
+            let mut qs = vec![];
+            if let Some(ns) = namespace {
+                qs.push(format!("namespace={ns}"));
+            }
+            if let Some(r) = reason {
+                qs.push(format!("reason={r}"));
+            }
+            let query = if qs.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", qs.join("&"))
+            };
+            let v = client
+                .post_project_json(&format!("/knowledge/{path}/archive{query}"), None)
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Knowledge entry '{path}' archived.");
+            }
+        }
+
+        KnowledgeSubcommand::Unarchive { path, namespace } => {
+            let mut qs = vec![];
+            if let Some(ns) = namespace {
+                qs.push(format!("namespace={ns}"));
+            }
+            let query = if qs.is_empty() {
+                String::new()
+            } else {
+                format!("?{}", qs.join("&"))
+            };
+            let v = client
+                .post_project_json(&format!("/knowledge/{path}/unarchive{query}"), None)
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Knowledge entry '{path}' unarchived.");
             }
         }
 

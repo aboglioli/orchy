@@ -104,6 +104,7 @@ impl GetAgentSummary {
                     project: Some(agent.project().clone()),
                     namespace: Some(agent.namespace().clone()),
                     status: Some(TaskStatus::Pending),
+                    include_archived: None,
                     ..Default::default()
                 },
                 PageParams::unbounded(),
@@ -128,6 +129,7 @@ impl GetAgentSummary {
                     project: Some(agent.project().clone()),
                     include_org_level: true,
                     kind: Some(KnowledgeKind::Skill),
+                    include_archived: None,
                     ..Default::default()
                 },
                 PageParams::unbounded(),
@@ -146,6 +148,7 @@ impl GetAgentSummary {
                     project: Some(agent.project().clone()),
                     include_org_level: false,
                     kind: Some(KnowledgeKind::Context),
+                    include_archived: None,
                     ..Default::default()
                 },
                 PageParams::unbounded(),

@@ -102,6 +102,7 @@ impl GetNextTask {
                 namespace: namespace.clone(),
                 status: Some(TaskStatus::Pending),
                 assigned_role: Some(role.clone()),
+                include_archived: None,
                 ..Default::default()
             };
             let mut tasks = self

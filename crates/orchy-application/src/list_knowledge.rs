@@ -20,6 +20,7 @@ pub struct ListKnowledgeCommand {
     pub after: Option<String>,
     pub limit: Option<u32>,
     pub orphaned: Option<bool>,
+    pub archived: Option<bool>,
 }
 
 pub struct ListKnowledge {
@@ -65,6 +66,7 @@ impl ListKnowledge {
             tag: cmd.tag,
             path_prefix: cmd.path_prefix,
             orphaned: cmd.orphaned,
+            include_archived: cmd.archived,
             ..Default::default()
         };
 

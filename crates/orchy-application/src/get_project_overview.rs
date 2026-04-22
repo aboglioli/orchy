@@ -84,6 +84,7 @@ impl GetProjectOverview {
                     org_id: Some(org_id.clone()),
                     project: Some(project_id.clone()),
                     namespace: namespace.clone(),
+                    include_archived: None,
                     ..Default::default()
                 },
                 PageParams::unbounded(),
@@ -103,6 +104,7 @@ impl GetProjectOverview {
                     include_org_level: true,
                     kind: Some(KnowledgeKind::Skill),
                     namespace: namespace.clone(),
+                    include_archived: None,
                     ..Default::default()
                 },
                 PageParams::unbounded(),
@@ -122,6 +124,7 @@ impl GetProjectOverview {
                     include_org_level: true,
                     kind: Some(KnowledgeKind::Overview),
                     namespace: namespace.clone(),
+                    include_archived: None,
                     ..Default::default()
                 },
                 PageParams::unbounded(),

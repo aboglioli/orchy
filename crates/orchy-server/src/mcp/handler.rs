@@ -316,7 +316,9 @@ pending → claimed → in_progress → completed/failed. \
 Always claim before starting. If another agent claimed it, move on. \
 `split_task` breaks a task into subtasks — parent auto-completes when all finish. \
 `touch_task` keeps a claimed task alive (staleness). `merge_tasks` consolidates related tasks. `delegate_task` creates subtasks \
-without blocking the parent. Use `tag_task` / `untag_task` for labels.
+without blocking the parent. Use `tag_task` / `untag_task` for labels. \
+Completed, failed, or cancelled tasks can be archived with `archive_task` to reduce listing noise, \
+and restored with `unarchive_task`. Archived tasks do not appear in normal listings but remain reachable via graph queries.
 
 **Acceptance criteria:** Every task can have `acceptance_criteria` — a clear definition \
 of done. Set on create (`post_task`) or update (`update_task`). \
@@ -338,7 +340,9 @@ knowledge entries together. Use this instead of separate fetches to avoid N+1 pa
   `patch_knowledge_metadata` updates metadata only. \
   Use `change_knowledge_kind` to change an entry's kind; \
   `promote_knowledge` to promote a decision/discovery to a skill; \
-  `consolidate_knowledge` to merge multiple entries into one. (not via `write_knowledge` updates).
+  `consolidate_knowledge` to merge multiple entries into one. (not via `write_knowledge` updates). \
+  Knowledge entries may be archived explicitly with `archive_knowledge` and restored with `unarchive_knowledge`. \
+  Consolidation and promotion auto-archive their source knowledge entries. Archived knowledge stays reachable through graph queries and explicit reads, but is hidden from normal listings.
 - `send_message` to coordinate (by agent ID, `role:name`, or `broadcast`).
 - `lock_resource` before editing shared files to prevent conflicts.
 - `poll_updates` + `check_mailbox` on each heartbeat cycle for reactivity.

@@ -1,19 +1,19 @@
 use orchy_application::{
-    AddDependencyCommand, AssignTaskCommand, CancelTaskCommand, ClaimTaskCommand,
-    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, GetTaskCommand,
-    GetTaskWithContextCommand, ListTasksCommand, MergeTasksCommand, MoveTaskCommand,
-    PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand, ReplaceTaskCommand,
-    SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand, UnblockTaskCommand,
-    UntagTaskCommand, UpdateTaskCommand,
+    AddDependencyCommand, ArchiveTaskCommand, AssignTaskCommand, CancelTaskCommand,
+    ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand,
+    GetNextTaskCommand, GetTaskCommand, GetTaskWithContextCommand, ListTasksCommand,
+    MergeTasksCommand, MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand,
+    RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
+    TagTaskCommand, UnarchiveTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
 };
 
 use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
 use crate::mcp::params::{
-    AddDependencyParams, AssignTaskParams, CancelTaskParams, ClaimTaskParams, CompleteTaskParams,
-    DelegateTaskParams, FailTaskParams, GetNextTaskParams, GetTaskParams, ListTagsParams,
-    ListTasksParams, MergeTasksParams, MoveTaskParams, PostTaskParams, ReleaseTaskParams,
-    RemoveDependencyParams, ReplaceTaskParams, SplitTaskParams, StartTaskParams, TagTaskParams,
-    UnblockTaskParams, UntagTaskParams, UpdateTaskParams,
+    AddDependencyParams, ArchiveTaskParams, AssignTaskParams, CancelTaskParams, ClaimTaskParams,
+    CompleteTaskParams, DelegateTaskParams, FailTaskParams, GetNextTaskParams, GetTaskParams,
+    ListTagsParams, ListTasksParams, MergeTasksParams, MoveTaskParams, PostTaskParams,
+    ReleaseTaskParams, RemoveDependencyParams, ReplaceTaskParams, SplitTaskParams, StartTaskParams,
+    TagTaskParams, UnarchiveTaskParams, UnblockTaskParams, UntagTaskParams, UpdateTaskParams,
 };
 
 use super::parse_relation_options;
@@ -140,6 +140,7 @@ pub(super) async fn list_tasks(
         tag: None,
         after: params.after,
         limit: params.limit,
+        archived: params.archived,
     };
 
     match h.container.app.list_tasks.execute(cmd).await {
@@ -289,6 +290,37 @@ pub(super) async fn cancel_task(
 
     match h.container.app.cancel_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
+        Err(e) => Err(mcp_error(e)),
+    }
+}
+
+pub(super) async fn archive_task(
+    h: &OrchyHandler,
+    params: ArchiveTaskParams,
+) -> Result<String, String> {
+    let (_agent_id, org, _project, _namespace) = h.require_session().await?;
+    let cmd = ArchiveTaskCommand {
+        org_id: org.to_string(),
+        task_id: params.task_id,
+        reason: params.reason,
+    };
+    match h.container.app.archive_task.execute(cmd).await {
+        Ok(response) => Ok(to_json(&response)),
+        Err(e) => Err(mcp_error(e)),
+    }
+}
+
+pub(super) async fn unarchive_task(
+    h: &OrchyHandler,
+    params: UnarchiveTaskParams,
+) -> Result<String, String> {
+    let (_agent_id, org, _project, _namespace) = h.require_session().await?;
+    let cmd = UnarchiveTaskCommand {
+        org_id: org.to_string(),
+        task_id: params.task_id,
+    };
+    match h.container.app.unarchive_task.execute(cmd).await {
+        Ok(response) => Ok(to_json(&response)),
         Err(e) => Err(mcp_error(e)),
     }
 }

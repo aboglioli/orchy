@@ -4,7 +4,9 @@ use chrono::Utc;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::graph::{Edge, EdgeStore, RelationType, TraversalDirection};
-use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
+use orchy_core::knowledge::{
+    Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgePath, KnowledgeStore,
+};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -233,6 +235,7 @@ async fn task_save_overwrites_existing() {
         last_activity_at: Utc::now(),
         tags: vec![],
         result_summary: Some("done".into()),
+        archived_at: None,
         created_by: None,
         created_at: task.created_at(),
         updated_at: task.updated_at(),
@@ -576,6 +579,85 @@ async fn task_list_filters_by_assigned_to() {
 }
 
 #[tokio::test]
+async fn task_archive_and_unarchive() {
+    let store = backend();
+    let mut task = Task::new(
+        org("default"),
+        proj("test-project"),
+        Namespace::root(),
+        "Archive test task".to_string(),
+        "Description".to_string(),
+        None,
+        Priority::Normal,
+        vec!["coder".to_string()],
+        None,
+        false,
+    )
+    .unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+
+    let agent_id = "01234567-89ab-cdef-0123-456789abcdef"
+        .parse::<AgentId>()
+        .unwrap();
+    let mut task = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
+    task.claim(agent_id.clone()).unwrap();
+    task.start(&agent_id).unwrap();
+    task.complete(Some("done".into())).unwrap();
+    TaskStore::save(&store, &mut task).await.unwrap();
+
+    let mut fetched = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
+    fetched.archive(Some("completed".into())).unwrap();
+    TaskStore::save(&store, &mut fetched).await.unwrap();
+
+    let archived = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(archived.is_archived());
+    assert!(archived.archived_at().is_some());
+
+    let filter = TaskFilter {
+        org_id: Some(org("default")),
+        project: Some(proj("test-project")),
+        include_archived: Some(false),
+        ..Default::default()
+    };
+    let page = TaskStore::list(&store, filter, PageParams::default())
+        .await
+        .unwrap();
+    assert!(page.items.iter().all(|task| !task.is_archived()));
+
+    let filter = TaskFilter {
+        org_id: Some(org("default")),
+        project: Some(proj("test-project")),
+        include_archived: Some(true),
+        ..Default::default()
+    };
+    let page = TaskStore::list(&store, filter, PageParams::default())
+        .await
+        .unwrap();
+    assert!(page.items.iter().any(|task| task.is_archived()));
+
+    let mut restored = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
+    restored.unarchive().unwrap();
+    TaskStore::save(&store, &mut restored).await.unwrap();
+    let active = TaskStore::find_by_id(&store, &task.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!active.is_archived());
+}
+
+#[tokio::test]
 async fn knowledge_search_fts_finds_content() {
     let store = backend();
     let o = org("default");
@@ -598,6 +680,111 @@ async fn knowledge_search_fts_finds_content() {
         .unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].0.path().as_str(), "auth/jwt");
+}
+
+#[tokio::test]
+async fn knowledge_archive_and_unarchive() {
+    let store = backend();
+    let mut entry = Knowledge::new(
+        org("default"),
+        Some(proj("test-project")),
+        Namespace::root(),
+        "test-arch".parse::<KnowledgePath>().unwrap(),
+        KnowledgeKind::Note,
+        "archive test".to_string(),
+        "content".to_string(),
+        vec![],
+        Default::default(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    let mut fetched = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    fetched.archive(Some("test reason".into())).unwrap();
+    KnowledgeStore::save(&store, &mut fetched).await.unwrap();
+
+    let archived = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(archived.is_archived());
+    assert!(archived.archived_at().is_some());
+
+    let filter = KnowledgeFilter {
+        org_id: Some(org("default")),
+        project: Some(proj("test-project")),
+        include_archived: Some(false),
+        ..Default::default()
+    };
+    let page = KnowledgeStore::list(&store, filter, PageParams::default())
+        .await
+        .unwrap();
+    assert!(page.items.iter().all(|entry| !entry.is_archived()));
+
+    let filter = KnowledgeFilter {
+        org_id: Some(org("default")),
+        project: Some(proj("test-project")),
+        include_archived: Some(true),
+        ..Default::default()
+    };
+    let page = KnowledgeStore::list(&store, filter, PageParams::default())
+        .await
+        .unwrap();
+    assert!(page.items.iter().any(|entry| entry.is_archived()));
+
+    let mut restored = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    restored.unarchive().unwrap();
+    KnowledgeStore::save(&store, &mut restored).await.unwrap();
+    let active = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!active.is_archived());
+}
+
+#[tokio::test]
+async fn knowledge_find_by_path_returns_archived() {
+    let store = backend();
+    let mut entry = Knowledge::new(
+        org("default"),
+        Some(proj("test-project")),
+        Namespace::root(),
+        "test-arch-path".parse::<KnowledgePath>().unwrap(),
+        KnowledgeKind::Note,
+        "find_by_path archive test".to_string(),
+        "content".to_string(),
+        vec![],
+        Default::default(),
+    )
+    .unwrap();
+    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+
+    // Archive
+    let mut fetched = KnowledgeStore::find_by_id(&store, &entry.id())
+        .await
+        .unwrap()
+        .unwrap();
+    fetched.archive(None).unwrap();
+    KnowledgeStore::save(&store, &mut fetched).await.unwrap();
+
+    // find_by_path still returns archived entries (for edge traversal)
+    let found = KnowledgeStore::find_by_path(
+        &store,
+        &org("default"),
+        Some(&proj("test-project")),
+        &Namespace::root(),
+        &"test-arch-path".parse::<KnowledgePath>().unwrap(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(found.is_archived());
 }
 
 #[tokio::test]

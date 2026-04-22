@@ -46,14 +46,15 @@ impl KnowledgeStore for SqliteBackend {
             entry.embedding_dimensions().map(|d| d as i64),
             entry.valid_from().map(|d| d.to_rfc3339()),
             entry.valid_until().map(|d| d.to_rfc3339()),
+            entry.archived_at().map(|d| d.to_rfc3339()),
             entry.created_at().to_rfc3339(),
             entry.updated_at().to_rfc3339(),
         ];
 
         if let Some(pv) = entry.persisted_version() {
             let rows = tx.execute(
-                "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, metadata = ?11, embedding = ?12, embedding_model = ?13, embedding_dimensions = ?14, valid_from = ?15, valid_until = ?16, created_at = ?17, updated_at = ?18
-                 WHERE id = ?1 AND version = ?19",
+                "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, metadata = ?11, embedding = ?12, embedding_model = ?13, embedding_dimensions = ?14, valid_from = ?15, valid_until = ?16, archived_at = ?17, created_at = ?18, updated_at = ?19
+                 WHERE id = ?1 AND version = ?20",
                 rusqlite::params![
                     entry.id().to_string(),
                     entry.org_id().to_string(),
@@ -71,6 +72,7 @@ impl KnowledgeStore for SqliteBackend {
                     entry.embedding_dimensions().map(|d| d as i64),
                     entry.valid_from().map(|d| d.to_rfc3339()),
                     entry.valid_until().map(|d| d.to_rfc3339()),
+                    entry.archived_at().map(|d| d.to_rfc3339()),
                     entry.created_at().to_rfc3339(),
                     entry.updated_at().to_rfc3339(),
                     pv.as_u64() as i64,
@@ -98,8 +100,8 @@ impl KnowledgeStore for SqliteBackend {
             }
         } else {
             tx.execute(
-                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
                 params,
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -119,7 +121,7 @@ impl KnowledgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at
+                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
                  FROM knowledge_entries WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -144,7 +146,7 @@ impl KnowledgeStore for SqliteBackend {
         let result = if let Some(proj) = project {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at
+                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
                      FROM knowledge_entries WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND path = ?4",
                 )
                 .map_err(|e| Error::Store(e.to_string()))?;
@@ -163,7 +165,7 @@ impl KnowledgeStore for SqliteBackend {
         } else {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at
+                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
                      FROM knowledge_entries WHERE organization_id = ?1 AND project IS NULL AND namespace = ?2 AND path = ?3",
                 )
                 .map_err(|e| Error::Store(e.to_string()))?;
@@ -183,7 +185,7 @@ impl KnowledgeStore for SqliteBackend {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at FROM knowledge_entries WHERE 1=1",
+            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at FROM knowledge_entries WHERE 1=1",
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
@@ -228,6 +230,9 @@ impl KnowledgeStore for SqliteBackend {
         }
         if !filter.include_expired.unwrap_or(false) {
             sql.push_str(" AND (valid_until IS NULL OR valid_until > datetime('now'))");
+        }
+        if !filter.include_archived.unwrap_or(false) {
+            sql.push_str(" AND archived_at IS NULL");
         }
         if let Some(orphaned) = filter.orphaned {
             let exists_sql = "EXISTS (
@@ -339,7 +344,7 @@ impl KnowledgeStore for SqliteBackend {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
-            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, created_at, updated_at \
+            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at \
              FROM knowledge_entries WHERE id IN ({placeholders})"
         );
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
@@ -382,7 +387,7 @@ fn search_knowledge_vec(
     let emb_bytes = embedding_to_bytes(embedding);
 
     let mut sql = String::from(
-        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.archived_at, e.created_at, e.updated_at
          FROM knowledge_vec kv
          JOIN knowledge_entries e ON e.rowid = kv.rowid
          WHERE kv.embedding MATCH ?1 AND kv.k = ?2 AND e.organization_id = ?3",
@@ -433,7 +438,7 @@ fn search_knowledge_fts(
     limit: usize,
 ) -> Result<Vec<Knowledge>> {
     let mut sql = String::from(
-        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.archived_at, e.created_at, e.updated_at
          FROM knowledge_entries_fts
          JOIN knowledge_entries AS e ON e.id = knowledge_entries_fts.knowledge_id
          WHERE knowledge_entries_fts MATCH ?1 AND e.organization_id = ?2",
@@ -480,7 +485,7 @@ fn search_knowledge_like(
     limit: usize,
 ) -> Result<Vec<Knowledge>> {
     let mut sql = String::from(
-        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.created_at, e.updated_at
+        "SELECT e.id, e.organization_id, e.project, e.namespace, e.path, e.kind, e.title, e.content, e.tags, e.version, e.metadata, e.embedding, e.embedding_model, e.embedding_dimensions, e.valid_from, e.valid_until, e.archived_at, e.created_at, e.updated_at
          FROM knowledge_entries e
          WHERE e.organization_id = ?1 AND (e.title LIKE ?2 OR e.content LIKE ?2 OR e.path LIKE ?2)",
     );
@@ -534,8 +539,9 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
     let embedding_dimensions: Option<i64> = row.get(13)?;
     let valid_from_str: Option<String> = row.get(14)?;
     let valid_until_str: Option<String> = row.get(15)?;
-    let created_at_str: String = row.get(16)?;
-    let updated_at_str: String = row.get(17)?;
+    let archived_at_str: Option<String> = row.get(16)?;
+    let created_at_str: String = row.get(17)?;
+    let updated_at_str: String = row.get(18)?;
 
     let id = KnowledgeId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -599,6 +605,10 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
         .as_ref()
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.with_timezone(&Utc));
+    let archived_at = archived_at_str
+        .as_ref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.with_timezone(&Utc));
 
     Ok(Knowledge::restore(RestoreKnowledge {
         id,
@@ -617,6 +627,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
         embedding_dimensions: embedding_dimensions.map(|d| d as u32),
         valid_from,
         valid_until,
+        archived_at,
         created_at,
         updated_at,
     }))

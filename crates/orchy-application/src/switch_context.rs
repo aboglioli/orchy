@@ -106,6 +106,7 @@ impl SwitchContext {
                 TaskFilter {
                     assigned_to: Some(agent_id.clone()),
                     project: Some(project.clone()),
+                    include_archived: None,
                     ..Default::default()
                 },
                 PageParams::unbounded(),

@@ -193,6 +193,8 @@ impl MaterializeNeighborhood {
                             status: t.status().to_string(),
                             priority: t.priority().to_string(),
                             assigned_to: t.assigned_to().map(|id| id.to_string()),
+                            archived: t.is_archived(),
+                            archived_at: t.archived_at(),
                         })
                     })?,
                     ResourceKind::Knowledge => knowledge_map.get(&peer_id).map(|k| {
@@ -202,6 +204,8 @@ impl MaterializeNeighborhood {
                             entry_kind: k.kind().to_string(),
                             path: k.path().to_string(),
                             tags: k.tags().to_vec(),
+                            archived: k.is_archived(),
+                            archived_at: k.archived_at(),
                         })
                     })?,
                     ResourceKind::Agent => agent_map.get(&peer_id).map(|a| {

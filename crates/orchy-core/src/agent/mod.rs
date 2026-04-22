@@ -78,7 +78,6 @@ pub trait AgentStore: Send + Sync {
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
     id: AgentId,

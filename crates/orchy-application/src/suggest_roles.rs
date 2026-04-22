@@ -46,6 +46,7 @@ impl SuggestRoles {
                 project: Some(project.clone()),
                 namespace: namespace.clone(),
                 status: Some(*status),
+                include_archived: None,
                 ..Default::default()
             };
             let tasks = self

@@ -17,6 +17,8 @@ pub const TOPIC_TAGGED: &str = "task.tagged";
 pub const TOPIC_TAG_REMOVED: &str = "task.tag_removed";
 pub const TOPIC_MOVED: &str = "task.moved";
 pub const TOPIC_UPDATED: &str = "task.updated";
+pub const TOPIC_ARCHIVED: &str = "task.archived";
+pub const TOPIC_RESTORED: &str = "task.restored";
 
 #[derive(Serialize)]
 pub struct TaskCreatedPayload {
@@ -108,4 +110,15 @@ pub struct TaskUpdatedPayload {
     pub description: Option<String>,
     pub acceptance_criteria: Option<String>,
     pub priority: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct TaskArchivedPayload {
+    pub task_id: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct TaskRestoredPayload {
+    pub task_id: String,
 }

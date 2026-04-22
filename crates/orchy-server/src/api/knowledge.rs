@@ -9,10 +9,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use orchy_application::{
-    AppendKnowledgeCommand, ChangeKnowledgeKindCommand, DeleteKnowledgeCommand,
-    ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
+    AppendKnowledgeCommand, ArchiveKnowledgeCommand, ChangeKnowledgeKindCommand,
+    DeleteKnowledgeCommand, ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
     PatchKnowledgeMetadataCommand, ReadKnowledgeCommand, RenameKnowledgeCommand,
-    SearchKnowledgeCommand, TagKnowledgeCommand, UntagKnowledgeCommand, WriteKnowledgeCommand,
+    SearchKnowledgeCommand, TagKnowledgeCommand, UnarchiveKnowledgeCommand, UntagKnowledgeCommand,
+    WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 use orchy_core::organization::OrganizationId;
@@ -48,6 +49,7 @@ pub struct ListQuery {
     pub after: Option<String>,
     pub limit: Option<u32>,
     pub orphaned: Option<bool>,
+    pub archived: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -133,6 +135,11 @@ pub struct ChangeKindBody {
 }
 
 #[derive(Deserialize)]
+pub struct ArchiveBody {
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct PatchMetadataBody {
     #[serde(alias = "ns")]
     pub namespace: Option<String>,
@@ -169,6 +176,7 @@ pub async fn list(
         after: query.after,
         limit: query.limit,
         orphaned: query.orphaned,
+        archived: query.archived,
     };
 
     let page = container
@@ -529,6 +537,73 @@ pub async fn rename(
     })?))
 }
 
+pub async fn archive(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, path)): Path<(String, String, String)>,
+    Query(query): Query<NamespaceQuery>,
+    Json(body): Json<ArchiveBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let cmd = ArchiveKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: query.namespace,
+        path,
+        reason: body.reason,
+    };
+
+    let result = container
+        .app
+        .archive_knowledge
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&result).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}
+
+pub async fn unarchive(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, path)): Path<(String, String, String)>,
+    Query(query): Query<NamespaceQuery>,
+    Json(_body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let cmd = UnarchiveKnowledgeCommand {
+        org_id: org,
+        project,
+        namespace: query.namespace,
+        path,
+    };
+
+    let result = container
+        .app
+        .unarchive_knowledge
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::to_value(&result).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}
+
 pub async fn change_kind(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -701,6 +776,30 @@ pub async fn knowledge_action(
             State(container),
             auth,
             Path((org, project, path.to_string())),
+            Json(json),
+        )
+        .await;
+    }
+    if let Some(path) = full_path.strip_suffix("/archive") {
+        let json: ArchiveBody = serde_json::from_slice(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return archive(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Query(NamespaceQuery { namespace: None }),
+            Json(json),
+        )
+        .await;
+    }
+    if let Some(path) = full_path.strip_suffix("/unarchive") {
+        let json = serde_json::from_slice::<serde_json::Value>(&body)
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
+        return unarchive(
+            State(container),
+            auth,
+            Path((org, project, path.to_string())),
+            Query(NamespaceQuery { namespace: None }),
             Json(json),
         )
         .await;

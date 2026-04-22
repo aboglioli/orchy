@@ -117,6 +117,7 @@ impl RegisterAgent {
                     assigned_role: None,
                     tag: None,
                     namespace: Some(namespace.clone()),
+                    include_archived: None,
                 },
                 PageParams::unbounded(),
             )
@@ -133,6 +134,7 @@ impl RegisterAgent {
                     assigned_role: None,
                     tag: None,
                     namespace: Some(namespace.clone()),
+                    include_archived: None,
                 },
                 PageParams::unbounded(),
             )

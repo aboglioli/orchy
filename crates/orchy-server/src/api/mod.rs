@@ -249,6 +249,14 @@ pub fn router() -> Router<Arc<Container>> {
             post(tasks::release),
         )
         .route(
+            "/organizations/{org}/projects/{project}/tasks/{id}/archive",
+            post(tasks::archive_task),
+        )
+        .route(
+            "/organizations/{org}/projects/{project}/tasks/{id}/unarchive",
+            post(tasks::unarchive_task),
+        )
+        .route(
             "/organizations/{org}/projects/{project}/tasks/{id}/unblock",
             post(tasks::unblock),
         )
@@ -336,6 +344,14 @@ pub fn router() -> Router<Arc<Container>> {
         .route(
             "/organizations/{org}/projects/{project}/knowledge/consolidate",
             post(knowledge::consolidate),
+        )
+        .route(
+            "/organizations/{org}/projects/{project}/knowledge/{*path}/archive",
+            post(knowledge::archive),
+        )
+        .route(
+            "/organizations/{org}/projects/{project}/knowledge/{*path}/unarchive",
+            post(knowledge::unarchive),
         )
         .route(
             "/organizations/{org}/projects/{project}/knowledge/{*path}",

@@ -134,7 +134,9 @@ pub async fn run(
             let project_qs = format!("&project={}", client.project);
             let sep = if query.is_empty() { "?" } else { "&" };
             let v = client
-                .get_json(&format!("/agents/{alias}/sent-messages{query}{sep}{project_qs}"))
+                .get_json(&format!(
+                    "/agents/{alias}/sent-messages{query}{sep}{project_qs}"
+                ))
                 .await?;
             if config.json {
                 output::print_json(config, &v);

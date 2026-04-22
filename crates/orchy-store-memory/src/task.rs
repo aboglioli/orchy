@@ -72,6 +72,9 @@ impl TaskStore for MemoryBackend {
                         return false;
                     }
                 }
+                if !filter.include_archived.unwrap_or(false) && t.is_archived() {
+                    return false;
+                }
                 true
             })
             .cloned()

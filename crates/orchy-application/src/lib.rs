@@ -57,6 +57,7 @@ mod suggest_roles;
 mod switch_context;
 
 // Task lifecycle
+mod archive_task;
 mod assign_task;
 mod cancel_task;
 mod claim_task;
@@ -70,6 +71,7 @@ mod post_task;
 mod release_task;
 mod start_task;
 mod touch_task;
+mod unarchive_task;
 mod unblock_task;
 mod update_task;
 
@@ -96,6 +98,7 @@ mod send_message;
 
 // Knowledge
 mod append_knowledge;
+mod archive_knowledge;
 mod change_knowledge_kind;
 mod consolidate_knowledge;
 mod delete_knowledge;
@@ -108,6 +111,7 @@ mod read_knowledge;
 mod rename_knowledge;
 mod search_knowledge;
 mod tag_knowledge;
+mod unarchive_knowledge;
 mod untag_knowledge;
 mod write_knowledge;
 
@@ -151,6 +155,7 @@ pub use resolve_agent::resolve_agent;
 pub use suggest_roles::{SuggestRoles, SuggestRolesCommand};
 pub use switch_context::{SwitchContext, SwitchContextCommand};
 
+pub use archive_task::{ArchiveTask, ArchiveTaskCommand};
 pub use assign_task::{AssignTask, AssignTaskCommand};
 pub use cancel_task::{CancelTask, CancelTaskCommand};
 pub use claim_task::{ClaimTask, ClaimTaskCommand};
@@ -164,6 +169,7 @@ pub use post_task::{PostTask, PostTaskCommand};
 pub use release_task::{ReleaseTask, ReleaseTaskCommand};
 pub use start_task::{StartTask, StartTaskCommand};
 pub use touch_task::{TouchTask, TouchTaskCommand};
+pub use unarchive_task::{UnarchiveTask, UnarchiveTaskCommand};
 pub use unblock_task::{UnblockTask, UnblockTaskCommand};
 pub use update_task::{UpdateTask, UpdateTaskCommand};
 
@@ -186,6 +192,7 @@ pub use mark_read::{MarkRead, MarkReadCommand};
 pub use send_message::{SendMessage, SendMessageCommand};
 
 pub use append_knowledge::{AppendKnowledge, AppendKnowledgeCommand};
+pub use archive_knowledge::{ArchiveKnowledge, ArchiveKnowledgeCommand};
 pub use change_knowledge_kind::{ChangeKnowledgeKind, ChangeKnowledgeKindCommand};
 pub use consolidate_knowledge::{ConsolidateKnowledge, ConsolidateKnowledgeCommand};
 pub use delete_knowledge::{DeleteKnowledge, DeleteKnowledgeCommand};
@@ -199,6 +206,7 @@ pub use read_knowledge::{ReadKnowledge, ReadKnowledgeCommand, ReadKnowledgeRespo
 pub use rename_knowledge::{RenameKnowledge, RenameKnowledgeCommand};
 pub use search_knowledge::{SearchKnowledge, SearchKnowledgeCommand};
 pub use tag_knowledge::{TagKnowledge, TagKnowledgeCommand};
+pub use unarchive_knowledge::{UnarchiveKnowledge, UnarchiveKnowledgeCommand};
 pub use untag_knowledge::{UntagKnowledge, UntagKnowledgeCommand};
 pub use write_knowledge::{WriteKnowledge, WriteKnowledgeCommand};
 
@@ -265,6 +273,8 @@ pub struct Application {
     pub fail_task: FailTask,
     pub cancel_task: CancelTask,
     pub release_task: ReleaseTask,
+    pub archive_task: ArchiveTask,
+    pub unarchive_task: UnarchiveTask,
     pub update_task: UpdateTask,
     pub assign_task: AssignTask,
     pub unblock_task: UnblockTask,
@@ -296,6 +306,8 @@ pub struct Application {
     pub list_knowledge: ListKnowledge,
     pub search_knowledge: SearchKnowledge,
     pub delete_knowledge: DeleteKnowledge,
+    pub archive_knowledge: ArchiveKnowledge,
+    pub unarchive_knowledge: UnarchiveKnowledge,
     pub append_knowledge: AppendKnowledge,
     pub rename_knowledge: RenameKnowledge,
     pub move_knowledge: MoveKnowledge,
@@ -400,6 +412,8 @@ impl Application {
             fail_task: FailTask::new(tasks.clone(), edges.clone()),
             cancel_task: CancelTask::new(tasks.clone(), edges.clone()),
             release_task: ReleaseTask::new(tasks.clone()),
+            archive_task: ArchiveTask::new(tasks.clone()),
+            unarchive_task: UnarchiveTask::new(tasks.clone()),
             update_task: UpdateTask::new(tasks.clone()),
             assign_task: AssignTask::new(agents.clone(), tasks.clone()),
             unblock_task: UnblockTask::new(tasks.clone()),
@@ -439,6 +453,8 @@ impl Application {
                 edges.clone(),
             ),
             delete_knowledge: DeleteKnowledge::new(knowledge.clone(), edges.clone()),
+            archive_knowledge: ArchiveKnowledge::new(knowledge.clone()),
+            unarchive_knowledge: UnarchiveKnowledge::new(knowledge.clone()),
             append_knowledge: AppendKnowledge::new(knowledge.clone(), embeddings.clone()),
             rename_knowledge: RenameKnowledge::new(knowledge.clone()),
             move_knowledge: MoveKnowledge::new(knowledge.clone()),

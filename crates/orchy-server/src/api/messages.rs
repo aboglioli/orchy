@@ -80,7 +80,11 @@ async fn resolve_agent_id_for_messages(
             .await
             .map_err(ApiError::from)?
             .ok_or_else(|| {
-                ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", "agent not found".to_string())
+                ApiError(
+                    StatusCode::NOT_FOUND,
+                    "NOT_FOUND",
+                    "agent not found".to_string(),
+                )
             })?;
         if agent.org_id() != org {
             return Err(ApiError(
@@ -115,13 +119,8 @@ pub async fn inbox_for_agent(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let (agent_id, project) = resolve_agent_id_for_messages(
-        &container,
-        &org_id,
-        &id,
-        query.project.as_deref(),
-    )
-    .await?;
+    let (agent_id, project) =
+        resolve_agent_id_for_messages(&container, &org_id, &id, query.project.as_deref()).await?;
 
     let cmd = CheckMailboxCommand {
         agent_id,
@@ -157,13 +156,8 @@ pub async fn sent_for_agent(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let (agent_id, project) = resolve_agent_id_for_messages(
-        &container,
-        &org_id,
-        &id,
-        query.project.as_deref(),
-    )
-    .await?;
+    let (agent_id, project) =
+        resolve_agent_id_for_messages(&container, &org_id, &id, query.project.as_deref()).await?;
 
     let cmd = CheckSentMessagesCommand {
         agent_id,
@@ -243,13 +237,8 @@ pub async fn mark_read(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let (agent_id, _) = resolve_agent_id_for_messages(
-        &container,
-        &org_id,
-        &id,
-        query.project.as_deref(),
-    )
-    .await?;
+    let (agent_id, _) =
+        resolve_agent_id_for_messages(&container, &org_id, &id, query.project.as_deref()).await?;
 
     let cmd = MarkReadCommand {
         agent_id,

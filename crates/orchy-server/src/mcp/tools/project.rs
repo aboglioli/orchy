@@ -60,6 +60,7 @@ pub(super) async fn get_project(
         tag: None,
         after: None,
         limit: None,
+        archived: None,
     };
     let all_tasks = h
         .container

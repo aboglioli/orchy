@@ -111,6 +111,9 @@ impl KnowledgeStore for MemoryBackend {
                             }
                         }
                     }
+                    if !filter.include_archived.unwrap_or(false) && e.is_archived() {
+                        return false;
+                    }
                     true
                 })
                 .cloned()
@@ -165,6 +168,9 @@ impl KnowledgeStore for MemoryBackend {
                     if !e.namespace().starts_with(ns) {
                         return false;
                     }
+                }
+                if e.is_archived() {
+                    return false;
                 }
                 true
             })

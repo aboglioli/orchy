@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use orchy_core::agent::Agent;
@@ -73,6 +74,8 @@ pub struct TaskResponse {
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
     pub created_by: Option<String>,
+    pub archived: bool,
+    pub archived_at: Option<DateTime<Utc>>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -101,6 +104,8 @@ impl From<&Task> for TaskResponse {
             tags: t.tags().to_vec(),
             result_summary: t.result_summary().map(|s| s.to_string()),
             created_by: t.created_by().map(|id| id.to_string()),
+            archived: t.is_archived(),
+            archived_at: t.archived_at(),
             created_at: t.created_at().to_rfc3339(),
             updated_at: t.updated_at().to_rfc3339(),
         }
@@ -146,6 +151,8 @@ pub struct KnowledgeResponse {
     pub tags: Vec<String>,
     pub version: u64,
     pub metadata: HashMap<String, String>,
+    pub archived: bool,
+    pub archived_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valid_from: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -185,6 +192,8 @@ impl From<&Knowledge> for KnowledgeResponse {
             tags: k.tags().to_vec(),
             version: k.version().as_u64(),
             metadata: k.metadata().clone(),
+            archived: k.is_archived(),
+            archived_at: k.archived_at(),
             valid_from: k.valid_from().map(|dt| dt.to_rfc3339()),
             valid_until: k.valid_until().map(|dt| dt.to_rfc3339()),
             created_at: k.created_at().to_rfc3339(),

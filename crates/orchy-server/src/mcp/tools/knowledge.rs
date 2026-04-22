@@ -1,19 +1,21 @@
 use orchy_application::{
-    AppendKnowledgeCommand, AssembleContextCommand, ChangeKnowledgeKindCommand,
-    ConsolidateKnowledgeCommand, DeleteKnowledgeCommand, ImportKnowledgeCommand,
-    ListKnowledgeCommand, MoveKnowledgeCommand, PatchKnowledgeMetadataCommand,
-    PromoteKnowledgeCommand, ReadKnowledgeCommand, RenameKnowledgeCommand, SearchKnowledgeCommand,
-    TagKnowledgeCommand, UntagKnowledgeCommand, WriteKnowledgeCommand,
+    AppendKnowledgeCommand, ArchiveKnowledgeCommand, AssembleContextCommand,
+    ChangeKnowledgeKindCommand, ConsolidateKnowledgeCommand, DeleteKnowledgeCommand,
+    ImportKnowledgeCommand, ListKnowledgeCommand, MoveKnowledgeCommand,
+    PatchKnowledgeMetadataCommand, PromoteKnowledgeCommand, ReadKnowledgeCommand,
+    RenameKnowledgeCommand, SearchKnowledgeCommand, TagKnowledgeCommand, UnarchiveKnowledgeCommand,
+    UntagKnowledgeCommand, WriteKnowledgeCommand,
 };
 use orchy_core::knowledge::KnowledgeKind;
 
 use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
 use crate::mcp::params::{
-    AppendKnowledgeParams, AssembleContextParams, ChangeKnowledgeKindParams,
-    ConsolidateKnowledgeParams, DeleteKnowledgeParams, ImportKnowledgeParams, ListKnowledgeParams,
-    ListKnowledgeTypesParams, MoveKnowledgeParams, PatchKnowledgeMetadataParams,
-    PromoteKnowledgeParams, ReadKnowledgeParams, RenameKnowledgeParams, SearchKnowledgeParams,
-    TagKnowledgeParams, UntagKnowledgeParams, WriteKnowledgeParams,
+    AppendKnowledgeParams, ArchiveKnowledgeParams, AssembleContextParams,
+    ChangeKnowledgeKindParams, ConsolidateKnowledgeParams, DeleteKnowledgeParams,
+    ImportKnowledgeParams, ListKnowledgeParams, ListKnowledgeTypesParams, MoveKnowledgeParams,
+    PatchKnowledgeMetadataParams, PromoteKnowledgeParams, ReadKnowledgeParams,
+    RenameKnowledgeParams, SearchKnowledgeParams, TagKnowledgeParams, UnarchiveKnowledgeParams,
+    UntagKnowledgeParams, WriteKnowledgeParams,
 };
 
 use super::{
@@ -169,6 +171,7 @@ pub(super) async fn list_knowledge(
         after: params.after,
         limit: params.limit,
         orphaned: params.orphaned,
+        archived: params.archived,
     };
 
     match h.container.app.list_knowledge.execute(cmd).await {
@@ -225,6 +228,41 @@ pub(super) async fn delete_knowledge(
 
     match h.container.app.delete_knowledge.execute(cmd).await {
         Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
+        Err(e) => Err(mcp_error(e)),
+    }
+}
+
+pub(super) async fn archive_knowledge(
+    h: &OrchyHandler,
+    params: ArchiveKnowledgeParams,
+) -> Result<String, String> {
+    let (_agent_id, org, project, namespace) = h.require_session().await?;
+    let cmd = ArchiveKnowledgeCommand {
+        org_id: org.to_string(),
+        project: project.to_string(),
+        namespace: Some(namespace.to_string()),
+        path: params.path,
+        reason: params.reason,
+    };
+    match h.container.app.archive_knowledge.execute(cmd).await {
+        Ok(response) => Ok(to_json(&response)),
+        Err(e) => Err(mcp_error(e)),
+    }
+}
+
+pub(super) async fn unarchive_knowledge(
+    h: &OrchyHandler,
+    params: UnarchiveKnowledgeParams,
+) -> Result<String, String> {
+    let (_agent_id, org, project, namespace) = h.require_session().await?;
+    let cmd = UnarchiveKnowledgeCommand {
+        org_id: org.to_string(),
+        project: project.to_string(),
+        namespace: Some(namespace.to_string()),
+        path: params.path,
+    };
+    match h.container.app.unarchive_knowledge.execute(cmd).await {
+        Ok(response) => Ok(to_json(&response)),
         Err(e) => Err(mcp_error(e)),
     }
 }

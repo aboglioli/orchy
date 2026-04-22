@@ -20,6 +20,7 @@ pub struct ListTasksCommand {
     pub tag: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
+    pub archived: Option<bool>,
 }
 
 pub struct ListTasks {
@@ -60,6 +61,7 @@ impl ListTasks {
             status,
             assigned_to,
             tag: cmd.tag,
+            include_archived: cmd.archived,
             ..Default::default()
         };
 

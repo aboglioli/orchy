@@ -8,12 +8,13 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_application::{
-    AddDependencyCommand, AssignTaskCommand, CancelTaskCommand, ClaimTaskCommand,
-    CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetNextTaskCommand, GetTaskCommand,
-    ListTagsCommand, ListTasksCommand, MergeTasksCommand, MoveTaskCommand, PostTaskCommand,
-    ReleaseTaskCommand, RemoveDependencyCommand, ReplaceTaskCommand, SplitTaskCommand,
-    StartTaskCommand, SubtaskInput, TagTaskCommand, TaskResponse, UnblockTaskCommand,
-    UntagTaskCommand, UpdateTaskCommand, resolve_agent,
+    AddDependencyCommand, ArchiveTaskCommand, AssignTaskCommand, CancelTaskCommand,
+    ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand,
+    GetNextTaskCommand, GetTaskCommand, ListTagsCommand, ListTasksCommand, MergeTasksCommand,
+    MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand,
+    ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand,
+    TaskResponse, UnarchiveTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
+    resolve_agent,
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -74,6 +75,7 @@ pub struct ListTasksQuery {
     pub namespace: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
+    pub archived: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -130,6 +132,11 @@ pub struct FailBody {
 
 #[derive(Deserialize)]
 pub struct CancelBody {
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ArchiveTaskBody {
     pub reason: Option<String>,
 }
 
@@ -212,6 +219,7 @@ pub async fn list(
         tag: None,
         after: query.after,
         limit: query.limit,
+        archived: query.archived,
     };
 
     let page = container
@@ -556,6 +564,87 @@ pub async fn cancel(
         .map_err(ApiError::from)?;
 
     Ok(Json(serde_json::to_value(&task).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}
+
+pub async fn archive_task(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, task_id)): Path<(String, String, String)>,
+    Json(body): Json<ArchiveTaskBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let existing = container
+        .app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: task_id.clone(),
+            org_id: None,
+            relations: None,
+        })
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project)?;
+
+    let cmd = ArchiveTaskCommand {
+        org_id: org,
+        task_id,
+        reason: body.reason,
+    };
+    let result = container
+        .app
+        .archive_task
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(Json(serde_json::to_value(&result).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "SERIALIZATION_ERROR",
+            e.to_string(),
+        )
+    })?))
+}
+
+pub async fn unarchive_task(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, project, task_id)): Path<(String, String, String)>,
+    Json(_body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let existing = container
+        .app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: task_id.clone(),
+            org_id: None,
+            relations: None,
+        })
+        .await
+        .map_err(ApiError::from)?;
+    check_task_project(&existing, &project)?;
+
+    let cmd = UnarchiveTaskCommand {
+        org_id: org,
+        task_id,
+    };
+    let result = container
+        .app
+        .unarchive_task
+        .execute(cmd)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(Json(serde_json::to_value(&result).map_err(|e| {
         ApiError(
             StatusCode::INTERNAL_SERVER_ERROR,
             "SERIALIZATION_ERROR",

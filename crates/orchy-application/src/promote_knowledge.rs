@@ -95,6 +95,12 @@ impl PromoteKnowledge {
         )?;
         let _ = self.edges.save(&mut edge).await;
 
+        let source_id = source.id();
+        if let Some(mut src) = self.knowledge.find_by_id(&source_id).await? {
+            src.archive(Some(format!("promoted to skill {}", promoted.path())))?;
+            self.knowledge.save(&mut src).await?;
+        }
+
         Ok(KnowledgeResponse::from(&promoted))
     }
 }

@@ -33,6 +33,8 @@ pub enum TaskSubcommand {
         #[arg(long)]
         namespace: Option<String>,
         #[arg(long)]
+        archived: bool,
+        #[arg(long)]
         after: Option<String>,
         #[arg(long)]
         limit: Option<u32>,
@@ -87,6 +89,14 @@ pub enum TaskSubcommand {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Archive a completed/failed/cancelled task
+    Archive {
+        task_id: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Unarchive a task
+    Unarchive { task_id: String },
     /// Release a claimed/in-progress task
     Release { id: String },
     /// Unblock a blocked task
@@ -213,6 +223,7 @@ pub async fn run(
         TaskSubcommand::List {
             status,
             namespace,
+            archived,
             after,
             limit,
         } => {
@@ -222,6 +233,9 @@ pub async fn run(
             }
             if let Some(ns) = namespace {
                 qs.push(format!("namespace={ns}"));
+            }
+            if *archived {
+                qs.push("archived=true".to_string());
             }
             if let Some(a) = after {
                 qs.push(format!("after={a}"));
@@ -397,6 +411,32 @@ pub async fn run(
                 output::print_json(config, &v);
             } else {
                 println!("Task {id} cancelled.");
+            }
+        }
+
+        TaskSubcommand::Archive { task_id, reason } => {
+            let mut body = serde_json::json!({});
+            if let Some(r) = reason {
+                body["reason"] = serde_json::Value::String(r.clone());
+            }
+            let v = client
+                .post_project_json(&format!("/tasks/{task_id}/archive"), Some(&body))
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Task {task_id} archived.");
+            }
+        }
+
+        TaskSubcommand::Unarchive { task_id } => {
+            let v = client
+                .post_project_json(&format!("/tasks/{task_id}/unarchive"), None)
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Task {task_id} unarchived.");
             }
         }
 

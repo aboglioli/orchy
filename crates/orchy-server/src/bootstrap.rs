@@ -66,6 +66,7 @@ pub async fn generate_bootstrap_prompt(
                 tag: None,
                 after: None,
                 limit: None,
+                archived: None,
             };
             if let Ok(page) = app.list_tasks.execute(cmd).await {
                 all.extend(page.items);

@@ -205,6 +205,7 @@ pub struct Task {
     last_activity_at: DateTime<Utc>,
     tags: Vec<String>,
     result_summary: Option<String>,
+    archived_at: Option<DateTime<Utc>>,
     created_by: Option<AgentId>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -252,6 +253,7 @@ impl Task {
             last_activity_at: now,
             tags: Vec::new(),
             result_summary: None,
+            archived_at: None,
             created_by,
             created_at: now,
             updated_at: now,
@@ -300,6 +302,7 @@ impl Task {
             last_activity_at: r.last_activity_at,
             tags: r.tags,
             result_summary: r.result_summary,
+            archived_at: r.archived_at,
             created_by: r.created_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -551,6 +554,43 @@ impl Task {
         Ok(())
     }
 
+    pub fn archive(&mut self, reason: Option<String>) -> Result<()> {
+        self.archived_at = Some(Utc::now());
+        self.updated_at = Utc::now();
+        let payload = Payload::from_json(&task_events::TaskArchivedPayload {
+            task_id: self.id.to_string(),
+            reason,
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_ARCHIVED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
+    }
+
+    pub fn unarchive(&mut self) -> Result<()> {
+        self.archived_at = None;
+        self.updated_at = Utc::now();
+        let payload = Payload::from_json(&task_events::TaskRestoredPayload {
+            task_id: self.id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_RESTORED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
+    }
+
     pub fn update_details(
         &mut self,
         title: Option<String>,
@@ -734,6 +774,12 @@ impl Task {
     pub fn result_summary(&self) -> Option<&str> {
         self.result_summary.as_deref()
     }
+    pub fn archived_at(&self) -> Option<DateTime<Utc>> {
+        self.archived_at
+    }
+    pub fn is_archived(&self) -> bool {
+        self.archived_at.is_some()
+    }
     pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
         let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
@@ -806,6 +852,7 @@ pub struct RestoreTask {
     pub last_activity_at: DateTime<Utc>,
     pub tags: Vec<String>,
     pub result_summary: Option<String>,
+    pub archived_at: Option<DateTime<Utc>>,
     pub created_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -828,6 +875,10 @@ pub struct TaskFilter {
     pub assigned_role: Option<String>,
     pub assigned_to: Option<AgentId>,
     pub tag: Option<String>,
+    /// When Some(true): include archived tasks.
+    /// When Some(false): only non-archived tasks.
+    /// When None: defaults to false (exclude archived).
+    pub include_archived: Option<bool>,
 }
 
 #[cfg(test)]
@@ -853,10 +904,18 @@ mod tests {
             last_activity_at: Utc::now(),
             tags: vec![],
             result_summary: None,
+            archived_at: None,
             created_by: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         })
+    }
+
+    fn make_completed_task() -> Task {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::InProgress, Some(agent));
+        task.complete(Some("done".to_string())).unwrap();
+        task
     }
 
     #[test]
@@ -976,6 +1035,24 @@ mod tests {
             task.acceptance_criteria(),
             Some("tests pass and integration verified")
         );
+    }
+
+    #[test]
+    fn archive_sets_archived_at() {
+        let mut task = make_completed_task();
+        assert!(!task.is_archived());
+        task.archive(Some("done".into())).unwrap();
+        assert!(task.is_archived());
+        assert!(task.archived_at().is_some());
+    }
+
+    #[test]
+    fn unarchive_clears_archived_at() {
+        let mut task = make_completed_task();
+        task.archive(None).unwrap();
+        assert!(task.is_archived());
+        task.unarchive().unwrap();
+        assert!(!task.is_archived());
     }
 
     #[test]

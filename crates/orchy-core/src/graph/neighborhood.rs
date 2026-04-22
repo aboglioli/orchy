@@ -43,6 +43,9 @@ pub struct TaskSummary {
     pub priority: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assigned_to: Option<String>,
+    pub archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +56,9 @@ pub struct KnowledgeSummary {
     pub path: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    pub archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

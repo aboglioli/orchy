@@ -104,8 +104,12 @@ impl ConsolidateKnowledge {
             let _ = self.edges.save(&mut edge).await;
         }
 
-        for src in sources {
-            let _ = self.knowledge.delete(&src.id()).await;
+        let source_ids: Vec<_> = sources.iter().map(|s| s.id()).collect();
+        for src_id in source_ids {
+            if let Some(mut src) = self.knowledge.find_by_id(&src_id).await? {
+                src.archive(Some(format!("merged into {}", consolidated.id())))?;
+                self.knowledge.save(&mut src).await?;
+            }
         }
 
         Ok(KnowledgeResponse::from(&consolidated))

@@ -71,6 +71,8 @@ pub struct ListTasksParams {
     pub after: Option<String>,
     /// Max items per page.
     pub limit: Option<u32>,
+    /// When true, only archived tasks. When false, only active tasks. Omit for default behavior.
+    pub archived: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -108,6 +110,17 @@ pub struct FailTaskParams {
 pub struct CancelTaskParams {
     pub task_id: String,
     pub reason: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ArchiveTaskParams {
+    pub task_id: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UnarchiveTaskParams {
+    pub task_id: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -391,6 +404,8 @@ pub struct ListKnowledgeParams {
     /// When false: only entries with at least one such link.
     /// Omit to return all entries regardless of link status.
     pub orphaned: Option<bool>,
+    /// When true, only archived entries. When false, only active entries. Omit for default behavior.
+    pub archived: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -414,6 +429,17 @@ pub struct SearchKnowledgeParams {
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct DeleteKnowledgeParams {
     pub namespace: Option<String>,
+    pub path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct ArchiveKnowledgeParams {
+    pub path: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UnarchiveKnowledgeParams {
     pub path: String,
 }
 

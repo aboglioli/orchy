@@ -47,6 +47,7 @@ impl ListTags {
             org_id,
             project,
             namespace,
+            include_archived: None,
             ..Default::default()
         };
 

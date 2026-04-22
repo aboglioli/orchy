@@ -238,6 +238,7 @@ pub struct Knowledge {
     embedding_dimensions: Option<u32>,
     valid_from: Option<DateTime<Utc>>,
     valid_until: Option<DateTime<Utc>>,
+    archived_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(skip)]
@@ -281,6 +282,7 @@ impl Knowledge {
             embedding_dimensions: None,
             valid_from: None,
             valid_until: None,
+            archived_at: None,
             created_at: now,
             updated_at: now,
             persisted_version: None,
@@ -330,6 +332,7 @@ impl Knowledge {
             embedding_dimensions: r.embedding_dimensions,
             valid_from: r.valid_from,
             valid_until: r.valid_until,
+            archived_at: r.archived_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
             persisted_version: Some(r.version),
@@ -539,6 +542,45 @@ impl Knowledge {
         Ok(())
     }
 
+    pub fn archive(&mut self, reason: Option<String>) -> Result<()> {
+        self.archived_at = Some(Utc::now());
+        self.updated_at = Utc::now();
+
+        let payload = Payload::from_json(&knowledge_events::KnowledgeArchivedPayload {
+            entry_id: self.id.to_string(),
+            path: self.path.to_string(),
+            reason,
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            knowledge_events::NAMESPACE,
+            knowledge_events::TOPIC_ARCHIVED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
+    }
+    pub fn unarchive(&mut self) -> Result<()> {
+        self.archived_at = None;
+        self.updated_at = Utc::now();
+        let payload = Payload::from_json(&knowledge_events::KnowledgeRestoredPayload {
+            entry_id: self.id.to_string(),
+            path: self.path.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            knowledge_events::NAMESPACE,
+            knowledge_events::TOPIC_RESTORED,
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+        Ok(())
+    }
+
     pub fn set_embedding(
         &mut self,
         embedding: Vec<f32>,
@@ -626,6 +668,12 @@ impl Knowledge {
     pub fn valid_until(&self) -> Option<DateTime<Utc>> {
         self.valid_until
     }
+    pub fn archived_at(&self) -> Option<DateTime<Utc>> {
+        self.archived_at
+    }
+    pub fn is_archived(&self) -> bool {
+        self.archived_at.is_some()
+    }
     pub fn set_validity(
         &mut self,
         from: Option<DateTime<Utc>>,
@@ -677,6 +725,7 @@ pub struct RestoreKnowledge {
     pub embedding_dimensions: Option<u32>,
     pub valid_from: Option<DateTime<Utc>>,
     pub valid_until: Option<DateTime<Utc>>,
+    pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -712,6 +761,10 @@ pub struct KnowledgeFilter {
     pub orphaned: Option<bool>,
     /// When Some(true): include entries whose valid_until is in the past.
     pub include_expired: Option<bool>,
+    /// When Some(true): include archived entries.
+    /// When Some(false): only non-archived entries.
+    /// When None: defaults to false (exclude archived).
+    pub include_archived: Option<bool>,
 }
 
 #[cfg(test)]

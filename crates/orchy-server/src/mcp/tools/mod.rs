@@ -256,8 +256,8 @@ impl OrchyHandler {
     }
 
     #[tool(
-        description = "List tasks, optionally filtered by namespace, status, and parent_id. \
-        Use parent_id to list subtasks of a specific task. \
+        description = "List tasks, optionally filtered by namespace and status. \
+        Use archived=true to list archived tasks or archived=false to limit to active tasks. \
         Defaults to session namespace; pass namespace=/ to see all namespaces."
     )]
     async fn list_tasks(
@@ -324,6 +324,24 @@ impl OrchyHandler {
         Parameters(params): Parameters<CancelTaskParams>,
     ) -> Result<String, String> {
         task::cancel_task(self, params).await
+    }
+
+    #[tool(
+        description = "Archive a task. Only tasks in terminal states (completed, failed, cancelled) can be archived. Archived tasks are hidden from listings."
+    )]
+    async fn archive_task(
+        &self,
+        Parameters(params): Parameters<ArchiveTaskParams>,
+    ) -> Result<String, String> {
+        task::archive_task(self, params).await
+    }
+
+    #[tool(description = "Restore an archived task back to active status.")]
+    async fn unarchive_task(
+        &self,
+        Parameters(params): Parameters<UnarchiveTaskParams>,
+    ) -> Result<String, String> {
+        task::unarchive_task(self, params).await
     }
 
     #[tool(description = "Update task title, description, and/or priority. \
@@ -532,7 +550,7 @@ impl OrchyHandler {
 
     #[tool(
         description = "List knowledge entries with optional filters: type, tag, \
-        path_prefix, agent_id, namespace."
+        path_prefix, namespace, orphaned, and archived. Archived entries are hidden from default listings."
     )]
     async fn list_knowledge(
         &self,
@@ -560,6 +578,24 @@ impl OrchyHandler {
         Parameters(params): Parameters<DeleteKnowledgeParams>,
     ) -> Result<String, String> {
         knowledge::delete_knowledge(self, params).await
+    }
+
+    #[tool(
+        description = "Archive a knowledge entry. Archived entries are hidden from listings but remain accessible via edge traversal and explicit retrieval."
+    )]
+    async fn archive_knowledge(
+        &self,
+        Parameters(params): Parameters<ArchiveKnowledgeParams>,
+    ) -> Result<String, String> {
+        knowledge::archive_knowledge(self, params).await
+    }
+
+    #[tool(description = "Restore an archived knowledge entry back to active status.")]
+    async fn unarchive_knowledge(
+        &self,
+        Parameters(params): Parameters<UnarchiveKnowledgeParams>,
+    ) -> Result<String, String> {
+        knowledge::unarchive_knowledge(self, params).await
     }
 
     #[tool(description = "Append text to a knowledge entry. Creates if it doesn't exist.")]

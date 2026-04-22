@@ -292,6 +292,7 @@ pub async fn get_context(
         tag: None,
         after: None,
         limit: Some(10),
+        archived: None,
     };
 
     let pending_tasks = container

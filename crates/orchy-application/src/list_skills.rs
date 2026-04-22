@@ -50,6 +50,7 @@ impl ListSkills {
             project: Some(project.clone()),
             include_org_level: true,
             kind: Some(kind),
+            include_archived: None,
             ..Default::default()
         };
         let all = self
