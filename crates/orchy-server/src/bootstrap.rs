@@ -122,7 +122,7 @@ the **same** `id` from your last registration or handoff (`session_status` summa
 3. **Claim work** — `get_next_task` (`claim: false` to peek only).
 4. **Heartbeat** — `heartbeat` every ~30s to stay alive.
 
-## Before Disconnecting
+## Session Handoff
 
 Always `write_knowledge(kind: "context", path: "handoff")` with:
 - What task you were working on (task ID and title)
@@ -150,7 +150,7 @@ Writes default to your current namespace. Namespaces are auto-created on first u
 - **delegate_task** creates subtasks without blocking the parent.
 - **tag_task** / **untag_task** / **list_tags** — label tasks for cross-cutting organization.
 - **release_task** — return a claimed task to pending.
-- On disconnect, your claimed tasks return to pending automatically.
+- Stale claimed tasks can be reclaimed by other agents after a timeout.
 
 ## Coordination
 
@@ -170,7 +170,7 @@ You must externalize knowledge so future agents can benefit:
   (e.g. path: `auth-algorithm`, kind: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned,
   what the next agent should know. Never just "done".
-- Before disconnecting, `write_knowledge(kind: "context", path: "handoff")`
+- Before ending your session, `write_knowledge(kind: "context", path: "handoff")`
   with structured summary: current task, progress, blockers, decisions.
 - Use `kind: "summary"` for concise task/feature summaries, `kind: "report"` for
   detailed analysis or post-mortems.

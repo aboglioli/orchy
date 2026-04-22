@@ -5,7 +5,6 @@ use serde::Serialize;
 pub const NAMESPACE: &str = "/agent";
 
 pub const TOPIC_REGISTERED: &str = "agent.registered";
-pub const TOPIC_SPAWNED: &str = "agent.spawned";
 pub const TOPIC_ROLES_CHANGED: &str = "agent.roles_changed";
 pub const TOPIC_RESUMED: &str = "agent.resumed";
 pub const TOPIC_CONTEXT_SWITCHED: &str = "agent.context_switched";
@@ -17,16 +16,6 @@ pub struct AgentRegisteredPayload {
     pub org_id: String,
     pub agent_id: String,
     pub alias: String,
-    pub project: String,
-    pub namespace: String,
-    pub roles: Vec<String>,
-}
-
-#[derive(Serialize)]
-pub struct AgentSpawnedPayload {
-    pub org_id: String,
-    pub agent_id: String,
-    pub parent_id: String,
     pub project: String,
     pub namespace: String,
     pub roles: Vec<String>,

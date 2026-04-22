@@ -83,7 +83,7 @@ async fn agent_save_updates_existing() {
 }
 
 #[tokio::test]
-async fn agent_disconnect_sets_status() {
+async fn agent_save_and_fetch_roundtrip() {
     let store = backend();
     let mut agent = Agent::register(
         org(),
@@ -129,7 +129,7 @@ async fn agent_find_timed_out() {
 
     AgentStore::save(&store, &mut agent).await.unwrap();
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
-    // disconnected status removed; disconnected agents are still stale
+    // agent was saved with current timestamp and is still timed out at threshold 0
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 }
 

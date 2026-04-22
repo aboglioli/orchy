@@ -297,7 +297,7 @@ session. After reconnect, call **`register_agent` again with the same `alias`** 
 `register_agent`, `session_status`, `list_knowledge_types`, and `list_agents` (when \
 `project` is passed) do not require a registered orchy session; most other tools do.
 
-## Before Disconnecting
+## Session Handoff
 
 Always `write_knowledge(kind: \"context\", path: \"handoff\")` with a structured \
 summary: current task, progress, blockers, decisions. This is the handoff note \
@@ -353,7 +353,7 @@ You must externalize knowledge so future agents can benefit:
   (e.g. path: `auth-algorithm`, kind: `decision`).
 - `complete_task` summary must be actionable: what was done, what was learned, \
   what the next agent should know. Never just 'done'.
-- Before disconnecting, `write_knowledge(kind: \"context\", path: \"handoff\")` \
+- Before ending your session, `write_knowledge(kind: \"context\", path: \"handoff\")` \
   with structured summary: current task, progress, blockers, decisions.
 - When you discover something non-obvious (a gotcha, a pattern, a constraint), \
   write it to knowledge immediately — don't wait until task completion.

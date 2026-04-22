@@ -20,7 +20,6 @@ mod bootstrap_admin;
 mod change_password;
 mod get_current_user;
 mod invite_user;
-mod list_org_users;
 mod login_user;
 mod register_user;
 
@@ -230,7 +229,6 @@ pub use bootstrap_admin::BootstrapAdmin;
 pub use change_password::{ChangePassword, ChangePasswordCommand};
 pub use get_current_user::{GetCurrentUser, GetCurrentUserCommand};
 pub use invite_user::{InviteUser, InviteUserCommand, InviteUserResponse};
-pub use list_org_users::{ListOrgUsers, ListOrgUsersCommand};
 pub use login_user::{LoginUser, LoginUserCommand};
 pub use register_user::{RegisterUser, RegisterUserCommand, RegisterUserResponse};
 
@@ -335,7 +333,6 @@ pub struct Application {
     pub get_current_user: GetCurrentUser,
     pub change_password: ChangePassword,
     pub invite_user: InviteUser,
-    pub list_org_users: ListOrgUsers,
     pub bootstrap_admin: BootstrapAdmin,
 }
 
@@ -479,7 +476,6 @@ impl Application {
             get_current_user: GetCurrentUser::new(users.clone(), memberships.clone()),
             change_password: ChangePassword::new(users.clone()),
             invite_user: InviteUser::new(users.clone(), memberships.clone()),
-            list_org_users: ListOrgUsers::new(users.clone(), memberships.clone()),
             bootstrap_admin: BootstrapAdmin::new(users),
         }
     }

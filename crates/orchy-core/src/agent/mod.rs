@@ -78,10 +78,6 @@ pub trait AgentStore: Send + Sync {
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>>;
 }
 
-pub fn validate_alias(alias: &str) -> Result<()> {
-    Alias::new(alias)?;
-    Ok(())
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Agent {
@@ -139,52 +135,6 @@ impl Agent {
             agent.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_REGISTERED,
-            payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
-        agent.collector.collect(event);
-
-        Ok(agent)
-    }
-
-    pub fn from_parent(
-        alias: Alias,
-        parent: &Agent,
-        namespace: Namespace,
-        roles: Vec<String>,
-        description: String,
-        id: Option<AgentId>,
-    ) -> Result<Self> {
-        let now = Utc::now();
-        let id = id.unwrap_or_default();
-        let mut agent = Self {
-            id,
-            alias,
-            org_id: parent.org_id.clone(),
-            project: parent.project.clone(),
-            namespace,
-            roles,
-            description,
-
-            last_seen: now,
-            connected_at: now,
-            metadata: parent.metadata.clone(),
-            collector: EventCollector::new(),
-        };
-
-        let payload = Payload::from_json(&agent_events::AgentSpawnedPayload {
-            org_id: agent.org_id.to_string(),
-            agent_id: agent.id.to_string(),
-            parent_id: parent.id.to_string(),
-            project: agent.project.to_string(),
-            namespace: agent.namespace.to_string(),
-            roles: agent.roles.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
-        let event = Event::create(
-            agent.org_id.as_str(),
-            agent_events::NAMESPACE,
-            agent_events::TOPIC_SPAWNED,
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -416,18 +366,6 @@ pub struct RestoreAgent {
     pub metadata: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct RegisterAgent {
-    pub org_id: OrganizationId,
-    pub project: ProjectId,
-    pub namespace: Namespace,
-    pub alias: Alias,
-    pub roles: Vec<String>,
-    pub description: String,
-    pub id: Option<AgentId>,
-    pub metadata: HashMap<String, String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,23 +406,6 @@ mod tests {
     }
 
     #[test]
-    fn from_parent_inherits_project() {
-        let parent = make_agent();
-        let child = Agent::from_parent(
-            Alias::new("child-agent").unwrap(),
-            &parent,
-            test_namespace(),
-            vec!["reviewer".to_string()],
-            "child agent".to_string(),
-            None,
-        )
-        .unwrap();
-        assert_eq!(child.project(), parent.project());
-        assert_eq!(child.roles(), &["reviewer"]);
-        // status derived from last_seen
-    }
-
-    #[test]
     fn heartbeat_updates_timestamp() {
         let mut agent = make_agent();
         let before = agent.last_seen();
@@ -494,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_reconnects_disconnected() {
+    fn heartbeat_updates_last_seen() {
         let mut agent = make_agent();
         agent.heartbeat().unwrap();
         // status derived from last_seen
