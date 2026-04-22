@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::knowledge::{KnowledgeId, KnowledgeKind, KnowledgeStore};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;

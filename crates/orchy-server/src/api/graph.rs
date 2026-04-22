@@ -11,8 +11,8 @@ use orchy_application::{
     AddEdgeCommand, AssembleContextCommand, EdgeResponse, MaterializeNeighborhoodCommand,
     RemoveEdgeCommand,
 };
-use orchy_core::edge::{EdgeStore, RelationType, TraversalDirection};
-use orchy_core::graph::relation_options::RelationOptions;
+use orchy_core::graph::RelationOptions;
+use orchy_core::graph::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 

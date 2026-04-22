@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::edge::{RelationDirection, RelationType};
+use crate::graph::{RelationDirection, RelationType};
 use crate::resource_ref::ResourceRef;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use orchy_core::agent::Agent;
-use orchy_core::edge::Edge;
+use orchy_core::graph::Edge;
 use orchy_core::knowledge::Knowledge;
 use orchy_core::message::Message;
 use orchy_core::organization::Organization;

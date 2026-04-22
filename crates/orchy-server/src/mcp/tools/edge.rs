@@ -1,5 +1,5 @@
 use orchy_application::{AddEdgeCommand, MaterializeNeighborhoodCommand, RemoveEdgeCommand};
-use orchy_core::graph::relation_options::RelationOptions;
+use orchy_core::graph::RelationOptions;
 
 use crate::mcp::handler::{OrchyHandler, mcp_error, to_json};
 use crate::mcp::params::{AddEdgeParams, QueryRelationsParams, RemoveEdgeParams};

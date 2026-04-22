@@ -6,8 +6,8 @@ use serde::Serialize;
 
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
-use orchy_core::graph::neighborhood::Relation;
-use orchy_core::graph::relation_options::RelationOptions;
+use orchy_core::graph::Relation;
+use orchy_core::graph::RelationOptions;
 use orchy_core::resource_ref::ResourceKind;
 
 use crate::dto::AgentResponse;

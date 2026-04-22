@@ -3,8 +3,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentId;
-use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskId, TaskStatus, TaskStore};

@@ -12,7 +12,7 @@ use orchy_application::{
     ListAgentsCommand, ListTasksCommand, RegisterAgentCommand, RenameAliasCommand,
     SwitchContextCommand, resolve_agent,
 };
-use orchy_core::agent::{AgentId, AgentStore, Alias};
+use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -200,7 +200,7 @@ pub async fn register(
         org_id: org,
         project,
         namespace: body.namespace,
-        alias: Alias::new(&body.alias).map_err(ApiError::from)?,
+        alias: body.alias.clone(),
         roles: body.roles,
         description: body.description,
         agent_type: body.agent_type,
@@ -435,7 +435,7 @@ pub async fn rename_alias(
         ));
     }
 
-    let new_alias = Alias::new(&body.new_alias).map_err(ApiError::from)?;
+    let new_alias = body.new_alias.clone();
     let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
     let cmd = RenameAliasCommand {
         agent_id,

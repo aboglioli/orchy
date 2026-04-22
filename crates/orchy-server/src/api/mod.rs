@@ -19,8 +19,8 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
-use orchy_core::edge::{RelationType, TraversalDirection};
-use orchy_core::graph::relation_options::RelationOptions;
+use orchy_core::graph::RelationOptions;
+use orchy_core::graph::{RelationType, TraversalDirection};
 use orchy_core::namespace::Namespace;
 
 use crate::container::Container;

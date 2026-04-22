@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::edge::{RelationType, TraversalDirection};
+use crate::graph::{RelationType, TraversalDirection};
 use crate::resource_ref::ResourceKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

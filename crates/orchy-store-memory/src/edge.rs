@@ -3,10 +3,10 @@ use std::collections::{HashSet, VecDeque};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use orchy_core::edge::{
+use orchy_core::error::Result;
+use orchy_core::graph::{
     Edge, EdgeId, EdgeStore, RelationDirection, RelationType, TraversalDirection, TraversalHop,
 };
-use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};

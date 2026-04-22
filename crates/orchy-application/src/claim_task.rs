@@ -2,8 +2,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::edge::{EdgeStore, RelationType};
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::{EdgeStore, RelationType};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStatus, TaskStore};
@@ -53,13 +53,7 @@ impl ClaimTask {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
-        let can_claim = match task.status() {
-            TaskStatus::Pending => true,
-            TaskStatus::InProgress => task.is_stale(),
-            _ => false,
-        };
-
-        if !can_claim {
+        if !task.can_be_claimed() {
             return Err(Error::InvalidTransition {
                 from: task.status().to_string(),
                 to: TaskStatus::Claimed.to_string(),

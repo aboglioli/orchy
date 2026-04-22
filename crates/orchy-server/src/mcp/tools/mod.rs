@@ -45,17 +45,17 @@ pub(super) fn parse_as_of(s: Option<String>) -> std::result::Result<Option<DateT
     .transpose()
 }
 
-pub(super) fn parse_direction(s: Option<&str>) -> orchy_core::edge::TraversalDirection {
+pub(super) fn parse_direction(s: Option<&str>) -> orchy_core::graph::TraversalDirection {
     match s {
-        Some("outgoing") => orchy_core::edge::TraversalDirection::Outgoing,
-        Some("incoming") => orchy_core::edge::TraversalDirection::Incoming,
-        _ => orchy_core::edge::TraversalDirection::Both,
+        Some("outgoing") => orchy_core::graph::TraversalDirection::Outgoing,
+        Some("incoming") => orchy_core::graph::TraversalDirection::Incoming,
+        _ => orchy_core::graph::TraversalDirection::Both,
     }
 }
 
 pub(super) fn parse_rel_type_alias(
     s: &str,
-) -> std::result::Result<orchy_core::edge::RelationType, String> {
+) -> std::result::Result<orchy_core::graph::RelationType, String> {
     let canonical = match s {
         "blocks" | "requires" | "needs" => "depends_on",
         "creates" | "made" | "wrote" => "produces",
@@ -65,7 +65,7 @@ pub(super) fn parse_rel_type_alias(
         other => other,
     };
     canonical
-        .parse::<orchy_core::edge::RelationType>()
+        .parse::<orchy_core::graph::RelationType>()
         .map_err(|e| e.to_string())
 }
 

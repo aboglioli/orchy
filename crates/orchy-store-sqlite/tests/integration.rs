@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
-use orchy_core::edge::{Edge, EdgeStore, RelationType, TraversalDirection};
+use orchy_core::graph::{Edge, EdgeStore, RelationType, TraversalDirection};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};

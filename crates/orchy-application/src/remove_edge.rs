@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::edge::{EdgeId, EdgeStore};
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::{EdgeId, EdgeStore};
 
 pub struct RemoveEdgeCommand {
     pub edge_id: String,

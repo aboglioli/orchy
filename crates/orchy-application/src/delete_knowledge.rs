@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::edge::EdgeStore;
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::{KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;

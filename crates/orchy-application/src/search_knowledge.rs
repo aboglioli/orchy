@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use orchy_core::edge::{EdgeStore, TraversalDirection};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::{EdgeStore, TraversalDirection};
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;

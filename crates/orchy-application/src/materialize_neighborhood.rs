@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore};
-use orchy_core::edge::{EdgeStore, RelationDirection, TraversalHop};
 use orchy_core::error::{Error, Result};
-use orchy_core::graph::neighborhood::{
+use orchy_core::graph::RelationOptions;
+use orchy_core::graph::{
     AgentSummary, EntityNeighborhood, KnowledgeSummary, MessageSummary, PeerEntity, Relation,
     TaskSummary,
 };
-use orchy_core::graph::relation_options::RelationOptions;
+use orchy_core::graph::{EdgeStore, RelationDirection, TraversalHop};
 use orchy_core::knowledge::{Knowledge, KnowledgeId, KnowledgePath, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore};
 use orchy_core::namespace::Namespace;

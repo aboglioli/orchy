@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use orchy_core::agent::AgentStore;
-use orchy_core::edge::EdgeStore;
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::{Namespace, NamespaceStore};

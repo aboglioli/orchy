@@ -5,9 +5,9 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use orchy_core::agent::AgentId;
-use orchy_core::edge::{Edge, EdgeStore, RelationType};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
+use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore, Version,
     WriteKnowledge as WriteKnowledgeCmd,

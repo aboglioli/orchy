@@ -16,7 +16,7 @@ pub struct RegisterAgentCommand {
     pub org_id: String,
     pub project: String,
     pub namespace: Option<String>,
-    pub alias: Alias,
+    pub alias: String,
     pub roles: Vec<String>,
     pub description: String,
     pub agent_type: Option<String>,
@@ -49,10 +49,10 @@ impl RegisterAgent {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
-        let agent = if let Some(mut existing) = self
-            .agents
-            .find_by_alias(&org_id, &project, &cmd.alias)
-            .await?
+        let alias = Alias::new(&cmd.alias).map_err(|e| Error::InvalidInput(e.to_string()))?;
+
+        let agent = if let Some(mut existing) =
+            self.agents.find_by_alias(&org_id, &project, &alias).await?
         {
             existing.resume(
                 namespace.clone(),
@@ -80,7 +80,7 @@ impl RegisterAgent {
                 org_id.clone(),
                 project.clone(),
                 namespace.clone(),
-                cmd.alias.clone(),
+                alias,
                 cmd.roles,
                 cmd.description,
                 None,

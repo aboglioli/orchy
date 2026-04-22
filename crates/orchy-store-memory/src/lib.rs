@@ -22,7 +22,7 @@ use tokio::sync::RwLock;
 use orchy_events::SerializedEvent;
 
 use orchy_core::agent::{Agent, AgentId};
-use orchy_core::edge::{Edge, EdgeId};
+use orchy_core::graph::{Edge, EdgeId};
 use orchy_core::knowledge::{Knowledge, KnowledgeId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;

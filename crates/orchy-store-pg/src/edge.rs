@@ -6,11 +6,11 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
-use orchy_core::edge::{
+use orchy_core::error::{Error, Result};
+use orchy_core::graph::{
     Edge, EdgeId, EdgeStore, RelationDirection, RelationType, RestoreEdge, TraversalDirection,
     TraversalHop,
 };
-use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};

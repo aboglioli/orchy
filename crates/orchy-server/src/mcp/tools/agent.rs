@@ -1,7 +1,5 @@
 use std::str::FromStr;
 
-use orchy_core::agent::Alias;
-
 use orchy_application::{
     ChangeRolesCommand, CheckMailboxCommand, CheckSentMessagesCommand, GetAgentCommand,
     GetAgentSummaryCommand, HeartbeatCommand, ListAgentsCommand, ListConversationCommand,
@@ -70,7 +68,7 @@ pub(super) async fn register_agent(
         org_id: org_id.clone(),
         project: params.project.clone(),
         namespace: namespace.clone(),
-        alias: Alias::new(&params.alias).map_err(mcp_error)?,
+        alias: params.alias.clone(),
         roles,
         description: params.description.clone(),
         agent_type: params.agent_type.clone(),
@@ -178,7 +176,7 @@ pub(super) async fn rename_alias(h: &OrchyHandler, new_alias: String) -> Result<
     let (agent_id, _, _, _) = h.require_session().await?;
     let cmd = RenameAliasCommand {
         agent_id: agent_id.to_string(),
-        new_alias: Alias::new(&new_alias).map_err(mcp_error)?,
+        new_alias,
     };
     match h.container.app.rename_alias.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),

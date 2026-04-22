@@ -670,6 +670,14 @@ impl Task {
             }
         }
     }
+
+    pub fn can_be_claimed(&self) -> bool {
+        match self.status {
+            TaskStatus::Pending => true,
+            TaskStatus::InProgress => self.is_stale(),
+            _ => false,
+        }
+    }
     pub fn touch(&mut self) {
         self.last_activity_at = Utc::now();
         self.updated_at = Utc::now();

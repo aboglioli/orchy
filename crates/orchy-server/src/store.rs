@@ -5,8 +5,8 @@ use orchy_events::io::Writer as EventWriter;
 
 use orchy_application::EventQuery;
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
-use orchy_core::edge::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalHop};
 use orchy_core::error::Result;
+use orchy_core::graph::{Edge, EdgeId, EdgeStore, RelationType, TraversalDirection, TraversalHop};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeId, KnowledgePath, KnowledgeStore,
 };
