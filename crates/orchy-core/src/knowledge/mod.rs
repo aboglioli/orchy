@@ -544,7 +544,9 @@ impl Knowledge {
 
     pub fn archive(&mut self, reason: Option<String>) -> Result<()> {
         if self.archived_at.is_some() {
-            return Err(Error::InvalidInput("knowledge entry is already archived".into()));
+            return Err(Error::InvalidInput(
+                "knowledge entry is already archived".into(),
+            ));
         }
         self.archived_at = Some(Utc::now());
         self.updated_at = Utc::now();
@@ -567,7 +569,9 @@ impl Knowledge {
     }
     pub fn unarchive(&mut self) -> Result<()> {
         if self.archived_at.is_none() {
-            return Err(Error::InvalidInput("knowledge entry is not archived".into()));
+            return Err(Error::InvalidInput(
+                "knowledge entry is not archived".into(),
+            ));
         }
         self.archived_at = None;
         self.updated_at = Utc::now();
