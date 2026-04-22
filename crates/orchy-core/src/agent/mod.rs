@@ -210,13 +210,11 @@ impl Agent {
         }
     }
 
+    /// No event emitted: heartbeat is high-frequency and would flood
+    /// the event log. This is the only mutation that skips event emission.
     pub fn heartbeat(&mut self) -> Result<()> {
         self.last_seen = Utc::now();
         Ok(())
-    }
-
-    pub fn status(&self) -> &'static str {
-        self.derived_status(30, 300)
     }
 
     pub fn derived_status(&self, idle_secs: u64, stale_secs: u64) -> &'static str {
@@ -393,6 +391,7 @@ impl Agent {
     pub fn description(&self) -> &str {
         &self.description
     }
+
     pub fn last_seen(&self) -> DateTime<Utc> {
         self.last_seen
     }

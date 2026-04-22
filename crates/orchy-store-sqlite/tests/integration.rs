@@ -47,7 +47,7 @@ async fn agent_save_and_find() {
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    assert_eq!(agent.status(), "active");
+    assert_eq!(agent.derived_status(30, 300), "active");
     assert_eq!(agent.roles(), &["coder".to_string()]);
 
     let fetched = AgentStore::find_by_id(&store, agent.id())

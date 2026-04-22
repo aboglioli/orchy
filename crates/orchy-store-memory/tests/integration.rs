@@ -44,7 +44,7 @@ async fn agent_save_and_find() {
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
 
-    assert_eq!(agent.status(), "active");
+    assert_eq!(agent.derived_status(30, 300), "active");
     assert_eq!(agent.roles(), &["coder".to_string()]);
 
     let fetched = AgentStore::find_by_id(&store, agent.id())
@@ -1580,7 +1580,7 @@ async fn agent_status_derived_from_last_seen() {
     )
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
-    assert_eq!(agent.status(), "active");
+    assert_eq!(agent.derived_status(30, 300), "active");
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
@@ -1596,7 +1596,7 @@ async fn agent_status_derived_from_last_seen() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(fetched.status(), "active");
+    assert_eq!(fetched.derived_status(30, 300), "active");
 }
 
 #[tokio::test]

@@ -208,7 +208,7 @@ impl MaterializeNeighborhood {
                         PeerEntity::Agent(AgentSummary {
                             id: a.id().to_string(),
                             description: a.description().to_string(),
-                            status: a.status().to_string(),
+                            status: a.derived_status(30, 300).to_string(),
                             roles: a.roles().to_vec(),
                         })
                     })?,

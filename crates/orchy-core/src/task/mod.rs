@@ -274,9 +274,9 @@ impl Task {
                     priority: task.priority.to_string(),
                     assigned_roles: task.assigned_roles.clone(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(task)
@@ -323,9 +323,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     agent_id: agent.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -351,9 +351,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     agent_id: agent.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -374,9 +374,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     summary,
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -396,7 +396,7 @@ impl Task {
                     task_id: self.id.to_string(),
                     summary: Some(summary),
                 })
-                .map_err(|e| Error::Store(format!("event serialization: {e}")))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
             .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
@@ -419,9 +419,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     reason,
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -447,9 +447,9 @@ impl Task {
                 Payload::from_json(&task_events::TaskReleasedPayload {
                     task_id: self.id.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -475,9 +475,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     agent_id: new_agent.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -498,9 +498,9 @@ impl Task {
                 Payload::from_json(&task_events::TaskBlockedPayload {
                     task_id: self.id.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -521,9 +521,9 @@ impl Task {
                 Payload::from_json(&task_events::TaskUnblockedPayload {
                     task_id: self.id.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -543,9 +543,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     reason,
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -611,9 +611,9 @@ impl Task {
                     acceptance_criteria: new_acceptance_criteria,
                     priority: new_priority,
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -693,9 +693,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     tag,
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -716,9 +716,9 @@ impl Task {
                     task_id: self.id.to_string(),
                     tag: tag.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -741,9 +741,9 @@ impl Task {
                     from_namespace,
                     to_namespace: self.namespace.to_string(),
                 })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
             )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
         );
 
         Ok(())
@@ -857,10 +857,30 @@ mod tests {
         assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Blocked));
         assert!(TaskStatus::Blocked.can_transition_to(&TaskStatus::Pending));
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::InProgress));
+        assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Completed));
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Failed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Claimed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Completed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Failed));
+    }
+
+    #[test]
+    fn auto_complete_from_claimed() {
+        let agent = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent));
+        assert!(task.auto_complete("all children done".to_string()).is_ok());
+        assert_eq!(task.status(), TaskStatus::Completed);
+        assert_eq!(task.result_summary(), Some("all children done"));
+    }
+
+    #[test]
+    fn assign_preserves_in_progress_status() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_task(TaskStatus::InProgress, Some(agent1));
+        assert!(task.assign(agent2.clone()).is_ok());
+        assert_eq!(task.status(), TaskStatus::InProgress);
+        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
     }
 
     #[test]

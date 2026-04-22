@@ -217,20 +217,25 @@ impl User {
         Ok(())
     }
 
-    pub fn deactivate(&mut self) {
+    pub fn deactivate(&mut self) -> Result<()> {
         self.is_active = false;
         self.updated_at = Utc::now();
 
-        if let Ok(payload) = Payload::from_json(&events::UserDeactivatedPayload {
+        let payload = Payload::from_json(&events::UserDeactivatedPayload {
             user_id: self.id.as_str(),
-        }) && let Ok(event) = Event::create(
+        })
+        .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+
+        let event = Event::create(
             self.id.as_str(),
             events::NAMESPACE,
             events::TOPIC_DEACTIVATED,
             payload,
-        ) {
-            self.collector.collect(event);
-        }
+        )
+        .map_err(|e| Error::store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+
+        Ok(())
     }
 
     pub fn make_platform_admin(&mut self) -> Result<()> {
@@ -397,7 +402,7 @@ mod tests {
         let password = PlainPassword::new("password123").unwrap();
 
         let mut user = User::register(id, email, &password, &hasher).unwrap();
-        user.deactivate();
+        user.deactivate().unwrap();
 
         let result = user.login(&password, &hasher);
         assert!(result.is_err());
