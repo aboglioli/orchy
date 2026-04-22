@@ -46,6 +46,10 @@ pub enum KnowledgeSubcommand {
         tags: Option<String>,
         #[arg(long)]
         task_id: Option<String>,
+        #[arg(long, help = "ISO 8601 timestamp for when this entry becomes valid")]
+        valid_from: Option<String>,
+        #[arg(long, help = "ISO 8601 timestamp for when this entry expires")]
+        valid_until: Option<String>,
     },
     /// Read a knowledge entry by path
     Read {
@@ -233,6 +237,8 @@ pub async fn run(
             namespace,
             tags,
             task_id,
+            valid_from,
+            valid_until,
         } => {
             let mut body = serde_json::json!({
                 "kind": kind,
@@ -251,6 +257,12 @@ pub async fn run(
             }
             if let Some(tid) = task_id {
                 body["task_id"] = serde_json::Value::String(tid.clone());
+            }
+            if let Some(vf) = valid_from {
+                body["valid_from"] = serde_json::Value::String(vf.clone());
+            }
+            if let Some(vu) = valid_until {
+                body["valid_until"] = serde_json::Value::String(vu.clone());
             }
             if let Some(aid) = &client.alias {
                 body["alias"] = serde_json::Value::String(aid.clone());

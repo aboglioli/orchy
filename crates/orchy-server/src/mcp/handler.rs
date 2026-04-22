@@ -228,9 +228,7 @@ impl OrchyHandler {
             return Err(format!("agent not found in current project: '{s}'"));
         }
 
-        if agent.status == "disconnected" {
-            return Err(format!("agent is disconnected: '{s}'"));
-        }
+        // Reconnect always works — stale agents resume by heartbeating.
 
         Ok(agent_id)
     }

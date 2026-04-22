@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgePath, KnowledgeStore, Version};

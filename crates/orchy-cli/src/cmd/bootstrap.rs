@@ -11,7 +11,7 @@ pub async fn run(
         .alias
         .clone()
         .ok_or(crate::client::CliError::MissingAgentId)?;
-    let path = format!("/agents/{alias}/context");
+    let path = format!("/agents/{alias}/context?project={}", client.project);
     let (agent_v, project_v) =
         tokio::try_join!(client.get_json(&path), client.get_project_json(""),)?;
 

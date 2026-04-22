@@ -9,8 +9,10 @@ use serde::Deserialize;
 
 use orchy_application::{
     CheckMailboxCommand, CheckSentMessagesCommand, ListConversationCommand, MarkReadCommand,
-    SendMessageCommand,
+    SendMessageCommand, resolve_agent,
 };
+use orchy_core::agent::AgentStore;
+use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -38,6 +40,7 @@ fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
 #[derive(Deserialize)]
 pub struct AgentNamespaceQuery {
     pub namespace: Option<String>,
+    pub project: Option<String>,
     pub after: Option<String>,
     pub limit: Option<u32>,
 }
@@ -64,6 +67,45 @@ pub struct ThreadQuery {
     pub limit: Option<u32>,
 }
 
+async fn resolve_agent_id_for_messages(
+    container: &Arc<Container>,
+    org: &OrganizationId,
+    id: &str,
+    project: Option<&str>,
+) -> Result<(String, String), ApiError> {
+    if let Ok(agent_id) = id.parse::<orchy_core::agent::AgentId>() {
+        let agent = container
+            .store
+            .find_by_id(&agent_id)
+            .await
+            .map_err(ApiError::from)?
+            .ok_or_else(|| {
+                ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", "agent not found".to_string())
+            })?;
+        if agent.org_id() != org {
+            return Err(ApiError(
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                "agent not found".to_string(),
+            ));
+        }
+        return Ok((agent_id.to_string(), agent.project().to_string()));
+    }
+    let project = project.ok_or_else(|| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "INVALID_PARAM",
+            "project query param is required when addressing agent by alias".to_string(),
+        )
+    })?;
+    let project_id = ProjectId::try_from(project.to_string())
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let agent = resolve_agent(container.store.as_ref(), org, &project_id, id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok((agent.id().to_string(), agent.project().to_string()))
+}
+
 pub async fn inbox_for_agent(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -73,29 +115,18 @@ pub async fn inbox_for_agent(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let agent = container
-        .app
-        .get_agent
-        .execute(orchy_application::GetAgentCommand {
-            agent_id: id.clone(),
-            org_id: None,
-            relations: None,
-        })
-        .await
-        .map_err(ApiError::from)?;
-
-    if agent.org_id != org_id.to_string() {
-        return Err(ApiError(
-            StatusCode::NOT_FOUND,
-            "NOT_FOUND",
-            "agent not found".to_string(),
-        ));
-    }
+    let (agent_id, project) = resolve_agent_id_for_messages(
+        &container,
+        &org_id,
+        &id,
+        query.project.as_deref(),
+    )
+    .await?;
 
     let cmd = CheckMailboxCommand {
-        agent_id: id,
+        agent_id,
         org_id: org,
-        project: agent.project.clone(),
+        project,
         after: query.after,
         limit: query.limit,
     };
@@ -126,29 +157,18 @@ pub async fn sent_for_agent(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let agent = container
-        .app
-        .get_agent
-        .execute(orchy_application::GetAgentCommand {
-            agent_id: id.clone(),
-            org_id: None,
-            relations: None,
-        })
-        .await
-        .map_err(ApiError::from)?;
-
-    if agent.org_id != org_id.to_string() {
-        return Err(ApiError(
-            StatusCode::NOT_FOUND,
-            "NOT_FOUND",
-            "agent not found".to_string(),
-        ));
-    }
+    let (agent_id, project) = resolve_agent_id_for_messages(
+        &container,
+        &org_id,
+        &id,
+        query.project.as_deref(),
+    )
+    .await?;
 
     let cmd = CheckSentMessagesCommand {
-        agent_id: id,
+        agent_id,
         org_id: org,
-        project: agent.project.clone(),
+        project,
         namespace: query.namespace,
         after: query.after,
         limit: query.limit,
@@ -208,36 +228,31 @@ pub async fn send(
     Ok(Json(v))
 }
 
+#[derive(Deserialize)]
+pub struct MarkReadQuery {
+    pub project: Option<String>,
+}
+
 pub async fn mark_read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path((org, id)): Path<(String, String)>,
+    Query(query): Query<MarkReadQuery>,
     Json(body): Json<MarkReadBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let agent = container
-        .app
-        .get_agent
-        .execute(orchy_application::GetAgentCommand {
-            agent_id: id.clone(),
-            org_id: None,
-            relations: None,
-        })
-        .await
-        .map_err(ApiError::from)?;
-
-    if agent.org_id != org_id.to_string() {
-        return Err(ApiError(
-            StatusCode::NOT_FOUND,
-            "NOT_FOUND",
-            "agent not found".to_string(),
-        ));
-    }
+    let (agent_id, _) = resolve_agent_id_for_messages(
+        &container,
+        &org_id,
+        &id,
+        query.project.as_deref(),
+    )
+    .await?;
 
     let cmd = MarkReadCommand {
-        agent_id: id,
+        agent_id,
         message_ids: body.message_ids,
     };
 

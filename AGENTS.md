@@ -101,6 +101,11 @@ crates/
 │       ├── task/          # Task + state machine
 │       ├── message/       # Message threading + delivery tracking
 │       ├── knowledge/     # Unified knowledge: notes, decisions, skills, context, docs
+│       ├── graph/         # Edge aggregate, GraphStore trait, traversal, neighborhoods
+│       │   ├── mod.rs     # Edge, EdgeId, EdgeStore, RelationType, TraversalDirection
+│       │   ├── neighborhood.rs  # EntityNeighborhood, PeerEntity, Relation summaries
+│       │   ├── relation_options.rs  # RelationOptions, RelationQuery
+│       │   └── rules.rs   # Graph validation rules (cycle detection)
 │       ├── project/       # Project metadata
 │       ├── organization/  # Organization aggregate + events
 │       ├── resource_lock/ # TTL-based distributed locking

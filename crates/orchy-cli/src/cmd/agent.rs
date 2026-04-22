@@ -23,7 +23,11 @@ pub enum AgentSubcommand {
         alias: Option<String>,
     },
     /// List all agents in the org
-    List,
+    /// List all agents in the org
+    List {
+        #[arg(long, help = "Filter agents by project")]
+        project: Option<String>,
+    },
     /// Get full agent context by alias
     Context {
         /// Agent alias
@@ -110,8 +114,12 @@ pub async fn run(
                 println!("Saved alias to .orchy.toml");
             }
         }
-        AgentSubcommand::List => {
-            let v = client.get_json("/agents").await?;
+        AgentSubcommand::List { project } => {
+            let mut path = "/agents".to_string();
+            if let Some(p) = project {
+                path = format!("/agents?project={p}");
+            }
+            let v = client.get_json(&path).await?;
             if config.json {
                 output::print_json(config, &v);
             } else {

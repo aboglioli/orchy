@@ -48,7 +48,7 @@ pub(super) async fn get_project(
         .map_err(mcp_error)?
         .items
         .into_iter()
-        .filter(|a| a.status != "disconnected")
+        // Status is derived (active/idle/stale); all agents are included
         .collect();
 
     let tasks_cmd = ListTasksCommand {
