@@ -22,11 +22,11 @@ CREATE TABLE agents (
 );
 
 INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, status, last_seen, connected_at, metadata)
-SELECT id, '', organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents_old;
+SELECT id, 'agent-' || id, organization_id, project, namespace, roles, description, status, last_heartbeat, connected_at, metadata FROM agents_old;
 
 DROP TABLE agents_old;
-CREATE UNIQUE INDEX idx_agents_alias_unique ON agents (organization_id, project, alias);
-CREATE INDEX idx_agents_status_heartbeat ON agents (status, last_seen);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_alias_unique ON agents (organization_id, project, alias);
+CREATE INDEX IF NOT EXISTS idx_agents_status_heartbeat ON agents (status, last_seen);
 
 -- Tasks: add stale_after_secs and last_activity_at
 -- last_activity_at defaults to epoch, updated to created_at for existing rows

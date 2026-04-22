@@ -38,7 +38,18 @@ impl SendMessage {
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let from = AgentId::from_str(&cmd.from_agent_id)?;
+        let from = if let Ok(id) = AgentId::from_str(&cmd.from_agent_id) {
+            id
+        } else {
+            let alias = Alias::new(&cmd.from_agent_id)
+                .map_err(|_| Error::InvalidInput(format!("invalid agent id: {}", cmd.from_agent_id)))?;
+            self.agents
+                .find_by_alias(&org_id, &project, &alias)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("agent alias @{}", cmd.from_agent_id)))?
+                .id()
+                .clone()
+        };
 
         let sender = self
             .agents

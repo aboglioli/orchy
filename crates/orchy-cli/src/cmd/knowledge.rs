@@ -362,7 +362,7 @@ pub async fn run(
                 format!("?{}", qs.join("&"))
             };
             let v = client
-                .post_project_json(&format!("/knowledge/{path}/archive{query}"), None)
+                .post_project_json(&format!("/knowledge/{path}/archive{query}"), Some(&serde_json::json!({})))
                 .await?;
             if config.json {
                 output::print_json(config, &v);
@@ -382,7 +382,7 @@ pub async fn run(
                 format!("?{}", qs.join("&"))
             };
             let v = client
-                .post_project_json(&format!("/knowledge/{path}/unarchive{query}"), None)
+                .post_project_json(&format!("/knowledge/{path}/unarchive{query}"), Some(&serde_json::json!({})))
                 .await?;
             if config.json {
                 output::print_json(config, &v);

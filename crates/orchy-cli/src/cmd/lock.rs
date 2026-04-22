@@ -33,7 +33,7 @@ pub async fn run(
     match cmd {
         LockSubcommand::Acquire { name, ttl } => {
             let alias = client.alias.as_deref().unwrap_or("cli");
-            let mut body = serde_json::json!({ "name": name, "alias": alias });
+            let mut body = serde_json::json!({ "name": name, "agent_id": alias });
             if let Some(t) = ttl {
                 body["ttl_secs"] = serde_json::Value::Number((*t).into());
             }
@@ -47,7 +47,7 @@ pub async fn run(
         LockSubcommand::Release { name } => {
             let alias = client.alias.as_deref().unwrap_or("cli");
             client
-                .delete_project(&format!("/locks/{name}?alias={alias}"))
+                .delete_project(&format!("/locks/{name}?agent_id={alias}"))
                 .await?;
             if config.json {
                 println!("{{\"ok\": true}}");

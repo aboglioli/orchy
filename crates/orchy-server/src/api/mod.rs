@@ -346,14 +346,6 @@ pub fn router() -> Router<Arc<Container>> {
             post(knowledge::consolidate),
         )
         .route(
-            "/organizations/{org}/projects/{project}/knowledge/{*path}/archive",
-            post(knowledge::archive),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/knowledge/{*path}/unarchive",
-            post(knowledge::unarchive),
-        )
-        .route(
             "/organizations/{org}/projects/{project}/knowledge/{*path}",
             get(knowledge::read)
                 .put(knowledge::write)

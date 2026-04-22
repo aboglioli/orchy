@@ -45,9 +45,9 @@ impl AddEdge {
         let rel_type = parse_rel_type_with_aliases(&cmd.rel_type)?;
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
-        if self
+        if let Some(existing) = self
             .store
-            .exists_by_pair(
+            .find_by_pair(
                 &org_id,
                 &from_kind,
                 &cmd.from_id,
@@ -58,19 +58,7 @@ impl AddEdge {
             .await?
         {
             if cmd.if_not_exists {
-                return Ok(EdgeResponse {
-                    id: String::new(),
-                    from_kind: cmd.from_kind,
-                    from_id: cmd.from_id,
-                    to_kind: cmd.to_kind,
-                    to_id: cmd.to_id,
-                    rel_type: cmd.rel_type,
-                    created_at: chrono::Utc::now().to_rfc3339(),
-                    created_by: None,
-                    source_kind: None,
-                    source_id: None,
-                    valid_until: None,
-                });
+                return Ok(EdgeResponse::from(&existing));
             }
             return Err(Error::Conflict(format!(
                 "edge {from_kind}:{} --{rel_type}--> {to_kind}:{} already exists",

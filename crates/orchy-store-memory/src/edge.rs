@@ -151,6 +151,27 @@ impl EdgeStore for MemoryBackend {
         }))
     }
 
+    async fn find_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<Option<Edge>> {
+        let store = self.edges.read().await;
+        Ok(store.values().find(|e| {
+            e.org_id() == org
+                && e.from_kind() == from_kind
+                && e.from_id() == from_id
+                && e.to_kind() == to_kind
+                && e.to_id() == to_id
+                && e.rel_type() == rel_type
+                && e.is_active()
+        }).cloned())
+    }
+
     async fn list_by_org(
         &self,
         org: &OrganizationId,

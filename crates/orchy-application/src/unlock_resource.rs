@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentId, AgentStore};
+use orchy_core::agent::{AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -33,7 +33,18 @@ impl UnlockResource {
         let project =
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let holder = AgentId::from_str(&cmd.holder_agent_id)?;
+        let holder = if let Ok(id) = AgentId::from_str(&cmd.holder_agent_id) {
+            id
+        } else {
+            let alias = Alias::new(&cmd.holder_agent_id)
+                .map_err(|_| Error::InvalidInput(format!("invalid agent id: {}", cmd.holder_agent_id)))?;
+            self.agents
+                .find_by_alias(&org_id, &project, &alias)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("agent alias @{}", cmd.holder_agent_id)))?
+                .id()
+                .clone()
+        };
 
         self.agents
             .find_by_id(&holder)

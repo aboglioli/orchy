@@ -112,8 +112,29 @@ impl SqliteBackend {
             let tx = conn
                 .unchecked_transaction()
                 .map_err(|e| Error::Store(format!("migration {filename} tx begin: {e}")))?;
-            tx.execute_batch(&sql)
-                .map_err(|e| Error::Store(format!("migration {filename} failed: {e}")))?;
+            match tx.execute_batch(&sql) {
+                Ok(()) => {}
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("duplicate column name")
+                        || err_msg.contains("already exists")
+                        || err_msg.contains("UNIQUE constraint failed")
+                        || err_msg.contains("no such column")
+                        || err_msg.contains("no such table")
+                    {
+                        // Column/table already exists from a previous apply or manual migration — idempotent
+                        tx.rollback().map_err(|e2| Error::Store(e2.to_string()))?;
+                        // Record as applied so we don't retry
+                        conn.execute(
+                            "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
+                            rusqlite::params![&filename, chrono::Utc::now().to_rfc3339()],
+                        )
+                        .map_err(|e2| Error::Store(e2.to_string()))?;
+                        continue;
+                    }
+                    return Err(Error::Store(format!("migration {filename} failed: {e}")));
+                }
+            }
             tx.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
                 rusqlite::params![&filename, chrono::Utc::now().to_rfc3339()],

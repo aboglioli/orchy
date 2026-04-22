@@ -313,6 +313,20 @@ impl EdgeStore for StoreBackend {
             EdgeStore::exists_by_pair(org, from_kind, from_id, to_kind, to_id, rel_type)
         )
     }
+    async fn find_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<Option<Edge>> {
+        delegate_trait!(
+            self,
+            EdgeStore::find_by_pair(org, from_kind, from_id, to_kind, to_id, rel_type)
+        )
+    }
     async fn list_by_org(
         &self,
         org: &OrganizationId,

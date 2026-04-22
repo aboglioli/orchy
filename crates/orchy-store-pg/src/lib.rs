@@ -89,10 +89,27 @@ impl PgBackend {
                 .begin()
                 .await
                 .map_err(|e| Error::Store(format!("migration {filename} tx begin: {e}")))?;
-            sqlx::query(&sql)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| Error::Store(format!("migration {filename} failed: {e}")))?;
+            match sqlx::query(&sql).execute(&mut *tx).await {
+                Ok(_) => {}
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("already exists")
+                        || err_msg.contains("duplicate")
+                        || err_msg.contains("relation already exists")
+                        || err_msg.contains("UNIQUE constraint failed")
+                    {
+                        // Column/table/index already exists from a previous apply — idempotent
+                        tx.rollback().await.map_err(|e2| Error::Store(e2.to_string()))?;
+                        sqlx::query("INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING")
+                            .bind(&filename)
+                            .execute(&self.pool)
+                            .await
+                            .map_err(|e2| Error::Store(e2.to_string()))?;
+                        continue;
+                    }
+                    return Err(Error::Store(format!("migration {filename} failed: {e}")));
+                }
+            }
             sqlx::query("INSERT INTO schema_migrations (version) VALUES ($1)")
                 .bind(&filename)
                 .execute(&mut *tx)

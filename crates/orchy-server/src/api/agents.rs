@@ -38,7 +38,9 @@ pub struct AgentDto {
     pub description: String,
     pub status: String,
     pub agent_type: Option<String>,
+    pub project: Option<String>,
     pub namespace: String,
+    pub roles: Vec<String>,
     pub last_seen: String,
 }
 
@@ -113,7 +115,7 @@ pub async fn list(
     auth: OrgAuth,
     Path(org): Path<String>,
     Query(query): Query<ListAgentsQuery>,
-) -> Result<Json<Vec<AgentDto>>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     if auth.0.id.as_str() != org_id.as_str() {
@@ -151,7 +153,7 @@ pub async fn list(
         .filter(|a| {
             project_filter
                 .as_ref()
-                .map(|p| a.project == p.as_ref())
+                .map(|p| a.project == *p.as_ref())
                 .unwrap_or(true)
         })
         .map(|a| AgentDto {
@@ -160,12 +162,14 @@ pub async fn list(
             description: a.description.clone(),
             status: a.status.clone(),
             agent_type: a.metadata.get("agent_type").cloned(),
+            project: Some(a.project.clone()),
             namespace: a.namespace.clone(),
+            roles: a.roles.clone(),
             last_seen: a.last_seen.clone(),
         })
         .collect();
 
-    Ok(Json(body))
+    Ok(Json(serde_json::json!({"items": body})))
 }
 
 #[derive(Deserialize)]
@@ -317,7 +321,9 @@ pub async fn get_context(
         description: agent.description.clone(),
         status: agent.status.clone(),
         agent_type: agent.metadata.get("agent_type").cloned(),
+        project: Some(agent.project.to_string()),
         namespace: agent.namespace.clone(),
+        roles: agent.roles.clone(),
         last_seen: agent.last_seen.clone(),
     };
 

@@ -1,1 +1,1 @@
-ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS acceptance_criteria TEXT;

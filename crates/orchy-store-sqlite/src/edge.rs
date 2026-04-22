@@ -198,6 +198,41 @@ impl EdgeStore for SqliteBackend {
         Ok(count > 0)
     }
 
+    async fn find_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<Option<Edge>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, created_at, created_by, source_kind, source_id, valid_until
+                 FROM edges
+                 WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3
+                   AND to_kind = ?4 AND to_id = ?5 AND rel_type = ?6
+                   AND valid_until IS NULL",
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let edge = stmt
+            .query_row(
+                rusqlite::params![
+                    org.to_string(),
+                    from_kind.to_string(),
+                    from_id,
+                    to_kind.to_string(),
+                    to_id,
+                    rel_type.to_string(),
+                ],
+                row_to_edge,
+            )
+            .ok();
+        Ok(edge)
+    }
+
     async fn list_by_org(
         &self,
         org: &OrganizationId,

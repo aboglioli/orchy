@@ -57,6 +57,15 @@ pub trait EdgeStore: Send + Sync {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<bool>;
+    async fn find_by_pair(
+        &self,
+        org: &OrganizationId,
+        from_kind: &ResourceKind,
+        from_id: &str,
+        to_kind: &ResourceKind,
+        to_id: &str,
+        rel_type: &RelationType,
+    ) -> Result<Option<Edge>>;
     async fn list_by_org(
         &self,
         org: &OrganizationId,
