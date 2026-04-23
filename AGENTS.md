@@ -402,6 +402,20 @@ A "janitor" agent can compact and reorganize:
   strings, resolved dynamically when reading inbox.
 - **No disconnect tool** — agents stop calling. Tasks become stale naturally.
   Resource locks released via heartbeat monitor.
+- **Auth-derived agent ownership** — API key resolution returns `ApiKeyPrincipal`
+  with org + user_id. Agent registration derives ownership from the authenticated
+  principal, not caller-supplied values. Ownership resume rules: none→attach,
+  same→resume, different→conflict.
+- **User-targeted messages are logical** — `user:<uuid>` targets are stored as
+  raw strings and resolved dynamically at mailbox-read time against the agent's
+  persisted `user_id`. No fan-out at send time.
+- **Claim semantics for logical targets** — role/ns/broadcast/user messages support
+  optional claim/unclaim. Claimed logical messages are hidden from sibling default
+  inboxes but remain visible in history/thread views.
+- **MCP/REST alias parity** — both REST and MCP resolve `@alias` in send_message
+  and lock_resource. Alias uniqueness enforced per `(org, project, alias)`.
+- **Namespace mark-read via receipts** — namespace-targeted messages create receipts
+  on read, enabling consistent mark_read behavior with other logical targets.
 
 ## Configuration
 
