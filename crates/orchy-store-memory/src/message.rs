@@ -6,6 +6,7 @@ use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
+use orchy_core::user::UserId;
 
 use crate::MemoryBackend;
 
@@ -58,6 +59,7 @@ impl MessageStore for MemoryBackend {
         agent: &AgentId,
         agent_roles: &[String],
         agent_namespace: &Namespace,
+        agent_user_id: Option<&UserId>,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
@@ -84,10 +86,20 @@ impl MessageStore for MemoryBackend {
                 MessageTarget::Namespace(ns) => {
                     msg.from() != agent && agent_namespace.starts_with(ns)
                 }
+                MessageTarget::User(user_id) => {
+                    msg.from() != agent && agent_user_id == Some(user_id)
+                }
             };
 
             if !targets_agent {
                 continue;
+            }
+
+            // Claim filter: hide from default inbox if claimed by another agent
+            if let Some(claimed_by) = msg.claimed_by() {
+                if claimed_by != agent {
+                    continue;
+                }
             }
 
             results.push(msg.clone());

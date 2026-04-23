@@ -8,6 +8,8 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
+use orchy_core::user::UserId;
+use std::str::FromStr;
 
 use crate::dto::{AgentResponse, RegisterAgentResponse};
 use crate::parse_namespace;
@@ -21,6 +23,7 @@ pub struct RegisterAgentCommand {
     pub description: String,
     pub agent_type: Option<String>,
     pub metadata: HashMap<String, String>,
+    pub auth_user_id: Option<String>,
 }
 
 pub struct RegisterAgent {
@@ -51,9 +54,30 @@ impl RegisterAgent {
 
         let alias = Alias::new(&cmd.alias).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
+        let auth_user_id = cmd
+            .auth_user_id
+            .as_deref()
+            .map(UserId::from_str)
+            .transpose()
+            .map_err(|e| Error::InvalidInput(format!("invalid auth_user_id: {e}")))?;
+
         let agent = if let Some(mut existing) =
             self.agents.find_by_alias(&org_id, &project, &alias).await?
         {
+            // Apply ownership resume conflict rule
+            match (existing.user_id(), auth_user_id.as_ref()) {
+                (Some(existing_uid), Some(provided_uid)) if existing_uid != provided_uid => {
+                    return Err(Error::Conflict(format!(
+                        "agent '{}' is owned by a different user",
+                        cmd.alias
+                    )));
+                }
+                (None, Some(provided_uid)) => {
+                    existing.attach_user(*provided_uid);
+                }
+                _ => {}
+            }
+
             existing.resume(
                 namespace.clone(),
                 cmd.roles.clone(),
@@ -85,6 +109,7 @@ impl RegisterAgent {
                 cmd.description,
                 None,
                 metadata,
+                auth_user_id,
             )?;
             self.agents.save(&mut agent).await?;
             agent
@@ -100,6 +125,7 @@ impl RegisterAgent {
                 &agent_id,
                 &agent_roles,
                 &agent_namespace,
+                agent.user_id(),
                 &org_id,
                 &project,
                 PageParams::unbounded(),

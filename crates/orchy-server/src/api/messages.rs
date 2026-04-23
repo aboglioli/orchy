@@ -25,8 +25,65 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
+use orchy_core::agent::AgentId;
+use orchy_core::message::MessageId;
+use std::str::FromStr;
+
+pub async fn claim_message(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, msg_id)): Path<(String, String)>,
+    Json(body): Json<ClaimMessageBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let agent_id = AgentId::from_str(&body.agent_id)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let message_id = MessageId::from_str(&msg_id)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+
+    container
+        .app
+        .claim_message
+        .execute(agent_id, message_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+pub async fn unclaim_message(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+    Path((org, msg_id)): Path<(String, String)>,
+    Json(body): Json<ClaimMessageBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let org_id = parse_org(&org)?;
+    check_org(&auth, &org_id)?;
+
+    let agent_id = AgentId::from_str(&body.agent_id)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let message_id = MessageId::from_str(&msg_id)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+
+    container
+        .app
+        .unclaim_message
+        .execute(agent_id, message_id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+#[derive(Deserialize)]
+pub struct ClaimMessageBody {
+    pub agent_id: String,
+}
+
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",

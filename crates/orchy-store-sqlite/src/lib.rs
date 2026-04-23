@@ -203,6 +203,21 @@ impl SqliteBackend {
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260422-000100_add_archived_at.sql"
         )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260423-000100_add_agent_user_id.sql"
+        )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260423-000200_add_api_key_user_id.sql"
+        )))
+        .map_err(|e| Error::Store(e.to_string()))?;
+        conn.execute_batch(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/sqlite/20260423-000300_add_message_claim_state.sql"
+        )))
         .map_err(|e| Error::Store(e.to_string()))
     }
 }

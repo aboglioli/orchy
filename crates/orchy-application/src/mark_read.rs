@@ -46,7 +46,7 @@ impl MarkRead {
                     continue;
                 }
 
-                if msg.is_broadcast() || msg.is_role_targeted() {
+                if msg.is_broadcast() || msg.is_role_targeted() || msg.is_namespace_targeted() {
                     receipt_ids.push(*id);
                 }
             }

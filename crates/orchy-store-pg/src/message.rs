@@ -14,6 +14,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::ResourceRef;
+use orchy_core::user::UserId;
 use orchy_events::io::Writer;
 
 use crate::{PgBackend, events::PgEventWriter, parse_namespace, parse_project_id};
@@ -55,8 +56,8 @@ impl MessageStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at, refs)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "INSERT INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at, refs, claimed_by, claimed_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              ON CONFLICT (id) DO UPDATE SET
                 organization_id = EXCLUDED.organization_id,
                 project = EXCLUDED.project,
@@ -66,7 +67,9 @@ impl MessageStore for PgBackend {
                 body = EXCLUDED.body,
                 reply_to = EXCLUDED.reply_to,
                 status = EXCLUDED.status,
-                refs = EXCLUDED.refs",
+                refs = EXCLUDED.refs,
+                claimed_by = EXCLUDED.claimed_by,
+                claimed_at = EXCLUDED.claimed_at",
         )
         .bind(message.id().as_uuid())
         .bind(message.org_id().to_string())
@@ -83,6 +86,8 @@ impl MessageStore for PgBackend {
         })
         .bind(message.created_at())
         .bind(serde_json::to_value(message.refs()).unwrap_or(serde_json::json!([])))
+        .bind(message.claimed_by().map(|id| *id.as_uuid()))
+        .bind(message.claimed_at())
         .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -148,6 +153,7 @@ impl MessageStore for PgBackend {
         agent: &AgentId,
         agent_roles: &[String],
         agent_namespace: &Namespace,
+        agent_user_id: Option<&UserId>,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
@@ -163,7 +169,7 @@ impl MessageStore for PgBackend {
 
         let rows = if let Some(cid) = cursor_id {
             sqlx::query(
-                "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
+                "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs, m.claimed_by, m.claimed_at
                  FROM messages m
                  LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $1
                  WHERE r.message_id IS NULL
@@ -175,6 +181,7 @@ impl MessageStore for PgBackend {
                         OR (m.to_target = 'broadcast' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'role:%' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'ns:%' AND m.from_agent != $1)
+                        OR (m.to_target LIKE 'user:%' AND m.from_agent != $1)
                    )
                  ORDER BY m.id DESC LIMIT $5",
             )
@@ -188,7 +195,7 @@ impl MessageStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?
         } else {
             sqlx::query(
-                "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
+                "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs, m.claimed_by, m.claimed_at
                  FROM messages m
                  LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = $1
                  WHERE r.message_id IS NULL
@@ -199,6 +206,7 @@ impl MessageStore for PgBackend {
                         OR (m.to_target = 'broadcast' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'role:%' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'ns:%' AND m.from_agent != $1)
+                        OR (m.to_target LIKE 'user:%' AND m.from_agent != $1)
                    )
                  ORDER BY m.id DESC LIMIT $4",
             )
@@ -216,11 +224,26 @@ impl MessageStore for PgBackend {
             .map(row_to_message)
             .collect::<Result<Vec<_>>>()?;
 
-        // App-layer filtering: role match + namespace hierarchy
-        messages.retain(|m| match m.to() {
-            MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
-            MessageTarget::Namespace(ns) => ns_str.starts_with(&ns.to_string()),
-            _ => true,
+        let user_targets: Vec<String> = agent_user_id
+            .map(|uid| vec![format!("user:{uid}")])
+            .unwrap_or_default();
+        // App-layer filtering: role match + namespace hierarchy + user target + claim hiding
+        messages.retain(|m| {
+            let visible = match m.to() {
+                MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
+                MessageTarget::Namespace(ns) => ns_str.starts_with(&ns.to_string()),
+                MessageTarget::User(uid) => user_targets.contains(&format!("user:{uid}")),
+                _ => true,
+            };
+            if !visible {
+                return false;
+            }
+            if let Some(claimed_by) = m.claimed_by() {
+                if claimed_by != agent {
+                    return false;
+                }
+            }
+            true
         });
 
         let has_more = messages.len() > page.limit as usize;
@@ -363,6 +386,8 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
     let reply_to: Option<Uuid> = row.get("reply_to");
     let refs_json: serde_json::Value = row.get("refs");
     let refs: Vec<ResourceRef> = serde_json::from_value(refs_json).unwrap_or_default();
+    let claimed_by: Option<Uuid> = row.try_get("claimed_by").ok();
+    let claimed_at: Option<DateTime<Utc>> = row.try_get("claimed_at").ok();
 
     Ok(Message::restore(RestoreMessage {
         id: MessageId::from_uuid(id),
@@ -379,5 +404,7 @@ fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
             .unwrap_or(MessageStatus::Pending),
         created_at,
         refs,
+        claimed_by: claimed_by.map(AgentId::from_uuid),
+        claimed_at,
     }))
 }

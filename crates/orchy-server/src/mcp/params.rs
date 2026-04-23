@@ -251,6 +251,16 @@ pub struct MarkReadParams {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+pub struct ClaimMessageParams {
+    pub message_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct UnclaimMessageParams {
+    pub message_id: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct ListConversationParams {
     pub message_id: String,
     /// Most recent N messages.

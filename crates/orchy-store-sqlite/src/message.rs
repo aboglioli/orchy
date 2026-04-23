@@ -12,6 +12,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::ResourceRef;
+use orchy_core::user::UserId;
 
 use crate::SqliteBackend;
 
@@ -31,8 +32,8 @@ impl MessageStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at, refs)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at, refs, claimed_by, claimed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             rusqlite::params![
                 message.id().to_string(),
                 message.org_id().to_string(),
@@ -49,6 +50,8 @@ impl MessageStore for SqliteBackend {
                 },
                 message.created_at().to_rfc3339(),
                 serde_json::to_string(message.refs()).unwrap_or_else(|_| "[]".to_string()),
+                message.claimed_by().map(|id| id.to_string()),
+                message.claimed_at().map(|dt| dt.to_rfc3339()),
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -100,6 +103,7 @@ impl MessageStore for SqliteBackend {
         agent: &AgentId,
         agent_roles: &[String],
         agent_namespace: &Namespace,
+        agent_user_id: Option<&UserId>,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
@@ -109,7 +113,7 @@ impl MessageStore for SqliteBackend {
         // Unread = not in message_receipts for this agent.
         // Match: direct to agent UUID, broadcast, role:*, ns:*
         let mut sql = String::from(
-            "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs
+            "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs, m.claimed_by, m.claimed_at
              FROM messages m
              LEFT JOIN message_receipts r ON r.message_id = m.id AND r.agent_id = ?1
              WHERE r.message_id IS NULL
@@ -120,8 +124,12 @@ impl MessageStore for SqliteBackend {
                     OR (m.to_target = 'broadcast' AND m.from_agent != ?1)
                     OR (m.to_target LIKE 'role:%' AND m.from_agent != ?1)
                     OR (m.to_target LIKE 'ns:%' AND m.from_agent != ?1)
+                    OR (m.to_target LIKE 'user:%' AND m.from_agent != ?1)
                )",
         );
+        let user_targets: Vec<String> = agent_user_id
+            .map(|uid| vec![format!("user:{uid}")])
+            .unwrap_or_default();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
             Box::new(agent.to_string()),
             Box::new(org.to_string()),
@@ -156,11 +164,24 @@ impl MessageStore for SqliteBackend {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        // App-layer filtering: role match + namespace hierarchy
-        messages.retain(|m| match m.to() {
-            MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
-            MessageTarget::Namespace(ns) => ns_str.starts_with(&ns.to_string()),
-            _ => true,
+        // App-layer filtering: role match + namespace hierarchy + user target + claim hiding
+        messages.retain(|m| {
+            let visible = match m.to() {
+                MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
+                MessageTarget::Namespace(ns) => ns_str.starts_with(&ns.to_string()),
+                MessageTarget::User(uid) => user_targets.contains(&format!("user:{uid}")),
+                _ => true,
+            };
+            if !visible {
+                return false;
+            }
+            // Hide claimed logical messages from siblings
+            if let Some(claimed_by) = m.claimed_by() {
+                if claimed_by != agent {
+                    return false;
+                }
+            }
+            true
         });
 
         let has_more = messages.len() > page.limit as usize;
@@ -331,6 +352,8 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
     let created_at_str: String = row.get(8)?;
     let reply_to_str: Option<String> = row.get(9)?;
     let refs_str: String = row.get(10)?;
+    let claimed_by_str: Option<String> = row.get(11).ok();
+    let claimed_at_str: Option<String> = row.get(12).ok();
 
     let reply_to = reply_to_str
         .map(|s| {
@@ -345,6 +368,11 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
         .transpose()?;
 
     let refs: Vec<ResourceRef> = serde_json::from_str(&refs_str).unwrap_or_default();
+
+    let claimed_by = claimed_by_str.and_then(|s| AgentId::from_str(&s).ok());
+    let claimed_at = claimed_at_str
+        .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+        .map(|dt| dt.with_timezone(&Utc));
 
     Ok(Message::restore(RestoreMessage {
         id: MessageId::from_str(&id_str).map_err(|e| {
@@ -402,5 +430,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
                 )
             })?,
         refs,
+        claimed_by,
+        claimed_at,
     }))
 }

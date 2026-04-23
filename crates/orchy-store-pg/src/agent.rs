@@ -10,13 +10,14 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+use orchy_core::user::UserId;
 use orchy_events::io::Writer;
 
 use crate::{
     PgBackend, decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id,
 };
 
-const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata";
+const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id";
 
 #[async_trait]
 impl AgentStore for PgBackend {
@@ -33,8 +34,8 @@ impl AgentStore for PgBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
              ON CONFLICT (id) DO UPDATE SET
                 alias = EXCLUDED.alias,
                 organization_id = EXCLUDED.organization_id,
@@ -44,7 +45,8 @@ impl AgentStore for PgBackend {
                 description = EXCLUDED.description,
                 last_seen = EXCLUDED.last_seen,
                 connected_at = EXCLUDED.connected_at,
-                metadata = EXCLUDED.metadata",
+                metadata = EXCLUDED.metadata,
+                user_id = EXCLUDED.user_id",
         )
         .bind(agent.id().to_string())
         .bind(agent.alias().as_str())
@@ -56,6 +58,7 @@ impl AgentStore for PgBackend {
         .bind(agent.last_seen())
         .bind(agent.connected_at())
         .bind(&metadata_json)
+        .bind(agent.user_id().map(|u| u.to_string()))
         .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -203,10 +206,16 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let last_seen: DateTime<Utc> = row.get("last_seen");
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
+    let user_id_str: Option<String> = row.try_get("user_id").ok();
+
+    let user_id = user_id_str.and_then(|s| UserId::from_str(&s).ok());
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str)?,
-        alias: Alias::new(&alias).unwrap_or_else(|_| Alias::new(&format!("agent-{id_str}")).unwrap_or_else(|_| Alias::new("unknown").unwrap())),
+        alias: Alias::new(&alias).unwrap_or_else(|_| {
+            Alias::new(&format!("agent-{id_str}"))
+                .unwrap_or_else(|_| Alias::new("unknown").unwrap())
+        }),
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,
@@ -216,5 +225,6 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
         last_seen,
         connected_at,
         metadata: decode_json_value::<HashMap<String, String>>(metadata, "agents", "metadata")?,
+        user_id,
     }))
 }

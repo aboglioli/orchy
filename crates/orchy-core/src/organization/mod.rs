@@ -10,6 +10,7 @@ use uuid::Uuid;
 use orchy_events::{Event, EventCollector, Payload};
 
 use crate::error::{Error, Result};
+use crate::user::UserId;
 
 use self::events as org_events;
 
@@ -56,16 +57,18 @@ pub struct ApiKey {
     id: ApiKeyId,
     name: String,
     key: String,
+    user_id: Option<UserId>,
     is_active: bool,
     created_at: DateTime<Utc>,
 }
 
 impl ApiKey {
-    fn new(name: String, key: String) -> Self {
+    fn new(name: String, key: String, user_id: Option<UserId>) -> Self {
         Self {
             id: ApiKeyId::new(),
             name,
             key,
+            user_id,
             is_active: true,
             created_at: Utc::now(),
         }
@@ -81,6 +84,10 @@ impl ApiKey {
 
     pub fn key(&self) -> &str {
         &self.key
+    }
+
+    pub fn user_id(&self) -> Option<&UserId> {
+        self.user_id.as_ref()
     }
 
     pub fn is_active(&self) -> bool {
@@ -143,8 +150,13 @@ impl Organization {
         }
     }
 
-    pub fn add_api_key(&mut self, name: String, key: String) -> Result<&ApiKey> {
-        let api_key = ApiKey::new(name.clone(), key.clone());
+    pub fn add_api_key(
+        &mut self,
+        name: String,
+        key: String,
+        user_id: Option<UserId>,
+    ) -> Result<&ApiKey> {
+        let api_key = ApiKey::new(name.clone(), key.clone(), user_id);
         let key_id = api_key.id().to_string();
         self.api_keys.push(api_key);
         self.updated_at = Utc::now();

@@ -133,13 +133,22 @@ impl MessageStore for StoreBackend {
         agent: &AgentId,
         agent_roles: &[String],
         agent_namespace: &Namespace,
+        agent_user_id: Option<&UserId>,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
     ) -> Result<Page<Message>> {
         delegate_trait!(
             self,
-            MessageStore::find_unread(agent, agent_roles, agent_namespace, org, project, page)
+            MessageStore::find_unread(
+                agent,
+                agent_roles,
+                agent_namespace,
+                agent_user_id,
+                org,
+                project,
+                page
+            )
         )
     }
     async fn find_sent(

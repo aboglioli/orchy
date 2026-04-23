@@ -118,7 +118,7 @@ pub async fn list(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -192,7 +192,7 @@ pub async fn register(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -209,6 +209,7 @@ pub async fn register(
         description: body.description,
         agent_type: body.agent_type,
         metadata: body.metadata,
+        auth_user_id: auth.user_id.clone(),
     };
 
     let agent = container
@@ -235,7 +236,7 @@ pub async fn get_context(
 ) -> Result<Json<AgentContextDto>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -342,7 +343,7 @@ pub async fn get_summary(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -388,7 +389,7 @@ pub async fn change_roles(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -434,7 +435,7 @@ pub async fn rename_alias(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -480,7 +481,7 @@ pub async fn switch_context(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",

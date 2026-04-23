@@ -38,8 +38,9 @@ impl LockResource {
         let holder = if let Ok(id) = AgentId::from_str(&cmd.holder_agent_id) {
             id
         } else {
-            let alias = Alias::new(&cmd.holder_agent_id)
-                .map_err(|_| Error::InvalidInput(format!("invalid agent id: {}", cmd.holder_agent_id)))?;
+            let alias = Alias::new(&cmd.holder_agent_id).map_err(|_| {
+                Error::InvalidInput(format!("invalid agent id: {}", cmd.holder_agent_id))
+            })?;
             self.agents
                 .find_by_alias(&org_id, &project, &alias)
                 .await?

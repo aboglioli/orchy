@@ -7,6 +7,7 @@ use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceRef;
+use orchy_core::user::{OrgMembershipStore, UserStore};
 
 use crate::dto::MessageResponse;
 use crate::parse_namespace;
@@ -25,11 +26,23 @@ pub struct SendMessageCommand {
 pub struct SendMessage {
     agents: Arc<dyn AgentStore>,
     messages: Arc<dyn MessageStore>,
+    users: Arc<dyn UserStore>,
+    memberships: Arc<dyn OrgMembershipStore>,
 }
 
 impl SendMessage {
-    pub fn new(agents: Arc<dyn AgentStore>, messages: Arc<dyn MessageStore>) -> Self {
-        Self { agents, messages }
+    pub fn new(
+        agents: Arc<dyn AgentStore>,
+        messages: Arc<dyn MessageStore>,
+        users: Arc<dyn UserStore>,
+        memberships: Arc<dyn OrgMembershipStore>,
+    ) -> Self {
+        Self {
+            agents,
+            messages,
+            users,
+            memberships,
+        }
     }
 
     pub async fn execute(&self, cmd: SendMessageCommand) -> Result<MessageResponse> {
@@ -41,8 +54,9 @@ impl SendMessage {
         let from = if let Ok(id) = AgentId::from_str(&cmd.from_agent_id) {
             id
         } else {
-            let alias = Alias::new(&cmd.from_agent_id)
-                .map_err(|_| Error::InvalidInput(format!("invalid agent id: {}", cmd.from_agent_id)))?;
+            let alias = Alias::new(&cmd.from_agent_id).map_err(|_| {
+                Error::InvalidInput(format!("invalid agent id: {}", cmd.from_agent_id))
+            })?;
             self.agents
                 .find_by_alias(&org_id, &project, &alias)
                 .await?
@@ -76,7 +90,20 @@ impl SendMessage {
                 .ok_or_else(|| Error::NotFound(format!("agent alias @{alias_str}")))?;
             MessageTarget::Agent(target_agent.id().clone())
         } else {
-            MessageTarget::parse(&cmd.to)?
+            let target = MessageTarget::parse(&cmd.to)?;
+            if let MessageTarget::User(ref uid) = target {
+                self.users
+                    .find_by_id(uid)
+                    .await?
+                    .ok_or_else(|| Error::NotFound(format!("user {uid}")))?;
+                let membership = self.memberships.find(uid, &org_id).await?;
+                if membership.is_none() {
+                    return Err(Error::InvalidInput(format!(
+                        "user {uid} does not belong to organization {org_id}"
+                    )));
+                }
+            }
+            target
         };
         let reply_to = cmd
             .reply_to

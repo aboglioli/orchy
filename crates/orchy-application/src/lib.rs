@@ -92,9 +92,11 @@ mod untag_task;
 // Messages
 mod check_mailbox;
 mod check_sent_messages;
+pub mod claim_message;
 mod list_conversation;
 mod mark_read;
 mod send_message;
+pub mod unclaim_message;
 
 // Knowledge
 mod append_knowledge;
@@ -187,9 +189,11 @@ pub use untag_task::{UntagTask, UntagTaskCommand};
 
 pub use check_mailbox::{CheckMailbox, CheckMailboxCommand};
 pub use check_sent_messages::{CheckSentMessages, CheckSentMessagesCommand};
+pub use claim_message::ClaimMessage;
 pub use list_conversation::{ListConversation, ListConversationCommand};
 pub use mark_read::{MarkRead, MarkReadCommand};
 pub use send_message::{SendMessage, SendMessageCommand};
+pub use unclaim_message::UnclaimMessage;
 
 pub use append_knowledge::{AppendKnowledge, AppendKnowledgeCommand};
 pub use archive_knowledge::{ArchiveKnowledge, ArchiveKnowledgeCommand};
@@ -226,7 +230,7 @@ pub use add_api_key::{AddApiKey, AddApiKeyCommand};
 pub use create_organization::{CreateOrganization, CreateOrganizationCommand};
 pub use get_organization::{GetOrganization, GetOrganizationCommand};
 pub use list_organizations::{ListOrganizations, ListOrganizationsCommand};
-pub use resolve_api_key::{ResolveApiKey, ResolveApiKeyCommand};
+pub use resolve_api_key::{ApiKeyPrincipal, ResolveApiKey, ResolveApiKeyCommand};
 pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 
 pub use add_edge::{AddEdge, AddEdgeCommand};
@@ -299,6 +303,8 @@ pub struct Application {
     pub check_mailbox: CheckMailbox,
     pub check_sent_messages: CheckSentMessages,
     pub mark_read: MarkRead,
+    pub claim_message: ClaimMessage,
+    pub unclaim_message: UnclaimMessage,
     pub list_conversation: ListConversation,
 
     pub write_knowledge: WriteKnowledge,
@@ -434,10 +440,17 @@ impl Application {
             move_task: MoveTask::new(tasks.clone()),
             list_tags: ListTags::new(tasks.clone()),
 
-            send_message: SendMessage::new(agents.clone(), messages.clone()),
+            send_message: SendMessage::new(
+                agents.clone(),
+                messages.clone(),
+                users.clone(),
+                memberships.clone(),
+            ),
             check_mailbox: CheckMailbox::new(messages.clone(), agents.clone()),
             check_sent_messages: CheckSentMessages::new(messages.clone(), agents.clone()),
             mark_read: MarkRead::new(messages.clone(), agents.clone()),
+            claim_message: ClaimMessage::new(messages.clone()),
+            unclaim_message: UnclaimMessage::new(messages.clone()),
             list_conversation: ListConversation::new(messages.clone()),
 
             write_knowledge: WriteKnowledge::new(

@@ -9,10 +9,11 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
+use orchy_core::user::UserId;
 
 use crate::SqliteBackend;
 
-const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata";
+const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id";
 
 #[async_trait]
 impl AgentStore for SqliteBackend {
@@ -23,8 +24,19 @@ impl AgentStore for SqliteBackend {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT (id) DO UPDATE SET
+                alias = EXCLUDED.alias,
+                organization_id = EXCLUDED.organization_id,
+                project = EXCLUDED.project,
+                namespace = EXCLUDED.namespace,
+                roles = EXCLUDED.roles,
+                description = EXCLUDED.description,
+                last_seen = EXCLUDED.last_seen,
+                connected_at = EXCLUDED.connected_at,
+                metadata = EXCLUDED.metadata,
+                user_id = EXCLUDED.user_id",
             rusqlite::params![
                 agent.id().to_string(),
                 agent.alias().as_str(),
@@ -38,6 +50,7 @@ impl AgentStore for SqliteBackend {
                 agent.connected_at().to_rfc3339(),
                 serde_json::to_string(agent.metadata())
                     .map_err(|e| Error::Store(format!("failed to serialize metadata: {e}")))?,
+                agent.user_id().map(|u| u.to_string()),
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -197,10 +210,16 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let last_seen_str: String = row.get(7)?;
     let connected_str: String = row.get(8)?;
     let metadata_str: String = row.get(9)?;
+    let user_id_str: Option<String> = row.get(10).ok();
+
+    let user_id = user_id_str.and_then(|s| UserId::from_str(&s).ok());
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e.to_string()))?,
-        alias: Alias::new(&alias).unwrap_or_else(|_| Alias::new(&format!("agent-{id_str}")).unwrap_or_else(|_| Alias::new("unknown").unwrap())),
+        alias: Alias::new(&alias).unwrap_or_else(|_| {
+            Alias::new(&format!("agent-{id_str}"))
+                .unwrap_or_else(|_| Alias::new("unknown").unwrap())
+        }),
         org_id: OrganizationId::new(&org_id_str).map_err(|e| conversion_err(2, e.to_string()))?,
         project: ProjectId::try_from(project_str).map_err(|e| conversion_err(3, e))?,
         namespace: Namespace::try_from(namespace_str)
@@ -226,5 +245,6 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
                 )
             })?,
         metadata: crate::decode_json(&metadata_str, "metadata")?,
+        user_id,
     }))
 }

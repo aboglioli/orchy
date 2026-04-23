@@ -193,6 +193,14 @@ pub fn router() -> Router<Arc<Container>> {
             post(messages::mark_read),
         )
         .route(
+            "/organizations/{org}/messages/{msg_id}/claim",
+            post(messages::claim_message),
+        )
+        .route(
+            "/organizations/{org}/messages/{msg_id}/unclaim",
+            post(messages::unclaim_message),
+        )
+        .route(
             "/organizations/{org}/projects/{project}",
             get(projects::get).put(projects::update),
         )

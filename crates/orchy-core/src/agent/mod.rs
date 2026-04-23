@@ -16,6 +16,7 @@ use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
+use crate::user::UserId;
 
 use self::events as agent_events;
 
@@ -90,6 +91,7 @@ pub struct Agent {
     last_seen: DateTime<Utc>,
     connected_at: DateTime<Utc>,
     metadata: HashMap<String, String>,
+    user_id: Option<UserId>,
     #[serde(skip)]
     collector: EventCollector,
 }
@@ -104,6 +106,7 @@ impl Agent {
         description: String,
         id: Option<AgentId>,
         metadata: HashMap<String, String>,
+        user_id: Option<UserId>,
     ) -> Result<Self> {
         let now = Utc::now();
         let id = id.unwrap_or_default();
@@ -118,6 +121,7 @@ impl Agent {
             last_seen: now,
             connected_at: now,
             metadata,
+            user_id,
             collector: EventCollector::new(),
         };
 
@@ -151,10 +155,10 @@ impl Agent {
             namespace: r.namespace,
             roles: r.roles,
             description: r.description,
-
             last_seen: r.last_seen,
             connected_at: r.connected_at,
             metadata: r.metadata,
+            user_id: r.user_id,
             collector: EventCollector::new(),
         }
     }
@@ -350,6 +354,12 @@ impl Agent {
     pub fn metadata(&self) -> &HashMap<String, String> {
         &self.metadata
     }
+    pub fn user_id(&self) -> Option<&UserId> {
+        self.user_id.as_ref()
+    }
+    pub fn attach_user(&mut self, user_id: UserId) {
+        self.user_id = Some(user_id);
+    }
 }
 
 pub struct RestoreAgent {
@@ -363,6 +373,7 @@ pub struct RestoreAgent {
     pub last_seen: DateTime<Utc>,
     pub connected_at: DateTime<Utc>,
     pub metadata: HashMap<String, String>,
+    pub user_id: Option<UserId>,
 }
 
 #[cfg(test)]
@@ -393,6 +404,7 @@ mod tests {
             "test agent".to_string(),
             None,
             HashMap::new(),
+            None,
         )
         .unwrap()
     }

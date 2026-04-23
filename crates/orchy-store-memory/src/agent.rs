@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
-use orchy_core::error::Result;
+use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
@@ -13,6 +13,19 @@ impl AgentStore for MemoryBackend {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         {
             let mut agents = self.agents.write().await;
+            // Enforce alias uniqueness per (org, project)
+            if let Some(existing) = agents.values().find(|a| {
+                a.org_id() == agent.org_id()
+                    && a.project() == agent.project()
+                    && a.alias() == agent.alias()
+                    && a.id() != agent.id()
+            }) {
+                return Err(Error::Conflict(format!(
+                    "alias '{}' already in use by agent {}",
+                    agent.alias(),
+                    existing.id()
+                )));
+            }
             agents.insert(agent.id().clone(), agent.clone());
         }
 

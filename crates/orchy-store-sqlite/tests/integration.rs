@@ -45,6 +45,7 @@ async fn agent_save_and_find() {
         "test agent".into(),
         None,
         HashMap::new(),
+        None,
     )
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -71,6 +72,7 @@ async fn agent_save_updates_existing() {
         "original".into(),
         None,
         HashMap::new(),
+        None,
     )
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -99,6 +101,7 @@ async fn agent_save_and_fetch_roundtrip() {
         "".into(),
         None,
         HashMap::new(),
+        None,
     )
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -124,6 +127,7 @@ async fn agent_find_timed_out() {
         "".into(),
         None,
         HashMap::new(),
+        None,
     )
     .unwrap();
     AgentStore::save(&store, &mut agent).await.unwrap();
@@ -321,6 +325,7 @@ async fn message_save_and_find_unread() {
         &to,
         &[],
         &Namespace::root(),
+        None,
         &o,
         &p,
         PageParams::unbounded(),
@@ -341,6 +346,7 @@ async fn message_save_and_find_unread() {
         &to,
         &[],
         &Namespace::root(),
+        None,
         &o,
         &p,
         PageParams::unbounded(),
@@ -503,6 +509,7 @@ async fn message_find_unread_includes_broadcast() {
         &receiver,
         &[],
         &Namespace::root(),
+        None,
         &o,
         &p,
         PageParams::unbounded(),
@@ -517,6 +524,7 @@ async fn message_find_unread_includes_broadcast() {
         &sender,
         &[],
         &Namespace::root(),
+        None,
         &o,
         &p,
         PageParams::unbounded(),
@@ -534,6 +542,7 @@ async fn message_find_unread_includes_broadcast() {
         &receiver,
         &[],
         &Namespace::root(),
+        None,
         &o,
         &p,
         PageParams::unbounded(),

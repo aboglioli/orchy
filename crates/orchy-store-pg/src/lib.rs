@@ -99,7 +99,9 @@ impl PgBackend {
                         || err_msg.contains("UNIQUE constraint failed")
                     {
                         // Column/table/index already exists from a previous apply — idempotent
-                        tx.rollback().await.map_err(|e2| Error::Store(e2.to_string()))?;
+                        tx.rollback()
+                            .await
+                            .map_err(|e2| Error::Store(e2.to_string()))?;
                         sqlx::query("INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING")
                             .bind(&filename)
                             .execute(&self.pool)

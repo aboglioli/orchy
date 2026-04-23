@@ -83,6 +83,7 @@ impl GetAgentSummary {
                 agent.id(),
                 agent.roles(),
                 agent.namespace(),
+                agent.user_id(),
                 &org_id,
                 agent.project(),
                 PageParams::unbounded(),

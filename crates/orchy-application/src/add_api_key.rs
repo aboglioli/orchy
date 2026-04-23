@@ -1,7 +1,9 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::{OrganizationId, OrganizationStore};
+use orchy_core::user::UserId;
 
 use crate::dto::OrganizationResponse;
 
@@ -9,6 +11,7 @@ pub struct AddApiKeyCommand {
     pub org_id: String,
     pub name: String,
     pub key: String,
+    pub user_id: Option<String>,
 }
 
 pub struct AddApiKey {
@@ -28,7 +31,13 @@ impl AddApiKey {
             .find_by_id(&org_id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("organization {org_id}")))?;
-        org.add_api_key(cmd.name, cmd.key)?;
+        let user_id = cmd
+            .user_id
+            .as_deref()
+            .map(UserId::from_str)
+            .transpose()
+            .map_err(|e| Error::InvalidInput(format!("invalid user_id: {e}")))?;
+        org.add_api_key(cmd.name, cmd.key, user_id)?;
         self.orgs.save(&mut org).await?;
         Ok(OrganizationResponse::from(&org))
     }

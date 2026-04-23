@@ -5,6 +5,11 @@ use orchy_core::organization::OrganizationStore;
 
 use crate::dto::OrganizationResponse;
 
+pub struct ApiKeyPrincipal {
+    pub org: OrganizationResponse,
+    pub user_id: Option<String>,
+}
+
 pub struct ResolveApiKeyCommand {
     pub key: String,
 }
@@ -18,8 +23,22 @@ impl ResolveApiKey {
         Self { orgs }
     }
 
-    pub async fn execute(&self, cmd: ResolveApiKeyCommand) -> Result<Option<OrganizationResponse>> {
+    pub async fn execute(&self, cmd: ResolveApiKeyCommand) -> Result<Option<ApiKeyPrincipal>> {
         let org = self.orgs.find_by_api_key(&cmd.key).await?;
-        Ok(org.as_ref().map(OrganizationResponse::from))
+        let org = match org {
+            Some(o) => o,
+            None => return Ok(None),
+        };
+
+        let user_id = org
+            .api_keys()
+            .iter()
+            .find(|k| k.is_active() && k.key() == cmd.key)
+            .and_then(|k| k.user_id().map(|u| u.to_string()));
+
+        Ok(Some(ApiKeyPrincipal {
+            org: OrganizationResponse::from(&org),
+            user_id,
+        }))
     }
 }

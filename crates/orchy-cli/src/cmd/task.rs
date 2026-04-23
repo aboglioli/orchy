@@ -431,7 +431,10 @@ pub async fn run(
 
         TaskSubcommand::Unarchive { task_id } => {
             let v = client
-                .post_project_json(&format!("/tasks/{task_id}/unarchive"), Some(&serde_json::json!({})))
+                .post_project_json(
+                    &format!("/tasks/{task_id}/unarchive"),
+                    Some(&serde_json::json!({})),
+                )
                 .await?;
             if config.json {
                 output::print_json(config, &v);

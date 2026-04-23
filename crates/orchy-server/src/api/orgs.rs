@@ -66,7 +66,7 @@ pub async fn get(
 ) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -90,7 +90,7 @@ pub async fn add_api_key(
 ) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -104,6 +104,7 @@ pub async fn add_api_key(
             org_id: org,
             name: body.name,
             key: body.key,
+            user_id: auth.user_id.clone(),
         })
         .await
         .map_err(ApiError::from)?;
@@ -117,7 +118,7 @@ pub async fn revoke_api_key(
 ) -> Result<Json<OrganizationResponse>, ApiError> {
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",

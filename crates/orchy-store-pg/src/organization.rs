@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
@@ -7,6 +9,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::{
     ApiKey, ApiKeyId, Organization, OrganizationId, OrganizationStore, RestoreOrganization,
 };
+use orchy_core::user::UserId;
 use orchy_events::io::Writer;
 
 use crate::{PgBackend, events::PgEventWriter};
@@ -43,8 +46,8 @@ impl OrganizationStore for PgBackend {
 
         for key in org.api_keys() {
             sqlx::query(
-                "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at)
-                 VALUES ($1, $2, $3, $4, $5, $6)",
+                "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at, user_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
             )
             .bind(*key.id().as_uuid())
             .bind(org.id().as_str())
@@ -52,6 +55,7 @@ impl OrganizationStore for PgBackend {
             .bind(key.key())
             .bind(key.is_active())
             .bind(key.created_at())
+            .bind(key.user_id().map(|u| u.to_string()))
             .execute(&mut *tx)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -122,7 +126,7 @@ impl OrganizationStore for PgBackend {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let key_rows = sqlx::query(
-            "SELECT organization_id, id, name, key, is_active, created_at FROM api_keys",
+            "SELECT organization_id, id, name, key, is_active, created_at, user_id FROM api_keys",
         )
         .fetch_all(&self.pool)
         .await
@@ -137,7 +141,15 @@ impl OrganizationStore for PgBackend {
             let key: String = row.get("key");
             let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
-            let api_key = build_api_key(ApiKeyId::from_uuid(id), name, key, is_active, created_at)?;
+            let user_id_str: Option<String> = row.try_get("user_id").ok();
+            let api_key = build_api_key(
+                ApiKeyId::from_uuid(id),
+                name,
+                key,
+                is_active,
+                created_at,
+                user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+            )?;
             keys_by_org.entry(org_id_str).or_default().push(api_key);
         }
 
@@ -157,7 +169,7 @@ impl OrganizationStore for PgBackend {
 
 async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKey>> {
     let rows = sqlx::query(
-        "SELECT id, name, key, is_active, created_at FROM api_keys WHERE organization_id = $1",
+        "SELECT id, name, key, is_active, created_at, user_id FROM api_keys WHERE organization_id = $1",
     )
     .bind(org_id)
     .fetch_all(pool)
@@ -171,7 +183,15 @@ async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKe
             let key: String = row.get("key");
             let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
-            build_api_key(ApiKeyId::from_uuid(id), name, key, is_active, created_at)
+            let user_id_str: Option<String> = row.try_get("user_id").ok();
+            build_api_key(
+                ApiKeyId::from_uuid(id),
+                name,
+                key,
+                is_active,
+                created_at,
+                user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+            )
         })
         .collect()
 }
@@ -182,6 +202,7 @@ fn build_api_key(
     key: String,
     is_active: bool,
     created_at: DateTime<Utc>,
+    user_id: Option<UserId>,
 ) -> Result<ApiKey> {
     serde_json::from_value(serde_json::json!({
         "id": id,
@@ -189,6 +210,7 @@ fn build_api_key(
         "key": key,
         "is_active": is_active,
         "created_at": created_at,
+        "user_id": user_id,
     }))
     .map_err(|e| Error::Store(format!("failed to deserialize api keys: {e}")))
 }

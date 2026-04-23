@@ -1,8 +1,12 @@
+use std::str::FromStr;
+
 use orchy_application::SendMessageCommand;
+use orchy_core::agent::AgentStore;
+use orchy_core::message::MessageId;
 use orchy_core::resource_ref::ResourceRef;
 
 use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
-use crate::mcp::params::{RefParam, SendMessageParams};
+use crate::mcp::params::{ClaimMessageParams, RefParam, SendMessageParams, UnclaimMessageParams};
 
 fn convert_ref_param(param: RefParam) -> Result<ResourceRef, String> {
     let rr = match param.kind.as_str() {
@@ -29,17 +33,31 @@ pub(super) async fn send_message(
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
         .await?;
 
-    let to = match orchy_core::message::MessageTarget::parse(&params.to) {
-        Ok(_) => params.to.clone(),
-        Err(_) => match h.resolve_agent_id(&params.to).await {
-            Ok(id) => id.to_string(),
-            Err(_) => {
-                return Err(format!(
-                    "invalid target: '{}' (not a UUID, role:name, broadcast, or known alias)",
-                    params.to
-                ));
-            }
-        },
+    let to = if let Some(alias_str) = params.to.strip_prefix('@') {
+        let alias =
+            orchy_core::agent::Alias::new(alias_str).map_err(|e| format!("invalid alias: {e}"))?;
+        let (_, org, project, _) = h.require_session().await?;
+        let agent = h
+            .container
+            .store
+            .find_by_alias(&org, &project, &alias)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("agent alias @{alias_str} not found"))?;
+        agent.id().to_string()
+    } else {
+        match orchy_core::message::MessageTarget::parse(&params.to) {
+            Ok(_) => params.to.clone(),
+            Err(_) => match h.resolve_agent_id(&params.to).await {
+                Ok(id) => id.to_string(),
+                Err(_) => {
+                    return Err(format!(
+                        "invalid target: '{}' (not a UUID, @alias, role:name, ns:/path, broadcast)",
+                        params.to
+                    ));
+                }
+            },
+        }
     };
 
     let refs: Vec<ResourceRef> = match params.refs {
@@ -65,4 +83,38 @@ pub(super) async fn send_message(
         Ok(message) => Ok(to_json(&message)),
         Err(e) => Err(mcp_error(e)),
     }
+}
+
+pub(super) async fn claim_message(
+    h: &OrchyHandler,
+    params: ClaimMessageParams,
+) -> Result<String, String> {
+    let (agent_id, _, _, _) = h.require_session().await?;
+    let message_id =
+        MessageId::from_str(&params.message_id).map_err(|e| format!("invalid message_id: {e}"))?;
+
+    h.container
+        .app
+        .claim_message
+        .execute(agent_id, message_id)
+        .await
+        .map_err(mcp_error)?;
+    Ok(to_json(&serde_json::json!({"ok": true})))
+}
+
+pub(super) async fn unclaim_message(
+    h: &OrchyHandler,
+    params: UnclaimMessageParams,
+) -> Result<String, String> {
+    let (agent_id, _, _, _) = h.require_session().await?;
+    let message_id =
+        MessageId::from_str(&params.message_id).map_err(|e| format!("invalid message_id: {e}"))?;
+
+    h.container
+        .app
+        .unclaim_message
+        .execute(agent_id, message_id)
+        .await
+        .map_err(mcp_error)?;
+    Ok(to_json(&serde_json::json!({"ok": true})))
 }

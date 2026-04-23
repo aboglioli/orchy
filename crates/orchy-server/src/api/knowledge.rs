@@ -29,7 +29,7 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
 }
 
 fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",
@@ -200,7 +200,7 @@ pub async fn list_types(
     Path((org, _project)): Path<(String, String)>,
 ) -> Result<Json<Vec<KnowledgeTypeDto>>, ApiError> {
     let org_id = parse_org(&org)?;
-    if auth.0.id.as_str() != org_id.as_str() {
+    if auth.org.id.as_str() != org_id.as_str() {
         return Err(ApiError(
             StatusCode::FORBIDDEN,
             "FORBIDDEN",

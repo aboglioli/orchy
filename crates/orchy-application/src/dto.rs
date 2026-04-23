@@ -29,6 +29,8 @@ pub struct AgentResponse {
     pub last_seen: String,
     pub connected_at: String,
     pub metadata: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 impl From<Agent> for AgentResponse {
@@ -53,6 +55,7 @@ impl From<&Agent> for AgentResponse {
             last_seen: a.last_seen().to_rfc3339(),
             connected_at: a.connected_at().to_rfc3339(),
             metadata: a.metadata().clone(),
+            user_id: a.user_id().map(|u| u.to_string()),
         }
     }
 }

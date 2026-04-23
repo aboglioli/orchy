@@ -6,6 +6,7 @@ use tracing::warn;
 use orchy_core::agent::AgentId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::user::UserId;
 
 use crate::container::Container;
 
@@ -14,6 +15,8 @@ struct SessionState {
     org: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
+    #[allow(dead_code)]
+    user_id: Option<UserId>,
 }
 
 pub(crate) enum NamespacePolicy {
@@ -66,6 +69,11 @@ impl OrchyHandler {
             .map(|s| s.namespace.clone())
     }
 
+    #[allow(dead_code)]
+    pub(crate) async fn get_session_user_id(&self) -> Option<UserId> {
+        self.session.read().await.as_ref().and_then(|s| s.user_id)
+    }
+
     pub(crate) async fn require_session(
         &self,
     ) -> Result<(AgentId, OrganizationId, ProjectId, Namespace), String> {
@@ -89,12 +97,14 @@ impl OrchyHandler {
         org: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
+        user_id: Option<UserId>,
     ) {
         *self.session.write().await = Some(SessionState {
             agent_id: agent_id.clone(),
             org,
             project,
             namespace,
+            user_id,
         });
 
         if let Some(session_id) = self.mcp_session_id.read().await.as_ref().cloned() {

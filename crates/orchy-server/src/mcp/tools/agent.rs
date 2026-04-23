@@ -6,6 +6,7 @@ use orchy_application::{
     MarkReadCommand, PollUpdatesCommand, RegisterAgentCommand, RenameAliasCommand,
     SwitchContextCommand,
 };
+use orchy_core::user::UserId;
 
 use crate::mcp::handler::{
     NamespacePolicy, OrchyHandler, default_org, mcp_error, parse_project, to_json,
@@ -73,6 +74,7 @@ pub(super) async fn register_agent(
         description: params.description.clone(),
         agent_type: params.agent_type.clone(),
         metadata: params.metadata.unwrap_or_default(),
+        auth_user_id: None,
     };
 
     match h.container.app.register_agent.execute(cmd).await {
@@ -84,7 +86,11 @@ pub(super) async fn register_agent(
                 orchy_core::agent::AgentId::from_str(&agent.id).map_err(|e| e.to_string())?;
             let ns = orchy_core::namespace::Namespace::try_from(agent.namespace.clone())
                 .map_err(|e| e.to_string())?;
-            h.set_session(agent_id, org, project, ns).await;
+            let user_id = agent
+                .user_id
+                .as_deref()
+                .and_then(|s| UserId::from_str(s).ok());
+            h.set_session(agent_id, org, project, ns, user_id).await;
             Ok(to_json(&response))
         }
         Err(e) => Err(mcp_error(e)),

@@ -15,6 +15,7 @@ use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 use crate::resource_ref::ResourceRef;
+use crate::user::UserId;
 
 #[async_trait::async_trait]
 pub trait MessageStore: Send + Sync {
@@ -27,6 +28,7 @@ pub trait MessageStore: Send + Sync {
         agent: &AgentId,
         agent_roles: &[String],
         agent_namespace: &Namespace,
+        agent_user_id: Option<&UserId>,
         org: &OrganizationId,
         project: &ProjectId,
         page: PageParams,
@@ -93,6 +95,7 @@ pub enum MessageTarget {
     Role(String),
     Namespace(Namespace),
     Broadcast,
+    User(UserId),
 }
 
 impl MessageTarget {
@@ -112,6 +115,11 @@ impl MessageTarget {
             return Namespace::try_from(ns.to_string())
                 .map(MessageTarget::Namespace)
                 .map_err(|e| Error::InvalidInput(e.to_string()));
+        }
+        if let Some(user_id) = s.strip_prefix("user:") {
+            return UserId::from_str(user_id)
+                .map(MessageTarget::User)
+                .map_err(|_| Error::InvalidInput(format!("invalid user target: '{s}'")));
         }
         match AgentId::from_str(s) {
             Ok(id) => Ok(MessageTarget::Agent(id)),
@@ -143,6 +151,7 @@ impl fmt::Display for MessageTarget {
             MessageTarget::Role(r) => write!(f, "role:{r}"),
             MessageTarget::Namespace(ns) => write!(f, "ns:{ns}"),
             MessageTarget::Agent(id) => write!(f, "{id}"),
+            MessageTarget::User(id) => write!(f, "user:{id}"),
         }
     }
 }
@@ -180,6 +189,8 @@ pub struct Message {
     reply_to: Option<MessageId>,
     status: MessageStatus,
     created_at: DateTime<Utc>,
+    claimed_by: Option<AgentId>,
+    claimed_at: Option<DateTime<Utc>>,
     refs: Vec<ResourceRef>,
     #[serde(skip)]
     collector: EventCollector,
@@ -207,6 +218,8 @@ impl Message {
             reply_to,
             status: MessageStatus::Pending,
             created_at: Utc::now(),
+            claimed_by: None,
+            claimed_at: None,
             refs,
             collector: EventCollector::new(),
         };
@@ -251,6 +264,8 @@ impl Message {
             reply_to: r.reply_to,
             status: r.status,
             created_at: r.created_at,
+            claimed_by: r.claimed_by,
+            claimed_at: r.claimed_at,
             refs: r.refs,
             collector: EventCollector::new(),
         }
@@ -330,6 +345,58 @@ impl Message {
         matches!(self.to, MessageTarget::Role(_))
     }
 
+    pub fn is_namespace_targeted(&self) -> bool {
+        matches!(self.to, MessageTarget::Namespace(_))
+    }
+
+    pub fn is_logical_target(&self) -> bool {
+        matches!(
+            self.to,
+            MessageTarget::Broadcast
+                | MessageTarget::Role(_)
+                | MessageTarget::Namespace(_)
+                | MessageTarget::User(_)
+        )
+    }
+
+    pub fn claim(&mut self, agent_id: AgentId) -> Result<()> {
+        if !self.is_logical_target() {
+            return Err(Error::InvalidInput(
+                "only logical targets can be claimed".to_string(),
+            ));
+        }
+        if let Some(existing) = &self.claimed_by {
+            if *existing != agent_id {
+                return Err(Error::Conflict(
+                    "message already claimed by another agent".to_string(),
+                ));
+            }
+            return Ok(());
+        }
+        self.claimed_by = Some(agent_id);
+        self.claimed_at = Some(Utc::now());
+        Ok(())
+    }
+
+    pub fn unclaim(&mut self, agent_id: &AgentId) -> Result<()> {
+        if self.claimed_by.as_ref() != Some(agent_id) {
+            return Err(Error::InvalidInput(
+                "only the claimant can unclaim".to_string(),
+            ));
+        }
+        self.claimed_by = None;
+        self.claimed_at = None;
+        Ok(())
+    }
+
+    pub fn claimed_by(&self) -> Option<&AgentId> {
+        self.claimed_by.as_ref()
+    }
+
+    pub fn claimed_at(&self) -> Option<DateTime<Utc>> {
+        self.claimed_at
+    }
+
     pub fn drain_events(&mut self) -> Vec<Event> {
         self.collector.drain()
     }
@@ -381,6 +448,8 @@ pub struct RestoreMessage {
     pub status: MessageStatus,
     pub created_at: DateTime<Utc>,
     pub refs: Vec<ResourceRef>,
+    pub claimed_by: Option<AgentId>,
+    pub claimed_at: Option<DateTime<Utc>>,
 }
 
 #[cfg(test)]

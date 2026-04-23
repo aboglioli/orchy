@@ -50,6 +50,7 @@ impl CheckMailbox {
                 &agent_id,
                 &agent_roles,
                 &agent_namespace,
+                agent.user_id(),
                 &org_id,
                 &project,
                 page,

@@ -221,6 +221,26 @@ impl OrchyHandler {
     }
 
     #[tool(
+        description = "Claim a logical message so it is hidden from sibling agents' default inboxes. Only the claiming agent will see it in their inbox."
+    )]
+    async fn claim_message(
+        &self,
+        Parameters(params): Parameters<ClaimMessageParams>,
+    ) -> Result<String, String> {
+        message::claim_message(self, params).await
+    }
+
+    #[tool(
+        description = "Unclaim a previously claimed logical message, making it visible again to all matching agents."
+    )]
+    async fn unclaim_message(
+        &self,
+        Parameters(params): Parameters<UnclaimMessageParams>,
+    ) -> Result<String, String> {
+        message::unclaim_message(self, params).await
+    }
+
+    #[tool(
         description = "List the full conversation thread for a given message ID. \
         Walks the reply_to chain to find the root, then returns all messages in \
         the thread in chronological order. Use limit to cap the number of messages \

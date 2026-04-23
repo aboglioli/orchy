@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
@@ -7,6 +9,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::{
     ApiKey, ApiKeyId, Organization, OrganizationId, OrganizationStore, RestoreOrganization,
 };
+use orchy_core::user::UserId;
 
 use crate::SqliteBackend;
 
@@ -38,8 +41,8 @@ impl OrganizationStore for SqliteBackend {
 
         for key in org.api_keys() {
             tx.execute(
-                "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at, user_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
                     key.id().to_string(),
                     org.id().to_string(),
@@ -47,6 +50,7 @@ impl OrganizationStore for SqliteBackend {
                     key.key(),
                     key.is_active() as i32,
                     key.created_at().to_rfc3339(),
+                    key.user_id().map(|u| u.to_string()),
                 ],
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -171,7 +175,7 @@ impl OrganizationStore for SqliteBackend {
 fn load_api_keys(conn: &rusqlite::Connection, org_id: &str) -> Result<Vec<ApiKey>> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, key, is_active, created_at FROM api_keys WHERE organization_id = ?1",
+            "SELECT id, name, key, is_active, created_at, user_id FROM api_keys WHERE organization_id = ?1",
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -182,26 +186,30 @@ fn load_api_keys(conn: &rusqlite::Connection, org_id: &str) -> Result<Vec<ApiKey
             let key: String = row.get(2)?;
             let is_active: i32 = row.get(3)?;
             let created_at_str: String = row.get(4)?;
-            Ok((id_str, name, key, is_active, created_at_str))
+            let user_id_str: Option<String> = row.get(5).ok();
+            Ok((id_str, name, key, is_active, created_at_str, user_id_str))
         })
         .map_err(|e| Error::Store(e.to_string()))?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| Error::Store(e.to_string()))?
         .into_iter()
-        .map(|(id_str, name, key, is_active, created_at_str)| {
-            let uuid = Uuid::parse_str(&id_str)
-                .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
-            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                .map(|dt| dt.with_timezone(&Utc))
-                .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
-            build_api_key(
-                ApiKeyId::from_uuid(uuid),
-                name,
-                key,
-                is_active != 0,
-                created_at,
-            )
-        })
+        .map(
+            |(id_str, name, key, is_active, created_at_str, user_id_str)| {
+                let uuid = Uuid::parse_str(&id_str)
+                    .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
+                let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
+                build_api_key(
+                    ApiKeyId::from_uuid(uuid),
+                    name,
+                    key,
+                    is_active != 0,
+                    created_at,
+                    user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+                )
+            },
+        )
         .collect::<Result<Vec<_>>>()?;
 
     Ok(keys)
@@ -210,7 +218,7 @@ fn load_api_keys(conn: &rusqlite::Connection, org_id: &str) -> Result<Vec<ApiKey
 fn load_all_api_keys(conn: &rusqlite::Connection) -> Result<Vec<(String, ApiKey)>> {
     let mut stmt = conn
         .prepare(
-            "SELECT organization_id, id, name, key, is_active, created_at FROM api_keys ORDER BY created_at",
+            "SELECT organization_id, id, name, key, is_active, created_at, user_id FROM api_keys ORDER BY created_at",
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
@@ -222,27 +230,39 @@ fn load_all_api_keys(conn: &rusqlite::Connection) -> Result<Vec<(String, ApiKey)
             let key: String = row.get(3)?;
             let is_active: i32 = row.get(4)?;
             let created_at_str: String = row.get(5)?;
-            Ok((org_id, id_str, name, key, is_active, created_at_str))
+            let user_id_str: Option<String> = row.get(6).ok();
+            Ok((
+                org_id,
+                id_str,
+                name,
+                key,
+                is_active,
+                created_at_str,
+                user_id_str,
+            ))
         })
         .map_err(|e| Error::Store(e.to_string()))?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| Error::Store(e.to_string()))?
         .into_iter()
-        .map(|(org_id, id_str, name, key, is_active, created_at_str)| {
-            let uuid = Uuid::parse_str(&id_str)
-                .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
-            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                .map(|dt| dt.with_timezone(&Utc))
-                .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
-            let api_key = build_api_key(
-                ApiKeyId::from_uuid(uuid),
-                name,
-                key,
-                is_active != 0,
-                created_at,
-            )?;
-            Ok((org_id, api_key))
-        })
+        .map(
+            |(org_id, id_str, name, key, is_active, created_at_str, user_id_str)| {
+                let uuid = Uuid::parse_str(&id_str)
+                    .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
+                let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
+                let api_key = build_api_key(
+                    ApiKeyId::from_uuid(uuid),
+                    name,
+                    key,
+                    is_active != 0,
+                    created_at,
+                    user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+                )?;
+                Ok((org_id, api_key))
+            },
+        )
         .collect::<Result<Vec<_>>>()?;
 
     Ok(keys)
@@ -254,6 +274,7 @@ fn build_api_key(
     key: String,
     is_active: bool,
     created_at: DateTime<Utc>,
+    user_id: Option<UserId>,
 ) -> Result<ApiKey> {
     use serde_json::json;
     serde_json::from_value(json!({
@@ -262,6 +283,7 @@ fn build_api_key(
         "key": key,
         "is_active": is_active,
         "created_at": created_at,
+        "user_id": user_id,
     }))
     .map_err(|e| Error::Store(format!("failed to deserialize api keys: {e}")))
 }
