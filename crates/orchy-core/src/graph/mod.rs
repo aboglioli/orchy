@@ -28,6 +28,7 @@ pub use relation_options::{RelationOptions, RelationQuery};
 pub use rules::check_no_cycle;
 
 #[async_trait]
+#[allow(clippy::too_many_arguments)]
 pub trait EdgeStore: Send + Sync {
     async fn save(&self, edge: &mut Edge) -> Result<()>;
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>>;

@@ -7,13 +7,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::container::Container;
 use orchy_application::{
     GetProjectCommand, GetProjectOverviewCommand, ListNamespacesCommand, SetProjectMetadataCommand,
     UpdateProjectCommand,
 };
-use orchy_core::organization::OrganizationId;
-
-use crate::container::Container;
 
 use super::ApiError;
 use super::auth::OrgAuth;
@@ -54,32 +52,13 @@ fn project_to_dto(p: orchy_application::ProjectResponse) -> ProjectDto {
     }
 }
 
-fn parse_org_id(org: &str) -> Result<OrganizationId, ApiError> {
-    OrganizationId::new(org)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.org.id.as_str() != org_id.as_str() {
-        Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 pub async fn get(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Query(query): Query<IncludeSummaryQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org_id(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     if !query.include_summary.unwrap_or(false) {
         let cmd = GetProjectCommand {
             org_id: org,
@@ -148,12 +127,10 @@ pub async fn get(
 pub async fn update(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<UpdateProjectBody>,
 ) -> Result<Json<ProjectDto>, ApiError> {
-    let org_id = parse_org_id(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = UpdateProjectCommand {
         org_id: org,
         project,
@@ -173,12 +150,10 @@ pub async fn update(
 pub async fn set_metadata(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<SetMetadataBody>,
 ) -> Result<Json<ProjectDto>, ApiError> {
-    let org_id = parse_org_id(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = SetProjectMetadataCommand {
         org_id: org,
         project,
@@ -199,11 +174,9 @@ pub async fn set_metadata(
 pub async fn list_namespaces(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
 ) -> Result<Json<Vec<String>>, ApiError> {
-    let org_id = parse_org_id(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = ListNamespacesCommand {
         org_id: org,
         project,

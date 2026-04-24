@@ -6,11 +6,8 @@ use orchy_application::{
     MarkReadCommand, PollUpdatesCommand, RegisterAgentCommand, RenameAliasCommand,
     SwitchContextCommand,
 };
-use orchy_core::user::UserId;
 
-use crate::mcp::handler::{
-    NamespacePolicy, OrchyHandler, default_org, mcp_error, parse_project, to_json,
-};
+use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, parse_project, to_json};
 use crate::mcp::params::{
     ChangeRolesParams, CheckMailboxParams, CheckSentMessagesParams, GetAgentContextParams,
     ListAgentsParams, ListConversationParams, MarkReadParams, PollUpdatesParams,
@@ -30,30 +27,21 @@ pub(super) async fn register_agent(
         );
     }
     let project = parse_project(&params.project)?;
+    let org = h.org();
 
     let namespace = match params.namespace.as_deref() {
         Some(s) if !s.is_empty() => Some(format!("/{s}")),
         _ => None,
     };
 
-    let org_id = match params.organization.as_deref() {
-        Some(s) if !s.is_empty() => s.to_string(),
-        _ => default_org().to_string(),
-    };
-
     let _ = h
-        .resolve_namespace_for(
-            namespace.as_deref(),
-            NamespacePolicy::RegisterIfNew,
-            None,
-            None,
-        )
+        .resolve_namespace(namespace.as_deref(), NamespacePolicy::RegisterIfNew)
         .await;
 
     let input_roles = params.roles.unwrap_or_default();
     let roles = if input_roles.is_empty() {
         let cmd = orchy_application::SuggestRolesCommand {
-            org_id: Some(org_id.clone()),
+            org_id: Some(org.to_string()),
             project: params.project.clone(),
             namespace: namespace.clone(),
         };
@@ -66,7 +54,7 @@ pub(super) async fn register_agent(
     };
 
     let cmd = RegisterAgentCommand {
-        org_id: org_id.clone(),
+        org_id: org.to_string(),
         project: params.project.clone(),
         namespace: namespace.clone(),
         alias: params.alias.clone(),
@@ -74,23 +62,17 @@ pub(super) async fn register_agent(
         description: params.description.clone(),
         agent_type: params.agent_type.clone(),
         metadata: params.metadata.unwrap_or_default(),
-        auth_user_id: None,
+        auth_user_id: h.user_id().map(|u| u.to_string()),
     };
 
     match h.container.app.register_agent.execute(cmd).await {
         Ok(response) => {
             let agent = &response.agent;
-            let org = orchy_core::organization::OrganizationId::new(&org_id)
-                .map_err(|e| e.to_string())?;
             let agent_id =
                 orchy_core::agent::AgentId::from_str(&agent.id).map_err(|e| e.to_string())?;
             let ns = orchy_core::namespace::Namespace::try_from(agent.namespace.clone())
                 .map_err(|e| e.to_string())?;
-            let user_id = agent
-                .user_id
-                .as_deref()
-                .and_then(|s| UserId::from_str(s).ok());
-            h.set_session(agent_id, org, project, ns, user_id).await;
+            h.set_session(agent_id, project, ns).await;
             Ok(to_json(&response))
         }
         Err(e) => Err(mcp_error(e)),
@@ -121,7 +103,8 @@ pub(super) async fn list_agents(
     params: ListAgentsParams,
 ) -> Result<String, String> {
     let (org, project) = match h.require_session().await {
-        Ok((_, org, proj, _)) => {
+        Ok((_, proj, _)) => {
+            let org = h.org();
             let project = match params.project.as_deref() {
                 Some(p) => parse_project(p)?,
                 None => proj,
@@ -134,7 +117,7 @@ pub(super) async fn list_agents(
                 .as_deref()
                 .ok_or("pass project or register first")?;
             let project = parse_project(p)?;
-            (default_org().to_string(), project.to_string())
+            (h.org().to_string(), project.to_string())
         }
     };
 
@@ -154,8 +137,7 @@ pub(super) async fn change_roles(
     h: &OrchyHandler,
     params: ChangeRolesParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
     let cmd = ChangeRolesCommand {
         agent_id: agent_id.to_string(),
         roles: params.roles,
@@ -167,8 +149,7 @@ pub(super) async fn change_roles(
 }
 
 pub(super) async fn heartbeat(h: &OrchyHandler) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
     let cmd = HeartbeatCommand {
         agent_id: agent_id.to_string(),
     };
@@ -179,7 +160,7 @@ pub(super) async fn heartbeat(h: &OrchyHandler) -> Result<String, String> {
 }
 
 pub(super) async fn rename_alias(h: &OrchyHandler, new_alias: String) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
+    let (agent_id, _, _) = h.require_session().await?;
     let cmd = RenameAliasCommand {
         agent_id: agent_id.to_string(),
         new_alias,
@@ -194,8 +175,8 @@ pub(super) async fn switch_context(
     h: &OrchyHandler,
     params: SwitchContextParams,
 ) -> Result<String, String> {
-    let (agent_id, org, current_project, _) = h.require_session().await?;
-
+    let (agent_id, current_project, _) = h.require_session().await?;
+    let org = h.org();
     if params.project.is_none() && params.namespace.is_none() {
         return Err("at least one of project or namespace is required".to_string());
     }
@@ -211,7 +192,6 @@ pub(super) async fn switch_context(
             .resolve_namespace_for(
                 Some(ns),
                 NamespacePolicy::RegisterIfNew,
-                Some(&org),
                 Some(&target_project),
             )
             .await;
@@ -246,8 +226,8 @@ pub(super) async fn get_agent_context(
     h: &OrchyHandler,
     params: GetAgentContextParams,
 ) -> Result<String, String> {
-    let (agent_id, org, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
+    let org = h.org();
     let relations_opts = parse_relation_options(params.relations);
 
     if let Some(opts) = relations_opts {
@@ -277,7 +257,7 @@ pub(super) async fn poll_updates(
     h: &OrchyHandler,
     params: PollUpdatesParams,
 ) -> Result<String, String> {
-    let (_, _, session_project, _) = h.require_session().await?;
+    let (_, session_project, _) = h.require_session().await?;
     let project = params
         .project
         .unwrap_or_else(|| session_project.to_string());
@@ -323,8 +303,8 @@ pub(super) async fn check_mailbox(
     h: &OrchyHandler,
     params: CheckMailboxParams,
 ) -> Result<String, String> {
-    let (agent_id, org, session_project, _) = h.require_session().await?;
-
+    let (agent_id, session_project, _) = h.require_session().await?;
+    let org = h.org();
     let project = if let Some(p) = params.project {
         p
     } else {
@@ -353,8 +333,8 @@ pub(super) async fn check_sent_messages(
     h: &OrchyHandler,
     params: CheckSentMessagesParams,
 ) -> Result<String, String> {
-    let (agent_id, org, session_project, _) = h.require_session().await?;
-
+    let (agent_id, session_project, _) = h.require_session().await?;
+    let org = h.org();
     let project = if let Some(p) = params.project {
         p
     } else {
@@ -381,8 +361,7 @@ pub(super) async fn check_sent_messages(
 }
 
 pub(super) async fn mark_read(h: &OrchyHandler, params: MarkReadParams) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
     let cmd = MarkReadCommand {
         agent_id: agent_id.to_string(),
         message_ids: params.message_ids,
@@ -398,8 +377,8 @@ pub(super) async fn list_conversation(
     h: &OrchyHandler,
     params: ListConversationParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = ListConversationCommand {
         org_id: org.to_string(),
         project: project.to_string(),

@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use orchy_application::HeartbeatCommand;
+use orchy_application::{ApiKeyPrincipal, HeartbeatCommand, ResolveApiKeyCommand};
 use rmcp::transport::{
     StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
 };
 use tokio::net::TcpListener;
-use tracing::{error, info};
+use tower::Service;
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 use orchy_server::api;
@@ -66,20 +67,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let bootstrap_container = Arc::clone(&container);
-    let mcp_container = container;
+    let _mcp_container = Arc::clone(&container);
 
     let mut session_manager = LocalSessionManager::default();
-    session_manager.session_config.keep_alive =
-        mcp_container.config.server.mcp_session_keep_alive();
-
-    let service = StreamableHttpService::new(
-        move || Ok(OrchyHandler::new(mcp_container.clone())),
-        Arc::new(session_manager),
-        Default::default(),
-    );
+    session_manager.session_config.keep_alive = container.config.server.mcp_session_keep_alive();
+    let session_manager = Arc::new(session_manager);
 
     let router = axum::Router::new()
-        .nest_service("/mcp", service)
+        .route(
+            "/mcp",
+            axum::routing::post(move |headers, state, request: axum::extract::Request| {
+                mcp_handler(headers, state, request, Arc::clone(&session_manager))
+            }),
+        )
         .route(
             "/bootstrap/{namespace}",
             axum::routing::get(bootstrap_handler),
@@ -104,6 +104,65 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("server error: {e}"))?;
 
     Ok(())
+}
+
+async fn mcp_handler(
+    headers: axum::http::HeaderMap,
+    State(container): State<Arc<Container>>,
+    request: axum::extract::Request,
+    session_manager: Arc<LocalSessionManager>,
+) -> axum::response::Response {
+    let auth = match resolve_mcp_auth(&headers, &container.app).await {
+        Ok(auth) => auth,
+        Err(e) => {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                format!("Unauthorized: {e}"),
+            )
+                .into_response();
+        }
+    };
+
+    let container_clone = Arc::clone(&container);
+    let mut service = StreamableHttpService::new(
+        move || Ok(OrchyHandler::new(container_clone.clone(), auth.clone())),
+        session_manager,
+        Default::default(),
+    );
+
+    match service.call(request).await {
+        Ok(response) => response.into_response(),
+        Err(e) => {
+            warn!(error = %e, "MCP service error");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal error",
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn resolve_mcp_auth(
+    headers: &axum::http::HeaderMap,
+    app: &orchy_application::Application,
+) -> Result<ApiKeyPrincipal, String> {
+    let key = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or("missing or invalid Authorization header")?;
+
+    let principal = app
+        .resolve_api_key
+        .execute(ResolveApiKeyCommand {
+            key: key.to_string(),
+        })
+        .await
+        .map_err(|e| format!("API key resolution failed: {e}"))?
+        .ok_or("invalid or expired API key")?;
+
+    Ok(principal)
 }
 
 async fn heartbeat_middleware(

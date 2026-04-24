@@ -21,8 +21,8 @@ use super::parse_relation_options;
 use orchy_application::ListTagsCommand;
 
 pub(super) async fn post_task(h: &OrchyHandler, params: PostTaskParams) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
         .await?;
@@ -49,8 +49,8 @@ pub(super) async fn get_next_task(
     h: &OrchyHandler,
     params: GetNextTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, org, project, _) = h.require_session().await?;
-
+    let (agent_id, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
         .await?;
@@ -121,8 +121,8 @@ pub(super) async fn list_tasks(
     h: &OrchyHandler,
     params: ListTasksParams,
 ) -> Result<String, String> {
-    let (_, org, session_project, _) = h.require_session().await?;
-
+    let (_, session_project, _) = h.require_session().await?;
+    let org = h.org();
     let project = params
         .project
         .unwrap_or_else(|| session_project.to_string());
@@ -153,8 +153,8 @@ pub(super) async fn claim_task(
     h: &OrchyHandler,
     params: ClaimTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, org, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = ClaimTaskCommand {
         task_id: params.task_id.clone(),
         agent_id: agent_id.to_string(),
@@ -194,8 +194,8 @@ pub(super) async fn start_task(
     h: &OrchyHandler,
     params: StartTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, org, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = StartTaskCommand {
         task_id: params.task_id.clone(),
         agent_id: agent_id.to_string(),
@@ -233,7 +233,8 @@ pub(super) async fn complete_task(
     h: &OrchyHandler,
     params: CompleteTaskParams,
 ) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = CompleteTaskCommand {
         task_id: params.task_id,
         org_id: org.to_string(),
@@ -262,8 +263,8 @@ pub(super) async fn complete_task(
 }
 
 pub(super) async fn fail_task(h: &OrchyHandler, params: FailTaskParams) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = FailTaskCommand {
         task_id: params.task_id,
         org_id: org.to_string(),
@@ -280,8 +281,8 @@ pub(super) async fn cancel_task(
     h: &OrchyHandler,
     params: CancelTaskParams,
 ) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = CancelTaskCommand {
         task_id: params.task_id,
         org_id: org.to_string(),
@@ -298,7 +299,8 @@ pub(super) async fn archive_task(
     h: &OrchyHandler,
     params: ArchiveTaskParams,
 ) -> Result<String, String> {
-    let (_agent_id, org, _project, _namespace) = h.require_session().await?;
+    let (_agent_id, _project, _namespace) = h.require_session().await?;
+    let org = h.org();
     let cmd = ArchiveTaskCommand {
         org_id: org.to_string(),
         task_id: params.task_id,
@@ -314,7 +316,8 @@ pub(super) async fn unarchive_task(
     h: &OrchyHandler,
     params: UnarchiveTaskParams,
 ) -> Result<String, String> {
-    let (_agent_id, org, _project, _namespace) = h.require_session().await?;
+    let (_agent_id, _project, _namespace) = h.require_session().await?;
+    let org = h.org();
     let cmd = UnarchiveTaskCommand {
         org_id: org.to_string(),
         task_id: params.task_id,
@@ -384,8 +387,7 @@ pub(super) async fn split_task(
     h: &OrchyHandler,
     params: SplitTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
     let subtasks = params
         .subtasks
         .into_iter()
@@ -421,8 +423,7 @@ pub(super) async fn replace_task(
     h: &OrchyHandler,
     params: ReplaceTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
     let replacements = params
         .replacements
         .into_iter()
@@ -459,8 +460,8 @@ pub(super) async fn merge_tasks(
     h: &OrchyHandler,
     params: MergeTasksParams,
 ) -> Result<String, String> {
-    let (agent_id, org, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = MergeTasksCommand {
         org_id: org.to_string(),
         task_ids: params.task_ids,
@@ -486,8 +487,7 @@ pub(super) async fn delegate_task(
     h: &OrchyHandler,
     params: DelegateTaskParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
-
+    let (agent_id, _, _) = h.require_session().await?;
     let cmd = DelegateTaskCommand {
         task_id: params.task_id,
         title: params.title,
@@ -508,8 +508,8 @@ pub(super) async fn add_dependency(
     h: &OrchyHandler,
     params: AddDependencyParams,
 ) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = AddDependencyCommand {
         org_id: org.to_string(),
         task_id: params.task_id,
@@ -526,8 +526,8 @@ pub(super) async fn remove_dependency(
     h: &OrchyHandler,
     params: RemoveDependencyParams,
 ) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = RemoveDependencyCommand {
         org_id: org.to_string(),
         task_id: params.task_id,
@@ -606,8 +606,8 @@ pub(super) async fn release_task(
 }
 
 pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let relations = parse_relation_options(params.relations);
     if relations.is_some()
         || (!params.include_dependencies.unwrap_or(false)
@@ -651,8 +651,8 @@ pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<
 }
 
 pub(super) async fn list_tags(h: &OrchyHandler, params: ListTagsParams) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
         .await?;
@@ -670,7 +670,7 @@ pub(super) async fn list_tags(h: &OrchyHandler, params: ListTagsParams) -> Resul
 }
 
 pub(super) async fn touch_task(h: &OrchyHandler, task_id: String) -> Result<String, String> {
-    let (agent_id, _org, _project, _ns) = h.require_session().await?;
+    let (agent_id, _project, _ns) = h.require_session().await?;
     let cmd = orchy_application::TouchTaskCommand {
         task_id,
         agent_id: Some(agent_id.to_string()),

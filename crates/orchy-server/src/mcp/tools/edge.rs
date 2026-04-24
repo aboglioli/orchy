@@ -7,8 +7,8 @@ use crate::mcp::params::{AddEdgeParams, QueryRelationsParams, RemoveEdgeParams};
 use super::{parse_as_of, parse_direction, parse_rel_type_alias};
 
 pub(super) async fn add_edge(h: &OrchyHandler, params: AddEdgeParams) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = AddEdgeCommand {
         org_id: org.to_string(),
         from_kind: params.from_kind,
@@ -46,8 +46,8 @@ pub(super) async fn query_relations(
     h: &OrchyHandler,
     params: QueryRelationsParams,
 ) -> Result<String, String> {
-    let (_, org, session_project, session_namespace) = h.require_session().await?;
-
+    let (_, session_project, session_namespace) = h.require_session().await?;
+    let org = h.org();
     let as_of = parse_as_of(params.as_of)
         .map_err(|e| mcp_error(orchy_core::error::Error::InvalidInput(e)))?;
 

@@ -7,7 +7,7 @@ use serde::Deserialize;
 pub struct Config {
     pub url: String,
     pub api_key: String,
-    pub org: String,
+    pub org: Option<String>,
     pub project: String,
     pub namespace: String,
     pub alias: Option<String>,
@@ -93,17 +93,12 @@ impl Config {
             "config file, env (ORCHY_API_KEY), or --api-key",
         )?;
 
-        let org = pick(
-            &[
-                global.as_ref().and_then(|c| c.org.as_deref()),
-                local.as_ref().and_then(|c| c.org.as_deref()),
-                env("ORCHY_ORG"),
-                flag_org,
-            ],
-            "org",
-            "ORCHY_ORG",
-            "config file, env (ORCHY_ORG), or --org",
-        )?;
+        let org = pick_opt(&[
+            global.as_ref().and_then(|c| c.org.as_deref()),
+            local.as_ref().and_then(|c| c.org.as_deref()),
+            env("ORCHY_ORG"),
+            flag_org,
+        ]);
 
         let project = pick(
             &[
@@ -147,7 +142,7 @@ impl Config {
         let config = Config {
             url: url.clone(),
             api_key: api_key.clone(),
-            org: org.clone(),
+            org,
             project: project.clone(),
             namespace: namespace.clone(),
             alias,
@@ -184,21 +179,6 @@ impl Config {
             return Err(ConfigError::InvalidField {
                 field: "api_key".into(),
                 message: "must not be empty".into(),
-            });
-        }
-
-        // Organization validation
-        if self.org.is_empty() {
-            return Err(ConfigError::InvalidField {
-                field: "org".into(),
-                message: "must not be empty".into(),
-            });
-        }
-
-        if self.org.len() > 64 {
-            return Err(ConfigError::InvalidField {
-                field: "org".into(),
-                message: "must be 64 characters or less".into(),
             });
         }
 

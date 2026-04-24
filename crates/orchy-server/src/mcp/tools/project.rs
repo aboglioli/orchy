@@ -14,8 +14,8 @@ pub(super) async fn get_project(
     h: &OrchyHandler,
     params: GetProjectParams,
 ) -> Result<String, String> {
-    let (_, org, project_id, _) = h.require_session().await?;
-
+    let (_, project_id, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = GetProjectCommand {
         org_id: org.to_string(),
         project: project_id.to_string(),
@@ -137,8 +137,8 @@ pub(super) async fn update_project(
     h: &OrchyHandler,
     params: UpdateProjectParams,
 ) -> Result<String, String> {
-    let (_, org, project_id, _) = h.require_session().await?;
-
+    let (_, project_id, _) = h.require_session().await?;
+    let org = h.org();
     let project_cmd = GetProjectCommand {
         org_id: org.to_string(),
         project: project_id.to_string(),
@@ -183,8 +183,8 @@ pub(super) async fn set_project_metadata(
     h: &OrchyHandler,
     params: SetProjectMetadataParams,
 ) -> Result<String, String> {
-    let (_, org, project_id, _) = h.require_session().await?;
-
+    let (_, project_id, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = SetProjectMetadataCommand {
         org_id: org.to_string(),
         project: project_id.to_string(),
@@ -202,7 +202,8 @@ pub(super) async fn list_namespaces(
     h: &OrchyHandler,
     params: ListNamespacesParams,
 ) -> Result<String, String> {
-    let (_, org, session_project, _) = h.require_session().await?;
+    let (_, session_project, _) = h.require_session().await?;
+    let org = h.org();
     let project = if let Some(p) = params.project {
         p
     } else {
@@ -224,8 +225,8 @@ pub(super) async fn lock_resource(
     h: &OrchyHandler,
     params: LockResourceParams,
 ) -> Result<String, String> {
-    let (agent_id, org, project, _) = h.require_session().await?;
-
+    let (agent_id, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
         .await?;
@@ -249,8 +250,8 @@ pub(super) async fn unlock_resource(
     h: &OrchyHandler,
     params: UnlockResourceParams,
 ) -> Result<String, String> {
-    let (agent_id, org, project, _) = h.require_session().await?;
-
+    let (agent_id, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -273,8 +274,8 @@ pub(super) async fn check_lock(
     h: &OrchyHandler,
     params: CheckLockParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;

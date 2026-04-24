@@ -5,6 +5,7 @@ use orchy_core::organization::OrganizationStore;
 
 use crate::dto::OrganizationResponse;
 
+#[derive(Debug, Clone)]
 pub struct ApiKeyPrincipal {
     pub org: OrganizationResponse,
     pub user_id: Option<String>,

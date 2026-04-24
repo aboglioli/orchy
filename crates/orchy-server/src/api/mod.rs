@@ -149,228 +149,141 @@ pub fn router() -> Router<Arc<Container>> {
         .route("/auth/change-password", post(user_auth::change_password))
         .route("/organizations", post(orgs::create).get(orgs::list))
         .route("/organizations/{org}", get(orgs::get))
-        .route("/organizations/{org}/api-keys", post(orgs::add_api_key))
+        .route("/api-keys", post(orgs::add_api_key))
+        .route("/api-keys/{key_id}", delete(orgs::revoke_api_key))
+        .route("/invite", post(user_auth::invite_user))
+        .route("/agents", get(agents::list))
+        .route("/projects/{project}/agents", post(agents::register))
+        .route("/agents/{id}/context", get(agents::get_context))
+        .route("/agents/{id}/summary", get(agents::get_summary))
         .route(
-            "/organizations/{org}/api-keys/{key_id}",
-            delete(orgs::revoke_api_key),
-        )
-        .route("/organizations/{org}/invite", post(user_auth::invite_user))
-        .route("/organizations/{org}/agents", get(agents::list))
-        .route(
-            "/organizations/{org}/projects/{project}/agents",
-            post(agents::register),
-        )
-        .route(
-            "/organizations/{org}/agents/{id}/context",
-            get(agents::get_context),
-        )
-        .route(
-            "/organizations/{org}/agents/{id}/summary",
-            get(agents::get_summary),
-        )
-        .route(
-            "/organizations/{org}/agents/{id}/roles",
+            "/agents/{id}/roles",
             axum::routing::patch(agents::change_roles),
         )
+        .route("/agents/{id}/rename", post(agents::rename_alias))
+        .route("/agents/{id}/switch-context", post(agents::switch_context))
+        .route("/agents/{id}/inbox", get(messages::inbox_for_agent))
+        .route("/agents/{id}/sent-messages", get(messages::sent_for_agent))
+        .route("/agents/{id}/messages/read", post(messages::mark_read))
+        .route("/messages/{msg_id}/claim", post(messages::claim_message))
         .route(
-            "/organizations/{org}/agents/{id}/rename",
-            post(agents::rename_alias),
-        )
-        .route(
-            "/organizations/{org}/agents/{id}/switch-context",
-            post(agents::switch_context),
-        )
-        .route(
-            "/organizations/{org}/agents/{id}/inbox",
-            get(messages::inbox_for_agent),
-        )
-        .route(
-            "/organizations/{org}/agents/{id}/sent-messages",
-            get(messages::sent_for_agent),
-        )
-        .route(
-            "/organizations/{org}/agents/{id}/messages/read",
-            post(messages::mark_read),
-        )
-        .route(
-            "/organizations/{org}/messages/{msg_id}/claim",
-            post(messages::claim_message),
-        )
-        .route(
-            "/organizations/{org}/messages/{msg_id}/unclaim",
+            "/messages/{msg_id}/unclaim",
             post(messages::unclaim_message),
         )
         .route(
-            "/organizations/{org}/projects/{project}",
+            "/projects/{project}",
             get(projects::get).put(projects::update),
         )
+        .route("/projects/{project}/metadata", post(projects::set_metadata))
         .route(
-            "/organizations/{org}/projects/{project}/metadata",
-            post(projects::set_metadata),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/namespaces",
+            "/projects/{project}/namespaces",
             get(projects::list_namespaces),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks",
+            "/projects/{project}/tasks",
             get(tasks::list).post(tasks::post),
         )
+        .route("/projects/{project}/tasks/next", get(tasks::next_task))
+        .route("/projects/{project}/tasks/tags", get(tasks::list_tags))
+        .route("/projects/{project}/tasks/merge", post(tasks::merge))
         .route(
-            "/organizations/{org}/projects/{project}/tasks/next",
-            get(tasks::next_task),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/tags",
-            get(tasks::list_tags),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/merge",
-            post(tasks::merge),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}",
+            "/projects/{project}/tasks/{id}",
             get(tasks::get_task).patch(tasks::update_task),
         )
+        .route("/projects/{project}/tasks/{id}/claim", post(tasks::claim))
+        .route("/projects/{project}/tasks/{id}/start", post(tasks::start))
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/claim",
-            post(tasks::claim),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/start",
-            post(tasks::start),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/complete",
+            "/projects/{project}/tasks/{id}/complete",
             post(tasks::complete),
         )
+        .route("/projects/{project}/tasks/{id}/fail", post(tasks::fail))
+        .route("/projects/{project}/tasks/{id}/cancel", post(tasks::cancel))
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/fail",
-            post(tasks::fail),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/cancel",
-            post(tasks::cancel),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/release",
+            "/projects/{project}/tasks/{id}/release",
             post(tasks::release),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/archive",
+            "/projects/{project}/tasks/{id}/archive",
             post(tasks::archive_task),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/unarchive",
+            "/projects/{project}/tasks/{id}/unarchive",
             post(tasks::unarchive_task),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/unblock",
+            "/projects/{project}/tasks/{id}/unblock",
             post(tasks::unblock),
         )
+        .route("/projects/{project}/tasks/{id}/assign", post(tasks::assign))
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/assign",
-            post(tasks::assign),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/dependencies",
+            "/projects/{project}/tasks/{id}/dependencies",
             post(tasks::add_dep),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/dependencies/{dep_id}",
+            "/projects/{project}/tasks/{id}/dependencies/{dep_id}",
             delete(tasks::remove_dep),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/tags/{tag}",
+            "/projects/{project}/tasks/{id}/tags/{tag}",
             post(tasks::tag_task).delete(tasks::untag_task),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/move",
+            "/projects/{project}/tasks/{id}/move",
             post(tasks::move_task),
         )
+        .route("/projects/{project}/tasks/{id}/split", post(tasks::split))
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/split",
-            post(tasks::split),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/replace",
+            "/projects/{project}/tasks/{id}/replace",
             post(tasks::replace),
         )
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/delegate",
+            "/projects/{project}/tasks/{id}/delegate",
             post(tasks::delegate),
         )
+        .route("/projects/{project}/tasks/{id}/touch", post(tasks::touch))
+        .route("/projects/{project}/messages", post(messages::send))
         .route(
-            "/organizations/{org}/projects/{project}/tasks/{id}/touch",
-            post(tasks::touch),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/messages",
-            post(messages::send),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/messages/{id}/thread",
+            "/projects/{project}/messages/{id}/thread",
             get(messages::thread),
         )
-        .route(
-            "/organizations/{org}/projects/{project}/knowledge",
-            get(knowledge::list),
-        )
+        .route("/projects/{project}/knowledge", get(knowledge::list))
         // Graph endpoints
+        .route("/graph/edges", post(graph::add_edge).get(graph::list_edges))
+        .route("/graph/edges/{edge_id}", delete(graph::remove_edge))
+        .route("/graph/relations", get(graph::query_relations))
+        .route("/graph/context", post(graph::assemble_context))
         .route(
-            "/organizations/{org}/graph/edges",
-            post(graph::add_edge).get(graph::list_edges),
-        )
-        .route(
-            "/organizations/{org}/graph/edges/{edge_id}",
-            delete(graph::remove_edge),
-        )
-        .route(
-            "/organizations/{org}/graph/relations",
-            get(graph::query_relations),
-        )
-        .route(
-            "/organizations/{org}/graph/context",
-            post(graph::assemble_context),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/knowledge/types",
+            "/projects/{project}/knowledge/types",
             get(knowledge::list_types),
         )
         .route(
-            "/organizations/{org}/projects/{project}/knowledge/search",
+            "/projects/{project}/knowledge/search",
             post(knowledge::search),
         )
         .route(
-            "/organizations/{org}/projects/{project}/knowledge/import",
+            "/projects/{project}/knowledge/import",
             post(knowledge::import),
         )
         .route(
-            "/organizations/{org}/projects/{project}/knowledge/promote",
+            "/projects/{project}/knowledge/promote",
             post(knowledge::promote),
         )
         .route(
-            "/organizations/{org}/projects/{project}/knowledge/consolidate",
+            "/projects/{project}/knowledge/consolidate",
             post(knowledge::consolidate),
         )
         .route(
-            "/organizations/{org}/projects/{project}/knowledge/{*path}",
+            "/projects/{project}/knowledge/{*path}",
             get(knowledge::read)
                 .put(knowledge::write)
                 .delete(knowledge::delete)
                 .post(knowledge::knowledge_action)
                 .patch(knowledge::knowledge_patch),
         )
+        .route("/projects/{project}/locks", post(locks::acquire))
         .route(
-            "/organizations/{org}/projects/{project}/locks",
-            post(locks::acquire),
-        )
-        .route(
-            "/organizations/{org}/projects/{project}/locks/{name}",
+            "/projects/{project}/locks/{name}",
             get(locks::check).delete(locks::release),
         )
-        .route(
-            "/organizations/{org}/projects/{project}/events",
-            get(events::poll),
-        )
+        .route("/projects/{project}/events", get(events::poll))
 }

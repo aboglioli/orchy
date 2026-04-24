@@ -8,29 +8,11 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_application::PollUpdatesCommand;
-use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
 use super::auth::OrgAuth;
 use super::{ApiError, parse_namespace};
-
-fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
-    OrganizationId::new(s)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.org.id.as_str() != org_id.as_str() {
-        Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ))
-    } else {
-        Ok(())
-    }
-}
 
 #[derive(Deserialize)]
 pub struct PollQuery {
@@ -42,12 +24,10 @@ pub struct PollQuery {
 pub async fn poll(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, _project)): Path<(String, String)>,
+    Path(_project): Path<String>,
     Query(query): Query<PollQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let since_str = match query.since.as_deref() {
         Some(s) => {
             chrono::DateTime::parse_from_rfc3339(s).map_err(|e| {

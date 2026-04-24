@@ -28,18 +28,6 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.org.id.as_str() != org_id.as_str() {
-        Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn check_task_project(task: &TaskResponse, project: &str) -> Result<(), ApiError> {
     if task.project != project {
         return Err(ApiError(
@@ -66,8 +54,6 @@ async fn resolve_agent_id(
 }
 
 use super::ApiError;
-
-type OrgProject = (String, String);
 
 #[derive(Deserialize)]
 pub struct ListTasksQuery {
@@ -204,12 +190,10 @@ fn to_subtask_inputs(defs: Vec<SubtaskDefBody>) -> Vec<SubtaskInput> {
 pub async fn list(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<OrgProject>,
+    Path(project): Path<String>,
     Query(query): Query<ListTasksQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = ListTasksCommand {
         org_id: org,
         project: Some(project),
@@ -241,12 +225,10 @@ pub async fn list(
 pub async fn post(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<OrgProject>,
+    Path(project): Path<String>,
     Json(body): Json<PostTaskBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = PostTaskCommand {
         org_id: org,
         project,
@@ -278,12 +260,10 @@ pub async fn post(
 pub async fn get_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Query(rel_query): Query<super::InlineRelationQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let relations = rel_query.into_options()?;
 
     let task = container
@@ -309,13 +289,10 @@ pub async fn get_task(
 
 pub async fn update_task(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<UpdateTaskBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -355,12 +332,11 @@ pub async fn update_task(
 pub async fn claim(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<ClaimBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -401,12 +377,11 @@ pub async fn claim(
 pub async fn start(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<AgentBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -445,12 +420,10 @@ pub async fn start(
 pub async fn complete(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<CompleteBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
@@ -489,12 +462,10 @@ pub async fn complete(
 pub async fn fail(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<FailBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
@@ -532,12 +503,10 @@ pub async fn fail(
 pub async fn cancel(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<CancelBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
@@ -575,12 +544,10 @@ pub async fn cancel(
 pub async fn archive_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, task_id)): Path<(String, String, String)>,
+    Path((project, task_id)): Path<(String, String)>,
     Json(body): Json<ArchiveTaskBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
@@ -616,12 +583,10 @@ pub async fn archive_task(
 pub async fn unarchive_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, task_id)): Path<(String, String, String)>,
+    Path((project, task_id)): Path<(String, String)>,
     Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
@@ -655,13 +620,10 @@ pub async fn unarchive_task(
 
 pub async fn release(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
     Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -694,12 +656,9 @@ pub async fn release(
 
 pub async fn unblock(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -733,12 +692,11 @@ pub async fn unblock(
 pub async fn assign(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<AgentBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -777,12 +735,11 @@ pub async fn assign(
 pub async fn add_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<AddDepBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -820,11 +777,10 @@ pub async fn add_dep(
 pub async fn remove_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, id, dep_id)): Path<(String, String, String, String)>,
+    Path((project, id, dep_id)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -861,12 +817,9 @@ pub async fn remove_dep(
 
 pub async fn tag_task(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id, tag)): Path<(String, String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id, tag)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -899,12 +852,9 @@ pub async fn tag_task(
 
 pub async fn untag_task(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id, tag)): Path<(String, String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id, tag)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -938,12 +888,10 @@ pub async fn untag_task(
 pub async fn list_tags(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<OrgProject>,
+    Path(project): Path<String>,
     Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = ListTagsCommand {
         org_id: Some(org),
         project: Some(project),
@@ -969,12 +917,11 @@ pub async fn list_tags(
 pub async fn next_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<OrgProject>,
+    Path(project): Path<String>,
     Query(query): Query<NextTaskQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let roles = match query.role {
         Some(r) => vec![r],
         None => vec![],
@@ -1022,13 +969,10 @@ pub async fn next_task(
 
 pub async fn split(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<SplitBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -1061,13 +1005,10 @@ pub async fn split(
 
 pub async fn replace(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<ReplaceBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -1102,12 +1043,10 @@ pub async fn replace(
 pub async fn merge(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<OrgProject>,
+    Path(project): Path<String>,
     Json(body): Json<MergeBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     for tid in &body.task_ids {
         let existing = container
             .app
@@ -1145,13 +1084,10 @@ pub async fn merge(
 
 pub async fn delegate(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<DelegateBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -1197,13 +1133,10 @@ pub struct MoveTaskBody {
 
 pub async fn move_task(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
     Json(body): Json<MoveTaskBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task
@@ -1239,12 +1172,9 @@ pub async fn move_task(
 
 pub async fn touch(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, project, id)): Path<(String, String, String)>,
+    _auth: OrgAuth,
+    Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let existing = container
         .app
         .get_task

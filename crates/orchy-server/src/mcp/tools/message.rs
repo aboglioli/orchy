@@ -26,8 +26,8 @@ pub(super) async fn send_message(
     h: &OrchyHandler,
     params: SendMessageParams,
 ) -> Result<String, String> {
-    let (agent_id, org, project, _) = h.require_session().await?;
-
+    let (agent_id, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
         .await?;
@@ -35,7 +35,8 @@ pub(super) async fn send_message(
     let to = if let Some(alias_str) = params.to.strip_prefix('@') {
         let alias =
             orchy_core::agent::Alias::new(alias_str).map_err(|e| format!("invalid alias: {e}"))?;
-        let (_, org, project, _) = h.require_session().await?;
+        let (_, project, _) = h.require_session().await?;
+        let org = h.org();
         let agent = h
             .container
             .agent_store
@@ -88,7 +89,7 @@ pub(super) async fn claim_message(
     h: &OrchyHandler,
     params: ClaimMessageParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
+    let (agent_id, _, _) = h.require_session().await?;
     let message_id =
         MessageId::from_str(&params.message_id).map_err(|e| format!("invalid message_id: {e}"))?;
 
@@ -105,7 +106,7 @@ pub(super) async fn unclaim_message(
     h: &OrchyHandler,
     params: UnclaimMessageParams,
 ) -> Result<String, String> {
-    let (agent_id, _, _, _) = h.require_session().await?;
+    let (agent_id, _, _) = h.require_session().await?;
     let message_id =
         MessageId::from_str(&params.message_id).map_err(|e| format!("invalid message_id: {e}"))?;
 

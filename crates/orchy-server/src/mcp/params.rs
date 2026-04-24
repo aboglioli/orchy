@@ -5,9 +5,8 @@ use serde::Deserialize;
 pub struct RegisterAgentParams {
     pub alias: String,
     pub project: String,
-    pub namespace: Option<String>,
-    pub organization: Option<String>,
     pub description: String,
+    pub namespace: Option<String>,
     /// Auto-assigned from task demand if omitted.
     pub roles: Option<Vec<String>>,
     /// Informative only (e.g. claude-code, opencode, pi). Not part of identity.

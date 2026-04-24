@@ -227,7 +227,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_str(&id_str).map_err(|e| conversion_err(0, e.to_string()))?,
         alias: Alias::new(&alias).unwrap_or_else(|_| {
-            Alias::new(&format!("agent-{id_str}"))
+            Alias::new(format!("agent-{id_str}"))
                 .unwrap_or_else(|_| Alias::new("unknown").unwrap())
         }),
         org_id: OrganizationId::new(&org_id_str).map_err(|e| conversion_err(2, e.to_string()))?,

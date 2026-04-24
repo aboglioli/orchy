@@ -97,6 +97,7 @@ pub struct Agent {
 }
 
 impl Agent {
+    #[allow(clippy::too_many_arguments)]
     pub fn register(
         org_id: OrganizationId,
         project: ProjectId,

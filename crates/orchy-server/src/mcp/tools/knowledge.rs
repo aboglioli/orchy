@@ -42,8 +42,8 @@ pub(super) async fn write_knowledge(
     h: &OrchyHandler,
     params: WriteKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
         .await?;
@@ -82,8 +82,8 @@ pub(super) async fn patch_knowledge_metadata(
     h: &OrchyHandler,
     params: PatchKnowledgeMetadataParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -113,7 +113,8 @@ pub(super) async fn read_knowledge(
     h: &OrchyHandler,
     params: ReadKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, session_project, _) = h.require_session().await?;
+    let (_, session_project, _) = h.require_session().await?;
+    let org = h.org();
     let project = params
         .project
         .unwrap_or_else(|| session_project.to_string());
@@ -141,8 +142,8 @@ pub(super) async fn list_knowledge(
     h: &OrchyHandler,
     params: ListKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = match params.namespace.as_deref() {
         Some(_) => Some(
             h.resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
@@ -184,8 +185,8 @@ pub(super) async fn search_knowledge(
     h: &OrchyHandler,
     params: SearchKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::SessionDefault)
         .await?;
@@ -213,8 +214,8 @@ pub(super) async fn delete_knowledge(
     h: &OrchyHandler,
     params: DeleteKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -236,7 +237,8 @@ pub(super) async fn archive_knowledge(
     h: &OrchyHandler,
     params: ArchiveKnowledgeParams,
 ) -> Result<String, String> {
-    let (_agent_id, org, project, namespace) = h.require_session().await?;
+    let (_agent_id, project, namespace) = h.require_session().await?;
+    let org = h.org();
     let cmd = ArchiveKnowledgeCommand {
         org_id: org.to_string(),
         project: project.to_string(),
@@ -254,7 +256,8 @@ pub(super) async fn unarchive_knowledge(
     h: &OrchyHandler,
     params: UnarchiveKnowledgeParams,
 ) -> Result<String, String> {
-    let (_agent_id, org, project, namespace) = h.require_session().await?;
+    let (_agent_id, project, namespace) = h.require_session().await?;
+    let org = h.org();
     let cmd = UnarchiveKnowledgeCommand {
         org_id: org.to_string(),
         project: project.to_string(),
@@ -271,8 +274,8 @@ pub(super) async fn append_knowledge(
     h: &OrchyHandler,
     params: AppendKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::RegisterIfNew)
         .await?;
@@ -301,8 +304,8 @@ pub(super) async fn move_knowledge(
     h: &OrchyHandler,
     params: MoveKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -329,8 +332,8 @@ pub(super) async fn rename_knowledge(
     h: &OrchyHandler,
     params: RenameKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -353,8 +356,8 @@ pub(super) async fn change_knowledge_kind(
     h: &OrchyHandler,
     params: ChangeKnowledgeKindParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -378,8 +381,8 @@ pub(super) async fn tag_knowledge(
     h: &OrchyHandler,
     params: TagKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -402,8 +405,8 @@ pub(super) async fn untag_knowledge(
     h: &OrchyHandler,
     params: UntagKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -426,8 +429,8 @@ pub(super) async fn import_knowledge(
     h: &OrchyHandler,
     params: ImportKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(None, NamespacePolicy::RegisterIfNew)
         .await?;
@@ -453,8 +456,8 @@ pub(super) async fn assemble_context(
     h: &OrchyHandler,
     params: AssembleContextParams,
 ) -> Result<String, String> {
-    let (_, org, _, _) = h.require_session().await?;
-
+    let (_, _, _) = h.require_session().await?;
+    let org = h.org();
     let cmd = AssembleContextCommand {
         org_id: org.to_string(),
         kind: params.kind,
@@ -472,8 +475,8 @@ pub(super) async fn promote_knowledge(
     h: &OrchyHandler,
     params: PromoteKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;
@@ -498,8 +501,8 @@ pub(super) async fn consolidate_knowledge(
     h: &OrchyHandler,
     params: ConsolidateKnowledgeParams,
 ) -> Result<String, String> {
-    let (_, org, project, _) = h.require_session().await?;
-
+    let (_, project, _) = h.require_session().await?;
+    let org = h.org();
     let namespace = h
         .resolve_namespace(params.namespace.as_deref(), NamespacePolicy::Required)
         .await?;

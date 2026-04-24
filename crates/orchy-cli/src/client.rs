@@ -7,7 +7,6 @@ pub struct OrchyClient {
     client: Client,
     base_url: String,
     api_key: String,
-    org: String,
     pub project: String,
     pub alias: Option<String>,
 }
@@ -19,23 +18,17 @@ impl OrchyClient {
             client: Client::new(),
             base_url,
             api_key: config.api_key.clone(),
-            org: config.org.clone(),
             project: config.project.clone(),
             alias: config.alias.clone(),
         }
     }
 
-    /// Build an org-scoped URL: /organizations/{org}/...
     fn url(&self, path: &str) -> String {
-        format!("{}/api/organizations/{}{}", self.base_url, self.org, path)
+        format!("{}/api{}", self.base_url, path)
     }
 
-    /// Build a project-scoped URL: /organizations/{org}/projects/{project}/...
     fn project_url(&self, path: &str) -> String {
-        format!(
-            "{}/api/organizations/{}/projects/{}{}",
-            self.base_url, self.org, self.project, path
-        )
+        format!("{}/api/projects/{}{}", self.base_url, self.project, path)
     }
 
     /// GET request.

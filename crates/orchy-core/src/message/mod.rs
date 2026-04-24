@@ -18,6 +18,7 @@ use crate::resource_ref::ResourceRef;
 use crate::user::UserId;
 
 #[async_trait::async_trait]
+#[allow(clippy::too_many_arguments)]
 pub trait MessageStore: Send + Sync {
     async fn save(&self, message: &mut Message) -> Result<()>;
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>>;
@@ -197,6 +198,7 @@ pub struct Message {
 }
 
 impl Message {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         org_id: OrganizationId,
         project: ProjectId,

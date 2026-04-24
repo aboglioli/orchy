@@ -903,7 +903,7 @@ impl ServerHandler for OrchyHandler {
             self.set_mcp_session_id(session_id).await;
         }
         self.touch_heartbeat();
-        let (_, org, project, namespace) = match self.require_session().await {
+        let (_, project, namespace) = match self.require_session().await {
             Ok(s) => s,
             Err(_) => {
                 return Ok(ListPromptsResult {
@@ -913,6 +913,7 @@ impl ServerHandler for OrchyHandler {
                 });
             }
         };
+        let org = self.org();
 
         let cmd = orchy_application::ListSkillsCommand {
             org_id: org.to_string(),
@@ -948,10 +949,11 @@ impl ServerHandler for OrchyHandler {
             self.set_mcp_session_id(session_id).await;
         }
         self.touch_heartbeat();
-        let (_, org, project, namespace) = self
+        let (_, project, namespace) = self
             .require_session()
             .await
             .map_err(|e| ErrorData::internal_error(e, None))?;
+        let org = self.org();
 
         let cmd = orchy_application::ListSkillsCommand {
             org_id: org.to_string(),

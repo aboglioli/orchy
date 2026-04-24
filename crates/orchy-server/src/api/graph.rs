@@ -12,7 +12,7 @@ use orchy_application::{
     RemoveEdgeCommand,
 };
 use orchy_core::graph::RelationOptions;
-use orchy_core::graph::{RelationType, TraversalDirection};
+use orchy_core::graph::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
@@ -24,18 +24,6 @@ use super::auth::OrgAuth;
 fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
     OrganizationId::new(s)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
-
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.org.id.as_str() != org_id.as_str() {
-        Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 #[derive(Deserialize)]
@@ -52,12 +40,9 @@ pub struct AddEdgeBody {
 pub async fn add_edge(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path(org): Path<String>,
     Json(body): Json<AddEdgeBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = AddEdgeCommand {
         org_id: org,
         from_kind: body.from_kind,
@@ -87,12 +72,9 @@ pub async fn add_edge(
 
 pub async fn remove_edge(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, edge_id)): Path<(String, String)>,
+    _auth: OrgAuth,
+    Path(edge_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let cmd = RemoveEdgeCommand {
         edge_id: edge_id.clone(),
     };
@@ -121,12 +103,9 @@ pub struct QueryRelationsQuery {
 pub async fn query_relations(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path(org): Path<String>,
     Query(query): Query<QueryRelationsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let rel_types: Option<Vec<RelationType>> = query
         .rel_types
         .as_deref()
@@ -209,11 +188,10 @@ pub struct ListEdgesQuery {
 pub async fn list_edges(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path(org): Path<String>,
     Query(query): Query<ListEdgesQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
 
     let rel_type: Option<RelationType> = query
         .rel_type
@@ -237,17 +215,16 @@ pub async fn list_edges(
         .transpose()?
         .map(|dt| dt.to_utc());
 
-    let page = container
-        .edge_store
-        .list_by_org(
-            &org_id,
-            rel_type.as_ref(),
-            PageParams::new(query.after, query.limit),
-            true,
-            as_of,
-        )
-        .await
-        .map_err(ApiError::from)?;
+    let page = EdgeStore::list_by_org(
+        &*container.edge_store,
+        &org_id,
+        rel_type.as_ref(),
+        PageParams::new(query.after, query.limit),
+        true,
+        as_of,
+    )
+    .await
+    .map_err(ApiError::from)?;
 
     // If from/to filters are provided, filter in-memory since the store only
     // supports rel_type filter natively. This is an admin/debug endpoint.
@@ -295,12 +272,9 @@ pub struct AssembleContextBody {
 pub async fn assemble_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path(org): Path<String>,
     Json(body): Json<AssembleContextBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = AssembleContextCommand {
         org_id: org,
         kind: body.kind,

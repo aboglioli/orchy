@@ -113,19 +113,11 @@ async fn resolve_agent_id(
 pub async fn list(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path(org): Path<String>,
     Query(query): Query<ListAgentsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = OrganizationId::new(&org)
+    let org = auth.org.id.clone();
+    OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
-
     let cmd = ListAgentsCommand {
         org_id: org,
         project: None,
@@ -187,19 +179,12 @@ pub struct RegisterAgentBody {
 pub async fn register(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<RegisterAgentBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = OrganizationId::new(&org)
+    let org = auth.org.id.clone();
+    OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
-
     let cmd = RegisterAgentCommand {
         org_id: org,
         project,
@@ -231,19 +216,12 @@ pub async fn register(
 pub async fn get_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<AgentRefQuery>,
 ) -> Result<Json<AgentContextDto>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
-
     let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
 
     let agent = container
@@ -337,20 +315,13 @@ pub async fn get_context(
 
 pub async fn get_summary(
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<AgentRefQuery>,
     State(container): State<Arc<Container>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
-
     let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
 
     let cmd = GetAgentSummaryCommand {
@@ -383,20 +354,13 @@ pub struct ChangeRolesBody {
 pub async fn change_roles(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<AgentRefQuery>,
     Json(body): Json<ChangeRolesBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
-
     let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
 
     let cmd = ChangeRolesCommand {
@@ -429,20 +393,13 @@ pub struct RenameAliasBody {
 pub async fn rename_alias(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<AgentRefQuery>,
     Json(body): Json<RenameAliasBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
-
     let new_alias = body.new_alias.clone();
     let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
     let cmd = RenameAliasCommand {
@@ -475,20 +432,13 @@ pub struct SwitchContextBody {
 pub async fn switch_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<AgentRefQuery>,
     Json(body): Json<SwitchContextBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = OrganizationId::new(&org)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
-
     let agent_id = resolve_agent_id(&container, &org_id, &id, query.project.as_deref()).await?;
 
     let cmd = SwitchContextCommand {

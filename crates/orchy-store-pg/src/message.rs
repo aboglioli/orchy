@@ -248,10 +248,10 @@ impl MessageStore for PgMessageStore {
             if !visible {
                 return false;
             }
-            if let Some(claimed_by) = m.claimed_by() {
-                if claimed_by != agent {
-                    return false;
-                }
+            if let Some(claimed_by) = m.claimed_by()
+                && claimed_by != agent
+            {
+                return false;
             }
             true
         });

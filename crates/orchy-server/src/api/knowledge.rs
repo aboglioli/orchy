@@ -28,18 +28,6 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.org.id.as_str() != org_id.as_str() {
-        Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub kind: Option<String>,
@@ -159,11 +147,10 @@ pub struct KnowledgeTypeDto {
 pub async fn list(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = ListKnowledgeCommand {
         org_id: org,
@@ -197,16 +184,10 @@ pub async fn list(
 
 pub async fn list_types(
     auth: OrgAuth,
-    Path((org, _project)): Path<(String, String)>,
+    Path(_project): Path<String>,
 ) -> Result<Json<Vec<KnowledgeTypeDto>>, ApiError> {
-    let org_id = parse_org(&org)?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
+    let org = auth.org.id.clone();
+    parse_org(&org)?;
 
     let types = KnowledgeKind::all()
         .iter()
@@ -222,11 +203,10 @@ pub async fn list_types(
 pub async fn search(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<SearchBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = SearchKnowledgeCommand {
         org_id: org,
@@ -260,11 +240,10 @@ pub async fn search(
 pub async fn import(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<ImportBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = ImportKnowledgeCommand {
         source_org_id: org.clone(),
@@ -296,11 +275,10 @@ pub async fn import(
 pub async fn read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Query(query): Query<ReadKnowledgeQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let relations = query.relations.into_options()?;
 
@@ -343,11 +321,10 @@ pub async fn read(
 pub async fn write(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Json(body): Json<WriteBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = WriteKnowledgeCommand {
         org_id: org,
@@ -386,11 +363,10 @@ pub async fn write(
 pub async fn delete(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, full_path)): Path<(String, String, String)>,
+    Path((project, full_path)): Path<(String, String)>,
     Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     if full_path.contains("/tags/")
         && let Some((path, tag_name)) = full_path.rsplit_once("/tags/")
@@ -437,11 +413,10 @@ pub async fn delete(
 pub async fn append(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Json(body): Json<AppendBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = AppendKnowledgeCommand {
         org_id: org,
@@ -474,11 +449,10 @@ pub async fn append(
 pub async fn move_entry(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Json(body): Json<MoveBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = MoveKnowledgeCommand {
         org_id: org,
@@ -507,11 +481,10 @@ pub async fn move_entry(
 pub async fn rename(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Json(body): Json<RenameBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = RenameKnowledgeCommand {
         org_id: org,
@@ -540,12 +513,11 @@ pub async fn rename(
 pub async fn archive(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Query(query): Query<NamespaceQuery>,
     Json(body): Json<ArchiveBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = ArchiveKnowledgeCommand {
         org_id: org,
@@ -574,12 +546,11 @@ pub async fn archive(
 pub async fn unarchive(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Query(query): Query<NamespaceQuery>,
     Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = UnarchiveKnowledgeCommand {
         org_id: org,
@@ -607,11 +578,10 @@ pub async fn unarchive(
 pub async fn change_kind(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Json(body): Json<ChangeKindBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = ChangeKnowledgeKindCommand {
         org_id: org,
@@ -641,11 +611,10 @@ pub async fn change_kind(
 pub async fn patch_metadata(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path)): Path<(String, String, String)>,
+    Path((project, path)): Path<(String, String)>,
     Json(body): Json<PatchMetadataBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = PatchKnowledgeMetadataCommand {
         org_id: org,
@@ -678,11 +647,10 @@ pub async fn patch_metadata(
 pub async fn tag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
+    Path((project, path, tag_name)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = TagKnowledgeCommand {
         org_id: org,
@@ -711,11 +679,10 @@ pub async fn tag(
 pub async fn untag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, path, tag_name)): Path<(String, String, String, String)>,
+    Path((project, path, tag_name)): Path<(String, String, String)>,
     Query(query): Query<NamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = UntagKnowledgeCommand {
         org_id: org,
@@ -744,16 +711,17 @@ pub async fn untag(
 pub async fn knowledge_action(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, full_path)): Path<(String, String, String)>,
+    Path((project, full_path)): Path<(String, String)>,
     body: axum::body::Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     if let Some(path) = full_path.strip_suffix("/append") {
         let json: AppendBody = serde_json::from_slice(&body)
             .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
         return append(
             State(container),
             auth,
-            Path((org, project, path.to_string())),
+            Path((project, path.to_string())),
             Json(json),
         )
         .await;
@@ -764,7 +732,7 @@ pub async fn knowledge_action(
         return move_entry(
             State(container),
             auth,
-            Path((org, project, path.to_string())),
+            Path((project, path.to_string())),
             Json(json),
         )
         .await;
@@ -775,7 +743,7 @@ pub async fn knowledge_action(
         return rename(
             State(container),
             auth,
-            Path((org, project, path.to_string())),
+            Path((project, path.to_string())),
             Json(json),
         )
         .await;
@@ -786,7 +754,7 @@ pub async fn knowledge_action(
         return archive(
             State(container),
             auth,
-            Path((org, project, path.to_string())),
+            Path((project, path.to_string())),
             Query(NamespaceQuery { namespace: None }),
             Json(json),
         )
@@ -798,7 +766,7 @@ pub async fn knowledge_action(
         return unarchive(
             State(container),
             auth,
-            Path((org, project, path.to_string())),
+            Path((project, path.to_string())),
             Query(NamespaceQuery { namespace: None }),
             Json(json),
         )
@@ -807,8 +775,6 @@ pub async fn knowledge_action(
     if full_path.contains("/tags/")
         && let Some((path, tag_name)) = full_path.rsplit_once("/tags/")
     {
-        let org_id = parse_org(&org)?;
-        check_org(&auth, &org_id)?;
         let namespace = serde_json::from_slice::<serde_json::Value>(&body)
             .ok()
             .and_then(|v| {
@@ -847,16 +813,17 @@ pub async fn knowledge_action(
 pub async fn knowledge_patch(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, full_path)): Path<(String, String, String)>,
+    Path((project, full_path)): Path<(String, String)>,
     body: axum::body::Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let _org = auth.org.id.clone();
     if let Some(path) = full_path.strip_suffix("/kind") {
         let json: ChangeKindBody = serde_json::from_slice(&body)
             .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_INPUT", e.to_string()))?;
         return change_kind(
             State(container),
             auth,
-            Path((org, project, path.to_string())),
+            Path((project, path.to_string())),
             Json(json),
         )
         .await;
@@ -867,7 +834,7 @@ pub async fn knowledge_patch(
         return patch_metadata(
             State(container),
             auth,
-            Path((org, project, path.to_string())),
+            Path((project, path.to_string())),
             Json(json),
         )
         .await;
@@ -891,11 +858,10 @@ pub struct PromoteBody {
 pub async fn promote(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<PromoteBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = orchy_application::PromoteKnowledgeCommand {
         org_id: org,
@@ -937,11 +903,10 @@ pub struct ConsolidateBody {
 pub async fn consolidate(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<ConsolidateBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
+    let org = auth.org.id.clone();
 
     let cmd = orchy_application::ConsolidateKnowledgeCommand {
         org_id: org,

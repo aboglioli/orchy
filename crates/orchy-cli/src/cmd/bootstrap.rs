@@ -26,7 +26,13 @@ pub async fn run(
     } else {
         print!(
             "{}",
-            output::format_bootstrap(&agent_v, &project_v, &config.org, &config.project, verbose,)
+            output::format_bootstrap(
+                &agent_v,
+                &project_v,
+                config.org.as_deref(),
+                &config.project,
+                verbose,
+            )
         );
     }
     Ok(())

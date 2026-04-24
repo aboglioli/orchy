@@ -30,13 +30,10 @@ use std::str::FromStr;
 
 pub async fn claim_message(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, msg_id)): Path<(String, String)>,
+    _auth: OrgAuth,
+    Path(msg_id): Path<String>,
     Json(body): Json<ClaimMessageBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let agent_id = AgentId::from_str(&body.agent_id)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     let message_id = MessageId::from_str(&msg_id)
@@ -54,13 +51,10 @@ pub async fn claim_message(
 
 pub async fn unclaim_message(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
-    Path((org, msg_id)): Path<(String, String)>,
+    _auth: OrgAuth,
+    Path(msg_id): Path<String>,
     Json(body): Json<ClaimMessageBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let agent_id = AgentId::from_str(&body.agent_id)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     let message_id = MessageId::from_str(&msg_id)
@@ -79,18 +73,6 @@ pub async fn unclaim_message(
 #[derive(Deserialize)]
 pub struct ClaimMessageBody {
     pub agent_id: String,
-}
-
-fn check_org(auth: &OrgAuth, org_id: &OrganizationId) -> Result<(), ApiError> {
-    if auth.org.id.as_str() != org_id.as_str() {
-        Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 #[derive(Deserialize)]
@@ -169,12 +151,11 @@ async fn resolve_agent_id_for_messages(
 pub async fn inbox_for_agent(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<AgentNamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let (agent_id, project) =
         resolve_agent_id_for_messages(&container, &org_id, &id, query.project.as_deref()).await?;
 
@@ -206,12 +187,11 @@ pub async fn inbox_for_agent(
 pub async fn sent_for_agent(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<AgentNamespaceQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let (agent_id, project) =
         resolve_agent_id_for_messages(&container, &org_id, &id, query.project.as_deref()).await?;
 
@@ -244,12 +224,10 @@ pub async fn sent_for_agent(
 pub async fn send(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project)): Path<(String, String)>,
+    Path(project): Path<String>,
     Json(body): Json<SendBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = SendMessageCommand {
         org_id: org,
         project,
@@ -286,13 +264,12 @@ pub struct MarkReadQuery {
 pub async fn mark_read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     Query(query): Query<MarkReadQuery>,
     Json(body): Json<MarkReadBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
     let (agent_id, _) =
         resolve_agent_id_for_messages(&container, &org_id, &id, query.project.as_deref()).await?;
 
@@ -314,12 +291,10 @@ pub async fn mark_read(
 pub async fn thread(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, project, msg_id)): Path<(String, String, String)>,
+    Path((project, msg_id)): Path<(String, String)>,
     Query(query): Query<ThreadQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org_id = parse_org(&org)?;
-    check_org(&auth, &org_id)?;
-
+    let org = auth.org.id.clone();
     let cmd = ListConversationCommand {
         org_id: org,
         project,

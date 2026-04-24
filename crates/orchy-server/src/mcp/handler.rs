@@ -3,20 +3,19 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::warn;
 
+use orchy_application::ApiKeyPrincipal;
 use orchy_core::agent::AgentId;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
+use uuid::Uuid;
 
 use crate::container::Container;
 
 struct SessionState {
     agent_id: AgentId,
-    org: OrganizationId,
     project: ProjectId,
     namespace: Namespace,
-    #[allow(dead_code)]
-    user_id: Option<UserId>,
 }
 
 pub(crate) enum NamespacePolicy {
@@ -28,17 +27,30 @@ pub(crate) enum NamespacePolicy {
 #[derive(Clone)]
 pub struct OrchyHandler {
     pub(crate) container: Arc<Container>,
+    auth: ApiKeyPrincipal,
     session: Arc<RwLock<Option<SessionState>>>,
     mcp_session_id: Arc<RwLock<Option<String>>>,
 }
 
 impl OrchyHandler {
-    pub fn new(container: Arc<Container>) -> Self {
+    pub fn new(container: Arc<Container>, auth: ApiKeyPrincipal) -> Self {
         Self {
             container,
+            auth,
             session: Arc::new(RwLock::new(None)),
             mcp_session_id: Arc::new(RwLock::new(None)),
         }
+    }
+
+    pub(crate) fn org(&self) -> OrganizationId {
+        OrganizationId::new(&self.auth.org.id).expect("org id is always valid from resolved key")
+    }
+
+    pub(crate) fn user_id(&self) -> Option<UserId> {
+        self.auth
+            .user_id
+            .as_ref()
+            .and_then(|s| Uuid::parse_str(s).ok().map(UserId::from_uuid))
     }
 
     pub(crate) async fn set_mcp_session_id(&self, session_id: String) {
@@ -69,22 +81,10 @@ impl OrchyHandler {
             .map(|s| s.namespace.clone())
     }
 
-    #[allow(dead_code)]
-    pub(crate) async fn get_session_user_id(&self) -> Option<UserId> {
-        self.session.read().await.as_ref().and_then(|s| s.user_id)
-    }
-
-    pub(crate) async fn require_session(
-        &self,
-    ) -> Result<(AgentId, OrganizationId, ProjectId, Namespace), String> {
+    pub(crate) async fn require_session(&self) -> Result<(AgentId, ProjectId, Namespace), String> {
         let guard = self.session.read().await;
         match guard.as_ref() {
-            Some(s) => Ok((
-                s.agent_id.clone(),
-                s.org.clone(),
-                s.project.clone(),
-                s.namespace.clone(),
-            )),
+            Some(s) => Ok((s.agent_id.clone(), s.project.clone(), s.namespace.clone())),
             None => {
                 Err("no agent registered for this session; call register_agent first".to_string())
             }
@@ -94,17 +94,13 @@ impl OrchyHandler {
     pub(crate) async fn set_session(
         &self,
         agent_id: AgentId,
-        org: OrganizationId,
         project: ProjectId,
         namespace: Namespace,
-        user_id: Option<UserId>,
     ) {
         *self.session.write().await = Some(SessionState {
             agent_id: agent_id.clone(),
-            org,
             project,
             namespace,
-            user_id,
         });
 
         if let Some(session_id) = self.mcp_session_id.read().await.as_ref().cloned() {
@@ -148,16 +144,6 @@ impl OrchyHandler {
         param: Option<&str>,
         policy: NamespacePolicy,
     ) -> Result<Namespace, String> {
-        self.resolve_namespace_for(param, policy, None, None).await
-    }
-
-    pub(crate) async fn resolve_namespace_for(
-        &self,
-        param: Option<&str>,
-        policy: NamespacePolicy,
-        explicit_org: Option<&OrganizationId>,
-        explicit_project: Option<&ProjectId>,
-    ) -> Result<Namespace, String> {
         let ns = match param {
             Some(s) if !s.is_empty() => {
                 let normalized = if s.starts_with('/') {
@@ -177,16 +163,48 @@ impl OrchyHandler {
         };
 
         if matches!(policy, NamespacePolicy::RegisterIfNew) {
-            let org = match explicit_org {
-                Some(o) => o.clone(),
-                None => self
-                    .session
-                    .read()
-                    .await
-                    .as_ref()
-                    .map(|s| s.org.clone())
-                    .ok_or("no session org for namespace registration")?,
-            };
+            let org = self.org();
+            let project = self
+                .get_session_project()
+                .await
+                .ok_or("no session project for namespace registration")?;
+
+            use orchy_core::namespace::NamespaceStore;
+            if let Err(e) = NamespaceStore::register(
+                &*self.container.namespace_store,
+                &org,
+                &project,
+                &ns,
+            )
+            .await
+            {
+                warn!(error = %e, "namespace registration failed");
+            }
+        }
+
+        Ok(ns)
+    }
+
+    pub(crate) async fn resolve_namespace_for(
+        &self,
+        param: Option<&str>,
+        policy: NamespacePolicy,
+        explicit_project: Option<&ProjectId>,
+    ) -> Result<Namespace, String> {
+        let ns = match param {
+            Some(s) if !s.is_empty() => {
+                let normalized = if s.starts_with('/') {
+                    s.to_string()
+                } else {
+                    format!("/{s}")
+                };
+                Namespace::try_from(normalized).map_err(|e| e.to_string())?
+            }
+            _ => return self.resolve_namespace(None, policy).await,
+        };
+
+        if matches!(policy, NamespacePolicy::RegisterIfNew) {
+            let org = self.org();
             let project = match explicit_project {
                 Some(p) => p.clone(),
                 None => self
@@ -195,11 +213,14 @@ impl OrchyHandler {
                     .ok_or("no session project for namespace registration")?,
             };
 
-            if let Err(e) = self
-                .container
-                .namespace_store
-                .register(&org, &project, &ns)
-                .await
+            use orchy_core::namespace::NamespaceStore;
+            if let Err(e) = NamespaceStore::register(
+                &*self.container.namespace_store,
+                &org,
+                &project,
+                &ns,
+            )
+            .await
             {
                 warn!(error = %e, "namespace registration failed");
             }
@@ -216,13 +237,7 @@ impl OrchyHandler {
             .await
             .ok_or("no session project for agent lookup")?;
 
-        let org = self
-            .session
-            .read()
-            .await
-            .as_ref()
-            .map(|s| s.org.clone())
-            .unwrap_or_else(default_org);
+        let org = self.org();
 
         let agent = self
             .container
@@ -244,10 +259,6 @@ impl OrchyHandler {
 
         Ok(agent_id)
     }
-}
-
-pub(crate) fn default_org() -> OrganizationId {
-    OrganizationId::new("default").unwrap()
 }
 
 pub(crate) fn parse_project(s: &str) -> Result<ProjectId, String> {
