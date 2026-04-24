@@ -150,7 +150,10 @@ pub fn router() -> Router<Arc<Container>> {
         .route("/organizations", post(orgs::create).get(orgs::list))
         .route("/organizations/{org}", get(orgs::get))
         .route("/organizations/{org}/invite", post(user_auth::invite_user))
-        .route("/api-keys", post(orgs::add_api_key))
+        .route(
+            "/api-keys",
+            post(orgs::generate_api_key).get(orgs::list_api_keys),
+        )
         .route("/api-keys/{key_id}", delete(orgs::revoke_api_key))
         .route("/agents", get(agents::list))
         .route("/projects/{project}/agents", post(agents::register))

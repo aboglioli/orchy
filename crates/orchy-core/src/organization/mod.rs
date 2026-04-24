@@ -1,5 +1,7 @@
+pub mod api_key;
 pub mod events;
 
+pub use api_key::{ApiKeyHash, ApiKeyPrefix, RawApiKey};
 pub use orchy_events::OrganizationId;
 
 use chrono::{DateTime, Utc};
@@ -18,7 +20,7 @@ use self::events as org_events;
 pub trait OrganizationStore: Send + Sync {
     async fn save(&self, org: &mut Organization) -> Result<()>;
     async fn find_by_id(&self, id: &OrganizationId) -> Result<Option<Organization>>;
-    async fn find_by_api_key(&self, key: &str) -> Result<Option<Organization>>;
+    async fn find_by_api_key_hash(&self, key_hash: &str) -> Result<Option<Organization>>;
     async fn list(&self) -> Result<Vec<Organization>>;
 }
 
@@ -56,18 +58,28 @@ impl fmt::Display for ApiKeyId {
 pub struct ApiKey {
     id: ApiKeyId,
     name: String,
-    key: String,
+    key_hash: ApiKeyHash,
+    key_prefix: ApiKeyPrefix,
+    key_suffix: String,
     user_id: Option<UserId>,
     is_active: bool,
     created_at: DateTime<Utc>,
 }
 
 impl ApiKey {
-    fn new(name: String, key: String, user_id: Option<UserId>) -> Self {
+    fn new(
+        name: String,
+        key_hash: ApiKeyHash,
+        key_prefix: ApiKeyPrefix,
+        key_suffix: String,
+        user_id: Option<UserId>,
+    ) -> Self {
         Self {
             id: ApiKeyId::new(),
             name,
-            key,
+            key_hash,
+            key_prefix,
+            key_suffix,
             user_id,
             is_active: true,
             created_at: Utc::now(),
@@ -82,8 +94,16 @@ impl ApiKey {
         &self.name
     }
 
-    pub fn key(&self) -> &str {
-        &self.key
+    pub fn key_hash(&self) -> &ApiKeyHash {
+        &self.key_hash
+    }
+
+    pub fn key_prefix(&self) -> &ApiKeyPrefix {
+        &self.key_prefix
+    }
+
+    pub fn key_suffix(&self) -> &str {
+        &self.key_suffix
     }
 
     pub fn user_id(&self) -> Option<&UserId> {
@@ -153,10 +173,18 @@ impl Organization {
     pub fn add_api_key(
         &mut self,
         name: String,
-        key: String,
+        key_hash: ApiKeyHash,
+        key_prefix: ApiKeyPrefix,
+        key_suffix: String,
         user_id: Option<UserId>,
     ) -> Result<&ApiKey> {
-        let api_key = ApiKey::new(name.clone(), key.clone(), user_id);
+        let api_key = ApiKey::new(
+            name.clone(),
+            key_hash.clone(),
+            key_prefix.clone(),
+            key_suffix,
+            user_id,
+        );
         let key_id = api_key.id().to_string();
         self.api_keys.push(api_key);
         self.updated_at = Utc::now();
@@ -165,6 +193,8 @@ impl Organization {
             org_id: self.id.to_string(),
             key_id,
             name,
+            key_hash: key_hash.to_string(),
+            key_prefix: key_prefix.to_string(),
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
         let event = Event::create(

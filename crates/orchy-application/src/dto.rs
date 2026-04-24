@@ -384,6 +384,8 @@ impl From<&Organization> for OrganizationDto {
 pub struct ApiKeyDto {
     pub id: String,
     pub name: String,
+    pub key_prefix: String,
+    pub key_suffix: String,
     pub is_active: bool,
     pub created_at: String,
 }
@@ -393,6 +395,8 @@ impl From<&orchy_core::organization::ApiKey> for ApiKeyDto {
         Self {
             id: k.id().to_string(),
             name: k.name().to_string(),
+            key_prefix: k.key_prefix().to_string(),
+            key_suffix: k.key_suffix().to_string(),
             is_active: k.is_active(),
             created_at: k.created_at().to_rfc3339(),
         }

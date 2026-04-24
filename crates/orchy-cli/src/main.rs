@@ -51,6 +51,8 @@ enum Commands {
     #[command(subcommand)]
     Project(cmd::project::ProjectSubcommand),
     #[command(subcommand)]
+    Org(cmd::org::OrgSubcommand),
+    #[command(subcommand)]
     Lock(cmd::lock::LockSubcommand),
     #[command(subcommand)]
     Event(cmd::event::EventSubcommand),
@@ -60,6 +62,12 @@ enum Commands {
 async fn main() {
     let cli = Cli::parse();
 
+    let requires_api_key = !matches!(
+        cli.command,
+        Commands::Org(cmd::org::OrgSubcommand::Create { .. })
+    );
+    let requires_project = !matches!(cli.command, Commands::Org(_));
+
     let config = match Config::resolve(
         cli.url.as_deref(),
         cli.api_key.as_deref(),
@@ -68,6 +76,8 @@ async fn main() {
         cli.namespace.as_deref(),
         cli.agent.as_deref(),
         cli.json,
+        requires_api_key,
+        requires_project,
     ) {
         Ok(c) => c,
         Err(e) => {
@@ -86,6 +96,7 @@ async fn main() {
         Commands::Message(cmd) => cmd::message::run(&cmd, &client, &config).await,
         Commands::Edge(cmd) => cmd::edge::run(&cmd, &client, &config).await,
         Commands::Project(cmd) => cmd::project::run(&cmd, &client, &config).await,
+        Commands::Org(cmd) => cmd::org::run(&cmd, &client, &config).await,
         Commands::Lock(cmd) => cmd::lock::run(&cmd, &client, &config).await,
         Commands::Event(cmd) => cmd::event::run(&cmd, &client, &config).await,
     };

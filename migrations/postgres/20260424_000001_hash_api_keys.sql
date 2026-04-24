@@ -1,0 +1,2 @@
+ALTER TABLE api_keys RENAME COLUMN key TO key_hash;
+ALTER TABLE api_keys ADD COLUMN key_prefix TEXT NOT NULL DEFAULT '';

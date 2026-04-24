@@ -51,13 +51,15 @@ impl OrganizationStore for SqliteOrganizationStore {
 
         for key in org.api_keys() {
             tx.execute(
-                "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at, user_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
                     key.id().to_string(),
                     org.id().to_string(),
                     key.name(),
-                    key.key(),
+                    key.key_hash().as_str(),
+                    key.key_prefix().as_str(),
+                    key.key_suffix(),
                     key.is_active() as i32,
                     key.created_at().to_rfc3339(),
                     key.user_id().map(|u| u.to_string()),
@@ -106,7 +108,7 @@ impl OrganizationStore for SqliteOrganizationStore {
         )?))
     }
 
-    async fn find_by_api_key(&self, key: &str) -> Result<Option<Organization>> {
+    async fn find_by_api_key_hash(&self, key_hash: &str) -> Result<Option<Organization>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         let row = conn
@@ -114,8 +116,8 @@ impl OrganizationStore for SqliteOrganizationStore {
                 "SELECT o.id, o.name, o.created_at, o.updated_at
                  FROM organizations o
                  JOIN api_keys k ON k.organization_id = o.id
-                 WHERE k.key = ?1 AND k.is_active = 1",
-                rusqlite::params![key],
+                 WHERE k.key_hash = ?1 AND k.is_active = 1",
+                rusqlite::params![key_hash],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -185,103 +187,120 @@ impl OrganizationStore for SqliteOrganizationStore {
 fn load_api_keys(conn: &rusqlite::Connection, org_id: &str) -> Result<Vec<ApiKey>> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, key, is_active, created_at, user_id FROM api_keys WHERE organization_id = ?1",
+            "SELECT id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id FROM api_keys WHERE organization_id = ?1",
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
-    let keys: Vec<ApiKey> = stmt
-        .query_map(rusqlite::params![org_id], |row| {
-            let id_str: String = row.get(0)?;
-            let name: String = row.get(1)?;
-            let key: String = row.get(2)?;
-            let is_active: i32 = row.get(3)?;
-            let created_at_str: String = row.get(4)?;
-            let user_id_str: Option<String> = row.get(5).ok();
-            Ok((id_str, name, key, is_active, created_at_str, user_id_str))
-        })
-        .map_err(|e| Error::Store(e.to_string()))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Store(e.to_string()))?
-        .into_iter()
-        .map(
-            |(id_str, name, key, is_active, created_at_str, user_id_str)| {
-                let uuid = Uuid::parse_str(&id_str)
-                    .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
-                let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
-                build_api_key(
-                    ApiKeyId::from_uuid(uuid),
-                    name,
-                    key,
-                    is_active != 0,
-                    created_at,
-                    user_id_str.and_then(|s| UserId::from_str(&s).ok()),
-                )
-            },
-        )
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(keys)
+    stmt.query_map(rusqlite::params![org_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4).unwrap_or_default(),
+            row.get::<_, i32>(5)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, Option<String>>(7).ok().flatten(),
+        ))
+    })
+    .map_err(|e| Error::Store(e.to_string()))?
+    .collect::<std::result::Result<Vec<_>, _>>()
+    .map_err(|e| Error::Store(e.to_string()))?
+    .into_iter()
+    .map(
+        |(
+            id_str,
+            name,
+            key_hash,
+            key_prefix,
+            key_suffix,
+            is_active,
+            created_at_str,
+            user_id_str,
+        )| {
+            let uuid = Uuid::parse_str(&id_str)
+                .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
+            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
+            build_api_key(
+                ApiKeyId::from_uuid(uuid),
+                name,
+                key_hash,
+                key_prefix,
+                key_suffix,
+                is_active != 0,
+                created_at,
+                user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+            )
+        },
+    )
+    .collect()
 }
 
 fn load_all_api_keys(conn: &rusqlite::Connection) -> Result<Vec<(String, ApiKey)>> {
     let mut stmt = conn
         .prepare(
-            "SELECT organization_id, id, name, key, is_active, created_at, user_id FROM api_keys ORDER BY created_at",
+            "SELECT organization_id, id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id FROM api_keys ORDER BY created_at",
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
-    let keys: Vec<(String, ApiKey)> = stmt
-        .query_map([], |row| {
-            let org_id: String = row.get(0)?;
-            let id_str: String = row.get(1)?;
-            let name: String = row.get(2)?;
-            let key: String = row.get(3)?;
-            let is_active: i32 = row.get(4)?;
-            let created_at_str: String = row.get(5)?;
-            let user_id_str: Option<String> = row.get(6).ok();
-            Ok((
-                org_id,
-                id_str,
+    stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5).unwrap_or_default(),
+            row.get::<_, i32>(6)?,
+            row.get::<_, String>(7)?,
+            row.get::<_, Option<String>>(8).ok().flatten(),
+        ))
+    })
+    .map_err(|e| Error::Store(e.to_string()))?
+    .collect::<std::result::Result<Vec<_>, _>>()
+    .map_err(|e| Error::Store(e.to_string()))?
+    .into_iter()
+    .map(
+        |(
+            org_id,
+            id_str,
+            name,
+            key_hash,
+            key_prefix,
+            key_suffix,
+            is_active,
+            created_at_str,
+            user_id_str,
+        )| {
+            let uuid = Uuid::parse_str(&id_str)
+                .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
+            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
+            let api_key = build_api_key(
+                ApiKeyId::from_uuid(uuid),
                 name,
-                key,
-                is_active,
-                created_at_str,
-                user_id_str,
-            ))
-        })
-        .map_err(|e| Error::Store(e.to_string()))?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Store(e.to_string()))?
-        .into_iter()
-        .map(
-            |(org_id, id_str, name, key, is_active, created_at_str, user_id_str)| {
-                let uuid = Uuid::parse_str(&id_str)
-                    .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
-                let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
-                let api_key = build_api_key(
-                    ApiKeyId::from_uuid(uuid),
-                    name,
-                    key,
-                    is_active != 0,
-                    created_at,
-                    user_id_str.and_then(|s| UserId::from_str(&s).ok()),
-                )?;
-                Ok((org_id, api_key))
-            },
-        )
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(keys)
+                key_hash,
+                key_prefix,
+                key_suffix,
+                is_active != 0,
+                created_at,
+                user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+            )?;
+            Ok((org_id, api_key))
+        },
+    )
+    .collect()
 }
 
 fn build_api_key(
     id: ApiKeyId,
     name: String,
-    key: String,
+    key_hash: String,
+    key_prefix: String,
+    key_suffix: String,
     is_active: bool,
     created_at: DateTime<Utc>,
     user_id: Option<UserId>,
@@ -290,7 +309,9 @@ fn build_api_key(
     serde_json::from_value(json!({
         "id": id,
         "name": name,
-        "key": key,
+        "key_hash": key_hash,
+        "key_prefix": key_prefix,
+        "key_suffix": key_suffix,
         "is_active": is_active,
         "created_at": created_at,
         "user_id": user_id,

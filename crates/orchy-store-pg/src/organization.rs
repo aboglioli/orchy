@@ -54,13 +54,15 @@ impl OrganizationStore for PgOrganizationStore {
 
         for key in org.api_keys() {
             sqlx::query(
-                "INSERT INTO api_keys (id, organization_id, name, key, is_active, created_at, user_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                "INSERT INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
             )
             .bind(*key.id().as_uuid())
             .bind(org.id().as_str())
             .bind(key.name())
-            .bind(key.key())
+            .bind(key.key_hash().as_str())
+            .bind(key.key_prefix().as_str())
+            .bind(key.key_suffix())
             .bind(key.is_active())
             .bind(key.created_at())
             .bind(key.user_id().map(|u| u.as_uuid()))
@@ -100,14 +102,14 @@ impl OrganizationStore for PgOrganizationStore {
         build_org(org_id_str, name, api_keys, created_at, updated_at).map(Some)
     }
 
-    async fn find_by_api_key(&self, key: &str) -> Result<Option<Organization>> {
+    async fn find_by_api_key_hash(&self, key_hash: &str) -> Result<Option<Organization>> {
         let row = sqlx::query(
             "SELECT o.id, o.name, o.created_at, o.updated_at
              FROM organizations o
              JOIN api_keys k ON k.organization_id = o.id
-             WHERE k.key = $1 AND k.is_active = true",
+             WHERE k.key_hash = $1 AND k.is_active = true",
         )
-        .bind(key)
+        .bind(key_hash)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -134,7 +136,7 @@ impl OrganizationStore for PgOrganizationStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let key_rows = sqlx::query(
-            "SELECT organization_id, id, name, key, is_active, created_at, user_id FROM api_keys",
+            "SELECT organization_id, id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id FROM api_keys",
         )
         .fetch_all(&self.pool)
         .await
@@ -146,14 +148,18 @@ impl OrganizationStore for PgOrganizationStore {
             let org_id_str: String = row.get("organization_id");
             let id: Uuid = row.get("id");
             let name: String = row.get("name");
-            let key: String = row.get("key");
+            let key_hash: String = row.get("key_hash");
+            let key_prefix: String = row.get("key_prefix");
+            let key_suffix: String = row.try_get("key_suffix").unwrap_or_default();
             let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
             let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
             let api_key = build_api_key(
                 ApiKeyId::from_uuid(id),
                 name,
-                key,
+                key_hash,
+                key_prefix,
+                key_suffix,
                 is_active,
                 created_at,
                 user_id_uuid.map(UserId::from_uuid),
@@ -177,7 +183,7 @@ impl OrganizationStore for PgOrganizationStore {
 
 async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKey>> {
     let rows = sqlx::query(
-        "SELECT id, name, key, is_active, created_at, user_id FROM api_keys WHERE organization_id = $1",
+        "SELECT id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id FROM api_keys WHERE organization_id = $1",
     )
     .bind(org_id)
     .fetch_all(pool)
@@ -188,14 +194,18 @@ async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKe
         .map(|row| {
             let id: Uuid = row.get("id");
             let name: String = row.get("name");
-            let key: String = row.get("key");
+            let key_hash: String = row.get("key_hash");
+            let key_prefix: String = row.get("key_prefix");
+            let key_suffix: String = row.try_get("key_suffix").unwrap_or_default();
             let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
             let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
             build_api_key(
                 ApiKeyId::from_uuid(id),
                 name,
-                key,
+                key_hash,
+                key_prefix,
+                key_suffix,
                 is_active,
                 created_at,
                 user_id_uuid.map(UserId::from_uuid),
@@ -207,7 +217,9 @@ async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKe
 fn build_api_key(
     id: ApiKeyId,
     name: String,
-    key: String,
+    key_hash: String,
+    key_prefix: String,
+    key_suffix: String,
     is_active: bool,
     created_at: DateTime<Utc>,
     user_id: Option<UserId>,
@@ -215,7 +227,9 @@ fn build_api_key(
     serde_json::from_value(serde_json::json!({
         "id": id,
         "name": name,
-        "key": key,
+        "key_hash": key_hash,
+        "key_prefix": key_prefix,
+        "key_suffix": key_suffix,
         "is_active": is_active,
         "created_at": created_at,
         "user_id": user_id,

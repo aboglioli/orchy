@@ -1,7 +1,9 @@
+pub mod api_key;
 pub mod cookie;
 pub mod password;
 pub mod token;
 
+pub use api_key::RandomApiKeyGenerator;
 pub use cookie::{
     AUTH_COOKIE_NAME, CookieConfig, clear_auth_cookie, get_auth_token, set_auth_cookie,
 };

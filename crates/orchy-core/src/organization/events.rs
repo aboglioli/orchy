@@ -16,6 +16,8 @@ pub struct ApiKeyAddedPayload {
     pub org_id: String,
     pub key_id: String,
     pub name: String,
+    pub key_hash: String,
+    pub key_prefix: String,
 }
 
 #[derive(Serialize)]

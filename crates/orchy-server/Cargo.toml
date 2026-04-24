@@ -31,5 +31,7 @@ pkcs8 = { version = "0.10", features = ["pem"] }
 rand = "0.8"
 tower = "0.5"
 http-body-util = "0.1"
+sha2.workspace = true
+hex.workspace = true
 
 [dev-dependencies]

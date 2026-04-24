@@ -64,6 +64,8 @@ impl Config {
         flag_namespace: Option<&str>,
         flag_agent: Option<&str>,
         json: bool,
+        requires_api_key: bool,
+        requires_project: bool,
     ) -> Result<Self, ConfigError> {
         let global = read_global_config();
         let local = read_repo_config();
@@ -81,17 +83,27 @@ impl Config {
             "config file, env (ORCHY_URL), or --url",
         )?;
 
-        let api_key = pick(
-            &[
+        let api_key = if requires_api_key {
+            pick(
+                &[
+                    global.as_ref().and_then(|c| c.api_key.as_deref()),
+                    local.as_ref().and_then(|c| c.api_key.as_deref()),
+                    env("ORCHY_API_KEY"),
+                    flag_api_key,
+                ],
+                "api_key",
+                "ORCHY_API_KEY",
+                "config file, env (ORCHY_API_KEY), or --api-key",
+            )?
+        } else {
+            pick_opt(&[
                 global.as_ref().and_then(|c| c.api_key.as_deref()),
                 local.as_ref().and_then(|c| c.api_key.as_deref()),
                 env("ORCHY_API_KEY"),
                 flag_api_key,
-            ],
-            "api_key",
-            "ORCHY_API_KEY",
-            "config file, env (ORCHY_API_KEY), or --api-key",
-        )?;
+            ])
+            .unwrap_or_default()
+        };
 
         let org = pick_opt(&[
             global.as_ref().and_then(|c| c.org.as_deref()),
@@ -100,17 +112,27 @@ impl Config {
             flag_org,
         ]);
 
-        let project = pick(
-            &[
+        let project = if requires_project {
+            pick(
+                &[
+                    global.as_ref().and_then(|c| c.project.as_deref()),
+                    local.as_ref().and_then(|c| c.project.as_deref()),
+                    env("ORCHY_PROJECT"),
+                    flag_project,
+                ],
+                "project",
+                "ORCHY_PROJECT",
+                "config file, env (ORCHY_PROJECT), or --project",
+            )?
+        } else {
+            pick_opt(&[
                 global.as_ref().and_then(|c| c.project.as_deref()),
                 local.as_ref().and_then(|c| c.project.as_deref()),
                 env("ORCHY_PROJECT"),
                 flag_project,
-            ],
-            "project",
-            "ORCHY_PROJECT",
-            "config file, env (ORCHY_PROJECT), or --project",
-        )?;
+            ])
+            .unwrap_or_default()
+        };
 
         let namespace = pick_opt(&[
             global.as_ref().and_then(|c| c.namespace.as_deref()),
@@ -152,12 +174,12 @@ impl Config {
         };
 
         // Validate resolved values
-        config.validate()?;
+        config.validate(requires_api_key, requires_project)?;
 
         Ok(config)
     }
 
-    fn validate(&self) -> Result<(), ConfigError> {
+    fn validate(&self, requires_api_key: bool, requires_project: bool) -> Result<(), ConfigError> {
         // URL validation
         if !self.url.starts_with("http://") && !self.url.starts_with("https://") {
             return Err(ConfigError::InvalidField {
@@ -175,7 +197,7 @@ impl Config {
         }
 
         // API key validation
-        if self.api_key.is_empty() {
+        if requires_api_key && self.api_key.is_empty() {
             return Err(ConfigError::InvalidField {
                 field: "api_key".into(),
                 message: "must not be empty".into(),
@@ -183,14 +205,14 @@ impl Config {
         }
 
         // Project validation
-        if self.project.is_empty() {
+        if requires_project && self.project.is_empty() {
             return Err(ConfigError::InvalidField {
                 field: "project".into(),
                 message: "must not be empty".into(),
             });
         }
 
-        if self.project.len() > 64 {
+        if !self.project.is_empty() && self.project.len() > 64 {
             return Err(ConfigError::InvalidField {
                 field: "project".into(),
                 message: "must be 64 characters or less".into(),

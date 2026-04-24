@@ -125,7 +125,11 @@ impl OrchyClient {
     }
 
     async fn request_url(&self, method: Method, url: &str) -> CliResult<RequestBuilder> {
-        Ok(self.client.request(method, url).bearer_auth(&self.api_key))
+        let req = self.client.request(method, url);
+        if self.api_key.is_empty() {
+            return Ok(req);
+        }
+        Ok(req.bearer_auth(&self.api_key))
     }
 
     async fn send(&self, req: RequestBuilder) -> CliResult<Response> {
@@ -162,6 +166,24 @@ impl OrchyClient {
             .await
             .map_err(|e| CliError::Request(e.to_string()))?;
         Ok(v)
+    }
+
+    pub async fn create_organization_json(
+        &self,
+        id: &str,
+        name: &str,
+    ) -> CliResult<serde_json::Value> {
+        let body = serde_json::json!({ "id": id, "name": name });
+        self.post_json("/organizations", Some(&body)).await
+    }
+
+    pub async fn generate_api_key_json(&self, name: &str) -> CliResult<serde_json::Value> {
+        let body = serde_json::json!({ "name": name });
+        self.post_json("/api-keys", Some(&body)).await
+    }
+
+    pub async fn list_api_keys_json(&self) -> CliResult<serde_json::Value> {
+        self.get_json("/api-keys").await
     }
 
     /// Convenience: POST to org-scoped URL and return parsed JSON value.

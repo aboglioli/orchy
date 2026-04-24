@@ -7,8 +7,8 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_application::{
-    AddApiKeyCommand, CreateOrganizationCommand, GetOrganizationCommand, OrganizationDto,
-    RevokeApiKeyCommand,
+    ApiKeyDto, CreateOrganizationCommand, GenerateApiKeyCommand, GenerateApiKeyResponse,
+    GetOrganizationCommand, OrganizationDto, RevokeApiKeyCommand,
 };
 
 use crate::container::Container;
@@ -20,12 +20,6 @@ use super::auth::OrgAuth;
 pub struct CreateOrgBody {
     pub id: String,
     pub name: String,
-}
-
-#[derive(Deserialize)]
-pub struct AddApiKeyBody {
-    pub name: String,
-    pub key: String,
 }
 
 pub async fn create(
@@ -71,23 +65,42 @@ pub async fn get(
     Ok(Json(resp))
 }
 
-pub async fn add_api_key(
+#[derive(Deserialize)]
+pub struct GenerateApiKeyBody {
+    pub name: String,
+}
+
+pub async fn generate_api_key(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Json(body): Json<AddApiKeyBody>,
-) -> Result<Json<OrganizationDto>, ApiError> {
+    Json(body): Json<GenerateApiKeyBody>,
+) -> Result<Json<GenerateApiKeyResponse>, ApiError> {
     let resp = container
         .app
-        .add_api_key
-        .execute(AddApiKeyCommand {
+        .generate_api_key
+        .execute(GenerateApiKeyCommand {
             org_id: auth.org.id.clone(),
             name: body.name,
-            key: body.key,
-            user_id: auth.user_id.clone(),
+            user_id: auth.user_id,
         })
         .await
         .map_err(ApiError::from)?;
     Ok(Json(resp))
+}
+
+pub async fn list_api_keys(
+    State(container): State<Arc<Container>>,
+    auth: OrgAuth,
+) -> Result<Json<Vec<ApiKeyDto>>, ApiError> {
+    let org = container
+        .app
+        .get_organization
+        .execute(GetOrganizationCommand {
+            id: auth.org.id.clone(),
+        })
+        .await
+        .map_err(ApiError::from)?;
+    Ok(Json(org.api_keys))
 }
 
 pub async fn revoke_api_key(

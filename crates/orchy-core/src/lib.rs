@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod api_key;
 pub mod embeddings;
 pub mod error;
 pub mod graph;

@@ -5,5 +5,6 @@ pub mod event;
 pub mod knowledge;
 pub mod lock;
 pub mod message;
+pub mod org;
 pub mod project;
 pub mod task;

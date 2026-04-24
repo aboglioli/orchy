@@ -156,7 +156,7 @@ async fn resolve_mcp_auth(
     let principal = app
         .resolve_api_key
         .execute(ResolveApiKeyCommand {
-            key: key.to_string(),
+            raw_key: key.to_string(),
         })
         .await
         .map_err(|e| format!("API key resolution failed: {e}"))?

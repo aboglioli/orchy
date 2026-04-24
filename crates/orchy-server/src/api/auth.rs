@@ -80,7 +80,7 @@ async fn try_resolve_api_key(state: &Arc<Container>, token: &str) -> Option<ApiK
         .app
         .resolve_api_key
         .execute(ResolveApiKeyCommand {
-            key: token.to_string(),
+            raw_key: token.to_string(),
         })
         .await
         .ok()
