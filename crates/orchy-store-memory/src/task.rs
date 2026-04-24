@@ -1,23 +1,37 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use orchy_core::error::Result;
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 
-use crate::MemoryBackend;
+use crate::MemoryState;
+
+pub struct MemoryTaskStore {
+    state: Arc<MemoryState>,
+}
+
+impl MemoryTaskStore {
+    pub fn new(state: Arc<MemoryState>) -> Self {
+        Self { state }
+    }
+}
 
 #[async_trait]
-impl TaskStore for MemoryBackend {
+impl TaskStore for MemoryTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
         {
-            let mut tasks = self.tasks.write().await;
+            let mut tasks = self.state.tasks.write().await;
             tasks.insert(task.id(), task.clone());
         }
 
         let events = task.drain_events();
         if !events.is_empty() {
-            if let Err(e) = orchy_events::io::Writer::write_all(self, &events).await {
-                tracing::error!("failed to persist events: {e}");
+            for event in events {
+                let serialized = orchy_events::SerializedEvent::from_event(&event)
+                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                self.state.events.write().await.push(serialized);
             }
         }
 
@@ -25,12 +39,12 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
-        let tasks = self.tasks.read().await;
+        let tasks = self.state.tasks.read().await;
         Ok(tasks.get(id).cloned())
     }
 
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
-        let tasks = self.tasks.read().await;
+        let tasks = self.state.tasks.read().await;
 
         let mut results: Vec<Task> = tasks
             .values()
@@ -88,7 +102,7 @@ impl TaskStore for MemoryBackend {
     }
 
     async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>> {
-        let tasks = self.tasks.read().await;
+        let tasks = self.state.tasks.read().await;
         Ok(ids.iter().filter_map(|id| tasks.get(id)).cloned().collect())
     }
 }

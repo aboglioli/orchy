@@ -10,7 +10,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
 
 fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(std::io::Error::new(
@@ -19,8 +19,18 @@ fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     ))
 }
 
+pub struct SqliteLockStore {
+    conn: SqliteConn,
+}
+
+impl SqliteLockStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
+
 #[async_trait]
-impl LockStore for SqliteBackend {
+impl LockStore for SqliteLockStore {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn

@@ -1,26 +1,38 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use orchy_core::error::Result;
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 
-use crate::MemoryBackend;
+use crate::MemoryState;
+
+pub struct MemoryNamespaceStore {
+    state: Arc<MemoryState>,
+}
+
+impl MemoryNamespaceStore {
+    pub fn new(state: Arc<MemoryState>) -> Self {
+        Self { state }
+    }
+}
 
 #[async_trait]
-impl NamespaceStore for MemoryBackend {
+impl NamespaceStore for MemoryNamespaceStore {
     async fn register(
         &self,
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<()> {
-        let mut namespaces = self.namespaces.write().await;
+        let mut namespaces = self.state.namespaces.write().await;
         namespaces.insert((org.to_string(), project.to_string(), namespace.to_string()));
         Ok(())
     }
 
     async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
-        let namespaces = self.namespaces.read().await;
+        let namespaces = self.state.namespaces.read().await;
 
         let org_str = org.to_string();
         let project_str = project.to_string();

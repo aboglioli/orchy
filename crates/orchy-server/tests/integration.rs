@@ -1,9 +1,3 @@
-//! Integration tests — regression tests for bugs fixed this session.
-//!
-//! 1. send_message resolves alias from_agent_id (not just UUID)
-//! 2. lock_resource resolves alias holder_agent_id (not just UUID)
-//! 3. edge add (if_not_exists) returns real ID instead of empty string
-
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -21,7 +15,7 @@ use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
 use orchy_core::user::OrgMembershipStore;
 use orchy_core::user::UserStore;
-use orchy_store_memory::MemoryBackend;
+use orchy_store_memory::*;
 
 fn org() -> OrganizationId {
     OrganizationId::new("default").unwrap()
@@ -33,11 +27,33 @@ fn ns() -> Namespace {
     Namespace::root()
 }
 
-async fn setup() -> Arc<MemoryBackend> {
-    Arc::new(MemoryBackend::new())
+fn state() -> Arc<MemoryState> {
+    Arc::new(MemoryState::new())
 }
 
-async fn register(b: &Arc<MemoryBackend>, alias: &str) -> AgentId {
+fn agents(s: &Arc<MemoryState>) -> Arc<MemoryAgentStore> {
+    Arc::new(MemoryAgentStore::new(s.clone()))
+}
+fn tasks(s: &Arc<MemoryState>) -> Arc<MemoryTaskStore> {
+    Arc::new(MemoryTaskStore::new(s.clone()))
+}
+fn messages(s: &Arc<MemoryState>) -> Arc<MemoryMessageStore> {
+    Arc::new(MemoryMessageStore::new(s.clone()))
+}
+fn edges(s: &Arc<MemoryState>) -> Arc<MemoryEdgeStore> {
+    Arc::new(MemoryEdgeStore::new(s.clone()))
+}
+fn locks(s: &Arc<MemoryState>) -> Arc<MemoryLockStore> {
+    Arc::new(MemoryLockStore::new(s.clone()))
+}
+fn users(s: &Arc<MemoryState>) -> Arc<MemoryUserStore> {
+    Arc::new(MemoryUserStore::new(s.clone()))
+}
+fn memberships(s: &Arc<MemoryState>) -> Arc<MemoryOrgMembershipStore> {
+    Arc::new(MemoryOrgMembershipStore::new(s.clone()))
+}
+
+async fn register(agent_store: &Arc<MemoryAgentStore>, alias: &str) -> AgentId {
     let alias = Alias::new(alias).unwrap();
     let mut a = Agent::register(
         org(),
@@ -52,15 +68,15 @@ async fn register(b: &Arc<MemoryBackend>, alias: &str) -> AgentId {
     )
     .unwrap();
     let id = a.id().clone();
-    AgentStore::save(b.as_ref(), &mut a).await.unwrap();
+    agent_store.save(&mut a).await.unwrap();
     id
 }
 
-async fn register_with_app(b: &Arc<MemoryBackend>, alias: &str) -> AgentId {
+async fn register_with_app(s: &Arc<MemoryState>, alias: &str) -> AgentId {
     let register = RegisterAgent::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn TaskStore>,
+        agents(s) as Arc<dyn AgentStore>,
+        messages(s) as Arc<dyn MessageStore>,
+        tasks(s) as Arc<dyn TaskStore>,
     );
     let resp = register
         .execute(RegisterAgentCommand {
@@ -79,10 +95,10 @@ async fn register_with_app(b: &Arc<MemoryBackend>, alias: &str) -> AgentId {
     AgentId::from_str(&resp.agent.id).unwrap()
 }
 
-async fn inbox_for(b: &Arc<MemoryBackend>, id: &AgentId, _roles: &[String]) -> Vec<String> {
+async fn inbox_for(s: &Arc<MemoryState>, id: &AgentId, _roles: &[String]) -> Vec<String> {
     let check = CheckMailbox::new(
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn AgentStore>,
+        messages(s) as Arc<dyn MessageStore>,
+        agents(s) as Arc<dyn AgentStore>,
     );
     let page = check
         .execute(CheckMailboxCommand {
@@ -101,18 +117,18 @@ async fn inbox_for(b: &Arc<MemoryBackend>, id: &AgentId, _roles: &[String]) -> V
 
 #[tokio::test]
 async fn send_message_resolves_alias_for_from() {
-    let b = setup().await;
-    let sender_id = register(&b, "sender").await;
-    let receiver_id = register(&b, "receiver").await;
+    let s = state();
+    let a = agents(&s);
+    let sender_id = register(&a, "sender").await;
+    let receiver_id = register(&a, "receiver").await;
 
     let send = SendMessage::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn UserStore>,
-        b.clone() as Arc<dyn OrgMembershipStore>,
+        a.clone() as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
     );
 
-    // from_agent_id = alias "sender"
     let msg = send
         .execute(SendMessageCommand {
             org_id: "default".into(),
@@ -128,7 +144,6 @@ async fn send_message_resolves_alias_for_from() {
         .expect("send with alias should succeed");
     assert_eq!(msg.from, sender_id.to_string());
 
-    // from_agent_id = UUID
     let msg2 = send
         .execute(SendMessageCommand {
             org_id: "default".into(),
@@ -149,15 +164,15 @@ async fn send_message_resolves_alias_for_from() {
 
 #[tokio::test]
 async fn lock_resource_resolves_alias() {
-    let b = setup().await;
-    let agent_id = register(&b, "locker").await;
+    let s = state();
+    let a = agents(&s);
+    let agent_id = register(&a, "locker").await;
 
     let lock = LockResource::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn LockStore>,
+        a.clone() as Arc<dyn AgentStore>,
+        locks(&s) as Arc<dyn LockStore>,
     );
 
-    // holder_agent_id = alias
     let r = lock
         .execute(LockResourceCommand {
             org_id: "default".into(),
@@ -171,7 +186,6 @@ async fn lock_resource_resolves_alias() {
         .expect("lock with alias should succeed");
     assert_eq!(r.holder, agent_id.to_string());
 
-    // holder_agent_id = UUID
     let r2 = lock
         .execute(LockResourceCommand {
             org_id: "default".into(),
@@ -190,8 +204,8 @@ async fn lock_resource_resolves_alias() {
 
 #[tokio::test]
 async fn edge_add_idempotent_returns_real_id() {
-    let b = setup().await;
-    let add = AddEdge::new(b.clone() as Arc<dyn EdgeStore>);
+    let s = state();
+    let add = AddEdge::new(edges(&s) as Arc<dyn EdgeStore>);
 
     let r1 = add
         .execute(AddEdgeCommand {
@@ -232,15 +246,14 @@ async fn edge_add_idempotent_returns_real_id() {
 
 #[tokio::test]
 async fn reconnect_with_same_alias_preserves_uuid_and_mailbox() {
-    let b = setup().await;
-    let id1 = register_with_app(&b, "reconnect-agent").await;
+    let s = state();
+    let id1 = register_with_app(&s, "reconnect-agent").await;
 
-    // Send a direct message to the alias
     let send = SendMessage::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn UserStore>,
-        b.clone() as Arc<dyn OrgMembershipStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
     );
     send.execute(SendMessageCommand {
         org_id: "default".into(),
@@ -255,12 +268,10 @@ async fn reconnect_with_same_alias_preserves_uuid_and_mailbox() {
     .await
     .unwrap();
 
-    // Re-register with same alias
-    let id2 = register_with_app(&b, "reconnect-agent").await;
+    let id2 = register_with_app(&s, "reconnect-agent").await;
     assert_eq!(id1, id2, "same alias must resume same agent UUID");
 
-    // Message still visible in mailbox
-    let bodies = inbox_for(&b, &id1, &[]).await;
+    let bodies = inbox_for(&s, &id1, &[]).await;
     assert!(bodies.contains(&"direct-before-reconnect".to_string()));
 }
 
@@ -268,15 +279,15 @@ async fn reconnect_with_same_alias_preserves_uuid_and_mailbox() {
 
 #[tokio::test]
 async fn alias_rename_preserves_direct_messages() {
-    let b = setup().await;
-    let agent_id = register_with_app(&b, "original-alias").await;
-    let sender_id = register_with_app(&b, "sender").await;
+    let s = state();
+    let agent_id = register_with_app(&s, "original-alias").await;
+    let sender_id = register_with_app(&s, "sender").await;
 
     let send = SendMessage::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn UserStore>,
-        b.clone() as Arc<dyn OrgMembershipStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
     );
     send.execute(SendMessageCommand {
         org_id: "default".into(),
@@ -291,8 +302,7 @@ async fn alias_rename_preserves_direct_messages() {
     .await
     .unwrap();
 
-    // Rename the agent
-    let rename = RenameAlias::new(b.clone() as Arc<dyn AgentStore>);
+    let rename = RenameAlias::new(agents(&s) as Arc<dyn AgentStore>);
     rename
         .execute(RenameAliasCommand {
             agent_id: agent_id.to_string(),
@@ -301,8 +311,7 @@ async fn alias_rename_preserves_direct_messages() {
         .await
         .unwrap();
 
-    // Message still in mailbox via UUID target
-    let bodies = inbox_for(&b, &agent_id, &[]).await;
+    let bodies = inbox_for(&s, &agent_id, &[]).await;
     assert!(bodies.contains(&"to-original".to_string()));
 }
 
@@ -310,29 +319,24 @@ async fn alias_rename_preserves_direct_messages() {
 
 #[tokio::test]
 async fn namespace_targeted_message_can_be_marked_read() {
-    let b = setup().await;
-    let sender_id = register_with_app(&b, "ns-sender").await;
-    let recipient_id = register_with_app(&b, "ns-recipient").await;
+    let s = state();
+    let sender_id = register_with_app(&s, "ns-sender").await;
+    let recipient_id = register_with_app(&s, "ns-recipient").await;
 
-    // Give recipient a namespace
     {
-        use orchy_core::agent::AgentStore;
-        let mut agent = AgentStore::find_by_id(b.as_ref(), &recipient_id)
-            .await
-            .unwrap()
-            .unwrap();
-        use orchy_core::namespace::Namespace;
+        let a = agents(&s);
+        let mut agent = a.find_by_id(&recipient_id).await.unwrap().unwrap();
         agent
             .switch_context(None, Namespace::try_from("/backend".to_string()).unwrap())
             .unwrap();
-        AgentStore::save(b.as_ref(), &mut agent).await.unwrap();
+        a.save(&mut agent).await.unwrap();
     }
 
     let send = SendMessage::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn UserStore>,
-        b.clone() as Arc<dyn OrgMembershipStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
     );
     let msg = send
         .execute(SendMessageCommand {
@@ -348,10 +352,9 @@ async fn namespace_targeted_message_can_be_marked_read() {
         .await
         .unwrap();
 
-    // Mark read should succeed for namespace-targeted messages
     let mark_read = MarkRead::new(
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        agents(&s) as Arc<dyn AgentStore>,
     );
     mark_read
         .execute(MarkReadCommand {
@@ -361,8 +364,7 @@ async fn namespace_targeted_message_can_be_marked_read() {
         .await
         .expect("mark_read should succeed for namespace-targeted message");
 
-    // Should not appear in inbox anymore
-    let bodies = inbox_for(&b, &recipient_id, &[]).await;
+    let bodies = inbox_for(&s, &recipient_id, &[]).await;
     assert!(!bodies.contains(&"ns-message".to_string()));
 }
 
@@ -370,14 +372,14 @@ async fn namespace_targeted_message_can_be_marked_read() {
 
 #[tokio::test]
 async fn future_agent_sees_old_role_message() {
-    let b = setup().await;
-    let sender_id = register_with_app(&b, "role-sender").await;
+    let s = state();
+    let sender_id = register_with_app(&s, "role-sender").await;
 
     let send = SendMessage::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn UserStore>,
-        b.clone() as Arc<dyn OrgMembershipStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
     );
     send.execute(SendMessageCommand {
         org_id: "default".into(),
@@ -392,32 +394,28 @@ async fn future_agent_sees_old_role_message() {
     .await
     .unwrap();
 
-    // New agent with matching role created later
-    let recipient_id = register_with_app(&b, "future-reviewer").await;
+    let recipient_id = register_with_app(&s, "future-reviewer").await;
     {
-        use orchy_core::agent::AgentStore;
-        let mut agent = AgentStore::find_by_id(b.as_ref(), &recipient_id)
-            .await
-            .unwrap()
-            .unwrap();
+        let a = agents(&s);
+        let mut agent = a.find_by_id(&recipient_id).await.unwrap().unwrap();
         agent.change_roles(vec!["reviewer".to_string()]).unwrap();
-        AgentStore::save(b.as_ref(), &mut agent).await.unwrap();
+        a.save(&mut agent).await.unwrap();
     }
 
-    let bodies = inbox_for(&b, &recipient_id, &["reviewer".to_string()]).await;
+    let bodies = inbox_for(&s, &recipient_id, &["reviewer".to_string()]).await;
     assert!(bodies.contains(&"role-message".to_string()));
 }
 
 #[tokio::test]
 async fn future_agent_sees_old_broadcast_message() {
-    let b = setup().await;
-    let sender_id = register_with_app(&b, "bc-sender").await;
+    let s = state();
+    let sender_id = register_with_app(&s, "bc-sender").await;
 
     let send = SendMessage::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn UserStore>,
-        b.clone() as Arc<dyn OrgMembershipStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
     );
     send.execute(SendMessageCommand {
         org_id: "default".into(),
@@ -432,23 +430,22 @@ async fn future_agent_sees_old_broadcast_message() {
     .await
     .unwrap();
 
-    // New agent created later
-    let recipient_id = register_with_app(&b, "future-listener").await;
+    let recipient_id = register_with_app(&s, "future-listener").await;
 
-    let bodies = inbox_for(&b, &recipient_id, &[]).await;
+    let bodies = inbox_for(&s, &recipient_id, &[]).await;
     assert!(bodies.contains(&"broadcast-message".to_string()));
 }
 
 #[tokio::test]
 async fn future_agent_sees_old_namespace_message() {
-    let b = setup().await;
-    let sender_id = register_with_app(&b, "ns-sender2").await;
+    let s = state();
+    let sender_id = register_with_app(&s, "ns-sender2").await;
 
     let send = SendMessage::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn UserStore>,
-        b.clone() as Arc<dyn OrgMembershipStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
     );
     send.execute(SendMessageCommand {
         org_id: "default".into(),
@@ -463,22 +460,17 @@ async fn future_agent_sees_old_namespace_message() {
     .await
     .unwrap();
 
-    // New agent in matching namespace created later
-    let recipient_id = register_with_app(&b, "future-backend-dev").await;
+    let recipient_id = register_with_app(&s, "future-backend-dev").await;
     {
-        use orchy_core::agent::AgentStore;
-        let mut agent = AgentStore::find_by_id(b.as_ref(), &recipient_id)
-            .await
-            .unwrap()
-            .unwrap();
-        use orchy_core::namespace::Namespace;
+        let a = agents(&s);
+        let mut agent = a.find_by_id(&recipient_id).await.unwrap().unwrap();
         agent
             .switch_context(None, Namespace::try_from("/backend".to_string()).unwrap())
             .unwrap();
-        AgentStore::save(b.as_ref(), &mut agent).await.unwrap();
+        a.save(&mut agent).await.unwrap();
     }
 
-    let bodies = inbox_for(&b, &recipient_id, &[]).await;
+    let bodies = inbox_for(&s, &recipient_id, &[]).await;
     assert!(bodies.contains(&"ns-old-message".to_string()));
 }
 
@@ -486,14 +478,13 @@ async fn future_agent_sees_old_namespace_message() {
 
 #[tokio::test]
 async fn alias_uniqueness_enforced_per_org_and_project() {
-    let b = setup().await;
-    let _id1 = register_with_app(&b, "unique-alias").await;
+    let s = state();
+    let _id1 = register_with_app(&s, "unique-alias").await;
 
-    // Second agent with same alias in same org/project should conflict
     let register = RegisterAgent::new(
-        b.clone() as Arc<dyn AgentStore>,
-        b.clone() as Arc<dyn MessageStore>,
-        b.clone() as Arc<dyn TaskStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
     );
     let result = register
         .execute(RegisterAgentCommand {
@@ -509,7 +500,6 @@ async fn alias_uniqueness_enforced_per_org_and_project() {
         })
         .await;
 
-    // Should resume existing agent, not create a new one
     assert!(
         result.is_ok(),
         "re-registering same alias should resume, not conflict: {:?}",

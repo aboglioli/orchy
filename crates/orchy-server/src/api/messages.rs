@@ -11,7 +11,6 @@ use orchy_application::{
     CheckMailboxCommand, CheckSentMessagesCommand, ListConversationCommand, MarkReadCommand,
     SendMessageCommand, resolve_agent,
 };
-use orchy_core::agent::AgentStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -132,7 +131,7 @@ async fn resolve_agent_id_for_messages(
 ) -> Result<(String, String), ApiError> {
     if let Ok(agent_id) = id.parse::<orchy_core::agent::AgentId>() {
         let agent = container
-            .store
+            .agent_store
             .find_by_id(&agent_id)
             .await
             .map_err(ApiError::from)?
@@ -161,7 +160,7 @@ async fn resolve_agent_id_for_messages(
     })?;
     let project_id = ProjectId::try_from(project.to_string())
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    let agent = resolve_agent(container.store.as_ref(), org, &project_id, id)
+    let agent = resolve_agent(container.agent_store.as_ref(), org, &project_id, id)
         .await
         .map_err(ApiError::from)?;
     Ok((agent.id().to_string(), agent.project().to_string()))

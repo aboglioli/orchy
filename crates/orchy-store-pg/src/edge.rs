@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -16,10 +16,20 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 use orchy_events::io::Writer;
 
-use crate::{PgBackend, events::PgEventWriter};
+use crate::events::PgEventWriter;
+
+pub struct PgEdgeStore {
+    pool: PgPool,
+}
+
+impl PgEdgeStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
 
 #[async_trait]
-impl EdgeStore for PgBackend {
+impl EdgeStore for PgEdgeStore {
     async fn save(&self, edge: &mut Edge) -> Result<()> {
         let mut tx = self
             .pool

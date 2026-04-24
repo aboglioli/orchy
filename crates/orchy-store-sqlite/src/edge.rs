@@ -14,7 +14,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
 
 fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(std::io::Error::new(
@@ -46,8 +46,18 @@ fn build_rel_clause(rel_types: &[RelationType], prefix: &str) -> String {
     format!(" AND {prefix}rel_type IN ({list})")
 }
 
+pub struct SqliteEdgeStore {
+    conn: SqliteConn,
+}
+
+impl SqliteEdgeStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
+
 #[async_trait]
-impl EdgeStore for SqliteBackend {
+impl EdgeStore for SqliteEdgeStore {
     async fn save(&self, edge: &mut Edge) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn

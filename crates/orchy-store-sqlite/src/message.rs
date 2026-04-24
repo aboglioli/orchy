@@ -14,7 +14,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::ResourceRef;
 use orchy_core::user::UserId;
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
 
 fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(std::io::Error::new(
@@ -23,8 +23,18 @@ fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     ))
 }
 
+pub struct SqliteMessageStore {
+    conn: SqliteConn,
+}
+
+impl SqliteMessageStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
+
 #[async_trait]
-impl MessageStore for SqliteBackend {
+impl MessageStore for SqliteMessageStore {
     async fn save(&self, message: &mut Message) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn
@@ -110,8 +120,6 @@ impl MessageStore for SqliteBackend {
     ) -> Result<Page<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        // Unread = not in message_receipts for this agent.
-        // Match: direct to agent UUID, broadcast, role:*, ns:*
         let mut sql = String::from(
             "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs, m.claimed_by, m.claimed_at
              FROM messages m
@@ -164,7 +172,6 @@ impl MessageStore for SqliteBackend {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
-        // App-layer filtering: role match + namespace hierarchy + user target + claim hiding
         messages.retain(|m| {
             let visible = match m.to() {
                 MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
@@ -175,7 +182,6 @@ impl MessageStore for SqliteBackend {
             if !visible {
                 return false;
             }
-            // Hide claimed logical messages from siblings
             if let Some(claimed_by) = m.claimed_by() {
                 if claimed_by != agent {
                     return false;

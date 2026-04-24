@@ -9,10 +9,20 @@ use orchy_core::user::{
     MembershipId, OrgMembership, OrgMembershipStore, OrgRole, RestoreOrgMembership, UserId,
 };
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
+
+pub struct SqliteOrgMembershipStore {
+    conn: SqliteConn,
+}
+
+impl SqliteOrgMembershipStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
 
 #[async_trait]
-impl OrgMembershipStore for SqliteBackend {
+impl OrgMembershipStore for SqliteOrgMembershipStore {
     async fn save(&self, membership: &OrgMembership) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
@@ -37,7 +47,7 @@ impl OrgMembershipStore for SqliteBackend {
 
         let row = conn
             .query_row(
-                "SELECT id, user_id, org_id, role, created_at 
+                "SELECT id, user_id, org_id, role, created_at
                  FROM org_memberships WHERE id = ?1",
                 rusqlite::params![id.to_string()],
                 |row| {
@@ -61,7 +71,7 @@ impl OrgMembershipStore for SqliteBackend {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, user_id, org_id, role, created_at 
+                "SELECT id, user_id, org_id, role, created_at
                  FROM org_memberships WHERE user_id = ?1 ORDER BY created_at DESC",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -94,7 +104,7 @@ impl OrgMembershipStore for SqliteBackend {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, user_id, org_id, role, created_at 
+                "SELECT id, user_id, org_id, role, created_at
                  FROM org_memberships WHERE org_id = ?1 ORDER BY created_at DESC",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -131,7 +141,7 @@ impl OrgMembershipStore for SqliteBackend {
 
         let row = conn
             .query_row(
-                "SELECT id, user_id, org_id, role, created_at 
+                "SELECT id, user_id, org_id, role, created_at
                  FROM org_memberships WHERE user_id = ?1 AND org_id = ?2",
                 rusqlite::params![user_id.to_string(), org_id.to_string()],
                 |row| {

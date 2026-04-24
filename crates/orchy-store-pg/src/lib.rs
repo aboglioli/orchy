@@ -12,7 +12,18 @@ mod subscriber;
 mod task;
 mod user;
 
+pub use agent::PgAgentStore;
+pub use edge::PgEdgeStore;
+pub use events::{PgEventQuery, PgEventWriter};
+pub use knowledge::PgKnowledgeStore;
+pub use message::PgMessageStore;
+pub use namespace::PgNamespaceStore;
+pub use organization::PgOrganizationStore;
+pub use project::PgProjectStore;
+pub use resource_lock::PgLockStore;
 pub use subscriber::{ConsumerConfig, PgSubscriber};
+pub use task::PgTaskStore;
+pub use user::{PgOrgMembershipStore, PgUserStore};
 
 use std::path::Path;
 
@@ -22,12 +33,12 @@ use sqlx::PgPool;
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
 
-pub struct PgBackend {
+pub struct PgDatabase {
     pool: PgPool,
     embedding_dimensions: Option<u32>,
 }
 
-impl PgBackend {
+impl PgDatabase {
     pub async fn new(url: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
         let pool = PgPool::connect(url)
             .await
@@ -37,6 +48,14 @@ impl PgBackend {
             pool,
             embedding_dimensions,
         })
+    }
+
+    pub fn pool(&self) -> PgPool {
+        self.pool.clone()
+    }
+
+    pub fn embedding_dimensions(&self) -> Option<u32> {
+        self.embedding_dimensions
     }
 
     pub async fn run_migrations(&self, dir: &Path) -> Result<()> {

@@ -6,10 +6,20 @@ use rusqlite::OptionalExtension;
 use orchy_core::error::{Error, Result};
 use orchy_core::user::{Email, HashedPassword, RestoreUser, User, UserId, UserStore};
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
+
+pub struct SqliteUserStore {
+    conn: SqliteConn,
+}
+
+impl SqliteUserStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
 
 #[async_trait]
-impl UserStore for SqliteBackend {
+impl UserStore for SqliteUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn
@@ -43,7 +53,7 @@ impl UserStore for SqliteBackend {
 
         let row = conn
             .query_row(
-                "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at 
+                "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
                  FROM users WHERE id = ?1",
                 rusqlite::params![id.to_string()],
                 |row| {
@@ -103,7 +113,7 @@ impl UserStore for SqliteBackend {
 
         let row = conn
             .query_row(
-                "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at 
+                "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
                  FROM users WHERE email = ?1",
                 rusqlite::params![email.as_str()],
                 |row| {
@@ -163,7 +173,7 @@ impl UserStore for SqliteBackend {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at 
+                "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
                  FROM users ORDER BY created_at DESC"
             )
             .map_err(|e| Error::Store(e.to_string()))?;

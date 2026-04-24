@@ -11,10 +11,20 @@ use orchy_core::organization::{
 };
 use orchy_core::user::UserId;
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
+
+pub struct SqliteOrganizationStore {
+    conn: SqliteConn,
+}
+
+impl SqliteOrganizationStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
 
 #[async_trait]
-impl OrganizationStore for SqliteBackend {
+impl OrganizationStore for SqliteOrganizationStore {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn

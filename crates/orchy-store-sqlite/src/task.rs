@@ -11,12 +11,22 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
 
 const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at";
 
+pub struct SqliteTaskStore {
+    conn: SqliteConn,
+}
+
+impl SqliteTaskStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
+
 #[async_trait]
-impl TaskStore for SqliteBackend {
+impl TaskStore for SqliteTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn

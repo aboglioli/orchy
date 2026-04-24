@@ -1,34 +1,27 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::Arc;
+
+use async_trait::async_trait;
 
 use orchy_core::error::Result;
 use orchy_core::user::{Email, User, UserId, UserStore};
 
-pub struct InMemoryUserStore {
-    users: Mutex<HashMap<UserId, User>>,
-    by_email: Mutex<HashMap<String, UserId>>,
+use crate::MemoryState;
+
+pub struct MemoryUserStore {
+    state: Arc<MemoryState>,
 }
 
-impl InMemoryUserStore {
-    pub fn new() -> Self {
-        Self {
-            users: Mutex::new(HashMap::new()),
-            by_email: Mutex::new(HashMap::new()),
-        }
+impl MemoryUserStore {
+    pub fn new(state: Arc<MemoryState>) -> Self {
+        Self { state }
     }
 }
 
-impl Default for InMemoryUserStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait::async_trait]
-impl UserStore for InMemoryUserStore {
+#[async_trait]
+impl UserStore for MemoryUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
-        let mut users = self.users.lock().unwrap();
-        let mut by_email = self.by_email.lock().unwrap();
+        let mut users = self.state.users.write().await;
+        let mut by_email = self.state.user_by_email.write().await;
 
         let id = *user.id();
         let email = user.email().as_str().to_string();
@@ -41,13 +34,13 @@ impl UserStore for InMemoryUserStore {
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>> {
-        let users = self.users.lock().unwrap();
+        let users = self.state.users.read().await;
         Ok(users.get(id).cloned())
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>> {
-        let users = self.users.lock().unwrap();
-        let by_email = self.by_email.lock().unwrap();
+        let users = self.state.users.read().await;
+        let by_email = self.state.user_by_email.read().await;
 
         Ok(by_email
             .get(email.as_str())
@@ -55,7 +48,7 @@ impl UserStore for InMemoryUserStore {
     }
 
     async fn list_all(&self) -> Result<Vec<User>> {
-        let users = self.users.lock().unwrap();
+        let users = self.state.users.read().await;
         Ok(users.values().cloned().collect())
     }
 }
@@ -92,13 +85,14 @@ mod tests {
 
     #[tokio::test]
     async fn user_crud() {
-        let store = InMemoryUserStore::new();
-        let hasher = MockPasswordHasher;
+        let state = Arc::new(MemoryState::new());
+        let store = MemoryUserStore::new(state);
 
         let email = Email::new("test@example.com").unwrap();
         let password = orchy_core::user::PlainPassword::new("password123").unwrap();
 
-        let mut user = User::register(UserId::new(), email.clone(), &password, &hasher).unwrap();
+        let mut user =
+            User::register(UserId::new(), email.clone(), &password, &MockPasswordHasher).unwrap();
         store.save(&mut user).await.unwrap();
 
         let found = store.find_by_email(&email).await.unwrap();

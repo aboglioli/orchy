@@ -1,14 +1,22 @@
 use async_trait::async_trait;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 
-use crate::PgBackend;
+pub struct PgNamespaceStore {
+    pool: PgPool,
+}
+
+impl PgNamespaceStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
 
 #[async_trait]
-impl NamespaceStore for PgBackend {
+impl NamespaceStore for PgNamespaceStore {
     async fn register(
         &self,
         _org: &OrganizationId,

@@ -1,19 +1,19 @@
 use std::collections::HashMap;
 
-use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
+use orchy_core::agent::{Agent, AgentStore, Alias};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
-use orchy_store_pg::PgBackend;
+use orchy_store_pg::*;
 
 const PG_URL: &str = "postgres://orchy:orchy@localhost:5432/orchy";
 
-async fn backend() -> PgBackend {
-    let b = PgBackend::new(PG_URL, None).await.unwrap();
+async fn pool() -> sqlx::PgPool {
+    let b = PgDatabase::new(PG_URL, None).await.unwrap();
     b.truncate_all().await.unwrap();
-    b
+    b.pool()
 }
 
 fn proj(s: &str) -> ProjectId {
@@ -27,7 +27,8 @@ fn org() -> OrganizationId {
 #[tokio::test]
 #[ignore]
 async fn agent_save_and_find() {
-    let store = backend().await;
+    let p = pool().await;
+    let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
         proj("myapp"),
@@ -40,22 +41,20 @@ async fn agent_save_and_find() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    agents.save(&mut agent).await.unwrap();
 
     assert_eq!(agent.derived_status(30, 300), "active");
     assert_eq!(agent.roles(), &["coder".to_string()]);
 
-    let fetched = AgentStore::find_by_id(&store, agent.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let fetched = agents.find_by_id(agent.id()).await.unwrap().unwrap();
     assert_eq!(fetched.id(), agent.id());
 }
 
 #[tokio::test]
 #[ignore]
 async fn agent_save_updates_existing() {
-    let store = backend().await;
+    let p = pool().await;
+    let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
         proj("test-project"),
@@ -68,24 +67,22 @@ async fn agent_save_updates_existing() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    agents.save(&mut agent).await.unwrap();
 
     let before = agent.last_seen();
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     agent.heartbeat().unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    agents.save(&mut agent).await.unwrap();
 
-    let updated = AgentStore::find_by_id(&store, agent.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let updated = agents.find_by_id(agent.id()).await.unwrap().unwrap();
     assert!(updated.last_seen() > before);
 }
 
 #[tokio::test]
 #[ignore]
 async fn agent_save_and_fetch_roundtrip() {
-    let store = backend().await;
+    let p = pool().await;
+    let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
         proj("test-project"),
@@ -98,20 +95,16 @@ async fn agent_save_and_fetch_roundtrip() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
-
-    AgentStore::save(&store, &mut agent).await.unwrap();
-
-    let _fetched = AgentStore::find_by_id(&store, agent.id())
-        .await
-        .unwrap()
-        .unwrap();
+    agents.save(&mut agent).await.unwrap();
+    agents.save(&mut agent).await.unwrap();
+    let _fetched = agents.find_by_id(agent.id()).await.unwrap().unwrap();
 }
 
 #[tokio::test]
 #[ignore]
 async fn agent_find_timed_out() {
-    let store = backend().await;
+    let p = pool().await;
+    let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
         proj("test-project"),
@@ -124,22 +117,22 @@ async fn agent_find_timed_out() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    agents.save(&mut agent).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
+    let timed_out = agents.find_timed_out(0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
-    AgentStore::save(&store, &mut agent).await.unwrap();
-    let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
-    // agent was saved with current timestamp and is still timed out at threshold 0
+    agents.save(&mut agent).await.unwrap();
+    let timed_out = agents.find_timed_out(0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 }
 
 #[tokio::test]
 #[ignore]
 async fn task_save_and_get() {
-    let store = backend().await;
+    let p = pool().await;
+    let tasks = PgTaskStore::new(p);
 
     let mut task = Task::new(
         org(),
@@ -154,12 +147,9 @@ async fn task_save_and_get() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &mut task).await.unwrap();
+    tasks.save(&mut task).await.unwrap();
 
-    let fetched = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let fetched = tasks.find_by_id(&task.id()).await.unwrap().unwrap();
     assert_eq!(fetched.status(), TaskStatus::Pending);
     assert_eq!(fetched.title(), "Do thing");
 }
@@ -167,7 +157,9 @@ async fn task_save_and_get() {
 #[tokio::test]
 #[ignore]
 async fn task_save_persists_event_log() {
-    let store = backend().await;
+    let p = pool().await;
+    let tasks = PgTaskStore::new(p.clone());
+    let event_query = PgEventQuery::new(p);
     let organization = org();
     let mut task = Task::new(
         organization.clone(),
@@ -182,9 +174,9 @@ async fn task_save_persists_event_log() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &mut task).await.unwrap();
+    tasks.save(&mut task).await.unwrap();
 
-    let events = store
+    let events = event_query
         .query_events(
             organization.as_str(),
             chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
@@ -199,7 +191,8 @@ async fn task_save_persists_event_log() {
 #[tokio::test]
 #[ignore]
 async fn task_list_sorted_by_priority() {
-    let store = backend().await;
+    let p = pool().await;
+    let tasks = PgTaskStore::new(p);
 
     let mut low = Task::new(
         org(),
@@ -214,7 +207,7 @@ async fn task_list_sorted_by_priority() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &mut low).await.unwrap();
+    tasks.save(&mut low).await.unwrap();
 
     let mut critical = Task::new(
         org(),
@@ -229,9 +222,10 @@ async fn task_list_sorted_by_priority() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &mut critical).await.unwrap();
+    tasks.save(&mut critical).await.unwrap();
 
-    let page = TaskStore::list(&store, TaskFilter::default(), PageParams::unbounded())
+    let page = tasks
+        .list(TaskFilter::default(), PageParams::unbounded())
         .await
         .unwrap();
     assert_eq!(page.items[0].title(), "critical");
@@ -241,13 +235,15 @@ async fn task_list_sorted_by_priority() {
 #[tokio::test]
 #[ignore]
 async fn message_save_and_find_unread() {
-    let store = backend().await;
+    let p = pool().await;
+    let agents = PgAgentStore::new(p.clone());
+    let messages = PgMessageStore::new(p);
 
     let mut from_agent = Agent::register(
         org(),
         proj("test-project"),
         Namespace::root(),
-        Alias::new("test-agent").unwrap(),
+        Alias::new("sender-agent").unwrap(),
         vec![],
         "sender".into(),
         None,
@@ -255,13 +251,13 @@ async fn message_save_and_find_unread() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut from_agent).await.unwrap();
+    agents.save(&mut from_agent).await.unwrap();
 
     let mut to_agent = Agent::register(
         org(),
         proj("test-project"),
         Namespace::root(),
-        Alias::new("test-agent").unwrap(),
+        Alias::new("receiver-agent").unwrap(),
         vec![],
         "receiver".into(),
         None,
@@ -269,7 +265,7 @@ async fn message_save_and_find_unread() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut to_agent).await.unwrap();
+    agents.save(&mut to_agent).await.unwrap();
 
     let mut msg = Message::new(
         org(),
@@ -282,56 +278,56 @@ async fn message_save_and_find_unread() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg).await.unwrap();
+    messages.save(&mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
-    let p = proj("test-project");
-    let messages = MessageStore::find_unread(
-        &store,
-        to_agent.id(),
-        &[],
-        &Namespace::root(),
-        None,
-        &org(),
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(messages.items.len(), 1);
-    assert_eq!(messages.items[0].body(), "hello");
-    assert_eq!(messages.items[0].status(), MessageStatus::Pending);
-
-    let msg_id = messages.items[0].id();
-    MessageStore::mark_read(&store, to_agent.id(), &[msg_id])
+    let pr = proj("test-project");
+    let unread = messages
+        .find_unread(
+            to_agent.id(),
+            &[],
+            &Namespace::root(),
+            None,
+            &org(),
+            &pr,
+            PageParams::unbounded(),
+        )
         .await
         .unwrap();
+    assert_eq!(unread.items.len(), 1);
+    assert_eq!(unread.items[0].body(), "hello");
+    assert_eq!(unread.items[0].status(), MessageStatus::Pending);
 
-    let messages = MessageStore::find_unread(
-        &store,
-        to_agent.id(),
-        &[],
-        &Namespace::root(),
-        None,
-        &org(),
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
-    assert!(messages.items.is_empty());
+    let msg_id = unread.items[0].id();
+    messages.mark_read(to_agent.id(), &[msg_id]).await.unwrap();
+
+    let after = messages
+        .find_unread(
+            to_agent.id(),
+            &[],
+            &Namespace::root(),
+            None,
+            &org(),
+            &pr,
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
+    assert!(after.items.is_empty());
 }
 
 #[tokio::test]
 #[ignore]
 async fn message_find_by_id_and_mark_read() {
-    let store = backend().await;
+    let p = pool().await;
+    let agents = PgAgentStore::new(p.clone());
+    let messages = PgMessageStore::new(p);
 
     let mut from_agent = Agent::register(
         org(),
         proj("test-project"),
         Namespace::root(),
-        Alias::new("test-agent").unwrap(),
+        Alias::new("from-agent").unwrap(),
         vec![],
         "".into(),
         None,
@@ -339,13 +335,13 @@ async fn message_find_by_id_and_mark_read() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut from_agent).await.unwrap();
+    agents.save(&mut from_agent).await.unwrap();
 
     let mut to_agent = Agent::register(
         org(),
         proj("test-project"),
         Namespace::root(),
-        Alias::new("test-agent").unwrap(),
+        Alias::new("to-agent").unwrap(),
         vec![],
         "".into(),
         None,
@@ -353,7 +349,7 @@ async fn message_find_by_id_and_mark_read() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut to_agent).await.unwrap();
+    agents.save(&mut to_agent).await.unwrap();
 
     let mut msg = Message::new(
         org(),
@@ -366,33 +362,28 @@ async fn message_find_by_id_and_mark_read() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg).await.unwrap();
+    messages.save(&mut msg).await.unwrap();
 
-    let mut fetched = MessageStore::find_by_id(&store, &msg.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut fetched = messages.find_by_id(&msg.id()).await.unwrap().unwrap();
     fetched.mark_read().unwrap();
-    MessageStore::save(&store, &mut fetched).await.unwrap();
+    messages.save(&mut fetched).await.unwrap();
 
-    let read = MessageStore::find_by_id(&store, &msg.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let read = messages.find_by_id(&msg.id()).await.unwrap().unwrap();
     assert_eq!(read.status(), MessageStatus::Read);
 }
 
 #[tokio::test]
 #[ignore]
 async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
-    let store = backend().await;
-    let sender = AgentId::new();
-    let receiver = AgentId::new();
-    let p = proj("proj");
+    let p = pool().await;
+    let messages = PgMessageStore::new(p);
+    let sender = orchy_core::agent::AgentId::new();
+    let receiver = orchy_core::agent::AgentId::new();
+    let pr = proj("proj");
 
     let mut msg = Message::new(
         org(),
-        p.clone(),
+        pr.clone(),
         Namespace::root(),
         sender.clone(),
         MessageTarget::Broadcast,
@@ -401,51 +392,49 @@ async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg).await.unwrap();
+    messages.save(&mut msg).await.unwrap();
 
-    let pending = MessageStore::find_unread(
-        &store,
-        &receiver,
-        &[],
-        &Namespace::root(),
-        None,
-        &org(),
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(pending.items.len(), 1);
-
-    let sender_pending = MessageStore::find_unread(
-        &store,
-        &sender,
-        &[],
-        &Namespace::root(),
-        None,
-        &org(),
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
-    assert!(sender_pending.items.is_empty());
-
-    MessageStore::mark_read(&store, &receiver, &[msg.id()])
+    let pending = messages
+        .find_unread(
+            &receiver,
+            &[],
+            &Namespace::root(),
+            None,
+            &org(),
+            &pr,
+            PageParams::unbounded(),
+        )
         .await
         .unwrap();
+    assert_eq!(pending.items.len(), 1);
 
-    let after_read = MessageStore::find_unread(
-        &store,
-        &receiver,
-        &[],
-        &Namespace::root(),
-        None,
-        &org(),
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
+    let sender_pending = messages
+        .find_unread(
+            &sender,
+            &[],
+            &Namespace::root(),
+            None,
+            &org(),
+            &pr,
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
+    assert!(sender_pending.items.is_empty());
+
+    messages.mark_read(&receiver, &[msg.id()]).await.unwrap();
+
+    let after_read = messages
+        .find_unread(
+            &receiver,
+            &[],
+            &Namespace::root(),
+            None,
+            &org(),
+            &pr,
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
     assert!(after_read.items.is_empty());
 }

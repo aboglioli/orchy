@@ -14,23 +14,33 @@ mod task;
 mod user;
 
 use std::path::Path;
+use std::sync::Arc;
 
 use rusqlite::Connection;
 use std::sync::Mutex;
 
 use orchy_core::error::{Error, Result};
 
-/// SQLite persistence. Install schema in one of two ways:
-/// - **`run_migrations`** — apply ordered `*.sql` files from a directory and record them in `schema_migrations` (typical `orchy-server` startup).
-/// - **`apply_schema`** — execute bundled SQL (initial + knowledge FTS5) once (tests, in-memory setups) without the migrations table.
-///
-/// Text search uses FTS5 on `knowledge_entries_fts` after migrations or `apply_schema`. Embeddings are stored as BLOBs on `knowledge_entries`;
-/// optional `knowledge_vec` (sqlite-vec `vec0`) is created when `embedding_dimensions` is set for future ANN; Postgres remains the primary vector backend.
-pub struct SqliteBackend {
-    conn: Mutex<Connection>,
+pub use agent::SqliteAgentStore;
+pub use edge::SqliteEdgeStore;
+pub use events::{SqliteEventQuery, SqliteEventWriter};
+pub use knowledge::SqliteKnowledgeStore;
+pub use membership::SqliteOrgMembershipStore;
+pub use message::SqliteMessageStore;
+pub use namespace::SqliteNamespaceStore;
+pub use organization::SqliteOrganizationStore;
+pub use project::SqliteProjectStore;
+pub use resource_lock::SqliteLockStore;
+pub use task::SqliteTaskStore;
+pub use user::SqliteUserStore;
+
+pub type SqliteConn = Arc<Mutex<Connection>>;
+
+pub struct SqliteDatabase {
+    conn: SqliteConn,
 }
 
-impl SqliteBackend {
+impl SqliteDatabase {
     pub fn new(path: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
         #[allow(clippy::missing_transmute_annotations)]
         unsafe {
@@ -53,8 +63,12 @@ impl SqliteBackend {
         Self::init_vec0_table(&conn, embedding_dimensions)?;
 
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    pub fn conn(&self) -> SqliteConn {
+        self.conn.clone()
     }
 
     fn init_vec0_table(conn: &Connection, embedding_dimensions: Option<u32>) -> Result<()> {
@@ -122,9 +136,7 @@ impl SqliteBackend {
                         || err_msg.contains("no such column")
                         || err_msg.contains("no such table")
                     {
-                        // Column/table already exists from a previous apply or manual migration — idempotent
                         tx.rollback().map_err(|e2| Error::Store(e2.to_string()))?;
-                        // Record as applied so we don't retry
                         conn.execute(
                             "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
                             rusqlite::params![&filename, chrono::Utc::now().to_rfc3339()],
@@ -149,20 +161,16 @@ impl SqliteBackend {
 
     pub fn apply_schema(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        // Initial schema includes edges table (clean, no legacy columns)
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260415-000000_initial_schema.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))?;
-        // Adds message_receipts, orgs, api_keys; skips refs (already in initial)
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260418-000000_align_schema.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))?;
-        // Note: 20260419-000000_add_edges.sql is skipped - edges created in initial schema
-        // and it contains data migrations for old columns that don't exist in clean schema
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260419-000100_add_edge_source.sql"
@@ -188,7 +196,6 @@ impl SqliteBackend {
             "/../../migrations/sqlite/20260420-000100_add_users.sql"
         )))
         .map_err(|e| Error::Store(e.to_string()))?;
-        // Note: 20260420-000400_add_message_refs.sql is skipped - refs already in initial schema
         conn.execute_batch(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/sqlite/20260420-000700_add_edge_indexes.sql"
@@ -266,7 +273,7 @@ mod tests {
 
     #[test]
     fn apply_schema_runs() {
-        let backend = SqliteBackend::new(":memory:", None).unwrap();
+        let backend = SqliteDatabase::new(":memory:", None).unwrap();
         backend.apply_schema().unwrap();
     }
 }

@@ -4,7 +4,7 @@ pub mod bootstrap;
 pub mod config;
 pub mod container;
 pub mod embeddings;
+mod event_query;
 pub mod heartbeat;
 pub mod mcp;
 pub mod skill_loader;
-pub mod store;

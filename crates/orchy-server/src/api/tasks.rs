@@ -59,7 +59,7 @@ async fn resolve_agent_id(
 ) -> Result<String, ApiError> {
     let project = ProjectId::try_from(project.to_string())
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    let agent = resolve_agent(container.store.as_ref(), org, &project, id_or_alias)
+    let agent = resolve_agent(container.agent_store.as_ref(), org, &project, id_or_alias)
         .await
         .map_err(ApiError::from)?;
     Ok(agent.id().to_string())

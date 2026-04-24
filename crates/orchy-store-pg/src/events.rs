@@ -8,8 +8,6 @@ use orchy_core::error::{Error, Result};
 use orchy_events::io::Writer;
 use orchy_events::{Event, SerializedEvent};
 
-use crate::PgBackend;
-
 pub struct PgEventWriter {
     pool: sqlx::PgPool,
 }
@@ -108,14 +106,15 @@ impl<'tx> Writer for PgTxEventWriter<'tx> {
     }
 }
 
-#[async_trait]
-impl Writer for PgBackend {
-    async fn write(&self, event: &Event) -> orchy_events::Result<()> {
-        PgEventWriter::new(self.pool.clone()).write(event).await
-    }
+pub struct PgEventQuery {
+    pool: sqlx::PgPool,
 }
 
-impl PgBackend {
+impl PgEventQuery {
+    pub fn new(pool: sqlx::PgPool) -> Self {
+        Self { pool }
+    }
+
     pub async fn query_events(
         &self,
         organization: &str,

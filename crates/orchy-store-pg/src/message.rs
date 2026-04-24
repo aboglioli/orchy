@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -17,7 +17,7 @@ use orchy_core::resource_ref::ResourceRef;
 use orchy_core::user::UserId;
 use orchy_events::io::Writer;
 
-use crate::{PgBackend, events::PgEventWriter, parse_namespace, parse_project_id};
+use crate::{events::PgEventWriter, parse_namespace, parse_project_id};
 
 #[derive(Iden)]
 enum Messages {
@@ -46,8 +46,18 @@ enum Messages {
     Refs,
 }
 
+pub struct PgMessageStore {
+    pool: PgPool,
+}
+
+impl PgMessageStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
 #[async_trait]
-impl MessageStore for PgBackend {
+impl MessageStore for PgMessageStore {
     async fn save(&self, message: &mut Message) -> Result<()> {
         let mut tx = self
             .pool

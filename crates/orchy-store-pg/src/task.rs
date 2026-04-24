@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -12,9 +12,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 use orchy_events::io::Writer;
 
-use crate::{
-    PgBackend, decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id,
-};
+use crate::{decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id};
 
 #[derive(Iden)]
 enum Tasks {
@@ -61,8 +59,18 @@ enum Tasks {
     UpdatedAt,
 }
 
+pub struct PgTaskStore {
+    pool: PgPool,
+}
+
+impl PgTaskStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
 #[async_trait]
-impl TaskStore for PgBackend {
+impl TaskStore for PgTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
         let roles_json = serde_json::to_value(task.assigned_roles())
             .map_err(|e| Error::Store(format!("failed to serialize tasks.assigned_roles: {e}")))?;

@@ -12,7 +12,7 @@ use orchy_application::{
     ListAgentsCommand, ListTasksCommand, RegisterAgentCommand, RenameAliasCommand,
     SwitchContextCommand, resolve_agent,
 };
-use orchy_core::agent::{AgentId, AgentStore};
+use orchy_core::agent::AgentId;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -74,7 +74,7 @@ async fn resolve_agent_id(
 ) -> Result<String, ApiError> {
     if let Ok(agent_id) = id_or_alias.parse::<AgentId>() {
         let agent = container
-            .store
+            .agent_store
             .find_by_id(&agent_id)
             .await
             .map_err(ApiError::from)?
@@ -104,7 +104,7 @@ async fn resolve_agent_id(
     })?;
     let project = ProjectId::try_from(project.to_string())
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    let agent = resolve_agent(container.store.as_ref(), org, &project, id_or_alias)
+    let agent = resolve_agent(container.agent_store.as_ref(), org, &project, id_or_alias)
         .await
         .map_err(ApiError::from)?;
     Ok(agent.id().to_string())

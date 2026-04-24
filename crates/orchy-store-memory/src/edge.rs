@@ -1,4 +1,5 @@
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -11,15 +12,25 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 
-use crate::MemoryBackend;
+use crate::MemoryState;
+
+pub struct MemoryEdgeStore {
+    state: Arc<MemoryState>,
+}
+
+impl MemoryEdgeStore {
+    pub fn new(state: Arc<MemoryState>) -> Self {
+        Self { state }
+    }
+}
 
 #[async_trait]
-impl EdgeStore for MemoryBackend {
+impl EdgeStore for MemoryEdgeStore {
     async fn save(&self, edge: &mut Edge) -> Result<()> {
         {
-            let mut store = self.edges.write().await;
-            let mut by_from = self.edges_by_from.write().await;
-            let mut by_to = self.edges_by_to.write().await;
+            let mut store = self.state.edges.write().await;
+            let mut by_from = self.state.edges_by_from.write().await;
+            let mut by_to = self.state.edges_by_to.write().await;
 
             if let Some(old) = store.get(&edge.id()) {
                 let from_key = (old.from_kind().clone(), old.from_id().to_string());
@@ -43,8 +54,10 @@ impl EdgeStore for MemoryBackend {
 
         let events = edge.drain_events();
         if !events.is_empty() {
-            if let Err(e) = orchy_events::io::Writer::write_all(self, &events).await {
-                tracing::error!("failed to persist events: {e}");
+            for event in events {
+                let serialized = orchy_events::SerializedEvent::from_event(&event)
+                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                self.state.events.write().await.push(serialized);
             }
         }
 
@@ -52,14 +65,14 @@ impl EdgeStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
-        let store = self.edges.read().await;
+        let store = self.state.edges.read().await;
         Ok(store.get(id).cloned())
     }
 
     async fn delete(&self, id: &EdgeId) -> Result<()> {
-        let mut store = self.edges.write().await;
-        let mut by_from = self.edges_by_from.write().await;
-        let mut by_to = self.edges_by_to.write().await;
+        let mut store = self.state.edges.write().await;
+        let mut by_from = self.state.edges_by_from.write().await;
+        let mut by_to = self.state.edges_by_to.write().await;
 
         if let Some(old) = store.remove(id) {
             let from_key = (old.from_kind().clone(), old.from_id().to_string());
@@ -82,7 +95,7 @@ impl EdgeStore for MemoryBackend {
         rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let store = self.edges.read().await;
+        let store = self.state.edges.read().await;
         let mut edges: Vec<Edge> = store
             .values()
             .filter(|e| {
@@ -110,7 +123,7 @@ impl EdgeStore for MemoryBackend {
         rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let store = self.edges.read().await;
+        let store = self.state.edges.read().await;
         let mut edges: Vec<Edge> = store
             .values()
             .filter(|e| {
@@ -139,7 +152,7 @@ impl EdgeStore for MemoryBackend {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<bool> {
-        let store = self.edges.read().await;
+        let store = self.state.edges.read().await;
         Ok(store.values().any(|e| {
             e.org_id() == org
                 && e.from_kind() == from_kind
@@ -160,7 +173,7 @@ impl EdgeStore for MemoryBackend {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<Option<Edge>> {
-        let store = self.edges.read().await;
+        let store = self.state.edges.read().await;
         Ok(store
             .values()
             .find(|e| {
@@ -183,7 +196,7 @@ impl EdgeStore for MemoryBackend {
         only_active: bool,
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Page<Edge>> {
-        let store = self.edges.read().await;
+        let store = self.state.edges.read().await;
         let mut edges: Vec<Edge> = store
             .values()
             .filter(|e| {
@@ -215,9 +228,9 @@ impl EdgeStore for MemoryBackend {
         as_of: Option<DateTime<Utc>>,
         limit: u32,
     ) -> Result<Vec<TraversalHop>> {
-        let store = self.edges.read().await;
-        let by_from = self.edges_by_from.read().await;
-        let by_to = self.edges_by_to.read().await;
+        let store = self.state.edges.read().await;
+        let by_from = self.state.edges_by_from.read().await;
+        let by_to = self.state.edges_by_to.read().await;
 
         let max_depth = max_depth.max(1);
         let mut result: Vec<TraversalHop> = vec![];
@@ -339,9 +352,9 @@ impl EdgeStore for MemoryBackend {
         kind: &ResourceKind,
         id: &str,
     ) -> Result<()> {
-        let mut store = self.edges.write().await;
-        let mut by_from = self.edges_by_from.write().await;
-        let mut by_to = self.edges_by_to.write().await;
+        let mut store = self.state.edges.write().await;
+        let mut by_from = self.state.edges_by_from.write().await;
+        let mut by_to = self.state.edges_by_to.write().await;
 
         let to_remove: Vec<Edge> = store
             .values()
@@ -377,9 +390,9 @@ impl EdgeStore for MemoryBackend {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<()> {
-        let mut store = self.edges.write().await;
-        let mut by_from = self.edges_by_from.write().await;
-        let mut by_to = self.edges_by_to.write().await;
+        let mut store = self.state.edges.write().await;
+        let mut by_from = self.state.edges_by_from.write().await;
+        let mut by_to = self.state.edges_by_to.write().await;
 
         let to_remove: Vec<Edge> = store
             .values()

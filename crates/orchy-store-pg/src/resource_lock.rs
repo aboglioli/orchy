@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -10,10 +10,20 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 use orchy_events::io::Writer;
 
-use crate::{PgBackend, events::PgEventWriter, parse_namespace, parse_project_id};
+use crate::{events::PgEventWriter, parse_namespace, parse_project_id};
+
+pub struct PgLockStore {
+    pool: PgPool,
+}
+
+impl PgLockStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
 
 #[async_trait]
-impl LockStore for PgBackend {
+impl LockStore for PgLockStore {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         let mut tx = self
             .pool

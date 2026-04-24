@@ -9,10 +9,20 @@ use orchy_core::user::{
 };
 use orchy_events::io::Writer;
 
-use crate::{PgBackend, events::PgEventWriter};
+use crate::events::PgEventWriter;
+
+pub struct PgUserStore {
+    pool: sqlx::PgPool,
+}
+
+impl PgUserStore {
+    pub fn new(pool: sqlx::PgPool) -> Self {
+        Self { pool }
+    }
+}
 
 #[async_trait]
-impl UserStore for PgBackend {
+impl UserStore for PgUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
         let mut tx = self
             .pool
@@ -166,8 +176,18 @@ impl UserStore for PgBackend {
     }
 }
 
+pub struct PgOrgMembershipStore {
+    pool: sqlx::PgPool,
+}
+
+impl PgOrgMembershipStore {
+    pub fn new(pool: sqlx::PgPool) -> Self {
+        Self { pool }
+    }
+}
+
 #[async_trait]
-impl OrgMembershipStore for PgBackend {
+impl OrgMembershipStore for PgOrgMembershipStore {
     async fn save(&self, membership: &OrgMembership) -> Result<()> {
         sqlx::query(
             r#"

@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
@@ -13,14 +13,22 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::user::UserId;
 use orchy_events::io::Writer;
 
-use crate::{
-    PgBackend, decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id,
-};
+use crate::{decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id};
 
 const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id";
 
+pub struct PgAgentStore {
+    pool: PgPool,
+}
+
+impl PgAgentStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
 #[async_trait]
-impl AgentStore for PgBackend {
+impl AgentStore for PgAgentStore {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         let roles_json = serde_json::to_value(agent.roles())
             .map_err(|e| Error::Store(format!("failed to serialize agents.roles: {e}")))?;

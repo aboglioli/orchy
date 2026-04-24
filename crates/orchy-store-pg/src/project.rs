@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
@@ -10,10 +10,20 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
 use orchy_events::io::Writer;
 
-use crate::{PgBackend, decode_json_value, events::PgEventWriter, parse_project_id};
+use crate::{decode_json_value, events::PgEventWriter, parse_project_id};
+
+pub struct PgProjectStore {
+    pool: PgPool,
+}
+
+impl PgProjectStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
 
 #[async_trait]
-impl ProjectStore for PgBackend {
+impl ProjectStore for PgProjectStore {
     async fn save(&self, project: &mut Project) -> Result<()> {
         let metadata_json = serde_json::to_value(project.metadata())
             .map_err(|e| Error::Store(format!("failed to serialize projects.metadata: {e}")))?;

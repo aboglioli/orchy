@@ -1,38 +1,29 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::Arc;
+
+use async_trait::async_trait;
 
 use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
-use orchy_core::user::{MembershipId, OrgMembership, OrgMembershipStore, OrgRole, UserId};
+use orchy_core::user::{MembershipId, OrgMembership, OrgMembershipStore, UserId};
 
-pub struct InMemoryMembershipStore {
-    memberships: Mutex<HashMap<MembershipId, OrgMembership>>,
-    by_user: Mutex<HashMap<UserId, Vec<MembershipId>>>,
-    by_org: Mutex<HashMap<OrganizationId, Vec<MembershipId>>>,
+use crate::MemoryState;
+
+pub struct MemoryOrgMembershipStore {
+    state: Arc<MemoryState>,
 }
 
-impl InMemoryMembershipStore {
-    pub fn new() -> Self {
-        Self {
-            memberships: Mutex::new(HashMap::new()),
-            by_user: Mutex::new(HashMap::new()),
-            by_org: Mutex::new(HashMap::new()),
-        }
+impl MemoryOrgMembershipStore {
+    pub fn new(state: Arc<MemoryState>) -> Self {
+        Self { state }
     }
 }
 
-impl Default for InMemoryMembershipStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait::async_trait]
-impl OrgMembershipStore for InMemoryMembershipStore {
+#[async_trait]
+impl OrgMembershipStore for MemoryOrgMembershipStore {
     async fn save(&self, membership: &OrgMembership) -> Result<()> {
-        let mut memberships = self.memberships.lock().unwrap();
-        let mut by_user = self.by_user.lock().unwrap();
-        let mut by_org = self.by_org.lock().unwrap();
+        let mut memberships = self.state.memberships.write().await;
+        let mut by_user = self.state.memberships_by_user.write().await;
+        let mut by_org = self.state.memberships_by_org.write().await;
 
         let id = *membership.id();
         let user_id = *membership.user_id();
@@ -51,13 +42,13 @@ impl OrgMembershipStore for InMemoryMembershipStore {
     }
 
     async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>> {
-        let memberships = self.memberships.lock().unwrap();
+        let memberships = self.state.memberships.read().await;
         Ok(memberships.get(id).cloned())
     }
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>> {
-        let memberships = self.memberships.lock().unwrap();
-        let by_user = self.by_user.lock().unwrap();
+        let memberships = self.state.memberships.read().await;
+        let by_user = self.state.memberships_by_user.read().await;
 
         Ok(by_user
             .get(user_id)
@@ -70,8 +61,8 @@ impl OrgMembershipStore for InMemoryMembershipStore {
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>> {
-        let memberships = self.memberships.lock().unwrap();
-        let by_org = self.by_org.lock().unwrap();
+        let memberships = self.state.memberships.read().await;
+        let by_org = self.state.memberships_by_org.read().await;
 
         Ok(by_org
             .get(org_id)
@@ -88,8 +79,8 @@ impl OrgMembershipStore for InMemoryMembershipStore {
         user_id: &UserId,
         org_id: &OrganizationId,
     ) -> Result<Option<OrgMembership>> {
-        let memberships = self.memberships.lock().unwrap();
-        let by_user = self.by_user.lock().unwrap();
+        let memberships = self.state.memberships.read().await;
+        let by_user = self.state.memberships_by_user.read().await;
 
         Ok(by_user.get(user_id).and_then(|ids| {
             ids.iter()
@@ -100,9 +91,9 @@ impl OrgMembershipStore for InMemoryMembershipStore {
     }
 
     async fn delete(&self, id: &MembershipId) -> Result<()> {
-        let mut memberships = self.memberships.lock().unwrap();
-        let mut by_user = self.by_user.lock().unwrap();
-        let mut by_org = self.by_org.lock().unwrap();
+        let mut memberships = self.state.memberships.write().await;
+        let mut by_user = self.state.memberships_by_user.write().await;
+        let mut by_org = self.state.memberships_by_org.write().await;
 
         if let Some(membership) = memberships.remove(id) {
             if let Some(ids) = by_user.get_mut(membership.user_id()) {
@@ -120,10 +111,12 @@ impl OrgMembershipStore for InMemoryMembershipStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchy_core::user::OrgRole;
 
     #[tokio::test]
     async fn membership_crud() {
-        let store = InMemoryMembershipStore::new();
+        let state = Arc::new(MemoryState::new());
+        let store = MemoryOrgMembershipStore::new(state);
         let user_id = UserId::new();
         let org_id = OrganizationId::new("test-org").unwrap();
 

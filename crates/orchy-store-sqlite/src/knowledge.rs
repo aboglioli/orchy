@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use crate::{SqliteBackend, bytes_to_embedding, embedding_to_bytes};
+use crate::{SqliteConn, bytes_to_embedding, embedding_to_bytes};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore,
@@ -15,8 +15,18 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 
+pub struct SqliteKnowledgeStore {
+    conn: SqliteConn,
+}
+
+impl SqliteKnowledgeStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
+
 #[async_trait]
-impl KnowledgeStore for SqliteBackend {
+impl KnowledgeStore for SqliteKnowledgeStore {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn

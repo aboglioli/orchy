@@ -195,9 +195,11 @@ impl OrchyHandler {
                     .ok_or("no session project for namespace registration")?,
             };
 
-            use orchy_core::namespace::NamespaceStore;
-            if let Err(e) =
-                NamespaceStore::register(&*self.container.store, &org, &project, &ns).await
+            if let Err(e) = self
+                .container
+                .namespace_store
+                .register(&org, &project, &ns)
+                .await
             {
                 warn!(error = %e, "namespace registration failed");
             }

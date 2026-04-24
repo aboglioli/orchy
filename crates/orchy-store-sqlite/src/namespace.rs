@@ -4,10 +4,20 @@ use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
+
+pub struct SqliteNamespaceStore {
+    conn: SqliteConn,
+}
+
+impl SqliteNamespaceStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
 
 #[async_trait]
-impl NamespaceStore for SqliteBackend {
+impl NamespaceStore for SqliteNamespaceStore {
     async fn register(
         &self,
         _org: &OrganizationId,

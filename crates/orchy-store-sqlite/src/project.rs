@@ -9,10 +9,20 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
+
+pub struct SqliteProjectStore {
+    conn: SqliteConn,
+}
+
+impl SqliteProjectStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
 
 #[async_trait]
-impl ProjectStore for SqliteBackend {
+impl ProjectStore for SqliteProjectStore {
     async fn save(&self, project: &mut Project) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn

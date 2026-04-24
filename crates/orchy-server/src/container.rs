@@ -2,20 +2,31 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use orchy_application::Application;
-use orchy_core::agent::AgentId;
+use orchy_application::{Application, EventQuery};
+use orchy_core::agent::{AgentId, AgentStore};
+use orchy_core::embeddings::EmbeddingsProvider;
+use orchy_core::graph::EdgeStore;
+use orchy_core::knowledge::KnowledgeStore;
+use orchy_core::message::MessageStore;
+use orchy_core::namespace::NamespaceStore;
+use orchy_core::organization::OrganizationStore;
+use orchy_core::project::ProjectStore;
+use orchy_core::resource_lock::LockStore;
+use orchy_core::task::TaskStore;
 use orchy_core::user::{OrgMembershipStore, PasswordHasher, UserStore};
-use orchy_store_memory::MemoryBackend;
-use orchy_store_pg::PgBackend;
-use orchy_store_sqlite::SqliteBackend;
+use orchy_store_memory::*;
+use orchy_store_pg::PgDatabase;
+use orchy_store_sqlite::SqliteDatabase;
 
 use crate::auth::{BcryptPasswordHasher, JwtTokenEncoder};
 use crate::config::{Config, EmbeddingsConfig};
 use crate::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
-use crate::store::StoreBackend;
+use crate::event_query::{MemoryEventQueryAdapter, PgEventQueryAdapter, SqliteEventQueryAdapter};
 
 pub struct Container {
-    pub store: Arc<StoreBackend>,
+    pub agent_store: Arc<dyn AgentStore>,
+    pub namespace_store: Arc<dyn NamespaceStore>,
+    pub edge_store: Arc<dyn EdgeStore>,
     pub app: Application,
     pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
@@ -24,9 +35,24 @@ pub struct Container {
     pub password_hasher: Arc<dyn PasswordHasher>,
 }
 
+struct Stores {
+    agents: Arc<dyn AgentStore>,
+    tasks: Arc<dyn TaskStore>,
+    projects: Arc<dyn ProjectStore>,
+    knowledge: Arc<dyn KnowledgeStore>,
+    messages: Arc<dyn MessageStore>,
+    locks: Arc<dyn LockStore>,
+    namespaces: Arc<dyn NamespaceStore>,
+    orgs: Arc<dyn OrganizationStore>,
+    edges: Arc<dyn EdgeStore>,
+    event_query: Arc<dyn EventQuery>,
+    users: Arc<dyn UserStore>,
+    memberships: Arc<dyn OrgMembershipStore>,
+}
+
 impl Container {
     pub async fn from_config(config: Config) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
-        let store = Arc::new(Self::build_store(&config).await?);
+        let stores = Self::build_stores(&config).await?;
         let embeddings: Option<Arc<EmbeddingsBackend>> = config
             .embeddings
             .as_ref()
@@ -34,32 +60,20 @@ impl Container {
             .transpose()?
             .map(Arc::new);
 
-        use orchy_application::EventQuery;
-        use orchy_core::agent::AgentStore;
-        use orchy_core::embeddings::EmbeddingsProvider;
-        use orchy_core::graph::EdgeStore;
-        use orchy_core::knowledge::KnowledgeStore;
-        use orchy_core::message::MessageStore;
-        use orchy_core::namespace::NamespaceStore;
-        use orchy_core::organization::OrganizationStore;
-        use orchy_core::project::ProjectStore;
-        use orchy_core::resource_lock::LockStore;
-        use orchy_core::task::TaskStore;
-
         let app = Application::new(
-            store.clone() as Arc<dyn AgentStore>,
-            store.clone() as Arc<dyn TaskStore>,
-            store.clone() as Arc<dyn ProjectStore>,
-            store.clone() as Arc<dyn KnowledgeStore>,
-            store.clone() as Arc<dyn MessageStore>,
-            store.clone() as Arc<dyn LockStore>,
-            store.clone() as Arc<dyn NamespaceStore>,
-            store.clone() as Arc<dyn OrganizationStore>,
-            store.clone() as Arc<dyn EdgeStore>,
+            stores.agents.clone(),
+            stores.tasks.clone(),
+            stores.projects.clone(),
+            stores.knowledge.clone(),
+            stores.messages.clone(),
+            stores.locks.clone(),
+            stores.namespaces.clone(),
+            stores.orgs.clone(),
+            stores.edges.clone(),
             embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
-            store.clone() as Arc<dyn EventQuery>,
-            store.clone() as Arc<dyn UserStore>,
-            store.clone() as Arc<dyn OrgMembershipStore>,
+            stores.event_query.clone(),
+            stores.users.clone(),
+            stores.memberships.clone(),
         );
 
         let password_hasher: Arc<dyn PasswordHasher> =
@@ -68,7 +82,9 @@ impl Container {
         let jwt_encoder = Self::init_jwt_encoder(&config).await?;
 
         let container = Arc::new(Self {
-            store,
+            agent_store: stores.agents,
+            namespace_store: stores.namespaces,
+            edge_store: stores.edges,
             app,
             session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
@@ -140,7 +156,7 @@ impl Container {
         Ok(())
     }
 
-    async fn build_store(config: &Config) -> Result<StoreBackend, Box<dyn std::error::Error>> {
+    async fn build_stores(config: &Config) -> Result<Stores, Box<dyn std::error::Error>> {
         let embedding_dims = config
             .embeddings
             .as_ref()
@@ -148,16 +164,16 @@ impl Container {
             .map(|o| o.dimensions);
 
         match config.store.backend.as_str() {
-            "memory" => Ok(StoreBackend::Memory(MemoryBackend::new())),
+            "memory" => Ok(Self::build_memory_stores()),
             "sqlite" => {
                 let store_config = config
                     .store
                     .sqlite
                     .as_ref()
                     .ok_or("store.sqlite config required when backend = \"sqlite\"")?;
-                let backend = SqliteBackend::new(&store_config.path, embedding_dims)?;
+                let backend = SqliteDatabase::new(&store_config.path, embedding_dims)?;
                 backend.run_migrations(std::path::Path::new("migrations/sqlite"))?;
-                Ok(StoreBackend::Sqlite(backend))
+                Ok(Self::build_sqlite_stores(backend))
             }
             "postgres" => {
                 let store_config = config
@@ -165,13 +181,74 @@ impl Container {
                     .postgres
                     .as_ref()
                     .ok_or("store.postgres config required when backend = \"postgres\"")?;
-                let backend = PgBackend::new(&store_config.url, embedding_dims).await?;
+                let backend = PgDatabase::new(&store_config.url, embedding_dims).await?;
                 backend
                     .run_migrations(std::path::Path::new("migrations/postgres"))
                     .await?;
-                Ok(StoreBackend::Postgres(backend))
+                Ok(Self::build_pg_stores(backend))
             }
             other => Err(format!("unsupported store backend: {other}").into()),
+        }
+    }
+
+    fn build_memory_stores() -> Stores {
+        let state = Arc::new(MemoryState::new());
+        Stores {
+            agents: Arc::new(MemoryAgentStore::new(state.clone())),
+            tasks: Arc::new(MemoryTaskStore::new(state.clone())),
+            projects: Arc::new(MemoryProjectStore::new(state.clone())),
+            knowledge: Arc::new(MemoryKnowledgeStore::new(state.clone())),
+            messages: Arc::new(MemoryMessageStore::new(state.clone())),
+            locks: Arc::new(MemoryLockStore::new(state.clone())),
+            namespaces: Arc::new(MemoryNamespaceStore::new(state.clone())),
+            orgs: Arc::new(MemoryOrganizationStore::new(state.clone())),
+            edges: Arc::new(MemoryEdgeStore::new(state.clone())),
+            event_query: Arc::new(MemoryEventQueryAdapter(MemoryEventQuery::new(
+                state.clone(),
+            ))),
+            users: Arc::new(MemoryUserStore::new(state.clone())),
+            memberships: Arc::new(MemoryOrgMembershipStore::new(state)),
+        }
+    }
+
+    fn build_sqlite_stores(backend: SqliteDatabase) -> Stores {
+        use orchy_store_sqlite::*;
+        let conn = backend.conn();
+        Stores {
+            agents: Arc::new(SqliteAgentStore::new(conn.clone())),
+            tasks: Arc::new(SqliteTaskStore::new(conn.clone())),
+            projects: Arc::new(SqliteProjectStore::new(conn.clone())),
+            knowledge: Arc::new(SqliteKnowledgeStore::new(conn.clone())),
+            messages: Arc::new(SqliteMessageStore::new(conn.clone())),
+            locks: Arc::new(SqliteLockStore::new(conn.clone())),
+            namespaces: Arc::new(SqliteNamespaceStore::new(conn.clone())),
+            orgs: Arc::new(SqliteOrganizationStore::new(conn.clone())),
+            edges: Arc::new(SqliteEdgeStore::new(conn.clone())),
+            event_query: Arc::new(SqliteEventQueryAdapter(SqliteEventQuery::new(conn.clone()))),
+            users: Arc::new(SqliteUserStore::new(conn.clone())),
+            memberships: Arc::new(SqliteOrgMembershipStore::new(conn)),
+        }
+    }
+
+    fn build_pg_stores(backend: PgDatabase) -> Stores {
+        use orchy_store_pg::*;
+        let pool = backend.pool();
+        let dims = backend.embedding_dimensions();
+        Stores {
+            agents: Arc::new(PgAgentStore::new(pool.clone())),
+            tasks: Arc::new(PgTaskStore::new(pool.clone())),
+            projects: Arc::new(PgProjectStore::new(pool.clone())),
+            knowledge: Arc::new(PgKnowledgeStore::new(pool.clone(), dims)),
+            messages: Arc::new(PgMessageStore::new(pool.clone())),
+            locks: Arc::new(PgLockStore::new(pool.clone())),
+            namespaces: Arc::new(PgNamespaceStore::new(pool.clone())),
+            orgs: Arc::new(PgOrganizationStore::new(pool.clone())),
+            edges: Arc::new(PgEdgeStore::new(pool.clone())),
+            event_query: Arc::new(PgEventQueryAdapter(orchy_store_pg::PgEventQuery::new(
+                pool.clone(),
+            ))),
+            users: Arc::new(PgUserStore::new(pool.clone())),
+            memberships: Arc::new(PgOrgMembershipStore::new(pool)),
         }
     }
 

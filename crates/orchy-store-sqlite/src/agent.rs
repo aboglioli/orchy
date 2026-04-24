@@ -11,12 +11,22 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::user::UserId;
 
-use crate::SqliteBackend;
+use crate::SqliteConn;
 
 const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id";
 
+pub struct SqliteAgentStore {
+    conn: SqliteConn,
+}
+
+impl SqliteAgentStore {
+    pub fn new(conn: SqliteConn) -> Self {
+        Self { conn }
+    }
+}
+
 #[async_trait]
-impl AgentStore for SqliteBackend {
+impl AgentStore for SqliteAgentStore {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn

@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use pgvector::Vector;
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
@@ -20,7 +20,7 @@ use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_events::io::Writer;
 
 use crate::{
-    PgBackend, decode_json_value, events::PgEventWriter, parse_namespace, parse_pg_vector_text,
+    decode_json_value, events::PgEventWriter, parse_namespace, parse_pg_vector_text,
     parse_project_id,
 };
 
@@ -66,8 +66,23 @@ enum KnowledgeEntries {
 
 const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding::text, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at";
 
+pub struct PgKnowledgeStore {
+    pool: PgPool,
+    #[allow(dead_code)]
+    embedding_dimensions: Option<u32>,
+}
+
+impl PgKnowledgeStore {
+    pub fn new(pool: PgPool, embedding_dimensions: Option<u32>) -> Self {
+        Self {
+            pool,
+            embedding_dimensions,
+        }
+    }
+}
+
 #[async_trait]
-impl KnowledgeStore for PgBackend {
+impl KnowledgeStore for PgKnowledgeStore {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
         let tags_json = serde_json::to_value(entry.tags()).map_err(|e| {

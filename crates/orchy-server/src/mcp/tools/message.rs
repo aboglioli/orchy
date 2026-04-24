@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use orchy_application::SendMessageCommand;
-use orchy_core::agent::AgentStore;
 use orchy_core::message::MessageId;
 use orchy_core::resource_ref::ResourceRef;
 
@@ -39,7 +38,7 @@ pub(super) async fn send_message(
         let (_, org, project, _) = h.require_session().await?;
         let agent = h
             .container
-            .store
+            .agent_store
             .find_by_alias(&org, &project, &alias)
             .await
             .map_err(|e| e.to_string())?

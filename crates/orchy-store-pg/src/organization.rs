@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
@@ -12,10 +12,20 @@ use orchy_core::organization::{
 use orchy_core::user::UserId;
 use orchy_events::io::Writer;
 
-use crate::{PgBackend, events::PgEventWriter};
+use crate::events::PgEventWriter;
+
+pub struct PgOrganizationStore {
+    pool: PgPool,
+}
+
+impl PgOrganizationStore {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
 
 #[async_trait]
-impl OrganizationStore for PgBackend {
+impl OrganizationStore for PgOrganizationStore {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         let mut tx = self
             .pool

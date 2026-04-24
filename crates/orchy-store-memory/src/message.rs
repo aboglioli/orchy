@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use orchy_core::agent::AgentId;
@@ -8,13 +10,23 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::user::UserId;
 
-use crate::MemoryBackend;
+use crate::MemoryState;
+
+pub struct MemoryMessageStore {
+    state: Arc<MemoryState>,
+}
+
+impl MemoryMessageStore {
+    pub fn new(state: Arc<MemoryState>) -> Self {
+        Self { state }
+    }
+}
 
 #[async_trait]
-impl MessageStore for MemoryBackend {
+impl MessageStore for MemoryMessageStore {
     async fn save(&self, message: &mut Message) -> Result<()> {
         let is_new = {
-            let mut messages = self.messages.write().await;
+            let mut messages = self.state.messages.write().await;
             let is_new = !messages.contains_key(&message.id());
             messages.insert(message.id(), message.clone());
             is_new
@@ -22,7 +34,8 @@ impl MessageStore for MemoryBackend {
 
         if is_new {
             if let Some(parent_id) = message.reply_to() {
-                self.message_replies
+                self.state
+                    .message_replies
                     .write()
                     .await
                     .entry(parent_id)
@@ -33,8 +46,10 @@ impl MessageStore for MemoryBackend {
 
         let events = message.drain_events();
         if !events.is_empty() {
-            if let Err(e) = orchy_events::io::Writer::write_all(self, &events).await {
-                tracing::error!("failed to persist events: {e}");
+            for event in events {
+                let serialized = orchy_events::SerializedEvent::from_event(&event)
+                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                self.state.events.write().await.push(serialized);
             }
         }
 
@@ -42,12 +57,12 @@ impl MessageStore for MemoryBackend {
     }
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
-        let messages = self.messages.read().await;
+        let messages = self.state.messages.read().await;
         Ok(messages.get(id).cloned())
     }
 
     async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
-        let mut receipts = self.message_receipts.write().await;
+        let mut receipts = self.state.message_receipts.write().await;
         for id in message_ids {
             receipts.insert((*id, agent.clone()));
         }
@@ -64,8 +79,8 @@ impl MessageStore for MemoryBackend {
         project: &ProjectId,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let messages = self.messages.read().await;
-        let receipts = self.message_receipts.read().await;
+        let messages = self.state.messages.read().await;
+        let receipts = self.state.message_receipts.read().await;
 
         let mut results = Vec::new();
 
@@ -74,7 +89,6 @@ impl MessageStore for MemoryBackend {
                 continue;
             }
 
-            // Already read by this agent
             if receipts.contains(&(msg.id(), agent.clone())) {
                 continue;
             }
@@ -95,7 +109,6 @@ impl MessageStore for MemoryBackend {
                 continue;
             }
 
-            // Claim filter: hide from default inbox if claimed by another agent
             if let Some(claimed_by) = msg.claimed_by() {
                 if claimed_by != agent {
                     continue;
@@ -118,7 +131,7 @@ impl MessageStore for MemoryBackend {
         namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let messages = self.messages.read().await;
+        let messages = self.state.messages.read().await;
 
         let mut results: Vec<Message> = messages
             .values()
@@ -143,8 +156,8 @@ impl MessageStore for MemoryBackend {
         message_id: &MessageId,
         limit: Option<usize>,
     ) -> Result<Vec<Message>> {
-        let messages = self.messages.read().await;
-        let replies = self.message_replies.read().await;
+        let messages = self.state.messages.read().await;
+        let replies = self.state.message_replies.read().await;
 
         let start = match messages.get(message_id) {
             Some(m) => m.clone(),
@@ -195,7 +208,7 @@ impl MessageStore for MemoryBackend {
     }
 
     async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>> {
-        let messages = self.messages.read().await;
+        let messages = self.state.messages.read().await;
         Ok(ids
             .iter()
             .filter_map(|id| messages.get(id))

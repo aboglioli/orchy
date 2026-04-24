@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use orchy_core::error::{Error, Result};
@@ -10,13 +12,23 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::resource_ref::ResourceKind;
 
-use crate::MemoryBackend;
+use crate::MemoryState;
+
+pub struct MemoryKnowledgeStore {
+    state: Arc<MemoryState>,
+}
+
+impl MemoryKnowledgeStore {
+    pub fn new(state: Arc<MemoryState>) -> Self {
+        Self { state }
+    }
+}
 
 #[async_trait]
-impl KnowledgeStore for MemoryBackend {
+impl KnowledgeStore for MemoryKnowledgeStore {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         {
-            let mut entries = self.knowledge_entries.write().await;
+            let mut entries = self.state.knowledge_entries.write().await;
 
             if let Some(pv) = entry.persisted_version() {
                 if let Some(existing) = entries.get(&entry.id()) {
@@ -35,15 +47,17 @@ impl KnowledgeStore for MemoryBackend {
 
         let events = entry.drain_events();
         if !events.is_empty() {
-            if let Err(e) = orchy_events::io::Writer::write_all(self, &events).await {
-                tracing::error!("failed to persist events: {e}");
+            for event in events {
+                let serialized = orchy_events::SerializedEvent::from_event(&event)
+                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                self.state.events.write().await.push(serialized);
             }
         }
         Ok(())
     }
 
     async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
-        let entries = self.knowledge_entries.read().await;
+        let entries = self.state.knowledge_entries.read().await;
         Ok(entries.get(id).cloned())
     }
 
@@ -54,7 +68,7 @@ impl KnowledgeStore for MemoryBackend {
         namespace: &Namespace,
         path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
-        let entries = self.knowledge_entries.read().await;
+        let entries = self.state.knowledge_entries.read().await;
         Ok(entries
             .values()
             .find(|e| {
@@ -68,7 +82,7 @@ impl KnowledgeStore for MemoryBackend {
 
     async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
         let results: Vec<Knowledge> = {
-            let entries = self.knowledge_entries.read().await;
+            let entries = self.state.knowledge_entries.read().await;
             entries
                 .values()
                 .filter(|e| {
@@ -121,7 +135,7 @@ impl KnowledgeStore for MemoryBackend {
         };
 
         let results = if let Some(orphaned) = filter.orphaned {
-            let edges = self.edges.read().await;
+            let edges = self.state.edges.read().await;
             results
                 .into_iter()
                 .filter(|entry| {
@@ -155,7 +169,7 @@ impl KnowledgeStore for MemoryBackend {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<(Knowledge, Option<f32>)>> {
-        let entries = self.knowledge_entries.read().await;
+        let entries = self.state.knowledge_entries.read().await;
 
         let query_lower = query.to_lowercase();
         let mut scored: Vec<(f32, &Knowledge)> = entries
@@ -198,7 +212,7 @@ impl KnowledgeStore for MemoryBackend {
     }
 
     async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>> {
-        let entries = self.knowledge_entries.read().await;
+        let entries = self.state.knowledge_entries.read().await;
         Ok(ids
             .iter()
             .filter_map(|id| entries.get(id))
@@ -207,7 +221,7 @@ impl KnowledgeStore for MemoryBackend {
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
-        let mut entries = self.knowledge_entries.write().await;
+        let mut entries = self.state.knowledge_entries.write().await;
         entries.remove(id);
         Ok(())
     }

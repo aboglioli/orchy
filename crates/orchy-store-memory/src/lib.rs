@@ -4,7 +4,6 @@ mod agent;
 mod edge;
 mod events;
 mod knowledge;
-#[cfg(test)]
 mod membership;
 mod message;
 mod namespace;
@@ -12,9 +11,7 @@ mod organization;
 mod project;
 mod resource_lock;
 mod task;
-#[cfg(test)]
 mod user;
-mod user_stores;
 
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
@@ -33,7 +30,20 @@ use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskId};
 use orchy_core::user::{OrgMembership, User, UserId};
 
-pub struct MemoryBackend {
+pub use agent::MemoryAgentStore;
+pub use edge::MemoryEdgeStore;
+pub use events::{MemoryEventQuery, MemoryEventWriter};
+pub use knowledge::MemoryKnowledgeStore;
+pub use membership::MemoryOrgMembershipStore;
+pub use message::MemoryMessageStore;
+pub use namespace::MemoryNamespaceStore;
+pub use organization::MemoryOrganizationStore;
+pub use project::MemoryProjectStore;
+pub use resource_lock::MemoryLockStore;
+pub use task::MemoryTaskStore;
+pub use user::MemoryUserStore;
+
+pub struct MemoryState {
     pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
     pub(crate) edges: RwLock<HashMap<EdgeId, Edge>>,
     pub(crate) edges_by_from: RwLock<HashMap<(ResourceKind, String), Vec<EdgeId>>>,
@@ -56,7 +66,7 @@ pub struct MemoryBackend {
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
 }
 
-impl MemoryBackend {
+impl MemoryState {
     pub fn new() -> Self {
         Self {
             agents: RwLock::new(HashMap::new()),
@@ -82,7 +92,7 @@ impl MemoryBackend {
     }
 }
 
-impl Default for MemoryBackend {
+impl Default for MemoryState {
     fn default() -> Self {
         Self::new()
     }

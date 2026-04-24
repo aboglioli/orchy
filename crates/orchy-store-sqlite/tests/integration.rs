@@ -2,23 +2,43 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 
-use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
-use orchy_core::graph::{Edge, EdgeStore, RelationType, TraversalDirection};
+use orchy_core::agent::{Agent, AgentId, AgentStore as _, Alias};
+use orchy_core::graph::{Edge, EdgeStore as _, RelationType, TraversalDirection};
 use orchy_core::knowledge::{
-    Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgePath, KnowledgeStore,
+    Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgePath, KnowledgeStore as _,
 };
-use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
+use orchy_core::message::{Message, MessageStatus, MessageStore as _, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::resource_ref::ResourceKind;
-use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore};
-use orchy_store_sqlite::SqliteBackend;
+use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore as _};
+use orchy_store_sqlite::{
+    SqliteAgentStore, SqliteDatabase, SqliteEdgeStore, SqliteEventQuery, SqliteKnowledgeStore,
+    SqliteMessageStore, SqliteTaskStore,
+};
 
-fn backend() -> SqliteBackend {
-    let store = SqliteBackend::new(":memory:", None).unwrap();
-    store.apply_schema().unwrap();
-    store
+struct Stores {
+    agent: SqliteAgentStore,
+    task: SqliteTaskStore,
+    message: SqliteMessageStore,
+    knowledge: SqliteKnowledgeStore,
+    edge: SqliteEdgeStore,
+    events: SqliteEventQuery,
+}
+
+fn backend() -> Stores {
+    let db = SqliteDatabase::new(":memory:", None).unwrap();
+    db.apply_schema().unwrap();
+    let conn = db.conn();
+    Stores {
+        agent: SqliteAgentStore::new(conn.clone()),
+        task: SqliteTaskStore::new(conn.clone()),
+        message: SqliteMessageStore::new(conn.clone()),
+        knowledge: SqliteKnowledgeStore::new(conn.clone()),
+        edge: SqliteEdgeStore::new(conn.clone()),
+        events: SqliteEventQuery::new(conn),
+    }
 }
 
 fn ns(s: &str) -> Namespace {
@@ -35,7 +55,7 @@ fn org(s: &str) -> OrganizationId {
 
 #[tokio::test]
 async fn agent_save_and_find() {
-    let store = backend();
+    let s = backend();
     let mut agent = Agent::register(
         org("default"),
         proj("myapp"),
@@ -48,21 +68,18 @@ async fn agent_save_and_find() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    s.agent.save(&mut agent).await.unwrap();
 
     assert_eq!(agent.derived_status(30, 300), "active");
     assert_eq!(agent.roles(), &["coder".to_string()]);
 
-    let fetched = AgentStore::find_by_id(&store, agent.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let fetched = s.agent.find_by_id(agent.id()).await.unwrap().unwrap();
     assert_eq!(fetched.id(), agent.id());
 }
 
 #[tokio::test]
 async fn agent_save_updates_existing() {
-    let store = backend();
+    let s = backend();
     let mut agent = Agent::register(
         org("default"),
         proj("test-project"),
@@ -75,23 +92,20 @@ async fn agent_save_updates_existing() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    s.agent.save(&mut agent).await.unwrap();
 
     let before = agent.last_seen();
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     agent.heartbeat().unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    s.agent.save(&mut agent).await.unwrap();
 
-    let updated = AgentStore::find_by_id(&store, agent.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let updated = s.agent.find_by_id(agent.id()).await.unwrap().unwrap();
     assert!(updated.last_seen() > before);
 }
 
 #[tokio::test]
 async fn agent_save_and_fetch_roundtrip() {
-    let store = backend();
+    let s = backend();
     let mut agent = Agent::register(
         org("default"),
         proj("test-project"),
@@ -104,20 +118,17 @@ async fn agent_save_and_fetch_roundtrip() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    s.agent.save(&mut agent).await.unwrap();
 
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    s.agent.save(&mut agent).await.unwrap();
 
-    let fetched = AgentStore::find_by_id(&store, agent.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let fetched = s.agent.find_by_id(agent.id()).await.unwrap().unwrap();
     assert_eq!(fetched.alias().as_str(), "test-agent");
 }
 
 #[tokio::test]
 async fn agent_find_timed_out() {
-    let store = backend();
+    let s = backend();
     let mut agent = Agent::register(
         org("default"),
         proj("test-project"),
@@ -130,21 +141,21 @@ async fn agent_find_timed_out() {
         None,
     )
     .unwrap();
-    AgentStore::save(&store, &mut agent).await.unwrap();
+    s.agent.save(&mut agent).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
+    let timed_out = s.agent.find_timed_out(0).await.unwrap();
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 
-    AgentStore::save(&store, &mut agent).await.unwrap();
-    let timed_out = AgentStore::find_timed_out(&store, 0).await.unwrap();
+    s.agent.save(&mut agent).await.unwrap();
+    let timed_out = s.agent.find_timed_out(0).await.unwrap();
     // agent was saved with current timestamp and is still timed out at threshold 0
     assert!(timed_out.iter().any(|a| a.id() == agent.id()));
 }
 
 #[tokio::test]
 async fn task_save_and_get() {
-    let store = backend();
+    let s = backend();
     let mut task = Task::new(
         org("default"),
         proj("proj"),
@@ -159,12 +170,9 @@ async fn task_save_and_get() {
     )
     .unwrap();
 
-    TaskStore::save(&store, &mut task).await.unwrap();
+    s.task.save(&mut task).await.unwrap();
 
-    let fetched = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let fetched = s.task.find_by_id(&task.id()).await.unwrap().unwrap();
     assert_eq!(fetched.status(), TaskStatus::Pending);
     assert_eq!(fetched.title(), "Do thing");
     assert_eq!(fetched.description(), "Details");
@@ -174,7 +182,7 @@ async fn task_save_and_get() {
 
 #[tokio::test]
 async fn task_save_persists_event_log() {
-    let store = backend();
+    let s = backend();
     let organization = org("default");
     let mut task = Task::new(
         organization.clone(),
@@ -190,9 +198,10 @@ async fn task_save_persists_event_log() {
     )
     .unwrap();
 
-    TaskStore::save(&store, &mut task).await.unwrap();
+    s.task.save(&mut task).await.unwrap();
 
-    let events = store
+    let events = s
+        .events
         .query_events(
             organization.as_str(),
             chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
@@ -205,7 +214,7 @@ async fn task_save_persists_event_log() {
 
 #[tokio::test]
 async fn task_save_overwrites_existing() {
-    let store = backend();
+    let s = backend();
     let mut task = Task::new(
         org("default"),
         proj("proj"),
@@ -220,7 +229,7 @@ async fn task_save_overwrites_existing() {
     )
     .unwrap();
 
-    TaskStore::save(&store, &mut task).await.unwrap();
+    s.task.save(&mut task).await.unwrap();
 
     let mut updated = Task::restore(RestoreTask {
         id: task.id(),
@@ -244,12 +253,9 @@ async fn task_save_overwrites_existing() {
         created_at: task.created_at(),
         updated_at: task.updated_at(),
     });
-    TaskStore::save(&store, &mut updated).await.unwrap();
+    s.task.save(&mut updated).await.unwrap();
 
-    let fetched = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let fetched = s.task.find_by_id(&task.id()).await.unwrap().unwrap();
     assert_eq!(fetched.title(), "updated");
     assert_eq!(fetched.status(), TaskStatus::Completed);
     assert_eq!(fetched.result_summary(), Some("done"));
@@ -257,7 +263,7 @@ async fn task_save_overwrites_existing() {
 
 #[tokio::test]
 async fn task_list_sorted_by_priority() {
-    let store = backend();
+    let s = backend();
 
     let mut low = Task::new(
         org("default"),
@@ -272,7 +278,7 @@ async fn task_list_sorted_by_priority() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &mut low).await.unwrap();
+    s.task.save(&mut low).await.unwrap();
 
     let mut critical = Task::new(
         org("default"),
@@ -287,9 +293,11 @@ async fn task_list_sorted_by_priority() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &mut critical).await.unwrap();
+    s.task.save(&mut critical).await.unwrap();
 
-    let page = TaskStore::list(&store, TaskFilter::default(), PageParams::unbounded())
+    let page = s
+        .task
+        .list(TaskFilter::default(), PageParams::unbounded())
         .await
         .unwrap();
     assert_eq!(page.items[0].title(), "critical");
@@ -298,7 +306,7 @@ async fn task_list_sorted_by_priority() {
 
 #[tokio::test]
 async fn message_save_and_find_unread() {
-    let store = backend();
+    let s = backend();
 
     let from = AgentId::new();
     let to = AgentId::new();
@@ -317,48 +325,48 @@ async fn message_save_and_find_unread() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg).await.unwrap();
+    s.message.save(&mut msg).await.unwrap();
     assert_eq!(msg.status(), MessageStatus::Pending);
 
-    let page = MessageStore::find_unread(
-        &store,
-        &to,
-        &[],
-        &Namespace::root(),
-        None,
-        &o,
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
+    let page = s
+        .message
+        .find_unread(
+            &to,
+            &[],
+            &Namespace::root(),
+            None,
+            &o,
+            &p,
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].body(), "hello");
     assert_eq!(page.items[0].status(), MessageStatus::Pending);
 
     let msg_id = page.items[0].id();
-    MessageStore::mark_read(&store, &to, &[msg_id])
+    s.message.mark_read(&to, &[msg_id]).await.unwrap();
+
+    let page = s
+        .message
+        .find_unread(
+            &to,
+            &[],
+            &Namespace::root(),
+            None,
+            &o,
+            &p,
+            PageParams::unbounded(),
+        )
         .await
         .unwrap();
-
-    let page = MessageStore::find_unread(
-        &store,
-        &to,
-        &[],
-        &Namespace::root(),
-        None,
-        &o,
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
     assert!(page.items.is_empty());
 }
 
 #[tokio::test]
 async fn message_find_by_id_and_mark_read() {
-    let store = backend();
+    let s = backend();
 
     let from = AgentId::new();
     let to = AgentId::new();
@@ -377,25 +385,19 @@ async fn message_find_by_id_and_mark_read() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg).await.unwrap();
+    s.message.save(&mut msg).await.unwrap();
 
-    let mut fetched = MessageStore::find_by_id(&store, &msg.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut fetched = s.message.find_by_id(&msg.id()).await.unwrap().unwrap();
     fetched.mark_read().unwrap();
-    MessageStore::save(&store, &mut fetched).await.unwrap();
+    s.message.save(&mut fetched).await.unwrap();
 
-    let read = MessageStore::find_by_id(&store, &msg.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let read = s.message.find_by_id(&msg.id()).await.unwrap().unwrap();
     assert_eq!(read.status(), MessageStatus::Read);
 }
 
 #[tokio::test]
 async fn message_find_sent() {
-    let store = backend();
+    let s = backend();
     let sender = AgentId::new();
     let receiver = AgentId::new();
     let o = org("default");
@@ -412,37 +414,33 @@ async fn message_find_sent() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg).await.unwrap();
+    s.message.save(&mut msg).await.unwrap();
 
-    let sent = MessageStore::find_sent(
-        &store,
-        &sender,
-        &o,
-        &p,
-        &Namespace::root(),
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
+    let sent = s
+        .message
+        .find_sent(&sender, &o, &p, &Namespace::root(), PageParams::unbounded())
+        .await
+        .unwrap();
     assert_eq!(sent.items.len(), 1);
     assert_eq!(sent.items[0].body(), "hello");
 
-    let sent_other = MessageStore::find_sent(
-        &store,
-        &receiver,
-        &o,
-        &p,
-        &Namespace::root(),
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
+    let sent_other = s
+        .message
+        .find_sent(
+            &receiver,
+            &o,
+            &p,
+            &Namespace::root(),
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
     assert!(sent_other.items.is_empty());
 }
 
 #[tokio::test]
 async fn message_find_thread() {
-    let store = backend();
+    let s = backend();
     let a = AgentId::new();
     let b = AgentId::new();
     let o = org("default");
@@ -459,25 +457,21 @@ async fn message_find_thread() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg1).await.unwrap();
+    s.message.save(&mut msg1).await.unwrap();
 
     let mut msg2 = msg1.reply(b.clone(), "second".into()).unwrap();
-    MessageStore::save(&store, &mut msg2).await.unwrap();
+    s.message.save(&mut msg2).await.unwrap();
 
     let mut msg3 = msg2.reply(a.clone(), "third".into()).unwrap();
-    MessageStore::save(&store, &mut msg3).await.unwrap();
+    s.message.save(&mut msg3).await.unwrap();
 
-    let thread = MessageStore::find_thread(&store, &msg3.id(), None)
-        .await
-        .unwrap();
+    let thread = s.message.find_thread(&msg3.id(), None).await.unwrap();
     assert_eq!(thread.len(), 3);
     assert_eq!(thread[0].body(), "first");
     assert_eq!(thread[1].body(), "second");
     assert_eq!(thread[2].body(), "third");
 
-    let limited = MessageStore::find_thread(&store, &msg3.id(), Some(2))
-        .await
-        .unwrap();
+    let limited = s.message.find_thread(&msg3.id(), Some(2)).await.unwrap();
     assert_eq!(limited.len(), 2);
     assert_eq!(limited[0].body(), "second");
     assert_eq!(limited[1].body(), "third");
@@ -485,7 +479,7 @@ async fn message_find_thread() {
 
 #[tokio::test]
 async fn message_find_unread_includes_broadcast() {
-    let store = backend();
+    let s = backend();
     let sender = AgentId::new();
     let receiver = AgentId::new();
     let o = org("default");
@@ -502,59 +496,60 @@ async fn message_find_unread_includes_broadcast() {
         vec![],
     )
     .unwrap();
-    MessageStore::save(&store, &mut msg).await.unwrap();
+    s.message.save(&mut msg).await.unwrap();
 
-    let pending = MessageStore::find_unread(
-        &store,
-        &receiver,
-        &[],
-        &Namespace::root(),
-        None,
-        &o,
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
+    let pending = s
+        .message
+        .find_unread(
+            &receiver,
+            &[],
+            &Namespace::root(),
+            None,
+            &o,
+            &p,
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
     assert_eq!(pending.items.len(), 1);
     assert_eq!(pending.items[0].body(), "to all");
 
-    let sender_pending = MessageStore::find_unread(
-        &store,
-        &sender,
-        &[],
-        &Namespace::root(),
-        None,
-        &o,
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
-    assert!(sender_pending.items.is_empty());
-
-    MessageStore::mark_read(&store, &receiver, &[msg.id()])
+    let sender_pending = s
+        .message
+        .find_unread(
+            &sender,
+            &[],
+            &Namespace::root(),
+            None,
+            &o,
+            &p,
+            PageParams::unbounded(),
+        )
         .await
         .unwrap();
+    assert!(sender_pending.items.is_empty());
 
-    let after_read = MessageStore::find_unread(
-        &store,
-        &receiver,
-        &[],
-        &Namespace::root(),
-        None,
-        &o,
-        &p,
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
+    s.message.mark_read(&receiver, &[msg.id()]).await.unwrap();
+
+    let after_read = s
+        .message
+        .find_unread(
+            &receiver,
+            &[],
+            &Namespace::root(),
+            None,
+            &o,
+            &p,
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
     assert!(after_read.items.is_empty());
 }
 
 #[tokio::test]
 async fn task_list_filters_by_assigned_to() {
-    let store = backend();
+    let s = backend();
     let agent = AgentId::new();
 
     let mut task = Task::new(
@@ -571,25 +566,26 @@ async fn task_list_filters_by_assigned_to() {
     )
     .unwrap();
     task.claim(agent.clone()).unwrap();
-    TaskStore::save(&store, &mut task).await.unwrap();
+    s.task.save(&mut task).await.unwrap();
 
-    let assigned = TaskStore::list(
-        &store,
-        TaskFilter {
-            assigned_to: Some(agent),
-            ..Default::default()
-        },
-        PageParams::unbounded(),
-    )
-    .await
-    .unwrap();
+    let assigned = s
+        .task
+        .list(
+            TaskFilter {
+                assigned_to: Some(agent),
+                ..Default::default()
+            },
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
     assert_eq!(assigned.items.len(), 1);
     assert_eq!(assigned.items[0].title(), "assigned");
 }
 
 #[tokio::test]
 async fn task_archive_and_unarchive() {
-    let store = backend();
+    let s = backend();
     let mut task = Task::new(
         org("default"),
         proj("test-project"),
@@ -603,31 +599,22 @@ async fn task_archive_and_unarchive() {
         false,
     )
     .unwrap();
-    TaskStore::save(&store, &mut task).await.unwrap();
+    s.task.save(&mut task).await.unwrap();
 
     let agent_id = "01234567-89ab-cdef-0123-456789abcdef"
         .parse::<AgentId>()
         .unwrap();
-    let mut task = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut task = s.task.find_by_id(&task.id()).await.unwrap().unwrap();
     task.claim(agent_id.clone()).unwrap();
     task.start(&agent_id).unwrap();
     task.complete(Some("done".into())).unwrap();
-    TaskStore::save(&store, &mut task).await.unwrap();
+    s.task.save(&mut task).await.unwrap();
 
-    let mut fetched = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut fetched = s.task.find_by_id(&task.id()).await.unwrap().unwrap();
     fetched.archive(Some("completed".into())).unwrap();
-    TaskStore::save(&store, &mut fetched).await.unwrap();
+    s.task.save(&mut fetched).await.unwrap();
 
-    let archived = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let archived = s.task.find_by_id(&task.id()).await.unwrap().unwrap();
     assert!(archived.is_archived());
     assert!(archived.archived_at().is_some());
 
@@ -637,9 +624,7 @@ async fn task_archive_and_unarchive() {
         include_archived: Some(false),
         ..Default::default()
     };
-    let page = TaskStore::list(&store, filter, PageParams::default())
-        .await
-        .unwrap();
+    let page = s.task.list(filter, PageParams::default()).await.unwrap();
     assert!(page.items.iter().all(|task| !task.is_archived()));
 
     let filter = TaskFilter {
@@ -648,27 +633,19 @@ async fn task_archive_and_unarchive() {
         include_archived: Some(true),
         ..Default::default()
     };
-    let page = TaskStore::list(&store, filter, PageParams::default())
-        .await
-        .unwrap();
+    let page = s.task.list(filter, PageParams::default()).await.unwrap();
     assert!(page.items.iter().any(|task| task.is_archived()));
 
-    let mut restored = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut restored = s.task.find_by_id(&task.id()).await.unwrap().unwrap();
     restored.unarchive().unwrap();
-    TaskStore::save(&store, &mut restored).await.unwrap();
-    let active = TaskStore::find_by_id(&store, &task.id())
-        .await
-        .unwrap()
-        .unwrap();
+    s.task.save(&mut restored).await.unwrap();
+    let active = s.task.find_by_id(&task.id()).await.unwrap().unwrap();
     assert!(!active.is_archived());
 }
 
 #[tokio::test]
 async fn knowledge_search_fts_finds_content() {
-    let store = backend();
+    let s = backend();
     let o = org("default");
     let mut entry = Knowledge::new(
         o.clone(),
@@ -682,9 +659,11 @@ async fn knowledge_search_fts_finds_content() {
         HashMap::new(),
     )
     .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
 
-    let hits = KnowledgeStore::search(&store, &o, "cryptography", None, None, 10)
+    let hits = s
+        .knowledge
+        .search(&o, "cryptography", None, None, 10)
         .await
         .unwrap();
     assert_eq!(hits.len(), 1);
@@ -693,7 +672,7 @@ async fn knowledge_search_fts_finds_content() {
 
 #[tokio::test]
 async fn knowledge_archive_and_unarchive() {
-    let store = backend();
+    let s = backend();
     let mut entry = Knowledge::new(
         org("default"),
         Some(proj("test-project")),
@@ -706,19 +685,13 @@ async fn knowledge_archive_and_unarchive() {
         Default::default(),
     )
     .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
 
-    let mut fetched = KnowledgeStore::find_by_id(&store, &entry.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut fetched = s.knowledge.find_by_id(&entry.id()).await.unwrap().unwrap();
     fetched.archive(Some("test reason".into())).unwrap();
-    KnowledgeStore::save(&store, &mut fetched).await.unwrap();
+    s.knowledge.save(&mut fetched).await.unwrap();
 
-    let archived = KnowledgeStore::find_by_id(&store, &entry.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let archived = s.knowledge.find_by_id(&entry.id()).await.unwrap().unwrap();
     assert!(archived.is_archived());
     assert!(archived.archived_at().is_some());
 
@@ -728,7 +701,9 @@ async fn knowledge_archive_and_unarchive() {
         include_archived: Some(false),
         ..Default::default()
     };
-    let page = KnowledgeStore::list(&store, filter, PageParams::default())
+    let page = s
+        .knowledge
+        .list(filter, PageParams::default())
         .await
         .unwrap();
     assert!(page.items.iter().all(|entry| !entry.is_archived()));
@@ -739,27 +714,23 @@ async fn knowledge_archive_and_unarchive() {
         include_archived: Some(true),
         ..Default::default()
     };
-    let page = KnowledgeStore::list(&store, filter, PageParams::default())
+    let page = s
+        .knowledge
+        .list(filter, PageParams::default())
         .await
         .unwrap();
     assert!(page.items.iter().any(|entry| entry.is_archived()));
 
-    let mut restored = KnowledgeStore::find_by_id(&store, &entry.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut restored = s.knowledge.find_by_id(&entry.id()).await.unwrap().unwrap();
     restored.unarchive().unwrap();
-    KnowledgeStore::save(&store, &mut restored).await.unwrap();
-    let active = KnowledgeStore::find_by_id(&store, &entry.id())
-        .await
-        .unwrap()
-        .unwrap();
+    s.knowledge.save(&mut restored).await.unwrap();
+    let active = s.knowledge.find_by_id(&entry.id()).await.unwrap().unwrap();
     assert!(!active.is_archived());
 }
 
 #[tokio::test]
 async fn knowledge_find_by_path_returns_archived() {
-    let store = backend();
+    let s = backend();
     let mut entry = Knowledge::new(
         org("default"),
         Some(proj("test-project")),
@@ -772,33 +743,29 @@ async fn knowledge_find_by_path_returns_archived() {
         Default::default(),
     )
     .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
 
-    // Archive
-    let mut fetched = KnowledgeStore::find_by_id(&store, &entry.id())
+    let mut fetched = s.knowledge.find_by_id(&entry.id()).await.unwrap().unwrap();
+    fetched.archive(None).unwrap();
+    s.knowledge.save(&mut fetched).await.unwrap();
+
+    let found = s
+        .knowledge
+        .find_by_path(
+            &org("default"),
+            Some(&proj("test-project")),
+            &Namespace::root(),
+            &"test-arch-path".parse::<KnowledgePath>().unwrap(),
+        )
         .await
         .unwrap()
         .unwrap();
-    fetched.archive(None).unwrap();
-    KnowledgeStore::save(&store, &mut fetched).await.unwrap();
-
-    // find_by_path still returns archived entries (for edge traversal)
-    let found = KnowledgeStore::find_by_path(
-        &store,
-        &org("default"),
-        Some(&proj("test-project")),
-        &Namespace::root(),
-        &"test-arch-path".parse::<KnowledgePath>().unwrap(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
     assert!(found.is_archived());
 }
 
 #[tokio::test]
 async fn knowledge_metadata_merge_and_remove() {
-    let store = backend();
+    let s = backend();
     let o = org("default");
 
     let mut md = HashMap::new();
@@ -815,67 +782,71 @@ async fn knowledge_metadata_merge_and_remove() {
         md,
     )
     .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
 
-    let mut entry = KnowledgeStore::find_by_path(
-        &store,
-        &o,
-        Some(&proj("p")),
-        &Namespace::root(),
-        &KnowledgePath::new("meta-test").unwrap(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let mut entry = s
+        .knowledge
+        .find_by_path(
+            &o,
+            Some(&proj("p")),
+            &Namespace::root(),
+            &KnowledgePath::new("meta-test").unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     entry.update("t".into(), "body2".into()).unwrap();
     entry.remove_metadata("a").unwrap();
     entry.set_metadata("b".into(), "2".into()).unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
 
-    let entry = KnowledgeStore::find_by_path(
-        &store,
-        &o,
-        Some(&proj("p")),
-        &Namespace::root(),
-        &KnowledgePath::new("meta-test").unwrap(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let entry = s
+        .knowledge
+        .find_by_path(
+            &o,
+            Some(&proj("p")),
+            &Namespace::root(),
+            &KnowledgePath::new("meta-test").unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(entry.metadata().get("a"), None);
     assert_eq!(entry.metadata().get("b").map(String::as_str), Some("2"));
 
-    let mut entry = KnowledgeStore::find_by_path(
-        &store,
-        &o,
-        Some(&proj("p")),
-        &Namespace::root(),
-        &KnowledgePath::new("meta-test").unwrap(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let mut entry = s
+        .knowledge
+        .find_by_path(
+            &o,
+            Some(&proj("p")),
+            &Namespace::root(),
+            &KnowledgePath::new("meta-test").unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     entry.remove_metadata("b").unwrap();
     entry.set_metadata("c".into(), "3".into()).unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
 
-    let entry = KnowledgeStore::find_by_path(
-        &store,
-        &o,
-        Some(&proj("p")),
-        &Namespace::root(),
-        &KnowledgePath::new("meta-test").unwrap(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let entry = s
+        .knowledge
+        .find_by_path(
+            &o,
+            Some(&proj("p")),
+            &Namespace::root(),
+            &KnowledgePath::new("meta-test").unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(entry.metadata().get("b"), None);
     assert_eq!(entry.metadata().get("c").map(String::as_str), Some("3"));
 }
 
 #[tokio::test]
 async fn knowledge_optimistic_concurrency_rejects_stale_version() {
-    let store = backend();
+    let s = backend();
     let o = org("default");
 
     let mut entry = Knowledge::new(
@@ -890,30 +861,27 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
         HashMap::new(),
     )
     .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 1);
 
     entry
         .update("v2 title".into(), "v2 content".into())
         .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 2);
 
-    let mut stale = KnowledgeStore::find_by_id(&store, &entry.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut stale = s.knowledge.find_by_id(&entry.id()).await.unwrap().unwrap();
     assert_eq!(stale.version().as_u64(), 2);
 
     entry
         .update("v3 title".into(), "v3 content".into())
         .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 3);
 
     stale.update("stale update".into(), "stale".into()).unwrap();
     assert_eq!(stale.version().as_u64(), 3);
-    let err = KnowledgeStore::save(&store, &mut stale).await.unwrap_err();
+    let err = s.knowledge.save(&mut stale).await.unwrap_err();
     assert!(
         matches!(
             err,
@@ -928,7 +896,7 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
 
 #[tokio::test]
 async fn knowledge_optimistic_concurrency_allows_correct_version() {
-    let store = backend();
+    let s = backend();
 
     let mut entry = Knowledge::new(
         org("default"),
@@ -942,27 +910,24 @@ async fn knowledge_optimistic_concurrency_allows_correct_version() {
         HashMap::new(),
     )
     .unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
 
     entry.update("v2".into(), "v2".into()).unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 2);
 
     entry.update("v3".into(), "v3".into()).unwrap();
-    KnowledgeStore::save(&store, &mut entry).await.unwrap();
+    s.knowledge.save(&mut entry).await.unwrap();
     assert_eq!(entry.version().as_u64(), 3);
 
-    let fetched = KnowledgeStore::find_by_id(&store, &entry.id())
-        .await
-        .unwrap()
-        .unwrap();
+    let fetched = s.knowledge.find_by_id(&entry.id()).await.unwrap().unwrap();
     assert_eq!(fetched.version().as_u64(), 3);
     assert_eq!(fetched.title(), "v3");
 }
 
 #[tokio::test]
 async fn edge_valid_until_persisted_and_filtered() {
-    let store = backend();
+    let s = backend();
     let org = org("default");
     let mut edge = Edge::new(
         org.clone(),
@@ -974,18 +939,22 @@ async fn edge_valid_until_persisted_and_filtered() {
         None,
     )
     .unwrap();
-    EdgeStore::save(&store, &mut edge).await.unwrap();
+    s.edge.save(&mut edge).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", &[], None)
+    let found = s
+        .edge
+        .find_from(&org, &ResourceKind::Task, "t1", &[], None)
         .await
         .unwrap();
     assert_eq!(found.len(), 1);
 
     let mut invalidated = found.into_iter().next().unwrap();
     invalidated.invalidate().unwrap();
-    EdgeStore::save(&store, &mut invalidated).await.unwrap();
+    s.edge.save(&mut invalidated).await.unwrap();
 
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", &[], None)
+    let found = s
+        .edge
+        .find_from(&org, &ResourceKind::Task, "t1", &[], None)
         .await
         .unwrap();
     assert!(found.is_empty());
@@ -993,7 +962,7 @@ async fn edge_valid_until_persisted_and_filtered() {
 
 #[tokio::test]
 async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
-    let store = backend();
+    let s = backend();
     let o = org("default");
 
     let mut edge_to_root = Edge::new(
@@ -1017,25 +986,24 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
     )
     .unwrap();
 
-    EdgeStore::save(&store, &mut edge_to_root).await.unwrap();
-    EdgeStore::save(&store, &mut edge_from_neighbor)
+    s.edge.save(&mut edge_to_root).await.unwrap();
+    s.edge.save(&mut edge_from_neighbor).await.unwrap();
+
+    let hops = s
+        .edge
+        .find_neighbors(
+            &o,
+            &ResourceKind::Task,
+            "root",
+            &[],
+            &[],
+            TraversalDirection::Both,
+            3,
+            None,
+            100,
+        )
         .await
         .unwrap();
-
-    let hops = EdgeStore::find_neighbors(
-        &store,
-        &o,
-        &ResourceKind::Task,
-        "root",
-        &[],
-        &[],
-        TraversalDirection::Both,
-        3,
-        None,
-        100,
-    )
-    .await
-    .unwrap();
 
     assert!(
         hops.iter()
@@ -1047,7 +1015,7 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
 #[tokio::test]
 async fn edge_as_of_returns_historical_snapshot() {
     use chrono::Duration;
-    let store = backend();
+    let s = backend();
     let org = org("default");
     let mut edge = Edge::new(
         org.clone(),
@@ -1059,39 +1027,31 @@ async fn edge_as_of_returns_historical_snapshot() {
         None,
     )
     .unwrap();
-    EdgeStore::save(&store, &mut edge).await.unwrap();
+    s.edge.save(&mut edge).await.unwrap();
 
     let snapshot_time = edge.created_at();
 
-    let found = EdgeStore::find_from(
-        &store,
-        &org,
-        &ResourceKind::Task,
-        "t1",
-        &[],
-        Some(snapshot_time),
-    )
-    .await
-    .unwrap();
+    let found = s
+        .edge
+        .find_from(&org, &ResourceKind::Task, "t1", &[], Some(snapshot_time))
+        .await
+        .unwrap();
     assert_eq!(found.len(), 1);
 
     edge.invalidate().unwrap();
-    EdgeStore::save(&store, &mut edge).await.unwrap();
+    s.edge.save(&mut edge).await.unwrap();
 
-    let found = EdgeStore::find_from(
-        &store,
-        &org,
-        &ResourceKind::Task,
-        "t1",
-        &[],
-        Some(snapshot_time),
-    )
-    .await
-    .unwrap();
+    let found = s
+        .edge
+        .find_from(&org, &ResourceKind::Task, "t1", &[], Some(snapshot_time))
+        .await
+        .unwrap();
     assert_eq!(found.len(), 1);
 
     let after = edge.valid_until().unwrap() + Duration::seconds(1);
-    let found = EdgeStore::find_from(&store, &org, &ResourceKind::Task, "t1", &[], Some(after))
+    let found = s
+        .edge
+        .find_from(&org, &ResourceKind::Task, "t1", &[], Some(after))
         .await
         .unwrap();
     assert!(found.is_empty());

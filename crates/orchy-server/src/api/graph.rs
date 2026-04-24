@@ -12,7 +12,7 @@ use orchy_application::{
     RemoveEdgeCommand,
 };
 use orchy_core::graph::RelationOptions;
-use orchy_core::graph::{EdgeStore, RelationType, TraversalDirection};
+use orchy_core::graph::{RelationType, TraversalDirection};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
@@ -215,8 +215,6 @@ pub async fn list_edges(
     let org_id = parse_org(&org)?;
     check_org(&auth, &org_id)?;
 
-    let _store = &container.store;
-
     let rel_type: Option<RelationType> = query
         .rel_type
         .as_deref()
@@ -239,16 +237,17 @@ pub async fn list_edges(
         .transpose()?
         .map(|dt| dt.to_utc());
 
-    let page = EdgeStore::list_by_org(
-        &*container.store,
-        &org_id,
-        rel_type.as_ref(),
-        PageParams::new(query.after, query.limit),
-        true,
-        as_of,
-    )
-    .await
-    .map_err(ApiError::from)?;
+    let page = container
+        .edge_store
+        .list_by_org(
+            &org_id,
+            rel_type.as_ref(),
+            PageParams::new(query.after, query.limit),
+            true,
+            as_of,
+        )
+        .await
+        .map_err(ApiError::from)?;
 
     // If from/to filters are provided, filter in-memory since the store only
     // supports rel_type filter natively. This is an admin/debug endpoint.
