@@ -169,7 +169,11 @@ impl OrchyHandler {
                 .await
                 .ok_or("no session project for namespace registration")?;
 
-            if let Err(e) = self.container.namespace_store.register(&org, &project, &ns).await
+            if let Err(e) = self
+                .container
+                .namespace_store
+                .register(&org, &project, &ns)
+                .await
             {
                 warn!(error = %e, "namespace registration failed");
             }
@@ -206,7 +210,11 @@ impl OrchyHandler {
                     .ok_or("no session project for namespace registration")?,
             };
 
-            if let Err(e) = self.container.namespace_store.register(&org, &project, &ns).await
+            if let Err(e) = self
+                .container
+                .namespace_store
+                .register(&org, &project, &ns)
+                .await
             {
                 warn!(error = %e, "namespace registration failed");
             }

@@ -374,6 +374,38 @@ async fn message_find_by_id_and_mark_read() {
 
 #[tokio::test]
 #[ignore]
+async fn message_find_by_id_preserves_claim_state() {
+    let p = pool().await;
+    let messages = PgMessageStore::new(p);
+    let claimer = orchy_core::agent::AgentId::new();
+
+    let mut msg = Message::new(
+        org(),
+        proj("test-project"),
+        Namespace::root(),
+        orchy_core::agent::AgentId::new(),
+        MessageTarget::Broadcast,
+        "claimable".into(),
+        None,
+        vec![],
+    )
+    .unwrap();
+    msg.claim(claimer.clone()).unwrap();
+    messages.save(&mut msg).await.unwrap();
+
+    let fetched = messages.find_by_id(&msg.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.claimed_by(), Some(&claimer));
+
+    let mut fetched = fetched;
+    fetched.unclaim(&claimer).unwrap();
+    messages.save(&mut fetched).await.unwrap();
+
+    let unclaimed = messages.find_by_id(&msg.id()).await.unwrap().unwrap();
+    assert!(unclaimed.claimed_by().is_none());
+}
+
+#[tokio::test]
+#[ignore]
 async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
     let p = pool().await;
     let messages = PgMessageStore::new(p);

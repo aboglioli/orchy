@@ -1,12 +1,13 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use chrono::Utc;
 use orchy_application::{
-    AddEdge, AddEdgeCommand, CheckMailbox, CheckMailboxCommand, GetAgentSummary,
+    AddEdge, AddEdgeCommand, CheckMailbox, CheckMailboxCommand, ClaimMessage, GetAgentSummary,
     GetAgentSummaryCommand, GetNextTask, GetNextTaskCommand, GetProject, GetProjectCommand,
     LockResource, LockResourceCommand, MarkRead, MarkReadCommand, PostTask, PostTaskCommand,
     RegisterAgent, RegisterAgentCommand, RenameAlias, RenameAliasCommand, SendMessage,
-    SendMessageCommand,
+    SendMessageCommand, UnclaimMessage,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::graph::EdgeStore;
@@ -16,8 +17,10 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
-use orchy_core::user::OrgMembershipStore;
-use orchy_core::user::UserStore;
+use orchy_core::user::{
+    Email, HashedPassword, OrgMembership, OrgMembershipStore, OrgRole, RestoreUser, User, UserId,
+    UserStore,
+};
 use orchy_store_memory::*;
 
 fn org() -> OrganizationId {
@@ -82,6 +85,14 @@ async fn register(agent_store: &Arc<MemoryAgentStore>, alias: &str) -> AgentId {
 }
 
 async fn register_with_app(s: &Arc<MemoryState>, alias: &str) -> AgentId {
+    register_with_auth_user(s, alias, None).await
+}
+
+async fn register_with_auth_user(
+    s: &Arc<MemoryState>,
+    alias: &str,
+    auth_user_id: Option<&UserId>,
+) -> AgentId {
     let register = RegisterAgent::new(
         agents(s) as Arc<dyn AgentStore>,
         messages(s) as Arc<dyn MessageStore>,
@@ -97,11 +108,29 @@ async fn register_with_app(s: &Arc<MemoryState>, alias: &str) -> AgentId {
             description: String::new(),
             agent_type: None,
             metadata: Default::default(),
-            auth_user_id: None,
+            auth_user_id: auth_user_id.map(ToString::to_string),
         })
         .await
         .unwrap();
     AgentId::from_str(&resp.agent.id).unwrap()
+}
+
+async fn seed_user_membership(s: &Arc<MemoryState>, email: &str) -> UserId {
+    let user_id = UserId::new();
+    let mut user = User::restore(RestoreUser {
+        id: user_id,
+        email: Email::new(email).unwrap(),
+        password_hash: HashedPassword::new("hashed-password").unwrap(),
+        is_active: true,
+        is_platform_admin: false,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    });
+    users(s).save(&mut user).await.unwrap();
+
+    let membership = OrgMembership::new(user_id, org(), OrgRole::Member);
+    memberships(s).save(&membership).await.unwrap();
+    user_id
 }
 
 async fn inbox_for(s: &Arc<MemoryState>, id: &AgentId, _roles: &[String]) -> Vec<String> {
@@ -630,6 +659,86 @@ async fn get_agent_summary_includes_synthesized_project() {
 
     assert!(result.project.is_some());
     assert_eq!(result.project.unwrap().id, "test");
+}
+
+#[tokio::test]
+async fn user_target_messages_reach_future_user_owned_agents() {
+    let s = state();
+    let sender_id = register_with_app(&s, "user-target-sender").await;
+    let user_id = seed_user_membership(&s, "member@example.com").await;
+
+    let send = SendMessage::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
+    );
+    let msg = send
+        .execute(SendMessageCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            from_agent_id: sender_id.to_string(),
+            to: format!("user:{user_id}"),
+            body: "hello future agent".into(),
+            reply_to: None,
+            refs: vec![],
+        })
+        .await
+        .unwrap();
+
+    let user_agent_id = register_with_auth_user(&s, "user-target-recipient", Some(&user_id)).await;
+    let bodies = inbox_for(&s, &user_agent_id, &[]).await;
+
+    assert!(bodies.contains(&"hello future agent".to_string()));
+    assert_eq!(msg.to, format!("user:{user_id}"));
+}
+
+#[tokio::test]
+async fn unclaim_succeeds_for_claimed_user_target_message() {
+    let s = state();
+    let sender_id = register_with_app(&s, "claim-sender").await;
+    let user_id = seed_user_membership(&s, "claimer@example.com").await;
+    let claimer_id = register_with_auth_user(&s, "claim-recipient-a", Some(&user_id)).await;
+    let sibling_id = register_with_auth_user(&s, "claim-recipient-b", Some(&user_id)).await;
+
+    let send = SendMessage::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
+    );
+    let msg = send
+        .execute(SendMessageCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            from_agent_id: sender_id.to_string(),
+            to: format!("user:{user_id}"),
+            body: "claim me".into(),
+            reply_to: None,
+            refs: vec![],
+        })
+        .await
+        .unwrap();
+
+    let claim = ClaimMessage::new(messages(&s) as Arc<dyn MessageStore>);
+    claim
+        .execute(claimer_id.clone(), msg.id.parse().unwrap())
+        .await
+        .unwrap();
+
+    let sibling_bodies = inbox_for(&s, &sibling_id, &[]).await;
+    assert!(!sibling_bodies.contains(&"claim me".to_string()));
+
+    let unclaim = UnclaimMessage::new(messages(&s) as Arc<dyn MessageStore>);
+    unclaim
+        .execute(claimer_id.clone(), msg.id.parse().unwrap())
+        .await
+        .unwrap();
+
+    let sibling_bodies = inbox_for(&s, &sibling_id, &[]).await;
+    assert!(sibling_bodies.contains(&"claim me".to_string()));
 }
 
 #[tokio::test]

@@ -77,7 +77,7 @@ impl MessageStore for SqliteMessageStore {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
+                "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs, claimed_by, claimed_at
                  FROM messages WHERE id = ?1",
             )
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -328,7 +328,7 @@ impl MessageStore for SqliteMessageStore {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs \
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs, claimed_by, claimed_at \
              FROM messages WHERE id IN ({placeholders})"
         );
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;

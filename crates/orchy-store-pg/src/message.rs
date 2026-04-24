@@ -114,7 +114,7 @@ impl MessageStore for PgMessageStore {
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs
+            "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs, claimed_by, claimed_at
              FROM messages WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -132,7 +132,7 @@ impl MessageStore for PgMessageStore {
         let uuid_ids: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
         let rows = sqlx::query(
             "SELECT id, organization_id, project, namespace, from_agent, to_target, body, \
-             status, created_at, reply_to \
+             status, created_at, reply_to, refs, claimed_by, claimed_at \
              FROM messages WHERE id = ANY($1::uuid[])",
         )
         .bind(&uuid_ids)

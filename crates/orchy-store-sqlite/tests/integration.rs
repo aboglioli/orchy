@@ -396,6 +396,36 @@ async fn message_find_by_id_and_mark_read() {
 }
 
 #[tokio::test]
+async fn message_find_by_id_preserves_claim_state() {
+    let s = backend();
+    let claimer = AgentId::new();
+
+    let mut msg = Message::new(
+        org("default"),
+        proj("test-project"),
+        Namespace::root(),
+        AgentId::new(),
+        MessageTarget::Broadcast,
+        "claimable".into(),
+        None,
+        vec![],
+    )
+    .unwrap();
+    msg.claim(claimer.clone()).unwrap();
+    s.message.save(&mut msg).await.unwrap();
+
+    let fetched = s.message.find_by_id(&msg.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.claimed_by(), Some(&claimer));
+
+    let mut fetched = fetched;
+    fetched.unclaim(&claimer).unwrap();
+    s.message.save(&mut fetched).await.unwrap();
+
+    let unclaimed = s.message.find_by_id(&msg.id()).await.unwrap().unwrap();
+    assert!(unclaimed.claimed_by().is_none());
+}
+
+#[tokio::test]
 async fn message_find_sent() {
     let s = backend();
     let sender = AgentId::new();
