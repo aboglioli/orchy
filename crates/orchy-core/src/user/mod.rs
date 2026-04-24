@@ -20,6 +20,19 @@ pub trait PasswordHasher: Send + Sync {
     fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()>;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenClaims {
+    pub sub: String,
+    pub email: String,
+    pub iat: i64,
+    pub exp: i64,
+}
+
+pub trait TokenEncoder: Send + Sync {
+    fn encode(&self, user_id: &UserId, email: &Email) -> Result<String>;
+    fn decode(&self, token: &str) -> Result<TokenClaims>;
+}
+
 #[async_trait::async_trait]
 pub trait UserStore: Send + Sync {
     async fn save(&self, user: &mut User) -> Result<()>;

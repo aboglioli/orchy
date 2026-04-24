@@ -7,7 +7,7 @@ use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 use crate::split_task::SubtaskInput;
 
 pub struct ReplaceTaskCommand {
@@ -27,10 +27,7 @@ impl ReplaceTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: ReplaceTaskCommand,
-    ) -> Result<(TaskResponse, Vec<TaskResponse>)> {
+    pub async fn execute(&self, cmd: ReplaceTaskCommand) -> Result<(TaskDto, Vec<TaskDto>)> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
@@ -127,8 +124,8 @@ impl ReplaceTask {
         }
 
         Ok((
-            TaskResponse::from(&original),
-            new_tasks.iter().map(TaskResponse::from).collect(),
+            TaskDto::from(&original),
+            new_tasks.iter().map(TaskDto::from).collect(),
         ))
     }
 }

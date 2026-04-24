@@ -13,7 +13,7 @@ use orchy_core::organization::OrganizationStore;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
-use orchy_core::user::{OrgMembershipStore, PasswordHasher, UserStore};
+use orchy_core::user::{OrgMembershipStore, PasswordHasher, TokenEncoder, UserStore};
 use orchy_store_memory::*;
 use orchy_store_pg::PgDatabase;
 use orchy_store_sqlite::SqliteDatabase;
@@ -25,15 +25,11 @@ use crate::event_query::{MemoryEventQueryAdapter, PgEventQueryAdapter, SqliteEve
 
 pub struct Container {
     pub agent_store: Arc<dyn AgentStore>,
-    pub namespace_store: Arc<dyn NamespaceStore>,
     pub edge_store: Arc<dyn EdgeStore>,
-    pub orgs: Arc<dyn OrganizationStore>,
-    pub memberships: Arc<dyn OrgMembershipStore>,
     pub app: Application,
     pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
     pub start_time: std::time::Instant,
-    pub jwt_encoder: Option<JwtTokenEncoder>,
     pub password_hasher: Arc<dyn PasswordHasher>,
 }
 
@@ -62,6 +58,13 @@ impl Container {
             .transpose()?
             .map(Arc::new);
 
+        let password_hasher: Arc<dyn PasswordHasher> =
+            Arc::new(BcryptPasswordHasher::with_cost(config.auth.bcrypt_cost));
+
+        let token_encoder: Option<Arc<dyn TokenEncoder>> = Self::init_jwt_encoder(&config)
+            .await?
+            .map(|e| Arc::new(e) as Arc<dyn TokenEncoder>);
+
         let app = Application::new(
             stores.agents.clone(),
             stores.tasks.clone(),
@@ -76,24 +79,16 @@ impl Container {
             stores.event_query.clone(),
             stores.users.clone(),
             stores.memberships.clone(),
+            token_encoder.clone(),
         );
-
-        let password_hasher: Arc<dyn PasswordHasher> =
-            Arc::new(BcryptPasswordHasher::with_cost(config.auth.bcrypt_cost));
-
-        let jwt_encoder = Self::init_jwt_encoder(&config).await?;
 
         let container = Arc::new(Self {
             agent_store: stores.agents,
-            namespace_store: stores.namespaces,
             edge_store: stores.edges,
-            orgs: stores.orgs,
-            memberships: stores.memberships,
             app,
             session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
             start_time: std::time::Instant::now(),
-            jwt_encoder,
             password_hasher: password_hasher.clone(),
         });
 

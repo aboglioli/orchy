@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_application::{
-    AddApiKeyCommand, CreateOrganizationCommand, GetOrganizationCommand, OrganizationResponse,
+    AddApiKeyCommand, CreateOrganizationCommand, GetOrganizationCommand, OrganizationDto,
     RevokeApiKeyCommand,
 };
 
@@ -31,7 +31,7 @@ pub struct AddApiKeyBody {
 pub async fn create(
     State(container): State<Arc<Container>>,
     Json(body): Json<CreateOrgBody>,
-) -> Result<Json<OrganizationResponse>, ApiError> {
+) -> Result<Json<OrganizationDto>, ApiError> {
     let resp = container
         .app
         .create_organization
@@ -47,7 +47,7 @@ pub async fn create(
 pub async fn list(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
-) -> Result<Json<Vec<OrganizationResponse>>, ApiError> {
+) -> Result<Json<Vec<OrganizationDto>>, ApiError> {
     let orgs = container
         .app
         .list_organizations
@@ -61,7 +61,7 @@ pub async fn get(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
     Path(org): Path<String>,
-) -> Result<Json<OrganizationResponse>, ApiError> {
+) -> Result<Json<OrganizationDto>, ApiError> {
     let resp = container
         .app
         .get_organization
@@ -75,7 +75,7 @@ pub async fn add_api_key(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Json(body): Json<AddApiKeyBody>,
-) -> Result<Json<OrganizationResponse>, ApiError> {
+) -> Result<Json<OrganizationDto>, ApiError> {
     let resp = container
         .app
         .add_api_key
@@ -94,7 +94,7 @@ pub async fn revoke_api_key(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
     Path(key_id_str): Path<String>,
-) -> Result<Json<OrganizationResponse>, ApiError> {
+) -> Result<Json<OrganizationDto>, ApiError> {
     let resp = container
         .app
         .revoke_api_key

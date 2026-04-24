@@ -8,7 +8,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
-use crate::dto::{MessageResponse, PageResponse};
+use crate::dto::{MessageDto, PageResponse};
 
 pub struct CheckMailboxCommand {
     pub agent_id: String,
@@ -28,7 +28,7 @@ impl CheckMailbox {
         Self { messages, agents }
     }
 
-    pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<PageResponse<MessageResponse>> {
+    pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<PageResponse<MessageDto>> {
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;

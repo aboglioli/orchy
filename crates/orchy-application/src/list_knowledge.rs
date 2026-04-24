@@ -6,7 +6,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
-use crate::dto::{KnowledgeResponse, PageResponse};
+use crate::dto::{KnowledgeDto, PageResponse};
 use crate::parse_namespace;
 
 pub struct ListKnowledgeCommand {
@@ -32,10 +32,7 @@ impl ListKnowledge {
         Self { store }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: ListKnowledgeCommand,
-    ) -> Result<PageResponse<KnowledgeResponse>> {
+    pub async fn execute(&self, cmd: ListKnowledgeCommand) -> Result<PageResponse<KnowledgeDto>> {
         let org_id =
             Some(OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?);
 

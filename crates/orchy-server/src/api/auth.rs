@@ -1,11 +1,9 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::extract::FromRequestParts;
 use axum::http::{StatusCode, request::Parts};
 
-use orchy_application::{ApiKeyPrincipal, ResolveApiKeyCommand};
-use orchy_core::user::UserId;
+use orchy_application::{ApiKeyPrincipal, ResolveApiKeyCommand, ResolveTokenCommand};
 
 use crate::auth::cookie::AUTH_COOKIE_NAME;
 use crate::container::Container;
@@ -13,7 +11,7 @@ use crate::container::Container;
 use super::ApiError;
 
 pub struct OrgAuth {
-    pub org: orchy_application::OrganizationResponse,
+    pub org: orchy_application::OrganizationDto,
     pub user_id: Option<String>,
 }
 
@@ -90,23 +88,17 @@ async fn try_resolve_api_key(state: &Arc<Container>, token: &str) -> Option<ApiK
 }
 
 async fn try_resolve_jwt(state: &Arc<Container>, token: &str, _parts: &Parts) -> Option<OrgAuth> {
-    let encoder = state.jwt_encoder.as_ref()?;
-    let claims = encoder.decode(token).ok()?;
-    let user_id = UserId::from_str(&claims.sub).ok()?;
-
-    let memberships = state.memberships.find_by_user(&user_id).await.ok()?;
-
-    let membership = memberships.first()?;
-
-    let org = state
-        .orgs
-        .find_by_id(membership.org_id())
+    let resolve_token = state.app.resolve_token.as_ref()?;
+    let principal = resolve_token
+        .execute(ResolveTokenCommand {
+            token: token.to_string(),
+        })
         .await
         .ok()
         .flatten()?;
 
     Some(OrgAuth {
-        org: orchy_application::OrganizationResponse::from(&org),
-        user_id: Some(claims.sub),
+        org: principal.org,
+        user_id: Some(principal.user_id),
     })
 }

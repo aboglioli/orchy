@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::{ApiKeyId, OrganizationId, OrganizationStore};
 
-use crate::dto::OrganizationResponse;
+use crate::dto::OrganizationDto;
 
 pub struct RevokeApiKeyCommand {
     pub org_id: String,
@@ -19,7 +19,7 @@ impl RevokeApiKey {
         Self { orgs }
     }
 
-    pub async fn execute(&self, cmd: RevokeApiKeyCommand) -> Result<OrganizationResponse> {
+    pub async fn execute(&self, cmd: RevokeApiKeyCommand) -> Result<OrganizationDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let key_uuid: uuid::Uuid = cmd
@@ -35,6 +35,6 @@ impl RevokeApiKey {
             .ok_or_else(|| Error::NotFound(format!("organization {org_id}")))?;
         org.revoke_api_key(&key_id)?;
         self.orgs.save(&mut org).await?;
-        Ok(OrganizationResponse::from(&org))
+        Ok(OrganizationDto::from(&org))
     }
 }

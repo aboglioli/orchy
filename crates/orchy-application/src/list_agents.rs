@@ -6,7 +6,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
-use crate::dto::{AgentResponse, PageResponse};
+use crate::dto::{AgentDto, PageResponse};
 
 pub struct ListAgentsCommand {
     pub org_id: String,
@@ -24,7 +24,7 @@ impl ListAgents {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: ListAgentsCommand) -> Result<PageResponse<AgentResponse>> {
+    pub async fn execute(&self, cmd: ListAgentsCommand) -> Result<PageResponse<AgentDto>> {
         let org =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
@@ -37,11 +37,11 @@ impl ListAgents {
             let limit = cmd.limit.unwrap_or(50) as usize;
             let result = self.agents.list(&org, PageParams::unbounded()).await?;
 
-            let filtered: Vec<AgentResponse> = result
+            let filtered: Vec<AgentDto> = result
                 .items
                 .iter()
                 .filter(|a| a.project() == project)
-                .map(AgentResponse::from)
+                .map(AgentDto::from)
                 .collect();
 
             let start = if let Some(ref cursor) = cmd.after {
@@ -54,10 +54,10 @@ impl ListAgents {
                 0
             };
 
-            let page_items: Vec<AgentResponse> =
+            let page_items: Vec<AgentDto> =
                 filtered.into_iter().skip(start).take(limit + 1).collect();
             let has_more = page_items.len() > limit;
-            let items: Vec<AgentResponse> = page_items.into_iter().take(limit).collect();
+            let items: Vec<AgentDto> = page_items.into_iter().take(limit).collect();
             let next_cursor = if has_more {
                 items.last().map(|a| a.id.clone())
             } else {
@@ -71,7 +71,7 @@ impl ListAgents {
         let result = self.agents.list(&org, page).await?;
 
         Ok(PageResponse {
-            items: result.items.iter().map(AgentResponse::from).collect(),
+            items: result.items.iter().map(AgentDto::from).collect(),
             next_cursor: result.next_cursor,
         })
     }

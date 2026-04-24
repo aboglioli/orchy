@@ -8,7 +8,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStatus, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct ClaimTaskCommand {
     pub task_id: String,
@@ -36,7 +36,7 @@ impl ClaimTask {
         }
     }
 
-    pub async fn execute(&self, cmd: ClaimTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: ClaimTaskCommand) -> Result<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
         let org_id =
@@ -93,6 +93,6 @@ impl ClaimTask {
         }
 
         self.tasks.save(&mut task).await?;
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 }

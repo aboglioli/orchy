@@ -5,7 +5,7 @@ use orchy_core::knowledge::{KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 use crate::parse_namespace;
 
 pub struct ArchiveKnowledgeCommand {
@@ -25,7 +25,7 @@ impl ArchiveKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: ArchiveKnowledgeCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: ArchiveKnowledgeCommand) -> Result<KnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -44,6 +44,6 @@ impl ArchiveKnowledge {
         entry.archive(cmd.reason)?;
         self.store.save(&mut entry).await?;
 
-        Ok(KnowledgeResponse::from(&entry))
+        Ok(KnowledgeDto::from(&entry))
     }
 }

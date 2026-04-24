@@ -13,7 +13,7 @@ use orchy_core::resource_ref::ResourceKind;
 use crate::materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborhoodCommand};
 use crate::parse_namespace;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 
 pub struct ReadKnowledgeCommand {
     pub org_id: String,
@@ -24,8 +24,8 @@ pub struct ReadKnowledgeCommand {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ReadKnowledgeResponse {
-    pub knowledge: Option<KnowledgeResponse>,
+pub struct ReadKnowledgeDto {
+    pub knowledge: Option<KnowledgeDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relations: Option<Vec<Relation>>,
 }
@@ -46,7 +46,7 @@ impl ReadKnowledge {
         }
     }
 
-    pub async fn execute(&self, cmd: ReadKnowledgeCommand) -> Result<ReadKnowledgeResponse> {
+    pub async fn execute(&self, cmd: ReadKnowledgeCommand) -> Result<ReadKnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -103,8 +103,8 @@ impl ReadKnowledge {
                 None
             };
 
-        Ok(ReadKnowledgeResponse {
-            knowledge: entry.map(|e| KnowledgeResponse::from(&e)),
+        Ok(ReadKnowledgeDto {
+            knowledge: entry.map(|e| KnowledgeDto::from(&e)),
             relations,
         })
     }

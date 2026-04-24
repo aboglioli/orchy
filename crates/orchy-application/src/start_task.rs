@@ -5,7 +5,7 @@ use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{TaskId, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct StartTaskCommand {
     pub task_id: String,
@@ -22,7 +22,7 @@ impl StartTask {
         Self { agents, tasks }
     }
 
-    pub async fn execute(&self, cmd: StartTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: StartTaskCommand) -> Result<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
 
@@ -39,6 +39,6 @@ impl StartTask {
 
         task.start(&agent_id)?;
         self.tasks.save(&mut task).await?;
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 }

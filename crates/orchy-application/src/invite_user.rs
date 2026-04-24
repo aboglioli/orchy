@@ -6,7 +6,7 @@ use orchy_core::user::{
     Email, OrgMembership, OrgMembershipStore, OrgRole, PlainPassword, User, UserId, UserStore,
 };
 
-use crate::dto::{OrgMembershipResponse, UserResponse};
+use crate::dto::{OrgMembershipDto, UserDto};
 
 fn map_org_error(e: orchy_events::Error) -> Error {
     Error::invalid_input(e.to_string())
@@ -19,9 +19,9 @@ pub struct InviteUserCommand {
     pub invited_by_user_id: String,
 }
 
-pub struct InviteUserResponse {
-    pub user: UserResponse,
-    pub membership: OrgMembershipResponse,
+pub struct InviteUserDto {
+    pub user: UserDto,
+    pub membership: OrgMembershipDto,
     pub is_new_user: bool,
 }
 
@@ -39,7 +39,7 @@ impl InviteUser {
         &self,
         cmd: InviteUserCommand,
         hasher: &dyn orchy_core::user::PasswordHasher,
-    ) -> Result<InviteUserResponse> {
+    ) -> Result<InviteUserDto> {
         let org_id = OrganizationId::new(&cmd.org_id).map_err(map_org_error)?;
         let role = cmd.role.parse::<OrgRole>()?;
 
@@ -76,9 +76,9 @@ impl InviteUser {
         self.memberships.save(&membership).await?;
         self.users.save(&mut user).await?;
 
-        Ok(InviteUserResponse {
-            user: UserResponse::from(&user),
-            membership: OrgMembershipResponse::from(&membership),
+        Ok(InviteUserDto {
+            user: UserDto::from(&user),
+            membership: OrgMembershipDto::from(&membership),
             is_new_user,
         })
     }

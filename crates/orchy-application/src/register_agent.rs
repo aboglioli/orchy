@@ -11,7 +11,7 @@ use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 use orchy_core::user::UserId;
 use std::str::FromStr;
 
-use crate::dto::{AgentResponse, RegisterAgentResponse};
+use crate::dto::{AgentDto, RegisterAgentDto};
 use crate::parse_namespace;
 
 pub struct RegisterAgentCommand {
@@ -45,7 +45,7 @@ impl RegisterAgent {
         }
     }
 
-    pub async fn execute(&self, cmd: RegisterAgentCommand) -> Result<RegisterAgentResponse> {
+    pub async fn execute(&self, cmd: RegisterAgentCommand) -> Result<RegisterAgentDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -168,8 +168,8 @@ impl RegisterAgent {
 
         let stale_tasks: Vec<_> = my_tasks.items.iter().filter(|t| t.is_stale()).collect();
 
-        Ok(RegisterAgentResponse {
-            agent: AgentResponse::from(&agent),
+        Ok(RegisterAgentDto {
+            agent: AgentDto::from(&agent),
             inbox_count: inbox.items.len(),
             pending_tasks_count: pending_tasks.items.len(),
             my_tasks_count: my_tasks.items.len(),

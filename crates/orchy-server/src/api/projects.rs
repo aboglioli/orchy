@@ -42,7 +42,7 @@ pub struct ProjectDto {
     pub updated_at: String,
 }
 
-fn project_to_dto(p: orchy_application::ProjectResponse) -> ProjectDto {
+fn project_to_dto(p: orchy_application::ProjectDto) -> ProjectDto {
     ProjectDto {
         id: p.id,
         description: p.description,

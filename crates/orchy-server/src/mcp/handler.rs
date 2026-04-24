@@ -171,8 +171,13 @@ impl OrchyHandler {
 
             if let Err(e) = self
                 .container
-                .namespace_store
-                .register(&org, &project, &ns)
+                .app
+                .register_namespace
+                .execute(orchy_application::RegisterNamespaceCommand {
+                    org_id: org.to_string(),
+                    project: project.to_string(),
+                    namespace: ns.to_string(),
+                })
                 .await
             {
                 warn!(error = %e, "namespace registration failed");
@@ -212,8 +217,13 @@ impl OrchyHandler {
 
             if let Err(e) = self
                 .container
-                .namespace_store
-                .register(&org, &project, &ns)
+                .app
+                .register_namespace
+                .execute(orchy_application::RegisterNamespaceCommand {
+                    org_id: org.to_string(),
+                    project: project.to_string(),
+                    namespace: ns.to_string(),
+                })
                 .await
             {
                 warn!(error = %e, "namespace registration failed");

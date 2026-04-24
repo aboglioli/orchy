@@ -9,7 +9,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::TaskId;
 
-use crate::dto::EdgeResponse;
+use crate::dto::EdgeDto;
 
 pub struct AddEdgeCommand {
     pub org_id: String,
@@ -31,7 +31,7 @@ impl AddEdge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: AddEdgeCommand) -> Result<EdgeResponse> {
+    pub async fn execute(&self, cmd: AddEdgeCommand) -> Result<EdgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let from_kind = cmd
@@ -58,7 +58,7 @@ impl AddEdge {
             .await?
         {
             if cmd.if_not_exists {
-                return Ok(EdgeResponse::from(&existing));
+                return Ok(EdgeDto::from(&existing));
             }
             return Err(Error::Conflict(format!(
                 "edge {from_kind}:{} --{rel_type}--> {to_kind}:{} already exists",
@@ -111,7 +111,7 @@ impl AddEdge {
             created_by,
         )?;
         self.store.save(&mut edge).await?;
-        Ok(EdgeResponse::from(&edge))
+        Ok(EdgeDto::from(&edge))
     }
 }
 

@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::Json;
@@ -32,8 +31,8 @@ pub struct LoginRequest {
 
 #[derive(Serialize)]
 pub struct AuthSuccessResponse {
-    user: orchy_application::UserResponse,
-    memberships: Vec<orchy_application::OrgMembershipResponse>,
+    user: orchy_application::UserDto,
+    memberships: Vec<orchy_application::OrgMembershipDto>,
 }
 
 impl From<AuthResponse> for AuthSuccessResponse {
@@ -70,9 +69,15 @@ pub async fn login(
     cookies: Cookies,
     Json(req): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let result = container
-        .app
-        .login_user
+    let login_user = container.app.login_user.as_ref().ok_or_else(|| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            "authentication not configured".to_string(),
+        )
+    })?;
+
+    let result = login_user
         .execute(
             LoginUserCommand {
                 email: req.email,
@@ -83,48 +88,21 @@ pub async fn login(
         .await
         .map_err(ApiError::from)?;
 
-    let encoder = container.jwt_encoder.as_ref().ok_or_else(|| {
-        ApiError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "INTERNAL_ERROR",
-            "JWT not configured".to_string(),
-        )
-    })?;
-
-    let token = encoder
-        .encode(
-            &orchy_core::user::UserId::from_str(&result.user.id).map_err(|e| {
-                ApiError(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    e.to_string(),
-                )
-            })?,
-            &orchy_core::user::Email::new(&result.user.email).map_err(|e| {
-                ApiError(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    e.to_string(),
-                )
-            })?,
-        )
-        .map_err(|e| {
-            ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
-            )
-        })?;
-
     let cookie_config = CookieConfig {
         secure: container.config.auth.cookie_secure,
         same_site: tower_cookies::cookie::SameSite::Lax,
         max_age_hours: container.config.auth.jwt_duration_hours,
     };
 
-    set_auth_cookie(&cookies, &token, &cookie_config);
+    set_auth_cookie(&cookies, &result.token, &cookie_config);
 
-    Ok((StatusCode::OK, Json(AuthSuccessResponse::from(result))))
+    Ok((
+        StatusCode::OK,
+        Json(AuthSuccessResponse {
+            user: result.user,
+            memberships: result.memberships,
+        }),
+    ))
 }
 
 pub async fn logout(_state: State<Arc<Container>>, cookies: Cookies) -> impl IntoResponse {
@@ -204,8 +182,8 @@ pub struct InviteRequest {
 
 #[derive(Serialize)]
 pub struct InviteResponse {
-    user: orchy_application::UserResponse,
-    membership: orchy_application::OrgMembershipResponse,
+    user: orchy_application::UserDto,
+    membership: orchy_application::OrgMembershipDto,
     is_new_user: bool,
 }
 

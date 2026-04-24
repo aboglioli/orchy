@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::Result;
 use orchy_core::user::{Email, PlainPassword, User, UserId, UserStore};
 
-use crate::dto::UserResponse;
+use crate::dto::UserDto;
 
 pub struct BootstrapAdmin {
     users: Arc<dyn UserStore>,
@@ -17,7 +17,7 @@ impl BootstrapAdmin {
     pub async fn execute(
         &self,
         hasher: &dyn orchy_core::user::PasswordHasher,
-    ) -> Result<Option<UserResponse>> {
+    ) -> Result<Option<UserDto>> {
         let existing_users = self.users.list_all().await?;
         if !existing_users.is_empty() {
             return Ok(None);
@@ -30,6 +30,6 @@ impl BootstrapAdmin {
         let mut user = User::register_platform_admin(id, email, &password, hasher)?;
         self.users.save(&mut user).await?;
 
-        Ok(Some(UserResponse::from(&user)))
+        Ok(Some(UserDto::from(&user)))
     }
 }

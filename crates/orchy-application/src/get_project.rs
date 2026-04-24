@@ -5,7 +5,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore};
 
-use crate::dto::ProjectResponse;
+use crate::dto::ProjectDto;
 
 pub struct GetProjectCommand {
     pub org_id: String,
@@ -21,7 +21,7 @@ impl GetProject {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: GetProjectCommand) -> Result<ProjectResponse> {
+    pub async fn execute(&self, cmd: GetProjectCommand) -> Result<ProjectDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -32,6 +32,6 @@ impl GetProject {
             None => Project::new(org_id, project, String::new())?,
         };
 
-        Ok(ProjectResponse::from(&p))
+        Ok(ProjectDto::from(&p))
     }
 }

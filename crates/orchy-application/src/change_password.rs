@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::user::{PlainPassword, UserId, UserStore};
 
-use crate::dto::UserResponse;
+use crate::dto::UserDto;
 
 pub struct ChangePasswordCommand {
     pub user_id: String,
@@ -25,7 +25,7 @@ impl ChangePassword {
         &self,
         cmd: ChangePasswordCommand,
         hasher: &dyn orchy_core::user::PasswordHasher,
-    ) -> Result<UserResponse> {
+    ) -> Result<UserDto> {
         let user_id = UserId::from_str(&cmd.user_id)
             .map_err(|e| Error::invalid_input(format!("invalid user id: {}", e)))?;
 
@@ -41,6 +41,6 @@ impl ChangePassword {
         user.change_password(&old_password, &new_password, hasher)?;
         self.users.save(&mut user).await?;
 
-        Ok(UserResponse::from(&user))
+        Ok(UserDto::from(&user))
     }
 }

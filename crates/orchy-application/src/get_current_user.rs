@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::user::{OrgMembershipStore, UserId, UserStore};
 
-use crate::dto::{AuthResponse, OrgMembershipResponse, UserResponse};
+use crate::dto::{AuthResponse, OrgMembershipDto, UserDto};
 
 pub struct GetCurrentUserCommand {
     pub user_id: String,
@@ -37,11 +37,8 @@ impl GetCurrentUser {
         let memberships = self.memberships.find_by_user(&user_id).await?;
 
         Ok(AuthResponse {
-            user: UserResponse::from(&user),
-            memberships: memberships
-                .iter()
-                .map(OrgMembershipResponse::from)
-                .collect(),
+            user: UserDto::from(&user),
+            memberships: memberships.iter().map(OrgMembershipDto::from).collect(),
         })
     }
 }

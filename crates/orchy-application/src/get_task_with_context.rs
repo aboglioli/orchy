@@ -7,7 +7,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStore, TaskWithContext};
 
-use crate::dto::{KnowledgeResponse, TaskResponse, TaskWithContextResponse};
+use crate::dto::{KnowledgeDto, TaskDto, TaskWithContextResponse};
 
 pub struct GetTaskWithContextCommand {
     pub task_id: String,
@@ -141,14 +141,14 @@ impl GetTaskWithContext {
         Ok(response)
     }
 
-    async fn load_dependencies(&self, dependency_ids: &[String]) -> Result<Vec<TaskResponse>> {
+    async fn load_dependencies(&self, dependency_ids: &[String]) -> Result<Vec<TaskDto>> {
         let mut dependencies = Vec::new();
         for dep in dependency_ids {
             let dep_id = dep.parse::<TaskId>()?;
             let Some(task) = self.tasks.find_by_id(&dep_id).await? else {
                 continue;
             };
-            dependencies.push(TaskResponse::from(task));
+            dependencies.push(TaskDto::from(task));
         }
 
         Ok(dependencies)
@@ -162,7 +162,7 @@ impl GetTaskWithContext {
         kind_filter: Option<&str>,
         tag_filter: Option<&str>,
         content_limit: usize,
-    ) -> Result<Vec<KnowledgeResponse>> {
+    ) -> Result<Vec<KnowledgeDto>> {
         let org = OrganizationId::new(org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let mut edges = self
@@ -210,7 +210,7 @@ impl GetTaskWithContext {
                 continue;
             }
 
-            let mut response = KnowledgeResponse::from(&entry);
+            let mut response = KnowledgeDto::from(&entry);
             if content_limit == 0 {
                 response.content.clear();
             } else if response.content.len() > content_limit {

@@ -8,7 +8,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::parse_namespace;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 
 pub struct ChangeKnowledgeKindCommand {
     pub org_id: String,
@@ -32,7 +32,7 @@ impl ChangeKnowledgeKind {
         Self { store, embeddings }
     }
 
-    pub async fn execute(&self, cmd: ChangeKnowledgeKindCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: ChangeKnowledgeKindCommand) -> Result<KnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -65,7 +65,7 @@ impl ChangeKnowledgeKind {
 
         if entry.kind() == new_kind {
             self.store.save(&mut entry).await?;
-            return Ok(KnowledgeResponse::from(&entry));
+            return Ok(KnowledgeDto::from(&entry));
         }
 
         entry.change_kind(new_kind)?;
@@ -77,6 +77,6 @@ impl ChangeKnowledgeKind {
         }
 
         self.store.save(&mut entry).await?;
-        Ok(KnowledgeResponse::from(&entry))
+        Ok(KnowledgeDto::from(&entry))
     }
 }

@@ -6,7 +6,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskId, TaskStatus, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct FailTaskCommand {
     pub task_id: String,
@@ -24,7 +24,7 @@ impl FailTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: FailTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: FailTaskCommand) -> Result<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
@@ -42,7 +42,7 @@ impl FailTask {
             tracing::warn!("failed to check parent auto-complete for {task_id}: {e}");
         }
 
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 
     async fn try_auto_complete_parent(&self, org: &OrganizationId, task_id: &TaskId) -> Result<()> {

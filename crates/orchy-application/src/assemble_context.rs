@@ -8,7 +8,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStatus, TaskStore};
 
-use crate::dto::{AssembleContextResponse, KnowledgeResponse, TaskResponse};
+use crate::dto::{AssembleContextResponse, KnowledgeDto, TaskDto};
 
 pub struct AssembleContextCommand {
     pub org_id: String,
@@ -87,7 +87,7 @@ impl AssembleContext {
         for (k, _) in &core_fact_entries {
             used_ids.insert(k.id().to_string());
         }
-        let core_facts: Vec<KnowledgeResponse> = core_fact_entries
+        let core_facts: Vec<KnowledgeDto> = core_fact_entries
             .iter()
             .map(|(k, _)| truncate_knowledge(k, content_limit))
             .collect();
@@ -105,7 +105,7 @@ impl AssembleContext {
         for (k, _) in &decision_entries {
             used_ids.insert(k.id().to_string());
         }
-        let relevant_decisions: Vec<KnowledgeResponse> = decision_entries
+        let relevant_decisions: Vec<KnowledgeDto> = decision_entries
             .iter()
             .map(|(k, _)| truncate_knowledge(k, content_limit))
             .collect();
@@ -116,7 +116,7 @@ impl AssembleContext {
                 .filter(|(k, _)| !used_ids.contains(&k.id().to_string()))
                 .take(5)
                 .collect();
-        let recent_changes: Vec<KnowledgeResponse> = recent_change_entries
+        let recent_changes: Vec<KnowledgeDto> = recent_change_entries
             .iter()
             .map(|(k, _)| truncate_knowledge(k, content_limit))
             .collect();
@@ -130,7 +130,7 @@ impl AssembleContext {
                     && let Some(dep_task) = self.tasks.find_by_id(&dep_id).await?
                     && dep_task.status() != TaskStatus::Completed
                 {
-                    deps.push(TaskResponse::from(&dep_task));
+                    deps.push(TaskDto::from(&dep_task));
                 }
             }
             deps
@@ -210,8 +210,8 @@ fn composite_score(k: &orchy_core::knowledge::Knowledge) -> f64 {
     kind_weight * recency
 }
 
-fn truncate_knowledge(k: &orchy_core::knowledge::Knowledge, limit: usize) -> KnowledgeResponse {
-    let mut resp = KnowledgeResponse::from(k);
+fn truncate_knowledge(k: &orchy_core::knowledge::Knowledge, limit: usize) -> KnowledgeDto {
+    let mut resp = KnowledgeDto::from(k);
     if resp.content.len() > limit {
         resp.content = resp.content.chars().take(limit).collect();
     }

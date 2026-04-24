@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{TaskId, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct ArchiveTaskCommand {
     pub org_id: String,
@@ -20,7 +20,7 @@ impl ArchiveTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ArchiveTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: ArchiveTaskCommand) -> Result<TaskDto> {
         let task_id = cmd
             .task_id
             .parse::<TaskId>()
@@ -34,6 +34,6 @@ impl ArchiveTask {
         task.archive(cmd.reason)?;
         self.tasks.save(&mut task).await?;
 
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 }

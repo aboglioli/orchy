@@ -8,7 +8,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
-use crate::dto::{MessageResponse, PageResponse};
+use crate::dto::{MessageDto, PageResponse};
 use crate::parse_namespace;
 
 pub struct CheckSentMessagesCommand {
@@ -30,10 +30,7 @@ impl CheckSentMessages {
         Self { messages, agents }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: CheckSentMessagesCommand,
-    ) -> Result<PageResponse<MessageResponse>> {
+    pub async fn execute(&self, cmd: CheckSentMessagesCommand) -> Result<PageResponse<MessageDto>> {
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
         self.agents
             .find_by_id(&agent_id)

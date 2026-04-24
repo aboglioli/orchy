@@ -7,7 +7,7 @@ use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskId, TaskStatus, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct SubtaskInput {
     pub title: String,
@@ -34,10 +34,7 @@ impl SplitTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: SplitTaskCommand,
-    ) -> Result<(TaskResponse, Vec<TaskResponse>)> {
+    pub async fn execute(&self, cmd: SplitTaskCommand) -> Result<(TaskDto, Vec<TaskDto>)> {
         let parent_id = cmd.task_id.parse::<TaskId>()?;
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
@@ -163,8 +160,8 @@ impl SplitTask {
         self.tasks.save(&mut parent).await?;
 
         Ok((
-            TaskResponse::from(&parent),
-            children.iter().map(TaskResponse::from).collect(),
+            TaskDto::from(&parent),
+            children.iter().map(TaskDto::from).collect(),
         ))
     }
 }

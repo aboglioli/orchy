@@ -7,7 +7,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 use crate::parse_namespace;
 
 pub struct ConsolidateKnowledgeCommand {
@@ -30,7 +30,7 @@ impl ConsolidateKnowledge {
         Self { knowledge, edges }
     }
 
-    pub async fn execute(&self, cmd: ConsolidateKnowledgeCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: ConsolidateKnowledgeCommand) -> Result<KnowledgeDto> {
         if cmd.source_paths.len() < 2 {
             return Err(Error::InvalidInput(
                 "consolidate requires at least 2 source paths".to_string(),
@@ -112,6 +112,6 @@ impl ConsolidateKnowledge {
             }
         }
 
-        Ok(KnowledgeResponse::from(&consolidated))
+        Ok(KnowledgeDto::from(&consolidated))
     }
 }

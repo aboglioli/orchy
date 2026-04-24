@@ -10,7 +10,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::parse_namespace;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 
 pub struct PatchKnowledgeMetadataCommand {
     pub org_id: String,
@@ -33,7 +33,7 @@ impl PatchKnowledgeMetadata {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: PatchKnowledgeMetadataCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: PatchKnowledgeMetadataCommand) -> Result<KnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -76,7 +76,7 @@ impl PatchKnowledgeMetadata {
             && valid_from.is_none()
             && valid_until.is_none()
         {
-            return Ok(KnowledgeResponse::from(&entry));
+            return Ok(KnowledgeDto::from(&entry));
         }
 
         entry.set_validity(valid_from, valid_until)?;
@@ -89,6 +89,6 @@ impl PatchKnowledgeMetadata {
         }
 
         self.store.save(&mut entry).await?;
-        Ok(KnowledgeResponse::from(&entry))
+        Ok(KnowledgeDto::from(&entry))
     }
 }

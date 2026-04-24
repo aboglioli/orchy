@@ -9,7 +9,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::parse_namespace;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 
 pub struct AppendKnowledgeCommand {
     pub org_id: String,
@@ -36,7 +36,7 @@ impl AppendKnowledge {
         Self { store, embeddings }
     }
 
-    pub async fn execute(&self, cmd: AppendKnowledgeCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: AppendKnowledgeCommand) -> Result<KnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -94,6 +94,6 @@ impl AppendKnowledge {
         }
 
         self.store.save(&mut entry).await?;
-        Ok(KnowledgeResponse::from(&entry))
+        Ok(KnowledgeDto::from(&entry))
     }
 }

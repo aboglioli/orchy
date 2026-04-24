@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 
-use crate::dto::OrganizationResponse;
+use crate::dto::OrganizationDto;
 
 pub struct CreateOrganizationCommand {
     pub id: String,
@@ -19,10 +19,10 @@ impl CreateOrganization {
         Self { orgs }
     }
 
-    pub async fn execute(&self, cmd: CreateOrganizationCommand) -> Result<OrganizationResponse> {
+    pub async fn execute(&self, cmd: CreateOrganizationCommand) -> Result<OrganizationDto> {
         let id = OrganizationId::new(&cmd.id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let mut org = Organization::new(id, cmd.name)?;
         self.orgs.save(&mut org).await?;
-        Ok(OrganizationResponse::from(&org))
+        Ok(OrganizationDto::from(&org))
     }
 }

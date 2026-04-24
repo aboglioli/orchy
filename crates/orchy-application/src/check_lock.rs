@@ -5,7 +5,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::LockStore;
 
-use crate::dto::ResourceLockResponse;
+use crate::dto::ResourceLockDto;
 use crate::parse_namespace;
 
 pub struct CheckLockCommand {
@@ -24,7 +24,7 @@ impl CheckLock {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: CheckLockCommand) -> Result<Option<ResourceLockResponse>> {
+    pub async fn execute(&self, cmd: CheckLockCommand) -> Result<Option<ResourceLockDto>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -43,7 +43,7 @@ impl CheckLock {
                     .await?;
                 Ok(None)
             }
-            Some(l) => Ok(Some(ResourceLockResponse::from(&l))),
+            Some(l) => Ok(Some(ResourceLockDto::from(&l))),
             None => Ok(None),
         }
     }

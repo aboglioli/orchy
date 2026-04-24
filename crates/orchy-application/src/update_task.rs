@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{Priority, TaskId, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct UpdateTaskCommand {
     pub task_id: String,
@@ -22,7 +22,7 @@ impl UpdateTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: UpdateTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: UpdateTaskCommand) -> Result<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
 
         let priority = cmd
@@ -45,6 +45,6 @@ impl UpdateTask {
         )?;
 
         self.tasks.save(&mut task).await?;
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 }

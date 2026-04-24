@@ -5,7 +5,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::{OrganizationId, OrganizationStore};
 use orchy_core::user::UserId;
 
-use crate::dto::OrganizationResponse;
+use crate::dto::OrganizationDto;
 
 pub struct AddApiKeyCommand {
     pub org_id: String,
@@ -23,7 +23,7 @@ impl AddApiKey {
         Self { orgs }
     }
 
-    pub async fn execute(&self, cmd: AddApiKeyCommand) -> Result<OrganizationResponse> {
+    pub async fn execute(&self, cmd: AddApiKeyCommand) -> Result<OrganizationDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let mut org = self
@@ -39,6 +39,6 @@ impl AddApiKey {
             .map_err(|e| Error::InvalidInput(format!("invalid user_id: {e}")))?;
         org.add_api_key(cmd.name, cmd.key, user_id)?;
         self.orgs.save(&mut org).await?;
-        Ok(OrganizationResponse::from(&org))
+        Ok(OrganizationDto::from(&org))
     }
 }

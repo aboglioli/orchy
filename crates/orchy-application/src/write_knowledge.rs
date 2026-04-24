@@ -19,7 +19,7 @@ use orchy_core::task::TaskId;
 
 use crate::parse_namespace;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 
 pub struct WriteKnowledgeCommand {
     pub org_id: String,
@@ -59,7 +59,7 @@ impl WriteKnowledge {
         }
     }
 
-    pub async fn execute(&self, cmd: WriteKnowledgeCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: WriteKnowledgeCommand) -> Result<KnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -192,7 +192,7 @@ impl WriteKnowledge {
                     Ok(e) => e,
                     Err(e) => {
                         tracing::warn!("failed to create edge: {e}");
-                        return Ok(KnowledgeResponse::from(&entry));
+                        return Ok(KnowledgeDto::from(&entry));
                     }
                 }
                 .with_source(ResourceKind::Task, task_id);
@@ -205,6 +205,6 @@ impl WriteKnowledge {
             }
         }
 
-        Ok(KnowledgeResponse::from(&entry))
+        Ok(KnowledgeDto::from(&entry))
     }
 }

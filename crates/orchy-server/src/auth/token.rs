@@ -1,17 +1,8 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use serde::{Deserialize, Serialize};
 
 use orchy_core::error::{Error, Result};
-use orchy_core::user::{Email, UserId};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenClaims {
-    pub sub: String,
-    pub email: String,
-    pub iat: i64,
-    pub exp: i64,
-}
+use orchy_core::user::{Email, TokenClaims, TokenEncoder, UserId};
 
 pub struct JwtTokenEncoder {
     encoding_key: EncodingKey,
@@ -36,8 +27,10 @@ impl JwtTokenEncoder {
             duration: Duration::hours(duration_hours),
         })
     }
+}
 
-    pub fn encode(&self, user_id: &UserId, email: &Email) -> Result<String> {
+impl TokenEncoder for JwtTokenEncoder {
+    fn encode(&self, user_id: &UserId, email: &Email) -> Result<String> {
         let now = Utc::now();
         let claims = TokenClaims {
             sub: user_id.to_string(),
@@ -50,7 +43,7 @@ impl JwtTokenEncoder {
             .map_err(|e| Error::store(format!("failed to encode JWT: {e}")))
     }
 
-    pub fn decode(&self, token: &str) -> Result<TokenClaims> {
+    fn decode(&self, token: &str) -> Result<TokenClaims> {
         let decoded = jsonwebtoken::decode::<TokenClaims>(
             token,
             &self.decoding_key,

@@ -5,7 +5,7 @@ use orchy_core::message::{MessageId, MessageStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
-use crate::dto::MessageResponse;
+use crate::dto::MessageDto;
 
 pub struct ListConversationCommand {
     pub org_id: String,
@@ -23,7 +23,7 @@ impl ListConversation {
         Self { messages }
     }
 
-    pub async fn execute(&self, cmd: ListConversationCommand) -> Result<Vec<MessageResponse>> {
+    pub async fn execute(&self, cmd: ListConversationCommand) -> Result<Vec<MessageDto>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -39,6 +39,6 @@ impl ListConversation {
             return Err(Error::NotFound("message not found in project".to_string()));
         }
 
-        Ok(messages.iter().map(MessageResponse::from).collect())
+        Ok(messages.iter().map(MessageDto::from).collect())
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 
-use crate::dto::AgentResponse;
+use crate::dto::AgentDto;
 
 pub struct ChangeRolesCommand {
     pub agent_id: String,
@@ -20,7 +20,7 @@ impl ChangeRoles {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: ChangeRolesCommand) -> Result<AgentResponse> {
+    pub async fn execute(&self, cmd: ChangeRolesCommand) -> Result<AgentDto> {
         if cmd.roles.is_empty() {
             return Err(Error::InvalidInput("roles must not be empty".to_string()));
         }
@@ -32,6 +32,6 @@ impl ChangeRoles {
             .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
         agent.change_roles(cmd.roles)?;
         self.agents.save(&mut agent).await?;
-        Ok(AgentResponse::from(&agent))
+        Ok(AgentDto::from(&agent))
     }
 }

@@ -8,7 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_application::{
-    AddEdgeCommand, AssembleContextCommand, EdgeResponse, MaterializeNeighborhoodCommand,
+    AddEdgeCommand, AssembleContextCommand, EdgeDto, MaterializeNeighborhoodCommand,
     RemoveEdgeCommand,
 };
 use orchy_core::graph::{RelationOptions, RelationType, TraversalDirection};
@@ -253,7 +253,7 @@ pub async fn list_edges(
                     .map(|ti| e.to_id() == ti)
                     .unwrap_or(true)
         })
-        .map(EdgeResponse::from)
+        .map(EdgeDto::from)
         .collect();
 
     Ok(Json(serde_json::json!({

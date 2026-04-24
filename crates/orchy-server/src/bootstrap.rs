@@ -1,6 +1,6 @@
 use orchy_application::{
-    AgentResponse, Application, GetProjectCommand, KnowledgeResponse, ListAgentsCommand,
-    ListOverviewsCommand, ListSkillsCommand, ListTasksCommand, ProjectResponse, TaskResponse,
+    AgentDto, Application, GetProjectCommand, KnowledgeDto, ListAgentsCommand,
+    ListOverviewsCommand, ListSkillsCommand, ListTasksCommand, ProjectDto, TaskDto,
 };
 use orchy_core::namespace::{Namespace, ProjectId};
 
@@ -42,7 +42,7 @@ pub async fn generate_bootstrap_prompt(
         .await
         .map_err(|e| e.to_string())?;
 
-    let agents: Vec<AgentResponse> = app
+    let agents: Vec<AgentDto> = app
         .list_agents
         .execute(ListAgentsCommand {
             org_id: default_org.clone(),
@@ -54,7 +54,7 @@ pub async fn generate_bootstrap_prompt(
         .map_err(|e| e.to_string())?
         .items;
 
-    let active_tasks: Vec<TaskResponse> = {
+    let active_tasks: Vec<TaskDto> = {
         let mut all = Vec::new();
         for status in &["pending", "claimed", "in_progress", "blocked"] {
             let cmd = ListTasksCommand {
@@ -92,11 +92,11 @@ fn render(
     namespace: &Namespace,
     host: &str,
     port: u16,
-    project: &ProjectResponse,
-    overviews: &[KnowledgeResponse],
-    skills: &[KnowledgeResponse],
-    agents: &[AgentResponse],
-    tasks: &[TaskResponse],
+    project: &ProjectDto,
+    overviews: &[KnowledgeDto],
+    skills: &[KnowledgeDto],
+    agents: &[AgentDto],
+    tasks: &[TaskDto],
 ) -> String {
     let mut out = format!(
         r#"# Multi-Agent Coordination — Project `{namespace}`

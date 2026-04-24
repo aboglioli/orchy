@@ -17,7 +17,7 @@ const AGENT_IDLE_SECS: u64 = 30;
 const AGENT_STALE_SECS: u64 = 300;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AgentResponse {
+pub struct AgentDto {
     pub id: String,
     pub alias: String,
     pub org_id: String,
@@ -33,13 +33,13 @@ pub struct AgentResponse {
     pub user_id: Option<String>,
 }
 
-impl From<Agent> for AgentResponse {
+impl From<Agent> for AgentDto {
     fn from(a: Agent) -> Self {
         Self::from(&a)
     }
 }
 
-impl From<&Agent> for AgentResponse {
+impl From<&Agent> for AgentDto {
     fn from(a: &Agent) -> Self {
         Self {
             id: a.id().to_string(),
@@ -61,7 +61,7 @@ impl From<&Agent> for AgentResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct TaskResponse {
+pub struct TaskDto {
     pub id: String,
     pub org_id: String,
     pub project: String,
@@ -83,13 +83,13 @@ pub struct TaskResponse {
     pub updated_at: String,
 }
 
-impl From<Task> for TaskResponse {
+impl From<Task> for TaskDto {
     fn from(t: Task) -> Self {
         Self::from(&t)
     }
 }
 
-impl From<&Task> for TaskResponse {
+impl From<&Task> for TaskDto {
     fn from(t: &Task) -> Self {
         Self {
             id: t.id().to_string(),
@@ -118,23 +118,23 @@ impl From<&Task> for TaskResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct TaskWithContextResponse {
     #[serde(flatten)]
-    pub task: TaskResponse,
+    pub task: TaskDto,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ancestors: Vec<TaskResponse>,
+    pub ancestors: Vec<TaskDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<TaskResponse>,
+    pub children: Vec<TaskDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<TaskResponse>,
+    pub dependencies: Vec<TaskDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub knowledge: Vec<KnowledgeResponse>,
+    pub knowledge: Vec<KnowledgeDto>,
 }
 
 impl From<TaskWithContext> for TaskWithContextResponse {
     fn from(ctx: TaskWithContext) -> Self {
         Self {
-            task: TaskResponse::from(&ctx.task),
-            ancestors: ctx.ancestors.iter().map(TaskResponse::from).collect(),
-            children: ctx.children.iter().map(TaskResponse::from).collect(),
+            task: TaskDto::from(&ctx.task),
+            ancestors: ctx.ancestors.iter().map(TaskDto::from).collect(),
+            children: ctx.children.iter().map(TaskDto::from).collect(),
             dependencies: Vec::new(),
             knowledge: Vec::new(),
         }
@@ -142,7 +142,7 @@ impl From<TaskWithContext> for TaskWithContextResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct KnowledgeResponse {
+pub struct KnowledgeDto {
     pub id: String,
     pub org_id: String,
     pub project: Option<String>,
@@ -166,7 +166,7 @@ pub struct KnowledgeResponse {
     pub score: Option<f32>,
 }
 
-impl KnowledgeResponse {
+impl KnowledgeDto {
     pub fn with_score(k: &Knowledge, score: Option<f32>) -> Self {
         Self {
             score,
@@ -175,13 +175,13 @@ impl KnowledgeResponse {
     }
 }
 
-impl From<Knowledge> for KnowledgeResponse {
+impl From<Knowledge> for KnowledgeDto {
     fn from(k: Knowledge) -> Self {
         Self::from(&k)
     }
 }
 
-impl From<&Knowledge> for KnowledgeResponse {
+impl From<&Knowledge> for KnowledgeDto {
     fn from(k: &Knowledge) -> Self {
         Self {
             id: k.id().to_string(),
@@ -207,7 +207,7 @@ impl From<&Knowledge> for KnowledgeResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct MessageResponse {
+pub struct MessageDto {
     pub id: String,
     pub org_id: String,
     pub project: String,
@@ -221,13 +221,13 @@ pub struct MessageResponse {
     pub refs: Vec<serde_json::Value>,
 }
 
-impl From<Message> for MessageResponse {
+impl From<Message> for MessageDto {
     fn from(m: Message) -> Self {
         Self::from(&m)
     }
 }
 
-impl From<&Message> for MessageResponse {
+impl From<&Message> for MessageDto {
     fn from(m: &Message) -> Self {
         Self {
             id: m.id().to_string(),
@@ -255,7 +255,7 @@ impl From<&Message> for MessageResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ProjectResponse {
+pub struct ProjectDto {
     pub org_id: String,
     pub id: String,
     pub description: String,
@@ -264,13 +264,13 @@ pub struct ProjectResponse {
     pub updated_at: String,
 }
 
-impl From<Project> for ProjectResponse {
+impl From<Project> for ProjectDto {
     fn from(p: Project) -> Self {
         Self::from(&p)
     }
 }
 
-impl From<&Project> for ProjectResponse {
+impl From<&Project> for ProjectDto {
     fn from(p: &Project) -> Self {
         Self {
             org_id: p.org_id().to_string(),
@@ -284,7 +284,7 @@ impl From<&Project> for ProjectResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ResourceLockResponse {
+pub struct ResourceLockDto {
     pub org_id: String,
     pub project: String,
     pub namespace: String,
@@ -294,13 +294,13 @@ pub struct ResourceLockResponse {
     pub expires_at: String,
 }
 
-impl From<ResourceLock> for ResourceLockResponse {
+impl From<ResourceLock> for ResourceLockDto {
     fn from(l: ResourceLock) -> Self {
         Self::from(&l)
     }
 }
 
-impl From<&ResourceLock> for ResourceLockResponse {
+impl From<&ResourceLock> for ResourceLockDto {
     fn from(l: &ResourceLock) -> Self {
         Self {
             org_id: l.org_id().to_string(),
@@ -343,37 +343,37 @@ pub struct SummaryCounts {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentSummaryResponse {
-    pub agent: AgentResponse,
-    pub project: Option<ProjectResponse>,
+    pub agent: AgentDto,
+    pub project: Option<ProjectDto>,
     pub counts: SummaryCounts,
-    pub connected_agents: Vec<AgentResponse>,
-    pub inbox: Vec<MessageResponse>,
-    pub pending_tasks: Vec<TaskResponse>,
-    pub skills: Vec<KnowledgeResponse>,
-    pub handoff_context: Vec<KnowledgeResponse>,
+    pub connected_agents: Vec<AgentDto>,
+    pub inbox: Vec<MessageDto>,
+    pub pending_tasks: Vec<TaskDto>,
+    pub skills: Vec<KnowledgeDto>,
+    pub handoff_context: Vec<KnowledgeDto>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct OrganizationResponse {
+pub struct OrganizationDto {
     pub id: String,
     pub name: String,
-    pub api_keys: Vec<ApiKeyResponse>,
+    pub api_keys: Vec<ApiKeyDto>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-impl From<Organization> for OrganizationResponse {
+impl From<Organization> for OrganizationDto {
     fn from(o: Organization) -> Self {
         Self::from(&o)
     }
 }
 
-impl From<&Organization> for OrganizationResponse {
+impl From<&Organization> for OrganizationDto {
     fn from(o: &Organization) -> Self {
         Self {
             id: o.id().to_string(),
             name: o.name().to_string(),
-            api_keys: o.api_keys().iter().map(ApiKeyResponse::from).collect(),
+            api_keys: o.api_keys().iter().map(ApiKeyDto::from).collect(),
             created_at: o.created_at().to_rfc3339(),
             updated_at: o.updated_at().to_rfc3339(),
         }
@@ -381,14 +381,14 @@ impl From<&Organization> for OrganizationResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ApiKeyResponse {
+pub struct ApiKeyDto {
     pub id: String,
     pub name: String,
     pub is_active: bool,
     pub created_at: String,
 }
 
-impl From<&orchy_core::organization::ApiKey> for ApiKeyResponse {
+impl From<&orchy_core::organization::ApiKey> for ApiKeyDto {
     fn from(k: &orchy_core::organization::ApiKey) -> Self {
         Self {
             id: k.id().to_string(),
@@ -401,15 +401,15 @@ impl From<&orchy_core::organization::ApiKey> for ApiKeyResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectOverviewResponse {
-    pub project: Option<ProjectResponse>,
-    pub agents: Vec<AgentResponse>,
-    pub tasks: Vec<TaskResponse>,
-    pub skills: Vec<KnowledgeResponse>,
-    pub overviews: Vec<KnowledgeResponse>,
+    pub project: Option<ProjectDto>,
+    pub agents: Vec<AgentDto>,
+    pub tasks: Vec<TaskDto>,
+    pub skills: Vec<KnowledgeDto>,
+    pub overviews: Vec<KnowledgeDto>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct EdgeResponse {
+pub struct EdgeDto {
     pub id: String,
     pub from_kind: String,
     pub from_id: String,
@@ -426,13 +426,13 @@ pub struct EdgeResponse {
     pub valid_until: Option<String>,
 }
 
-impl From<Edge> for EdgeResponse {
+impl From<Edge> for EdgeDto {
     fn from(e: Edge) -> Self {
         Self::from(&e)
     }
 }
 
-impl From<&Edge> for EdgeResponse {
+impl From<&Edge> for EdgeDto {
     fn from(e: &Edge) -> Self {
         Self {
             id: e.id().to_string(),
@@ -454,15 +454,15 @@ impl From<&Edge> for EdgeResponse {
 pub struct AssembleContextResponse {
     pub root_kind: String,
     pub root_id: String,
-    pub core_facts: Vec<KnowledgeResponse>,
-    pub open_dependencies: Vec<TaskResponse>,
-    pub relevant_decisions: Vec<KnowledgeResponse>,
-    pub recent_changes: Vec<KnowledgeResponse>,
+    pub core_facts: Vec<KnowledgeDto>,
+    pub open_dependencies: Vec<TaskDto>,
+    pub relevant_decisions: Vec<KnowledgeDto>,
+    pub recent_changes: Vec<KnowledgeDto>,
     pub risk_flags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct UserResponse {
+pub struct UserDto {
     pub id: String,
     pub email: String,
     pub is_active: bool,
@@ -470,7 +470,7 @@ pub struct UserResponse {
     pub created_at: String,
 }
 
-impl From<&orchy_core::user::User> for UserResponse {
+impl From<&orchy_core::user::User> for UserDto {
     fn from(u: &orchy_core::user::User) -> Self {
         Self {
             id: u.id().to_string(),
@@ -483,7 +483,7 @@ impl From<&orchy_core::user::User> for UserResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct OrgMembershipResponse {
+pub struct OrgMembershipDto {
     pub id: String,
     pub user_id: String,
     pub org_id: String,
@@ -491,7 +491,7 @@ pub struct OrgMembershipResponse {
     pub joined_at: String,
 }
 
-impl From<&orchy_core::user::OrgMembership> for OrgMembershipResponse {
+impl From<&orchy_core::user::OrgMembership> for OrgMembershipDto {
     fn from(m: &orchy_core::user::OrgMembership) -> Self {
         Self {
             id: m.id().to_string(),
@@ -505,13 +505,13 @@ impl From<&orchy_core::user::OrgMembership> for OrgMembershipResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthResponse {
-    pub user: UserResponse,
-    pub memberships: Vec<OrgMembershipResponse>,
+    pub user: UserDto,
+    pub memberships: Vec<OrgMembershipDto>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct RegisterAgentResponse {
-    pub agent: AgentResponse,
+pub struct RegisterAgentDto {
+    pub agent: AgentDto,
     pub inbox_count: usize,
     pub pending_tasks_count: usize,
     pub my_tasks_count: usize,

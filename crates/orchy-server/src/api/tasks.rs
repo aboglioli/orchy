@@ -12,9 +12,8 @@ use orchy_application::{
     ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetAgentCommand,
     GetNextTaskCommand, GetTaskCommand, ListTagsCommand, ListTasksCommand, MergeTasksCommand,
     MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand,
-    ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand,
-    TaskResponse, UnarchiveTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
-    resolve_agent,
+    ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand, TaskDto,
+    UnarchiveTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand, resolve_agent,
 };
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -28,7 +27,7 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-fn check_task_project(task: &TaskResponse, project: &str) -> Result<(), ApiError> {
+fn check_task_project(task: &TaskDto, project: &str) -> Result<(), ApiError> {
     if task.project != project {
         return Err(ApiError(
             StatusCode::NOT_FOUND,

@@ -3,15 +3,15 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::user::{Email, PlainPassword, User, UserId, UserStore};
 
-use crate::dto::UserResponse;
+use crate::dto::UserDto;
 
 pub struct RegisterUserCommand {
     pub email: String,
     pub password: String,
 }
 
-pub struct RegisterUserResponse {
-    pub user: UserResponse,
+pub struct RegisterUserDto {
+    pub user: UserDto,
 }
 
 pub struct RegisterUser {
@@ -27,7 +27,7 @@ impl RegisterUser {
         &self,
         cmd: RegisterUserCommand,
         hasher: &dyn orchy_core::user::PasswordHasher,
-    ) -> Result<RegisterUserResponse> {
+    ) -> Result<RegisterUserDto> {
         let email = Email::new(&cmd.email)?;
         let password = PlainPassword::new(&cmd.password)?;
 
@@ -39,8 +39,8 @@ impl RegisterUser {
         let mut user = User::register(id, email, &password, hasher)?;
         self.users.save(&mut user).await?;
 
-        Ok(RegisterUserResponse {
-            user: UserResponse::from(&user),
+        Ok(RegisterUserDto {
+            user: UserDto::from(&user),
         })
     }
 }

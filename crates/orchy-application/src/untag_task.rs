@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::task::{TaskId, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct UntagTaskCommand {
     pub task_id: String,
@@ -19,7 +19,7 @@ impl UntagTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: UntagTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: UntagTaskCommand) -> Result<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
 
         let mut task = self
@@ -30,6 +30,6 @@ impl UntagTask {
 
         task.remove_tag(&cmd.tag)?;
         self.tasks.save(&mut task).await?;
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 }

@@ -10,7 +10,7 @@ use orchy_core::graph::Relation;
 use orchy_core::graph::RelationOptions;
 use orchy_core::resource_ref::ResourceKind;
 
-use crate::dto::AgentResponse;
+use crate::dto::AgentDto;
 use crate::materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborhoodCommand};
 
 pub struct GetAgentCommand {
@@ -20,15 +20,15 @@ pub struct GetAgentCommand {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct GetAgentResponse {
+pub struct GetAgentDto {
     #[serde(flatten)]
-    pub agent: AgentResponse,
+    pub agent: AgentDto,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relations: Option<Vec<Relation>>,
 }
 
-impl Deref for GetAgentResponse {
-    type Target = AgentResponse;
+impl Deref for GetAgentDto {
+    type Target = AgentDto;
     fn deref(&self) -> &Self::Target {
         &self.agent
     }
@@ -50,7 +50,7 @@ impl GetAgent {
         }
     }
 
-    pub async fn execute(&self, cmd: GetAgentCommand) -> Result<GetAgentResponse> {
+    pub async fn execute(&self, cmd: GetAgentCommand) -> Result<GetAgentDto> {
         let id = AgentId::from_str(&cmd.agent_id)?;
         let agent = self
             .agents
@@ -78,8 +78,8 @@ impl GetAgent {
             None
         };
 
-        Ok(GetAgentResponse {
-            agent: AgentResponse::from(agent),
+        Ok(GetAgentDto {
+            agent: AgentDto::from(agent),
             relations,
         })
     }

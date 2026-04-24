@@ -5,7 +5,7 @@ use orchy_core::task::{TaskId, TaskStore};
 
 use crate::parse_namespace;
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct MoveTaskCommand {
     pub task_id: String,
@@ -21,7 +21,7 @@ impl MoveTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: MoveTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: MoveTaskCommand) -> Result<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
 
         let namespace = parse_namespace(Some(&cmd.new_namespace))?;
@@ -34,6 +34,6 @@ impl MoveTask {
 
         task.move_to(namespace)?;
         self.tasks.save(&mut task).await?;
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 }

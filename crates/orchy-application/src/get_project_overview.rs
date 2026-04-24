@@ -9,9 +9,7 @@ use orchy_core::pagination::PageParams;
 use orchy_core::project::{Project, ProjectStore};
 use orchy_core::task::{TaskFilter, TaskStore};
 
-use crate::dto::{
-    AgentResponse, KnowledgeResponse, ProjectOverviewResponse, ProjectResponse, TaskResponse,
-};
+use crate::dto::{AgentDto, KnowledgeDto, ProjectDto, ProjectOverviewResponse, TaskDto};
 use crate::parse_namespace;
 
 pub struct GetProjectOverviewCommand {
@@ -57,14 +55,14 @@ impl GetProjectOverview {
             Some(project) => project,
             None => Project::new(org_id.clone(), project_id.clone(), String::new())?,
         };
-        let project = Some(ProjectResponse::from(&project));
+        let project = Some(ProjectDto::from(&project));
 
         let all_agents = self
             .agents
             .list(&org_id, PageParams::unbounded())
             .await?
             .items;
-        let agents: Vec<AgentResponse> = all_agents
+        let agents: Vec<AgentDto> = all_agents
             .iter()
             .filter(|a| a.project() == &project_id)
             .filter(|a| {
@@ -73,10 +71,10 @@ impl GetProjectOverview {
                     .map(|ns| a.namespace().starts_with(ns))
                     .unwrap_or(true)
             })
-            .map(AgentResponse::from)
+            .map(AgentDto::from)
             .collect();
 
-        let tasks: Vec<TaskResponse> = self
+        let tasks: Vec<TaskDto> = self
             .tasks
             .list(
                 TaskFilter {
@@ -91,10 +89,10 @@ impl GetProjectOverview {
             .await?
             .items
             .iter()
-            .map(TaskResponse::from)
+            .map(TaskDto::from)
             .collect();
 
-        let skills: Vec<KnowledgeResponse> = self
+        let skills: Vec<KnowledgeDto> = self
             .knowledge
             .list(
                 KnowledgeFilter {
@@ -111,10 +109,10 @@ impl GetProjectOverview {
             .await?
             .items
             .iter()
-            .map(KnowledgeResponse::from)
+            .map(KnowledgeDto::from)
             .collect();
 
-        let overviews: Vec<KnowledgeResponse> = self
+        let overviews: Vec<KnowledgeDto> = self
             .knowledge
             .list(
                 KnowledgeFilter {
@@ -131,7 +129,7 @@ impl GetProjectOverview {
             .await?
             .items
             .iter()
-            .map(KnowledgeResponse::from)
+            .map(KnowledgeDto::from)
             .collect();
 
         Ok(ProjectOverviewResponse {

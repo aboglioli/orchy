@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orchy_core::agent::{AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 
-use crate::dto::AgentResponse;
+use crate::dto::AgentDto;
 
 pub struct RenameAliasCommand {
     pub agent_id: String,
@@ -20,7 +20,7 @@ impl RenameAlias {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: RenameAliasCommand) -> Result<AgentResponse> {
+    pub async fn execute(&self, cmd: RenameAliasCommand) -> Result<AgentDto> {
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
         let new_alias =
             Alias::new(&cmd.new_alias).map_err(|e| Error::InvalidInput(e.to_string()))?;
@@ -46,6 +46,6 @@ impl RenameAlias {
             self.agents.save(&mut agent).await?;
         }
 
-        Ok(AgentResponse::from(&agent))
+        Ok(AgentDto::from(&agent))
     }
 }

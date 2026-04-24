@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore};
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -27,7 +27,7 @@ impl ListOverviews {
         }
     }
 
-    pub async fn execute(&self, cmd: ListOverviewsCommand) -> Result<Vec<KnowledgeResponse>> {
+    pub async fn execute(&self, cmd: ListOverviewsCommand) -> Result<Vec<KnowledgeDto>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -38,6 +38,6 @@ impl ListOverviews {
             .inner
             .list_with_inheritance(&org_id, &project, &namespace, KnowledgeKind::Overview)
             .await?;
-        Ok(entries.iter().map(KnowledgeResponse::from).collect())
+        Ok(entries.iter().map(KnowledgeDto::from).collect())
     }
 }

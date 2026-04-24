@@ -9,7 +9,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceRef;
 use orchy_core::user::{OrgMembershipStore, UserStore};
 
-use crate::dto::MessageResponse;
+use crate::dto::MessageDto;
 use crate::parse_namespace;
 
 pub struct SendMessageCommand {
@@ -45,7 +45,7 @@ impl SendMessage {
         }
     }
 
-    pub async fn execute(&self, cmd: SendMessageCommand) -> Result<MessageResponse> {
+    pub async fn execute(&self, cmd: SendMessageCommand) -> Result<MessageDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -116,6 +116,6 @@ impl SendMessage {
         )?;
 
         self.messages.save(&mut msg).await?;
-        Ok(MessageResponse::from(&msg))
+        Ok(MessageDto::from(&msg))
     }
 }

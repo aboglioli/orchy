@@ -10,8 +10,7 @@ use orchy_core::project::{Project, ProjectStore};
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 
 use crate::dto::{
-    AgentResponse, AgentSummaryResponse, KnowledgeResponse, MessageResponse, ProjectResponse,
-    SummaryCounts, TaskResponse,
+    AgentDto, AgentSummaryResponse, KnowledgeDto, MessageDto, ProjectDto, SummaryCounts, TaskDto,
 };
 
 pub struct GetAgentSummaryCommand {
@@ -61,8 +60,8 @@ impl GetAgentSummary {
 
         let project = Some(
             match self.projects.find_by_id(&org_id, agent.project()).await? {
-                Some(project) => ProjectResponse::from(&project),
-                None => ProjectResponse::from(Project::new(
+                Some(project) => ProjectDto::from(&project),
+                None => ProjectDto::from(Project::new(
                     org_id.clone(),
                     agent.project().clone(),
                     String::new(),
@@ -75,14 +74,14 @@ impl GetAgentSummary {
             .list(&org_id, PageParams::unbounded())
             .await?
             .items;
-        let connected_agents: Vec<AgentResponse> = all_agents
+        let connected_agents: Vec<AgentDto> = all_agents
             .iter()
             .filter(|a| a.id() != agent.id())
             .filter(|a| a.project() == agent.project())
-            .map(AgentResponse::from)
+            .map(AgentDto::from)
             .collect();
 
-        let inbox: Vec<MessageResponse> = self
+        let inbox: Vec<MessageDto> = self
             .messages
             .find_unread(
                 agent.id(),
@@ -96,13 +95,13 @@ impl GetAgentSummary {
             .await?
             .items
             .iter()
-            .map(MessageResponse::from)
+            .map(MessageDto::from)
             .collect();
 
         let agent_roles: std::collections::HashSet<&str> =
             agent.roles().iter().map(|r| r.as_str()).collect();
 
-        let pending_tasks: Vec<TaskResponse> = self
+        let pending_tasks: Vec<TaskDto> = self
             .tasks
             .list(
                 TaskFilter {
@@ -124,10 +123,10 @@ impl GetAgentSummary {
                         .iter()
                         .any(|r| agent_roles.contains(r.as_str()))
             })
-            .map(TaskResponse::from)
+            .map(TaskDto::from)
             .collect();
 
-        let skills: Vec<KnowledgeResponse> = self
+        let skills: Vec<KnowledgeDto> = self
             .knowledge
             .list(
                 KnowledgeFilter {
@@ -143,10 +142,10 @@ impl GetAgentSummary {
             .await?
             .items
             .iter()
-            .map(KnowledgeResponse::from)
+            .map(KnowledgeDto::from)
             .collect();
 
-        let handoff_context: Vec<KnowledgeResponse> = self
+        let handoff_context: Vec<KnowledgeDto> = self
             .knowledge
             .list(
                 KnowledgeFilter {
@@ -162,7 +161,7 @@ impl GetAgentSummary {
             .await?
             .items
             .iter()
-            .map(KnowledgeResponse::from)
+            .map(KnowledgeDto::from)
             .collect();
 
         let counts = SummaryCounts {
@@ -173,7 +172,7 @@ impl GetAgentSummary {
         };
 
         Ok(AgentSummaryResponse {
-            agent: AgentResponse::from(&agent),
+            agent: AgentDto::from(&agent),
             project,
             counts,
             connected_agents,

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 
-use crate::dto::AgentResponse;
+use crate::dto::AgentDto;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
@@ -43,7 +43,7 @@ impl SwitchContext {
         }
     }
 
-    pub async fn execute(&self, cmd: SwitchContextCommand) -> Result<AgentResponse> {
+    pub async fn execute(&self, cmd: SwitchContextCommand) -> Result<AgentDto> {
         if cmd.project.is_none() && cmd.namespace.is_none() {
             return Err(Error::InvalidInput(
                 "at least one of project or namespace is required".to_string(),
@@ -91,7 +91,7 @@ impl SwitchContext {
 
         agent.switch_context(target_project, target_namespace)?;
         self.agents.save(&mut agent).await?;
-        Ok(AgentResponse::from(&agent))
+        Ok(AgentDto::from(&agent))
     }
 
     async fn release_project_resources(

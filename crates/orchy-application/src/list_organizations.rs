@@ -3,7 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::Result;
 use orchy_core::organization::OrganizationStore;
 
-use crate::dto::OrganizationResponse;
+use crate::dto::OrganizationDto;
 
 pub struct ListOrganizationsCommand {}
 
@@ -16,11 +16,8 @@ impl ListOrganizations {
         Self { orgs }
     }
 
-    pub async fn execute(
-        &self,
-        _cmd: ListOrganizationsCommand,
-    ) -> Result<Vec<OrganizationResponse>> {
+    pub async fn execute(&self, _cmd: ListOrganizationsCommand) -> Result<Vec<OrganizationDto>> {
         let orgs = self.orgs.list().await?;
-        Ok(orgs.iter().map(OrganizationResponse::from).collect())
+        Ok(orgs.iter().map(OrganizationDto::from).collect())
     }
 }

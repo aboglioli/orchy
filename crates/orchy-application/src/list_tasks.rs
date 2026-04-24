@@ -8,7 +8,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 
-use crate::dto::{PageResponse, TaskResponse};
+use crate::dto::{PageResponse, TaskDto};
 use crate::parse_namespace;
 
 pub struct ListTasksCommand {
@@ -32,7 +32,7 @@ impl ListTasks {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<PageResponse<TaskResponse>> {
+    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<PageResponse<TaskDto>> {
         let org_id =
             Some(OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?);
 

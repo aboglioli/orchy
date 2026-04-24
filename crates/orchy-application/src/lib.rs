@@ -11,7 +11,7 @@ use orchy_core::organization::OrganizationStore;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
-use orchy_core::user::{OrgMembershipStore, UserStore};
+use orchy_core::user::{OrgMembershipStore, TokenEncoder, UserStore};
 
 pub mod dto;
 
@@ -132,12 +132,16 @@ mod check_lock;
 mod lock_resource;
 mod unlock_resource;
 
+// Namespace
+mod register_namespace;
+
 // Organization
 mod add_api_key;
 mod create_organization;
 mod get_organization;
 mod list_organizations;
 mod resolve_api_key;
+mod resolve_token;
 mod revoke_api_key;
 
 // Events/overview
@@ -146,8 +150,8 @@ mod poll_updates;
 
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
 pub use check_timed_out_agents::CheckTimedOutAgents;
-pub use dto::RegisterAgentResponse;
-pub use get_agent::{GetAgent, GetAgentCommand, GetAgentResponse};
+pub use dto::RegisterAgentDto;
+pub use get_agent::{GetAgent, GetAgentCommand, GetAgentDto};
 pub use get_agent_summary::{GetAgentSummary, GetAgentSummaryCommand};
 pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
@@ -164,7 +168,7 @@ pub use claim_task::{ClaimTask, ClaimTaskCommand};
 pub use complete_task::{CompleteTask, CompleteTaskCommand};
 pub use fail_task::{FailTask, FailTaskCommand};
 pub use get_next_task::{GetNextTask, GetNextTaskCommand};
-pub use get_task::{GetTask, GetTaskCommand, GetTaskResponse};
+pub use get_task::{GetTask, GetTaskCommand, GetTaskDto};
 pub use get_task_with_context::{GetTaskWithContext, GetTaskWithContextCommand};
 pub use list_tasks::{ListTasks, ListTasksCommand};
 pub use post_task::{PostTask, PostTaskCommand};
@@ -206,7 +210,7 @@ pub use materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborh
 pub use move_knowledge::{MoveKnowledge, MoveKnowledgeCommand};
 pub use patch_knowledge_metadata::{PatchKnowledgeMetadata, PatchKnowledgeMetadataCommand};
 pub use promote_knowledge::{PromoteKnowledge, PromoteKnowledgeCommand};
-pub use read_knowledge::{ReadKnowledge, ReadKnowledgeCommand, ReadKnowledgeResponse};
+pub use read_knowledge::{ReadKnowledge, ReadKnowledgeCommand, ReadKnowledgeDto};
 pub use rename_knowledge::{RenameKnowledge, RenameKnowledgeCommand};
 pub use search_knowledge::{SearchKnowledge, SearchKnowledgeCommand};
 pub use tag_knowledge::{TagKnowledge, TagKnowledgeCommand};
@@ -230,7 +234,9 @@ pub use add_api_key::{AddApiKey, AddApiKeyCommand};
 pub use create_organization::{CreateOrganization, CreateOrganizationCommand};
 pub use get_organization::{GetOrganization, GetOrganizationCommand};
 pub use list_organizations::{ListOrganizations, ListOrganizationsCommand};
+pub use register_namespace::{RegisterNamespace, RegisterNamespaceCommand};
 pub use resolve_api_key::{ApiKeyPrincipal, ResolveApiKey, ResolveApiKeyCommand};
+pub use resolve_token::{ResolveToken, ResolveTokenCommand, TokenPrincipal};
 pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 
 pub use add_edge::{AddEdge, AddEdgeCommand};
@@ -240,15 +246,14 @@ pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 pub use bootstrap_admin::BootstrapAdmin;
 pub use change_password::{ChangePassword, ChangePasswordCommand};
 pub use get_current_user::{GetCurrentUser, GetCurrentUserCommand};
-pub use invite_user::{InviteUser, InviteUserCommand, InviteUserResponse};
-pub use login_user::{LoginUser, LoginUserCommand};
-pub use register_user::{RegisterUser, RegisterUserCommand, RegisterUserResponse};
+pub use invite_user::{InviteUser, InviteUserCommand, InviteUserDto};
+pub use login_user::{LoginUser, LoginUserCommand, LoginUserResponse};
+pub use register_user::{RegisterUser, RegisterUserCommand, RegisterUserDto};
 
 pub use dto::{
-    AgentResponse, AgentSummaryResponse, ApiKeyResponse, AssembleContextResponse, AuthResponse,
-    EdgeResponse, KnowledgeResponse, MessageResponse, OrgMembershipResponse, OrganizationResponse,
-    PageResponse, ProjectOverviewResponse, ProjectResponse, ResourceLockResponse, TaskResponse,
-    TaskWithContextResponse, UserResponse,
+    AgentDto, AgentSummaryResponse, ApiKeyDto, AssembleContextResponse, AuthResponse, EdgeDto,
+    KnowledgeDto, MessageDto, OrgMembershipDto, OrganizationDto, PageResponse, ProjectDto,
+    ProjectOverviewResponse, ResourceLockDto, TaskDto, TaskWithContextResponse, UserDto,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
@@ -345,9 +350,11 @@ pub struct Application {
     pub add_api_key: AddApiKey,
     pub revoke_api_key: RevokeApiKey,
     pub resolve_api_key: ResolveApiKey,
+    pub resolve_token: Option<ResolveToken>,
+    pub register_namespace: RegisterNamespace,
 
     pub register_user: RegisterUser,
-    pub login_user: LoginUser,
+    pub login_user: Option<LoginUser>,
     pub get_current_user: GetCurrentUser,
     pub change_password: ChangePassword,
     pub invite_user: InviteUser,
@@ -370,6 +377,7 @@ impl Application {
         event_query: Arc<dyn EventQuery>,
         users: Arc<dyn UserStore>,
         memberships: Arc<dyn OrgMembershipStore>,
+        token_encoder: Option<Arc<dyn TokenEncoder>>,
     ) -> Self {
         let materializer = Arc::new(MaterializeNeighborhood::new(
             edges.clone(),
@@ -484,7 +492,8 @@ impl Application {
             get_project: GetProject::new(projects.clone()),
             update_project: UpdateProject::new(projects.clone()),
             set_project_metadata: SetProjectMetadata::new(projects.clone()),
-            list_namespaces: ListNamespaces::new(namespaces),
+            list_namespaces: ListNamespaces::new(namespaces.clone()),
+            register_namespace: RegisterNamespace::new(namespaces),
 
             lock_resource: LockResource::new(agents.clone(), locks.clone()),
             unlock_resource: UnlockResource::new(agents.clone(), locks.clone()),
@@ -498,10 +507,14 @@ impl Application {
             list_organizations: ListOrganizations::new(orgs.clone()),
             add_api_key: AddApiKey::new(orgs.clone()),
             revoke_api_key: RevokeApiKey::new(orgs.clone()),
-            resolve_api_key: ResolveApiKey::new(orgs),
+            resolve_api_key: ResolveApiKey::new(orgs.clone()),
+            resolve_token: token_encoder
+                .as_ref()
+                .map(|te| ResolveToken::new(te.clone(), memberships.clone(), orgs)),
 
             register_user: RegisterUser::new(users.clone()),
-            login_user: LoginUser::new(users.clone(), memberships.clone()),
+            login_user: token_encoder
+                .map(|te| LoginUser::new(users.clone(), memberships.clone(), te)),
             get_current_user: GetCurrentUser::new(users.clone(), memberships.clone()),
             change_password: ChangePassword::new(users.clone()),
             invite_user: InviteUser::new(users.clone(), memberships.clone()),

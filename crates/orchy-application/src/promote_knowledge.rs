@@ -7,7 +7,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 use crate::parse_namespace;
 
 pub struct PromoteKnowledgeCommand {
@@ -30,7 +30,7 @@ impl PromoteKnowledge {
         Self { knowledge, edges }
     }
 
-    pub async fn execute(&self, cmd: PromoteKnowledgeCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: PromoteKnowledgeCommand) -> Result<KnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -101,6 +101,6 @@ impl PromoteKnowledge {
             self.knowledge.save(&mut src).await?;
         }
 
-        Ok(KnowledgeResponse::from(&promoted))
+        Ok(KnowledgeDto::from(&promoted))
     }
 }

@@ -6,7 +6,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStatus, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct RemoveDependencyCommand {
     pub org_id: String,
@@ -24,7 +24,7 @@ impl RemoveDependency {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: RemoveDependencyCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: RemoveDependencyCommand) -> Result<TaskDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let task_id = cmd.task_id.parse::<TaskId>()?;
@@ -61,7 +61,7 @@ impl RemoveDependency {
             self.tasks.save(&mut task).await?;
         }
 
-        Ok(TaskResponse::from(&task))
+        Ok(TaskDto::from(&task))
     }
 
     async fn all_deps_completed(&self, org: &OrganizationId, task_id: &TaskId) -> Result<bool> {

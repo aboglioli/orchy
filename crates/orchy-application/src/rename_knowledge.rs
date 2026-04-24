@@ -7,7 +7,7 @@ use orchy_core::organization::OrganizationId;
 
 use crate::parse_namespace;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 
 pub struct RenameKnowledgeCommand {
     pub org_id: String,
@@ -26,7 +26,7 @@ impl RenameKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: RenameKnowledgeCommand) -> Result<KnowledgeResponse> {
+    pub async fn execute(&self, cmd: RenameKnowledgeCommand) -> Result<KnowledgeDto> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let project =
@@ -49,6 +49,6 @@ impl RenameKnowledge {
 
         entry.rename(new_path)?;
         self.store.save(&mut entry).await?;
-        Ok(KnowledgeResponse::from(&entry))
+        Ok(KnowledgeDto::from(&entry))
     }
 }

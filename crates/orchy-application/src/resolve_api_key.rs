@@ -3,11 +3,11 @@ use std::sync::Arc;
 use orchy_core::error::Result;
 use orchy_core::organization::OrganizationStore;
 
-use crate::dto::OrganizationResponse;
+use crate::dto::OrganizationDto;
 
 #[derive(Debug, Clone)]
 pub struct ApiKeyPrincipal {
-    pub org: OrganizationResponse,
+    pub org: OrganizationDto,
     pub user_id: Option<String>,
 }
 
@@ -38,7 +38,7 @@ impl ResolveApiKey {
             .and_then(|k| k.user_id().map(|u| u.to_string()));
 
         Ok(Some(ApiKeyPrincipal {
-            org: OrganizationResponse::from(&org),
+            org: OrganizationDto::from(&org),
             user_id,
         }))
     }

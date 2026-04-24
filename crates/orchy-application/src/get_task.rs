@@ -9,7 +9,7 @@ use orchy_core::graph::RelationOptions;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 use crate::materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborhoodCommand};
 
 pub struct GetTaskCommand {
@@ -19,15 +19,15 @@ pub struct GetTaskCommand {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct GetTaskResponse {
+pub struct GetTaskDto {
     #[serde(flatten)]
-    pub task: TaskResponse,
+    pub task: TaskDto,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relations: Option<Vec<Relation>>,
 }
 
-impl Deref for GetTaskResponse {
-    type Target = TaskResponse;
+impl Deref for GetTaskDto {
+    type Target = TaskDto;
     fn deref(&self) -> &Self::Target {
         &self.task
     }
@@ -49,7 +49,7 @@ impl GetTask {
         }
     }
 
-    pub async fn execute(&self, cmd: GetTaskCommand) -> Result<GetTaskResponse> {
+    pub async fn execute(&self, cmd: GetTaskCommand) -> Result<GetTaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
 
         let task = self
@@ -78,8 +78,8 @@ impl GetTask {
             None
         };
 
-        Ok(GetTaskResponse {
-            task: TaskResponse::from(&task),
+        Ok(GetTaskDto {
+            task: TaskDto::from(&task),
             relations,
         })
     }

@@ -7,7 +7,7 @@ use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct DelegateTaskCommand {
     pub task_id: String,
@@ -29,7 +29,7 @@ impl DelegateTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: DelegateTaskCommand) -> Result<TaskResponse> {
+    pub async fn execute(&self, cmd: DelegateTaskCommand) -> Result<TaskDto> {
         let parent_id = cmd.task_id.parse::<TaskId>()?;
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
@@ -73,7 +73,7 @@ impl DelegateTask {
             Ok(e) => e,
             Err(e) => {
                 tracing::warn!("failed to create edge: {e}");
-                return Ok(TaskResponse::from(&subtask));
+                return Ok(TaskDto::from(&subtask));
             }
         }
         .with_source(ResourceKind::Task, parent_id.to_string());
@@ -83,6 +83,6 @@ impl DelegateTask {
                 subtask.id()
             );
         }
-        Ok(TaskResponse::from(&subtask))
+        Ok(TaskDto::from(&subtask))
     }
 }

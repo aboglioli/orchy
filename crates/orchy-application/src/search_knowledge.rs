@@ -10,7 +10,7 @@ use orchy_core::resource_ref::ResourceKind;
 
 use orchy_core::namespace::ProjectId;
 
-use crate::dto::KnowledgeResponse;
+use crate::dto::KnowledgeDto;
 use crate::parse_namespace;
 
 pub struct SearchKnowledgeCommand {
@@ -45,7 +45,7 @@ impl SearchKnowledge {
         }
     }
 
-    pub async fn execute(&self, cmd: SearchKnowledgeCommand) -> Result<Vec<KnowledgeResponse>> {
+    pub async fn execute(&self, cmd: SearchKnowledgeCommand) -> Result<Vec<KnowledgeDto>> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
@@ -136,7 +136,7 @@ impl SearchKnowledge {
                     true
                 }
             })
-            .map(|(k, score)| KnowledgeResponse::with_score(k, *score))
+            .map(|(k, score)| KnowledgeDto::with_score(k, *score))
             .collect();
 
         Ok(filtered)

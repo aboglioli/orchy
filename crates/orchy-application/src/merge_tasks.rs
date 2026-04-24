@@ -9,7 +9,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskId, TaskStatus, TaskStore};
 
-use crate::dto::TaskResponse;
+use crate::dto::TaskDto;
 
 pub struct MergeTasksCommand {
     pub org_id: String,
@@ -30,10 +30,7 @@ impl MergeTasks {
         Self { tasks, edges }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: MergeTasksCommand,
-    ) -> Result<(TaskResponse, Vec<TaskResponse>)> {
+    pub async fn execute(&self, cmd: MergeTasksCommand) -> Result<(TaskDto, Vec<TaskDto>)> {
         let task_ids = cmd
             .task_ids
             .iter()
@@ -205,8 +202,8 @@ impl MergeTasks {
         }
 
         Ok((
-            TaskResponse::from(&merged),
-            cancelled.iter().map(TaskResponse::from).collect(),
+            TaskDto::from(&merged),
+            cancelled.iter().map(TaskDto::from).collect(),
         ))
     }
 
