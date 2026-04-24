@@ -18,6 +18,7 @@ pub mod dto;
 // User/Auth
 mod bootstrap_admin;
 mod change_password;
+mod decode_token;
 mod get_current_user;
 mod invite_user;
 mod login_user;
@@ -247,6 +248,7 @@ pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
 pub use bootstrap_admin::BootstrapAdmin;
 pub use change_password::{ChangePassword, ChangePasswordCommand};
+pub use decode_token::{DecodeToken, DecodeTokenCommand, DecodeTokenResponse};
 pub use get_current_user::{GetCurrentUser, GetCurrentUserCommand};
 pub use invite_user::{InviteUser, InviteUserCommand, InviteUserDto};
 pub use login_user::{LoginUser, LoginUserCommand, LoginUserResponse};
@@ -355,6 +357,7 @@ pub struct Application {
     pub revoke_api_key: RevokeApiKey,
     pub resolve_api_key: ResolveApiKey,
     pub resolve_token: Option<ResolveToken>,
+    pub decode_token: Option<DecodeToken>,
     pub register_namespace: RegisterNamespace,
 
     pub register_user: RegisterUser,
@@ -518,6 +521,9 @@ impl Application {
             resolve_token: token_encoder
                 .as_ref()
                 .map(|te| ResolveToken::new(te.clone(), memberships.clone(), orgs)),
+            decode_token: token_encoder
+                .as_ref()
+                .map(|te| DecodeToken::new(te.clone())),
 
             register_user: RegisterUser::new(users.clone(), hasher.clone()),
             login_user: token_encoder

@@ -74,20 +74,18 @@ impl From<AuthResponse> for UserAuth {
 pub async fn extract_user_auth(cookies: &Cookies, container: &Arc<Container>) -> Option<UserAuth> {
     let token = get_auth_token(cookies)?;
 
-    let resolve_token = container.app.resolve_token.as_ref()?;
-    let principal = resolve_token
-        .execute(orchy_application::ResolveTokenCommand {
+    let decode_token = container.app.decode_token.as_ref()?;
+    let decoded = decode_token
+        .execute(orchy_application::DecodeTokenCommand {
             token: token.to_string(),
         })
-        .await
-        .ok()
-        .flatten()?;
+        .ok()?;
 
     let response = container
         .app
         .get_current_user
         .execute(GetCurrentUserCommand {
-            user_id: principal.user_id,
+            user_id: decoded.user_id,
         })
         .await
         .ok()?;
