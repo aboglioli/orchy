@@ -3,19 +3,32 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use orchy_application::{
-    AddEdge, AddEdgeCommand, CheckMailbox, CheckMailboxCommand, ClaimMessage, GetAgentSummary,
-    GetAgentSummaryCommand, GetNextTask, GetNextTaskCommand, GetProject, GetProjectCommand,
-    LockResource, LockResourceCommand, MarkRead, MarkReadCommand, PostTask, PostTaskCommand,
-    RegisterAgent, RegisterAgentCommand, RenameAlias, RenameAliasCommand, SendMessage,
-    SendMessageCommand, UnclaimMessage,
+    AddDependency, AddDependencyCommand, AddEdge, AddEdgeCommand, AppendKnowledge,
+    AppendKnowledgeCommand, AssignTask, AssignTaskCommand, CancelTask, CancelTaskCommand,
+    ChangeKnowledgeKind, ChangeKnowledgeKindCommand, ChangeRoles, ChangeRolesCommand, CheckMailbox,
+    CheckMailboxCommand, ClaimMessage, ClaimTask, ClaimTaskCommand, CompleteTask,
+    CompleteTaskCommand, ConsolidateKnowledge, ConsolidateKnowledgeCommand, DelegateTask,
+    DelegateTaskCommand, FailTask, FailTaskCommand, GetAgentSummary, GetAgentSummaryCommand,
+    GetNextTask, GetNextTaskCommand, GetProject, GetProjectCommand, GetTask, GetTaskCommand,
+    LockResource, LockResourceCommand, MarkRead, MarkReadCommand, MergeTasks, MergeTasksCommand,
+    MoveKnowledge, MoveKnowledgeCommand, PostTask, PostTaskCommand, PromoteKnowledge,
+    PromoteKnowledgeCommand, ReadKnowledge, ReadKnowledgeCommand, RegisterAgent,
+    RegisterAgentCommand, ReleaseTask, ReleaseTaskCommand, RemoveDependency,
+    RemoveDependencyCommand, RenameAlias, RenameAliasCommand, RenameKnowledge,
+    RenameKnowledgeCommand, ReplaceTask, ReplaceTaskCommand, SendMessage, SendMessageCommand,
+    StartTask, StartTaskCommand, SubtaskInput, SwitchContext, SwitchContextCommand, TagKnowledge,
+    TagKnowledgeCommand, TagTask, TagTaskCommand, UnclaimMessage, UntagKnowledge,
+    UntagKnowledgeCommand, UntagTask, UntagTaskCommand, WriteKnowledge, WriteKnowledgeCommand,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
-use orchy_core::graph::EdgeStore;
+use orchy_core::graph::{EdgeStore, RelationType};
+use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
+use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::TaskStore;
 use orchy_core::user::{
     Email, HashedPassword, OrgMembership, OrgMembershipStore, OrgRole, RestoreUser, User, UserId,
@@ -771,4 +784,1185 @@ async fn alias_uniqueness_enforced_per_org_and_project() {
         result.err()
     );
     assert_eq!(result.unwrap().agent.alias, "unique-alias");
+}
+
+// ─── knowledge operations ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn knowledge_append_creates_or_extends() {
+    let s = state();
+    let k = knowledge(&s);
+    let e = edges(&s);
+
+    let write = WriteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+        None,
+    );
+    let resp = write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "append-test".into(),
+            kind: "note".into(),
+            title: "Append Test".into(),
+            content: "original".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(resp.version, 1);
+
+    let append = AppendKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let appended = append
+        .execute(AppendKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "append-test".into(),
+            kind: "note".into(),
+            value: "appended".into(),
+            separator: None,
+            metadata: None,
+            metadata_remove: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(appended.content.contains("original"));
+    assert!(appended.content.contains("appended"));
+    assert_eq!(appended.version, 2);
+}
+
+#[tokio::test]
+async fn knowledge_rename_changes_path() {
+    let s = state();
+    let k = knowledge(&s);
+    let e = edges(&s);
+
+    let write = WriteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+        None,
+    );
+    write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "old-path".into(),
+            kind: "note".into(),
+            title: "Rename Test".into(),
+            content: "body".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let rename = RenameKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    let renamed = rename
+        .execute(RenameKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "old-path".into(),
+            new_path: "new-path".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(renamed.path, "new-path");
+
+    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let found = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "new-path".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(found.knowledge.is_some());
+
+    let not_found = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "old-path".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(not_found.knowledge.is_none());
+}
+
+#[tokio::test]
+async fn knowledge_move_changes_namespace() {
+    let s = state();
+    let k = knowledge(&s);
+    let e = edges(&s);
+
+    let write = WriteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+        None,
+    );
+    write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "move-test".into(),
+            kind: "note".into(),
+            title: "Move Test".into(),
+            content: "body".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let mv = MoveKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    let moved = mv
+        .execute(MoveKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "move-test".into(),
+            new_namespace: "/backend".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(moved.namespace, "/backend");
+
+    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let found = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: Some("/backend".into()),
+            path: "move-test".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(found.knowledge.is_some());
+}
+
+#[tokio::test]
+async fn knowledge_tag_and_untag() {
+    let s = state();
+    let k = knowledge(&s);
+    let e = edges(&s);
+
+    let write = WriteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+        None,
+    );
+    write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "tag-test".into(),
+            kind: "note".into(),
+            title: "Tag Test".into(),
+            content: "body".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let tag = TagKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    tag.execute(TagKnowledgeCommand {
+        org_id: "default".into(),
+        project: "test".into(),
+        namespace: None,
+        path: "tag-test".into(),
+        tag: "rust".into(),
+    })
+    .await
+    .unwrap();
+
+    tag.execute(TagKnowledgeCommand {
+        org_id: "default".into(),
+        project: "test".into(),
+        namespace: None,
+        path: "tag-test".into(),
+        tag: "backend".into(),
+    })
+    .await
+    .unwrap();
+
+    let untag = UntagKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    untag
+        .execute(UntagKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "tag-test".into(),
+            tag: "backend".into(),
+        })
+        .await
+        .unwrap();
+
+    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let resp = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "tag-test".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    let entry = resp.knowledge.unwrap();
+    assert!(entry.tags.contains(&"rust".to_string()));
+    assert!(!entry.tags.contains(&"backend".to_string()));
+}
+
+#[tokio::test]
+async fn knowledge_change_kind() {
+    let s = state();
+    let k = knowledge(&s);
+    let e = edges(&s);
+
+    let write = WriteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+        None,
+    );
+    let original = write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "kind-test".into(),
+            kind: "note".into(),
+            title: "Kind Test".into(),
+            content: "body".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(original.kind, "note");
+
+    let change = ChangeKnowledgeKind::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let changed = change
+        .execute(ChangeKnowledgeKindCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "kind-test".into(),
+            new_kind: "decision".into(),
+            version: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(changed.kind, "decision");
+    assert!(changed.version > original.version);
+}
+
+#[tokio::test]
+async fn knowledge_promote_to_skill() {
+    let s = state();
+    let k = knowledge(&s);
+    let e = edges(&s);
+
+    let write = WriteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+        None,
+    );
+    write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "promote-source".into(),
+            kind: "decision".into(),
+            title: "Use RS256".into(),
+            content: "RS256 supports key rotation".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let promote = PromoteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+    );
+    let skill = promote
+        .execute(PromoteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            source_path: "promote-source".into(),
+            target_path: "promote-skill".into(),
+            target_title: Some("JWT Algorithm Skill".into()),
+            instruction: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(skill.kind, "skill");
+    assert_eq!(skill.path, "promote-skill");
+
+    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let skill_entry = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "promote-skill".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(skill_entry.knowledge.is_some());
+
+    let source_entry = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "promote-source".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(source_entry.knowledge.unwrap().archived);
+}
+
+#[tokio::test]
+async fn knowledge_consolidate_merges_entries() {
+    let s = state();
+    let k = knowledge(&s);
+    let e = edges(&s);
+
+    let write = WriteKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+        None,
+    );
+    let src1 = write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "consolidate-a".into(),
+            kind: "note".into(),
+            title: "Note A".into(),
+            content: "content-a".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+    let src2 = write
+        .execute(WriteKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "consolidate-b".into(),
+            kind: "note".into(),
+            title: "Note B".into(),
+            content: "content-b".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let consolidate = ConsolidateKnowledge::new(
+        k.clone() as Arc<dyn KnowledgeStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+    );
+    let merged = consolidate
+        .execute(ConsolidateKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            source_paths: vec!["consolidate-a".into(), "consolidate-b".into()],
+            target_path: "consolidated".into(),
+            target_title: "Consolidated Notes".into(),
+            target_kind: Some("summary".into()),
+        })
+        .await
+        .unwrap();
+    assert!(merged.content.contains("content-a"));
+    assert!(merged.content.contains("content-b"));
+    assert_eq!(merged.kind, "summary");
+
+    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let src_a = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "consolidate-a".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(src_a.knowledge.unwrap().archived);
+
+    let src_b = read
+        .execute(ReadKnowledgeCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "consolidate-b".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(src_b.knowledge.unwrap().archived);
+
+    let org_id = org();
+    let edge1 = e
+        .exists_by_pair(
+            &org_id,
+            &ResourceKind::Knowledge,
+            &merged.id,
+            &ResourceKind::Knowledge,
+            &src1.id,
+            &RelationType::MergedFrom,
+        )
+        .await
+        .unwrap();
+    assert!(edge1, "merged_from edge to source A must exist");
+
+    let edge2 = e
+        .exists_by_pair(
+            &org_id,
+            &ResourceKind::Knowledge,
+            &merged.id,
+            &ResourceKind::Knowledge,
+            &src2.id,
+            &RelationType::MergedFrom,
+        )
+        .await
+        .unwrap();
+    assert!(edge2, "merged_from edge to source B must exist");
+}
+
+// ─── agent change roles ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn agent_change_roles_updates_roles() {
+    let s = state();
+    let a = agents(&s);
+    let agent_id = register(&a, "role-agent").await;
+
+    let change_roles = ChangeRoles::new(a.clone() as Arc<dyn AgentStore>);
+    change_roles
+        .execute(ChangeRolesCommand {
+            agent_id: agent_id.to_string(),
+            roles: vec!["coder".to_string()],
+        })
+        .await
+        .unwrap();
+
+    let agent = a.find_by_id(&agent_id).await.unwrap().unwrap();
+    assert_eq!(agent.roles(), &["coder"]);
+
+    change_roles
+        .execute(ChangeRolesCommand {
+            agent_id: agent_id.to_string(),
+            roles: vec!["coder".to_string(), "reviewer".to_string()],
+        })
+        .await
+        .unwrap();
+
+    let agent = a.find_by_id(&agent_id).await.unwrap().unwrap();
+    assert_eq!(agent.roles(), &["coder", "reviewer"]);
+}
+
+// ─── agent switch context ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn agent_switch_context_changes_project_and_namespace() {
+    let s = state();
+    let agent_id = register_with_app(&s, "switch-agent").await;
+
+    let p = projects(&s);
+    let target_org = org();
+    let target_project = ProjectId::try_from("proj-b").unwrap();
+    let mut project = orchy_core::project::Project::new(
+        target_org.clone(),
+        target_project.clone(),
+        String::new(),
+    )
+    .unwrap();
+    p.save(&mut project).await.unwrap();
+
+    let switch = SwitchContext::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        p as Arc<dyn ProjectStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+        locks(&s) as Arc<dyn LockStore>,
+    );
+    switch
+        .execute(SwitchContextCommand {
+            org_id: "default".into(),
+            agent_id: agent_id.to_string(),
+            project: Some("proj-b".into()),
+            namespace: Some("/backend".into()),
+        })
+        .await
+        .unwrap();
+
+    let a = agents(&s);
+    let agent = a.find_by_id(&agent_id).await.unwrap().unwrap();
+    assert_eq!(agent.project().to_string(), "proj-b");
+    assert_eq!(agent.namespace().to_string(), "/backend");
+}
+
+// ─── task lifecycle ─────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn task_fail_records_reason() {
+    let s = state();
+    let agent_id = register_with_app(&s, "fail-agent").await;
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let task = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "will fail".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let claim = ClaimTask::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    claim
+        .execute(ClaimTaskCommand {
+            task_id: task.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "default".into(),
+            start: None,
+        })
+        .await
+        .unwrap();
+
+    let start = StartTask::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+    );
+    start
+        .execute(StartTaskCommand {
+            task_id: task.id.clone(),
+            agent_id: agent_id.to_string(),
+        })
+        .await
+        .unwrap();
+
+    let fail = FailTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let failed = fail
+        .execute(FailTaskCommand {
+            task_id: task.id.clone(),
+            org_id: "default".into(),
+            reason: Some("compilation error".into()),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(failed.status, "failed");
+    assert_eq!(failed.result_summary.as_deref(), Some("compilation error"));
+}
+
+#[tokio::test]
+async fn task_cancel_from_pending() {
+    let s = state();
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let task = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "will cancel".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let cancel = CancelTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let cancelled = cancel
+        .execute(CancelTaskCommand {
+            task_id: task.id.clone(),
+            org_id: "default".into(),
+            reason: Some("no longer needed".into()),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(cancelled.status, "cancelled");
+}
+
+#[tokio::test]
+async fn task_release_returns_to_pending() {
+    let s = state();
+    let agent_id = register_with_app(&s, "release-agent").await;
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let task = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "will release".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let claim = ClaimTask::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    claim
+        .execute(ClaimTaskCommand {
+            task_id: task.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "default".into(),
+            start: None,
+        })
+        .await
+        .unwrap();
+
+    let release = ReleaseTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let released = release
+        .execute(ReleaseTaskCommand {
+            task_id: task.id.clone(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(released.status, "pending");
+    assert!(released.assigned_to.is_none());
+}
+
+#[tokio::test]
+async fn task_delegate_creates_subtask_without_blocking_parent() {
+    let s = state();
+    let agent_id = register_with_app(&s, "delegate-agent").await;
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let parent = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "parent task".into(),
+            description: "parent desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let claim = ClaimTask::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    claim
+        .execute(ClaimTaskCommand {
+            task_id: parent.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "default".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+
+    let delegate = DelegateTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let subtask = delegate
+        .execute(DelegateTaskCommand {
+            task_id: parent.id.clone(),
+            title: "subtask".into(),
+            description: "subtask desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: Some(agent_id.to_string()),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(subtask.status, "pending");
+
+    let get = GetTask::new(tasks(&s) as Arc<dyn TaskStore>, None);
+    let parent_now = get
+        .execute(GetTaskCommand {
+            task_id: parent.id.clone(),
+            org_id: None,
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(parent_now.status, "in_progress");
+
+    let e = edges(&s);
+    let spawns = e
+        .exists_by_pair(
+            &org(),
+            &ResourceKind::Task,
+            &parent.id,
+            &ResourceKind::Task,
+            &subtask.id,
+            &RelationType::Spawns,
+        )
+        .await
+        .unwrap();
+    assert!(spawns, "spawns edge from parent to subtask must exist");
+}
+
+#[tokio::test]
+async fn task_merge_combines_pending_tasks() {
+    let s = state();
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let t1 = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "merge source 1".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+    let t2 = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "merge source 2".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let merge = MergeTasks::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let (merged, cancelled) = merge
+        .execute(MergeTasksCommand {
+            org_id: "default".into(),
+            task_ids: vec![t1.id.clone(), t2.id.clone()],
+            title: "merged task".into(),
+            description: "combined".into(),
+            acceptance_criteria: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(merged.status, "pending");
+    assert_eq!(cancelled.len(), 2);
+    for c in &cancelled {
+        assert_eq!(c.status, "cancelled");
+    }
+
+    let e = edges(&s);
+    let edge1 = e
+        .exists_by_pair(
+            &org(),
+            &ResourceKind::Task,
+            &merged.id,
+            &ResourceKind::Task,
+            &t1.id,
+            &RelationType::MergedFrom,
+        )
+        .await
+        .unwrap();
+    assert!(edge1, "merged_from edge to source 1 must exist");
+
+    let edge2 = e
+        .exists_by_pair(
+            &org(),
+            &ResourceKind::Task,
+            &merged.id,
+            &ResourceKind::Task,
+            &t2.id,
+            &RelationType::MergedFrom,
+        )
+        .await
+        .unwrap();
+    assert!(edge2, "merged_from edge to source 2 must exist");
+}
+
+#[tokio::test]
+async fn task_replace_cancels_original_creates_replacements() {
+    let s = state();
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let original = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "original task".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let replace = ReplaceTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let (cancelled_original, replacements) = replace
+        .execute(ReplaceTaskCommand {
+            task_id: original.id.clone(),
+            reason: Some("split into smaller tasks".into()),
+            replacements: vec![
+                SubtaskInput {
+                    title: "replacement 1".into(),
+                    description: "desc 1".into(),
+                    acceptance_criteria: None,
+                    priority: None,
+                    assigned_roles: None,
+                    depends_on: None,
+                },
+                SubtaskInput {
+                    title: "replacement 2".into(),
+                    description: "desc 2".into(),
+                    acceptance_criteria: None,
+                    priority: None,
+                    assigned_roles: None,
+                    depends_on: None,
+                },
+            ],
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(cancelled_original.status, "cancelled");
+    assert_eq!(replacements.len(), 2);
+
+    let e = edges(&s);
+    for r in &replacements {
+        assert_eq!(r.status, "pending");
+        let supersedes = e
+            .exists_by_pair(
+                &org(),
+                &ResourceKind::Task,
+                &r.id,
+                &ResourceKind::Task,
+                &original.id,
+                &RelationType::Supersedes,
+            )
+            .await
+            .unwrap();
+        assert!(supersedes, "supersedes edge must exist for {}", r.id);
+    }
+}
+
+#[tokio::test]
+async fn task_tag_and_untag() {
+    let s = state();
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let task = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "tag test".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let tag = TagTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    tag.execute(TagTaskCommand {
+        task_id: task.id.clone(),
+        tag: "rust".into(),
+    })
+    .await
+    .unwrap();
+
+    tag.execute(TagTaskCommand {
+        task_id: task.id.clone(),
+        tag: "backend".into(),
+    })
+    .await
+    .unwrap();
+
+    let untag = UntagTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    untag
+        .execute(UntagTaskCommand {
+            task_id: task.id.clone(),
+            tag: "backend".into(),
+        })
+        .await
+        .unwrap();
+
+    let get = GetTask::new(tasks(&s) as Arc<dyn TaskStore>, None);
+    let result = get
+        .execute(GetTaskCommand {
+            task_id: task.id.clone(),
+            org_id: None,
+            relations: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(result.tags.contains(&"rust".to_string()));
+    assert!(!result.tags.contains(&"backend".to_string()));
+}
+
+#[tokio::test]
+async fn task_assign_transfers_to_another_agent() {
+    let s = state();
+    let agent1 = register_with_app(&s, "assign-agent-1").await;
+    let agent2 = register_with_app(&s, "assign-agent-2").await;
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let task = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "assign test".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let claim = ClaimTask::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    claim
+        .execute(ClaimTaskCommand {
+            task_id: task.id.clone(),
+            agent_id: agent1.to_string(),
+            org_id: "default".into(),
+            start: None,
+        })
+        .await
+        .unwrap();
+
+    let assign = AssignTask::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+    );
+    let assigned = assign
+        .execute(AssignTaskCommand {
+            task_id: task.id.clone(),
+            agent_id: agent2.to_string(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(assigned.assigned_to.as_deref(), Some(&*agent2.to_string()));
+}
+
+#[tokio::test]
+async fn task_add_and_remove_dependency() {
+    let s = state();
+
+    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let task_a = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "task A (dependent)".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+    let task_b = post
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "task B (dependency)".into(),
+            description: "desc".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let add_dep = AddDependency::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let after_dep = add_dep
+        .execute(AddDependencyCommand {
+            org_id: "default".into(),
+            task_id: task_a.id.clone(),
+            dependency_id: task_b.id.clone(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(after_dep.status, "blocked");
+
+    let agent_id = register_with_app(&s, "dep-completer").await;
+    let claim = ClaimTask::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    claim
+        .execute(ClaimTaskCommand {
+            task_id: task_b.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "default".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+
+    let complete = CompleteTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    complete
+        .execute(CompleteTaskCommand {
+            task_id: task_b.id.clone(),
+            org_id: "default".into(),
+            summary: Some("done".into()),
+            links: vec![],
+        })
+        .await
+        .unwrap();
+
+    let remove_dep = RemoveDependency::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let after_remove = remove_dep
+        .execute(RemoveDependencyCommand {
+            org_id: "default".into(),
+            task_id: task_a.id.clone(),
+            dependency_id: task_b.id.clone(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(after_remove.status, "pending");
 }
