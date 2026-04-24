@@ -2,7 +2,7 @@
 
 Multi-agent coordination server. Shared infrastructure for AI agents: task
 board, unified knowledge base, messaging, resource locking, graph edges, and
-project context — exposed as **62** MCP tools over Streamable HTTP and as a
+project context — exposed as **71** MCP tools over Streamable HTTP and as a
 stateless **CLI** (`orchy`) for agents without MCP support.
 
 orchy is not an orchestrator. Agents bring the intelligence; orchy provides
@@ -20,13 +20,12 @@ MCP server at `http://127.0.0.1:3100/mcp`. Bootstrap prompt at
 
 CLI quickstart:
 ```bash
-# Configure once (or use env vars: ORCHY_URL, ORCHY_API_KEY, ORCHY_ORG, ORCHY_PROJECT, ORCHY_AGENT_ID)
+# Configure once (or use env vars: ORCHY_URL, ORCHY_API_KEY, ORCHY_PROJECT, ORCHY_ALIAS)
 cat > ~/.orchy/config.toml <<EOF
 url      = "http://localhost:3100"
 api_key  = "your-key"
-org      = "myorg"
 project  = "myproject"
-agent_id = "your-agent-uuid"
+alias    = "coder-1"
 EOF
 
 orchy bootstrap              # agent briefing: inbox, tasks, skills, handoff context
@@ -290,8 +289,9 @@ Pending → Claimed → InProgress → Completed
 
 **Assignment** is exclusive: only one agent holds a task at a time via the
 `assigned_to` field. Claiming reserves it; starting moves it to in-progress;
-completing, failing, or cancelling terminates it. Disconnecting an agent releases
-its claimed and in-progress tasks back to pending automatically.
+completing, failing, or cancelling terminates it. Tasks become stale after
+inactivity (`stale_after_secs`), making them claimable by other agents.
+Use `touch_task` to keep long-running work alive.
 
 **Ownership** (via `owned_by` edge) is semantic — who is responsible for the
 resource. This survives task reassignment and persists after completion.
@@ -327,9 +327,14 @@ thread), but you cannot edit or delete one.
 
 | Target | Syntax | Who receives it |
 |--------|--------|-----------------|
-| Direct | agent UUID | That agent only |
+| Direct | `@alias` or agent UUID | That agent only |
 | Role | `role:reviewer` | All agents with that role |
+| Namespace | `ns:/backend` | All agents in that namespace |
+| User | `user:<uuid>` | All agents owned by that user |
 | Broadcast | `broadcast` | All agents in the project except the sender |
+
+Role, namespace, user, and broadcast messages support optional **claim/unclaim**
+semantics — claimed messages are hidden from sibling inboxes.
 
 **Threading:** any message can set `reply_to` pointing at another message ID.
 `list_conversation` walks the full chain up and down from any message in the
@@ -349,10 +354,10 @@ centeric tools (`send_message`, `check_mailbox`, `list_conversation`) instead.
 
 ### Agent lifecycle
 
-1. `register_agent(project, description)` — roles auto-assigned from task demand
+1. `register_agent(alias, project, description)` — roles auto-assigned from task demand. Org derived from API key.
 2. `get_agent_context` — everything in one call: agent info, project, inbox, pending tasks, skills, handoff context
 3. `get_next_task` — claim or peek the next available task matching your roles
-4. `heartbeat` every ~30s; on disconnect: tasks released, locks freed
+4. `heartbeat` every ~30s; on timeout: tasks become stale, locks freed
 
 ### Resource locking
 
@@ -370,14 +375,15 @@ Every state change is recorded as a semantic domain event. Query with
 
 ## REST Graph Endpoints
 
-Graph operations are available under `/organizations/{org}/graph/` for REST clients and the CLI.
+Graph operations are available under `/graph/` for REST clients and the CLI.
+Org is derived from the API key (Bearer token).
 
 ```
-POST   /organizations/{org}/graph/edges                    add_edge
-DELETE /organizations/{org}/graph/edges/{edge_id}          remove_edge
-GET    /organizations/{org}/graph/relations                 query_relations (query params: anchor_kind, anchor_id, rel_types, direction, max_depth, as_of)
-GET    /organizations/{org}/graph/edges                     list edges (admin/debug)
-POST   /organizations/{org}/graph/context                   assemble_context
+POST   /graph/edges                    add_edge
+DELETE /graph/edges/{edge_id}          remove_edge
+GET    /graph/relations                query_relations (query params: anchor_kind, anchor_id, rel_types, direction, max_depth, as_of)
+GET    /graph/edges                    list edges (admin/debug)
+POST   /graph/context                  assemble_context
 ```
 
 `GET /tasks/{id}`, `GET /knowledge/{*path}`, and `GET /agents/{id}` also accept
@@ -391,8 +397,8 @@ POST   /organizations/{org}/graph/context                   assemble_context
 **Config resolution** (lowest → highest priority):
 1. `~/.orchy/config.toml` — global defaults
 2. `.orchy.toml` — repo-local config (walked up from cwd, like mise)
-3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_ORG`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_AGENT_ID`
-4. Per-call flags: `--url`, `--api-key`, `--org`, `--project`, `--namespace`, `--agent`
+3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_ALIAS`
+4. Per-call flags: `--url`, `--api-key`, `--project`, `--namespace`, `--agent`
 
 **Output:** text by default, `--json` on every command for machine-parseable output.
 
@@ -437,26 +443,24 @@ Tools that do not require registration: `register_agent`, `session_status`,
 | `list_agents` | partial | List agents in a project. Works before registration if `project` is passed. |
 | `change_roles` | yes | Change the roles of the session agent. |
 | `heartbeat` | yes | Send a heartbeat to signal liveness. |
-| `disconnect` | yes | Disconnect and release all claimed tasks back to pending. |
+| `rename_alias` | yes | Change the agent's alias. Internal UUID is unchanged. |
 | `switch_context` | yes | Switch agent to a different project, namespace, or both within the same org. |
 
 ### `register_agent`
 
-Register as an agent. Required before almost every other tool. Roles are
-optional — orchy assigns them from pending task demand if omitted. Pass `id`
-to resume the same orchy agent after a new MCP session (orchy or client restarted);
-persist that UUID from the last `register_agent` JSON or handoff knowledge.
-Use `parent_id` for agent lineage.
+Register as an agent. Required before almost every other tool. Identity is
+alias-based — re-registering with the same `(org, project, alias)` resumes the
+existing agent. Org is derived from the API key. Roles are auto-assigned from
+pending task demand if omitted.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
+| `alias` | yes | Agent identity (lowercase alphanumeric + hyphens, 2-32 chars) |
 | `project` | yes | Project identifier |
 | `description` | yes | What this agent is |
-| `organization` | no | Organization identifier. Defaults to `default` |
 | `namespace` | no | Scope within project |
 | `roles` | no | Capabilities. Auto-assigned from task demand if omitted |
-| `id` | no | Resume a previous agent session by UUID. Auto-generated if omitted |
-| `parent_id` | no | Create as child of this parent agent |
+| `agent_type` | no | Informative only (e.g. `claude-code`, `opencode`, `pi`). Not part of identity. |
 | `metadata` | no | Key-value pairs attached to the agent record |
 
 ### `session_status`
@@ -509,8 +513,8 @@ releases claimed tasks and locks in the old project.
 
 ### `post_task`
 
-Create a task. Tasks with `depends_on` are auto-blocked until dependencies complete.
-Creates `spawns` edge if `parent_id` is set. Creates `depends_on` edges for each dependency.
+Create a task. Use `split_task` for subtasks with hierarchy, `add_dependency`
+for dependencies, or `delegate_task` for non-blocking subtasks.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -518,10 +522,8 @@ Creates `spawns` edge if `parent_id` is set. Creates `depends_on` edges for each
 | `description` | yes | Task description |
 | `acceptance_criteria` | no | Definition of done for this task |
 | `namespace` | no | Defaults to session namespace |
-| `parent_id` | no | Parent task ID for subtask. Creates `spawns` edge. |
 | `priority` | no | `low`, `normal` (default), `high`, `critical` |
 | `assigned_roles` | no | Roles that can claim. Empty = any role |
-| `depends_on` | no | Task IDs that must complete before this task can be claimed. Creates `depends_on` edges. |
 
 ### `delegate_task`
 
@@ -597,6 +599,9 @@ Creates `merged_from` edges from new task to each source.
 | `release_task` | yes | Release a claimed or in-progress task back to pending. |
 | `assign_task` | yes | Reassign a claimed/in-progress task to another agent. |
 | `unblock_task` | yes | Manually unblock a blocked task. |
+| `touch_task` | yes | Update last_activity_at to prevent staleness. Call periodically for long-running work. |
+| `archive_task` | yes | Archive a completed/failed/cancelled task. Hidden from listings. |
+| `unarchive_task` | yes | Restore an archived task. |
 
 ### `get_next_task`
 
@@ -721,17 +726,19 @@ Can materialize referenced dependencies and linked knowledge entries.
 
 | Tool | Session | Description |
 |------|---------|-------------|
-| `send_message` | yes | Send a message to an agent, role, or broadcast. |
+| `send_message` | yes | Send a message to an agent, role, namespace, user, or broadcast. |
 | `check_mailbox` | yes | Check your mailbox for incoming messages. |
 | `check_sent_messages` | yes | List messages you have sent, with delivery and read status. |
 | `mark_read` | yes | Mark messages as read by their IDs. |
 | `list_conversation` | yes | Get the full conversation thread for a message ID. |
+| `claim_message` | yes | Claim a logical (role/ns/broadcast/user) message for exclusive handling. |
+| `unclaim_message` | yes | Release a previously claimed message. |
 
 ### `send_message`
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `to` | yes | Agent UUID, `role:name` (all agents with that role), or `broadcast` |
+| `to` | yes | `@alias`, agent UUID, `role:name`, `ns:/path`, `user:<uuid>`, or `broadcast` |
 | `body` | yes | Message body |
 | `namespace` | no | |
 | `reply_to` | no | Message ID to thread the message |
@@ -779,6 +786,10 @@ Can materialize referenced dependencies and linked knowledge entries.
 | `tag_knowledge` | yes | Add a tag to a knowledge entry. |
 | `untag_knowledge` | yes | Remove a tag from a knowledge entry. |
 | `import_knowledge` | yes | Import a knowledge entry from a linked project. |
+| `promote_knowledge` | yes | Promote a decision/discovery/pattern into a reusable skill. |
+| `consolidate_knowledge` | yes | Merge multiple entries into one, deleting sources. |
+| `archive_knowledge` | yes | Archive a knowledge entry. Hidden from listings. |
+| `unarchive_knowledge` | yes | Restore an archived knowledge entry. |
 | `assemble_context` | yes | Assemble rich structured context for a resource by traversing the edge graph. |
 
 ### `write_knowledge`

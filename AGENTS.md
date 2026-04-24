@@ -6,7 +6,7 @@ together on complex goals — like a company operating system for agents.
 
 ## What Orchy Does
 
-Orchy exposes **62** MCP tools over Streamable HTTP and a stateless CLI
+Orchy exposes **71** MCP tools over Streamable HTTP and a stateless CLI
 (`orchy`) for agents without MCP support. Agents connect, register, and use
 these tools to coordinate. Orchy enforces the rules; agents bring the
 intelligence.
@@ -128,7 +128,7 @@ crates/
         ├── main.rs        # HTTP server + MCP routing
         ├── container.rs   # DI container wiring all services
         ├── config.rs      # config.toml structure
-        ├── store.rs       # StoreBackend enum delegation
+        ├── event_query.rs # EventQuery adapters per backend
         ├── bootstrap.rs   # Dynamic bootstrap prompt generation
         ├── heartbeat.rs   # Agent timeout monitor
         ├── api/           # REST handlers (axum)
@@ -179,8 +179,9 @@ params). The `RestoreX` struct has public fields.
 
 ### Store Trait Pattern
 
-Domain defines traits. Each store crate implements them. `StoreBackend` enum
-in server delegates via macro. All `save()` methods take `&mut` to drain events.
+Domain defines traits. Each store crate implements them as per-entity stores
+(e.g. `PgAgentStore`, `SqliteTaskStore`). Container wires them as `Arc<dyn Trait>`.
+All `save()` methods take `&mut` to drain events.
 
 ```rust
 #[async_trait]
@@ -291,7 +292,7 @@ For agents without MCP support (pi coding agent, Codex CLI, shell scripts). Each
 **Config** (lowest → highest priority):
 1. `~/.orchy/config.toml` — global
 2. `.orchy.toml` — repo-local (walk up from cwd)
-3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_ORG`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_ALIAS`
+3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_ALIAS`
 4. Per-call flags
 
 **Startup:**
@@ -469,7 +470,7 @@ path = "orchy.db"
 - Return early / guard clauses, no else after return
 - `cargo fmt` before committing
 - Conventional commits: `type(scope): description`
-- No GPG signing, no Co-Authored-By, never push
+- Do not change repo or global commit signing settings. Agent-run signed commits often fail because GPG prompts for a password. If signing would block an agent-run commit, ask the user to run it or use a one-off unsigned commit only when explicitly appropriate. No Co-Authored-By, never push
 
 ## Running
 

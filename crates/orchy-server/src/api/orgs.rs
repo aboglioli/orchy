@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use axum::http::StatusCode;
 use axum::{
     Json,
     extract::{Path, State},
@@ -11,7 +10,6 @@ use orchy_application::{
     AddApiKeyCommand, CreateOrganizationCommand, GetOrganizationCommand, OrganizationResponse,
     RevokeApiKeyCommand,
 };
-use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
 
@@ -61,18 +59,9 @@ pub async fn list(
 
 pub async fn get(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
+    _auth: OrgAuth,
     Path(org): Path<String>,
 ) -> Result<Json<OrganizationResponse>, ApiError> {
-    let org_id = OrganizationId::new(&org)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
     let resp = container
         .app
         .get_organization
@@ -85,23 +74,13 @@ pub async fn get(
 pub async fn add_api_key(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path(org): Path<String>,
     Json(body): Json<AddApiKeyBody>,
 ) -> Result<Json<OrganizationResponse>, ApiError> {
-    let org_id = OrganizationId::new(&org)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
     let resp = container
         .app
         .add_api_key
         .execute(AddApiKeyCommand {
-            org_id: org,
+            org_id: auth.org.id.clone(),
             name: body.name,
             key: body.key,
             user_id: auth.user_id.clone(),
@@ -114,22 +93,13 @@ pub async fn add_api_key(
 pub async fn revoke_api_key(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
-    Path((org, key_id_str)): Path<(String, String)>,
+    Path(key_id_str): Path<String>,
 ) -> Result<Json<OrganizationResponse>, ApiError> {
-    let org_id = OrganizationId::new(&org)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    if auth.org.id.as_str() != org_id.as_str() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "FORBIDDEN",
-            format!("access denied to organization {}", org_id),
-        ));
-    }
     let resp = container
         .app
         .revoke_api_key
         .execute(RevokeApiKeyCommand {
-            org_id: org,
+            org_id: auth.org.id.clone(),
             key_id: key_id_str,
         })
         .await

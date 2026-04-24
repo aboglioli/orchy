@@ -1,4 +1,5 @@
-ALTER TABLE tasks DROP COLUMN IF EXISTS parent_id;
-ALTER TABLE tasks DROP COLUMN IF EXISTS depends_on;
-ALTER TABLE knowledge_entries DROP COLUMN IF EXISTS agent_id;
-ALTER TABLE agents DROP COLUMN IF EXISTS parent_id;
+-- SQLite doesn't support DROP COLUMN IF EXISTS.
+-- These columns were already removed in 20260420-000800 via table recreate.
+-- This migration is a no-op for SQLite.
+CREATE TABLE IF NOT EXISTS _migration_noop_0600 (id INTEGER);
+DROP TABLE IF EXISTS _migration_noop_0600;
