@@ -1,1 +1,0 @@
-ALTER TABLE knowledge_entries ADD COLUMN IF NOT EXISTS refs JSONB NOT NULL DEFAULT '[]';
