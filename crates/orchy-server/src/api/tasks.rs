@@ -12,10 +12,10 @@ use orchy_application::{
     ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetAgentCommand,
     GetNextTaskCommand, GetTaskCommand, ListTagsCommand, ListTasksCommand, MergeTasksCommand,
     MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand,
-    ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand, TaskDto,
-    UnarchiveTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand, resolve_agent,
+    ReplaceTaskCommand, ResolveAgentCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput,
+    TagTaskCommand, TaskDto, UnarchiveTaskCommand, UnblockTaskCommand, UntagTaskCommand,
+    UpdateTaskCommand,
 };
-use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -44,12 +44,17 @@ async fn resolve_agent_id(
     project: &str,
     id_or_alias: &str,
 ) -> Result<String, ApiError> {
-    let project = ProjectId::try_from(project.to_string())
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    let agent = resolve_agent(container.agent_store.as_ref(), org, &project, id_or_alias)
+    let agent = container
+        .app
+        .resolve_agent
+        .execute(ResolveAgentCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            id_or_alias: id_or_alias.to_string(),
+        })
         .await
         .map_err(ApiError::from)?;
-    Ok(agent.id().to_string())
+    Ok(agent.id)
 }
 
 use super::ApiError;

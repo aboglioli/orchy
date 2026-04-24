@@ -8,22 +8,15 @@ use axum::{
 use serde::Deserialize;
 
 use orchy_application::{
-    AddEdgeCommand, AssembleContextCommand, EdgeDto, MaterializeNeighborhoodCommand,
+    AddEdgeCommand, AssembleContextCommand, ListEdgesCommand, MaterializeNeighborhoodCommand,
     RemoveEdgeCommand,
 };
 use orchy_core::graph::{RelationOptions, RelationType, TraversalDirection};
-use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::PageParams;
 
 use crate::container::Container;
 
 use super::ApiError;
 use super::auth::OrgAuth;
-
-fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
-    OrganizationId::new(s)
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
-}
 
 #[derive(Deserialize)]
 pub struct AddEdgeBody {
@@ -189,16 +182,6 @@ pub async fn list_edges(
     auth: OrgAuth,
     Query(query): Query<ListEdgesQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let org = auth.org.id.clone();
-    let org_id = parse_org(&org)?;
-
-    let rel_type: Option<RelationType> = query
-        .rel_type
-        .as_deref()
-        .map(|s| s.parse::<RelationType>())
-        .transpose()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
-
     let as_of = query
         .as_of
         .as_deref()
@@ -215,14 +198,15 @@ pub async fn list_edges(
         .map(|dt| dt.to_utc());
 
     let page = container
-        .edge_store
-        .list_by_org(
-            &org_id,
-            rel_type.as_ref(),
-            PageParams::new(query.after, query.limit),
-            true,
+        .app
+        .list_edges
+        .execute(ListEdgesCommand {
+            org_id: auth.org.id.clone(),
+            rel_type: query.rel_type.clone(),
+            after: query.after.clone(),
+            limit: query.limit,
             as_of,
-        )
+        })
         .await
         .map_err(ApiError::from)?;
 
@@ -235,25 +219,25 @@ pub async fn list_edges(
             query
                 .from_kind
                 .as_deref()
-                .map(|fk| e.from_kind().to_string() == fk)
+                .map(|fk| e.from_kind == fk)
                 .unwrap_or(true)
                 && query
                     .from_id
                     .as_deref()
-                    .map(|fi| e.from_id() == fi)
+                    .map(|fi| e.from_id == fi)
                     .unwrap_or(true)
                 && query
                     .to_kind
                     .as_deref()
-                    .map(|tk| e.to_kind().to_string() == tk)
+                    .map(|tk| e.to_kind == tk)
                     .unwrap_or(true)
                 && query
                     .to_id
                     .as_deref()
-                    .map(|ti| e.to_id() == ti)
+                    .map(|ti| e.to_id == ti)
                     .unwrap_or(true)
         })
-        .map(EdgeDto::from)
+        .cloned()
         .collect();
 
     Ok(Json(serde_json::json!({

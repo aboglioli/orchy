@@ -51,13 +51,10 @@ pub async fn register(
     let result = container
         .app
         .register_user
-        .execute(
-            RegisterUserCommand {
-                email: req.email,
-                password: req.password,
-            },
-            container.password_hasher.as_ref(),
-        )
+        .execute(RegisterUserCommand {
+            email: req.email,
+            password: req.password,
+        })
         .await
         .map_err(ApiError::from)?;
 
@@ -78,13 +75,10 @@ pub async fn login(
     })?;
 
     let result = login_user
-        .execute(
-            LoginUserCommand {
-                email: req.email,
-                password: req.password,
-            },
-            container.password_hasher.as_ref(),
-        )
+        .execute(LoginUserCommand {
+            email: req.email,
+            password: req.password,
+        })
         .await
         .map_err(ApiError::from)?;
 
@@ -160,14 +154,11 @@ pub async fn change_password(
     let result = container
         .app
         .change_password
-        .execute(
-            ChangePasswordCommand {
-                user_id: auth.user_id.to_string(),
-                old_password: req.old_password,
-                new_password: req.new_password,
-            },
-            container.password_hasher.as_ref(),
-        )
+        .execute(ChangePasswordCommand {
+            user_id: auth.user_id.to_string(),
+            old_password: req.old_password,
+            new_password: req.new_password,
+        })
         .await
         .map_err(ApiError::from)?;
 
@@ -220,15 +211,12 @@ pub async fn invite_user(
     let result = container
         .app
         .invite_user
-        .execute(
-            InviteUserCommand {
-                email: req.email,
-                org_id: org_id.to_string(),
-                role: req.role,
-                invited_by_user_id: auth.user_id.to_string(),
-            },
-            container.password_hasher.as_ref(),
-        )
+        .execute(InviteUserCommand {
+            email: req.email,
+            org_id: org_id.to_string(),
+            role: req.role,
+            invited_by_user_id: auth.user_id.to_string(),
+        })
         .await
         .map_err(ApiError::from)?;
 

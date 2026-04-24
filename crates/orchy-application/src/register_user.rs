@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
-use orchy_core::user::{Email, PlainPassword, User, UserId, UserStore};
+use orchy_core::user::{Email, PasswordHasher, PlainPassword, User, UserId, UserStore};
 
 use crate::dto::UserDto;
 
@@ -16,18 +16,15 @@ pub struct RegisterUserDto {
 
 pub struct RegisterUser {
     users: Arc<dyn UserStore>,
+    hasher: Arc<dyn PasswordHasher>,
 }
 
 impl RegisterUser {
-    pub fn new(users: Arc<dyn UserStore>) -> Self {
-        Self { users }
+    pub fn new(users: Arc<dyn UserStore>, hasher: Arc<dyn PasswordHasher>) -> Self {
+        Self { users, hasher }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: RegisterUserCommand,
-        hasher: &dyn orchy_core::user::PasswordHasher,
-    ) -> Result<RegisterUserDto> {
+    pub async fn execute(&self, cmd: RegisterUserCommand) -> Result<RegisterUserDto> {
         let email = Email::new(&cmd.email)?;
         let password = PlainPassword::new(&cmd.password)?;
 
@@ -36,7 +33,7 @@ impl RegisterUser {
         }
 
         let id = UserId::new();
-        let mut user = User::register(id, email, &password, hasher)?;
+        let mut user = User::register(id, email, &password, self.hasher.as_ref())?;
         self.users.save(&mut user).await?;
 
         Ok(RegisterUserDto {

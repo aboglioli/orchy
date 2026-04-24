@@ -3,7 +3,8 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::{
-    Email, OrgMembership, OrgMembershipStore, OrgRole, PlainPassword, User, UserId, UserStore,
+    Email, OrgMembership, OrgMembershipStore, OrgRole, PasswordHasher, PlainPassword, User, UserId,
+    UserStore,
 };
 
 use crate::dto::{OrgMembershipDto, UserDto};
@@ -28,18 +29,23 @@ pub struct InviteUserDto {
 pub struct InviteUser {
     users: Arc<dyn UserStore>,
     memberships: Arc<dyn OrgMembershipStore>,
+    hasher: Arc<dyn PasswordHasher>,
 }
 
 impl InviteUser {
-    pub fn new(users: Arc<dyn UserStore>, memberships: Arc<dyn OrgMembershipStore>) -> Self {
-        Self { users, memberships }
+    pub fn new(
+        users: Arc<dyn UserStore>,
+        memberships: Arc<dyn OrgMembershipStore>,
+        hasher: Arc<dyn PasswordHasher>,
+    ) -> Self {
+        Self {
+            users,
+            memberships,
+            hasher,
+        }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: InviteUserCommand,
-        hasher: &dyn orchy_core::user::PasswordHasher,
-    ) -> Result<InviteUserDto> {
+    pub async fn execute(&self, cmd: InviteUserCommand) -> Result<InviteUserDto> {
         let org_id = OrganizationId::new(&cmd.org_id).map_err(map_org_error)?;
         let role = cmd.role.parse::<OrgRole>()?;
 
@@ -54,7 +60,7 @@ impl InviteUser {
             } else {
                 let temp_password = PlainPassword::new("changeme123")?;
                 let id = UserId::new();
-                let new_user = User::register(id, email, &temp_password, hasher)?;
+                let new_user = User::register(id, email, &temp_password, self.hasher.as_ref())?;
                 (new_user, true)
             };
 

@@ -9,9 +9,9 @@ use serde::Deserialize;
 
 use orchy_application::{
     CheckMailboxCommand, CheckSentMessagesCommand, ListConversationCommand, MarkReadCommand,
-    SendMessageCommand, resolve_agent,
+    ResolveAgentCommand, SendMessageCommand,
 };
-use orchy_core::namespace::ProjectId;
+use orchy_core::agent::AgentId;
 use orchy_core::organization::OrganizationId;
 
 use crate::container::Container;
@@ -24,7 +24,6 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))
 }
 
-use orchy_core::agent::AgentId;
 use orchy_core::message::MessageId;
 use std::str::FromStr;
 
@@ -111,27 +110,18 @@ async fn resolve_agent_id_for_messages(
     id: &str,
     project: Option<&str>,
 ) -> Result<(String, String), ApiError> {
-    if let Ok(agent_id) = id.parse::<orchy_core::agent::AgentId>() {
+    if let Ok(agent_id) = id.parse::<AgentId>() {
         let agent = container
-            .agent_store
-            .find_by_id(&agent_id)
+            .app
+            .get_agent
+            .execute(orchy_application::GetAgentCommand {
+                agent_id: agent_id.to_string(),
+                org_id: Some(org.to_string()),
+                relations: None,
+            })
             .await
-            .map_err(ApiError::from)?
-            .ok_or_else(|| {
-                ApiError(
-                    StatusCode::NOT_FOUND,
-                    "NOT_FOUND",
-                    "agent not found".to_string(),
-                )
-            })?;
-        if agent.org_id() != org {
-            return Err(ApiError(
-                StatusCode::NOT_FOUND,
-                "NOT_FOUND",
-                "agent not found".to_string(),
-            ));
-        }
-        return Ok((agent_id.to_string(), agent.project().to_string()));
+            .map_err(ApiError::from)?;
+        return Ok((agent.id.clone(), agent.project.clone()));
     }
     let project = project.ok_or_else(|| {
         ApiError(
@@ -140,12 +130,17 @@ async fn resolve_agent_id_for_messages(
             "project query param is required when addressing agent by alias".to_string(),
         )
     })?;
-    let project_id = ProjectId::try_from(project.to_string())
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
-    let agent = resolve_agent(container.agent_store.as_ref(), org, &project_id, id)
+    let agent = container
+        .app
+        .resolve_agent
+        .execute(ResolveAgentCommand {
+            org_id: org.to_string(),
+            project: project.to_string(),
+            id_or_alias: id.to_string(),
+        })
         .await
         .map_err(ApiError::from)?;
-    Ok((agent.id().to_string(), agent.project().to_string()))
+    Ok((agent.id, agent.project))
 }
 
 pub async fn inbox_for_agent(

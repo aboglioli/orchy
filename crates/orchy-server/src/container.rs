@@ -24,13 +24,10 @@ use crate::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
 use crate::event_query::{MemoryEventQueryAdapter, PgEventQueryAdapter, SqliteEventQueryAdapter};
 
 pub struct Container {
-    pub agent_store: Arc<dyn AgentStore>,
-    pub edge_store: Arc<dyn EdgeStore>,
     pub app: Application,
     pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
     pub start_time: std::time::Instant,
-    pub password_hasher: Arc<dyn PasswordHasher>,
 }
 
 struct Stores {
@@ -80,19 +77,17 @@ impl Container {
             stores.users.clone(),
             stores.memberships.clone(),
             token_encoder.clone(),
+            password_hasher.clone(),
         );
 
         let container = Arc::new(Self {
-            agent_store: stores.agents,
-            edge_store: stores.edges,
             app,
             session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
             start_time: std::time::Instant::now(),
-            password_hasher: password_hasher.clone(),
         });
 
-        container.bootstrap_admin(&password_hasher).await?;
+        container.bootstrap_admin().await?;
 
         Ok(container)
     }
@@ -132,11 +127,8 @@ impl Container {
         Ok(Some(encoder))
     }
 
-    async fn bootstrap_admin(
-        &self,
-        hasher: &Arc<dyn PasswordHasher>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        match self.app.bootstrap_admin.execute(hasher.as_ref()).await {
+    async fn bootstrap_admin(&self) -> Result<(), Box<dyn std::error::Error>> {
+        match self.app.bootstrap_admin.execute().await {
             Ok(Some(user)) => {
                 tracing::info!(
                     "Bootstrap admin user created: {} (id: {})",

@@ -33,18 +33,18 @@ pub(super) async fn send_message(
         .await?;
 
     let to = if let Some(alias_str) = params.to.strip_prefix('@') {
-        let alias =
-            orchy_core::agent::Alias::new(alias_str).map_err(|e| format!("invalid alias: {e}"))?;
-        let (_, project, _) = h.require_session().await?;
-        let org = h.org();
         let agent = h
             .container
-            .agent_store
-            .find_by_alias(&org, &project, &alias)
+            .app
+            .resolve_agent
+            .execute(orchy_application::ResolveAgentCommand {
+                org_id: org.to_string(),
+                project: project.to_string(),
+                id_or_alias: alias_str.to_string(),
+            })
             .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("agent alias @{alias_str} not found"))?;
-        agent.id().to_string()
+            .map_err(|e| e.to_string())?;
+        agent.id
     } else {
         match orchy_core::message::MessageTarget::parse(&params.to) {
             Ok(_) => params.to.clone(),

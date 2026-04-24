@@ -25,6 +25,7 @@ pub struct LoginUser {
     users: Arc<dyn UserStore>,
     memberships: Arc<dyn OrgMembershipStore>,
     token_encoder: Arc<dyn TokenEncoder>,
+    hasher: Arc<dyn PasswordHasher>,
 }
 
 impl LoginUser {
@@ -32,19 +33,17 @@ impl LoginUser {
         users: Arc<dyn UserStore>,
         memberships: Arc<dyn OrgMembershipStore>,
         token_encoder: Arc<dyn TokenEncoder>,
+        hasher: Arc<dyn PasswordHasher>,
     ) -> Self {
         Self {
             users,
             memberships,
             token_encoder,
+            hasher,
         }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: LoginUserCommand,
-        hasher: &dyn PasswordHasher,
-    ) -> Result<LoginUserResponse> {
+    pub async fn execute(&self, cmd: LoginUserCommand) -> Result<LoginUserResponse> {
         let email = Email::new(&cmd.email)?;
         let password = PlainPassword::new(&cmd.password)?;
 
@@ -54,7 +53,7 @@ impl LoginUser {
             .await?
             .ok_or_else(|| Error::authentication_failed("invalid credentials"))?;
 
-        user.login(&password, hasher)?;
+        user.login(&password, self.hasher.as_ref())?;
         self.users.save(&mut user).await?;
 
         let token = self.token_encoder.encode(user.id(), user.email())?;

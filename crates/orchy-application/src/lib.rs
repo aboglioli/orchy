@@ -11,7 +11,7 @@ use orchy_core::organization::OrganizationStore;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
-use orchy_core::user::{OrgMembershipStore, TokenEncoder, UserStore};
+use orchy_core::user::{OrgMembershipStore, PasswordHasher, TokenEncoder, UserStore};
 
 pub mod dto;
 
@@ -26,6 +26,7 @@ mod register_user;
 // Edges
 mod add_edge;
 mod assemble_context;
+mod list_edges;
 pub mod materialize_neighborhood;
 mod remove_edge;
 
@@ -157,7 +158,7 @@ pub use heartbeat::{Heartbeat, HeartbeatCommand};
 pub use list_agents::{ListAgents, ListAgentsCommand};
 pub use register_agent::{RegisterAgent, RegisterAgentCommand};
 pub use rename_alias::{RenameAlias, RenameAliasCommand};
-pub use resolve_agent::resolve_agent;
+pub use resolve_agent::{ResolveAgent, ResolveAgentCommand};
 pub use suggest_roles::{SuggestRoles, SuggestRolesCommand};
 pub use switch_context::{SwitchContext, SwitchContextCommand};
 
@@ -241,6 +242,7 @@ pub use revoke_api_key::{RevokeApiKey, RevokeApiKeyCommand};
 
 pub use add_edge::{AddEdge, AddEdgeCommand};
 pub use assemble_context::{AssembleContext, AssembleContextCommand};
+pub use list_edges::{ListEdges, ListEdgesCommand};
 pub use remove_edge::{RemoveEdge, RemoveEdgeCommand};
 
 pub use bootstrap_admin::BootstrapAdmin;
@@ -269,6 +271,7 @@ pub struct Application {
     pub suggest_roles: SuggestRoles,
     pub check_timed_out_agents: CheckTimedOutAgents,
     pub rename_alias: RenameAlias,
+    pub resolve_agent: ResolveAgent,
 
     pub post_task: PostTask,
     pub get_task: GetTask,
@@ -297,6 +300,7 @@ pub struct Application {
 
     pub add_edge: AddEdge,
     pub assemble_context: AssembleContext,
+    pub list_edges: ListEdges,
     pub remove_edge: RemoveEdge,
     pub materialize_neighborhood: Arc<MaterializeNeighborhood>,
     pub tag_task: TagTask,
@@ -378,6 +382,7 @@ impl Application {
         users: Arc<dyn UserStore>,
         memberships: Arc<dyn OrgMembershipStore>,
         token_encoder: Option<Arc<dyn TokenEncoder>>,
+        hasher: Arc<dyn PasswordHasher>,
     ) -> Self {
         let materializer = Arc::new(MaterializeNeighborhood::new(
             edges.clone(),
@@ -397,6 +402,7 @@ impl Application {
             ),
             heartbeat: Heartbeat::new(agents.clone()),
             rename_alias: RenameAlias::new(agents.clone()),
+            resolve_agent: ResolveAgent::new(agents.clone()),
             change_roles: ChangeRoles::new(agents.clone()),
             get_agent: GetAgent::new(agents.clone(), Some(Arc::clone(&materializer))),
             get_agent_summary: GetAgentSummary::new(
@@ -441,6 +447,7 @@ impl Application {
 
             add_edge: AddEdge::new(edges.clone()),
             assemble_context: AssembleContext::new(edges.clone(), tasks.clone(), knowledge.clone()),
+            list_edges: ListEdges::new(edges.clone()),
             remove_edge: RemoveEdge::new(edges.clone()),
             materialize_neighborhood: Arc::clone(&materializer),
             tag_task: TagTask::new(tasks.clone()),
@@ -512,13 +519,13 @@ impl Application {
                 .as_ref()
                 .map(|te| ResolveToken::new(te.clone(), memberships.clone(), orgs)),
 
-            register_user: RegisterUser::new(users.clone()),
+            register_user: RegisterUser::new(users.clone(), hasher.clone()),
             login_user: token_encoder
-                .map(|te| LoginUser::new(users.clone(), memberships.clone(), te)),
+                .map(|te| LoginUser::new(users.clone(), memberships.clone(), te, hasher.clone())),
             get_current_user: GetCurrentUser::new(users.clone(), memberships.clone()),
-            change_password: ChangePassword::new(users.clone()),
-            invite_user: InviteUser::new(users.clone(), memberships.clone()),
-            bootstrap_admin: BootstrapAdmin::new(users),
+            change_password: ChangePassword::new(users.clone(), hasher.clone()),
+            invite_user: InviteUser::new(users.clone(), memberships.clone(), hasher.clone()),
+            bootstrap_admin: BootstrapAdmin::new(users, hasher),
         }
     }
 }
