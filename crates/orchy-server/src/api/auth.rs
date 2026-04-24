@@ -77,10 +77,7 @@ fn extract_cookie<'a>(parts: &'a Parts, name: &str) -> Option<&'a str> {
         })
 }
 
-async fn try_resolve_api_key(
-    state: &Arc<Container>,
-    token: &str,
-) -> Option<ApiKeyPrincipal> {
+async fn try_resolve_api_key(state: &Arc<Container>, token: &str) -> Option<ApiKeyPrincipal> {
     state
         .app
         .resolve_api_key
@@ -92,20 +89,12 @@ async fn try_resolve_api_key(
         .flatten()
 }
 
-async fn try_resolve_jwt(
-    state: &Arc<Container>,
-    token: &str,
-    _parts: &Parts,
-) -> Option<OrgAuth> {
+async fn try_resolve_jwt(state: &Arc<Container>, token: &str, _parts: &Parts) -> Option<OrgAuth> {
     let encoder = state.jwt_encoder.as_ref()?;
     let claims = encoder.decode(token).ok()?;
     let user_id = UserId::from_str(&claims.sub).ok()?;
 
-    let memberships = state
-        .memberships
-        .find_by_user(&user_id)
-        .await
-        .ok()?;
+    let memberships = state.memberships.find_by_user(&user_id).await.ok()?;
 
     let membership = memberships.first()?;
 

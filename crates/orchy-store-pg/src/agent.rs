@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias, RestoreAgent};
 use orchy_core::error::{Error, Result};
@@ -56,7 +56,7 @@ impl AgentStore for PgAgentStore {
                 metadata = EXCLUDED.metadata,
                 user_id = EXCLUDED.user_id",
         )
-        .bind(agent.id().to_string())
+        .bind(agent.id().as_uuid())
         .bind(agent.alias().as_str())
         .bind(agent.org_id().to_string())
         .bind(agent.project().to_string())
@@ -66,7 +66,7 @@ impl AgentStore for PgAgentStore {
         .bind(agent.last_seen())
         .bind(agent.connected_at())
         .bind(&metadata_json)
-        .bind(agent.user_id().map(|u| u.to_string()))
+        .bind(agent.user_id().map(|u| u.as_uuid()))
         .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -84,7 +84,7 @@ impl AgentStore for PgAgentStore {
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
         let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = $1");
         let row = sqlx::query(&sql)
-            .bind(id.to_string())
+            .bind(id.as_uuid())
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -179,10 +179,10 @@ impl AgentStore for PgAgentStore {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let str_ids: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = ANY($1::text[])");
+        let uuid_ids: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = ANY($1::uuid[])");
         let rows = sqlx::query(&sql)
-            .bind(&str_ids)
+            .bind(&uuid_ids)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -204,7 +204,7 @@ impl AgentStore for PgAgentStore {
 }
 
 fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
-    let id_str: String = row.get("id");
+    let id: Uuid = row.get("id");
     let alias: String = row.get("alias");
     let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
@@ -214,14 +214,13 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
     let last_seen: DateTime<Utc> = row.get("last_seen");
     let connected_at: DateTime<Utc> = row.get("connected_at");
     let metadata: serde_json::Value = row.get("metadata");
-    let user_id_str: Option<String> = row.try_get("user_id").ok();
-
-    let user_id = user_id_str.and_then(|s| UserId::from_str(&s).ok());
+    let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
+    let user_id = user_id_uuid.map(UserId::from_uuid);
 
     Ok(Agent::restore(RestoreAgent {
-        id: AgentId::from_str(&id_str)?,
+        id: AgentId::from_uuid(id),
         alias: Alias::new(&alias).unwrap_or_else(|_| {
-            Alias::new(format!("agent-{id_str}")).unwrap_or_else(|_| Alias::new("unknown").unwrap())
+            Alias::new(format!("agent-{id}")).unwrap_or_else(|_| Alias::new("unknown").unwrap())
         }),
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,

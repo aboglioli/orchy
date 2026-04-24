@@ -108,7 +108,7 @@ impl PgDatabase {
                 .begin()
                 .await
                 .map_err(|e| Error::Store(format!("migration {filename} tx begin: {e}")))?;
-            match sqlx::query(&sql).execute(&mut *tx).await {
+            match sqlx::raw_sql(&sql).execute(&mut *tx).await {
                 Ok(_) => {}
                 Err(e) => {
                     let err_msg = e.to_string();
@@ -177,6 +177,10 @@ impl PgDatabase {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(())
+    }
+
+    pub fn migrations_dir() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations/postgres")
     }
 
     pub async fn truncate_all(&self) -> Result<()> {

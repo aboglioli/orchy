@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
@@ -65,7 +63,7 @@ impl OrganizationStore for PgOrganizationStore {
             .bind(key.key())
             .bind(key.is_active())
             .bind(key.created_at())
-            .bind(key.user_id().map(|u| u.to_string()))
+            .bind(key.user_id().map(|u| u.as_uuid()))
             .execute(&mut *tx)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -151,14 +149,14 @@ impl OrganizationStore for PgOrganizationStore {
             let key: String = row.get("key");
             let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
-            let user_id_str: Option<String> = row.try_get("user_id").ok();
+            let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
             let api_key = build_api_key(
                 ApiKeyId::from_uuid(id),
                 name,
                 key,
                 is_active,
                 created_at,
-                user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+                user_id_uuid.map(UserId::from_uuid),
             )?;
             keys_by_org.entry(org_id_str).or_default().push(api_key);
         }
@@ -193,14 +191,14 @@ async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKe
             let key: String = row.get("key");
             let is_active: bool = row.get("is_active");
             let created_at: DateTime<Utc> = row.get("created_at");
-            let user_id_str: Option<String> = row.try_get("user_id").ok();
+            let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
             build_api_key(
                 ApiKeyId::from_uuid(id),
                 name,
                 key,
                 is_active,
                 created_at,
-                user_id_str.and_then(|s| UserId::from_str(&s).ok()),
+                user_id_uuid.map(UserId::from_uuid),
             )
         })
         .collect()

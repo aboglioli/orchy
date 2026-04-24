@@ -102,7 +102,7 @@ impl KnowledgeStore for PgKnowledgeStore {
         if let Some(pv) = entry.persisted_version() {
             let result = sqlx::query(
                 "UPDATE knowledge_entries SET organization_id = $2, project = $3, namespace = $4, path = $5, kind = $6, title = $7, content = $8, tags = $9, version = $10, metadata = $11, embedding = $12, embedding_model = $13, embedding_dimensions = $14, valid_from = $15, valid_until = $16, archived_at = $17, updated_at = $18
-                 WHERE id = $1 AND version = $18",
+                 WHERE id = $1 AND version = $19",
             )
             .bind(entry.id().as_uuid())
             .bind(entry.org_id().to_string())
@@ -147,7 +147,7 @@ impl KnowledgeStore for PgKnowledgeStore {
         } else {
             sqlx::query(
                 "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)",
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)",
             )
             .bind(entry.id().as_uuid())
             .bind(entry.org_id().to_string())

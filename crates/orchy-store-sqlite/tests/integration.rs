@@ -29,7 +29,8 @@ struct Stores {
 
 fn backend() -> Stores {
     let db = SqliteDatabase::new(":memory:", None).unwrap();
-    db.apply_schema().unwrap();
+    db.run_migrations(&SqliteDatabase::migrations_dir())
+        .unwrap();
     let conn = db.conn();
     Stores {
         agent: SqliteAgentStore::new(conn.clone()),

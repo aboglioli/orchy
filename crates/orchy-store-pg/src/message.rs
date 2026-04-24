@@ -187,7 +187,7 @@ impl MessageStore for PgMessageStore {
                    AND m.project = $3
                    AND m.id < $4
                    AND (
-                        m.to_target = $1
+                        m.to_target = $1::text
                         OR (m.to_target = 'broadcast' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'role:%' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'ns:%' AND m.from_agent != $1)
@@ -195,7 +195,7 @@ impl MessageStore for PgMessageStore {
                    )
                  ORDER BY m.id DESC LIMIT $5",
             )
-            .bind(agent.to_string())
+            .bind(agent.as_uuid())
             .bind(org.to_string())
             .bind(project.to_string())
             .bind(cid)
@@ -212,7 +212,7 @@ impl MessageStore for PgMessageStore {
                    AND m.organization_id = $2
                    AND m.project = $3
                    AND (
-                        m.to_target = $1
+                        m.to_target = $1::text
                         OR (m.to_target = 'broadcast' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'role:%' AND m.from_agent != $1)
                         OR (m.to_target LIKE 'ns:%' AND m.from_agent != $1)
@@ -220,7 +220,7 @@ impl MessageStore for PgMessageStore {
                    )
                  ORDER BY m.id DESC LIMIT $4",
             )
-            .bind(agent.to_string())
+            .bind(agent.as_uuid())
             .bind(org.to_string())
             .bind(project.to_string())
             .bind(fetch_limit)

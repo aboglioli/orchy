@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use async_trait::async_trait;
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
@@ -42,7 +40,7 @@ impl UserStore for PgUserStore {
                 updated_at = EXCLUDED.updated_at
             "#,
         )
-        .bind(user.id().to_string())
+        .bind(user.id().as_uuid())
         .bind(user.email().as_str())
         .bind(user.password_hash().as_str())
         .bind(user.is_active())
@@ -64,10 +62,10 @@ impl UserStore for PgUserStore {
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>> {
-        let row: Option<(String, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let row: Option<(uuid::Uuid, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users WHERE id = $1"
         )
-        .bind(id.to_string())
+        .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -82,8 +80,7 @@ impl UserStore for PgUserStore {
                 created_at,
                 updated_at,
             )) => {
-                let id = UserId::from_str(&id)
-                    .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
+                let id = UserId::from_uuid(id);
                 let email = Email::new(&email)
                     .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
                 let password_hash = HashedPassword::new(&password_hash)
@@ -104,7 +101,7 @@ impl UserStore for PgUserStore {
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>> {
-        let row: Option<(String, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let row: Option<(uuid::Uuid, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users WHERE email = $1"
         )
         .bind(email.as_str())
@@ -122,8 +119,7 @@ impl UserStore for PgUserStore {
                 created_at,
                 updated_at,
             )) => {
-                let id = UserId::from_str(&id)
-                    .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
+                let id = UserId::from_uuid(id);
                 let email = Email::new(&email)
                     .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
                 let password_hash = HashedPassword::new(&password_hash)
@@ -144,7 +140,7 @@ impl UserStore for PgUserStore {
     }
 
     async fn list_all(&self) -> Result<Vec<User>> {
-        let rows: Vec<(String, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let rows: Vec<(uuid::Uuid, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users ORDER BY created_at DESC"
         )
         .fetch_all(&self.pool)
@@ -154,8 +150,7 @@ impl UserStore for PgUserStore {
         let mut users = Vec::new();
         for (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at) in rows
         {
-            let id = UserId::from_str(&id)
-                .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
+            let id = UserId::from_uuid(id);
             let email = Email::new(&email)
                 .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
             let password_hash = HashedPassword::new(&password_hash)
@@ -197,8 +192,8 @@ impl OrgMembershipStore for PgOrgMembershipStore {
                 role = EXCLUDED.role
             "#,
         )
-        .bind(membership.id().to_string())
-        .bind(membership.user_id().to_string())
+        .bind(membership.id().as_uuid())
+        .bind(membership.user_id().as_uuid())
         .bind(membership.org_id().to_string())
         .bind(membership.role().to_string())
         .bind(membership.created_at())
@@ -211,15 +206,15 @@ impl OrgMembershipStore for PgOrgMembershipStore {
 
     async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>> {
         let row: Option<(
-            String,
-            String,
+            uuid::Uuid,
+            uuid::Uuid,
             String,
             String,
             chrono::DateTime<chrono::Utc>,
         )> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE id = $1",
         )
-        .bind(id.to_string())
+        .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -228,10 +223,10 @@ impl OrgMembershipStore for PgOrgMembershipStore {
     }
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>> {
-        let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let rows: Vec<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE user_id = $1 ORDER BY created_at DESC"
         )
-        .bind(user_id.to_string())
+        .bind(user_id.as_uuid())
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
@@ -247,7 +242,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>> {
-        let rows: Vec<(String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let rows: Vec<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE org_id = $1 ORDER BY created_at DESC"
         )
         .bind(org_id.to_string())
@@ -270,10 +265,10 @@ impl OrgMembershipStore for PgOrgMembershipStore {
         user_id: &UserId,
         org_id: &OrganizationId,
     ) -> Result<Option<OrgMembership>> {
-        let row: Option<(String, String, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let row: Option<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE user_id = $1 AND org_id = $2"
         )
-        .bind(user_id.to_string())
+        .bind(user_id.as_uuid())
         .bind(org_id.to_string())
         .fetch_optional(&self.pool)
         .await
@@ -284,7 +279,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
 
     async fn delete(&self, id: &MembershipId) -> Result<()> {
         sqlx::query("DELETE FROM org_memberships WHERE id = $1")
-            .bind(id.to_string())
+            .bind(id.as_uuid())
             .execute(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
@@ -295,8 +290,8 @@ impl OrgMembershipStore for PgOrgMembershipStore {
 
 fn row_to_membership(
     row: Option<(
-        String,
-        String,
+        uuid::Uuid,
+        uuid::Uuid,
         String,
         String,
         chrono::DateTime<chrono::Utc>,
@@ -304,10 +299,8 @@ fn row_to_membership(
 ) -> Result<Option<OrgMembership>> {
     match row {
         Some((id, user_id, org_id, role, created_at)) => {
-            let id = MembershipId::from_str(&id)
-                .map_err(|e| Error::Store(format!("invalid membership id in db: {e}")))?;
-            let user_id = UserId::from_str(&user_id)
-                .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
+            let id = MembershipId::from_uuid(id);
+            let user_id = UserId::from_uuid(user_id);
             let org_id = OrganizationId::new(&org_id)
                 .map_err(|e| Error::Store(format!("invalid org id in db: {e}")))?;
             let role = role

@@ -12,6 +12,9 @@ const PG_URL: &str = "postgres://orchy:orchy@localhost:5432/orchy";
 
 async fn pool() -> sqlx::PgPool {
     let b = PgDatabase::new(PG_URL, None).await.unwrap();
+    b.run_migrations(&PgDatabase::migrations_dir())
+        .await
+        .unwrap();
     b.truncate_all().await.unwrap();
     b.pool()
 }
@@ -376,14 +379,43 @@ async fn message_find_by_id_and_mark_read() {
 #[ignore]
 async fn message_find_by_id_preserves_claim_state() {
     let p = pool().await;
+    let agents = PgAgentStore::new(p.clone());
     let messages = PgMessageStore::new(p);
-    let claimer = orchy_core::agent::AgentId::new();
+
+    let mut sender_agent = Agent::register(
+        org(),
+        proj("test-project"),
+        Namespace::root(),
+        Alias::new("claim-sender").unwrap(),
+        vec![],
+        "sender".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    agents.save(&mut sender_agent).await.unwrap();
+
+    let mut claimer_agent = Agent::register(
+        org(),
+        proj("test-project"),
+        Namespace::root(),
+        Alias::new("claim-claimer").unwrap(),
+        vec![],
+        "claimer".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    agents.save(&mut claimer_agent).await.unwrap();
+    let claimer = claimer_agent.id().clone();
 
     let mut msg = Message::new(
         org(),
         proj("test-project"),
         Namespace::root(),
-        orchy_core::agent::AgentId::new(),
+        sender_agent.id().clone(),
         MessageTarget::Broadcast,
         "claimable".into(),
         None,
@@ -408,10 +440,39 @@ async fn message_find_by_id_preserves_claim_state() {
 #[ignore]
 async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
     let p = pool().await;
+    let agents = PgAgentStore::new(p.clone());
     let messages = PgMessageStore::new(p);
-    let sender = orchy_core::agent::AgentId::new();
-    let receiver = orchy_core::agent::AgentId::new();
     let pr = proj("proj");
+
+    let mut sender_agent = Agent::register(
+        org(),
+        pr.clone(),
+        Namespace::root(),
+        Alias::new("bcast-sender").unwrap(),
+        vec![],
+        "sender".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    agents.save(&mut sender_agent).await.unwrap();
+    let sender = sender_agent.id().clone();
+
+    let mut receiver_agent = Agent::register(
+        org(),
+        pr.clone(),
+        Namespace::root(),
+        Alias::new("bcast-receiver").unwrap(),
+        vec![],
+        "receiver".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    agents.save(&mut receiver_agent).await.unwrap();
+    let receiver = receiver_agent.id().clone();
 
     let mut msg = Message::new(
         org(),

@@ -159,73 +159,8 @@ impl SqliteDatabase {
         Ok(())
     }
 
-    pub fn apply_schema(&self) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260415-000000_initial_schema.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260418-000000_align_schema.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260419-000100_add_edge_source.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260419-000100_add_task_acceptance_criteria.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260419-000300_add_edge_valid_until.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260420-000000_add_missing_indexes.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260420-000100_add_users.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260420-000700_add_edge_indexes.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260421-000000_add_knowledge_validity.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260422-000100_add_archived_at.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260423-000100_add_agent_user_id.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260423-000200_add_api_key_user_id.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute_batch(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations/sqlite/20260423-000300_add_message_claim_state.sql"
-        )))
-        .map_err(|e| Error::Store(e.to_string()))
+    pub fn migrations_dir() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations/sqlite")
     }
 }
 
@@ -261,19 +196,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sqlite_initial_migration_file_exists() {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../migrations/sqlite/20260415-000000_initial_schema.sql");
-        assert!(
-            p.exists(),
-            "embedded schema path must exist: {}",
-            p.display()
-        );
+    fn migrations_dir_exists() {
+        let dir = SqliteDatabase::migrations_dir();
+        assert!(dir.exists(), "migrations dir must exist: {}", dir.display());
     }
 
     #[test]
-    fn apply_schema_runs() {
+    fn run_migrations_on_fresh_db() {
         let backend = SqliteDatabase::new(":memory:", None).unwrap();
-        backend.apply_schema().unwrap();
+        backend
+            .run_migrations(&SqliteDatabase::migrations_dir())
+            .unwrap();
     }
 }
