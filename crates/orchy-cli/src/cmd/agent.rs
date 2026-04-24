@@ -82,9 +82,11 @@ pub async fn run(
                 .unwrap_or_default();
             let agent_roles = roles.clone().unwrap_or_else(|| config.roles.clone());
             let alias = alias.clone().or_else(|| config.alias.clone());
+            let ns = &config.namespace;
             let mut body = serde_json::json!({
                 "description": desc,
                 "roles": agent_roles,
+                "namespace": ns,
             });
             if let Some(a) = &alias {
                 body["alias"] = serde_json::Value::String(a.clone());

@@ -49,6 +49,9 @@ impl RelationOptions {
                     RelationType::DependsOn,
                     RelationType::Spawns,
                     RelationType::Implements,
+                    RelationType::Produces,
+                    RelationType::Supersedes,
+                    RelationType::MergedFrom,
                 ],
                 ResourceKind::Knowledge => &[
                     RelationType::Produces,
