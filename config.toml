@@ -4,10 +4,13 @@ port = 3100
 heartbeat_timeout_secs = 300
 
 [store]
-backend = "sqlite"
+backend = "postgres"
 
 [store.sqlite]
 path = "orchy.db"
+
+[store.postgres]
+url = "postgres://orchy:orchy@localhost:5432/orchy"
 
 [skills]
 dir = "skills"
