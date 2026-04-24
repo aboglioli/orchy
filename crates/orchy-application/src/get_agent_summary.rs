@@ -6,7 +6,7 @@ use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::MessageStore;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
-use orchy_core::project::ProjectStore;
+use orchy_core::project::{Project, ProjectStore};
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 
 use crate::dto::{
@@ -59,11 +59,16 @@ impl GetAgentSummary {
             return Err(Error::NotFound(format!("agent {agent_id}")));
         }
 
-        let project = self
-            .projects
-            .find_by_id(&org_id, agent.project())
-            .await?
-            .map(|p| ProjectResponse::from(&p));
+        let project = Some(
+            match self.projects.find_by_id(&org_id, agent.project()).await? {
+                Some(project) => ProjectResponse::from(&project),
+                None => ProjectResponse::from(Project::new(
+                    org_id.clone(),
+                    agent.project().clone(),
+                    String::new(),
+                )?),
+            },
+        );
 
         let all_agents = self
             .agents

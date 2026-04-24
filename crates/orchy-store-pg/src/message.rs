@@ -248,6 +248,9 @@ impl MessageStore for PgMessageStore {
             if !visible {
                 return false;
             }
+            if m.is_directed_to(agent) && m.status() == MessageStatus::Read {
+                return false;
+            }
             if let Some(claimed_by) = m.claimed_by()
                 && claimed_by != agent
             {

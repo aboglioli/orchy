@@ -182,6 +182,9 @@ impl MessageStore for SqliteMessageStore {
             if !visible {
                 return false;
             }
+            if m.is_directed_to(agent) && m.status() == MessageStatus::Read {
+                return false;
+            }
             if let Some(claimed_by) = m.claimed_by() {
                 if claimed_by != agent {
                     return false;

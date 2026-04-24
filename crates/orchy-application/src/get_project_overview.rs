@@ -6,7 +6,7 @@ use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
-use orchy_core::project::ProjectStore;
+use orchy_core::project::{Project, ProjectStore};
 use orchy_core::task::{TaskFilter, TaskStore};
 
 use crate::dto::{
@@ -53,11 +53,10 @@ impl GetProjectOverview {
             .map(|s| parse_namespace(Some(s)))
             .transpose()?;
 
-        let project = self
-            .projects
-            .find_by_id(&org_id, &project_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("project {project_id}")))?;
+        let project = match self.projects.find_by_id(&org_id, &project_id).await? {
+            Some(project) => project,
+            None => Project::new(org_id.clone(), project_id.clone(), String::new())?,
+        };
         let project = Some(ProjectResponse::from(&project));
 
         let all_agents = self

@@ -93,26 +93,31 @@ impl GetNextTask {
         project: Option<ProjectId>,
         namespace: Option<Namespace>,
     ) -> Result<Vec<Task>> {
-        let mut candidates: Vec<Task> = Vec::new();
-
-        for role in roles {
-            let filter = TaskFilter {
-                org_id: org_id.clone(),
-                project: project.clone(),
-                namespace: namespace.clone(),
-                status: Some(TaskStatus::Pending),
-                assigned_role: Some(role.clone()),
-                include_archived: None,
-                ..Default::default()
-            };
-            let mut tasks = self
-                .tasks
-                .list(filter, PageParams::unbounded())
-                .await?
-                .items;
-            tasks.sort_by_key(|t| std::cmp::Reverse(t.priority()));
-            candidates.extend(tasks);
-        }
+        let mut candidates: Vec<Task> = self
+            .tasks
+            .list(
+                TaskFilter {
+                    org_id: org_id.clone(),
+                    project: project.clone(),
+                    namespace: namespace.clone(),
+                    status: Some(TaskStatus::Pending),
+                    include_archived: None,
+                    ..Default::default()
+                },
+                PageParams::unbounded(),
+            )
+            .await?
+            .items
+            .into_iter()
+            .filter(|task| {
+                task.assigned_roles().is_empty()
+                    || roles.iter().any(|role| {
+                        task.assigned_roles()
+                            .iter()
+                            .any(|assigned| assigned == role)
+                    })
+            })
+            .collect();
 
         let mut seen = HashSet::new();
         candidates.retain(|t| seen.insert(t.id()));

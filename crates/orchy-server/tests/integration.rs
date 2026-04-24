@@ -2,15 +2,18 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use orchy_application::{
-    AddEdge, AddEdgeCommand, CheckMailbox, CheckMailboxCommand, LockResource, LockResourceCommand,
-    MarkRead, MarkReadCommand, RegisterAgent, RegisterAgentCommand, RenameAlias,
-    RenameAliasCommand, SendMessage, SendMessageCommand,
+    AddEdge, AddEdgeCommand, CheckMailbox, CheckMailboxCommand, GetAgentSummary,
+    GetAgentSummaryCommand, GetNextTask, GetNextTaskCommand, GetProject, GetProjectCommand,
+    LockResource, LockResourceCommand, MarkRead, MarkReadCommand, PostTask, PostTaskCommand,
+    RegisterAgent, RegisterAgentCommand, RenameAlias, RenameAliasCommand, SendMessage,
+    SendMessageCommand,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::graph::EdgeStore;
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
+use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
 use orchy_core::user::OrgMembershipStore;
@@ -51,6 +54,12 @@ fn users(s: &Arc<MemoryState>) -> Arc<MemoryUserStore> {
 }
 fn memberships(s: &Arc<MemoryState>) -> Arc<MemoryOrgMembershipStore> {
     Arc::new(MemoryOrgMembershipStore::new(s.clone()))
+}
+fn projects(s: &Arc<MemoryState>) -> Arc<MemoryProjectStore> {
+    Arc::new(MemoryProjectStore::new(s.clone()))
+}
+fn knowledge(s: &Arc<MemoryState>) -> Arc<MemoryKnowledgeStore> {
+    Arc::new(MemoryKnowledgeStore::new(s.clone()))
 }
 
 async fn register(agent_store: &Arc<MemoryAgentStore>, alias: &str) -> AgentId {
@@ -475,6 +484,153 @@ async fn future_agent_sees_old_namespace_message() {
 }
 
 // ─── alias uniqueness per org/project ───────────────────────────────────────
+
+#[tokio::test]
+async fn direct_mark_read_hides_message_from_inbox() {
+    let s = state();
+    let sender_id = register_with_app(&s, "direct-sender").await;
+    let recipient_id = register_with_app(&s, "direct-recipient").await;
+
+    let send = SendMessage::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        users(&s) as Arc<dyn UserStore>,
+        memberships(&s) as Arc<dyn OrgMembershipStore>,
+    );
+    let msg = send
+        .execute(SendMessageCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            from_agent_id: sender_id.to_string(),
+            to: recipient_id.to_string(),
+            body: "direct-read".into(),
+            reply_to: None,
+            refs: vec![],
+        })
+        .await
+        .unwrap();
+
+    let bodies = inbox_for(&s, &recipient_id, &[]).await;
+    assert!(bodies.contains(&"direct-read".to_string()));
+
+    let mark_read = MarkRead::new(
+        messages(&s) as Arc<dyn MessageStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+    );
+    mark_read
+        .execute(MarkReadCommand {
+            agent_id: recipient_id.to_string(),
+            message_ids: vec![msg.id],
+        })
+        .await
+        .unwrap();
+
+    let bodies = inbox_for(&s, &recipient_id, &[]).await;
+    assert!(!bodies.contains(&"direct-read".to_string()));
+}
+
+#[tokio::test]
+async fn mark_read_fails_for_unknown_message() {
+    let s = state();
+    let recipient_id = register_with_app(&s, "mark-read-recipient").await;
+
+    let mark_read = MarkRead::new(
+        messages(&s) as Arc<dyn MessageStore>,
+        agents(&s) as Arc<dyn AgentStore>,
+    );
+    let result = mark_read
+        .execute(MarkReadCommand {
+            agent_id: recipient_id.to_string(),
+            message_ids: vec!["019dbe0b-e8de-7930-a9c8-67e522bb2bd6".into()],
+        })
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn get_next_task_returns_unassigned_pending_task() {
+    let s = state();
+    let agent_id = register_with_app(&s, "next-agent").await;
+
+    let post_task = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    post_task
+        .execute(PostTaskCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            title: "unassigned task".into(),
+            description: "available to anyone".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+        })
+        .await
+        .unwrap();
+
+    let next = GetNextTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
+    let found = next
+        .execute(GetNextTaskCommand {
+            org_id: Some("default".into()),
+            project: Some("test".into()),
+            namespace: None,
+            roles: vec![],
+            claim: Some(true),
+            agent_id: Some(agent_id.to_string()),
+        })
+        .await
+        .unwrap();
+
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().title, "unassigned task");
+}
+
+#[tokio::test]
+async fn get_project_synthesizes_missing_project_projection() {
+    let s = state();
+    let _agent_id = register_with_app(&s, "project-agent").await;
+
+    let get_project = GetProject::new(projects(&s) as Arc<dyn ProjectStore>);
+    let project = get_project
+        .execute(GetProjectCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(project.id, "test");
+    assert_eq!(project.org_id, "default");
+}
+
+#[tokio::test]
+async fn get_agent_summary_includes_synthesized_project() {
+    let s = state();
+    let agent_id = register_with_app(&s, "summary-agent").await;
+
+    let summary = GetAgentSummary::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        projects(&s) as Arc<dyn ProjectStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+        knowledge(&s) as Arc<dyn orchy_core::knowledge::KnowledgeStore>,
+    );
+    let result = summary
+        .execute(GetAgentSummaryCommand {
+            org_id: "default".into(),
+            agent_id: agent_id.to_string(),
+        })
+        .await
+        .unwrap();
+
+    assert!(result.project.is_some());
+    assert_eq!(result.project.unwrap().id, "test");
+}
 
 #[tokio::test]
 async fn alias_uniqueness_enforced_per_org_and_project() {

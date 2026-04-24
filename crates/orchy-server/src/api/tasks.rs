@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use orchy_application::{
     AddDependencyCommand, ArchiveTaskCommand, AssignTaskCommand, CancelTaskCommand,
-    ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand,
+    ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand, GetAgentCommand,
     GetNextTaskCommand, GetTaskCommand, ListTagsCommand, ListTasksCommand, MergeTasksCommand,
     MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand,
     ReplaceTaskCommand, SplitTaskCommand, StartTaskCommand, SubtaskInput, TagTaskCommand,
@@ -922,16 +922,37 @@ pub async fn next_task(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org = auth.org.id.clone();
     let org_id = parse_org(&org)?;
+
+    let resolved_agent_id = match query.agent_id.as_deref() {
+        Some(id_or_alias) => {
+            Some(resolve_agent_id(&container, &org_id, &project, id_or_alias).await?)
+        }
+        None => None,
+    };
+
     let roles = match query.role {
         Some(r) => vec![r],
-        None => vec![],
+        None => match resolved_agent_id.as_deref() {
+            Some(agent_id) => {
+                let agent = container
+                    .app
+                    .get_agent
+                    .execute(GetAgentCommand {
+                        agent_id: agent_id.to_string(),
+                        org_id: Some(org.clone()),
+                        relations: None,
+                    })
+                    .await
+                    .map_err(ApiError::from)?;
+                agent.roles.clone()
+            }
+            None => vec![],
+        },
     };
 
     let claim = query.claim.unwrap_or(false);
-    let agent_id = match (claim, query.agent_id.as_deref()) {
-        (true, Some(id_or_alias)) => {
-            Some(resolve_agent_id(&container, &org_id, &project, id_or_alias).await?)
-        }
+    let agent_id = match (claim, resolved_agent_id) {
+        (true, Some(agent_id)) => Some(agent_id),
         (true, None) => {
             return Err(ApiError(
                 StatusCode::BAD_REQUEST,

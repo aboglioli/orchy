@@ -34,21 +34,21 @@ impl MarkRead {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
-        let mut direct_ids = Vec::new();
         let mut receipt_ids = Vec::new();
 
         for id in &message_ids {
-            if let Some(mut msg) = self.messages.find_by_id(id).await? {
-                if msg.is_directed_to(&agent_id) {
-                    msg.mark_read()?;
-                    self.messages.save(&mut msg).await?;
-                    direct_ids.push(*id);
-                    continue;
-                }
+            let Some(mut msg) = self.messages.find_by_id(id).await? else {
+                return Err(Error::NotFound(format!("message {id}")));
+            };
 
-                if msg.is_broadcast() || msg.is_role_targeted() || msg.is_namespace_targeted() {
-                    receipt_ids.push(*id);
-                }
+            if msg.is_directed_to(&agent_id) {
+                msg.mark_read()?;
+                self.messages.save(&mut msg).await?;
+                continue;
+            }
+
+            if msg.is_broadcast() || msg.is_role_targeted() || msg.is_namespace_targeted() {
+                receipt_ids.push(*id);
             }
         }
 

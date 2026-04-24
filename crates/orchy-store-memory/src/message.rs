@@ -92,6 +92,10 @@ impl MessageStore for MemoryMessageStore {
             if receipts.contains(&(msg.id(), agent.clone())) {
                 continue;
             }
+            if msg.is_directed_to(agent) && msg.status() == orchy_core::message::MessageStatus::Read
+            {
+                continue;
+            }
 
             let targets_agent = match msg.to() {
                 MessageTarget::Agent(id) => id == agent,
