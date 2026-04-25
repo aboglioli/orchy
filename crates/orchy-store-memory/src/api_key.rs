@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use orchy_core::api_key::{ApiKey, ApiKeyId, ApiKeyStore, HashedApiKey};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 
 use crate::MemoryState;
@@ -26,12 +26,14 @@ impl ApiKeyStore for MemoryApiKeyStore {
         Ok(())
     }
 
+    async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>> {
+        let keys = self.state.api_keys.read().await;
+        Ok(keys.get(id).cloned())
+    }
+
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
         let keys = self.state.api_keys.read().await;
-        Ok(keys
-            .values()
-            .find(|k| k.hashed_key() == hash && k.is_active())
-            .cloned())
+        Ok(keys.values().find(|k| k.hashed_key() == hash).cloned())
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>> {
@@ -41,16 +43,5 @@ impl ApiKeyStore for MemoryApiKeyStore {
             .filter(|k| k.org_id() == org_id)
             .cloned()
             .collect())
-    }
-
-    async fn revoke(&self, id: &ApiKeyId) -> Result<()> {
-        let mut keys = self.state.api_keys.write().await;
-        match keys.get_mut(id) {
-            Some(key) => {
-                key.revoke();
-                Ok(())
-            }
-            None => Err(Error::NotFound(format!("api key {id}"))),
-        }
     }
 }

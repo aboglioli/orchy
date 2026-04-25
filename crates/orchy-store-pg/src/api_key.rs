@@ -45,43 +45,44 @@ impl ApiKeyStore for PgApiKeyStore {
         Ok(())
     }
 
-    async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
-        let row = sqlx::query(
+    async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>> {
+        sqlx::query(
             "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
-             FROM api_keys WHERE key_hash = $1 AND is_active = true",
+             FROM api_keys WHERE id = $1",
+        )
+        .bind(*id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?
+        .map(|r| build_api_key(&r))
+        .transpose()
+    }
+
+    async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
+        sqlx::query(
+            "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
+             FROM api_keys WHERE key_hash = $1",
         )
         .bind(hash.as_str())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        row.map(|r| build_api_key(&r)).transpose()
+        .map_err(|e| Error::Store(e.to_string()))?
+        .map(|r| build_api_key(&r))
+        .transpose()
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>> {
-        let rows = sqlx::query(
+        sqlx::query(
             "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
              FROM api_keys WHERE organization_id = $1 ORDER BY created_at",
         )
         .bind(org_id.as_str())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        rows.iter().map(build_api_key).collect()
-    }
-
-    async fn revoke(&self, id: &ApiKeyId) -> Result<()> {
-        let rows = sqlx::query("UPDATE api_keys SET is_active = false WHERE id = $1")
-            .bind(*id.as_uuid())
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if rows.rows_affected() == 0 {
-            return Err(Error::NotFound(format!("api key {id}")));
-        }
-        Ok(())
+        .map_err(|e| Error::Store(e.to_string()))?
+        .iter()
+        .map(build_api_key)
+        .collect()
     }
 }
 
@@ -91,24 +92,18 @@ fn build_api_key(row: &sqlx::postgres::PgRow) -> Result<ApiKey> {
     let name: String = row.get("name");
     let key_hash: String = row.get("key_hash");
     let key_prefix: String = row.get("key_prefix");
-    let key_suffix: String = row.try_get("key_suffix").unwrap_or_default();
+    let key_suffix: String = row.get("key_suffix");
     let is_active: bool = row.get("is_active");
     let created_at: DateTime<Utc> = row.get("created_at");
     let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
 
-    let org_id = OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?;
-    let hashed_key = HashedApiKey::new(key_hash)?;
-    let prefix = ApiKeyPrefix::new(key_prefix)?;
-    let suffix = ApiKeySuffix::new(key_suffix)
-        .unwrap_or_else(|_| ApiKeySuffix::new("????".to_string()).unwrap());
-
     Ok(ApiKey::restore(RestoreApiKey {
         id: ApiKeyId::from_uuid(id),
-        org_id,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?,
         name,
-        hashed_key,
-        key_prefix: prefix,
-        key_suffix: suffix,
+        hashed_key: HashedApiKey::new(key_hash)?,
+        key_prefix: ApiKeyPrefix::new(key_prefix)?,
+        key_suffix: ApiKeySuffix::new(key_suffix)?,
         user_id: user_id_uuid.map(UserId::from_uuid),
         is_active,
         created_at,

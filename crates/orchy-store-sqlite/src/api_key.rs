@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use rusqlite::OptionalExtension;
 use uuid::Uuid;
 
 use orchy_core::api_key::{
@@ -44,19 +45,32 @@ impl ApiKeyStore for SqliteApiKeyStore {
         Ok(())
     }
 
+    async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        conn.query_row(
+            "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
+             FROM api_keys WHERE id = ?1",
+            rusqlite::params![id.to_string()],
+            row_to_tuple,
+        )
+        .optional()
+        .map_err(|e| Error::Store(e.to_string()))?
+        .map(build_api_key)
+        .transpose()
+    }
+
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let row = conn
-            .query_row(
-                "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
-                 FROM api_keys WHERE key_hash = ?1 AND is_active = 1",
-                rusqlite::params![hash.as_str()],
-                row_to_tuple,
-            )
-            .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        row.map(build_api_key).transpose()
+        conn.query_row(
+            "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
+             FROM api_keys WHERE key_hash = ?1",
+            rusqlite::params![hash.as_str()],
+            row_to_tuple,
+        )
+        .optional()
+        .map_err(|e| Error::Store(e.to_string()))?
+        .map(build_api_key)
+        .transpose()
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>> {
@@ -76,24 +90,7 @@ impl ApiKeyStore for SqliteApiKeyStore {
             .map(build_api_key)
             .collect()
     }
-
-    async fn revoke(&self, id: &ApiKeyId) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let rows = conn
-            .execute(
-                "UPDATE api_keys SET is_active = 0 WHERE id = ?1",
-                rusqlite::params![id.to_string()],
-            )
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        if rows == 0 {
-            return Err(Error::NotFound(format!("api key {id}")));
-        }
-        Ok(())
-    }
 }
-
-use rusqlite::OptionalExtension;
 
 type ApiKeyRow = (
     String,
@@ -114,7 +111,7 @@ fn row_to_tuple(row: &rusqlite::Row) -> rusqlite::Result<ApiKeyRow> {
         row.get(2)?,
         row.get(3)?,
         row.get(4)?,
-        row.get::<_, String>(5).unwrap_or_default(),
+        row.get(5)?,
         row.get(6)?,
         row.get(7)?,
         row.get::<_, Option<String>>(8).ok().flatten(),
@@ -134,28 +131,19 @@ fn build_api_key(row: ApiKeyRow) -> Result<ApiKey> {
         user_id_str,
     ) = row;
 
-    let id = Uuid::parse_str(&id_str)
-        .map(ApiKeyId::from_uuid)
-        .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?;
-    let org_id = OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?;
-    let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-        .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?;
-    let hashed_key = HashedApiKey::new(key_hash)?;
-    let prefix = ApiKeyPrefix::new(key_prefix)?;
-    let suffix = ApiKeySuffix::new(key_suffix)
-        .unwrap_or_else(|_| ApiKeySuffix::new("????".to_string()).unwrap());
-    let user_id = user_id_str.and_then(|s| s.parse::<UserId>().ok());
-
     Ok(ApiKey::restore(RestoreApiKey {
-        id,
-        org_id,
+        id: Uuid::parse_str(&id_str)
+            .map(ApiKeyId::from_uuid)
+            .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?,
         name,
-        hashed_key,
-        key_prefix: prefix,
-        key_suffix: suffix,
-        user_id,
+        hashed_key: HashedApiKey::new(key_hash)?,
+        key_prefix: ApiKeyPrefix::new(key_prefix)?,
+        key_suffix: ApiKeySuffix::new(key_suffix)?,
+        user_id: user_id_str.and_then(|s| s.parse::<UserId>().ok()),
         is_active: is_active != 0,
-        created_at,
+        created_at: DateTime::parse_from_rfc3339(&created_at_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?,
     }))
 }

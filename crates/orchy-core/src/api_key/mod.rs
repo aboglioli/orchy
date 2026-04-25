@@ -9,10 +9,27 @@ use crate::error::{Error, Result};
 use crate::organization::OrganizationId;
 use crate::user::UserId;
 
-const KEY_PREFIX: &str = "sk_";
-const KEY_LEN: usize = 67; // "sk_" + 64 hex chars
+pub trait ApiKeyGenerator: Send + Sync {
+    fn generate(
+        &self,
+        org_id: &OrganizationId,
+        user_id: Option<UserId>,
+        name: String,
+    ) -> Result<(PlainApiKey, ApiKey)>;
 
-// ── Value objects ───────────────────────────────────────────────────────────
+    fn hash(&self, plain: &PlainApiKey) -> HashedApiKey;
+}
+
+#[async_trait::async_trait]
+pub trait ApiKeyStore: Send + Sync {
+    async fn save(&self, api_key: &mut ApiKey) -> Result<()>;
+    async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>>;
+    async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>>;
+    async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>>;
+}
+
+const KEY_PREFIX: &str = "sk_";
+const KEY_LEN: usize = 67;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PlainApiKey(String);
@@ -119,8 +136,6 @@ impl fmt::Display for ApiKeySuffix {
     }
 }
 
-// ── Identity ────────────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ApiKeyId(Uuid);
@@ -160,29 +175,6 @@ impl FromStr for ApiKeyId {
             .map_err(|e| Error::invalid_input(format!("invalid api key id: {e}")))
     }
 }
-
-// ── Traits ──────────────────────────────────────────────────────────────────
-
-pub trait ApiKeyGenerator: Send + Sync {
-    fn generate(
-        &self,
-        org_id: &OrganizationId,
-        user_id: Option<UserId>,
-        name: String,
-    ) -> Result<(PlainApiKey, ApiKey)>;
-
-    fn hash(&self, plain: &PlainApiKey) -> HashedApiKey;
-}
-
-#[async_trait::async_trait]
-pub trait ApiKeyStore: Send + Sync {
-    async fn save(&self, api_key: &mut ApiKey) -> Result<()>;
-    async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>>;
-    async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>>;
-    async fn revoke(&self, id: &ApiKeyId) -> Result<()>;
-}
-
-// ── Entity ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKey {
@@ -245,6 +237,10 @@ impl ApiKey {
         }
     }
 
+    pub fn revoke(&mut self) {
+        self.is_active = false;
+    }
+
     pub fn id(&self) -> &ApiKeyId {
         &self.id
     }
@@ -271,10 +267,6 @@ impl ApiKey {
 
     pub fn user_id(&self) -> Option<&UserId> {
         self.user_id.as_ref()
-    }
-
-    pub fn revoke(&mut self) {
-        self.is_active = false;
     }
 
     pub fn is_active(&self) -> bool {
@@ -316,36 +308,28 @@ mod tests {
     }
 
     #[test]
-    fn hashed_api_key_valid() {
-        let hash = HashedApiKey::new("abc123".to_string()).unwrap();
-        assert_eq!(hash.as_str(), "abc123");
-    }
-
-    #[test]
     fn hashed_api_key_rejects_empty() {
         assert!(HashedApiKey::new("".to_string()).is_err());
     }
 
     #[test]
-    fn api_key_prefix_valid() {
-        let prefix = ApiKeyPrefix::new("sk_abcde".to_string()).unwrap();
-        assert_eq!(prefix.as_str(), "sk_abcde");
+    fn api_key_prefix_rejects_wrong_length() {
+        assert!(ApiKeyPrefix::new("short".to_string()).is_err());
     }
 
     #[test]
-    fn api_key_suffix_valid() {
-        let suffix = ApiKeySuffix::new("7890".to_string()).unwrap();
-        assert_eq!(suffix.as_str(), "7890");
+    fn api_key_suffix_rejects_wrong_length() {
+        assert!(ApiKeySuffix::new("ab".to_string()).is_err());
     }
 
     #[test]
-    fn api_key_entity_new() {
+    fn api_key_new_and_revoke() {
         let org_id = OrganizationId::new("test-org").unwrap();
         let hash = HashedApiKey::new("somehash".to_string()).unwrap();
         let prefix = ApiKeyPrefix::new("sk_abcde".to_string()).unwrap();
         let suffix = ApiKeySuffix::new("7890".to_string()).unwrap();
 
-        let key = ApiKey::new(
+        let mut key = ApiKey::new(
             org_id.clone(),
             "Production".into(),
             hash,
@@ -357,5 +341,8 @@ mod tests {
         assert_eq!(key.name(), "Production");
         assert!(key.is_active());
         assert!(key.user_id().is_none());
+
+        key.revoke();
+        assert!(!key.is_active());
     }
 }
