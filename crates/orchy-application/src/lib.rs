@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::agent::AgentStore;
-use orchy_core::api_key::ApiKeyGenerator;
+use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::EdgeStore;
@@ -142,6 +142,7 @@ mod register_namespace;
 mod create_organization;
 mod generate_api_key;
 mod get_organization;
+mod list_api_keys;
 mod list_organizations;
 mod resolve_api_key;
 mod resolve_token;
@@ -236,6 +237,7 @@ pub use unlock_resource::{UnlockResource, UnlockResourceCommand};
 pub use create_organization::{CreateOrganization, CreateOrganizationCommand};
 pub use generate_api_key::{GenerateApiKey, GenerateApiKeyCommand, GenerateApiKeyResponse};
 pub use get_organization::{GetOrganization, GetOrganizationCommand};
+pub use list_api_keys::{ListApiKeys, ListApiKeysCommand};
 pub use list_organizations::{ListOrganizations, ListOrganizationsCommand};
 pub use register_namespace::{RegisterNamespace, RegisterNamespaceCommand};
 pub use resolve_api_key::{ApiKeyPrincipal, ResolveApiKey, ResolveApiKeyCommand};
@@ -355,6 +357,7 @@ pub struct Application {
     pub get_organization: GetOrganization,
     pub list_organizations: ListOrganizations,
     pub generate_api_key: GenerateApiKey,
+    pub list_api_keys: ListApiKeys,
     pub revoke_api_key: RevokeApiKey,
     pub resolve_api_key: ResolveApiKey,
     pub resolve_token: Option<ResolveToken>,
@@ -387,6 +390,7 @@ impl Application {
         memberships: Arc<dyn OrgMembershipStore>,
         token_encoder: Option<Arc<dyn TokenEncoder>>,
         hasher: Arc<dyn PasswordHasher>,
+        api_keys: Arc<dyn ApiKeyStore>,
         generator: Arc<dyn ApiKeyGenerator>,
     ) -> Self {
         let materializer = Arc::new(MaterializeNeighborhood::new(
@@ -517,9 +521,10 @@ impl Application {
             create_organization: CreateOrganization::new(orgs.clone()),
             get_organization: GetOrganization::new(orgs.clone()),
             list_organizations: ListOrganizations::new(orgs.clone()),
-            generate_api_key: GenerateApiKey::new(orgs.clone(), generator.clone()),
-            revoke_api_key: RevokeApiKey::new(orgs.clone()),
-            resolve_api_key: ResolveApiKey::new(orgs.clone(), generator),
+            generate_api_key: GenerateApiKey::new(api_keys.clone(), generator.clone()),
+            list_api_keys: ListApiKeys::new(api_keys.clone()),
+            revoke_api_key: RevokeApiKey::new(api_keys.clone()),
+            resolve_api_key: ResolveApiKey::new(api_keys, orgs.clone(), generator),
             resolve_token: token_encoder
                 .as_ref()
                 .map(|te| ResolveToken::new(te.clone(), memberships.clone(), orgs)),

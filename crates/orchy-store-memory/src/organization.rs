@@ -42,18 +42,6 @@ impl OrganizationStore for MemoryOrganizationStore {
         Ok(orgs.get(id).cloned())
     }
 
-    async fn find_by_api_key_hash(&self, key_hash: &str) -> Result<Option<Organization>> {
-        let orgs = self.state.organizations.read().await;
-        Ok(orgs
-            .values()
-            .find(|org| {
-                org.api_keys()
-                    .iter()
-                    .any(|k| k.is_active() && k.key_hash().as_str() == key_hash)
-            })
-            .cloned())
-    }
-
     async fn list(&self) -> Result<Vec<Organization>> {
         let orgs = self.state.organizations.read().await;
         Ok(orgs.values().cloned().collect())

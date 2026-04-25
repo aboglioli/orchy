@@ -357,7 +357,6 @@ pub struct AgentSummaryResponse {
 pub struct OrganizationDto {
     pub id: String,
     pub name: String,
-    pub api_keys: Vec<ApiKeyDto>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -373,7 +372,6 @@ impl From<&Organization> for OrganizationDto {
         Self {
             id: o.id().to_string(),
             name: o.name().to_string(),
-            api_keys: o.api_keys().iter().map(ApiKeyDto::from).collect(),
             created_at: o.created_at().to_rfc3339(),
             updated_at: o.updated_at().to_rfc3339(),
         }
@@ -390,8 +388,8 @@ pub struct ApiKeyDto {
     pub created_at: String,
 }
 
-impl From<&orchy_core::organization::ApiKey> for ApiKeyDto {
-    fn from(k: &orchy_core::organization::ApiKey) -> Self {
+impl From<&orchy_core::api_key::ApiKey> for ApiKeyDto {
+    fn from(k: &orchy_core::api_key::ApiKey) -> Self {
         Self {
             id: k.id().to_string(),
             name: k.name().to_string(),

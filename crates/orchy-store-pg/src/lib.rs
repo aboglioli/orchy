@@ -1,4 +1,5 @@
 mod agent;
+mod api_key;
 pub(crate) mod consumer;
 mod edge;
 mod events;
@@ -13,6 +14,7 @@ mod task;
 mod user;
 
 pub use agent::PgAgentStore;
+pub use api_key::PgApiKeyStore;
 pub use edge::PgEdgeStore;
 pub use events::{PgEventQuery, PgEventWriter};
 pub use knowledge::PgKnowledgeStore;

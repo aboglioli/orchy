@@ -1,6 +1,7 @@
 #![allow(clippy::collapsible_if)]
 
 mod agent;
+mod api_key;
 mod edge;
 mod events;
 mod knowledge;
@@ -31,6 +32,7 @@ use orchy_core::task::{Task, TaskId};
 use orchy_core::user::{OrgMembership, User, UserId};
 
 pub use agent::MemoryAgentStore;
+pub use api_key::MemoryApiKeyStore;
 pub use edge::MemoryEdgeStore;
 pub use events::{MemoryEventQuery, MemoryEventWriter};
 pub use knowledge::MemoryKnowledgeStore;
@@ -56,6 +58,8 @@ pub struct MemoryState {
     pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
     pub(crate) resource_locks: RwLock<HashMap<String, ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String, String)>>,
+    pub(crate) api_keys:
+        RwLock<HashMap<orchy_core::api_key::ApiKeyId, orchy_core::api_key::ApiKey>>,
     pub(crate) organizations: RwLock<HashMap<OrganizationId, Organization>>,
     pub(crate) users: RwLock<HashMap<UserId, User>>,
     pub(crate) user_by_email: RwLock<HashMap<String, UserId>>,
@@ -81,6 +85,7 @@ impl MemoryState {
             knowledge_entries: RwLock::new(HashMap::new()),
             resource_locks: RwLock::new(HashMap::new()),
             namespaces: RwLock::new(HashSet::new()),
+            api_keys: RwLock::new(HashMap::new()),
             organizations: RwLock::new(HashMap::new()),
             users: RwLock::new(HashMap::new()),
             user_by_email: RwLock::new(HashMap::new()),

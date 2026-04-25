@@ -4,6 +4,7 @@ use tokio::sync::RwLock;
 
 use orchy_application::{Application, EventQuery};
 use orchy_core::agent::{AgentId, AgentStore};
+use orchy_core::api_key::ApiKeyStore;
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
@@ -39,6 +40,7 @@ struct Stores {
     locks: Arc<dyn LockStore>,
     namespaces: Arc<dyn NamespaceStore>,
     orgs: Arc<dyn OrganizationStore>,
+    api_keys: Arc<dyn ApiKeyStore>,
     edges: Arc<dyn EdgeStore>,
     event_query: Arc<dyn EventQuery>,
     users: Arc<dyn UserStore>,
@@ -81,6 +83,7 @@ impl Container {
             stores.memberships.clone(),
             token_encoder.clone(),
             password_hasher.clone(),
+            stores.api_keys.clone(),
             api_key_generator,
         );
 
@@ -197,6 +200,7 @@ impl Container {
             locks: Arc::new(MemoryLockStore::new(state.clone())),
             namespaces: Arc::new(MemoryNamespaceStore::new(state.clone())),
             orgs: Arc::new(MemoryOrganizationStore::new(state.clone())),
+            api_keys: Arc::new(MemoryApiKeyStore::new(state.clone())),
             edges: Arc::new(MemoryEdgeStore::new(state.clone())),
             event_query: Arc::new(MemoryEventQueryAdapter(MemoryEventQuery::new(
                 state.clone(),
@@ -218,6 +222,7 @@ impl Container {
             locks: Arc::new(SqliteLockStore::new(conn.clone())),
             namespaces: Arc::new(SqliteNamespaceStore::new(conn.clone())),
             orgs: Arc::new(SqliteOrganizationStore::new(conn.clone())),
+            api_keys: Arc::new(SqliteApiKeyStore::new(conn.clone())),
             edges: Arc::new(SqliteEdgeStore::new(conn.clone())),
             event_query: Arc::new(SqliteEventQueryAdapter(SqliteEventQuery::new(conn.clone()))),
             users: Arc::new(SqliteUserStore::new(conn.clone())),
@@ -238,6 +243,7 @@ impl Container {
             locks: Arc::new(PgLockStore::new(pool.clone())),
             namespaces: Arc::new(PgNamespaceStore::new(pool.clone())),
             orgs: Arc::new(PgOrganizationStore::new(pool.clone())),
+            api_keys: Arc::new(PgApiKeyStore::new(pool.clone())),
             edges: Arc::new(PgEdgeStore::new(pool.clone())),
             event_query: Arc::new(PgEventQueryAdapter(orchy_store_pg::PgEventQuery::new(
                 pool.clone(),

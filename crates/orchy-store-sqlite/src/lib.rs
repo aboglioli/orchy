@@ -1,6 +1,7 @@
 #![allow(clippy::collapsible_if)]
 
 mod agent;
+mod api_key;
 mod edge;
 mod events;
 mod knowledge;
@@ -22,6 +23,7 @@ use std::sync::Mutex;
 use orchy_core::error::{Error, Result};
 
 pub use agent::SqliteAgentStore;
+pub use api_key::SqliteApiKeyStore;
 pub use edge::SqliteEdgeStore;
 pub use events::{SqliteEventQuery, SqliteEventWriter};
 pub use knowledge::SqliteKnowledgeStore;

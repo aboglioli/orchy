@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use orchy_core::api_key::ApiKeyGenerator;
+use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore, PlainApiKey};
 use orchy_core::error::Result;
-use orchy_core::organization::{OrganizationStore, RawApiKey};
+use orchy_core::organization::OrganizationStore;
 
 use crate::dto::OrganizationDto;
 
@@ -17,37 +17,45 @@ pub struct ResolveApiKeyCommand {
 }
 
 pub struct ResolveApiKey {
+    api_keys: Arc<dyn ApiKeyStore>,
     orgs: Arc<dyn OrganizationStore>,
     generator: Arc<dyn ApiKeyGenerator>,
 }
 
 impl ResolveApiKey {
-    pub fn new(orgs: Arc<dyn OrganizationStore>, generator: Arc<dyn ApiKeyGenerator>) -> Self {
-        Self { orgs, generator }
+    pub fn new(
+        api_keys: Arc<dyn ApiKeyStore>,
+        orgs: Arc<dyn OrganizationStore>,
+        generator: Arc<dyn ApiKeyGenerator>,
+    ) -> Self {
+        Self {
+            api_keys,
+            orgs,
+            generator,
+        }
     }
 
     pub async fn execute(&self, cmd: ResolveApiKeyCommand) -> Result<Option<ApiKeyPrincipal>> {
-        let raw_key = match RawApiKey::new(cmd.raw_key) {
+        let plain = match PlainApiKey::new(cmd.raw_key) {
             Ok(k) => k,
             Err(_) => return Ok(None),
         };
-        let key_hash = self.generator.hash(&raw_key)?;
 
-        let org = self.orgs.find_by_api_key_hash(key_hash.as_str()).await?;
-        let org = match org {
+        let hashed = self.generator.hash(&plain);
+
+        let api_key = match self.api_keys.find_by_hash(&hashed).await? {
+            Some(k) if k.is_active() => k,
+            _ => return Ok(None),
+        };
+
+        let org = match self.orgs.find_by_id(api_key.org_id()).await? {
             Some(o) => o,
             None => return Ok(None),
         };
 
-        let user_id = org
-            .api_keys()
-            .iter()
-            .find(|k| k.is_active() && k.key_hash() == &key_hash)
-            .and_then(|k| k.user_id().map(|u| u.to_string()));
-
         Ok(Some(ApiKeyPrincipal {
             org: OrganizationDto::from(&org),
-            user_id,
+            user_id: api_key.user_id().map(|u| u.to_string()),
         }))
     }
 }

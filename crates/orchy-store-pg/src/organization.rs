@@ -1,13 +1,11 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
-use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::{
-    ApiKey, ApiKeyId, Organization, OrganizationId, OrganizationStore, RestoreOrganization,
+    Organization, OrganizationId, OrganizationStore, RestoreOrganization,
 };
-use orchy_core::user::UserId;
 use orchy_events::io::Writer;
 
 use crate::events::PgEventWriter;
@@ -46,31 +44,6 @@ impl OrganizationStore for PgOrganizationStore {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        sqlx::query("DELETE FROM api_keys WHERE organization_id = $1")
-            .bind(org.id().as_str())
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
-        for key in org.api_keys() {
-            sqlx::query(
-                "INSERT INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-            )
-            .bind(*key.id().as_uuid())
-            .bind(org.id().as_str())
-            .bind(key.name())
-            .bind(key.key_hash().as_str())
-            .bind(key.key_prefix().as_str())
-            .bind(key.key_suffix())
-            .bind(key.is_active())
-            .bind(key.created_at())
-            .bind(key.user_id().map(|u| u.as_uuid()))
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-        }
-
         let events = org.drain_events();
         PgEventWriter::new_tx(&mut tx)
             .write_all(&events)
@@ -89,168 +62,33 @@ impl OrganizationStore for PgOrganizationStore {
                 .await
                 .map_err(|e| Error::Store(e.to_string()))?;
 
-        let Some(row) = row else {
-            return Ok(None);
-        };
-
-        let org_id_str: String = row.get("id");
-        let name: String = row.get("name");
-        let created_at: DateTime<Utc> = row.get("created_at");
-        let updated_at: DateTime<Utc> = row.get("updated_at");
-
-        let api_keys = load_api_keys_pg(&self.pool, &org_id_str).await?;
-        build_org(org_id_str, name, api_keys, created_at, updated_at).map(Some)
-    }
-
-    async fn find_by_api_key_hash(&self, key_hash: &str) -> Result<Option<Organization>> {
-        let row = sqlx::query(
-            "SELECT o.id, o.name, o.created_at, o.updated_at
-             FROM organizations o
-             JOIN api_keys k ON k.organization_id = o.id
-             WHERE k.key_hash = $1 AND k.is_active = true",
-        )
-        .bind(key_hash)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        let Some(row) = row else {
-            return Ok(None);
-        };
-
-        let org_id_str: String = row.get("id");
-        let name: String = row.get("name");
-        let created_at: DateTime<Utc> = row.get("created_at");
-        let updated_at: DateTime<Utc> = row.get("updated_at");
-
-        let api_keys = load_api_keys_pg(&self.pool, &org_id_str).await?;
-        build_org(org_id_str, name, api_keys, created_at, updated_at).map(Some)
+        row.map(|r| build_org(&r)).transpose()
     }
 
     async fn list(&self) -> Result<Vec<Organization>> {
-        let org_rows = sqlx::query(
+        let rows = sqlx::query(
             "SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at",
         )
         .fetch_all(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        let key_rows = sqlx::query(
-            "SELECT organization_id, id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id FROM api_keys",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        let mut keys_by_org: std::collections::HashMap<String, Vec<ApiKey>> =
-            std::collections::HashMap::new();
-        for row in &key_rows {
-            let org_id_str: String = row.get("organization_id");
-            let id: Uuid = row.get("id");
-            let name: String = row.get("name");
-            let key_hash: String = row.get("key_hash");
-            let key_prefix: String = row.get("key_prefix");
-            let key_suffix: String = row.try_get("key_suffix").unwrap_or_default();
-            let is_active: bool = row.get("is_active");
-            let created_at: DateTime<Utc> = row.get("created_at");
-            let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
-            let api_key = build_api_key(
-                ApiKeyId::from_uuid(id),
-                name,
-                key_hash,
-                key_prefix,
-                key_suffix,
-                is_active,
-                created_at,
-                user_id_uuid.map(UserId::from_uuid),
-            )?;
-            keys_by_org.entry(org_id_str).or_default().push(api_key);
-        }
-
-        org_rows
-            .iter()
-            .map(|row| {
-                let org_id_str: String = row.get("id");
-                let name: String = row.get("name");
-                let created_at: DateTime<Utc> = row.get("created_at");
-                let updated_at: DateTime<Utc> = row.get("updated_at");
-                let api_keys = keys_by_org.remove(&org_id_str).unwrap_or_default();
-                build_org(org_id_str, name, api_keys, created_at, updated_at)
-            })
-            .collect()
+        rows.iter().map(build_org).collect()
     }
 }
 
-async fn load_api_keys_pg(pool: &sqlx::PgPool, org_id: &str) -> Result<Vec<ApiKey>> {
-    let rows = sqlx::query(
-        "SELECT id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id FROM api_keys WHERE organization_id = $1",
-    )
-    .bind(org_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| Error::Store(e.to_string()))?;
+fn build_org(row: &sqlx::postgres::PgRow) -> Result<Organization> {
+    let id_str: String = row.get("id");
+    let name: String = row.get("name");
+    let created_at: DateTime<Utc> = row.get("created_at");
+    let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    rows.iter()
-        .map(|row| {
-            let id: Uuid = row.get("id");
-            let name: String = row.get("name");
-            let key_hash: String = row.get("key_hash");
-            let key_prefix: String = row.get("key_prefix");
-            let key_suffix: String = row.try_get("key_suffix").unwrap_or_default();
-            let is_active: bool = row.get("is_active");
-            let created_at: DateTime<Utc> = row.get("created_at");
-            let user_id_uuid: Option<Uuid> = row.try_get("user_id").ok().flatten();
-            build_api_key(
-                ApiKeyId::from_uuid(id),
-                name,
-                key_hash,
-                key_prefix,
-                key_suffix,
-                is_active,
-                created_at,
-                user_id_uuid.map(UserId::from_uuid),
-            )
-        })
-        .collect()
-}
-
-fn build_api_key(
-    id: ApiKeyId,
-    name: String,
-    key_hash: String,
-    key_prefix: String,
-    key_suffix: String,
-    is_active: bool,
-    created_at: DateTime<Utc>,
-    user_id: Option<UserId>,
-) -> Result<ApiKey> {
-    serde_json::from_value(serde_json::json!({
-        "id": id,
-        "name": name,
-        "key_hash": key_hash,
-        "key_prefix": key_prefix,
-        "key_suffix": key_suffix,
-        "is_active": is_active,
-        "created_at": created_at,
-        "user_id": user_id,
-    }))
-    .map_err(|e| Error::Store(format!("failed to deserialize api keys: {e}")))
-}
-
-fn build_org(
-    id_str: String,
-    name: String,
-    api_keys: Vec<ApiKey>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-) -> Result<Organization> {
     let id = OrganizationId::new(&id_str)
         .map_err(|e| Error::Store(format!("invalid organizations.id: {e}")))?;
 
     Ok(Organization::restore(RestoreOrganization {
         id,
         name,
-        api_keys,
         created_at,
         updated_at,
     }))

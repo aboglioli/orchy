@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::{Path, State},
-};
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use serde::Deserialize;
 
 use orchy_application::{
     ApiKeyDto, CreateOrganizationCommand, GenerateApiKeyCommand, GenerateApiKeyResponse,
-    GetOrganizationCommand, OrganizationDto, RevokeApiKeyCommand,
+    GetOrganizationCommand, ListApiKeysCommand, OrganizationDto, RevokeApiKeyCommand,
 };
 
 use crate::container::Container;
@@ -92,30 +92,27 @@ pub async fn list_api_keys(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
 ) -> Result<Json<Vec<ApiKeyDto>>, ApiError> {
-    let org = container
+    let keys = container
         .app
-        .get_organization
-        .execute(GetOrganizationCommand {
-            id: auth.org.id.clone(),
+        .list_api_keys
+        .execute(ListApiKeysCommand {
+            org_id: auth.org.id.clone(),
         })
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(org.api_keys))
+    Ok(Json(keys))
 }
 
 pub async fn revoke_api_key(
     State(container): State<Arc<Container>>,
-    auth: OrgAuth,
+    _auth: OrgAuth,
     Path(key_id_str): Path<String>,
-) -> Result<Json<OrganizationDto>, ApiError> {
-    let resp = container
+) -> Result<impl IntoResponse, ApiError> {
+    container
         .app
         .revoke_api_key
-        .execute(RevokeApiKeyCommand {
-            org_id: auth.org.id.clone(),
-            key_id: key_id_str,
-        })
+        .execute(RevokeApiKeyCommand { key_id: key_id_str })
         .await
         .map_err(ApiError::from)?;
-    Ok(Json(resp))
+    Ok(StatusCode::NO_CONTENT)
 }
