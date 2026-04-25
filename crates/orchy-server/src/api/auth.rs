@@ -69,9 +69,7 @@ fn extract_cookie<'a>(parts: &'a Parts, name: &str) -> Option<&'a str> {
             cookies
                 .split(';')
                 .map(|c| c.trim())
-                .find(|c| c.starts_with(&format!("{}=", name)))
-                .and_then(|c| c.split_once('='))
-                .map(|(_, v)| v)
+                .find_map(|c| c.strip_prefix(name).and_then(|rest| rest.strip_prefix('=')))
         })
 }
 

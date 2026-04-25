@@ -20,7 +20,7 @@ impl MemoryApiKeyStore {
 
 #[async_trait]
 impl ApiKeyStore for MemoryApiKeyStore {
-    async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
+    async fn save(&self, api_key: &ApiKey) -> Result<()> {
         let mut keys = self.state.api_keys.write().await;
         keys.insert(api_key.id().clone(), api_key.clone());
         Ok(())

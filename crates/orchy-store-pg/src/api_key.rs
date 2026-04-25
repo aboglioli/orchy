@@ -22,7 +22,7 @@ impl PgApiKeyStore {
 
 #[async_trait]
 impl ApiKeyStore for PgApiKeyStore {
-    async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
+    async fn save(&self, api_key: &ApiKey) -> Result<()> {
         sqlx::query(
             "INSERT INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)

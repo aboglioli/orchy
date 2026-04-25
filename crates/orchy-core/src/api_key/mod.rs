@@ -22,7 +22,7 @@ pub trait ApiKeyGenerator: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait ApiKeyStore: Send + Sync {
-    async fn save(&self, api_key: &mut ApiKey) -> Result<()>;
+    async fn save(&self, api_key: &ApiKey) -> Result<()>;
     async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>>;
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>>;
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>>;

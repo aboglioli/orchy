@@ -42,8 +42,8 @@ impl GenerateApiKey {
             .transpose()
             .map_err(|e| Error::InvalidInput(format!("invalid user_id: {e}")))?;
 
-        let (plain, mut api_key) = self.generator.generate(&org_id, user_id, cmd.name)?;
-        self.api_keys.save(&mut api_key).await?;
+        let (plain, api_key) = self.generator.generate(&org_id, user_id, cmd.name)?;
+        self.api_keys.save(&api_key).await?;
 
         Ok(GenerateApiKeyResponse {
             api_key: plain.as_str().to_string(),

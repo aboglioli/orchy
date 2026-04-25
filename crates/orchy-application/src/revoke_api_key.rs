@@ -28,6 +28,6 @@ impl RevokeApiKey {
             .ok_or_else(|| Error::NotFound(format!("api key {key_id}")))?;
 
         api_key.revoke();
-        self.api_keys.save(&mut api_key).await
+        self.api_keys.save(&api_key).await
     }
 }

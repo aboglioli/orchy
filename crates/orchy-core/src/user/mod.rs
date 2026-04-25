@@ -456,7 +456,6 @@ mod tests {
 
         assert!(user.is_platform_admin());
 
-        // verify event was emitted
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].topic().as_str(), events::TOPIC_CREATED);
@@ -470,9 +469,8 @@ mod tests {
         let password = PlainPassword::new("password123").unwrap();
 
         let mut user = User::register(id, email, &password, &hasher).unwrap();
-        user.drain_events(); // Clear creation event
+        user.drain_events();
 
-        // Record membership added
         user.record_membership_added("membership-123", "test-org", "member")
             .unwrap();
 
@@ -489,9 +487,8 @@ mod tests {
         let password = PlainPassword::new("password123").unwrap();
 
         let mut user = User::register(id, email, &password, &hasher).unwrap();
-        user.drain_events(); // Clear creation event
+        user.drain_events();
 
-        // Make platform admin
         user.make_platform_admin().unwrap();
 
         assert!(user.is_platform_admin());

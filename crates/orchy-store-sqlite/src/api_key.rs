@@ -24,7 +24,7 @@ impl SqliteApiKeyStore {
 
 #[async_trait]
 impl ApiKeyStore for SqliteApiKeyStore {
-    async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
+    async fn save(&self, api_key: &ApiKey) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
@@ -114,7 +114,7 @@ fn row_to_tuple(row: &rusqlite::Row) -> rusqlite::Result<ApiKeyRow> {
         row.get(5)?,
         row.get(6)?,
         row.get(7)?,
-        row.get::<_, Option<String>>(8).ok().flatten(),
+        row.get::<_, Option<String>>(8)?,
     ))
 }
 
@@ -140,7 +140,10 @@ fn build_api_key(row: ApiKeyRow) -> Result<ApiKey> {
         hashed_key: HashedApiKey::new(key_hash)?,
         key_prefix: ApiKeyPrefix::new(key_prefix)?,
         key_suffix: ApiKeySuffix::new(key_suffix)?,
-        user_id: user_id_str.and_then(|s| s.parse::<UserId>().ok()),
+        user_id: user_id_str
+            .map(|s| s.parse::<UserId>())
+            .transpose()
+            .map_err(|e| Error::Store(format!("invalid api_keys.user_id: {e}")))?,
         is_active: is_active != 0,
         created_at: DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))
