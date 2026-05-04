@@ -19,7 +19,6 @@ pub async fn load_skills_from_dir(
     Ok(count)
 }
 
-#[allow(clippy::type_complexity)]
 fn load_recursive<'a>(
     base: &'a Path,
     current: &'a Path,
@@ -28,99 +27,92 @@ fn load_recursive<'a>(
 ) -> std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>,
 > {
-    Box::pin(async move { load_recursive_inner(base, current, app, count).await })
-}
+    Box::pin(async move {
+        let mut entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
+        entries.sort_by_key(|e| e.file_name());
 
-async fn load_recursive_inner(
-    base: &Path,
-    current: &Path,
-    app: &Application,
-    count: &mut usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
-    entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
+            let path = entry.path();
 
-    for entry in entries {
-        let path = entry.path();
+            if path.is_dir() {
+                load_recursive(base, &path, app, count).await?;
+                continue;
+            }
 
-        if path.is_dir() {
-            load_recursive(base, &path, app, count).await?;
-            continue;
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext != "md" {
+                continue;
+            }
+
+            let rel = path.strip_prefix(base)?;
+            let namespace_str = rel
+                .parent()
+                .map(|p| p.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/"))
+                .unwrap_or_default();
+
+            if namespace_str.is_empty() {
+                warn!(file = %path.display(), "skill file at root of skills dir (no project namespace), skipping");
+                continue;
+            }
+
+            let (project_str, scope_str) = match namespace_str.split_once('/') {
+                Some((p, s)) => (p.to_string(), Some(s.to_string())),
+                None => (namespace_str.clone(), None),
+            };
+
+            if ProjectId::try_from(project_str.clone()).is_err() {
+                warn!(file = %path.display(), "invalid project from path, skipping");
+                continue;
+            }
+
+            let namespace = match scope_str {
+                Some(scope) => match Namespace::try_from(format!("/{scope}")) {
+                    Ok(ns) => ns,
+                    Err(e) => {
+                        warn!(file = %path.display(), error = %e, "invalid namespace from path, skipping");
+                        continue;
+                    }
+                },
+                None => Namespace::root(),
+            };
+
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            let raw = std::fs::read_to_string(&path)?;
+            let (description, content) = parse_frontmatter(&raw, &name);
+
+            let cmd = WriteKnowledgeCommand {
+                org_id: "default".to_string(),
+                project: project_str,
+                namespace: Some(namespace.to_string()),
+                path: format!("skills/{name}"),
+                kind: "skill".to_string(),
+                title: description,
+                content,
+                tags: None,
+                version: None,
+                agent_id: None,
+                metadata: None,
+                metadata_remove: None,
+                valid_from: None,
+                valid_until: None,
+                task_id: None,
+            };
+
+            app.write_knowledge
+                .execute(cmd)
+                .await
+                .map_err(|e| format!("failed to load skill {} in {}: {}", name, namespace, e))?;
+
+            *count += 1;
         }
 
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if ext != "md" {
-            continue;
-        }
-
-        let rel = path.strip_prefix(base)?;
-        let namespace_str = rel
-            .parent()
-            .map(|p| p.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/"))
-            .unwrap_or_default();
-
-        if namespace_str.is_empty() {
-            warn!(file = %path.display(), "skill file at root of skills dir (no project namespace), skipping");
-            continue;
-        }
-
-        let (project_str, scope_str) = match namespace_str.split_once('/') {
-            Some((p, s)) => (p.to_string(), Some(s.to_string())),
-            None => (namespace_str.clone(), None),
-        };
-
-        if ProjectId::try_from(project_str.clone()).is_err() {
-            warn!(file = %path.display(), "invalid project from path, skipping");
-            continue;
-        }
-
-        let namespace = match scope_str {
-            Some(scope) => match Namespace::try_from(format!("/{scope}")) {
-                Ok(ns) => ns,
-                Err(e) => {
-                    warn!(file = %path.display(), error = %e, "invalid namespace from path, skipping");
-                    continue;
-                }
-            },
-            None => Namespace::root(),
-        };
-
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        let raw = std::fs::read_to_string(&path)?;
-        let (description, content) = parse_frontmatter(&raw, &name);
-
-        let cmd = WriteKnowledgeCommand {
-            org_id: "default".to_string(),
-            project: project_str,
-            namespace: Some(namespace.to_string()),
-            path: format!("skills/{name}"),
-            kind: "skill".to_string(),
-            title: description,
-            content,
-            tags: None,
-            version: None,
-            agent_id: None,
-            metadata: None,
-            metadata_remove: None,
-            valid_from: None,
-            valid_until: None,
-            task_id: None,
-        };
-
-        app.write_knowledge
-            .execute(cmd)
-            .await
-            .map_err(|e| format!("failed to load skill {} in {}: {}", name, namespace, e))?;
-
-        *count += 1;
-    }
-
-    Ok(())
+        Ok(())
+    })
 }
 
 fn parse_frontmatter(raw: &str, default_name: &str) -> (String, String) {
