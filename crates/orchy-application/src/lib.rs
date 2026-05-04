@@ -549,7 +549,7 @@ impl Application {
             resolve_api_key: ResolveApiKey::new(api_keys, orgs.clone(), generator),
             resolve_token: token_encoder
                 .as_ref()
-                .map(|te| ResolveToken::new(te.clone(), memberships.clone(), orgs)),
+                .map(|te| ResolveToken::new(te.clone(), memberships.clone(), orgs.clone())),
             decode_token: token_encoder
                 .as_ref()
                 .map(|te| DecodeToken::new(te.clone())),
@@ -560,7 +560,7 @@ impl Application {
             get_current_user: GetCurrentUser::new(users.clone(), memberships.clone()),
             change_password: ChangePassword::new(users.clone(), hasher.clone()),
             invite_user: InviteUser::new(users.clone(), memberships.clone(), hasher.clone()),
-            bootstrap_admin: BootstrapAdmin::new(users, hasher),
+            bootstrap_admin: BootstrapAdmin::new(users, orgs, memberships, hasher),
         }
     }
 }

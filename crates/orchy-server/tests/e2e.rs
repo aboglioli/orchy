@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use orchy_application::{CreateOrganizationCommand, GenerateApiKeyCommand};
-use orchy_server::config::{AuthConfig, Config, ServerConfig, StoreConfig};
+use orchy_server::config::{AuthConfig, Config, ServerConfig, SqliteConfig, StoreConfig};
 use orchy_server::container::Container;
 use tokio::net::TcpListener;
 use tower_cookies::CookieManagerLayer;
@@ -268,5 +269,120 @@ async fn full_agent_loop() {
     assert!(
         topics.iter().any(|t| t.contains("knowledge")),
         "missing knowledge event, got: {topics:?}"
+    );
+}
+
+fn sqlite_test_config(name: &str) -> Config {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("orchy-{name}-{nonce}"));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    Config {
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 1,
+            heartbeat_timeout_secs: 300,
+            mcp_session_keep_alive_secs: None,
+        },
+        store: StoreConfig {
+            backend: "sqlite".into(),
+            sqlite: Some(SqliteConfig {
+                path: dir.join("orchy.db").to_string_lossy().into_owned(),
+            }),
+            postgres: None,
+        },
+        auth: AuthConfig {
+            jwt_duration_hours: 1,
+            cookie_secure: false,
+            bcrypt_cost: 4,
+            keys_dir: dir.join("keys").to_string_lossy().into_owned(),
+        },
+        embeddings: None,
+        skills: None,
+    }
+}
+
+async fn spawn_sqlite_server(name: &str) -> String {
+    let container = Container::from_config(sqlite_test_config(name))
+        .await
+        .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let router = axum::Router::new()
+        .nest("/api", orchy_server::api::router())
+        .layer(CookieManagerLayer::new())
+        .with_state(Arc::clone(&container));
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn sqlite_auth_invite_new_user() {
+    let base = spawn_sqlite_server("auth-invite").await;
+    let client = reqwest::Client::new();
+
+    let login_resp = client
+        .post(format!("{base}/api/auth/login"))
+        .json(&serde_json::json!({
+            "email": "admin@orchy.sh",
+            "password": "12345678"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), 200);
+    let cookie = login_resp
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    let login_body: serde_json::Value = login_resp.json().await.unwrap();
+    assert!(
+        login_body["memberships"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| {
+                m["org_id"].as_str() == Some("default") && m["role"].as_str() == Some("owner")
+            })
+    );
+
+    let invite_resp = client
+        .post(format!("{base}/api/organizations/default/invite"))
+        .header(reqwest::header::COOKIE, cookie)
+        .json(&serde_json::json!({
+            "email": "worker@example.com",
+            "role": "member"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        invite_resp.status(),
+        201,
+        "invite failed: {}",
+        invite_resp.text().await.unwrap_or_default()
+    );
+    let invite_body: serde_json::Value = invite_resp.json().await.unwrap();
+    assert_eq!(
+        invite_body["membership"]["org_id"].as_str().unwrap(),
+        "default"
+    );
+    assert_eq!(
+        invite_body["membership"]["role"].as_str().unwrap(),
+        "member"
     );
 }

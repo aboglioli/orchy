@@ -70,9 +70,12 @@ impl InviteUser {
             ));
         }
 
+        if is_new_user {
+            self.users.save(&mut user).await?;
+        }
+
         let mut membership = OrgMembership::new(*user.id(), org_id.clone(), role);
 
-        // Record membership added event through user's event collector
         user.record_membership_added(
             &membership.id().to_string(),
             &org_id.to_string(),

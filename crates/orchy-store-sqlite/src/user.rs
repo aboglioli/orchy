@@ -27,8 +27,14 @@ impl UserStore for SqliteUserStore {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR REPLACE INTO users (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO users (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                email = excluded.email,
+                password_hash = excluded.password_hash,
+                is_active = excluded.is_active,
+                is_platform_admin = excluded.is_platform_admin,
+                updated_at = excluded.updated_at",
             rusqlite::params![
                 user.id().to_string(),
                 user.email().as_str(),
@@ -222,5 +228,80 @@ impl UserStore for SqliteUserStore {
         }
 
         Ok(users)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
+    use orchy_core::user::{
+        Email, HashedPassword, OrgMembership, OrgMembershipStore, OrgRole, PasswordHasher,
+        PlainPassword, User, UserStore,
+    };
+
+    use crate::{
+        SqliteDatabase, SqliteOrgMembershipStore, SqliteOrganizationStore, SqliteUserStore,
+    };
+
+    struct NoopHasher;
+
+    impl PasswordHasher for NoopHasher {
+        fn hash(&self, plain: &PlainPassword) -> orchy_core::error::Result<HashedPassword> {
+            HashedPassword::new(plain.as_str())
+        }
+
+        fn verify(
+            &self,
+            plain: &PlainPassword,
+            hashed: &HashedPassword,
+        ) -> orchy_core::error::Result<()> {
+            if plain.as_str() == hashed.as_str() {
+                return Ok(());
+            }
+
+            Err(orchy_core::error::Error::AuthenticationFailed(
+                "password mismatch".to_string(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn saving_existing_user_preserves_memberships() {
+        let db = SqliteDatabase::new(":memory:", None).unwrap();
+        db.run_migrations(&SqliteDatabase::migrations_dir())
+            .unwrap();
+        let conn = db.conn();
+        let users = SqliteUserStore::new(conn.clone());
+        let orgs = SqliteOrganizationStore::new(conn.clone());
+        let memberships = SqliteOrgMembershipStore::new(conn);
+        let hasher = NoopHasher;
+
+        let org_id = OrganizationId::new("default").unwrap();
+        let mut org = Organization::new(org_id.clone(), "Default".to_string()).unwrap();
+        orgs.save(&mut org).await.unwrap();
+
+        let password = PlainPassword::new("12345678").unwrap();
+        let mut user = User::register(
+            orchy_core::user::UserId::new(),
+            Email::new("agent@example.com").unwrap(),
+            &password,
+            &hasher,
+        )
+        .unwrap();
+        users.save(&mut user).await.unwrap();
+
+        let mut membership = OrgMembership::new(*user.id(), org_id.clone(), OrgRole::Owner);
+        memberships.save(&mut membership).await.unwrap();
+
+        user.login(&password, &hasher).unwrap();
+        users.save(&mut user).await.unwrap();
+
+        assert!(
+            memberships
+                .find(user.id(), &org_id)
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 }

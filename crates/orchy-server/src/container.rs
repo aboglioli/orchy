@@ -172,7 +172,7 @@ impl Container {
                 let backend = SqliteDatabase::new(&store_config.path, embedding_dims)
                     .map_err(|e| BootError::Store(e.to_string()))?;
                 backend
-                    .run_migrations(std::path::Path::new("migrations/sqlite"))
+                    .run_migrations(&SqliteDatabase::migrations_dir())
                     .map_err(|e| BootError::Migration(e.to_string()))?;
                 Ok(Self::build_sqlite_stores(backend))
             }
@@ -186,7 +186,7 @@ impl Container {
                     .await
                     .map_err(|e| BootError::Store(e.to_string()))?;
                 backend
-                    .run_migrations(std::path::Path::new("migrations/postgres"))
+                    .run_migrations(&PgDatabase::migrations_dir())
                     .await
                     .map_err(|e| BootError::Migration(e.to_string()))?;
                 Ok(Self::build_pg_stores(backend))
