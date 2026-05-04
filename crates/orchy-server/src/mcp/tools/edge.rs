@@ -1,5 +1,8 @@
-use orchy_application::{AddEdgeCommand, MaterializeNeighborhoodCommand, RemoveEdgeCommand};
+use orchy_core::error::Error;
 use orchy_core::graph::RelationOptions;
+use orchy_core::resource_ref::ResourceKind;
+
+use orchy_application::{AddEdgeCommand, MaterializeNeighborhoodCommand, RemoveEdgeCommand};
 
 use crate::mcp::handler::{OrchyHandler, mcp_error, to_json};
 use crate::mcp::params::{AddEdgeParams, QueryRelationsParams, RemoveEdgeParams};
@@ -54,7 +57,7 @@ pub(super) async fn query_relations(
     let (_, session_project, session_namespace) = h.require_session().await?;
     let org = h.org();
     let as_of = parse_as_of(params.as_of)
-        .map_err(|e| mcp_error(orchy_core::error::Error::InvalidInput(e)))?;
+        .map_err(|e| mcp_error(Error::InvalidInput(e)))?;
 
     let options = RelationOptions {
         rel_types: params.rel_types.map(|v| {
@@ -66,7 +69,7 @@ pub(super) async fn query_relations(
             .target_kinds
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|s| s.parse::<orchy_core::resource_ref::ResourceKind>().ok())
+            .filter_map(|s| s.parse::<ResourceKind>().ok())
             .collect(),
         direction: parse_direction(params.direction.as_deref()),
         max_depth: params.max_depth.unwrap_or(1),

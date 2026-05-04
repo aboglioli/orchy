@@ -9,7 +9,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
-use crate::SqliteConn;
+use crate::{SqliteConn, decode_json, events};
 
 pub struct SqliteProjectStore {
     conn: SqliteConn,
@@ -45,7 +45,7 @@ impl ProjectStore for SqliteProjectStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = project.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
@@ -97,7 +97,7 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )
     })?;
-    let metadata: HashMap<String, String> = crate::decode_json(&metadata_str, "metadata")?;
+    let metadata: HashMap<String, String> = decode_json(&metadata_str, "metadata")?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {

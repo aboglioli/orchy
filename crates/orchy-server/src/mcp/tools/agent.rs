@@ -1,5 +1,8 @@
 use std::str::FromStr;
 
+use orchy_core::agent::AgentId;
+use orchy_core::namespace::Namespace;
+
 use orchy_application::{
     ChangeRolesCommand, CheckMailboxCommand, CheckSentMessagesCommand, GetAgentCommand,
     GetAgentSummaryCommand, HeartbeatCommand, ListAgentsCommand, ListConversationCommand,
@@ -69,9 +72,8 @@ pub(super) async fn register_agent(
     match h.container.app.register_agent.execute(cmd).await {
         Ok(response) => {
             let agent = &response.agent;
-            let agent_id =
-                orchy_core::agent::AgentId::from_str(&agent.id).map_err(|e| e.to_string())?;
-            let ns = orchy_core::namespace::Namespace::try_from(agent.namespace.clone())
+            let agent_id = AgentId::from_str(&agent.id).map_err(|e| e.to_string())?;
+            let ns = Namespace::try_from(agent.namespace.clone())
                 .map_err(|e| e.to_string())?;
             h.set_session(agent_id, project, ns).await;
             Ok(to_json(&response))
@@ -220,7 +222,7 @@ pub(super) async fn switch_context(
     match h.container.app.switch_context.execute(cmd).await {
         Ok(response) => {
             let project = parse_project(&response.project)?;
-            let ns = orchy_core::namespace::Namespace::try_from(response.namespace.clone())
+            let ns = Namespace::try_from(response.namespace.clone())
                 .map_err(|e| e.to_string())?;
             h.set_session_project_and_namespace(project, ns).await;
             Ok(to_json(&response))

@@ -14,6 +14,7 @@ use uuid::Uuid;
 use orchy_events::{Event, EventCollector, Payload};
 
 use self::events as knowledge_events;
+use crate::embeddings::Embedding;
 use crate::error::{Error, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
@@ -603,7 +604,7 @@ impl Knowledge {
         Ok(())
     }
 
-    pub fn set_embedding(&mut self, embedding: crate::embeddings::Embedding) -> Result<()> {
+    pub fn set_embedding(&mut self, embedding: Embedding) -> Result<()> {
         let model = embedding.model().to_string();
         let dimensions = embedding.dimensions();
         let values = embedding.into_values();

@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -20,11 +20,7 @@ pub enum EventSubcommand {
     },
 }
 
-pub async fn run(
-    cmd: &EventSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &EventSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         EventSubcommand::Poll { after, limit } => {
             let mut qs = vec![];

@@ -5,7 +5,7 @@ use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
 
 use crate::dto::AgentDto;
-use orchy_core::namespace::ProjectId;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::project::ProjectStore;
@@ -73,7 +73,7 @@ impl SwitchContext {
 
         let target_namespace = match &cmd.namespace {
             Some(ns) => parse_namespace(Some(ns))?,
-            None if project_changed => orchy_core::namespace::Namespace::root(),
+            None if project_changed => Namespace::root(),
             None => agent.namespace().clone(),
         };
 

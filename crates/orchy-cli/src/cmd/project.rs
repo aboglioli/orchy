@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -26,11 +26,7 @@ pub enum ProjectSubcommand {
     Namespaces,
 }
 
-pub async fn run(
-    cmd: &ProjectSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &ProjectSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         ProjectSubcommand::Get => {
             let v = client.get_project_json("").await?;

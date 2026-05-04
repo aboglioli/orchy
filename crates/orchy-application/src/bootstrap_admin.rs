@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::error::Result;
+use orchy_core::error::{Error, Result};
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 use orchy_core::user::{
     Email, OrgMembership, OrgMembershipStore, OrgRole, PasswordHasher, PlainPassword, User, UserId,
@@ -44,8 +44,8 @@ impl BootstrapAdmin {
         let mut user = User::register_platform_admin(id, email, &password, self.hasher.as_ref())?;
         self.users.save(&mut user).await?;
 
-        let org_id = OrganizationId::new("default")
-            .map_err(|e| orchy_core::error::Error::InvalidInput(e.to_string()))?;
+        let org_id =
+            OrganizationId::new("default").map_err(|e| Error::InvalidInput(e.to_string()))?;
         if self.orgs.find_by_id(&org_id).await?.is_none() {
             let mut org = Organization::new(org_id.clone(), "Default Organization".to_string())?;
             self.orgs.save(&mut org).await?;
@@ -84,9 +84,7 @@ mod tests {
                 return Ok(());
             }
 
-            Err(orchy_core::error::Error::AuthenticationFailed(
-                "password mismatch".to_string(),
-            ))
+            Err(Error::AuthenticationFailed("password mismatch".to_string()))
         }
     }
 

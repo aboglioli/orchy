@@ -28,7 +28,7 @@ use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
-use orchy_core::project::ProjectStore;
+use orchy_core::project::{Project, ProjectStore};
 use orchy_core::resource_lock::LockStore;
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 use orchy_core::task::TaskStore;
@@ -667,7 +667,7 @@ async fn get_agent_summary_includes_synthesized_project() {
         projects(&s) as Arc<dyn ProjectStore>,
         messages(&s) as Arc<dyn MessageStore>,
         tasks(&s) as Arc<dyn TaskStore>,
-        knowledge(&s) as Arc<dyn orchy_core::knowledge::KnowledgeStore>,
+        knowledge(&s) as Arc<dyn KnowledgeStore>,
     );
     let result = summary
         .execute(GetAgentSummaryCommand {
@@ -1353,7 +1353,7 @@ async fn agent_switch_context_changes_project_and_namespace() {
     let p = projects(&s);
     let target_org = org();
     let target_project = ProjectId::try_from("proj-b").unwrap();
-    let mut project = orchy_core::project::Project::new(
+    let mut project = Project::new(
         target_org.clone(),
         target_project.clone(),
         String::new(),

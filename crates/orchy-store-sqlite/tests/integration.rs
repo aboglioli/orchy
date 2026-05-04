@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore as _, Alias};
+use orchy_core::error::Error;
 use orchy_core::graph::{Edge, EdgeStore as _, RelationType, TraversalDirection};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgePath, KnowledgeStore as _,
@@ -916,7 +917,7 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
     assert!(
         matches!(
             err,
-            orchy_core::error::Error::VersionMismatch {
+            Error::VersionMismatch {
                 expected: 2,
                 actual: 3
             }

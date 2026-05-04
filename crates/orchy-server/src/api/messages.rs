@@ -13,6 +13,7 @@ use orchy_application::{
 };
 use orchy_core::agent::AgentId;
 use orchy_core::organization::OrganizationId;
+use orchy_core::resource_ref::ResourceRef;
 
 use crate::container::Container;
 
@@ -93,7 +94,7 @@ pub struct SendBody {
     #[serde(alias = "ns")]
     pub namespace: Option<String>,
     pub reply_to: Option<String>,
-    pub refs: Option<Vec<orchy_core::resource_ref::ResourceRef>>,
+    pub refs: Option<Vec<ResourceRef>>,
 }
 
 #[derive(Deserialize)]

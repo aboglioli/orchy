@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::{EdgeStore, RelationType, TraversalDirection};
-use orchy_core::knowledge::{KnowledgeId, KnowledgeKind, KnowledgeStore};
+use orchy_core::knowledge::{Knowledge, KnowledgeId, KnowledgeKind, KnowledgeStore};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStatus, TaskStore};
@@ -65,7 +65,7 @@ impl AssembleContext {
             }
         }
 
-        let mut all_entries: Vec<(orchy_core::knowledge::Knowledge, RelationType)> = Vec::new();
+        let mut all_entries: Vec<(Knowledge, RelationType)> = Vec::new();
         for (kid, rel) in knowledge_with_rel {
             if let Some(entry) = self.knowledge.find_by_id(&kid).await? {
                 all_entries.push((entry, rel));
@@ -80,7 +80,7 @@ impl AssembleContext {
 
         let mut used_ids: HashSet<String> = HashSet::new();
 
-        let core_fact_entries: Vec<&(orchy_core::knowledge::Knowledge, RelationType)> = all_entries
+        let core_fact_entries: Vec<&(Knowledge, RelationType)> = all_entries
             .iter()
             .filter(|(_, rel)| matches!(rel, RelationType::Produces | RelationType::DerivedFrom))
             .collect();
@@ -92,7 +92,7 @@ impl AssembleContext {
             .map(|(k, _)| truncate_knowledge(k, content_limit))
             .collect();
 
-        let decision_entries: Vec<&(orchy_core::knowledge::Knowledge, RelationType)> = all_entries
+        let decision_entries: Vec<&(Knowledge, RelationType)> = all_entries
             .iter()
             .filter(|(k, _)| {
                 !used_ids.contains(&k.id().to_string())
@@ -110,12 +110,11 @@ impl AssembleContext {
             .map(|(k, _)| truncate_knowledge(k, content_limit))
             .collect();
 
-        let recent_change_entries: Vec<&(orchy_core::knowledge::Knowledge, RelationType)> =
-            all_entries
-                .iter()
-                .filter(|(k, _)| !used_ids.contains(&k.id().to_string()))
-                .take(5)
-                .collect();
+        let recent_change_entries: Vec<&(Knowledge, RelationType)> = all_entries
+            .iter()
+            .filter(|(k, _)| !used_ids.contains(&k.id().to_string()))
+            .take(5)
+            .collect();
         let recent_changes: Vec<KnowledgeDto> = recent_change_entries
             .iter()
             .map(|(k, _)| truncate_knowledge(k, content_limit))
@@ -185,7 +184,7 @@ impl AssembleContext {
     }
 }
 
-fn composite_score(k: &orchy_core::knowledge::Knowledge) -> f64 {
+fn composite_score(k: &Knowledge) -> f64 {
     let kind_weight = match k.kind() {
         KnowledgeKind::Skill => 1.0,
         KnowledgeKind::Decision => 1.0,
@@ -210,7 +209,7 @@ fn composite_score(k: &orchy_core::knowledge::Knowledge) -> f64 {
     kind_weight * recency
 }
 
-fn truncate_knowledge(k: &orchy_core::knowledge::Knowledge, limit: usize) -> KnowledgeDto {
+fn truncate_knowledge(k: &Knowledge, limit: usize) -> KnowledgeDto {
     let mut resp = KnowledgeDto::from(k);
     if resp.content.len() > limit {
         resp.content = resp.content.chars().take(limit).collect();

@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -31,11 +31,7 @@ pub enum OrgApiKeySubcommand {
     List,
 }
 
-pub async fn run(
-    cmd: &OrgSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &OrgSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         OrgSubcommand::Create { id, name } => {
             let v = client.create_organization_json(id, name).await?;

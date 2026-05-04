@@ -4,14 +4,16 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use orchy_core::agent::Agent;
+use orchy_core::api_key::ApiKey;
 use orchy_core::graph::Edge;
 use orchy_core::knowledge::Knowledge;
-use orchy_core::message::Message;
+use orchy_core::message::{Message, MessageStatus};
 use orchy_core::organization::Organization;
 use orchy_core::pagination::Page;
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
 use orchy_core::task::{Task, TaskWithContext};
+use orchy_core::user::{OrgMembership, User};
 
 const AGENT_IDLE_SECS: u64 = 30;
 const AGENT_STALE_SECS: u64 = 300;
@@ -239,9 +241,9 @@ impl From<&Message> for MessageDto {
             body: m.body().to_string(),
             reply_to: m.reply_to().map(|id| id.to_string()),
             status: match m.status() {
-                orchy_core::message::MessageStatus::Pending => "pending",
-                orchy_core::message::MessageStatus::Delivered => "delivered",
-                orchy_core::message::MessageStatus::Read => "read",
+                MessageStatus::Pending => "pending",
+                MessageStatus::Delivered => "delivered",
+                MessageStatus::Read => "read",
             }
             .to_string(),
             created_at: m.created_at().to_rfc3339(),
@@ -388,8 +390,8 @@ pub struct ApiKeyDto {
     pub created_at: String,
 }
 
-impl From<&orchy_core::api_key::ApiKey> for ApiKeyDto {
-    fn from(k: &orchy_core::api_key::ApiKey) -> Self {
+impl From<&ApiKey> for ApiKeyDto {
+    fn from(k: &ApiKey) -> Self {
         Self {
             id: k.id().to_string(),
             name: k.name().to_string(),
@@ -472,8 +474,8 @@ pub struct UserDto {
     pub created_at: String,
 }
 
-impl From<&orchy_core::user::User> for UserDto {
-    fn from(u: &orchy_core::user::User) -> Self {
+impl From<&User> for UserDto {
+    fn from(u: &User) -> Self {
         Self {
             id: u.id().to_string(),
             email: u.email().as_str().to_string(),
@@ -493,8 +495,8 @@ pub struct OrgMembershipDto {
     pub joined_at: String,
 }
 
-impl From<&orchy_core::user::OrgMembership> for OrgMembershipDto {
-    fn from(m: &orchy_core::user::OrgMembership) -> Self {
+impl From<&OrgMembership> for OrgMembershipDto {
+    fn from(m: &OrgMembership) -> Self {
         Self {
             id: m.id().to_string(),
             user_id: m.user_id().to_string(),

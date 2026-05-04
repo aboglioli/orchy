@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use orchy_application::SendMessageCommand;
 use orchy_core::message::MessageId;
+use orchy_core::message::MessageTarget;
 use orchy_core::resource_ref::ResourceRef;
 
 use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
@@ -47,7 +48,7 @@ pub(super) async fn send_message(
             .map_err(|e| e.to_string())?;
         agent.id
     } else {
-        match orchy_core::message::MessageTarget::parse(&params.to) {
+        match MessageTarget::parse(&params.to) {
             Ok(_) => params.to.clone(),
             Err(_) => match h.resolve_agent_id(&params.to).await {
                 Ok(id) => id.to_string(),

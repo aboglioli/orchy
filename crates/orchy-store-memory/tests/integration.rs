@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
+use orchy_core::error::Error;
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgePath, KnowledgeStore,
@@ -744,7 +745,7 @@ async fn knowledge_optimistic_concurrency_rejects_stale_version() {
     assert!(
         matches!(
             err,
-            orchy_core::error::Error::VersionMismatch {
+            Error::VersionMismatch {
                 expected: 2,
                 actual: 3
             }
@@ -1010,7 +1011,7 @@ async fn split_task_creates_spawns_edges() {
     };
 
     let split = SplitTask::new(
-        task_store.clone() as Arc<dyn orchy_core::task::TaskStore>,
+        task_store.clone() as Arc<dyn TaskStore>,
         edge_store.clone() as Arc<dyn EdgeStore>,
     );
     split.execute(cmd).await.unwrap();
@@ -1069,7 +1070,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
     let task_store = Arc::new(MemoryTaskStore::new(s.clone()));
     let edge_store = Arc::new(MemoryEdgeStore::new(s));
 
-    let tasks: Arc<dyn orchy_core::task::TaskStore> = task_store.clone();
+    let tasks: Arc<dyn TaskStore> = task_store.clone();
     let edges: Arc<dyn EdgeStore> = edge_store.clone();
 
     let post = PostTask::new(tasks.clone(), edges.clone());
@@ -1212,10 +1213,9 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
     };
 
     let s = state();
-    let tasks: Arc<dyn orchy_core::task::TaskStore> = Arc::new(MemoryTaskStore::new(s.clone()));
+    let tasks: Arc<dyn TaskStore> = Arc::new(MemoryTaskStore::new(s.clone()));
     let edges: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(s.clone()));
-    let knowledge: Arc<dyn orchy_core::knowledge::KnowledgeStore> =
-        Arc::new(MemoryKnowledgeStore::new(s));
+    let knowledge: Arc<dyn KnowledgeStore> = Arc::new(MemoryKnowledgeStore::new(s));
 
     let post_task = PostTask::new(tasks.clone(), edges.clone());
     let add_edge = AddEdge::new(edges.clone());
@@ -1363,7 +1363,7 @@ async fn search_knowledge_task_proximity_boost() {
         task_id: None,
     };
     let results_no_boost = SearchKnowledge::new(
-        knowledge_store.clone() as Arc<dyn orchy_core::knowledge::KnowledgeStore>,
+        knowledge_store.clone() as Arc<dyn KnowledgeStore>,
         None,
         edge_store.clone() as Arc<dyn EdgeStore>,
     )
@@ -1384,7 +1384,7 @@ async fn search_knowledge_task_proximity_boost() {
         task_id: Some("task-123".to_string()),
     };
     let results_with_boost = SearchKnowledge::new(
-        knowledge_store.clone() as Arc<dyn orchy_core::knowledge::KnowledgeStore>,
+        knowledge_store.clone() as Arc<dyn KnowledgeStore>,
         None,
         edge_store.clone() as Arc<dyn EdgeStore>,
     )
@@ -1443,10 +1443,9 @@ async fn assemble_context_returns_linked_knowledge() {
     use orchy_application::{AssembleContext, AssembleContextCommand};
 
     let s = state();
-    let knowledge_store: Arc<dyn orchy_core::knowledge::KnowledgeStore> =
-        Arc::new(MemoryKnowledgeStore::new(s.clone()));
+    let knowledge_store: Arc<dyn KnowledgeStore> = Arc::new(MemoryKnowledgeStore::new(s.clone()));
     let edge_store: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(s.clone()));
-    let task_store: Arc<dyn orchy_core::task::TaskStore> = Arc::new(MemoryTaskStore::new(s));
+    let task_store: Arc<dyn TaskStore> = Arc::new(MemoryTaskStore::new(s));
     let o = org();
     let p = proj("p");
 
@@ -1588,10 +1587,9 @@ async fn assemble_context_surfaces_decision_above_log() {
     use orchy_application::{AssembleContext, AssembleContextCommand};
 
     let s = state();
-    let knowledge_store: Arc<dyn orchy_core::knowledge::KnowledgeStore> =
-        Arc::new(MemoryKnowledgeStore::new(s.clone()));
+    let knowledge_store: Arc<dyn KnowledgeStore> = Arc::new(MemoryKnowledgeStore::new(s.clone()));
     let edge_store: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(s.clone()));
-    let task_store: Arc<dyn orchy_core::task::TaskStore> = Arc::new(MemoryTaskStore::new(s));
+    let task_store: Arc<dyn TaskStore> = Arc::new(MemoryTaskStore::new(s));
     let o = org();
     let p = proj("p");
 

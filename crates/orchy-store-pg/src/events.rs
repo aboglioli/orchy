@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
 use orchy_events::io::{EventQuery, Writer};
-use orchy_events::{Event, SerializedEvent};
+use orchy_events::{Error as EventError, Event, Result as EventResult, SerializedEvent};
 
 pub struct PgEventWriter {
     pool: sqlx::PgPool,
@@ -30,22 +30,21 @@ impl PgEventWriter {
     }
 }
 
-fn serialize_event(event: &Event) -> orchy_events::Result<(Uuid, SerializedEvent)> {
-    let serialized = SerializedEvent::from_event(event)
-        .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
-    let id =
-        Uuid::parse_str(&serialized.id).map_err(|e| orchy_events::Error::Store(e.to_string()))?;
+fn serialize_event(event: &Event) -> EventResult<(Uuid, SerializedEvent)> {
+    let serialized =
+        SerializedEvent::from_event(event).map_err(|e| EventError::Store(e.to_string()))?;
+    let id = Uuid::parse_str(&serialized.id).map_err(|e| EventError::Store(e.to_string()))?;
     Ok((id, serialized))
 }
 
 fn serialize_metadata(
     metadata: &std::collections::HashMap<String, String>,
-) -> orchy_events::Result<serde_json::Value> {
+) -> EventResult<serde_json::Value> {
     serde_json::to_value(metadata)
-        .map_err(|e| orchy_events::Error::Store(format!("failed to serialize metadata: {e}")))
+        .map_err(|e| EventError::Store(format!("failed to serialize metadata: {e}")))
 }
 
-async fn append_to_pool(pool: &sqlx::PgPool, event: &Event) -> orchy_events::Result<()> {
+async fn append_to_pool(pool: &sqlx::PgPool, event: &Event) -> EventResult<()> {
     let (id, serialized) = serialize_event(event)?;
 
     sqlx::query(
@@ -64,12 +63,12 @@ async fn append_to_pool(pool: &sqlx::PgPool, event: &Event) -> orchy_events::Res
     .bind(serialized.version as i64)
     .execute(pool)
     .await
-    .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
+    .map_err(|e| EventError::Store(e.to_string()))?;
 
     Ok(())
 }
 
-async fn append_to_tx(conn: &mut sqlx::PgConnection, event: &Event) -> orchy_events::Result<()> {
+async fn append_to_tx(conn: &mut sqlx::PgConnection, event: &Event) -> EventResult<()> {
     let (id, serialized) = serialize_event(event)?;
 
     sqlx::query(
@@ -88,21 +87,21 @@ async fn append_to_tx(conn: &mut sqlx::PgConnection, event: &Event) -> orchy_eve
     .bind(serialized.version as i64)
     .execute(conn)
     .await
-    .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
+    .map_err(|e| EventError::Store(e.to_string()))?;
 
     Ok(())
 }
 
 #[async_trait]
 impl Writer for PgEventWriter {
-    async fn write(&self, event: &Event) -> orchy_events::Result<()> {
+    async fn write(&self, event: &Event) -> EventResult<()> {
         append_to_pool(&self.pool, event).await
     }
 }
 
 #[async_trait]
 impl<'tx> Writer for PgTxEventWriter<'tx> {
-    async fn write(&self, event: &Event) -> orchy_events::Result<()> {
+    async fn write(&self, event: &Event) -> EventResult<()> {
         let mut tx = self.tx.lock().await;
         append_to_tx(*tx, event).await
     }

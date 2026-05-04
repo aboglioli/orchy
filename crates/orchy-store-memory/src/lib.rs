@@ -20,16 +20,18 @@ use tokio::sync::RwLock;
 use orchy_events::SerializedEvent;
 
 use orchy_core::agent::{Agent, AgentId};
+use orchy_core::api_key::{ApiKey, ApiKeyId};
 use orchy_core::graph::{Edge, EdgeId};
 use orchy_core::knowledge::{Knowledge, KnowledgeId};
 use orchy_core::message::{Message, MessageId};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::{Organization, OrganizationId};
+use orchy_core::pagination::{Page, PageParams};
 use orchy_core::project::Project;
 use orchy_core::resource_lock::ResourceLock;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskId};
-use orchy_core::user::{OrgMembership, User, UserId};
+use orchy_core::user::{MembershipId, OrgMembership, User, UserId};
 
 pub use agent::MemoryAgentStore;
 pub use api_key::MemoryApiKeyStore;
@@ -58,15 +60,13 @@ pub struct MemoryState {
     pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
     pub(crate) resource_locks: RwLock<HashMap<String, ResourceLock>>,
     pub(crate) namespaces: RwLock<HashSet<(String, String, String)>>,
-    pub(crate) api_keys:
-        RwLock<HashMap<orchy_core::api_key::ApiKeyId, orchy_core::api_key::ApiKey>>,
+    pub(crate) api_keys: RwLock<HashMap<ApiKeyId, ApiKey>>,
     pub(crate) organizations: RwLock<HashMap<OrganizationId, Organization>>,
     pub(crate) users: RwLock<HashMap<UserId, User>>,
     pub(crate) user_by_email: RwLock<HashMap<String, UserId>>,
-    pub(crate) memberships: RwLock<HashMap<orchy_core::user::MembershipId, OrgMembership>>,
-    pub(crate) memberships_by_user: RwLock<HashMap<UserId, Vec<orchy_core::user::MembershipId>>>,
-    pub(crate) memberships_by_org:
-        RwLock<HashMap<OrganizationId, Vec<orchy_core::user::MembershipId>>>,
+    pub(crate) memberships: RwLock<HashMap<MembershipId, OrgMembership>>,
+    pub(crate) memberships_by_user: RwLock<HashMap<UserId, Vec<MembershipId>>>,
+    pub(crate) memberships_by_org: RwLock<HashMap<OrganizationId, Vec<MembershipId>>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
 }
 
@@ -103,11 +103,7 @@ impl Default for MemoryState {
     }
 }
 
-pub(crate) fn apply_cursor_pagination<T, F>(
-    items: Vec<T>,
-    page: &orchy_core::pagination::PageParams,
-    id_fn: F,
-) -> orchy_core::pagination::Page<T>
+pub(crate) fn apply_cursor_pagination<T, F>(items: Vec<T>, page: &PageParams, id_fn: F) -> Page<T>
 where
     T: serde::Serialize + Clone,
     F: Fn(&T) -> String,

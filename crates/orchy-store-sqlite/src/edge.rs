@@ -14,7 +14,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 
-use crate::SqliteConn;
+use crate::{SqliteConn, events};
 
 fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(std::io::Error::new(
@@ -85,7 +85,7 @@ impl EdgeStore for SqliteEdgeStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = edge.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

@@ -10,7 +10,7 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
 
-use crate::SqliteConn;
+use crate::{SqliteConn, events};
 
 pub struct SqliteApiKeyStore {
     conn: SqliteConn,
@@ -48,7 +48,7 @@ impl ApiKeyStore for SqliteApiKeyStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = api_key.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

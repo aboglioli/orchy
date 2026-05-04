@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use orchy_core::error::Result;
+use orchy_core::error::{Error, Result};
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 
 use crate::MemoryState;
@@ -29,7 +29,7 @@ impl OrganizationStore for MemoryOrganizationStore {
         if !events.is_empty() {
             for event in events {
                 let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                    .map_err(|e| Error::Store(e.to_string()))?;
                 self.state.events.write().await.push(serialized);
             }
         }

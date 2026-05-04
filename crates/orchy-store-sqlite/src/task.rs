@@ -11,7 +11,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
-use crate::SqliteConn;
+use crate::{SqliteConn, decode_json, events};
 
 const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at";
 
@@ -64,7 +64,7 @@ impl TaskStore for SqliteTaskStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = task.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
@@ -140,7 +140,7 @@ impl TaskStore for SqliteTaskStore {
         }
 
         let events = task.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(true)
     }
@@ -301,7 +301,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let created_at_str: String = row.get(18)?;
     let updated_at_str: String = row.get(19)?;
 
-    let tags: Vec<String> = crate::decode_json(&tags_str, "tags")?;
+    let tags: Vec<String> = decode_json(&tags_str, "tags")?;
 
     let id = TaskId::from_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -334,7 +334,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         .parse::<TaskStatus>()
         .unwrap_or(TaskStatus::Pending);
     let priority = priority_str.parse::<Priority>().unwrap_or_default();
-    let assigned_roles: Vec<String> = crate::decode_json(&roles_str, "assigned_roles")?;
+    let assigned_roles: Vec<String> = decode_json(&roles_str, "assigned_roles")?;
     let assigned_to = assigned_to_str.and_then(|s| AgentId::from_str(&s).ok());
     let assigned_at = assigned_at_str
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())

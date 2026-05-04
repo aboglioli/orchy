@@ -12,10 +12,13 @@ use orchy_application::{
     LoginUserCommand, RegisterUserCommand,
 };
 
+use crate::api::middleware::cookie_auth::extract_user_auth;
 use crate::auth::{CookieConfig, clear_auth_cookie, set_auth_cookie};
 use crate::container::Container;
 
 use super::ApiError;
+
+use orchy_core::organization::OrganizationId;
 
 #[derive(Deserialize)]
 pub struct RegisterRequest {
@@ -112,7 +115,7 @@ pub async fn me(
     State(container): State<Arc<Container>>,
     cookies: Cookies,
 ) -> Result<impl IntoResponse, ApiError> {
-    let auth = super::middleware::cookie_auth::extract_user_auth(&cookies, &container)
+    let auth = extract_user_auth(&cookies, &container)
         .await
         .ok_or_else(|| {
             ApiError(
@@ -146,7 +149,7 @@ pub async fn change_password(
     cookies: Cookies,
     Json(req): Json<ChangePasswordRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let auth = super::middleware::cookie_auth::extract_user_auth(&cookies, &container)
+    let auth = extract_user_auth(&cookies, &container)
         .await
         .ok_or_else(|| {
             ApiError(
@@ -190,7 +193,7 @@ pub async fn invite_user(
     axum::extract::Path(org_id): axum::extract::Path<String>,
     Json(req): Json<InviteRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let auth = super::middleware::cookie_auth::extract_user_auth(&cookies, &container)
+    let auth = extract_user_auth(&cookies, &container)
         .await
         .ok_or_else(|| {
             ApiError(
@@ -200,7 +203,7 @@ pub async fn invite_user(
             )
         })?;
 
-    let org_id = orchy_core::organization::OrganizationId::new(&org_id)
+    let org_id = OrganizationId::new(&org_id)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_ORG", e.to_string()))?;
 
     let _membership = auth

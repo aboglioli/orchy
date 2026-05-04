@@ -4,8 +4,13 @@ use chrono::{DateTime, Utc};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
-use super::handler::OrchyHandler;
+use orchy_core::graph::{RelationType, TraversalDirection};
+use orchy_core::graph::relation_options::RelationOptions;
+use orchy_core::resource_ref::ResourceKind;
+
+use super::handler::{INSTRUCTIONS, OrchyHandler};
 use super::params::*;
+use super::schema_compat::compat_tool_input_schema;
 
 mod agent;
 mod edge;
@@ -45,17 +50,17 @@ pub(super) fn parse_as_of(s: Option<String>) -> std::result::Result<Option<DateT
     .transpose()
 }
 
-pub(super) fn parse_direction(s: Option<&str>) -> orchy_core::graph::TraversalDirection {
+pub(super) fn parse_direction(s: Option<&str>) -> TraversalDirection {
     match s {
-        Some("outgoing") => orchy_core::graph::TraversalDirection::Outgoing,
-        Some("incoming") => orchy_core::graph::TraversalDirection::Incoming,
-        _ => orchy_core::graph::TraversalDirection::Both,
+        Some("outgoing") => TraversalDirection::Outgoing,
+        Some("incoming") => TraversalDirection::Incoming,
+        _ => TraversalDirection::Both,
     }
 }
 
 pub(super) fn parse_rel_type_alias(
     s: &str,
-) -> std::result::Result<orchy_core::graph::RelationType, String> {
+) -> std::result::Result<RelationType, String> {
     let canonical = match s {
         "blocks" | "requires" | "needs" => "depends_on",
         "creates" | "made" | "wrote" => "produces",
@@ -65,15 +70,15 @@ pub(super) fn parse_rel_type_alias(
         other => other,
     };
     canonical
-        .parse::<orchy_core::graph::RelationType>()
+        .parse::<RelationType>()
         .map_err(|e| e.to_string())
 }
 
 pub(super) fn parse_relation_options(
-    p: Option<super::params::RelationOptionsParam>,
-) -> Option<orchy_core::graph::relation_options::RelationOptions> {
+    p: Option<RelationOptionsParam>,
+) -> Option<RelationOptions> {
     p.map(
-        |opts| orchy_core::graph::relation_options::RelationOptions {
+        |opts| RelationOptions {
             rel_types: opts.rel_types.map(|v| {
                 v.into_iter()
                     .filter_map(|s| parse_rel_type_alias(&s).ok())
@@ -83,7 +88,7 @@ pub(super) fn parse_relation_options(
                 .target_kinds
                 .unwrap_or_default()
                 .into_iter()
-                .filter_map(|s| s.parse::<orchy_core::resource_ref::ResourceKind>().ok())
+                .filter_map(|s| s.parse::<ResourceKind>().ok())
                 .collect(),
             direction: parse_direction(opts.direction.as_deref()),
             max_depth: opts.max_depth.unwrap_or(1),
@@ -841,7 +846,7 @@ impl ServerHandler for OrchyHandler {
                 .enable_prompts()
                 .build(),
         )
-        .with_instructions(super::handler::INSTRUCTIONS.to_string())
+        .with_instructions(INSTRUCTIONS.to_string())
     }
 
     async fn initialize(
@@ -883,7 +888,7 @@ impl ServerHandler for OrchyHandler {
             .list_all()
             .into_iter()
             .map(|mut t| {
-                t.input_schema = super::schema_compat::compat_tool_input_schema(t.input_schema);
+                t.input_schema = compat_tool_input_schema(t.input_schema);
                 t
             })
             .collect();

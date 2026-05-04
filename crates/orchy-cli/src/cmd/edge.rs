@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -55,11 +55,7 @@ pub enum EdgeSubcommand {
     },
 }
 
-pub async fn run(
-    cmd: &EdgeSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &EdgeSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         EdgeSubcommand::Add {
             from_kind,

@@ -5,6 +5,7 @@ use tracing::warn;
 
 use orchy_application::ApiKeyPrincipal;
 use orchy_core::agent::AgentId;
+use orchy_core::error::Error;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
@@ -282,8 +283,7 @@ pub(crate) fn to_json<T: serde::Serialize>(val: &T) -> String {
     serde_json::to_string_pretty(val).unwrap_or_else(|e| format!("serialization error: {e}"))
 }
 
-pub(crate) fn mcp_error(e: orchy_core::error::Error) -> String {
-    use orchy_core::error::Error;
+pub(crate) fn mcp_error(e: Error) -> String {
     let (code, message) = match &e {
         Error::NotFound(_) => ("NOT_FOUND", e.to_string()),
         Error::InvalidInput(_) | Error::InvalidTransition { .. } | Error::DependencyNotMet(_) => {

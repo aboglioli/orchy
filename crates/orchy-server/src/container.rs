@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use orchy_application::{Application, ApplicationDeps, EventQuery};
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::api_key::ApiKeyStore;
+use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore};
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
@@ -19,7 +19,7 @@ use orchy_store_memory::*;
 use orchy_store_pg::PgDatabase;
 use orchy_store_sqlite::SqliteDatabase;
 
-use crate::auth::{BcryptPasswordHasher, JwtTokenEncoder, RandomApiKeyGenerator};
+use crate::auth::{generate_rsa_keypair, BcryptPasswordHasher, JwtTokenEncoder, RandomApiKeyGenerator};
 use crate::config::{Config, EmbeddingsConfig};
 use crate::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
 use crate::error::{BootError, BootResult};
@@ -61,7 +61,7 @@ impl Container {
         let password_hasher: Arc<dyn PasswordHasher> =
             Arc::new(BcryptPasswordHasher::with_cost(config.auth.bcrypt_cost));
 
-        let api_key_generator: Arc<dyn orchy_core::api_key::ApiKeyGenerator> =
+        let api_key_generator: Arc<dyn ApiKeyGenerator> =
             Arc::new(RandomApiKeyGenerator::new());
 
         let token_encoder: Option<Arc<dyn TokenEncoder>> = Self::init_jwt_encoder(&config)
@@ -113,7 +113,7 @@ impl Container {
             )
         } else {
             tracing::info!("Generating new RSA keypair for JWT signing");
-            let (private_pem, public_pem) = crate::auth::generate_rsa_keypair()
+            let (private_pem, public_pem) = generate_rsa_keypair()
                 .map_err(|e| BootError::Auth(format!("failed to generate RSA keys: {e}")))?;
 
             tokio::fs::create_dir_all(keys_dir).await?;

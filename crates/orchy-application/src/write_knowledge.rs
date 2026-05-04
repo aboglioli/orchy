@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use orchy_core::agent::AgentId;
-use orchy_core::embeddings::EmbeddingsProvider;
+use orchy_core::embeddings::{Embedding, EmbeddingsProvider};
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{
@@ -160,11 +160,7 @@ impl WriteKnowledge {
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());
             let vector = emb.embed(&text).await?;
-            let embedding = orchy_core::embeddings::Embedding::new(
-                vector,
-                emb.model().to_string(),
-                emb.dimensions(),
-            )?;
+            let embedding = Embedding::new(vector, emb.model().to_string(), emb.dimensions())?;
             entry.set_embedding(embedding)?;
         }
 

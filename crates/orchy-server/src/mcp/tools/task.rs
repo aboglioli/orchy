@@ -1,3 +1,6 @@
+use orchy_core::graph::neighborhood::LinkParam;
+use orchy_core::task::TaskId;
+
 use orchy_application::{
     AddDependencyCommand, ArchiveTaskCommand, AssignTaskCommand, CancelTaskCommand,
     ClaimTaskCommand, CompleteTaskCommand, DelegateTaskCommand, FailTaskCommand,
@@ -96,7 +99,7 @@ pub(super) async fn get_next_task(
         Ok(Some(task)) => {
             let task_id = task
                 .id
-                .parse::<orchy_core::task::TaskId>()
+                .parse::<TaskId>()
                 .map_err(|e| e.to_string())?;
             let ctx = h
                 .container
@@ -172,7 +175,7 @@ pub(super) async fn claim_task(
         Ok(task) => {
             let task_id = task
                 .id
-                .parse::<orchy_core::task::TaskId>()
+                .parse::<TaskId>()
                 .map_err(|e| e.to_string())?;
             let ctx = h
                 .container
@@ -213,7 +216,7 @@ pub(super) async fn start_task(
         Ok(task) => {
             let task_id = task
                 .id
-                .parse::<orchy_core::task::TaskId>()
+                .parse::<TaskId>()
                 .map_err(|e| e.to_string())?;
             let ctx = h
                 .container
@@ -256,7 +259,7 @@ pub(super) async fn complete_task(
                 let rel_type = super::parse_rel_type_alias(&l.rel_type)
                     .map(|r| r.to_string())
                     .unwrap_or(l.rel_type);
-                orchy_core::graph::neighborhood::LinkParam {
+                LinkParam {
                     to_kind: l.to_kind,
                     to_id: l.to_id,
                     rel_type,

@@ -1,7 +1,7 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
-use crate::config::Config;
+use crate::client::{CliResult, OrchyClient};
+use crate::config::{Config, save_alias};
 use crate::output;
 
 /// Agent commands
@@ -65,11 +65,7 @@ pub enum AgentSubcommand {
     },
 }
 
-pub async fn run(
-    cmd: &AgentSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &AgentSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         AgentSubcommand::Register {
             description,
@@ -101,7 +97,7 @@ pub async fn run(
 
             // Auto-save alias to .orchy.toml
             if new_alias != "?" {
-                crate::config::save_alias(new_alias);
+                save_alias(new_alias);
             }
 
             if config.json {
@@ -189,7 +185,7 @@ pub async fn run(
                     Some(&body),
                 )
                 .await?;
-            crate::config::save_alias(new_alias);
+            save_alias(new_alias);
             if config.json {
                 output::print_json(config, &v);
             } else {

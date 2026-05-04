@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliError, CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -177,18 +177,11 @@ pub enum TaskSubcommand {
     },
 }
 
-fn require_alias(client: &OrchyClient) -> Result<String, crate::client::CliError> {
-    client
-        .alias
-        .clone()
-        .ok_or(crate::client::CliError::MissingAgentId)
+fn require_alias(client: &OrchyClient) -> Result<String, CliError> {
+    client.alias.clone().ok_or(CliError::MissingAgentId)
 }
 
-pub async fn run(
-    cmd: &TaskSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &TaskSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         TaskSubcommand::Create {
             title,

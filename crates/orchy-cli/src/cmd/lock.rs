@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -25,11 +25,7 @@ pub enum LockSubcommand {
     },
 }
 
-pub async fn run(
-    cmd: &LockSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &LockSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         LockSubcommand::Acquire { name, ttl } => {
             let alias = client.alias.as_deref().unwrap_or("cli");

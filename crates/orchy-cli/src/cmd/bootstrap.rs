@@ -1,16 +1,9 @@
-use crate::client::OrchyClient;
+use crate::client::{CliError, CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
-pub async fn run(
-    client: &OrchyClient,
-    config: &Config,
-    verbose: bool,
-) -> crate::client::CliResult<()> {
-    let alias = client
-        .alias
-        .clone()
-        .ok_or(crate::client::CliError::MissingAgentId)?;
+pub async fn run(client: &OrchyClient, config: &Config, verbose: bool) -> CliResult<()> {
+    let alias = client.alias.clone().ok_or(CliError::MissingAgentId)?;
     let path = format!("/agents/{alias}/context?project={}", client.project);
     let (agent_v, project_v) =
         tokio::try_join!(client.get_json(&path), client.get_project_json(""),)?;

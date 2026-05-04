@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchy_core::agent::{AgentStore, Alias};
+use orchy_core::agent::{Agent, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::ProjectId;
@@ -100,7 +100,7 @@ impl RegisterAgent {
             if let Some(agent_type) = &cmd.agent_type {
                 metadata.insert("agent_type".to_string(), agent_type.clone());
             }
-            let mut agent = orchy_core::agent::Agent::register(
+            let mut agent = Agent::register(
                 org_id.clone(),
                 project.clone(),
                 namespace.clone(),

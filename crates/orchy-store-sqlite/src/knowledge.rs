@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use crate::{SqliteConn, bytes_to_embedding, embedding_to_bytes};
+use crate::{SqliteConn, bytes_to_embedding, embedding_to_bytes, events};
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore,
@@ -118,7 +118,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         }
 
         let events = entry.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
 

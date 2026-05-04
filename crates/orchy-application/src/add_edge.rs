@@ -4,7 +4,7 @@ use std::sync::Arc;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::check_no_cycle;
-use orchy_core::graph::{Edge, EdgeStore, RelationType, TraversalDirection};
+use orchy_core::graph::{Edge, EdgeStore, RelationDirection, RelationType, TraversalDirection};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::TaskId;
@@ -92,8 +92,8 @@ impl AddEdge {
                 .iter()
                 .filter_map(|hop| {
                     let peer_id = match hop.direction {
-                        orchy_core::graph::RelationDirection::Outgoing => hop.edge.to_id(),
-                        orchy_core::graph::RelationDirection::Incoming => hop.edge.from_id(),
+                        RelationDirection::Outgoing => hop.edge.to_id(),
+                        RelationDirection::Incoming => hop.edge.from_id(),
                     };
                     peer_id.parse::<TaskId>().ok()
                 })

@@ -8,7 +8,7 @@ use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::api_key::{
     ApiKey, ApiKeyGenerator, ApiKeyPrefix, ApiKeyStore, ApiKeySuffix, HashedApiKey, PlainApiKey,
 };
-use orchy_core::error::Result;
+use orchy_core::error::{Error, Result};
 use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
@@ -18,7 +18,7 @@ use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::TaskStore;
 use orchy_core::user::{
-    HashedPassword, OrgMembershipStore, PasswordHasher, PlainPassword, UserStore,
+    HashedPassword, OrgMembershipStore, PasswordHasher, PlainPassword, UserId, UserStore,
 };
 use orchy_store_memory::*;
 
@@ -33,9 +33,7 @@ impl PasswordHasher for NoopHasher {
         if plain.as_str() == hashed.as_str() {
             Ok(())
         } else {
-            Err(orchy_core::error::Error::InvalidInput(
-                "password mismatch".into(),
-            ))
+            Err(Error::InvalidInput("password mismatch".into()))
         }
     }
 }
@@ -46,7 +44,7 @@ impl ApiKeyGenerator for NoopApiKeyGenerator {
     fn generate(
         &self,
         org_id: &OrganizationId,
-        user_id: Option<orchy_core::user::UserId>,
+        user_id: Option<UserId>,
         name: String,
     ) -> Result<(PlainApiKey, ApiKey)> {
         let plain = PlainApiKey::new(

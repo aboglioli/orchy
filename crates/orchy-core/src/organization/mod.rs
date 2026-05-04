@@ -67,7 +67,7 @@ impl Organization {
         }
     }
 
-    pub fn drain_events(&mut self) -> Vec<orchy_events::Event> {
+    pub fn drain_events(&mut self) -> Vec<Event> {
         self.collector.drain()
     }
 

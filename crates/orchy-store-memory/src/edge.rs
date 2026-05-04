@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use orchy_core::error::Result;
+use orchy_core::error::{Error, Result};
 use orchy_core::graph::{
     Edge, EdgeId, EdgeStore, RelationDirection, RelationType, TraversalDirection, TraversalHop,
 };
@@ -56,7 +56,7 @@ impl EdgeStore for MemoryEdgeStore {
         if !events.is_empty() {
             for event in events {
                 let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                    .map_err(|e| Error::Store(e.to_string()))?;
                 self.state.events.write().await.push(serialized);
             }
         }

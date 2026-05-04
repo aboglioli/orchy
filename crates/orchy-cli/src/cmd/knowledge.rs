@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::{CliError, OrchyClient};
+use crate::client::{CliError, CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -192,7 +192,7 @@ pub async fn run(
     cmd: &KnowledgeSubcommand,
     client: &OrchyClient,
     config: &Config,
-) -> crate::client::CliResult<()> {
+) -> CliResult<()> {
     match cmd {
         KnowledgeSubcommand::List {
             kind,

@@ -23,6 +23,8 @@ use orchy_core::graph::RelationOptions;
 use orchy_core::graph::{RelationType, TraversalDirection};
 use orchy_core::namespace::Namespace;
 
+use orchy_core::error::Error;
+
 use crate::container::Container;
 
 pub(crate) fn parse_namespace(s: &str) -> Result<Namespace, ApiError> {
@@ -96,8 +98,8 @@ struct ApiErrorEnvelope {
 
 pub struct ApiError(pub StatusCode, pub &'static str, pub String);
 
-impl From<orchy_core::error::Error> for ApiError {
-    fn from(e: orchy_core::error::Error) -> Self {
+impl From<Error> for ApiError {
+    fn from(e: Error) -> Self {
         use orchy_core::error::Error;
         match &e {
             Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),

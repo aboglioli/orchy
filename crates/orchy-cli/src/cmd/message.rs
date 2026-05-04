@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliError, CliResult, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -41,11 +41,7 @@ pub enum MessageSubcommand {
     },
 }
 
-pub async fn run(
-    cmd: &MessageSubcommand,
-    client: &OrchyClient,
-    config: &Config,
-) -> crate::client::CliResult<()> {
+pub async fn run(cmd: &MessageSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
         MessageSubcommand::Send {
             to,
@@ -97,10 +93,7 @@ pub async fn run(
             } else {
                 format!("?{}", qs.join("&"))
             };
-            let alias = client
-                .alias
-                .clone()
-                .ok_or(crate::client::CliError::MissingAgentId)?;
+            let alias = client.alias.clone().ok_or(CliError::MissingAgentId)?;
             let project_qs = format!("&project={}", client.project);
             let sep = if query.is_empty() { "?" } else { "&" };
             let v = client
@@ -127,10 +120,7 @@ pub async fn run(
             } else {
                 format!("?{}", qs.join("&"))
             };
-            let alias = client
-                .alias
-                .clone()
-                .ok_or(crate::client::CliError::MissingAgentId)?;
+            let alias = client.alias.clone().ok_or(CliError::MissingAgentId)?;
             let project_qs = format!("&project={}", client.project);
             let sep = if query.is_empty() { "?" } else { "&" };
             let v = client
@@ -152,10 +142,7 @@ pub async fn run(
         MessageSubcommand::MarkRead { ids } => {
             let id_vec: Vec<String> = ids.split(',').map(|s| s.trim().to_string()).collect();
             let body = serde_json::json!({ "message_ids": id_vec });
-            let alias = client
-                .alias
-                .clone()
-                .ok_or(crate::client::CliError::MissingAgentId)?;
+            let alias = client.alias.clone().ok_or(CliError::MissingAgentId)?;
             let v = client
                 .post_json(
                     &format!("/agents/{alias}/messages/read?project={}", client.project),

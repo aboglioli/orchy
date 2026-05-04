@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::error;
 use crate::organization::OrganizationId;
 
 pub use orchy_events::Namespace;
@@ -13,12 +14,12 @@ pub trait NamespaceStore: Send + Sync {
         org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
-    ) -> crate::error::Result<()>;
+    ) -> error::Result<()>;
     async fn list(
         &self,
         org: &OrganizationId,
         project: &ProjectId,
-    ) -> crate::error::Result<Vec<Namespace>>;
+    ) -> error::Result<Vec<Namespace>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

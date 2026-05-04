@@ -7,7 +7,7 @@ use orchy_core::organization::{
     Organization, OrganizationId, OrganizationStore, RestoreOrganization,
 };
 
-use crate::SqliteConn;
+use crate::{SqliteConn, events};
 
 pub struct SqliteOrganizationStore {
     conn: SqliteConn,
@@ -40,7 +40,7 @@ impl OrganizationStore for SqliteOrganizationStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = org.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

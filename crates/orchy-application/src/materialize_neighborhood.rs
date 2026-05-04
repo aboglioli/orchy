@@ -11,7 +11,7 @@ use orchy_core::graph::{
 use orchy_core::graph::{EdgeStore, RelationDirection, TraversalHop};
 use orchy_core::knowledge::{Knowledge, KnowledgeId, KnowledgePath, KnowledgeStore};
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore};
-use orchy_core::namespace::Namespace;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 use orchy_core::task::{Task, TaskId, TaskStore};
@@ -141,7 +141,7 @@ impl MaterializeNeighborhood {
                 .project
                 .as_deref()
                 .map(|p| {
-                    orchy_core::namespace::ProjectId::try_from(p.to_string())
+                    ProjectId::try_from(p.to_string())
                         .map_err(|e| Error::InvalidInput(e.to_string()))
                 })
                 .transpose()?;

@@ -10,7 +10,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
-use crate::SqliteConn;
+use crate::{SqliteConn, events};
 
 fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(std::io::Error::new(
@@ -80,7 +80,7 @@ impl LockStore for SqliteLockStore {
             ttl_secs,
         )?;
         let events = lock.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(Some(lock))
     }
@@ -107,7 +107,7 @@ impl LockStore for SqliteLockStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = lock.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())

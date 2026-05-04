@@ -11,6 +11,8 @@ use tower::Service;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
+use orchy_core::agent::AgentId;
+use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_server::api;
 use orchy_server::bootstrap;
 use orchy_server::config::Config;
@@ -235,17 +237,17 @@ async fn bootstrap_handler(
         None => (namespace.clone(), None),
     };
 
-    let project_id = match orchy_core::namespace::ProjectId::try_from(project_str) {
+    let project_id = match ProjectId::try_from(project_str) {
         Ok(p) => p,
         Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
     };
 
     let ns = match scope {
-        Some(s) => match orchy_core::namespace::Namespace::try_from(format!("/{s}")) {
+        Some(s) => match Namespace::try_from(format!("/{s}")) {
             Ok(ns) => ns,
             Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         },
-        None => orchy_core::namespace::Namespace::root(),
+        None => Namespace::root(),
     };
 
     let host = &container.config.server.host;
@@ -273,7 +275,7 @@ async fn run_session_pruner(container: Arc<Container>) {
     loop {
         sleep(interval).await;
 
-        let snapshot: Vec<(String, orchy_core::agent::AgentId)> = {
+        let snapshot: Vec<(String, AgentId)> = {
             let sessions = container.session_agents.read().await;
             sessions
                 .iter()
@@ -284,9 +286,9 @@ async fn run_session_pruner(container: Arc<Container>) {
             continue;
         }
 
-        let agent_ids: Vec<orchy_core::agent::AgentId> =
+        let agent_ids: Vec<AgentId> =
             snapshot.iter().map(|(_, id)| id.clone()).collect();
-        let alive: HashSet<orchy_core::agent::AgentId> = match container
+        let alive: HashSet<AgentId> = match container
             .agents
             .find_by_ids(&agent_ids)
             .await

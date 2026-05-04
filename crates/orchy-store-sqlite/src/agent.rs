@@ -11,7 +11,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::user::UserId;
 
-use crate::SqliteConn;
+use crate::{SqliteConn, decode_json, events};
 
 const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id";
 
@@ -66,7 +66,7 @@ impl AgentStore for SqliteAgentStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = agent.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
@@ -231,7 +231,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
         project: ProjectId::try_from(project_str).map_err(|e| conversion_err(3, e))?,
         namespace: Namespace::try_from(namespace_str)
             .map_err(|e| conversion_err(4, e.to_string()))?,
-        roles: crate::decode_json(&roles_str, "roles")?,
+        roles: decode_json(&roles_str, "roles")?,
         description,
         last_seen: DateTime::parse_from_rfc3339(&last_seen_str)
             .map(|dt| dt.with_timezone(&Utc))
@@ -251,7 +251,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
                     Box::new(e),
                 )
             })?,
-        metadata: crate::decode_json(&metadata_str, "metadata")?,
+        metadata: decode_json(&metadata_str, "metadata")?,
         user_id,
     }))
 }

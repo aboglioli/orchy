@@ -1,3 +1,4 @@
+use orchy_core::error::Error as CoreError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -24,8 +25,8 @@ pub enum BootError {
     Other(String),
 }
 
-impl From<orchy_core::error::Error> for BootError {
-    fn from(e: orchy_core::error::Error) -> Self {
+impl From<CoreError> for BootError {
+    fn from(e: CoreError) -> Self {
         BootError::Store(e.to_string())
     }
 }
@@ -44,7 +45,7 @@ mod tests {
 
     #[test]
     fn boot_error_from_orchy_error_maps_to_store() {
-        let core_err = orchy_core::error::Error::Store("oops".to_string());
+        let core_err = CoreError::Store("oops".to_string());
         let boot_err = BootError::from(core_err);
         assert!(matches!(boot_err, BootError::Store(_)));
     }

@@ -4,7 +4,8 @@ use std::sync::Arc;
 use tower_cookies::Cookies;
 
 use orchy_application::{AuthResponse, GetCurrentUserCommand};
-use orchy_core::user::{Email, OrgMembership, UserId};
+use orchy_core::organization::OrganizationId;
+use orchy_core::user::{Email, MembershipId, OrgMembership, OrgRole, RestoreOrgMembership, UserId};
 
 use crate::auth::get_auth_token;
 use crate::container::Container;
@@ -24,8 +25,8 @@ impl UserAuth {
 
     pub fn get_org_role(
         &self,
-        org_id: &orchy_core::organization::OrganizationId,
-    ) -> Option<orchy_core::user::OrgRole> {
+        org_id: &OrganizationId,
+    ) -> Option<OrgRole> {
         self.memberships
             .iter()
             .find(|m| m.org_id() == org_id)
@@ -44,14 +45,14 @@ impl From<AuthResponse> for UserAuth {
             .memberships
             .into_iter()
             .filter_map(|m| {
-                let id = orchy_core::user::MembershipId::from_str(&m.id).ok()?;
+                let id = MembershipId::from_str(&m.id).ok()?;
                 let user_id = UserId::from_str(&m.user_id).ok()?;
-                let org_id = orchy_core::organization::OrganizationId::new(&m.org_id).ok()?;
-                let role = m.role.parse::<orchy_core::user::OrgRole>().ok()?;
+                let org_id = OrganizationId::new(&m.org_id).ok()?;
+                let role = m.role.parse::<OrgRole>().ok()?;
                 let created_at = m.joined_at.parse().ok()?;
 
                 Some(OrgMembership::restore(
-                    orchy_core::user::RestoreOrgMembership {
+                    RestoreOrgMembership {
                         id,
                         user_id,
                         org_id,

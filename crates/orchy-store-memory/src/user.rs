@@ -56,29 +56,22 @@ impl UserStore for MemoryUserStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchy_core::error::Error;
+    use orchy_core::user::{HashedPassword, PasswordHasher, PlainPassword};
 
     struct MockPasswordHasher;
 
-    impl orchy_core::user::PasswordHasher for MockPasswordHasher {
-        fn hash(
-            &self,
-            plain: &orchy_core::user::PlainPassword,
-        ) -> Result<orchy_core::user::HashedPassword> {
-            orchy_core::user::HashedPassword::new(&format!("hashed_{}", plain.as_str()))
+    impl PasswordHasher for MockPasswordHasher {
+        fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+            HashedPassword::new(&format!("hashed_{}", plain.as_str()))
         }
 
-        fn verify(
-            &self,
-            plain: &orchy_core::user::PlainPassword,
-            hashed: &orchy_core::user::HashedPassword,
-        ) -> Result<()> {
+        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
             let expected = format!("hashed_{}", plain.as_str());
             if hashed.as_str() == expected {
                 Ok(())
             } else {
-                Err(orchy_core::error::Error::authentication_failed(
-                    "invalid password",
-                ))
+                Err(Error::authentication_failed("invalid password"))
             }
         }
     }
@@ -89,7 +82,7 @@ mod tests {
         let store = MemoryUserStore::new(state);
 
         let email = Email::new("test@example.com").unwrap();
-        let password = orchy_core::user::PlainPassword::new("password123").unwrap();
+        let password = PlainPassword::new("password123").unwrap();
 
         let mut user =
             User::register(UserId::new(), email.clone(), &password, &MockPasswordHasher).unwrap();

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use orchy_core::api_key::{ApiKey, ApiKeyId, ApiKeyStore, HashedApiKey};
-use orchy_core::error::Result;
+use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 
 use crate::MemoryState;
@@ -28,7 +28,7 @@ impl ApiKeyStore for MemoryApiKeyStore {
             let mut events_guard = self.state.events.write().await;
             for event in events {
                 let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                    .map_err(|e| Error::Store(e.to_string()))?;
                 events_guard.push(serialized);
             }
         }

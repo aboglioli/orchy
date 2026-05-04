@@ -3,9 +3,9 @@ use chrono::{DateTime, Utc};
 
 use orchy_core::error::{Error, Result};
 use orchy_events::io::{EventQuery, Writer};
-use orchy_events::{Event, SerializedEvent};
+use orchy_events::{Error as EventsError, Event, Result as EventsResult, SerializedEvent};
 
-use crate::SqliteConn;
+use crate::{SqliteConn, decode_json};
 
 pub struct SqliteEventWriter {
     conn: SqliteConn,
@@ -51,9 +51,9 @@ impl SqliteEventQuery {
                         namespace: row.get(2)?,
                         topic: row.get(3)?,
                         key: row.get(4)?,
-                        payload: crate::decode_json(&payload_str, "payload")?,
+                        payload: decode_json(&payload_str, "payload")?,
                         content_type: row.get(6)?,
-                        metadata: crate::decode_json(&metadata_str, "metadata")?,
+                        metadata: decode_json(&metadata_str, "metadata")?,
                         timestamp: DateTime::parse_from_rfc3339(&timestamp_str)
                             .map(|dt| dt.with_timezone(&Utc))
                             .unwrap_or_else(|_| Utc::now()),
@@ -72,11 +72,11 @@ impl SqliteEventQuery {
     }
 }
 
-fn serialize_event(event: &Event) -> orchy_events::Result<SerializedEvent> {
-    SerializedEvent::from_event(event).map_err(|e| orchy_events::Error::Store(e.to_string()))
+fn serialize_event(event: &Event) -> EventsResult<SerializedEvent> {
+    SerializedEvent::from_event(event).map_err(|e| EventsError::Store(e.to_string()))
 }
 
-fn append_event(conn: &rusqlite::Connection, event: &Event) -> orchy_events::Result<()> {
+fn append_event(conn: &rusqlite::Connection, event: &Event) -> EventsResult<()> {
     let serialized = serialize_event(event)?;
     conn.execute(
         "INSERT INTO events (id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version)
@@ -88,15 +88,15 @@ fn append_event(conn: &rusqlite::Connection, event: &Event) -> orchy_events::Res
             serialized.topic,
             serialized.key,
             serde_json::to_string(&serialized.payload)
-                .map_err(|e| orchy_events::Error::Store(format!("failed to serialize payload: {e}")))?,
+                .map_err(|e| EventsError::Store(format!("failed to serialize payload: {e}")))?,
             serialized.content_type,
             serde_json::to_string(&serialized.metadata)
-                .map_err(|e| orchy_events::Error::Store(format!("failed to serialize metadata: {e}")))?,
+                .map_err(|e| EventsError::Store(format!("failed to serialize metadata: {e}")))?,
             serialized.timestamp.to_rfc3339(),
             serialized.version,
         ],
     )
-    .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
+    .map_err(|e| EventsError::Store(e.to_string()))?;
     Ok(())
 }
 
@@ -110,11 +110,11 @@ pub(crate) fn write_events_in_tx(tx: &rusqlite::Transaction<'_>, events: &[Event
 
 #[async_trait]
 impl Writer for SqliteEventWriter {
-    async fn write(&self, event: &Event) -> orchy_events::Result<()> {
+    async fn write(&self, event: &Event) -> EventsResult<()> {
         let conn = self
             .conn
             .lock()
-            .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
+            .map_err(|e| EventsError::Store(e.to_string()))?;
         append_event(&conn, event)
     }
 }

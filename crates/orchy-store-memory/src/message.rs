@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::Result;
-use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
+use orchy_core::error::{Error, Result};
+use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams};
@@ -48,7 +48,7 @@ impl MessageStore for MemoryMessageStore {
         if !events.is_empty() {
             for event in events {
                 let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                    .map_err(|e| Error::Store(e.to_string()))?;
                 self.state.events.write().await.push(serialized);
             }
         }
@@ -92,8 +92,7 @@ impl MessageStore for MemoryMessageStore {
             if receipts.contains(&(msg.id(), agent.clone())) {
                 continue;
             }
-            if msg.is_directed_to(agent) && msg.status() == orchy_core::message::MessageStatus::Read
-            {
+            if msg.is_directed_to(agent) && msg.status() == MessageStatus::Read {
                 continue;
             }
 

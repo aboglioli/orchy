@@ -6,7 +6,7 @@ use rusqlite::OptionalExtension;
 use orchy_core::error::{Error, Result};
 use orchy_core::user::{Email, HashedPassword, RestoreUser, User, UserId, UserStore};
 
-use crate::SqliteConn;
+use crate::{SqliteConn, events};
 
 pub struct SqliteUserStore {
     conn: SqliteConn,
@@ -48,7 +48,7 @@ impl UserStore for SqliteUserStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         let events = user.drain_events();
-        crate::events::write_events_in_tx(&tx, &events)?;
+        events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
@@ -233,10 +233,11 @@ impl UserStore for SqliteUserStore {
 
 #[cfg(test)]
 mod tests {
+    use orchy_core::error::{Error, Result};
     use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
     use orchy_core::user::{
         Email, HashedPassword, OrgMembership, OrgMembershipStore, OrgRole, PasswordHasher,
-        PlainPassword, User, UserStore,
+        PlainPassword, User, UserId, UserStore,
     };
 
     use crate::{
@@ -246,22 +247,16 @@ mod tests {
     struct NoopHasher;
 
     impl PasswordHasher for NoopHasher {
-        fn hash(&self, plain: &PlainPassword) -> orchy_core::error::Result<HashedPassword> {
+        fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
             HashedPassword::new(plain.as_str())
         }
 
-        fn verify(
-            &self,
-            plain: &PlainPassword,
-            hashed: &HashedPassword,
-        ) -> orchy_core::error::Result<()> {
+        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
             if plain.as_str() == hashed.as_str() {
                 return Ok(());
             }
 
-            Err(orchy_core::error::Error::AuthenticationFailed(
-                "password mismatch".to_string(),
-            ))
+            Err(Error::AuthenticationFailed("password mismatch".to_string()))
         }
     }
 
@@ -282,7 +277,7 @@ mod tests {
 
         let password = PlainPassword::new("12345678").unwrap();
         let mut user = User::register(
-            orchy_core::user::UserId::new(),
+            UserId::new(),
             Email::new("agent@example.com").unwrap(),
             &password,
             &hasher,

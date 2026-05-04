@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::graph::{RelationType, TraversalDirection};
-use crate::resource_ref::ResourceKind;
+use crate::resource_ref::{ResourceKind, ResourceRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelationOptions {
@@ -76,7 +76,7 @@ impl RelationOptions {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelationQuery {
-    pub anchor: crate::resource_ref::ResourceRef,
+    pub anchor: ResourceRef,
     #[serde(flatten)]
     pub options: RelationOptions,
     #[serde(skip_serializing_if = "Option::is_none")]
