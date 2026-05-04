@@ -73,8 +73,7 @@ pub(super) async fn register_agent(
         Ok(response) => {
             let agent = &response.agent;
             let agent_id = AgentId::from_str(&agent.id).map_err(|e| e.to_string())?;
-            let ns = Namespace::try_from(agent.namespace.clone())
-                .map_err(|e| e.to_string())?;
+            let ns = Namespace::try_from(agent.namespace.clone()).map_err(|e| e.to_string())?;
             h.set_session(agent_id, project, ns).await;
             Ok(to_json(&response))
         }
@@ -222,8 +221,7 @@ pub(super) async fn switch_context(
     match h.container.app.switch_context.execute(cmd).await {
         Ok(response) => {
             let project = parse_project(&response.project)?;
-            let ns = Namespace::try_from(response.namespace.clone())
-                .map_err(|e| e.to_string())?;
+            let ns = Namespace::try_from(response.namespace.clone()).map_err(|e| e.to_string())?;
             h.set_session_project_and_namespace(project, ns).await;
             Ok(to_json(&response))
         }

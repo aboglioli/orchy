@@ -286,13 +286,8 @@ async fn run_session_pruner(container: Arc<Container>) {
             continue;
         }
 
-        let agent_ids: Vec<AgentId> =
-            snapshot.iter().map(|(_, id)| id.clone()).collect();
-        let alive: HashSet<AgentId> = match container
-            .agents
-            .find_by_ids(&agent_ids)
-            .await
-        {
+        let agent_ids: Vec<AgentId> = snapshot.iter().map(|(_, id)| id.clone()).collect();
+        let alive: HashSet<AgentId> = match container.agents.find_by_ids(&agent_ids).await {
             Ok(found) => found.into_iter().map(|a| a.id().clone()).collect(),
             Err(e) => {
                 tracing::warn!(error = %e, "session pruner: failed to query agents, skipping cycle");

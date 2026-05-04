@@ -23,10 +23,7 @@ impl UserAuth {
         self.is_platform_admin
     }
 
-    pub fn get_org_role(
-        &self,
-        org_id: &OrganizationId,
-    ) -> Option<OrgRole> {
+    pub fn get_org_role(&self, org_id: &OrganizationId) -> Option<OrgRole> {
         self.memberships
             .iter()
             .find(|m| m.org_id() == org_id)
@@ -51,15 +48,13 @@ impl From<AuthResponse> for UserAuth {
                 let role = m.role.parse::<OrgRole>().ok()?;
                 let created_at = m.joined_at.parse().ok()?;
 
-                Some(OrgMembership::restore(
-                    RestoreOrgMembership {
-                        id,
-                        user_id,
-                        org_id,
-                        role,
-                        created_at,
-                    },
-                ))
+                Some(OrgMembership::restore(RestoreOrgMembership {
+                    id,
+                    user_id,
+                    org_id,
+                    role,
+                    created_at,
+                }))
             })
             .collect();
 

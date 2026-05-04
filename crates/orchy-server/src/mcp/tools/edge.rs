@@ -56,8 +56,7 @@ pub(super) async fn query_relations(
 ) -> Result<String, String> {
     let (_, session_project, session_namespace) = h.require_session().await?;
     let org = h.org();
-    let as_of = parse_as_of(params.as_of)
-        .map_err(|e| mcp_error(Error::InvalidInput(e)))?;
+    let as_of = parse_as_of(params.as_of).map_err(|e| mcp_error(Error::InvalidInput(e)))?;
 
     let options = RelationOptions {
         rel_types: params.rel_types.map(|v| {

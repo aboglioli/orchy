@@ -19,7 +19,9 @@ use orchy_store_memory::*;
 use orchy_store_pg::PgDatabase;
 use orchy_store_sqlite::SqliteDatabase;
 
-use crate::auth::{generate_rsa_keypair, BcryptPasswordHasher, JwtTokenEncoder, RandomApiKeyGenerator};
+use crate::auth::{
+    BcryptPasswordHasher, JwtTokenEncoder, RandomApiKeyGenerator, generate_rsa_keypair,
+};
 use crate::config::{Config, EmbeddingsConfig};
 use crate::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
 use crate::error::{BootError, BootResult};
@@ -61,8 +63,7 @@ impl Container {
         let password_hasher: Arc<dyn PasswordHasher> =
             Arc::new(BcryptPasswordHasher::with_cost(config.auth.bcrypt_cost));
 
-        let api_key_generator: Arc<dyn ApiKeyGenerator> =
-            Arc::new(RandomApiKeyGenerator::new());
+        let api_key_generator: Arc<dyn ApiKeyGenerator> = Arc::new(RandomApiKeyGenerator::new());
 
         let token_encoder: Option<Arc<dyn TokenEncoder>> = Self::init_jwt_encoder(&config)
             .await?

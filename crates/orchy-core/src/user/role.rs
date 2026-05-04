@@ -46,10 +46,7 @@ impl std::str::FromStr for OrgRole {
             "owner" => Ok(OrgRole::Owner),
             "admin" => Ok(OrgRole::Admin),
             "member" => Ok(OrgRole::Member),
-            _ => Err(Error::invalid_input(format!(
-                "invalid org role: {}",
-                s
-            ))),
+            _ => Err(Error::invalid_input(format!("invalid org role: {}", s))),
         }
     }
 }

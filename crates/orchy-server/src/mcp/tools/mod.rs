@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{tool, tool_router};
 
-use orchy_core::graph::{RelationType, TraversalDirection};
 use orchy_core::graph::relation_options::RelationOptions;
+use orchy_core::graph::{RelationType, TraversalDirection};
 use orchy_core::resource_ref::ResourceKind;
 
 use super::handler::{INSTRUCTIONS, OrchyHandler};
@@ -58,9 +58,7 @@ pub(super) fn parse_direction(s: Option<&str>) -> TraversalDirection {
     }
 }
 
-pub(super) fn parse_rel_type_alias(
-    s: &str,
-) -> std::result::Result<RelationType, String> {
+pub(super) fn parse_rel_type_alias(s: &str) -> std::result::Result<RelationType, String> {
     let canonical = match s {
         "blocks" | "requires" | "needs" => "depends_on",
         "creates" | "made" | "wrote" => "produces",
@@ -69,32 +67,26 @@ pub(super) fn parse_rel_type_alias(
         "based_on" | "from" => "derived_from",
         other => other,
     };
-    canonical
-        .parse::<RelationType>()
-        .map_err(|e| e.to_string())
+    canonical.parse::<RelationType>().map_err(|e| e.to_string())
 }
 
-pub(super) fn parse_relation_options(
-    p: Option<RelationOptionsParam>,
-) -> Option<RelationOptions> {
-    p.map(
-        |opts| RelationOptions {
-            rel_types: opts.rel_types.map(|v| {
-                v.into_iter()
-                    .filter_map(|s| parse_rel_type_alias(&s).ok())
-                    .collect()
-            }),
-            target_kinds: opts
-                .target_kinds
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|s| s.parse::<ResourceKind>().ok())
-                .collect(),
-            direction: parse_direction(opts.direction.as_deref()),
-            max_depth: opts.max_depth.unwrap_or(1),
-            limit: opts.limit.unwrap_or(50),
-        },
-    )
+pub(super) fn parse_relation_options(p: Option<RelationOptionsParam>) -> Option<RelationOptions> {
+    p.map(|opts| RelationOptions {
+        rel_types: opts.rel_types.map(|v| {
+            v.into_iter()
+                .filter_map(|s| parse_rel_type_alias(&s).ok())
+                .collect()
+        }),
+        target_kinds: opts
+            .target_kinds
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|s| s.parse::<ResourceKind>().ok())
+            .collect(),
+        direction: parse_direction(opts.direction.as_deref()),
+        max_depth: opts.max_depth.unwrap_or(1),
+        limit: opts.limit.unwrap_or(50),
+    })
 }
 
 #[tool_router]

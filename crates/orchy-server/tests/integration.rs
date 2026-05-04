@@ -1353,12 +1353,8 @@ async fn agent_switch_context_changes_project_and_namespace() {
     let p = projects(&s);
     let target_org = org();
     let target_project = ProjectId::try_from("proj-b").unwrap();
-    let mut project = Project::new(
-        target_org.clone(),
-        target_project.clone(),
-        String::new(),
-    )
-    .unwrap();
+    let mut project =
+        Project::new(target_org.clone(), target_project.clone(), String::new()).unwrap();
     p.save(&mut project).await.unwrap();
 
     let switch = SwitchContext::new(

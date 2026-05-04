@@ -97,10 +97,7 @@ pub(super) async fn get_next_task(
 
     match h.container.app.get_next_task.execute(cmd).await {
         Ok(Some(task)) => {
-            let task_id = task
-                .id
-                .parse::<TaskId>()
-                .map_err(|e| e.to_string())?;
+            let task_id = task.id.parse::<TaskId>().map_err(|e| e.to_string())?;
             let ctx = h
                 .container
                 .app
@@ -173,10 +170,7 @@ pub(super) async fn claim_task(
 
     match h.container.app.claim_task.execute(cmd).await {
         Ok(task) => {
-            let task_id = task
-                .id
-                .parse::<TaskId>()
-                .map_err(|e| e.to_string())?;
+            let task_id = task.id.parse::<TaskId>().map_err(|e| e.to_string())?;
             let ctx = h
                 .container
                 .app
@@ -214,10 +208,7 @@ pub(super) async fn start_task(
 
     match h.container.app.start_task.execute(cmd).await {
         Ok(task) => {
-            let task_id = task
-                .id
-                .parse::<TaskId>()
-                .map_err(|e| e.to_string())?;
+            let task_id = task.id.parse::<TaskId>().map_err(|e| e.to_string())?;
             let ctx = h
                 .container
                 .app
