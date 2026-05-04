@@ -82,7 +82,73 @@ impl CompleteTask {
             tracing::warn!("failed to check parent auto-complete for {task_id}: {e}");
         }
 
+        if let Err(e) = self.try_unblock_dependents(&org_id, &task_id).await {
+            tracing::warn!("failed to cascade-unblock dependents of {task_id}: {e}");
+        }
+
         Ok(TaskDto::from(&task))
+    }
+
+    async fn try_unblock_dependents(&self, org: &OrganizationId, task_id: &TaskId) -> Result<()> {
+        let dependent_edges = self
+            .edges
+            .find_to(
+                org,
+                &ResourceKind::Task,
+                &task_id.to_string(),
+                &[RelationType::DependsOn],
+                None,
+            )
+            .await?;
+
+        for edge in dependent_edges {
+            let dependent_id: TaskId = match edge.from_id().parse() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+
+            let Some(mut dependent) = self.tasks.find_by_id(&dependent_id).await? else {
+                continue;
+            };
+            if dependent.status() != TaskStatus::Blocked {
+                continue;
+            }
+            if !self.all_deps_completed(org, &dependent_id).await? {
+                continue;
+            }
+            dependent.unblock()?;
+            if let Err(e) = self.tasks.save(&mut dependent).await {
+                tracing::warn!("failed to unblock dependent {dependent_id}: {e}");
+            }
+        }
+        Ok(())
+    }
+
+    async fn all_deps_completed(&self, org: &OrganizationId, task_id: &TaskId) -> Result<bool> {
+        let dep_edges = self
+            .edges
+            .find_from(
+                org,
+                &ResourceKind::Task,
+                &task_id.to_string(),
+                &[RelationType::DependsOn],
+                None,
+            )
+            .await?;
+
+        for edge in &dep_edges {
+            let dep_id: TaskId = match edge.to_id().parse() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let Some(dep) = self.tasks.find_by_id(&dep_id).await? else {
+                return Ok(false);
+            };
+            if dep.status() != TaskStatus::Completed {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     async fn try_auto_complete_parent(&self, org: &OrganizationId, task_id: &TaskId) -> Result<()> {

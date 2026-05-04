@@ -43,6 +43,27 @@ pub fn format_knowledge(v: &serde_json::Value) -> String {
     format!("{id}  {kind:>12}  {path}  v{version}  {title}\n")
 }
 
+pub fn format_knowledge_full(v: &serde_json::Value) -> String {
+    let mut out = format_knowledge(v);
+    if let Some(tags) = v.get("tags").and_then(|v| v.as_array())
+        && !tags.is_empty()
+    {
+        let names: Vec<String> = tags
+            .iter()
+            .filter_map(|t| t.as_str().map(String::from))
+            .collect();
+        out.push_str(&format!("tags: {}\n", names.join(", ")));
+    }
+    if let Some(content) = v.get("content").and_then(|v| v.as_str()) {
+        out.push('\n');
+        out.push_str(content);
+        if !content.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Format a list of knowledge entries.
 pub fn format_knowledge_list(items: &[serde_json::Value]) -> String {
     if items.is_empty() {

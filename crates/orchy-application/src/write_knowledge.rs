@@ -88,7 +88,7 @@ impl WriteKnowledge {
             org_id: org_id.clone(),
             project: Some(project),
             namespace,
-            path: KnowledgePath::new(&cmd.path).map_err(|e| Error::InvalidInput(e.to_string()))?,
+            path: KnowledgePath::new(&cmd.path)?,
             kind,
             title: cmd.title,
             content: cmd.content,

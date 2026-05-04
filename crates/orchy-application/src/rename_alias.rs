@@ -22,8 +22,7 @@ impl RenameAlias {
 
     pub async fn execute(&self, cmd: RenameAliasCommand) -> Result<AgentDto> {
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
-        let new_alias =
-            Alias::new(&cmd.new_alias).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let new_alias = Alias::new(&cmd.new_alias)?;
         let mut agent = self
             .agents
             .find_by_id(&agent_id)

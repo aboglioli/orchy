@@ -91,6 +91,7 @@ pub struct PostTaskBody {
     pub namespace: Option<String>,
     pub parent_id: Option<String>,
     pub depends_on: Option<Vec<String>>,
+    pub agent: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -237,6 +238,14 @@ pub async fn post(
     Json(body): Json<PostTaskBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let org = auth.org.id.clone();
+    let org_id = OrganizationId::new(&org)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
+    let created_by = match body.agent.as_deref() {
+        Some(alias) if !alias.is_empty() => {
+            Some(resolve_agent_id(&container, &org_id, &project, alias).await?)
+        }
+        _ => None,
+    };
     let cmd = PostTaskCommand {
         org_id: org,
         project,
@@ -246,7 +255,7 @@ pub async fn post(
         acceptance_criteria: body.acceptance_criteria,
         priority: body.priority,
         assigned_roles: body.assigned_roles,
-        created_by: None,
+        created_by,
         parent_id: body.parent_id,
         depends_on: body.depends_on,
     };

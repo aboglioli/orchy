@@ -204,6 +204,9 @@ pub async fn run(cmd: &TaskSubcommand, client: &OrchyClient, config: &Config) ->
                         .collect(),
                 );
             }
+            if let Some(alias) = client.alias.as_deref() {
+                body["agent"] = serde_json::Value::String(alias.to_string());
+            }
             let v = client.post_project_json("/tasks", Some(&body)).await?;
             if config.json {
                 output::print_json(config, &v);

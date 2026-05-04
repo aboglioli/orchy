@@ -42,8 +42,10 @@ pub async fn run(cmd: &LockSubcommand, client: &OrchyClient, config: &Config) ->
         }
         LockSubcommand::Release { name } => {
             let alias = client.alias.as_deref().unwrap_or("cli");
+            let encoded = urlencoding::encode(name);
+            let alias_q = urlencoding::encode(alias);
             client
-                .delete_project(&format!("/locks/{name}?agent_id={alias}"))
+                .delete_project(&format!("/locks/{encoded}?agent_id={alias_q}"))
                 .await?;
             if config.json {
                 println!("{{\"ok\": true}}");
@@ -52,7 +54,10 @@ pub async fn run(cmd: &LockSubcommand, client: &OrchyClient, config: &Config) ->
             }
         }
         LockSubcommand::Check { name } => {
-            let v = client.get_project_json(&format!("/locks/{name}")).await?;
+            let encoded = urlencoding::encode(name);
+            let v = client
+                .get_project_json(&format!("/locks/{encoded}"))
+                .await?;
             if config.json {
                 output::print_json(config, &v);
             } else {

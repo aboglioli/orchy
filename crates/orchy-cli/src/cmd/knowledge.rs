@@ -320,7 +320,7 @@ pub async fn run(
             if config.json {
                 output::print_json(config, &v);
             } else {
-                print!("{}", output::format_knowledge(&v));
+                print!("{}", output::format_knowledge_full(&v));
             }
         }
 

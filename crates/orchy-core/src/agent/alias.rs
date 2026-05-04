@@ -14,6 +14,9 @@ impl Alias {
         if s.len() < 2 {
             return Err(Error::invalid_input("alias must be at least 2 characters"));
         }
+        if s.len() > 64 {
+            return Err(Error::invalid_input("alias must be at most 64 characters"));
+        }
         if !s
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')

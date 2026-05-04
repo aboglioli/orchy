@@ -13,8 +13,12 @@ pub struct EventCommand {
 #[derive(Subcommand)]
 pub enum EventSubcommand {
     Poll {
-        #[arg(long)]
-        after: Option<String>,
+        #[arg(
+            long,
+            alias = "after",
+            help = "RFC3339 timestamp; events at or after this time"
+        )]
+        since: Option<String>,
         #[arg(long)]
         limit: Option<u32>,
     },
@@ -22,10 +26,10 @@ pub enum EventSubcommand {
 
 pub async fn run(cmd: &EventSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
     match cmd {
-        EventSubcommand::Poll { after, limit } => {
+        EventSubcommand::Poll { since, limit } => {
             let mut qs = vec![];
-            if let Some(a) = after {
-                qs.push(format!("after={a}"));
+            if let Some(s) = since {
+                qs.push(format!("since={s}"));
             }
             if let Some(l) = limit {
                 qs.push(format!("limit={l}"));

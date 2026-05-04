@@ -52,7 +52,7 @@ impl RegisterAgent {
             ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
-        let alias = Alias::new(&cmd.alias).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let alias = Alias::new(&cmd.alias)?;
 
         let auth_user_id = cmd
             .auth_user_id

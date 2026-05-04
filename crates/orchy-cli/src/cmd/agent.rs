@@ -95,10 +95,12 @@ pub async fn run(cmd: &AgentSubcommand, client: &OrchyClient, config: &Config) -
                 .or(alias.as_deref())
                 .unwrap_or("?");
 
-            // Auto-save alias to .orchy.toml
-            if new_alias != "?" {
+            let saved = if new_alias != "?" && client.alias.is_none() {
                 save_alias(new_alias);
-            }
+                true
+            } else {
+                false
+            };
 
             if config.json {
                 output::print_json(config, &v);
@@ -109,7 +111,9 @@ pub async fn run(cmd: &AgentSubcommand, client: &OrchyClient, config: &Config) -
                     .and_then(|v| v.as_str())
                     .unwrap_or("?");
                 println!("Agent registered: {new_alias} ({status})");
-                println!("Saved alias to .orchy.toml");
+                if saved {
+                    println!("Saved alias to .orchy.toml");
+                }
             }
         }
         AgentSubcommand::List { project } => {
@@ -122,7 +126,10 @@ pub async fn run(cmd: &AgentSubcommand, client: &OrchyClient, config: &Config) -
                 output::print_json(config, &v);
             } else {
                 let empty = vec![];
-                let items = v.as_array().unwrap_or(&empty);
+                let items = v
+                    .as_array()
+                    .or_else(|| v.get("items").and_then(|v| v.as_array()))
+                    .unwrap_or(&empty);
                 for a in items {
                     print!("{}", output::format_agent(a));
                 }
@@ -185,12 +192,20 @@ pub async fn run(cmd: &AgentSubcommand, client: &OrchyClient, config: &Config) -
                     Some(&body),
                 )
                 .await?;
-            save_alias(new_alias);
+            let renamed_self = client.alias.as_deref() == Some(alias.as_str());
+            let saved = if renamed_self {
+                save_alias(new_alias);
+                true
+            } else {
+                false
+            };
             if config.json {
                 output::print_json(config, &v);
             } else {
                 println!("Agent '{alias}' renamed to '{new_alias}'.");
-                println!("Saved alias to .orchy.toml");
+                if saved {
+                    println!("Saved alias to .orchy.toml");
+                }
             }
         }
         AgentSubcommand::Switch {
