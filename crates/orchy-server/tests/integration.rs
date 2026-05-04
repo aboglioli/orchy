@@ -793,6 +793,38 @@ async fn alias_uniqueness_enforced_per_org_and_project() {
     assert_eq!(result.unwrap().agent.alias, "unique-alias");
 }
 
+#[tokio::test]
+async fn register_agent_invalid_alias_error_has_single_invalid_input_prefix() {
+    let s = state();
+    let register = RegisterAgent::new(
+        agents(&s) as Arc<dyn AgentStore>,
+        messages(&s) as Arc<dyn MessageStore>,
+        tasks(&s) as Arc<dyn TaskStore>,
+    );
+
+    let err = register
+        .execute(RegisterAgentCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            alias: "x".into(),
+            roles: vec![],
+            description: String::new(),
+            agent_type: None,
+            metadata: Default::default(),
+            auth_user_id: None,
+        })
+        .await
+        .expect_err("alias 'x' is too short and must be rejected");
+
+    let msg = err.to_string();
+    let count = msg.matches("invalid input:").count();
+    assert_eq!(
+        count, 1,
+        "expected exactly one 'invalid input:' prefix, got: {msg}"
+    );
+}
+
 // ─── knowledge operations ──────────────────────────────────────────────────
 
 #[tokio::test]

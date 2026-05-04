@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use orchy_application::{
-    Application, ApplicationDeps, ClaimTaskCommand, CompleteTaskCommand, GetTaskCommand,
-    ListEdgesCommand, MergeTasksCommand, PostTaskCommand, SplitTaskCommand, SubtaskInput,
+    AddDependencyCommand, Application, ApplicationDeps, ArchiveTaskCommand, ClaimTaskCommand,
+    CompleteTaskCommand, GetTaskCommand, ListEdgesCommand, ListTasksCommand, MergeTasksCommand,
+    MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, SplitTaskCommand, SubtaskInput, UnarchiveTaskCommand, UpdateTaskCommand,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::api_key::{
@@ -460,4 +461,465 @@ async fn merge_tasks_cancels_sources_and_creates_merged_from_edges() {
     let source_ids: Vec<&str> = merged_from_edges.iter().map(|e| e.to_id.as_str()).collect();
     assert!(source_ids.contains(&task_a.id.as_str()));
     assert!(source_ids.contains(&task_b.id.as_str()));
+}
+
+#[tokio::test]
+async fn complete_task_cascade_unblocks_blocked_dependent() {
+    let s = mem();
+    let app = build_app(&s);
+    let agent_id = seed_agent(&s, "org", "worker-cascade").await;
+
+    let prereq = app
+        .post_task
+        .execute(post_cmd("org", "prereq"))
+        .await
+        .unwrap();
+    let dependent = app
+        .post_task
+        .execute(PostTaskCommand {
+            depends_on: Some(vec![prereq.id.clone()]),
+            ..post_cmd("org", "dependent")
+        })
+        .await
+        .unwrap();
+    assert_eq!(dependent.status, "blocked");
+
+    app.claim_task
+        .execute(ClaimTaskCommand {
+            task_id: prereq.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "org".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+    app.complete_task
+        .execute(CompleteTaskCommand {
+            task_id: prereq.id.clone(),
+            org_id: "org".into(),
+            summary: Some("done".into()),
+            links: vec![],
+        })
+        .await
+        .unwrap();
+
+    let after = app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: dependent.id.clone(),
+            org_id: "org".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        after.status, "pending",
+        "dependent must auto-unblock after sole prereq completes"
+    );
+}
+
+#[tokio::test]
+async fn complete_task_does_not_unblock_when_other_deps_still_pending() {
+    let s = mem();
+    let app = build_app(&s);
+    let agent_id = seed_agent(&s, "org", "worker-multi-dep").await;
+
+    let dep_a = app
+        .post_task
+        .execute(post_cmd("org", "dep-a"))
+        .await
+        .unwrap();
+    let dep_b = app
+        .post_task
+        .execute(post_cmd("org", "dep-b"))
+        .await
+        .unwrap();
+    let dependent = app
+        .post_task
+        .execute(PostTaskCommand {
+            depends_on: Some(vec![dep_a.id.clone(), dep_b.id.clone()]),
+            ..post_cmd("org", "dependent")
+        })
+        .await
+        .unwrap();
+    assert_eq!(dependent.status, "blocked");
+
+    app.claim_task
+        .execute(ClaimTaskCommand {
+            task_id: dep_a.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "org".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+    app.complete_task
+        .execute(CompleteTaskCommand {
+            task_id: dep_a.id.clone(),
+            org_id: "org".into(),
+            summary: None,
+            links: vec![],
+        })
+        .await
+        .unwrap();
+
+    let after_partial = app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: dependent.id.clone(),
+            org_id: "org".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        after_partial.status, "blocked",
+        "dependent must stay blocked while one dep still pending"
+    );
+
+    app.claim_task
+        .execute(ClaimTaskCommand {
+            task_id: dep_b.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "org".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+    app.complete_task
+        .execute(CompleteTaskCommand {
+            task_id: dep_b.id.clone(),
+            org_id: "org".into(),
+            summary: None,
+            links: vec![],
+        })
+        .await
+        .unwrap();
+
+    let after_all = app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: dependent.id.clone(),
+            org_id: "org".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(after_all.status, "pending");
+}
+
+#[tokio::test]
+async fn post_task_records_created_by_when_supplied() {
+    let s = mem();
+    let app = build_app(&s);
+    let agent_id = seed_agent(&s, "org", "creator").await;
+
+    let task = app
+        .post_task
+        .execute(PostTaskCommand {
+            created_by: Some(agent_id.to_string()),
+            ..post_cmd("org", "owned task")
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        task.created_by.as_deref(),
+        Some(agent_id.to_string().as_str()),
+        "created_by must be set when caller passes the agent id"
+    );
+}
+
+#[tokio::test]
+async fn add_dependency_rejects_self_cycle() {
+    let s = mem();
+    let app = build_app(&s);
+    let t = app
+        .post_task
+        .execute(post_cmd("org", "self-cycle"))
+        .await
+        .unwrap();
+
+    let err = app
+        .add_dependency
+        .execute(AddDependencyCommand {
+            org_id: "org".into(),
+            task_id: t.id.clone(),
+            dependency_id: t.id.clone(),
+        })
+        .await
+        .expect_err("task cannot depend on itself");
+    assert!(
+        matches!(err, Error::Conflict(_)),
+        "expected Conflict, got: {err:?}"
+    );
+}
+
+// TODO: indirect cycle detection not wired yet — add_dependency doesn't traverse the graph
+// Enable this test once cycle detection is implemented
+#[tokio::test]
+#[ignore]
+async fn add_dependency_rejects_indirect_cycle() {
+    let s = mem();
+    let app = build_app(&s);
+    let a = app
+        .post_task
+        .execute(post_cmd("org", "a"))
+        .await
+        .unwrap();
+    let b = app
+        .post_task
+        .execute(post_cmd("org", "b"))
+        .await
+        .unwrap();
+
+    app.add_dependency
+        .execute(AddDependencyCommand {
+            org_id: "org".into(),
+            task_id: a.id.clone(),
+            dependency_id: b.id.clone(),
+        })
+        .await
+        .unwrap();
+
+    let err = app
+        .add_dependency
+        .execute(AddDependencyCommand {
+            org_id: "org".into(),
+            task_id: b.id.clone(),
+            dependency_id: a.id.clone(),
+        })
+        .await
+        .expect_err("indirect cycle must be rejected");
+    assert!(
+        matches!(err, Error::Conflict(_)),
+        "expected Conflict, got: {err:?}"
+    );
+}
+
+// ─── task archive and unarchive ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn task_archive_and_unarchive() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let task = app
+        .post_task
+        .execute(post_cmd("org", "archive me"))
+        .await
+        .unwrap();
+    assert!(!task.archived);
+
+    // Must be completed before archive
+    let agent_id = seed_agent(&s, "org", "archiver").await;
+    app.claim_task
+        .execute(ClaimTaskCommand {
+            task_id: task.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "org".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+    app.complete_task
+        .execute(CompleteTaskCommand {
+            task_id: task.id.clone(),
+            org_id: "org".into(),
+            summary: Some("done".into()),
+            links: vec![],
+        })
+        .await
+        .unwrap();
+
+    let archived = app
+        .archive_task
+        .execute(ArchiveTaskCommand {
+            org_id: "org".into(),
+            task_id: task.id.clone(),
+            reason: Some("test".into()),
+        })
+        .await
+        .unwrap();
+    assert!(archived.archived);
+
+    let restored = app
+        .unarchive_task
+        .execute(UnarchiveTaskCommand {
+            org_id: "org".into(),
+            task_id: task.id,
+        })
+        .await
+        .unwrap();
+    assert!(!restored.archived);
+}
+
+// ─── task release returns to pending ────────────────────────────────────────
+
+#[tokio::test]
+async fn task_release_returns_to_pending() {
+    let s = mem();
+    let app = build_app(&s);
+    let agent_id = seed_agent(&s, "org", "releaser").await;
+
+    let task = app.post_task.execute(post_cmd("org", "release me")).await.unwrap();
+    let task_id = task.id.clone();
+
+    app.claim_task
+        .execute(ClaimTaskCommand {
+            task_id: task_id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "org".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        app.get_task
+            .execute(GetTaskCommand {
+                task_id: task_id.clone(),
+                org_id: "org".into(),
+                relations: None,
+            })
+            .await
+            .unwrap()
+            .task
+            .status,
+        "in_progress"
+    );
+
+    let released = app.release_task.execute(ReleaseTaskCommand { task_id }).await.unwrap();
+    assert_eq!(released.status, "pending");
+    assert!(released.assigned_to.is_none(), "assigned_to must be cleared on release");
+}
+
+// ─── task move to namespace ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn task_move_to_namespace() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let task = app.post_task.execute(post_cmd("org", "move me")).await.unwrap();
+    assert_eq!(task.namespace, "/");
+
+    let moved = app
+        .move_task
+        .execute(MoveTaskCommand {
+            task_id: task.id,
+            new_namespace: "/backend".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(moved.namespace, "/backend");
+}
+
+// ─── task update fields ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn task_update_fields() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let task = app.post_task.execute(post_cmd("org", "original")).await.unwrap();
+
+    let updated = app
+        .update_task
+        .execute(UpdateTaskCommand {
+            task_id: task.id,
+            title: Some("updated title".into()),
+            description: Some("updated desc".into()),
+            acceptance_criteria: Some("must pass".into()),
+            priority: Some("high".into()),
+        })
+        .await
+        .unwrap();
+    assert_eq!(updated.title, "updated title");
+    assert_eq!(updated.description, "updated desc");
+    assert_eq!(updated.acceptance_criteria, Some("must pass".into()));
+    assert_eq!(updated.priority, "high");
+}
+
+// ─── list tasks filters by status and namespace ─────────────────────────────
+
+#[tokio::test]
+async fn list_tasks_filters_by_status_and_namespace() {
+    let s = mem();
+    let app = build_app(&s);
+    let agent_id = seed_agent(&s, "org", "lister").await;
+
+    let frontend = app
+        .post_task
+        .execute(PostTaskCommand {
+            namespace: Some("/frontend".into()),
+            ..post_cmd("org", "frontend task")
+        })
+        .await
+        .unwrap();
+    let backend = app
+        .post_task
+        .execute(PostTaskCommand {
+            namespace: Some("/backend".into()),
+            ..post_cmd("org", "backend task")
+        })
+        .await
+        .unwrap();
+
+    // Complete backend task
+    app.claim_task
+        .execute(ClaimTaskCommand {
+            task_id: backend.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "org".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+    app.complete_task
+        .execute(CompleteTaskCommand {
+            task_id: backend.id,
+            org_id: "org".into(),
+            summary: Some("done".into()),
+            links: vec![],
+        })
+        .await
+        .unwrap();
+
+    // List by namespace
+    let namespace_page = app
+        .list_tasks
+        .execute(ListTasksCommand {
+            org_id: "org".into(),
+            project: None,
+            namespace: Some("/frontend".into()),
+            status: None,
+            assigned_to: None,
+            tag: None,
+            after: None,
+            limit: None,
+            archived: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(namespace_page.items.len(), 1);
+    assert_eq!(namespace_page.items[0].id, frontend.id);
+
+    // List by status
+    let completed_page = app
+        .list_tasks
+        .execute(ListTasksCommand {
+            org_id: "org".into(),
+            project: None,
+            namespace: None,
+            status: Some("completed".into()),
+            assigned_to: None,
+            tag: None,
+            after: None,
+            limit: None,
+            archived: None,
+        })
+        .await
+        .unwrap();
+    assert!(completed_page.items.iter().all(|t| t.status == "completed"));
 }

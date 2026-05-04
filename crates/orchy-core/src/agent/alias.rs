@@ -69,3 +69,70 @@ impl From<Alias> for String {
         a.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_alias_shorter_than_two_chars() {
+        assert!(Alias::new("a").is_err());
+    }
+
+    #[test]
+    fn accepts_alias_at_minimum_length() {
+        assert!(Alias::new("ab").is_ok());
+    }
+
+    #[test]
+    fn accepts_alias_at_64_char_upper_bound() {
+        assert!(Alias::new("a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn rejects_alias_longer_than_64_chars() {
+        let err = Alias::new("a".repeat(65)).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "invalid input: alias must be at most 64 characters"
+        );
+    }
+
+    #[test]
+    fn rejects_uppercase_chars() {
+        assert!(Alias::new("Foo").is_err());
+    }
+
+    #[test]
+    fn rejects_leading_or_trailing_hyphen() {
+        assert!(Alias::new("-foo").is_err());
+        assert!(Alias::new("foo-").is_err());
+    }
+
+    #[test]
+    fn error_message_has_single_invalid_input_prefix() {
+        let err = Alias::new("a").unwrap_err();
+        let msg = err.to_string();
+        let count = msg.matches("invalid input:").count();
+        assert_eq!(
+            count, 1,
+            "expected exactly one 'invalid input:' prefix, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn serde_round_trip() {
+        let a = Alias::new("agent-7").unwrap();
+        let json = serde_json::to_string(&a).unwrap();
+        assert_eq!(json, "\"agent-7\"");
+        let back: Alias = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, a);
+    }
+
+    #[test]
+    fn serde_rejects_invalid() {
+        let r: std::result::Result<Alias, _> =
+            serde_json::from_str("\"BadAlias\"");
+        assert!(r.is_err(), "TryFrom<String> must reject uppercase via serde");
+    }
+}
