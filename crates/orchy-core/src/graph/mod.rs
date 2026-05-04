@@ -161,6 +161,7 @@ pub enum RelationType {
     ContradictedBy,
     OwnedBy,
     ReviewedBy,
+    Confirms,
 }
 
 impl RelationType {
@@ -180,6 +181,7 @@ impl RelationType {
             RelationType::ContradictedBy,
             RelationType::OwnedBy,
             RelationType::ReviewedBy,
+            RelationType::Confirms,
         ]
     }
 
@@ -211,6 +213,7 @@ impl fmt::Display for RelationType {
             RelationType::ContradictedBy => write!(f, "contradicted_by"),
             RelationType::OwnedBy => write!(f, "owned_by"),
             RelationType::ReviewedBy => write!(f, "reviewed_by"),
+            RelationType::Confirms => write!(f, "confirms"),
         }
     }
 }
@@ -237,8 +240,9 @@ impl FromStr for RelationType {
             "contradicted_by" => Ok(RelationType::ContradictedBy),
             "owned_by" => Ok(RelationType::OwnedBy),
             "reviewed_by" => Ok(RelationType::ReviewedBy),
+            "confirms" => Ok(RelationType::Confirms),
             other => Err(format!(
-                "unknown relation type: {other}. valid: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on, invalidates, supported_by, contradicted_by, owned_by, reviewed_by"
+                "unknown relation type: {other}. valid: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on, invalidates, supported_by, contradicted_by, owned_by, reviewed_by, confirms"
             )),
         }
     }
@@ -297,6 +301,12 @@ impl Edge {
         rel_type: RelationType,
         created_by: Option<AgentId>,
     ) -> Result<Self> {
+        if from_id.trim().is_empty() {
+            return Err(Error::InvalidInput("edge from_id must not be empty".into()));
+        }
+        if to_id.trim().is_empty() {
+            return Err(Error::InvalidInput("edge to_id must not be empty".into()));
+        }
         let id = EdgeId::new();
         let mut edge = Self {
             id,
@@ -554,5 +564,35 @@ mod tests {
         edge.invalidate().unwrap();
         assert!(!edge.is_active());
         assert!(edge.valid_until().is_some());
+    }
+
+    #[test]
+    fn edge_new_rejects_empty_from_id() {
+        let org = OrganizationId::new("test").unwrap();
+        let result = Edge::new(
+            org,
+            ResourceKind::Task,
+            "".to_string(),
+            ResourceKind::Knowledge,
+            "k1".to_string(),
+            RelationType::Produces,
+            None,
+        );
+        assert!(matches!(result, Err(Error::InvalidInput(_))));
+    }
+
+    #[test]
+    fn edge_new_rejects_whitespace_only_to_id() {
+        let org = OrganizationId::new("test").unwrap();
+        let result = Edge::new(
+            org,
+            ResourceKind::Task,
+            "t1".to_string(),
+            ResourceKind::Knowledge,
+            "   ".to_string(),
+            RelationType::Produces,
+            None,
+        );
+        assert!(matches!(result, Err(Error::InvalidInput(_))));
     }
 }

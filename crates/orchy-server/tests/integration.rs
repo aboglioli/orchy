@@ -143,8 +143,8 @@ async fn seed_user_membership(s: &Arc<MemoryState>, email: &str) -> UserId {
     });
     users(s).save(&mut user).await.unwrap();
 
-    let membership = OrgMembership::new(user_id, org(), OrgRole::Member);
-    memberships(s).save(&membership).await.unwrap();
+    let mut membership = OrgMembership::new(user_id, org(), OrgRole::Member);
+    memberships(s).save(&mut membership).await.unwrap();
     user_id
 }
 
@@ -598,7 +598,10 @@ async fn get_next_task_returns_unassigned_pending_task() {
     let s = state();
     let agent_id = register_with_app(&s, "next-agent").await;
 
-    let post_task = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post_task = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     post_task
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -610,6 +613,8 @@ async fn get_next_task_returns_unassigned_pending_task() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1385,7 +1390,10 @@ async fn task_fail_records_reason() {
     let s = state();
     let agent_id = register_with_app(&s, "fail-agent").await;
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1397,6 +1405,8 @@ async fn task_fail_records_reason() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1424,6 +1434,7 @@ async fn task_fail_records_reason() {
         .execute(StartTaskCommand {
             task_id: task.id.clone(),
             agent_id: agent_id.to_string(),
+            org_id: "default".into(),
         })
         .await
         .unwrap();
@@ -1449,7 +1460,10 @@ async fn task_fail_records_reason() {
 async fn task_cancel_from_pending() {
     let s = state();
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1461,6 +1475,8 @@ async fn task_cancel_from_pending() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1486,7 +1502,10 @@ async fn task_release_returns_to_pending() {
     let s = state();
     let agent_id = register_with_app(&s, "release-agent").await;
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1498,6 +1517,8 @@ async fn task_release_returns_to_pending() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1534,7 +1555,10 @@ async fn task_delegate_creates_subtask_without_blocking_parent() {
     let s = state();
     let agent_id = register_with_app(&s, "delegate-agent").await;
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let parent = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1546,6 +1570,8 @@ async fn task_delegate_creates_subtask_without_blocking_parent() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1588,7 +1614,7 @@ async fn task_delegate_creates_subtask_without_blocking_parent() {
     let parent_now = get
         .execute(GetTaskCommand {
             task_id: parent.id.clone(),
-            org_id: None,
+            org_id: "default".into(),
             relations: None,
         })
         .await
@@ -1614,7 +1640,10 @@ async fn task_delegate_creates_subtask_without_blocking_parent() {
 async fn task_merge_combines_pending_tasks() {
     let s = state();
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let t1 = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1626,6 +1655,8 @@ async fn task_merge_combines_pending_tasks() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1640,6 +1671,8 @@ async fn task_merge_combines_pending_tasks() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1698,7 +1731,10 @@ async fn task_merge_combines_pending_tasks() {
 async fn task_replace_cancels_original_creates_replacements() {
     let s = state();
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let original = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1710,6 +1746,8 @@ async fn task_replace_cancels_original_creates_replacements() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1770,7 +1808,10 @@ async fn task_replace_cancels_original_creates_replacements() {
 async fn task_tag_and_untag() {
     let s = state();
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1782,6 +1823,8 @@ async fn task_tag_and_untag() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1814,7 +1857,7 @@ async fn task_tag_and_untag() {
     let result = get
         .execute(GetTaskCommand {
             task_id: task.id.clone(),
-            org_id: None,
+            org_id: "default".into(),
             relations: None,
         })
         .await
@@ -1830,7 +1873,10 @@ async fn task_assign_transfers_to_another_agent() {
     let agent1 = register_with_app(&s, "assign-agent-1").await;
     let agent2 = register_with_app(&s, "assign-agent-2").await;
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1842,6 +1888,8 @@ async fn task_assign_transfers_to_another_agent() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1880,7 +1928,10 @@ async fn task_assign_transfers_to_another_agent() {
 async fn task_add_and_remove_dependency() {
     let s = state();
 
-    let post = PostTask::new(tasks(&s) as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        tasks(&s) as Arc<dyn TaskStore>,
+        edges(&s) as Arc<dyn EdgeStore>,
+    );
     let task_a = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1892,6 +1943,8 @@ async fn task_add_and_remove_dependency() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1906,6 +1959,8 @@ async fn task_add_and_remove_dependency() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1979,7 +2034,10 @@ async fn knowledge_write_with_task_id_creates_produces_edge() {
     let e = edges(&s);
     let t = tasks(&s);
 
-    let post = PostTask::new(t.clone() as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        t.clone() as Arc<dyn TaskStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -1991,6 +2049,8 @@ async fn knowledge_write_with_task_id_creates_produces_edge() {
             priority: None,
             assigned_roles: None,
             created_by: Some(agent_id.to_string()),
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -2101,8 +2161,12 @@ async fn task_touch_updates_timestamp() {
     let s = state();
     let agent_id = register_with_app(&s, "touch-agent").await;
     let t = tasks(&s);
+    let e = edges(&s);
 
-    let post = PostTask::new(t.clone() as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        t.clone() as Arc<dyn TaskStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -2114,6 +2178,8 @@ async fn task_touch_updates_timestamp() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -2155,7 +2221,10 @@ async fn task_complete_preserves_summary() {
     let t = tasks(&s);
     let e = edges(&s);
 
-    let post = PostTask::new(t.clone() as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        t.clone() as Arc<dyn TaskStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -2167,6 +2236,8 @@ async fn task_complete_preserves_summary() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -2198,6 +2269,7 @@ async fn task_complete_preserves_summary() {
         .execute(StartTaskCommand {
             task_id: task.id.clone(),
             agent_id: agent_id.to_string(),
+            org_id: "default".into(),
         })
         .await
         .unwrap();
@@ -2303,7 +2375,10 @@ async fn query_relations_traverses_task_knowledge_graph() {
     let a = agents(&s);
     let m = messages(&s);
 
-    let post = PostTask::new(t.clone() as Arc<dyn TaskStore>);
+    let post = PostTask::new(
+        t.clone() as Arc<dyn TaskStore>,
+        e.clone() as Arc<dyn EdgeStore>,
+    );
     let task = post
         .execute(PostTaskCommand {
             org_id: "default".into(),
@@ -2315,6 +2390,8 @@ async fn query_relations_traverses_task_knowledge_graph() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();

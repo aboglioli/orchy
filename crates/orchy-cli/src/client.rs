@@ -1,12 +1,12 @@
 use reqwest::{Client, Method, RequestBuilder, Response};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::config::Config;
 
-/// HTTP client for orchy REST API. Stateless — every call is a single request.
 pub struct OrchyClient {
     client: Client,
     base_url: String,
-    api_key: String,
+    api_key: SecretString,
     pub project: String,
     pub alias: Option<String>,
 }
@@ -126,10 +126,11 @@ impl OrchyClient {
 
     async fn request_url(&self, method: Method, url: &str) -> CliResult<RequestBuilder> {
         let req = self.client.request(method, url);
-        if self.api_key.is_empty() {
+        let key = self.api_key.expose_secret();
+        if key.is_empty() {
             return Ok(req);
         }
-        Ok(req.bearer_auth(&self.api_key))
+        Ok(req.bearer_auth(key))
     }
 
     async fn send(&self, req: RequestBuilder) -> CliResult<Response> {

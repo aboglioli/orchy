@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use orchy_core::error::Result;
-use orchy_events::io::Writer;
+use orchy_events::io::{EventQuery, Writer};
 use orchy_events::{Event, SerializedEvent};
 
 use crate::MemoryState;
@@ -59,5 +59,19 @@ impl MemoryEventQuery {
         filtered.truncate(limit);
         filtered.reverse();
         Ok(filtered)
+    }
+}
+
+#[async_trait]
+impl EventQuery for MemoryEventQuery {
+    async fn query_events(
+        &self,
+        organization: &str,
+        since: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> std::result::Result<Vec<SerializedEvent>, String> {
+        self.query_events(organization, since, limit)
+            .await
+            .map_err(|e| e.to_string())
     }
 }

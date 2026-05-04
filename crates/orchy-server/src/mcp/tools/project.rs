@@ -10,6 +10,7 @@ use crate::mcp::params::{
     SetProjectMetadataParams, UnlockResourceParams, UpdateProjectParams,
 };
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn get_project(
     h: &OrchyHandler,
     params: GetProjectParams,
@@ -133,6 +134,7 @@ pub(super) async fn get_project(
     })))
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn update_project(
     h: &OrchyHandler,
     params: UpdateProjectParams,
@@ -179,6 +181,7 @@ pub(super) async fn update_project(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn set_project_metadata(
     h: &OrchyHandler,
     params: SetProjectMetadataParams,
@@ -198,6 +201,7 @@ pub(super) async fn set_project_metadata(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn list_namespaces(
     h: &OrchyHandler,
     params: ListNamespacesParams,
@@ -221,6 +225,7 @@ pub(super) async fn list_namespaces(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn lock_resource(
     h: &OrchyHandler,
     params: LockResourceParams,
@@ -246,6 +251,7 @@ pub(super) async fn lock_resource(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn unlock_resource(
     h: &OrchyHandler,
     params: UnlockResourceParams,
@@ -270,6 +276,7 @@ pub(super) async fn unlock_resource(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn check_lock(
     h: &OrchyHandler,
     params: CheckLockParams,

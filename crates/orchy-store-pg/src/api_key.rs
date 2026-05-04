@@ -10,6 +10,10 @@ use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
 
+use orchy_events::io::Writer;
+
+use crate::events::PgEventWriter;
+
 pub struct PgApiKeyStore {
     pool: PgPool,
 }
@@ -22,7 +26,13 @@ impl PgApiKeyStore {
 
 #[async_trait]
 impl ApiKeyStore for PgApiKeyStore {
-    async fn save(&self, api_key: &ApiKey) -> Result<()> {
+    async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
         sqlx::query(
             "INSERT INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -39,9 +49,17 @@ impl ApiKeyStore for PgApiKeyStore {
         .bind(api_key.is_active())
         .bind(api_key.created_at())
         .bind(api_key.user_id().map(|u| u.as_uuid()))
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = api_key.drain_events();
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 
@@ -74,7 +92,7 @@ impl ApiKeyStore for PgApiKeyStore {
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>> {
         sqlx::query(
             "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
-             FROM api_keys WHERE organization_id = $1 ORDER BY created_at",
+             FROM api_keys WHERE organization_id = $1 ORDER BY created_at LIMIT 1000",
         )
         .bind(org_id.as_str())
         .fetch_all(&self.pool)

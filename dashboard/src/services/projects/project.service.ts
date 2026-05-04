@@ -8,14 +8,14 @@ export type ProjectDto = {
 };
 
 export type ProjectService = {
-  getProject: (org: string, project: string) => Promise<ProjectDto>;
+  getProject: (_org: string, project: string) => Promise<ProjectDto>;
 };
 
 export function createProjectService(client: HttpClient): ProjectService {
   return {
-    getProject(org: string, project: string): Promise<ProjectDto> {
+    getProject(_org: string, project: string): Promise<ProjectDto> {
       return client.get(
-        `/organizations/${encodeURIComponent(org)}/projects/${encodeURIComponent(project)}`,
+        `/projects/${encodeURIComponent(project)}`,
       );
     },
   };

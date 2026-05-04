@@ -44,6 +44,7 @@ impl From<AuthResponse> for AuthSuccessResponse {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn register(
     State(container): State<Arc<Container>>,
     Json(req): Json<RegisterRequest>,
@@ -61,6 +62,7 @@ pub async fn register(
     Ok((StatusCode::CREATED, Json(result.user)))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn login(
     State(container): State<Arc<Container>>,
     cookies: Cookies,
@@ -99,11 +101,13 @@ pub async fn login(
     ))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn logout(_state: State<Arc<Container>>, cookies: Cookies) -> impl IntoResponse {
     clear_auth_cookie(&cookies);
     StatusCode::NO_CONTENT
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn me(
     State(container): State<Arc<Container>>,
     cookies: Cookies,
@@ -136,6 +140,7 @@ pub struct ChangePasswordRequest {
     new_password: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn change_password(
     State(container): State<Arc<Container>>,
     cookies: Cookies,
@@ -178,6 +183,7 @@ pub struct InviteResponse {
     is_new_user: bool,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn invite_user(
     State(container): State<Arc<Container>>,
     cookies: Cookies,

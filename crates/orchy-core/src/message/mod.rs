@@ -238,8 +238,9 @@ impl Message {
             refs: msg
                 .refs
                 .iter()
-                .map(|r| serde_json::to_value(r).unwrap_or_default())
-                .collect(),
+                .map(serde_json::to_value)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| Error::InvalidInput(format!("invalid resource ref: {e}")))?,
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
         let event = Event::create(
@@ -313,6 +314,9 @@ impl Message {
     }
 
     pub fn mark_read(&mut self) -> Result<()> {
+        if self.status == MessageStatus::Read {
+            return Ok(());
+        }
         self.status = MessageStatus::Read;
 
         let payload = Payload::from_json(&message_events::MessageReadPayload {
@@ -354,6 +358,10 @@ impl Message {
         matches!(self.to, MessageTarget::Namespace(_))
     }
 
+    pub fn is_user_targeted(&self) -> bool {
+        matches!(self.to, MessageTarget::User(_))
+    }
+
     pub fn is_logical_target(&self) -> bool {
         matches!(
             self.to,
@@ -378,8 +386,25 @@ impl Message {
             }
             return Ok(());
         }
-        self.claimed_by = Some(agent_id);
+        self.claimed_by = Some(agent_id.clone());
         self.claimed_at = Some(Utc::now());
+
+        let payload = Payload::from_json(&message_events::MessageClaimedPayload {
+            org_id: self.org_id.to_string(),
+            message_id: self.id.to_string(),
+            agent_id: agent_id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            message_events::NAMESPACE,
+            message_events::TOPIC_CLAIMED,
+            self.id.to_string(),
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+
         Ok(())
     }
 
@@ -391,6 +416,23 @@ impl Message {
         }
         self.claimed_by = None;
         self.claimed_at = None;
+
+        let payload = Payload::from_json(&message_events::MessageUnclaimedPayload {
+            org_id: self.org_id.to_string(),
+            message_id: self.id.to_string(),
+            agent_id: agent_id.to_string(),
+        })
+        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        let event = Event::create(
+            self.org_id.as_str(),
+            message_events::NAMESPACE,
+            message_events::TOPIC_UNCLAIMED,
+            self.id.to_string(),
+            payload,
+        )
+        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        self.collector.collect(event);
+
         Ok(())
     }
 
@@ -590,5 +632,107 @@ mod tests {
         )
         .unwrap();
         assert_eq!(msg.refs(), &refs);
+    }
+
+    #[test]
+    fn is_user_targeted_returns_true_for_user_target() {
+        let user_id = UserId::new();
+        let msg = Message::new(
+            test_org(),
+            test_project(),
+            Namespace::root(),
+            AgentId::new(),
+            MessageTarget::User(user_id),
+            "hi".into(),
+            None,
+            vec![],
+        )
+        .unwrap();
+        assert!(msg.is_user_targeted());
+    }
+
+    #[test]
+    fn is_user_targeted_returns_false_for_other_targets() {
+        let msg = Message::new(
+            test_org(),
+            test_project(),
+            Namespace::root(),
+            AgentId::new(),
+            MessageTarget::Agent(AgentId::new()),
+            "hi".into(),
+            None,
+            vec![],
+        )
+        .unwrap();
+        assert!(!msg.is_user_targeted());
+    }
+
+    fn logical_message() -> Message {
+        let mut msg = Message::new(
+            test_org(),
+            test_project(),
+            Namespace::root(),
+            AgentId::new(),
+            MessageTarget::Broadcast,
+            "hi".into(),
+            None,
+            vec![],
+        )
+        .unwrap();
+        msg.drain_events();
+        msg
+    }
+
+    #[test]
+    fn claim_emits_one_event() {
+        let mut msg = logical_message();
+        let agent = AgentId::new();
+        msg.claim(agent).unwrap();
+        let events = msg.drain_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].topic().as_str(), message_events::TOPIC_CLAIMED);
+    }
+
+    #[test]
+    fn claim_idempotent_when_same_agent() {
+        let mut msg = logical_message();
+        let agent = AgentId::new();
+        msg.claim(agent.clone()).unwrap();
+        msg.drain_events();
+        msg.claim(agent).unwrap();
+        let events = msg.drain_events();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn unclaim_emits_one_event() {
+        let mut msg = logical_message();
+        let agent = AgentId::new();
+        msg.claim(agent.clone()).unwrap();
+        msg.drain_events();
+        msg.unclaim(&agent).unwrap();
+        let events = msg.drain_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].topic().as_str(), message_events::TOPIC_UNCLAIMED);
+    }
+
+    #[test]
+    fn mark_read_idempotent_when_already_read() {
+        let mut msg = Message::new(
+            test_org(),
+            test_project(),
+            Namespace::root(),
+            AgentId::new(),
+            MessageTarget::Broadcast,
+            "hi".into(),
+            None,
+            vec![],
+        )
+        .unwrap();
+        msg.mark_read().unwrap();
+        msg.drain_events();
+        msg.mark_read().unwrap();
+        let events = msg.drain_events();
+        assert!(events.is_empty());
     }
 }

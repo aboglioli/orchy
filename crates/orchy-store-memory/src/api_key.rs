@@ -20,9 +20,18 @@ impl MemoryApiKeyStore {
 
 #[async_trait]
 impl ApiKeyStore for MemoryApiKeyStore {
-    async fn save(&self, api_key: &ApiKey) -> Result<()> {
+    async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
+        let events = api_key.drain_events();
         let mut keys = self.state.api_keys.write().await;
         keys.insert(api_key.id().clone(), api_key.clone());
+        if !events.is_empty() {
+            let mut events_guard = self.state.events.write().await;
+            for event in events {
+                let serialized = orchy_events::SerializedEvent::from_event(&event)
+                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                events_guard.push(serialized);
+            }
+        }
         Ok(())
     }
 

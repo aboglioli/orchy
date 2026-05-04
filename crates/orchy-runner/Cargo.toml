@@ -22,3 +22,4 @@ pty-process = { version = "0.5", features = ["async"] }
 strip-ansi-escapes = "0.2"
 crossterm = "0.29"
 clap = { version = "4", features = ["derive", "env"] }
+nix = { version = "0.29", features = ["signal"] }

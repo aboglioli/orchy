@@ -21,6 +21,7 @@ pub struct PollQuery {
     pub namespace: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn poll(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,

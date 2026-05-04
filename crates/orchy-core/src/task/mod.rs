@@ -18,6 +18,11 @@ use crate::pagination::{Page, PageParams};
 #[async_trait::async_trait]
 pub trait TaskStore: Send + Sync {
     async fn save(&self, task: &mut Task) -> Result<()>;
+    async fn save_if_status(
+        &self,
+        task: &mut Task,
+        expected_statuses: &[TaskStatus],
+    ) -> Result<bool>;
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
     async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>>;
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>>;
@@ -98,6 +103,7 @@ impl TaskStatus {
                 | (Pending, Blocked)
                 | (Pending, Cancelled)
                 | (Blocked, Pending)
+                | (Blocked, Completed)
                 | (Blocked, Cancelled)
                 | (Claimed, InProgress)
                 | (Claimed, Completed)
@@ -341,6 +347,14 @@ impl Task {
         );
 
         Ok(())
+    }
+
+    pub fn claim_if_available(&mut self, agent: &AgentId) -> Result<bool> {
+        if !self.can_be_claimed() {
+            return Ok(false);
+        }
+        self.claim(agent.clone())?;
+        Ok(true)
     }
 
     pub fn start(&mut self, agent: &AgentId) -> Result<()> {
@@ -747,7 +761,7 @@ impl Task {
     pub fn can_be_claimed(&self) -> bool {
         match self.status {
             TaskStatus::Pending => true,
-            TaskStatus::InProgress => self.is_stale(),
+            TaskStatus::Claimed | TaskStatus::InProgress => self.is_stale(),
             _ => false,
         }
     }
@@ -841,9 +855,12 @@ impl Task {
 
     pub fn all_children_completed(children: &[Task]) -> bool {
         !children.is_empty()
-            && children
-                .iter()
-                .all(|c| matches!(c.status(), TaskStatus::Completed | TaskStatus::Cancelled))
+            && children.iter().all(|c| {
+                matches!(
+                    c.status(),
+                    TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+                )
+            })
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {

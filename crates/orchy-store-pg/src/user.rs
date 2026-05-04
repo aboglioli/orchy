@@ -141,7 +141,7 @@ impl UserStore for PgUserStore {
 
     async fn list_all(&self) -> Result<Vec<User>> {
         let rows: Vec<(uuid::Uuid, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users ORDER BY created_at DESC"
+            "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 1000"
         )
         .fetch_all(&self.pool)
         .await
@@ -183,7 +183,7 @@ impl PgOrgMembershipStore {
 
 #[async_trait]
 impl OrgMembershipStore for PgOrgMembershipStore {
-    async fn save(&self, membership: &OrgMembership) -> Result<()> {
+    async fn save(&self, membership: &mut OrgMembership) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO org_memberships (id, user_id, org_id, role, created_at)
@@ -224,7 +224,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>> {
         let rows: Vec<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE user_id = $1 ORDER BY created_at DESC"
+            "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1000"
         )
         .bind(user_id.as_uuid())
         .fetch_all(&self.pool)
@@ -243,7 +243,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>> {
         let rows: Vec<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-            "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE org_id = $1 ORDER BY created_at DESC"
+            "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE org_id = $1 ORDER BY created_at DESC LIMIT 1000"
         )
         .bind(org_id.to_string())
         .fetch_all(&self.pool)

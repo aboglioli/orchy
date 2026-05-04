@@ -60,6 +60,8 @@ enum KnowledgeEntries {
     ArchivedAt,
     #[iden = "created_at"]
     CreatedAt,
+    #[iden = "organization_id"]
+    OrganizationId,
     #[iden = "updated_at"]
     UpdatedAt,
 }
@@ -68,16 +70,11 @@ const SELECT_COLUMNS: &str = "id, organization_id, project, namespace, path, kin
 
 pub struct PgKnowledgeStore {
     pool: PgPool,
-    #[allow(dead_code)]
-    embedding_dimensions: Option<u32>,
 }
 
 impl PgKnowledgeStore {
-    pub fn new(pool: PgPool, embedding_dimensions: Option<u32>) -> Self {
-        Self {
-            pool,
-            embedding_dimensions,
-        }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 }
 
@@ -240,6 +237,9 @@ impl KnowledgeStore for PgKnowledgeStore {
             .from(KnowledgeEntries::Table)
             .expr(Expr::cust(SELECT_COLUMNS));
 
+        if let Some(ref org_id) = filter.org_id {
+            select.and_where(Expr::col(KnowledgeEntries::OrganizationId).eq(org_id.to_string()));
+        }
         if let Some(ref project) = filter.project {
             select.and_where(Expr::col(KnowledgeEntries::Project).eq(project.to_string()));
         }
@@ -455,7 +455,7 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     let org_id_str: String = row.get("organization_id");
     let project: Option<String> = row.get("project");
     let namespace: String = row.get("namespace");
-    let path: String = row.get("path");
+    let path_str: String = row.get("path");
     let kind_str: String = row.get("kind");
     let title: String = row.get("title");
     let content: String = row.get("content");
@@ -471,6 +471,8 @@ fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
+    let path = KnowledgePath::new(&path_str)
+        .map_err(|e| Error::Store(format!("invalid knowledge_entries.path: {e}")))?;
     let kind = KnowledgeKind::from_str(&kind_str).map_err(|e| {
         Error::Store(format!(
             "invalid knowledge_entries.kind value `{kind_str}`: {e}"

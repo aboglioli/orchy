@@ -1481,6 +1481,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1577,6 +1589,7 @@ dependencies = [
  "chrono",
  "orchy-core",
  "orchy-events",
+ "orchy-store-memory",
  "serde",
  "serde_json",
  "tokio",
@@ -1594,6 +1607,7 @@ dependencies = [
  "orchy-application",
  "orchy-core",
  "reqwest",
+ "secrecy",
  "serde",
  "serde_json",
  "tokio",
@@ -1636,6 +1650,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "crossterm",
+ "nix",
  "pty-process",
  "reqwest",
  "serde",
@@ -1673,12 +1688,28 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "thiserror",
  "tokio",
  "toml",
  "tower",
  "tower-cookies",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "orchy-store-conformance"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "orchy-core",
+ "orchy-events",
+ "orchy-store-memory",
+ "orchy-store-pg",
+ "orchy-store-sqlite",
+ "tokio",
  "uuid",
 ]
 
@@ -2395,6 +2426,16 @@ dependencies = [
  "quote",
  "syn",
  "thiserror",
+]
+
+[[package]]
+name = "secrecy"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e891af845473308773346dc847b2c23ee78fe442e0472ac50e22a18a93d3ae5a"
+dependencies = [
+ "serde",
+ "zeroize",
 ]
 
 [[package]]

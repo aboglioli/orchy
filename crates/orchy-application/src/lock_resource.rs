@@ -5,7 +5,7 @@ use orchy_core::agent::{AgentId, AgentStore, Alias};
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
-use orchy_core::resource_lock::{LockStore, ResourceLock};
+use orchy_core::resource_lock::LockStore;
 
 use crate::dto::ResourceLockDto;
 use crate::parse_namespace;
@@ -55,26 +55,11 @@ impl LockResource {
             .ok_or_else(|| Error::NotFound(format!("agent {holder}")))?;
         let ttl_secs = cmd.ttl_secs.unwrap_or(300);
 
-        if let Some(existing) = self
+        let lock = self
             .store
-            .find(&org_id, &project, &namespace, &cmd.name)
+            .acquire_if_free(&org_id, &project, &namespace, &cmd.name, &holder, ttl_secs)
             .await?
-        {
-            if !existing.is_expired() && !existing.is_held_by(&holder) {
-                return Err(Error::Conflict(format!(
-                    "resource '{}' is locked by agent {}",
-                    cmd.name,
-                    existing.holder()
-                )));
-            }
-            self.store
-                .delete(&org_id, &project, &namespace, &cmd.name)
-                .await?;
-        }
-
-        let mut lock =
-            ResourceLock::acquire(org_id, project, namespace, cmd.name, holder, ttl_secs)?;
-        self.store.save(&mut lock).await?;
+            .ok_or_else(|| Error::Conflict(format!("resource '{}' is locked", cmd.name)))?;
         Ok(ResourceLockDto::from(&lock))
     }
 }

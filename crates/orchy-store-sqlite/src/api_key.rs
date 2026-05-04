@@ -24,9 +24,13 @@ impl SqliteApiKeyStore {
 
 #[async_trait]
 impl ApiKeyStore for SqliteApiKeyStore {
-    async fn save(&self, api_key: &ApiKey) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
+    async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        tx.execute(
             "INSERT OR REPLACE INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
@@ -42,6 +46,11 @@ impl ApiKeyStore for SqliteApiKeyStore {
             ],
         )
         .map_err(|e| Error::Store(e.to_string()))?;
+
+        let events = api_key.drain_events();
+        crate::events::write_events_in_tx(&tx, &events)?;
+
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
         Ok(())
     }
 

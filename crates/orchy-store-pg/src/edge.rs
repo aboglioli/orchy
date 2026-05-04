@@ -116,7 +116,7 @@ impl EdgeStore for PgEdgeStore {
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
              created_at, created_by, source_kind, source_id, valid_until \
              FROM edges WHERE org_id = $1 AND from_kind = $2 AND from_id = $3{rel_clause}{time_clause} \
-             ORDER BY created_at ASC"
+             ORDER BY created_at ASC LIMIT 1000"
         );
         let rows = sqlx::query(&sql)
             .bind(org.to_string())
@@ -142,7 +142,7 @@ impl EdgeStore for PgEdgeStore {
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
              created_at, created_by, source_kind, source_id, valid_until \
              FROM edges WHERE org_id = $1 AND to_kind = $2 AND to_id = $3{rel_clause}{time_clause} \
-             ORDER BY created_at ASC"
+             ORDER BY created_at ASC LIMIT 1000"
         );
         let rows = sqlx::query(&sql)
             .bind(org.to_string())

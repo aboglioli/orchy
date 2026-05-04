@@ -53,6 +53,10 @@ impl ClaimTask {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
+        if task.org_id() != &org_id {
+            return Err(Error::NotFound(format!("task {task_id}")));
+        }
+
         if !task.can_be_claimed() {
             return Err(Error::InvalidTransition {
                 from: task.status().to_string(),
@@ -86,13 +90,24 @@ impl ClaimTask {
             }
         }
 
-        task.claim(agent_id.clone())?;
+        let expected = vec![task.status()];
+
+        if !task.claim_if_available(&agent_id)? {
+            return Err(Error::Conflict(format!(
+                "task {task_id} no longer claimable"
+            )));
+        }
 
         if cmd.start.unwrap_or(false) {
             task.start(&agent_id)?;
         }
 
-        self.tasks.save(&mut task).await?;
+        let saved = self.tasks.save_if_status(&mut task, &expected).await?;
+        if !saved {
+            return Err(Error::Conflict(format!(
+                "task {task_id} was claimed concurrently"
+            )));
+        }
         Ok(TaskDto::from(&task))
     }
 }

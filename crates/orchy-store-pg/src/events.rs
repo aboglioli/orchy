@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
-use orchy_events::io::Writer;
+use orchy_events::io::{EventQuery, Writer};
 use orchy_events::{Event, SerializedEvent};
 
 pub struct PgEventWriter {
@@ -158,5 +158,19 @@ impl PgEventQuery {
             .collect();
         events.reverse();
         Ok(events)
+    }
+}
+
+#[async_trait]
+impl EventQuery for PgEventQuery {
+    async fn query_events(
+        &self,
+        organization: &str,
+        since: DateTime<Utc>,
+        limit: usize,
+    ) -> std::result::Result<Vec<SerializedEvent>, String> {
+        self.query_events(organization, since, limit)
+            .await
+            .map_err(|e| e.to_string())
     }
 }

@@ -120,6 +120,20 @@ impl MessageStore for SqliteMessageStore {
     ) -> Result<Page<Message>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
+        let role_targets: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
+        let role_targets_json = serde_json::to_string(&role_targets)
+            .map_err(|e| Error::Store(format!("serialize role targets: {e}")))?;
+
+        let ns_targets = namespace_ancestors(agent_namespace);
+        let ns_targets_json = serde_json::to_string(&ns_targets)
+            .map_err(|e| Error::Store(format!("serialize ns targets: {e}")))?;
+
+        let user_targets: Vec<String> = agent_user_id
+            .map(|uid| vec![format!("user:{uid}")])
+            .unwrap_or_default();
+        let user_targets_json = serde_json::to_string(&user_targets)
+            .map_err(|e| Error::Store(format!("serialize user targets: {e}")))?;
+
         let mut sql = String::from(
             "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs, m.claimed_by, m.claimed_at
              FROM messages m
@@ -130,23 +144,23 @@ impl MessageStore for SqliteMessageStore {
                AND (
                     m.to_target = ?1
                     OR (m.to_target = 'broadcast' AND m.from_agent != ?1)
-                    OR (m.to_target LIKE 'role:%' AND m.from_agent != ?1)
-                    OR (m.to_target LIKE 'ns:%' AND m.from_agent != ?1)
-                    OR (m.to_target LIKE 'user:%' AND m.from_agent != ?1)
-               )",
+                    OR (m.to_target IN (SELECT value FROM json_each(?4)) AND m.from_agent != ?1)
+                    OR (m.to_target IN (SELECT value FROM json_each(?5)) AND m.from_agent != ?1)
+                    OR (m.to_target IN (SELECT value FROM json_each(?6)) AND m.from_agent != ?1)
+               )
+               AND (m.claimed_by IS NULL OR m.claimed_by = ?1)",
         );
-        let user_targets: Vec<String> = agent_user_id
-            .map(|uid| vec![format!("user:{uid}")])
-            .unwrap_or_default();
+
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
             Box::new(agent.to_string()),
             Box::new(org.to_string()),
             Box::new(project.to_string()),
+            Box::new(role_targets_json),
+            Box::new(ns_targets_json),
+            Box::new(user_targets_json),
         ];
-        let role_set: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
-        let ns_str = agent_namespace.to_string();
 
-        let mut idx = 4;
+        let mut idx = 7;
 
         if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
@@ -171,27 +185,6 @@ impl MessageStore for SqliteMessageStore {
             .map_err(|e| Error::Store(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
-
-        messages.retain(|m| {
-            let visible = match m.to() {
-                MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
-                MessageTarget::Namespace(ns) => ns_str.starts_with(&ns.to_string()),
-                MessageTarget::User(uid) => user_targets.contains(&format!("user:{uid}")),
-                _ => true,
-            };
-            if !visible {
-                return false;
-            }
-            if m.is_directed_to(agent) && m.status() == MessageStatus::Read {
-                return false;
-            }
-            if let Some(claimed_by) = m.claimed_by() {
-                if claimed_by != agent {
-                    return false;
-                }
-            }
-            true
-        });
 
         let has_more = messages.len() > page.limit as usize;
         if has_more {
@@ -347,6 +340,17 @@ impl MessageStore for SqliteMessageStore {
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(messages)
     }
+}
+
+fn namespace_ancestors(ns: &Namespace) -> Vec<String> {
+    let mut ancestors = vec![format!("ns:{}", Namespace::root())];
+    let mut current = ns.clone();
+    while !current.is_root() {
+        ancestors.push(format!("ns:{current}"));
+        current = current.parent();
+    }
+    ancestors.dedup();
+    ancestors
 }
 
 fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {

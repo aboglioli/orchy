@@ -20,6 +20,7 @@ use super::parse_relation_options;
 
 use orchy_application::ListTagsCommand;
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn post_task(h: &OrchyHandler, params: PostTaskParams) -> Result<String, String> {
     let (_, project, _) = h.require_session().await?;
     let org = h.org();
@@ -37,6 +38,8 @@ pub(super) async fn post_task(h: &OrchyHandler, params: PostTaskParams) -> Resul
         priority: params.priority,
         assigned_roles: params.assigned_roles,
         created_by: h.get_session_agent().await.map(|id| id.to_string()),
+        parent_id: params.parent_id,
+        depends_on: params.depends_on,
     };
 
     match h.container.app.post_task.execute(cmd).await {
@@ -45,6 +48,7 @@ pub(super) async fn post_task(h: &OrchyHandler, params: PostTaskParams) -> Resul
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn get_next_task(
     h: &OrchyHandler,
     params: GetNextTaskParams,
@@ -117,6 +121,7 @@ pub(super) async fn get_next_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn list_tasks(
     h: &OrchyHandler,
     params: ListTasksParams,
@@ -149,6 +154,7 @@ pub(super) async fn list_tasks(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn claim_task(
     h: &OrchyHandler,
     params: ClaimTaskParams,
@@ -190,6 +196,7 @@ pub(super) async fn claim_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn start_task(
     h: &OrchyHandler,
     params: StartTaskParams,
@@ -199,6 +206,7 @@ pub(super) async fn start_task(
     let cmd = StartTaskCommand {
         task_id: params.task_id.clone(),
         agent_id: agent_id.to_string(),
+        org_id: org.to_string(),
     };
 
     match h.container.app.start_task.execute(cmd).await {
@@ -229,6 +237,7 @@ pub(super) async fn start_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn complete_task(
     h: &OrchyHandler,
     params: CompleteTaskParams,
@@ -262,6 +271,7 @@ pub(super) async fn complete_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn fail_task(h: &OrchyHandler, params: FailTaskParams) -> Result<String, String> {
     let (_, _, _) = h.require_session().await?;
     let org = h.org();
@@ -277,6 +287,7 @@ pub(super) async fn fail_task(h: &OrchyHandler, params: FailTaskParams) -> Resul
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn cancel_task(
     h: &OrchyHandler,
     params: CancelTaskParams,
@@ -295,6 +306,7 @@ pub(super) async fn cancel_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn archive_task(
     h: &OrchyHandler,
     params: ArchiveTaskParams,
@@ -312,6 +324,7 @@ pub(super) async fn archive_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn unarchive_task(
     h: &OrchyHandler,
     params: UnarchiveTaskParams,
@@ -328,6 +341,7 @@ pub(super) async fn unarchive_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn update_task(
     h: &OrchyHandler,
     params: UpdateTaskParams,
@@ -348,6 +362,7 @@ pub(super) async fn update_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn unblock_task(
     h: &OrchyHandler,
     params: UnblockTaskParams,
@@ -364,6 +379,7 @@ pub(super) async fn unblock_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn assign_task(
     h: &OrchyHandler,
     params: AssignTaskParams,
@@ -383,6 +399,7 @@ pub(super) async fn assign_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn split_task(
     h: &OrchyHandler,
     params: SplitTaskParams,
@@ -419,6 +436,7 @@ pub(super) async fn split_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn replace_task(
     h: &OrchyHandler,
     params: ReplaceTaskParams,
@@ -456,6 +474,7 @@ pub(super) async fn replace_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn merge_tasks(
     h: &OrchyHandler,
     params: MergeTasksParams,
@@ -483,6 +502,7 @@ pub(super) async fn merge_tasks(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn delegate_task(
     h: &OrchyHandler,
     params: DelegateTaskParams,
@@ -504,6 +524,7 @@ pub(super) async fn delegate_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn add_dependency(
     h: &OrchyHandler,
     params: AddDependencyParams,
@@ -522,6 +543,7 @@ pub(super) async fn add_dependency(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn remove_dependency(
     h: &OrchyHandler,
     params: RemoveDependencyParams,
@@ -540,6 +562,7 @@ pub(super) async fn remove_dependency(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn move_task(h: &OrchyHandler, params: MoveTaskParams) -> Result<String, String> {
     let _ = h.require_session().await?;
 
@@ -558,6 +581,7 @@ pub(super) async fn move_task(h: &OrchyHandler, params: MoveTaskParams) -> Resul
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn tag_task(h: &OrchyHandler, params: TagTaskParams) -> Result<String, String> {
     let _ = h.require_session().await?;
 
@@ -572,6 +596,7 @@ pub(super) async fn tag_task(h: &OrchyHandler, params: TagTaskParams) -> Result<
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn untag_task(
     h: &OrchyHandler,
     params: UntagTaskParams,
@@ -589,6 +614,7 @@ pub(super) async fn untag_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn release_task(
     h: &OrchyHandler,
     params: ReleaseTaskParams,
@@ -605,6 +631,7 @@ pub(super) async fn release_task(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<String, String> {
     let (_, _, _) = h.require_session().await?;
     let org = h.org();
@@ -619,7 +646,7 @@ pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<
             .get_task
             .execute(GetTaskCommand {
                 task_id: params.task_id.clone(),
-                org_id: Some(org.to_string()),
+                org_id: org.to_string(),
                 relations,
             })
             .await
@@ -650,6 +677,7 @@ pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn list_tags(h: &OrchyHandler, params: ListTagsParams) -> Result<String, String> {
     let (_, project, _) = h.require_session().await?;
     let org = h.org();
@@ -669,6 +697,7 @@ pub(super) async fn list_tags(h: &OrchyHandler, params: ListTagsParams) -> Resul
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn touch_task(h: &OrchyHandler, task_id: String) -> Result<String, String> {
     let (agent_id, _project, _ns) = h.require_session().await?;
     let cmd = orchy_application::TouchTaskCommand {

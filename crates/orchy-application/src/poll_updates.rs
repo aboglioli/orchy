@@ -3,15 +3,7 @@ use std::sync::Arc;
 use orchy_core::error::{Error, Result};
 use orchy_events::SerializedEvent;
 
-#[async_trait::async_trait]
-pub trait EventQuery: Send + Sync {
-    async fn query_events(
-        &self,
-        organization: &str,
-        since: chrono::DateTime<chrono::Utc>,
-        limit: usize,
-    ) -> Result<Vec<SerializedEvent>>;
-}
+pub use orchy_events::EventQuery;
 
 pub struct PollUpdatesCommand {
     pub org_id: String,
@@ -36,6 +28,9 @@ impl PollUpdates {
 
         let limit = cmd.limit.unwrap_or(50) as usize;
 
-        self.events.query_events(&cmd.org_id, since, limit).await
+        self.events
+            .query_events(&cmd.org_id, since, limit)
+            .await
+            .map_err(Error::Store)
     }
 }

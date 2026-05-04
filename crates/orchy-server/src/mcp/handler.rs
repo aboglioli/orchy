@@ -28,22 +28,26 @@ pub(crate) enum NamespacePolicy {
 pub struct OrchyHandler {
     pub(crate) container: Arc<Container>,
     auth: ApiKeyPrincipal,
+    org: OrganizationId,
     session: Arc<RwLock<Option<SessionState>>>,
     mcp_session_id: Arc<RwLock<Option<String>>>,
 }
 
 impl OrchyHandler {
-    pub fn new(container: Arc<Container>, auth: ApiKeyPrincipal) -> Self {
-        Self {
+    pub fn new(container: Arc<Container>, auth: ApiKeyPrincipal) -> Result<Self, String> {
+        let org = OrganizationId::new(&auth.org.id)
+            .map_err(|e| format!("invalid org id from resolved key: {e}"))?;
+        Ok(Self {
             container,
             auth,
+            org,
             session: Arc::new(RwLock::new(None)),
             mcp_session_id: Arc::new(RwLock::new(None)),
-        }
+        })
     }
 
     pub(crate) fn org(&self) -> OrganizationId {
-        OrganizationId::new(&self.auth.org.id).expect("org id is always valid from resolved key")
+        self.org.clone()
     }
 
     pub(crate) fn user_id(&self) -> Option<UserId> {

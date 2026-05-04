@@ -1072,7 +1072,7 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
     let tasks: Arc<dyn orchy_core::task::TaskStore> = task_store.clone();
     let edges: Arc<dyn EdgeStore> = edge_store.clone();
 
-    let post = PostTask::new(tasks.clone());
+    let post = PostTask::new(tasks.clone(), edges.clone());
     let split = SplitTask::new(tasks.clone(), edges.clone());
 
     let dep = post
@@ -1086,6 +1086,8 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1101,6 +1103,8 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1213,7 +1217,7 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
     let knowledge: Arc<dyn orchy_core::knowledge::KnowledgeStore> =
         Arc::new(MemoryKnowledgeStore::new(s));
 
-    let post_task = PostTask::new(tasks.clone());
+    let post_task = PostTask::new(tasks.clone(), edges.clone());
     let add_edge = AddEdge::new(edges.clone());
     let write_knowledge = WriteKnowledge::new(knowledge.clone(), edges.clone(), None);
     let get_task = GetTaskWithContext::new(tasks, edges, knowledge);
@@ -1229,6 +1233,8 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1244,6 +1250,8 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
             priority: None,
             assigned_roles: None,
             created_by: None,
+            parent_id: None,
+            depends_on: None,
         })
         .await
         .unwrap();
@@ -1842,4 +1850,155 @@ async fn knowledge_path_roundtrip_through_store() {
     assert_eq!(fetched.kind(), KnowledgeKind::Decision);
     assert_eq!(fetched.title(), "JWT Strategy");
     assert_eq!(fetched.content(), "We chose RS256");
+}
+
+#[tokio::test]
+async fn save_if_status_returns_true_when_match() {
+    let s = state();
+    let store = MemoryTaskStore::new(s);
+    let mut task = Task::new(
+        org(),
+        proj("proj"),
+        Namespace::root(),
+        "Atomic task".into(),
+        "desc".into(),
+        None,
+        Priority::Normal,
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    store.save(&mut task).await.unwrap();
+
+    let agent = AgentId::new();
+    task.claim(agent).unwrap();
+    let saved = store
+        .save_if_status(&mut task, &[TaskStatus::Pending])
+        .await
+        .unwrap();
+    assert!(saved);
+
+    let fetched = store.find_by_id(&task.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.status(), TaskStatus::Claimed);
+}
+
+#[tokio::test]
+async fn save_if_status_returns_false_on_status_mismatch() {
+    let s = state();
+    let store = MemoryTaskStore::new(s);
+    let agent = AgentId::new();
+    let mut task = Task::new(
+        org(),
+        proj("proj"),
+        Namespace::root(),
+        "Concurrent task".into(),
+        "desc".into(),
+        None,
+        Priority::Normal,
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    store.save(&mut task).await.unwrap();
+
+    let mut task_b = store.find_by_id(&task.id()).await.unwrap().unwrap();
+    task_b.claim(agent.clone()).unwrap();
+    store.save(&mut task_b).await.unwrap();
+
+    task.claim(AgentId::new()).unwrap();
+    let saved = store
+        .save_if_status(&mut task, &[TaskStatus::Pending])
+        .await
+        .unwrap();
+    assert!(!saved);
+
+    let fetched = store.find_by_id(&task.id()).await.unwrap().unwrap();
+    assert_eq!(fetched.assigned_to(), Some(&agent));
+}
+
+#[tokio::test]
+async fn acquire_if_free_returns_none_when_held_by_other() {
+    use orchy_core::resource_lock::LockStore;
+    let s = state();
+    let store = MemoryLockStore::new(s);
+    let agent1 = AgentId::new();
+    let agent2 = AgentId::new();
+    let p = proj("proj");
+
+    let result = store
+        .acquire_if_free(&org(), &p, &Namespace::root(), "file.rs", &agent1, 300)
+        .await
+        .unwrap();
+    assert!(result.is_some());
+
+    let result2 = store
+        .acquire_if_free(&org(), &p, &Namespace::root(), "file.rs", &agent2, 300)
+        .await
+        .unwrap();
+    assert!(result2.is_none());
+}
+
+#[tokio::test]
+async fn acquire_if_free_replaces_expired() {
+    use orchy_core::resource_lock::LockStore;
+    let s = state();
+    let store = MemoryLockStore::new(s);
+    let agent1 = AgentId::new();
+    let agent2 = AgentId::new();
+    let p = proj("proj");
+
+    let result = store
+        .acquire_if_free(&org(), &p, &Namespace::root(), "file.rs", &agent1, 0)
+        .await
+        .unwrap();
+    assert!(result.is_some());
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+    let result2 = store
+        .acquire_if_free(&org(), &p, &Namespace::root(), "file.rs", &agent2, 300)
+        .await
+        .unwrap();
+    assert!(result2.is_some());
+    assert_eq!(result2.unwrap().holder(), &agent2);
+}
+
+#[tokio::test]
+async fn release_for_agent_removes_only_matching_holder_in_org() {
+    use orchy_core::resource_lock::LockStore;
+    let s = state();
+    let store = MemoryLockStore::new(s);
+
+    let agent_a = AgentId::new();
+    let agent_b = AgentId::new();
+    let org_x = org();
+    let org_y = OrganizationId::new("other-org").unwrap();
+    let p = proj("proj");
+
+    store
+        .acquire_if_free(&org_x, &p, &Namespace::root(), "file-a.rs", &agent_a, 300)
+        .await
+        .unwrap();
+    store
+        .acquire_if_free(&org_y, &p, &Namespace::root(), "file-b.rs", &agent_a, 300)
+        .await
+        .unwrap();
+    store
+        .acquire_if_free(&org_x, &p, &Namespace::root(), "file-c.rs", &agent_b, 300)
+        .await
+        .unwrap();
+
+    let count = store.release_for_agent(&agent_a, &org_x).await.unwrap();
+    assert_eq!(count, 1);
+
+    let remaining_a_x = store.find_by_holder(&agent_a, &org_x).await.unwrap();
+    assert!(remaining_a_x.is_empty());
+
+    let remaining_a_y = store.find_by_holder(&agent_a, &org_y).await.unwrap();
+    assert_eq!(remaining_a_y.len(), 1);
+
+    let remaining_b_x = store.find_by_holder(&agent_b, &org_x).await.unwrap();
+    assert_eq!(remaining_b_x.len(), 1);
 }

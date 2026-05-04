@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use orchy_application::{Application, EventQuery};
+use orchy_application::{Application, ApplicationDeps, EventQuery};
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::api_key::ApiKeyStore;
 use orchy_core::embeddings::EmbeddingsProvider;
@@ -22,10 +22,11 @@ use orchy_store_sqlite::SqliteDatabase;
 use crate::auth::{BcryptPasswordHasher, JwtTokenEncoder, RandomApiKeyGenerator};
 use crate::config::{Config, EmbeddingsConfig};
 use crate::embeddings::{EmbeddingsBackend, OpenAiEmbeddingsProvider};
-use crate::event_query::{MemoryEventQueryAdapter, PgEventQueryAdapter, SqliteEventQueryAdapter};
+use crate::error::{BootError, BootResult};
 
 pub struct Container {
     pub app: Application,
+    pub agents: Arc<dyn AgentStore>,
     pub session_agents: Arc<RwLock<HashMap<String, AgentId>>>,
     pub config: Config,
     pub start_time: std::time::Instant,
@@ -48,7 +49,7 @@ struct Stores {
 }
 
 impl Container {
-    pub async fn from_config(config: Config) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
+    pub async fn from_config(config: Config) -> BootResult<Arc<Self>> {
         let stores = Self::build_stores(&config).await?;
         let embeddings: Option<Arc<EmbeddingsBackend>> = config
             .embeddings
@@ -67,28 +68,29 @@ impl Container {
             .await?
             .map(|e| Arc::new(e) as Arc<dyn TokenEncoder>);
 
-        let app = Application::new(
-            stores.agents.clone(),
-            stores.tasks.clone(),
-            stores.projects.clone(),
-            stores.knowledge.clone(),
-            stores.messages.clone(),
-            stores.locks.clone(),
-            stores.namespaces.clone(),
-            stores.orgs.clone(),
-            stores.edges.clone(),
-            embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
-            stores.event_query.clone(),
-            stores.users.clone(),
-            stores.memberships.clone(),
-            token_encoder.clone(),
-            password_hasher.clone(),
-            stores.api_keys.clone(),
+        let app = Application::new(ApplicationDeps {
+            agents: stores.agents.clone(),
+            tasks: stores.tasks.clone(),
+            projects: stores.projects.clone(),
+            knowledge: stores.knowledge.clone(),
+            messages: stores.messages.clone(),
+            locks: stores.locks.clone(),
+            namespaces: stores.namespaces.clone(),
+            orgs: stores.orgs.clone(),
+            edges: stores.edges.clone(),
+            embeddings: embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
+            event_query: stores.event_query.clone(),
+            users: stores.users.clone(),
+            memberships: stores.memberships.clone(),
+            token_encoder: token_encoder.clone(),
+            hasher: password_hasher.clone(),
+            api_keys: stores.api_keys.clone(),
             api_key_generator,
-        );
+        });
 
         let container = Arc::new(Self {
             app,
+            agents: stores.agents.clone(),
             session_agents: Arc::new(RwLock::new(HashMap::new())),
             config,
             start_time: std::time::Instant::now(),
@@ -99,9 +101,7 @@ impl Container {
         Ok(container)
     }
 
-    async fn init_jwt_encoder(
-        config: &Config,
-    ) -> Result<Option<JwtTokenEncoder>, Box<dyn std::error::Error>> {
+    async fn init_jwt_encoder(config: &Config) -> BootResult<Option<JwtTokenEncoder>> {
         let keys_dir = std::path::Path::new(&config.auth.keys_dir);
         let private_key_path = keys_dir.join("private.pem");
         let public_key_path = keys_dir.join("public.pem");
@@ -114,7 +114,7 @@ impl Container {
         } else {
             tracing::info!("Generating new RSA keypair for JWT signing");
             let (private_pem, public_pem) = crate::auth::generate_rsa_keypair()
-                .map_err(|e| format!("failed to generate RSA keys: {e}"))?;
+                .map_err(|e| BootError::Auth(format!("failed to generate RSA keys: {e}")))?;
 
             tokio::fs::create_dir_all(keys_dir).await?;
             tokio::fs::write(&private_key_path, &private_pem).await?;
@@ -129,12 +129,12 @@ impl Container {
             public_pem.as_bytes(),
             config.auth.jwt_duration_hours,
         )
-        .map_err(|e| format!("failed to create JWT encoder: {e}"))?;
+        .map_err(|e| BootError::Auth(format!("failed to create JWT encoder: {e}")))?;
 
         Ok(Some(encoder))
     }
 
-    async fn bootstrap_admin(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn bootstrap_admin(&self) -> BootResult<()> {
         match self.app.bootstrap_admin.execute().await {
             Ok(Some(user)) => {
                 tracing::info!(
@@ -154,7 +154,7 @@ impl Container {
         Ok(())
     }
 
-    async fn build_stores(config: &Config) -> Result<Stores, Box<dyn std::error::Error>> {
+    async fn build_stores(config: &Config) -> BootResult<Stores> {
         let embedding_dims = config
             .embeddings
             .as_ref()
@@ -164,28 +164,36 @@ impl Container {
         match config.store.backend.as_str() {
             "memory" => Ok(Self::build_memory_stores()),
             "sqlite" => {
-                let store_config = config
-                    .store
-                    .sqlite
-                    .as_ref()
-                    .ok_or("store.sqlite config required when backend = \"sqlite\"")?;
-                let backend = SqliteDatabase::new(&store_config.path, embedding_dims)?;
-                backend.run_migrations(std::path::Path::new("migrations/sqlite"))?;
+                let store_config = config.store.sqlite.as_ref().ok_or_else(|| {
+                    BootError::Config(
+                        "store.sqlite config required when backend = \"sqlite\"".to_string(),
+                    )
+                })?;
+                let backend = SqliteDatabase::new(&store_config.path, embedding_dims)
+                    .map_err(|e| BootError::Store(e.to_string()))?;
+                backend
+                    .run_migrations(std::path::Path::new("migrations/sqlite"))
+                    .map_err(|e| BootError::Migration(e.to_string()))?;
                 Ok(Self::build_sqlite_stores(backend))
             }
             "postgres" => {
-                let store_config = config
-                    .store
-                    .postgres
-                    .as_ref()
-                    .ok_or("store.postgres config required when backend = \"postgres\"")?;
-                let backend = PgDatabase::new(&store_config.url, embedding_dims).await?;
+                let store_config = config.store.postgres.as_ref().ok_or_else(|| {
+                    BootError::Config(
+                        "store.postgres config required when backend = \"postgres\"".to_string(),
+                    )
+                })?;
+                let backend = PgDatabase::new(&store_config.url, embedding_dims)
+                    .await
+                    .map_err(|e| BootError::Store(e.to_string()))?;
                 backend
                     .run_migrations(std::path::Path::new("migrations/postgres"))
-                    .await?;
+                    .await
+                    .map_err(|e| BootError::Migration(e.to_string()))?;
                 Ok(Self::build_pg_stores(backend))
             }
-            other => Err(format!("unsupported store backend: {other}").into()),
+            other => Err(BootError::Config(format!(
+                "unsupported store backend: {other}"
+            ))),
         }
     }
 
@@ -202,9 +210,7 @@ impl Container {
             orgs: Arc::new(MemoryOrganizationStore::new(state.clone())),
             api_keys: Arc::new(MemoryApiKeyStore::new(state.clone())),
             edges: Arc::new(MemoryEdgeStore::new(state.clone())),
-            event_query: Arc::new(MemoryEventQueryAdapter(MemoryEventQuery::new(
-                state.clone(),
-            ))),
+            event_query: Arc::new(MemoryEventQuery::new(state.clone())),
             users: Arc::new(MemoryUserStore::new(state.clone())),
             memberships: Arc::new(MemoryOrgMembershipStore::new(state)),
         }
@@ -224,7 +230,7 @@ impl Container {
             orgs: Arc::new(SqliteOrganizationStore::new(conn.clone())),
             api_keys: Arc::new(SqliteApiKeyStore::new(conn.clone())),
             edges: Arc::new(SqliteEdgeStore::new(conn.clone())),
-            event_query: Arc::new(SqliteEventQueryAdapter(SqliteEventQuery::new(conn.clone()))),
+            event_query: Arc::new(SqliteEventQuery::new(conn.clone())),
             users: Arc::new(SqliteUserStore::new(conn.clone())),
             memberships: Arc::new(SqliteOrgMembershipStore::new(conn)),
         }
@@ -233,42 +239,40 @@ impl Container {
     fn build_pg_stores(backend: PgDatabase) -> Stores {
         use orchy_store_pg::*;
         let pool = backend.pool();
-        let dims = backend.embedding_dimensions();
         Stores {
             agents: Arc::new(PgAgentStore::new(pool.clone())),
             tasks: Arc::new(PgTaskStore::new(pool.clone())),
             projects: Arc::new(PgProjectStore::new(pool.clone())),
-            knowledge: Arc::new(PgKnowledgeStore::new(pool.clone(), dims)),
+            knowledge: Arc::new(PgKnowledgeStore::new(pool.clone())),
             messages: Arc::new(PgMessageStore::new(pool.clone())),
             locks: Arc::new(PgLockStore::new(pool.clone())),
             namespaces: Arc::new(PgNamespaceStore::new(pool.clone())),
             orgs: Arc::new(PgOrganizationStore::new(pool.clone())),
             api_keys: Arc::new(PgApiKeyStore::new(pool.clone())),
             edges: Arc::new(PgEdgeStore::new(pool.clone())),
-            event_query: Arc::new(PgEventQueryAdapter(orchy_store_pg::PgEventQuery::new(
-                pool.clone(),
-            ))),
+            event_query: Arc::new(orchy_store_pg::PgEventQuery::new(pool.clone())),
             users: Arc::new(PgUserStore::new(pool.clone())),
             memberships: Arc::new(PgOrgMembershipStore::new(pool)),
         }
     }
 
-    fn build_embeddings(
-        config: &EmbeddingsConfig,
-    ) -> Result<EmbeddingsBackend, Box<dyn std::error::Error>> {
+    fn build_embeddings(config: &EmbeddingsConfig) -> BootResult<EmbeddingsBackend> {
         match config.provider.as_str() {
             "openai" => {
-                let openai = config
-                    .openai
-                    .as_ref()
-                    .ok_or("embeddings.openai config required when provider = \"openai\"")?;
+                let openai = config.openai.as_ref().ok_or_else(|| {
+                    BootError::Embeddings(
+                        "embeddings.openai config required when provider = \"openai\"".to_string(),
+                    )
+                })?;
                 Ok(EmbeddingsBackend::OpenAi(OpenAiEmbeddingsProvider::new(
                     openai.url.clone(),
                     openai.model.clone(),
                     openai.dimensions,
                 )))
             }
-            other => Err(format!("unsupported embeddings provider: {other}").into()),
+            other => Err(BootError::Embeddings(format!(
+                "unsupported embeddings provider: {other}"
+            ))),
         }
     }
 }

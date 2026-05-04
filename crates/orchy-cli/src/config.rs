@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
+use secrecy::SecretString;
 use serde::Deserialize;
 
-/// Resolved CLI configuration after layering: global file → repo-local file → env → flags.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub url: String,
-    pub api_key: String,
+    pub api_key: SecretString,
     pub org: Option<String>,
     pub project: String,
     pub namespace: String,
@@ -56,6 +56,7 @@ impl Config {
     /// 2. Repo-local file (.orchy.toml, walked up from cwd)
     /// 3. Environment variables
     /// 4. CLI flags
+    #[allow(clippy::too_many_arguments)]
     pub fn resolve(
         flag_url: Option<&str>,
         flag_api_key: Option<&str>,
@@ -70,12 +71,18 @@ impl Config {
         let global = read_global_config();
         let local = read_repo_config();
 
-        // Layer: global → local → env → flags (last wins)
+        let env_url = env("ORCHY_URL");
+        let env_api_key = env("ORCHY_API_KEY");
+        let env_org = env("ORCHY_ORG");
+        let env_project = env("ORCHY_PROJECT");
+        let env_namespace = env("ORCHY_NAMESPACE");
+        let env_alias = env("ORCHY_ALIAS");
+
         let url = pick(
             &[
                 global.as_ref().and_then(|c| c.url.as_deref()),
                 local.as_ref().and_then(|c| c.url.as_deref()),
-                env("ORCHY_URL"),
+                env_url.as_deref(),
                 flag_url,
             ],
             "url",
@@ -88,7 +95,7 @@ impl Config {
                 &[
                     global.as_ref().and_then(|c| c.api_key.as_deref()),
                     local.as_ref().and_then(|c| c.api_key.as_deref()),
-                    env("ORCHY_API_KEY"),
+                    env_api_key.as_deref(),
                     flag_api_key,
                 ],
                 "api_key",
@@ -99,7 +106,7 @@ impl Config {
             pick_opt(&[
                 global.as_ref().and_then(|c| c.api_key.as_deref()),
                 local.as_ref().and_then(|c| c.api_key.as_deref()),
-                env("ORCHY_API_KEY"),
+                env_api_key.as_deref(),
                 flag_api_key,
             ])
             .unwrap_or_default()
@@ -108,7 +115,7 @@ impl Config {
         let org = pick_opt(&[
             global.as_ref().and_then(|c| c.org.as_deref()),
             local.as_ref().and_then(|c| c.org.as_deref()),
-            env("ORCHY_ORG"),
+            env_org.as_deref(),
             flag_org,
         ]);
 
@@ -117,7 +124,7 @@ impl Config {
                 &[
                     global.as_ref().and_then(|c| c.project.as_deref()),
                     local.as_ref().and_then(|c| c.project.as_deref()),
-                    env("ORCHY_PROJECT"),
+                    env_project.as_deref(),
                     flag_project,
                 ],
                 "project",
@@ -128,7 +135,7 @@ impl Config {
             pick_opt(&[
                 global.as_ref().and_then(|c| c.project.as_deref()),
                 local.as_ref().and_then(|c| c.project.as_deref()),
-                env("ORCHY_PROJECT"),
+                env_project.as_deref(),
                 flag_project,
             ])
             .unwrap_or_default()
@@ -137,7 +144,7 @@ impl Config {
         let namespace = pick_opt(&[
             global.as_ref().and_then(|c| c.namespace.as_deref()),
             local.as_ref().and_then(|c| c.namespace.as_deref()),
-            env("ORCHY_NAMESPACE"),
+            env_namespace.as_deref(),
             flag_namespace,
         ])
         .unwrap_or_else(|| "/".to_string());
@@ -145,7 +152,7 @@ impl Config {
         let alias = pick_opt(&[
             global.as_ref().and_then(|c| c.alias.as_deref()),
             local.as_ref().and_then(|c| c.alias.as_deref()),
-            env("ORCHY_ALIAS"),
+            env_alias.as_deref(),
             flag_agent,
         ]);
 
@@ -163,7 +170,7 @@ impl Config {
 
         let config = Config {
             url: url.clone(),
-            api_key: api_key.clone(),
+            api_key: SecretString::new(api_key.into_boxed_str()),
             org,
             project: project.clone(),
             namespace: namespace.clone(),
@@ -180,7 +187,8 @@ impl Config {
     }
 
     fn validate(&self, requires_api_key: bool, requires_project: bool) -> Result<(), ConfigError> {
-        // URL validation
+        use secrecy::ExposeSecret;
+
         if !self.url.starts_with("http://") && !self.url.starts_with("https://") {
             return Err(ConfigError::InvalidField {
                 field: "url".into(),
@@ -188,7 +196,6 @@ impl Config {
             });
         }
 
-        // Basic URL structure check
         if !self.url.contains("://") || self.url.ends_with("://") {
             return Err(ConfigError::InvalidField {
                 field: "url".into(),
@@ -196,8 +203,7 @@ impl Config {
             });
         }
 
-        // API key validation
-        if requires_api_key && self.api_key.is_empty() {
+        if requires_api_key && self.api_key.expose_secret().is_empty() {
             return Err(ConfigError::InvalidField {
                 field: "api_key".into(),
                 message: "must not be empty".into(),
@@ -245,8 +251,8 @@ impl Config {
     }
 }
 
-fn env(key: &str) -> Option<&'static str> {
-    std::env::var(key).ok().map(|s| s.leak() as &_)
+fn env(key: &str) -> Option<String> {
+    std::env::var(key).ok()
 }
 
 fn pick(
@@ -338,5 +344,26 @@ fn find_repo_config_path() -> Option<PathBuf> {
         if !dir.pop() {
             return None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use secrecy::ExposeSecret;
+
+    use super::*;
+
+    #[test]
+    fn env_returns_owned_string_not_leaked() {
+        unsafe { std::env::set_var("ORCHY_TEST_OWNED", "hello") };
+        let result: Option<String> = env("ORCHY_TEST_OWNED");
+        assert_eq!(result.as_deref(), Some("hello"));
+        unsafe { std::env::remove_var("ORCHY_TEST_OWNED") };
+    }
+
+    #[test]
+    fn secret_string_round_trip() {
+        let secret = SecretString::new("test123".to_string().into_boxed_str());
+        assert_eq!(secret.expose_secret(), "test123");
     }
 }

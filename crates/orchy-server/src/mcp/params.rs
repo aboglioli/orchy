@@ -48,6 +48,10 @@ pub struct PostTaskParams {
     pub priority: Option<String>,
     /// Roles that can claim this task. Empty = any role.
     pub assigned_roles: Option<Vec<String>>,
+    /// Optional parent task ID. Creates a Spawns edge from parent to new task.
+    pub parent_id: Option<String>,
+    /// Optional list of task IDs this new task depends on. Creates DependsOn edges.
+    pub depends_on: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

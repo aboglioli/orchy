@@ -22,6 +22,7 @@ pub struct CreateOrgBody {
     pub name: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn create(
     State(container): State<Arc<Container>>,
     Json(body): Json<CreateOrgBody>,
@@ -38,6 +39,7 @@ pub async fn create(
     Ok(Json(resp))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
@@ -51,6 +53,7 @@ pub async fn list(
     Ok(Json(orgs))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn get(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
@@ -70,6 +73,7 @@ pub struct GenerateApiKeyBody {
     pub name: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn generate_api_key(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -88,6 +92,7 @@ pub async fn generate_api_key(
     Ok(Json(resp))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list_api_keys(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -103,15 +108,19 @@ pub async fn list_api_keys(
     Ok(Json(keys))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn revoke_api_key(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path(key_id_str): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     container
         .app
         .revoke_api_key
-        .execute(RevokeApiKeyCommand { key_id: key_id_str })
+        .execute(RevokeApiKeyCommand {
+            key_id: key_id_str,
+            org_id: auth.org.id.clone(),
+        })
         .await
         .map_err(ApiError::from)?;
     Ok(StatusCode::NO_CONTENT)

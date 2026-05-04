@@ -6,6 +6,7 @@ use crate::mcp::params::{AddEdgeParams, QueryRelationsParams, RemoveEdgeParams};
 
 use super::{parse_as_of, parse_direction, parse_rel_type_alias};
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn add_edge(h: &OrchyHandler, params: AddEdgeParams) -> Result<String, String> {
     let (_, _, _) = h.require_session().await?;
     let org = h.org();
@@ -26,14 +27,17 @@ pub(super) async fn add_edge(h: &OrchyHandler, params: AddEdgeParams) -> Result<
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn remove_edge(
     h: &OrchyHandler,
     params: RemoveEdgeParams,
 ) -> Result<String, String> {
     h.require_session().await?;
+    let org = h.org();
 
     let cmd = RemoveEdgeCommand {
         edge_id: params.edge_id,
+        org_id: org.to_string(),
     };
 
     match h.container.app.remove_edge.execute(cmd).await {
@@ -42,6 +46,7 @@ pub(super) async fn remove_edge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn query_relations(
     h: &OrchyHandler,
     params: QueryRelationsParams,

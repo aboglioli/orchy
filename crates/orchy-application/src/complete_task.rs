@@ -37,6 +37,10 @@ impl CompleteTask {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
+        if task.org_id() != &org_id {
+            return Err(Error::NotFound(format!("task {task_id}")));
+        }
+
         task.complete(cmd.summary)?;
         self.tasks.save(&mut task).await?;
 

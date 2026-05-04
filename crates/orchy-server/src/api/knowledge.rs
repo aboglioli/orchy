@@ -144,6 +144,7 @@ pub struct KnowledgeTypeDto {
     pub description: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -182,6 +183,7 @@ pub async fn list(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list_types(
     auth: OrgAuth,
     Path(_project): Path<String>,
@@ -200,6 +202,7 @@ pub async fn list_types(
     Ok(Json(types))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn search(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -237,6 +240,7 @@ pub async fn search(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn import(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -272,6 +276,7 @@ pub async fn import(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -318,6 +323,7 @@ pub async fn read(
     )?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn write(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -360,6 +366,7 @@ pub async fn write(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn delete(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -410,6 +417,7 @@ pub async fn delete(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn append(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -446,6 +454,7 @@ pub async fn append(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn move_entry(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -478,6 +487,7 @@ pub async fn move_entry(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn rename(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -510,6 +520,7 @@ pub async fn rename(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn archive(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -543,6 +554,7 @@ pub async fn archive(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn unarchive(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -575,6 +587,7 @@ pub async fn unarchive(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn change_kind(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -608,6 +621,7 @@ pub async fn change_kind(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn patch_metadata(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -644,6 +658,7 @@ pub async fn patch_metadata(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn tag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -676,6 +691,7 @@ pub async fn tag(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn untag(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -708,6 +724,7 @@ pub async fn untag(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn knowledge_action(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -810,6 +827,7 @@ pub async fn knowledge_action(
     ))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn knowledge_patch(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -855,6 +873,7 @@ pub struct PromoteBody {
     pub namespace: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn promote(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -900,6 +919,7 @@ pub struct ConsolidateBody {
     pub namespace: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn consolidate(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,

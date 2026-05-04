@@ -8,14 +8,14 @@ export type LockDto = {
 };
 
 export type LockService = {
-  check: (org: string, project: string, name: string) => Promise<LockDto | null>;
+  check: (_org: string, project: string, name: string) => Promise<LockDto | null>;
 };
 
 export function createLockService(client: HttpClient): LockService {
   return {
-    check(org: string, project: string, name: string): Promise<LockDto | null> {
+    check(_org: string, project: string, name: string): Promise<LockDto | null> {
       return client.get(
-        `/organizations/${encodeURIComponent(org)}/projects/${encodeURIComponent(project)}/locks/${encodeURIComponent(name)}`,
+        `/projects/${encodeURIComponent(project)}/locks/${encodeURIComponent(name)}`,
       );
     },
   };

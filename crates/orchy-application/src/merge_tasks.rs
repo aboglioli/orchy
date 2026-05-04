@@ -155,7 +155,7 @@ impl MergeTasks {
         }
 
         for source in &cancelled {
-            let mut edge = match Edge::new(
+            let mut edge = Edge::new(
                 org_id.clone(),
                 ResourceKind::Task,
                 merged.id().to_string(),
@@ -163,16 +163,8 @@ impl MergeTasks {
                 source.id().to_string(),
                 RelationType::MergedFrom,
                 created_by.clone(),
-            ) {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::warn!("failed to create edge: {e}");
-                    continue;
-                }
-            };
-            if let Err(e) = self.edges.save(&mut edge).await {
-                tracing::warn!("failed to create merged_from edge for {}: {e}", source.id());
-            }
+            )?;
+            self.edges.save(&mut edge).await?;
         }
 
         for source_id in &source_ids {

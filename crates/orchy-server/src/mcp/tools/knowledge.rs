@@ -22,6 +22,7 @@ use super::{
     knowledge_metadata_from_json_str, optional_knowledge_metadata, parse_relation_options,
 };
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn list_knowledge_types(
     _h: &OrchyHandler,
     _params: ListKnowledgeTypesParams,
@@ -38,6 +39,7 @@ pub(super) async fn list_knowledge_types(
     Ok(to_json(&types))
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn write_knowledge(
     h: &OrchyHandler,
     params: WriteKnowledgeParams,
@@ -78,6 +80,7 @@ pub(super) async fn write_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn patch_knowledge_metadata(
     h: &OrchyHandler,
     params: PatchKnowledgeMetadataParams,
@@ -109,6 +112,7 @@ pub(super) async fn patch_knowledge_metadata(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn read_knowledge(
     h: &OrchyHandler,
     params: ReadKnowledgeParams,
@@ -138,6 +142,7 @@ pub(super) async fn read_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn list_knowledge(
     h: &OrchyHandler,
     params: ListKnowledgeParams,
@@ -181,6 +186,7 @@ pub(super) async fn list_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn search_knowledge(
     h: &OrchyHandler,
     params: SearchKnowledgeParams,
@@ -210,6 +216,7 @@ pub(super) async fn search_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn delete_knowledge(
     h: &OrchyHandler,
     params: DeleteKnowledgeParams,
@@ -233,6 +240,7 @@ pub(super) async fn delete_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn archive_knowledge(
     h: &OrchyHandler,
     params: ArchiveKnowledgeParams,
@@ -252,6 +260,7 @@ pub(super) async fn archive_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn unarchive_knowledge(
     h: &OrchyHandler,
     params: UnarchiveKnowledgeParams,
@@ -270,6 +279,7 @@ pub(super) async fn unarchive_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn append_knowledge(
     h: &OrchyHandler,
     params: AppendKnowledgeParams,
@@ -300,6 +310,7 @@ pub(super) async fn append_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn move_knowledge(
     h: &OrchyHandler,
     params: MoveKnowledgeParams,
@@ -328,6 +339,7 @@ pub(super) async fn move_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn rename_knowledge(
     h: &OrchyHandler,
     params: RenameKnowledgeParams,
@@ -352,6 +364,7 @@ pub(super) async fn rename_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn change_knowledge_kind(
     h: &OrchyHandler,
     params: ChangeKnowledgeKindParams,
@@ -377,6 +390,7 @@ pub(super) async fn change_knowledge_kind(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn tag_knowledge(
     h: &OrchyHandler,
     params: TagKnowledgeParams,
@@ -401,6 +415,7 @@ pub(super) async fn tag_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn untag_knowledge(
     h: &OrchyHandler,
     params: UntagKnowledgeParams,
@@ -425,6 +440,7 @@ pub(super) async fn untag_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn import_knowledge(
     h: &OrchyHandler,
     params: ImportKnowledgeParams,
@@ -452,6 +468,7 @@ pub(super) async fn import_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn assemble_context(
     h: &OrchyHandler,
     params: AssembleContextParams,
@@ -471,6 +488,7 @@ pub(super) async fn assemble_context(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn promote_knowledge(
     h: &OrchyHandler,
     params: PromoteKnowledgeParams,
@@ -497,6 +515,7 @@ pub(super) async fn promote_knowledge(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn consolidate_knowledge(
     h: &OrchyHandler,
     params: ConsolidateKnowledgeParams,

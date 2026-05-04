@@ -8,13 +8,13 @@ export type AgentDto = {
 };
 
 export type AgentService = {
-  listAgents: (org: string) => Promise<AgentDto[]>;
+  listAgents: (_org: string) => Promise<AgentDto[]>;
 };
 
 export function createAgentService(client: HttpClient): AgentService {
   return {
-    listAgents(org: string): Promise<AgentDto[]> {
-      return client.get(`/organizations/${encodeURIComponent(org)}/agents`);
+    listAgents(_org: string): Promise<AgentDto[]> {
+      return client.get(`/agents`);
     },
   };
 }

@@ -153,7 +153,7 @@ mod get_project_overview;
 mod poll_updates;
 
 pub use change_roles::{ChangeRoles, ChangeRolesCommand};
-pub use check_timed_out_agents::CheckTimedOutAgents;
+pub use check_timed_out_agents::{CheckTimedOutAgents, CheckTimedOutAgentsResult};
 pub use dto::RegisterAgentDto;
 pub use get_agent::{GetAgent, GetAgentCommand, GetAgentDto};
 pub use get_agent_summary::{GetAgentSummary, GetAgentSummaryCommand};
@@ -265,6 +265,26 @@ pub use dto::{
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
 
+pub struct ApplicationDeps {
+    pub agents: Arc<dyn AgentStore>,
+    pub tasks: Arc<dyn TaskStore>,
+    pub projects: Arc<dyn ProjectStore>,
+    pub knowledge: Arc<dyn KnowledgeStore>,
+    pub messages: Arc<dyn MessageStore>,
+    pub locks: Arc<dyn LockStore>,
+    pub namespaces: Arc<dyn NamespaceStore>,
+    pub orgs: Arc<dyn OrganizationStore>,
+    pub edges: Arc<dyn EdgeStore>,
+    pub embeddings: Option<Arc<dyn EmbeddingsProvider>>,
+    pub event_query: Arc<dyn EventQuery>,
+    pub users: Arc<dyn UserStore>,
+    pub memberships: Arc<dyn OrgMembershipStore>,
+    pub token_encoder: Option<Arc<dyn TokenEncoder>>,
+    pub hasher: Arc<dyn PasswordHasher>,
+    pub api_keys: Arc<dyn ApiKeyStore>,
+    pub api_key_generator: Arc<dyn ApiKeyGenerator>,
+}
+
 pub struct Application {
     pub register_agent: RegisterAgent,
     pub switch_context: SwitchContext,
@@ -373,26 +393,24 @@ pub struct Application {
 }
 
 impl Application {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        agents: Arc<dyn AgentStore>,
-        tasks: Arc<dyn TaskStore>,
-        projects: Arc<dyn ProjectStore>,
-        knowledge: Arc<dyn KnowledgeStore>,
-        messages: Arc<dyn MessageStore>,
-        locks: Arc<dyn LockStore>,
-        namespaces: Arc<dyn NamespaceStore>,
-        orgs: Arc<dyn OrganizationStore>,
-        edges: Arc<dyn EdgeStore>,
-        embeddings: Option<Arc<dyn EmbeddingsProvider>>,
-        event_query: Arc<dyn EventQuery>,
-        users: Arc<dyn UserStore>,
-        memberships: Arc<dyn OrgMembershipStore>,
-        token_encoder: Option<Arc<dyn TokenEncoder>>,
-        hasher: Arc<dyn PasswordHasher>,
-        api_keys: Arc<dyn ApiKeyStore>,
-        generator: Arc<dyn ApiKeyGenerator>,
-    ) -> Self {
+    pub fn new(deps: ApplicationDeps) -> Self {
+        let agents = deps.agents;
+        let tasks = deps.tasks;
+        let projects = deps.projects;
+        let knowledge = deps.knowledge;
+        let messages = deps.messages;
+        let locks = deps.locks;
+        let namespaces = deps.namespaces;
+        let orgs = deps.orgs;
+        let edges = deps.edges;
+        let embeddings = deps.embeddings;
+        let event_query = deps.event_query;
+        let users = deps.users;
+        let memberships = deps.memberships;
+        let token_encoder = deps.token_encoder;
+        let hasher = deps.hasher;
+        let api_keys = deps.api_keys;
+        let generator = deps.api_key_generator;
         let materializer = Arc::new(MaterializeNeighborhood::new(
             edges.clone(),
             tasks.clone(),
@@ -423,9 +441,13 @@ impl Application {
             ),
             list_agents: ListAgents::new(agents.clone()),
             suggest_roles: SuggestRoles::new(tasks.clone()),
-            check_timed_out_agents: CheckTimedOutAgents::new(agents.clone()),
+            check_timed_out_agents: CheckTimedOutAgents::new(
+                agents.clone(),
+                tasks.clone(),
+                locks.clone(),
+            ),
 
-            post_task: PostTask::new(tasks.clone()),
+            post_task: PostTask::new(tasks.clone(), edges.clone()),
             get_task: GetTask::new(tasks.clone(), Some(Arc::clone(&materializer))),
             get_task_with_context: GetTaskWithContext::new(
                 tasks.clone(),

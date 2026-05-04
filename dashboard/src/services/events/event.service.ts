@@ -15,12 +15,12 @@ export type PollEventsResponse = {
 };
 
 export type EventService = {
-  poll: (org: string, project: string, since?: string, limit?: number) => Promise<PollEventsResponse>;
+  poll: (_org: string, project: string, since?: string, limit?: number) => Promise<PollEventsResponse>;
 };
 
 export function createEventService(client: HttpClient): EventService {
   return {
-    poll(org: string, project: string, since?: string, limit?: number): Promise<PollEventsResponse> {
+    poll(_org: string, project: string, since?: string, limit?: number): Promise<PollEventsResponse> {
       const params = new URLSearchParams();
       if (since) {
         params.set('since', since);
@@ -32,7 +32,7 @@ export function createEventService(client: HttpClient): EventService {
       const suffix = query ? `?${query}` : '';
 
       return client.get(
-        `/organizations/${encodeURIComponent(org)}/projects/${encodeURIComponent(project)}/events${suffix}`,
+        `/projects/${encodeURIComponent(project)}/events${suffix}`,
       );
     },
   };

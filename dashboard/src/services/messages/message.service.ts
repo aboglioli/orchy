@@ -9,12 +9,12 @@ export type MessageDto = {
 };
 
 export type MessageService = {
-  getThread: (org: string, project: string, messageId: string, limit?: number) => Promise<MessageDto[]>;
+  getThread: (_org: string, project: string, messageId: string, limit?: number) => Promise<MessageDto[]>;
 };
 
 export function createMessageService(client: HttpClient): MessageService {
   return {
-    getThread(org: string, project: string, messageId: string, limit?: number): Promise<MessageDto[]> {
+    getThread(_org: string, project: string, messageId: string, limit?: number): Promise<MessageDto[]> {
       const params = new URLSearchParams();
       if (limit !== undefined) {
         params.set('limit', String(limit));
@@ -23,7 +23,7 @@ export function createMessageService(client: HttpClient): MessageService {
       const suffix = query ? `?${query}` : '';
 
       return client.get(
-        `/organizations/${encodeURIComponent(org)}/projects/${encodeURIComponent(project)}/messages/${encodeURIComponent(messageId)}/thread${suffix}`,
+        `/projects/${encodeURIComponent(project)}/messages/${encodeURIComponent(messageId)}/thread${suffix}`,
       );
     },
   };

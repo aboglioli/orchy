@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 
-use crate::client::OrchyClient;
+use crate::client::{CliError, OrchyClient};
 use crate::config::Config;
 use crate::output;
 
@@ -573,7 +573,8 @@ pub async fn run(
                             .map(|(k, v)| (k.to_string(), v.to_string()))
                     })
                     .collect();
-                body["set"] = serde_json::to_value(&map).unwrap();
+                body["set"] = serde_json::to_value(&map)
+                    .map_err(|e| CliError::Request(format!("serialize metadata: {e}")))?;
             }
             if !remove.is_empty() {
                 body["remove"] = serde_json::Value::Array(

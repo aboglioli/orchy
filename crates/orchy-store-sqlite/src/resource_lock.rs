@@ -31,6 +31,60 @@ impl SqliteLockStore {
 
 #[async_trait]
 impl LockStore for SqliteLockStore {
+    async fn acquire_if_free(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+        holder: &AgentId,
+        ttl_secs: u64,
+    ) -> Result<Option<ResourceLock>> {
+        let now = chrono::Utc::now();
+        let expires_at = now + chrono::Duration::seconds(ttl_secs as i64);
+
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let affected = tx
+            .execute(
+                "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT (organization_id, project, namespace, name) DO UPDATE
+                 SET holder = excluded.holder, acquired_at = excluded.acquired_at, expires_at = excluded.expires_at
+                 WHERE resource_locks.expires_at <= ?6 OR resource_locks.holder = excluded.holder",
+                rusqlite::params![
+                    org.to_string(),
+                    project.to_string(),
+                    namespace.to_string(),
+                    name,
+                    holder.to_string(),
+                    now.to_rfc3339(),
+                    expires_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        if affected == 0 {
+            return Ok(None);
+        }
+
+        let mut lock = ResourceLock::acquire(
+            org.clone(),
+            project.clone(),
+            namespace.clone(),
+            name.to_string(),
+            holder.clone(),
+            ttl_secs,
+        )?;
+        let events = lock.drain_events();
+        crate::events::write_events_in_tx(&tx, &events)?;
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        Ok(Some(lock))
+    }
+
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn
@@ -135,6 +189,17 @@ impl LockStore for SqliteLockStore {
             .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(locks)
+    }
+
+    async fn release_for_agent(&self, holder: &AgentId, org: &OrganizationId) -> Result<u64> {
+        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let count = conn
+            .execute(
+                "DELETE FROM resource_locks WHERE holder = ?1 AND organization_id = ?2",
+                rusqlite::params![holder.to_string(), org.to_string()],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(count as u64)
     }
 
     async fn delete_expired(&self) -> Result<u64> {

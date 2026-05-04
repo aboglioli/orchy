@@ -27,6 +27,7 @@ fn parse_org(s: &str) -> Result<OrganizationId, ApiError> {
 use orchy_core::message::MessageId;
 use std::str::FromStr;
 
+#[tracing::instrument(skip_all)]
 pub async fn claim_message(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
@@ -48,6 +49,7 @@ pub async fn claim_message(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn unclaim_message(
     State(container): State<Arc<Container>>,
     _auth: OrgAuth,
@@ -143,6 +145,7 @@ async fn resolve_agent_id_for_messages(
     Ok((agent.id, agent.project))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn inbox_for_agent(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -179,6 +182,7 @@ pub async fn inbox_for_agent(
     Ok(Json(v))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn sent_for_agent(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -216,6 +220,7 @@ pub async fn sent_for_agent(
     Ok(Json(v))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn send(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -256,6 +261,7 @@ pub struct MarkReadQuery {
     pub project: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn mark_read(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -283,6 +289,7 @@ pub async fn mark_read(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn thread(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,

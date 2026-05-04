@@ -15,6 +15,7 @@ use orchy_server::api;
 use orchy_server::bootstrap;
 use orchy_server::config::Config;
 use orchy_server::container::Container;
+use orchy_server::error::{BootError, BootResult};
 use orchy_server::heartbeat::run_heartbeat_monitor;
 use orchy_server::mcp::OrchyHandler;
 use orchy_server::skill_loader;
@@ -28,9 +29,15 @@ async fn main() {
     }
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> BootResult<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("orchy=info".parse()?))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive(
+                "orchy=info"
+                    .parse()
+                    .map_err(|e| BootError::Config(format!("invalid log directive: {e}")))?,
+            ),
+        )
         .init();
 
     let config_path = std::env::args()
@@ -38,32 +45,35 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "config.toml".to_string());
 
     let config_content = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("failed to read config file {config_path}: {e}"))?;
+        .map_err(|e| BootError::Config(format!("failed to read config file {config_path}: {e}")))?;
 
-    let config: Config =
-        toml::from_str(&config_content).map_err(|e| format!("failed to parse config file: {e}"))?;
+    let config: Config = toml::from_str(&config_content)
+        .map_err(|e| BootError::Config(format!("failed to parse config file: {e}")))?;
 
     config
         .validate()
-        .map_err(|e| format!("invalid config: {e}"))?;
+        .map_err(|e| BootError::Config(format!("invalid config: {e}")))?;
 
     let host = config.server.host.clone();
     let port = config.server.port;
 
-    let container = Container::from_config(config)
-        .await
-        .map_err(|e| format!("failed to build container: {e}"))?;
+    let container = Container::from_config(config).await?;
 
     if let Some(ref skills_config) = container.config.skills {
         let dir = std::path::Path::new(&skills_config.dir);
         skill_loader::load_skills_from_dir(dir, &container.app)
             .await
-            .map_err(|e| format!("failed to load skills from disk: {e}"))?;
+            .map_err(|e| BootError::Other(format!("failed to load skills from disk: {e}")))?;
     }
 
     let heartbeat_container = Arc::clone(&container);
     tokio::spawn(async move {
         run_heartbeat_monitor(heartbeat_container).await;
+    });
+
+    let session_pruner_container = Arc::clone(&container);
+    tokio::spawn(async move {
+        run_session_pruner(session_pruner_container).await;
     });
 
     let bootstrap_container = Arc::clone(&container);
@@ -95,15 +105,39 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{host}:{port}");
     let listener = TcpListener::bind(&addr)
         .await
-        .map_err(|e| format!("failed to bind to {addr}: {e}"))?;
+        .map_err(|e| BootError::Other(format!("failed to bind to {addr}: {e}")))?;
 
     info!(%addr, "orchy server listening");
 
     axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown_signal())
         .await
-        .map_err(|e| format!("server error: {e}"))?;
+        .map_err(|e| BootError::Other(format!("server error: {e}")))?;
 
+    info!("orchy server shut down cleanly");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut s) = signal(SignalKind::terminate()) {
+            s.recv().await;
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => info!("SIGINT received, beginning graceful shutdown"),
+        _ = terminate => info!("SIGTERM received, beginning graceful shutdown"),
+    }
 }
 
 async fn mcp_handler(
@@ -125,7 +159,9 @@ async fn mcp_handler(
 
     let container_clone = Arc::clone(&container);
     let mut service = StreamableHttpService::new(
-        move || Ok(OrchyHandler::new(container_clone.clone(), auth.clone())),
+        move || {
+            OrchyHandler::new(container_clone.clone(), auth.clone()).map_err(std::io::Error::other)
+        },
         session_manager,
         Default::default(),
     );
@@ -225,5 +261,54 @@ async fn bootstrap_handler(
         )
             .into_response(),
         Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+async fn run_session_pruner(container: Arc<Container>) {
+    use std::collections::HashSet;
+    use tokio::time::{Duration, sleep};
+
+    let interval = Duration::from_secs(300);
+
+    loop {
+        sleep(interval).await;
+
+        let snapshot: Vec<(String, orchy_core::agent::AgentId)> = {
+            let sessions = container.session_agents.read().await;
+            sessions
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        };
+        if snapshot.is_empty() {
+            continue;
+        }
+
+        let agent_ids: Vec<orchy_core::agent::AgentId> =
+            snapshot.iter().map(|(_, id)| id.clone()).collect();
+        let alive: HashSet<orchy_core::agent::AgentId> = match container
+            .agents
+            .find_by_ids(&agent_ids)
+            .await
+        {
+            Ok(found) => found.into_iter().map(|a| a.id().clone()).collect(),
+            Err(e) => {
+                tracing::warn!(error = %e, "session pruner: failed to query agents, skipping cycle");
+                continue;
+            }
+        };
+
+        let mut pruned = 0u32;
+        let mut sessions = container.session_agents.write().await;
+        sessions.retain(|_, agent_id| {
+            let keep = alive.contains(agent_id);
+            if !keep {
+                pruned += 1;
+            }
+            keep
+        });
+        if pruned > 0 {
+            tracing::info!(pruned, "session pruner removed stale sessions");
+        }
     }
 }

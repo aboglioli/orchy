@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use orchy_core::error::{Error, Result};
-use orchy_events::io::Writer;
+use orchy_events::io::{EventQuery, Writer};
 use orchy_events::{Event, SerializedEvent};
 
 use crate::SqliteConn;
@@ -116,5 +116,18 @@ impl Writer for SqliteEventWriter {
             .lock()
             .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
         append_event(&conn, event)
+    }
+}
+
+#[async_trait]
+impl EventQuery for SqliteEventQuery {
+    async fn query_events(
+        &self,
+        organization: &str,
+        since: DateTime<Utc>,
+        limit: usize,
+    ) -> std::result::Result<Vec<SerializedEvent>, String> {
+        self.query_events(organization, since, limit)
+            .map_err(|e| e.to_string())
     }
 }

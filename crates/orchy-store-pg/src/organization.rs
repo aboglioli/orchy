@@ -67,7 +67,7 @@ impl OrganizationStore for PgOrganizationStore {
 
     async fn list(&self) -> Result<Vec<Organization>> {
         let rows = sqlx::query(
-            "SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at",
+            "SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at LIMIT 1000",
         )
         .fetch_all(&self.pool)
         .await

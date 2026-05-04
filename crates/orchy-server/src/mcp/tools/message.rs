@@ -22,6 +22,7 @@ fn convert_ref_param(param: RefParam) -> Result<ResourceRef, String> {
     })
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn send_message(
     h: &OrchyHandler,
     params: SendMessageParams,
@@ -85,6 +86,7 @@ pub(super) async fn send_message(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn claim_message(
     h: &OrchyHandler,
     params: ClaimMessageParams,
@@ -102,6 +104,7 @@ pub(super) async fn claim_message(
     Ok(to_json(&serde_json::json!({"ok": true})))
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn unclaim_message(
     h: &OrchyHandler,
     params: UnclaimMessageParams,

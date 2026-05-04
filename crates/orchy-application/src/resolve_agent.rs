@@ -25,7 +25,7 @@ impl ResolveAgent {
     pub async fn execute(&self, cmd: ResolveAgentCommand) -> Result<AgentDto> {
         let org =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project = ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e))?;
+        let project = ProjectId::try_from(cmd.project).map_err(Error::InvalidInput)?;
 
         if let Ok(agent_id) = cmd.id_or_alias.parse::<AgentId>()
             && let Some(agent) = self.agents.find_by_id(&agent_id).await?

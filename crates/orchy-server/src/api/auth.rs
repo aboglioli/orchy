@@ -38,10 +38,10 @@ impl FromRequestParts<Arc<Container>> for OrgAuth {
         }
 
         // 3. No Bearer header — try JWT from cookie
-        if let Some(token) = extract_cookie(parts, AUTH_COOKIE_NAME) {
-            if let Some(auth) = try_resolve_jwt(state, token, parts).await {
-                return Ok(auth);
-            }
+        if let Some(token) = extract_cookie(parts, AUTH_COOKIE_NAME)
+            && let Some(auth) = try_resolve_jwt(state, token, parts).await
+        {
+            return Ok(auth);
         }
 
         Err(ApiError(

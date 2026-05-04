@@ -36,12 +36,13 @@ impl NamespaceStore for PgNamespaceStore {
     }
 
     async fn list(&self, _org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
-        let rows =
-            sqlx::query("SELECT namespace FROM namespaces WHERE project = $1 ORDER BY namespace")
-                .bind(project.to_string())
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| Error::Store(e.to_string()))?;
+        let rows = sqlx::query(
+            "SELECT namespace FROM namespaces WHERE project = $1 ORDER BY namespace LIMIT 1000",
+        )
+        .bind(project.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
 
         let mut result = Vec::new();
         for row in rows {

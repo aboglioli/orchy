@@ -15,6 +15,15 @@ use self::events as lock_events;
 #[async_trait::async_trait]
 pub trait LockStore: Send + Sync {
     async fn save(&self, lock: &mut ResourceLock) -> Result<()>;
+    async fn acquire_if_free(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+        holder: &AgentId,
+        ttl_secs: u64,
+    ) -> Result<Option<ResourceLock>>;
     async fn find(
         &self,
         org: &OrganizationId,
@@ -34,6 +43,7 @@ pub trait LockStore: Send + Sync {
         holder: &AgentId,
         org: &OrganizationId,
     ) -> Result<Vec<ResourceLock>>;
+    async fn release_for_agent(&self, holder: &AgentId, org: &OrganizationId) -> Result<u64>;
     async fn delete_expired(&self) -> Result<u64>;
 }
 

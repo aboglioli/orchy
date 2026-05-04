@@ -28,7 +28,7 @@ fn org() -> OrganizationId {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn agent_save_and_find() {
     let p = pool().await;
     let agents = PgAgentStore::new(p);
@@ -54,7 +54,7 @@ async fn agent_save_and_find() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn agent_save_updates_existing() {
     let p = pool().await;
     let agents = PgAgentStore::new(p);
@@ -82,7 +82,7 @@ async fn agent_save_updates_existing() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn agent_save_and_fetch_roundtrip() {
     let p = pool().await;
     let agents = PgAgentStore::new(p);
@@ -104,7 +104,7 @@ async fn agent_save_and_fetch_roundtrip() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn agent_find_timed_out() {
     let p = pool().await;
     let agents = PgAgentStore::new(p);
@@ -132,7 +132,7 @@ async fn agent_find_timed_out() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn task_save_and_get() {
     let p = pool().await;
     let tasks = PgTaskStore::new(p);
@@ -158,7 +158,7 @@ async fn task_save_and_get() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn task_save_persists_event_log() {
     let p = pool().await;
     let tasks = PgTaskStore::new(p.clone());
@@ -192,7 +192,7 @@ async fn task_save_persists_event_log() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn task_list_sorted_by_priority() {
     let p = pool().await;
     let tasks = PgTaskStore::new(p);
@@ -236,7 +236,7 @@ async fn task_list_sorted_by_priority() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn message_save_and_find_unread() {
     let p = pool().await;
     let agents = PgAgentStore::new(p.clone());
@@ -320,7 +320,7 @@ async fn message_save_and_find_unread() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn message_find_by_id_and_mark_read() {
     let p = pool().await;
     let agents = PgAgentStore::new(p.clone());
@@ -376,7 +376,7 @@ async fn message_find_by_id_and_mark_read() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn message_find_by_id_preserves_claim_state() {
     let p = pool().await;
     let agents = PgAgentStore::new(p.clone());
@@ -437,7 +437,7 @@ async fn message_find_by_id_preserves_claim_state() {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
 async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
     let p = pool().await;
     let agents = PgAgentStore::new(p.clone());

@@ -36,9 +36,9 @@ export type TaskWithContextDto = {
 };
 
 export type TaskService = {
-  listTasks: (org: string, project: string) => Promise<TaskPageDto>;
+  listTasks: (_org: string, project: string) => Promise<TaskPageDto>;
   getTask: (
-    org: string,
+    _org: string,
     project: string,
     id: string,
     options?: GetTaskOptions,
@@ -77,21 +77,21 @@ export function buildGetTaskQuery(options: GetTaskOptions = {}): string {
 
 export function createTaskService(client: HttpClient): TaskService {
   return {
-    listTasks(org: string, project: string): Promise<TaskPageDto> {
-      const path = `/organizations/${encodeURIComponent(org)}/projects/${encodeURIComponent(project)}/tasks`;
+    listTasks(_org: string, project: string): Promise<TaskPageDto> {
+      const path = `/projects/${encodeURIComponent(project)}/tasks`;
 
       return client.get(path);
     },
 
     async getTask(
-      org: string,
+      _org: string,
       project: string,
       id: string,
       options: GetTaskOptions = {},
     ): Promise<TaskWithContextDto> {
       const query = buildGetTaskQuery(options);
       const suffix = query ? `?${query}` : '';
-      const path = `/organizations/${encodeURIComponent(org)}/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}${suffix}`;
+      const path = `/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}${suffix}`;
 
       return client.get(path);
     },

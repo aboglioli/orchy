@@ -34,6 +34,7 @@ pub struct AcquireBody {
     pub agent_id: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn check(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -65,6 +66,7 @@ pub async fn check(
     Ok(Json(v))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn acquire(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -98,6 +100,7 @@ pub async fn acquire(
     Ok(Json(v))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn release(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,

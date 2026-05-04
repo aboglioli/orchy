@@ -106,6 +106,7 @@ async fn resolve_agent_id(
     Ok(agent.id)
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -172,6 +173,7 @@ pub struct RegisterAgentBody {
     pub metadata: std::collections::HashMap<String, String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn register(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -209,6 +211,7 @@ pub async fn register(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn get_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -309,6 +312,7 @@ pub async fn get_context(
     }))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn get_summary(
     auth: OrgAuth,
     Path(id): Path<String>,
@@ -347,6 +351,7 @@ pub struct ChangeRolesBody {
     pub roles: Vec<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn change_roles(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -386,6 +391,7 @@ pub struct RenameAliasBody {
     pub new_alias: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn rename_alias(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -425,6 +431,7 @@ pub struct SwitchContextBody {
     pub namespace: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn switch_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,

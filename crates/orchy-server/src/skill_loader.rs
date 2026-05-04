@@ -19,6 +19,7 @@ pub async fn load_skills_from_dir(
     Ok(count)
 }
 
+#[allow(clippy::type_complexity)]
 fn load_recursive<'a>(
     base: &'a Path,
     current: &'a Path,

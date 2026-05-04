@@ -192,7 +192,7 @@ impl AgentStore for PgAgentStore {
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
 
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE last_seen < $1");
+        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE last_seen < $1 LIMIT 1000");
         let rows = sqlx::query(&sql)
             .bind(cutoff)
             .fetch_all(&self.pool)
@@ -219,9 +219,7 @@ fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
 
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_uuid(id),
-        alias: Alias::new(&alias).unwrap_or_else(|_| {
-            Alias::new(format!("agent-{id}")).unwrap_or_else(|_| Alias::new("unknown").unwrap())
-        }),
+        alias: Alias::from_string_unchecked(alias),
         org_id: OrganizationId::new(&org_id_str)
             .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
         project: parse_project_id(project, "agents", "project")?,

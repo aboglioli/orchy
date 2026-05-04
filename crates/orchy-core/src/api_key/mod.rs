@@ -1,7 +1,10 @@
+pub mod events;
+
 use std::fmt;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
+use orchy_events::{Event, EventCollector, Payload};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,7 +25,7 @@ pub trait ApiKeyGenerator: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait ApiKeyStore: Send + Sync {
-    async fn save(&self, api_key: &ApiKey) -> Result<()>;
+    async fn save(&self, api_key: &mut ApiKey) -> Result<()>;
     async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>>;
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>>;
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>>;
@@ -187,6 +190,8 @@ pub struct ApiKey {
     user_id: Option<UserId>,
     is_active: bool,
     created_at: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 pub struct RestoreApiKey {
@@ -210,7 +215,7 @@ impl ApiKey {
         key_suffix: ApiKeySuffix,
         user_id: Option<UserId>,
     ) -> Self {
-        Self {
+        let mut key = Self {
             id: ApiKeyId::new(),
             org_id,
             name,
@@ -220,7 +225,25 @@ impl ApiKey {
             user_id,
             is_active: true,
             created_at: Utc::now(),
-        }
+            collector: EventCollector::new(),
+        };
+        let payload = Payload::from_json(&events::ApiKeyCreatedPayload {
+            org_id: key.org_id.to_string(),
+            api_key_id: key.id.to_string(),
+            name: key.name.clone(),
+            user_id: key.user_id.as_ref().map(|u| u.to_string()),
+        })
+        .expect("api_key.created payload always serializes");
+        let event = Event::create(
+            key.org_id.as_str(),
+            events::NAMESPACE,
+            events::TOPIC_CREATED,
+            key.id.to_string(),
+            payload,
+        )
+        .expect("api_key.created event always constructs");
+        key.collector.collect(event);
+        key
     }
 
     pub fn restore(r: RestoreApiKey) -> Self {
@@ -234,11 +257,33 @@ impl ApiKey {
             user_id: r.user_id,
             is_active: r.is_active,
             created_at: r.created_at,
+            collector: EventCollector::new(),
         }
     }
 
     pub fn revoke(&mut self) {
+        if !self.is_active {
+            return;
+        }
         self.is_active = false;
+        let payload = Payload::from_json(&events::ApiKeyRevokedPayload {
+            org_id: self.org_id.to_string(),
+            api_key_id: self.id.to_string(),
+        })
+        .expect("api_key.revoked payload always serializes");
+        let event = Event::create(
+            self.org_id.as_str(),
+            events::NAMESPACE,
+            events::TOPIC_REVOKED,
+            self.id.to_string(),
+            payload,
+        )
+        .expect("api_key.revoked event always constructs");
+        self.collector.collect(event);
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Event> {
+        self.collector.drain()
     }
 
     pub fn id(&self) -> &ApiKeyId {
@@ -322,21 +367,18 @@ mod tests {
         assert!(ApiKeySuffix::new("ab".to_string()).is_err());
     }
 
-    #[test]
-    fn api_key_new_and_revoke() {
+    fn make_key() -> ApiKey {
         let org_id = OrganizationId::new("test-org").unwrap();
         let hash = HashedApiKey::new("somehash".to_string()).unwrap();
         let prefix = ApiKeyPrefix::new("sk_abcde".to_string()).unwrap();
         let suffix = ApiKeySuffix::new("7890".to_string()).unwrap();
+        ApiKey::new(org_id, "Production".into(), hash, prefix, suffix, None)
+    }
 
-        let mut key = ApiKey::new(
-            org_id.clone(),
-            "Production".into(),
-            hash,
-            prefix,
-            suffix,
-            None,
-        );
+    #[test]
+    fn api_key_new_and_revoke() {
+        let org_id = OrganizationId::new("test-org").unwrap();
+        let mut key = make_key();
         assert_eq!(key.org_id(), &org_id);
         assert_eq!(key.name(), "Production");
         assert!(key.is_active());
@@ -344,5 +386,34 @@ mod tests {
 
         key.revoke();
         assert!(!key.is_active());
+    }
+
+    #[test]
+    fn new_collects_one_created_event() {
+        let mut key = make_key();
+        let evts = key.drain_events();
+        assert_eq!(evts.len(), 1);
+        assert_eq!(evts[0].topic().as_str(), events::TOPIC_CREATED);
+    }
+
+    #[test]
+    fn revoke_collects_one_revoked_event() {
+        let mut key = make_key();
+        key.drain_events();
+        key.revoke();
+        let evts = key.drain_events();
+        assert_eq!(evts.len(), 1);
+        assert_eq!(evts[0].topic().as_str(), events::TOPIC_REVOKED);
+    }
+
+    #[test]
+    fn revoke_idempotent_when_inactive() {
+        let mut key = make_key();
+        key.drain_events();
+        key.revoke();
+        key.drain_events();
+        key.revoke();
+        let evts = key.drain_events();
+        assert!(evts.is_empty());
     }
 }

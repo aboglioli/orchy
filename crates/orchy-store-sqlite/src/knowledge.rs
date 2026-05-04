@@ -537,7 +537,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
     let org_id_str: String = row.get(1)?;
     let project_str: Option<String> = row.get(2)?;
     let namespace_str: String = row.get(3)?;
-    let path: String = row.get(4)?;
+    let path_str: String = row.get(4)?;
     let kind_str: String = row.get(5)?;
     let title: String = row.get(6)?;
     let content: String = row.get(7)?;
@@ -579,6 +579,13 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             3,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+        )
+    })?;
+    let path = KnowledgePath::new(&path_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            4,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
         )

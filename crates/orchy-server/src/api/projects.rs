@@ -52,6 +52,7 @@ fn project_to_dto(p: orchy_application::ProjectDto) -> ProjectDto {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn get(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -124,6 +125,7 @@ pub async fn get(
     })))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn update(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -147,6 +149,7 @@ pub async fn update(
     Ok(Json(project_to_dto(p)))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn set_metadata(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -171,6 +174,7 @@ pub async fn set_metadata(
     Ok(Json(project_to_dto(p)))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list_namespaces(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,

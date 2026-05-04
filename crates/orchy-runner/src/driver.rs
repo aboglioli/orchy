@@ -216,8 +216,16 @@ impl AgentDriver {
             }
 
             tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
-                    tracing::info!(alias = %self.config.alias, "ctrl-c received, shutting down");
+                _ = ctrl_c_signal() => {
+                    tracing::info!(alias = %self.config.alias, "SIGINT received, shutting down");
+                    self.shutting_down = true;
+                }
+                _ = sigterm_signal() => {
+                    tracing::info!(alias = %self.config.alias, "SIGTERM received, shutting down");
+                    self.shutting_down = true;
+                }
+                _ = sighup_signal() => {
+                    tracing::info!(alias = %self.config.alias, "SIGHUP received, shutting down");
                     self.shutting_down = true;
                 }
                 Some(bytes) = input_rx.recv() => {
@@ -265,14 +273,41 @@ impl AgentDriver {
     }
 
     async fn shutdown(&mut self) -> Result<()> {
+        use nix::sys::signal::{Signal, kill};
+        use nix::unistd::Pid;
+
         tracing::info!(alias = %self.config.alias, "shutting down");
+
         {
             let mut w = self.writer.lock().await;
             let _ = w.write_all(b"/exit\r").await;
             let _ = w.flush().await;
         }
-        sleep(Duration::from_millis(500)).await;
+
+        let pid = self.child.id();
+        let exited = tokio::time::timeout(Duration::from_secs(5), self.child.wait()).await;
+        if exited.is_ok() {
+            tracing::info!(alias = %self.config.alias, "child exited cleanly");
+            return self.cleanup_mcp().await;
+        }
+
+        if let Some(pid) = pid {
+            let nix_pid = Pid::from_raw(pid as i32);
+            let _ = kill(nix_pid, Signal::SIGTERM);
+            let exited = tokio::time::timeout(Duration::from_secs(3), self.child.wait()).await;
+            if exited.is_ok() {
+                tracing::warn!(alias = %self.config.alias, "child terminated via SIGTERM");
+                return self.cleanup_mcp().await;
+            }
+            let _ = kill(nix_pid, Signal::SIGKILL);
+            tracing::error!(alias = %self.config.alias, "child killed via SIGKILL after timeouts");
+        }
         let _ = self.child.kill().await;
+
+        self.cleanup_mcp().await
+    }
+
+    async fn cleanup_mcp(&self) -> Result<()> {
         if self.mcp_injected {
             let dir = self
                 .config
@@ -427,4 +462,34 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+async fn ctrl_c_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(unix)]
+async fn sigterm_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+    if let Ok(mut s) = signal(SignalKind::terminate()) {
+        s.recv().await;
+    }
+}
+
+#[cfg(unix)]
+async fn sighup_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+    if let Ok(mut s) = signal(SignalKind::hangup()) {
+        s.recv().await;
+    }
+}
+
+#[cfg(not(unix))]
+async fn sigterm_signal() {
+    std::future::pending::<()>().await;
+}
+
+#[cfg(not(unix))]
+async fn sighup_signal() {
+    std::future::pending::<()>().await;
 }

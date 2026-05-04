@@ -35,7 +35,7 @@ impl ListEdges {
             .as_deref()
             .map(|s| s.parse::<RelationType>())
             .transpose()
-            .map_err(|e| Error::InvalidInput(e))?;
+            .map_err(Error::InvalidInput)?;
 
         let page = self
             .edges

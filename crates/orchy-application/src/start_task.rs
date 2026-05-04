@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::error::{Error, Result};
+use orchy_core::organization::OrganizationId;
 use orchy_core::task::{TaskId, TaskStore};
 
 use crate::dto::TaskDto;
@@ -10,6 +11,7 @@ use crate::dto::TaskDto;
 pub struct StartTaskCommand {
     pub task_id: String,
     pub agent_id: String,
+    pub org_id: String,
 }
 
 pub struct StartTask {
@@ -25,6 +27,8 @@ impl StartTask {
     pub async fn execute(&self, cmd: StartTaskCommand) -> Result<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
+        let org_id =
+            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         self.agents
             .find_by_id(&agent_id)
@@ -36,6 +40,10 @@ impl StartTask {
             .find_by_id(&task_id)
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+
+        if task.org_id() != &org_id {
+            return Err(Error::NotFound(format!("task {task_id}")));
+        }
 
         task.start(&agent_id)?;
         self.tasks.save(&mut task).await?;

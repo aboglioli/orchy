@@ -321,7 +321,7 @@ impl Knowledge {
             org_id: r.org_id,
             project: r.project,
             namespace: r.namespace,
-            path: KnowledgePath::new(&r.path).expect("invalid path in restore"),
+            path: r.path,
             kind: r.kind,
             title: r.title,
             content: r.content,
@@ -603,13 +603,12 @@ impl Knowledge {
         Ok(())
     }
 
-    pub fn set_embedding(
-        &mut self,
-        embedding: Vec<f32>,
-        model: String,
-        dimensions: u32,
-    ) -> Result<()> {
-        self.embedding = Some(embedding);
+    pub fn set_embedding(&mut self, embedding: crate::embeddings::Embedding) -> Result<()> {
+        let model = embedding.model().to_string();
+        let dimensions = embedding.dimensions();
+        let values = embedding.into_values();
+
+        self.embedding = Some(values);
         self.embedding_model = Some(model.clone());
         self.embedding_dimensions = Some(dimensions);
 
@@ -737,7 +736,7 @@ pub struct RestoreKnowledge {
     pub org_id: OrganizationId,
     pub project: Option<ProjectId>,
     pub namespace: Namespace,
-    pub path: String,
+    pub path: KnowledgePath,
     pub kind: KnowledgeKind,
     pub title: String,
     pub content: String,

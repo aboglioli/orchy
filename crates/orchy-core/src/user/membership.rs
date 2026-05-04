@@ -8,7 +8,7 @@ use super::role::OrgRole;
 
 #[async_trait::async_trait]
 pub trait OrgMembershipStore: Send + Sync {
-    async fn save(&self, membership: &OrgMembership) -> Result<()>;
+    async fn save(&self, membership: &mut OrgMembership) -> Result<()>;
     async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>>;
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>>;
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>>;

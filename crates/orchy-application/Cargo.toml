@@ -16,3 +16,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+orchy-store-memory = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+chrono = { workspace = true }

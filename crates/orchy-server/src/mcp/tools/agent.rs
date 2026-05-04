@@ -16,6 +16,7 @@ use crate::mcp::params::{
 
 use super::parse_relation_options;
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn register_agent(
     h: &OrchyHandler,
     params: RegisterAgentParams,
@@ -79,6 +80,7 @@ pub(super) async fn register_agent(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn session_status(h: &OrchyHandler) -> Result<String, String> {
     let agent_id = h.get_session_agent().await;
     let agent_id_str = agent_id.as_ref().map(|id| id.to_string());
@@ -98,6 +100,7 @@ pub(super) async fn session_status(h: &OrchyHandler) -> Result<String, String> {
     Ok(to_json(&payload))
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn list_agents(
     h: &OrchyHandler,
     params: ListAgentsParams,
@@ -133,6 +136,7 @@ pub(super) async fn list_agents(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn change_roles(
     h: &OrchyHandler,
     params: ChangeRolesParams,
@@ -148,6 +152,7 @@ pub(super) async fn change_roles(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn heartbeat(h: &OrchyHandler) -> Result<String, String> {
     let (agent_id, _, _) = h.require_session().await?;
     let cmd = HeartbeatCommand {
@@ -159,6 +164,7 @@ pub(super) async fn heartbeat(h: &OrchyHandler) -> Result<String, String> {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn rename_alias(h: &OrchyHandler, new_alias: String) -> Result<String, String> {
     let (agent_id, _, _) = h.require_session().await?;
     let cmd = RenameAliasCommand {
@@ -171,6 +177,7 @@ pub(super) async fn rename_alias(h: &OrchyHandler, new_alias: String) -> Result<
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn switch_context(
     h: &OrchyHandler,
     params: SwitchContextParams,
@@ -222,6 +229,7 @@ pub(super) async fn switch_context(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn get_agent_context(
     h: &OrchyHandler,
     params: GetAgentContextParams,
@@ -253,6 +261,7 @@ pub(super) async fn get_agent_context(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn poll_updates(
     h: &OrchyHandler,
     params: PollUpdatesParams,
@@ -299,6 +308,7 @@ pub(super) async fn poll_updates(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn check_mailbox(
     h: &OrchyHandler,
     params: CheckMailboxParams,
@@ -329,6 +339,7 @@ pub(super) async fn check_mailbox(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn check_sent_messages(
     h: &OrchyHandler,
     params: CheckSentMessagesParams,
@@ -360,6 +371,7 @@ pub(super) async fn check_sent_messages(
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn mark_read(h: &OrchyHandler, params: MarkReadParams) -> Result<String, String> {
     let (agent_id, _, _) = h.require_session().await?;
     let cmd = MarkReadCommand {
@@ -373,6 +385,7 @@ pub(super) async fn mark_read(h: &OrchyHandler, params: MarkReadParams) -> Resul
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub(super) async fn list_conversation(
     h: &OrchyHandler,
     params: ListConversationParams,

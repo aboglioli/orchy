@@ -14,14 +14,14 @@ export type KnowledgePageDto = {
 };
 
 export type KnowledgeService = {
-  listKnowledge: (org: string, project: string) => Promise<KnowledgePageDto>;
+  listKnowledge: (_org: string, project: string) => Promise<KnowledgePageDto>;
 };
 
 export function createKnowledgeService(client: HttpClient): KnowledgeService {
   return {
-    listKnowledge(org: string, project: string): Promise<KnowledgePageDto> {
+    listKnowledge(_org: string, project: string): Promise<KnowledgePageDto> {
       return client.get(
-        `/organizations/${encodeURIComponent(org)}/projects/${encodeURIComponent(project)}/knowledge`,
+        `/projects/${encodeURIComponent(project)}/knowledge`,
       );
     },
   };

@@ -1,3 +1,5 @@
+#![allow(clippy::needless_maybe_sized)]
+
 pub mod ackers;
 
 use async_trait::async_trait;
@@ -5,6 +7,7 @@ use futures::Stream;
 
 use crate::error::Result;
 use crate::event::Event;
+use crate::serialization::SerializedEvent;
 
 #[async_trait]
 pub trait Acker: Send + Sync + Clone {
@@ -122,4 +125,14 @@ impl<T: Writer + ?Sized> Writer for std::sync::Arc<T> {
     async fn write_all(&self, events: &[Event]) -> Result<()> {
         (**self).write_all(events).await
     }
+}
+
+#[async_trait]
+pub trait EventQuery: Send + Sync {
+    async fn query_events(
+        &self,
+        organization: &str,
+        since: chrono::DateTime<chrono::Utc>,
+        limit: usize,
+    ) -> std::result::Result<Vec<SerializedEvent>, String>;
 }

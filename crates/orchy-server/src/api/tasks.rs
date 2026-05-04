@@ -89,6 +89,8 @@ pub struct PostTaskBody {
     pub priority: Option<String>,
     pub assigned_roles: Option<Vec<String>>,
     pub namespace: Option<String>,
+    pub parent_id: Option<String>,
+    pub depends_on: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -191,6 +193,7 @@ fn to_subtask_inputs(defs: Vec<SubtaskDefBody>) -> Vec<SubtaskInput> {
         .collect()
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -226,6 +229,7 @@ pub async fn list(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn post(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -243,6 +247,8 @@ pub async fn post(
         priority: body.priority,
         assigned_roles: body.assigned_roles,
         created_by: None,
+        parent_id: body.parent_id,
+        depends_on: body.depends_on,
     };
 
     let task = container
@@ -261,6 +267,7 @@ pub async fn post(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn get_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -275,7 +282,7 @@ pub async fn get_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: Some(org),
+            org_id: org,
             relations,
         })
         .await
@@ -291,18 +298,20 @@ pub async fn get_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn update_task(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
     Json(body): Json<UpdateTaskBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -333,6 +342,7 @@ pub async fn update_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn claim(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -346,7 +356,7 @@ pub async fn claim(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -378,6 +388,7 @@ pub async fn claim(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn start(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -391,7 +402,7 @@ pub async fn start(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -403,6 +414,7 @@ pub async fn start(
     let cmd = StartTaskCommand {
         task_id: id,
         agent_id,
+        org_id: org,
     };
 
     let task = container
@@ -421,6 +433,7 @@ pub async fn start(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn complete(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -433,7 +446,7 @@ pub async fn complete(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -463,6 +476,7 @@ pub async fn complete(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn fail(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -475,7 +489,7 @@ pub async fn fail(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -504,6 +518,7 @@ pub async fn fail(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn cancel(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -516,7 +531,7 @@ pub async fn cancel(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -545,6 +560,7 @@ pub async fn cancel(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn archive_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -557,7 +573,7 @@ pub async fn archive_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: task_id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -584,6 +600,7 @@ pub async fn archive_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn unarchive_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -596,7 +613,7 @@ pub async fn unarchive_task(
         .get_task
         .execute(GetTaskCommand {
             task_id: task_id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -622,18 +639,20 @@ pub async fn unarchive_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn release(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
     Json(_body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -658,17 +677,19 @@ pub async fn release(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn unblock(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -693,6 +714,7 @@ pub async fn unblock(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn assign(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -706,7 +728,7 @@ pub async fn assign(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -736,6 +758,7 @@ pub async fn assign(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn add_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -749,7 +772,7 @@ pub async fn add_dep(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -778,6 +801,7 @@ pub async fn add_dep(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn remove_dep(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -790,7 +814,7 @@ pub async fn remove_dep(
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org.clone(),
             relations: None,
         })
         .await
@@ -819,17 +843,19 @@ pub async fn remove_dep(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn tag_task(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id, tag)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -854,17 +880,19 @@ pub async fn tag_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn untag_task(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id, tag)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -889,6 +917,7 @@ pub async fn untag_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list_tags(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -918,6 +947,7 @@ pub async fn list_tags(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn next_task(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -992,18 +1022,20 @@ pub async fn next_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn split(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
     Json(body): Json<SplitBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -1028,18 +1060,20 @@ pub async fn split(
     ))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn replace(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
     Json(body): Json<ReplaceBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -1065,6 +1099,7 @@ pub async fn replace(
     ))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn merge(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -1078,7 +1113,7 @@ pub async fn merge(
             .get_task
             .execute(GetTaskCommand {
                 task_id: tid.clone(),
-                org_id: None,
+                org_id: org.clone(),
                 relations: None,
             })
             .await
@@ -1107,18 +1142,20 @@ pub async fn merge(
     ))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn delegate(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
     Json(body): Json<DelegateBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -1156,18 +1193,20 @@ pub struct MoveTaskBody {
     pub new_namespace: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn move_task(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
     Json(body): Json<MoveTaskBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await
@@ -1195,17 +1234,19 @@ pub async fn move_task(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn touch(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let existing = container
         .app
         .get_task
         .execute(GetTaskCommand {
             task_id: id.clone(),
-            org_id: None,
+            org_id: org,
             relations: None,
         })
         .await

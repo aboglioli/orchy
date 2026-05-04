@@ -1087,3 +1087,205 @@ async fn edge_as_of_returns_historical_snapshot() {
         .unwrap();
     assert!(found.is_empty());
 }
+
+#[tokio::test]
+async fn message_find_unread_limit_applies_after_target_filter() {
+    let s = backend();
+    let agent = AgentId::new();
+    let other = AgentId::new();
+    let o = org("default");
+    let p = proj("proj");
+
+    for _ in 0..5 {
+        let mut msg = Message::new(
+            o.clone(),
+            p.clone(),
+            Namespace::root(),
+            other.clone(),
+            MessageTarget::Broadcast,
+            "broadcast".into(),
+            None,
+            vec![],
+        )
+        .unwrap();
+        s.message.save(&mut msg).await.unwrap();
+    }
+
+    for _ in 0..5 {
+        let mut msg = Message::new(
+            o.clone(),
+            p.clone(),
+            Namespace::root(),
+            other.clone(),
+            MessageTarget::Agent(other.clone()),
+            "direct to other".into(),
+            None,
+            vec![],
+        )
+        .unwrap();
+        s.message.save(&mut msg).await.unwrap();
+    }
+
+    let page1 = s
+        .message
+        .find_unread(
+            &agent,
+            &[],
+            &Namespace::root(),
+            None,
+            &o,
+            &p,
+            PageParams {
+                limit: 3,
+                after: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        page1.items.len(),
+        3,
+        "first page must return exactly 3 items"
+    );
+    assert!(
+        page1.next_cursor.is_some(),
+        "must indicate more pages exist"
+    );
+
+    let page2 = s
+        .message
+        .find_unread(
+            &agent,
+            &[],
+            &Namespace::root(),
+            None,
+            &o,
+            &p,
+            PageParams {
+                limit: 3,
+                after: page1.next_cursor,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        page2.items.len(),
+        2,
+        "second page must return the remaining 2 items"
+    );
+    assert!(page2.next_cursor.is_none(), "no more pages after last item");
+}
+
+#[tokio::test]
+async fn task_filter_tag_does_not_match_substring() {
+    let s = backend();
+    let organization = org("default");
+    let project = proj("proj");
+
+    let mut t1 = Task::new(
+        organization.clone(),
+        project.clone(),
+        Namespace::root(),
+        "auth task".into(),
+        "tagged auth".into(),
+        None,
+        Priority::Normal,
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    t1.add_tag("auth".into()).unwrap();
+    s.task.save(&mut t1).await.unwrap();
+
+    let mut t2 = Task::new(
+        organization.clone(),
+        project.clone(),
+        Namespace::root(),
+        "authorization task".into(),
+        "tagged authorization".into(),
+        None,
+        Priority::Normal,
+        vec![],
+        None,
+        false,
+    )
+    .unwrap();
+    t2.add_tag("authorization".into()).unwrap();
+    s.task.save(&mut t2).await.unwrap();
+
+    let page = s
+        .task
+        .list(
+            TaskFilter {
+                org_id: Some(organization.clone()),
+                project: Some(project.clone()),
+                tag: Some("auth".into()),
+                ..Default::default()
+            },
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        page.items.len(),
+        1,
+        "tag 'auth' must not match 'authorization'"
+    );
+    assert_eq!(page.items[0].id(), t1.id());
+}
+
+#[tokio::test]
+async fn task_filter_role_does_not_match_substring() {
+    let s = backend();
+    let organization = org("default");
+    let project = proj("proj");
+
+    let mut t1 = Task::new(
+        organization.clone(),
+        project.clone(),
+        Namespace::root(),
+        "for dev".into(),
+        "role: dev".into(),
+        None,
+        Priority::Normal,
+        vec!["dev".into()],
+        None,
+        false,
+    )
+    .unwrap();
+    s.task.save(&mut t1).await.unwrap();
+
+    let mut t2 = Task::new(
+        organization.clone(),
+        project.clone(),
+        Namespace::root(),
+        "for developer".into(),
+        "role: developer".into(),
+        None,
+        Priority::Normal,
+        vec!["developer".into()],
+        None,
+        false,
+    )
+    .unwrap();
+    s.task.save(&mut t2).await.unwrap();
+
+    let page = s
+        .task
+        .list(
+            TaskFilter {
+                org_id: Some(organization.clone()),
+                project: Some(project.clone()),
+                assigned_role: Some("dev".into()),
+                ..Default::default()
+            },
+            PageParams::unbounded(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 1, "role 'dev' must not match 'developer'");
+    assert_eq!(page.items[0].id(), t1.id());
+}

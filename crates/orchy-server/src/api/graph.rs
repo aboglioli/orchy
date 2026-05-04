@@ -29,6 +29,7 @@ pub struct AddEdgeBody {
     pub agent_id: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn add_edge(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -62,13 +63,16 @@ pub async fn add_edge(
     })?))
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn remove_edge(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path(edge_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let org = auth.org.id.clone();
     let cmd = RemoveEdgeCommand {
         edge_id: edge_id.clone(),
+        org_id: org,
     };
 
     container
@@ -92,6 +96,7 @@ pub struct QueryRelationsQuery {
     pub project: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn query_relations(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -177,6 +182,7 @@ pub struct ListEdgesQuery {
     pub limit: Option<u32>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn list_edges(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,
@@ -253,6 +259,7 @@ pub struct AssembleContextBody {
     pub max_tokens: Option<usize>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn assemble_context(
     State(container): State<Arc<Container>>,
     auth: OrgAuth,

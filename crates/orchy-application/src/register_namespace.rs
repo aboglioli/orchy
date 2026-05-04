@@ -22,7 +22,7 @@ impl RegisterNamespace {
     pub async fn execute(&self, cmd: RegisterNamespaceCommand) -> Result<()> {
         let org_id =
             OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project = ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e))?;
+        let project = ProjectId::try_from(cmd.project).map_err(Error::InvalidInput)?;
         let namespace =
             Namespace::try_from(cmd.namespace).map_err(|e| Error::InvalidInput(e.to_string()))?;
 

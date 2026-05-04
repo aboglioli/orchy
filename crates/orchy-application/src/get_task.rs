@@ -6,6 +6,7 @@ use serde::Serialize;
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::Relation;
 use orchy_core::graph::RelationOptions;
+use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{TaskId, TaskStore};
 
@@ -14,7 +15,7 @@ use crate::materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighb
 
 pub struct GetTaskCommand {
     pub task_id: String,
-    pub org_id: Option<String>,
+    pub org_id: String,
     pub relations: Option<RelationOptions>,
 }
 
@@ -51,6 +52,8 @@ impl GetTask {
 
     pub async fn execute(&self, cmd: GetTaskCommand) -> Result<GetTaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
+        let org_id =
+            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let task = self
             .tasks
@@ -58,12 +61,14 @@ impl GetTask {
             .await?
             .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
 
-        let relations = if let (Some(opts), Some(mat), Some(org_id)) =
-            (cmd.relations, &self.materializer, cmd.org_id)
-        {
+        if task.org_id() != &org_id {
+            return Err(Error::NotFound(format!("task {task_id}")));
+        }
+
+        let relations = if let (Some(opts), Some(mat)) = (cmd.relations, &self.materializer) {
             let neighborhood = mat
                 .execute(MaterializeNeighborhoodCommand {
-                    org_id,
+                    org_id: cmd.org_id,
                     anchor_kind: ResourceKind::Task.to_string(),
                     anchor_id: task_id.to_string(),
                     options: opts,

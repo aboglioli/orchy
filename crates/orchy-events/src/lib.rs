@@ -21,4 +21,4 @@ pub use payload::{ContentType, Payload};
 pub use serialization::SerializedEvent;
 pub use topic::Topic;
 
-pub use io::{Acker, Filter, Handler, Message, Reader, Writer};
+pub use io::{Acker, EventQuery, Filter, Handler, Message, Reader, Writer};

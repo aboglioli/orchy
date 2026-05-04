@@ -138,6 +138,72 @@ impl TaskStore for PgTaskStore {
         Ok(())
     }
 
+    async fn save_if_status(
+        &self,
+        task: &mut Task,
+        expected_statuses: &[TaskStatus],
+    ) -> Result<bool> {
+        if expected_statuses.is_empty() {
+            return Ok(false);
+        }
+        let roles_json = serde_json::to_value(task.assigned_roles())
+            .map_err(|e| Error::Store(format!("failed to serialize tasks.assigned_roles: {e}")))?;
+        let tags_json = serde_json::to_value(task.tags())
+            .map_err(|e| Error::Store(format!("failed to serialize tasks.tags: {e}")))?;
+        let status_strings: Vec<String> = expected_statuses.iter().map(|s| s.to_string()).collect();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let result = sqlx::query(
+            "UPDATE tasks SET organization_id=$2, project=$3, namespace=$4, title=$5, \
+             description=$6, acceptance_criteria=$7, status=$8, priority=$9, \
+             assigned_roles=$10, assigned_to=$11, assigned_at=$12, stale_after_secs=$13, \
+             last_activity_at=$14, tags=$15, result_summary=$16, archived_at=$17, \
+             created_by=$18, created_at=$19, updated_at=$20 \
+             WHERE id=$1 AND status::text = ANY($21::text[])",
+        )
+        .bind(task.id().as_uuid())
+        .bind(task.org_id().to_string())
+        .bind(task.project().to_string())
+        .bind(task.namespace().to_string())
+        .bind(task.title())
+        .bind(task.description())
+        .bind(task.acceptance_criteria())
+        .bind(task.status().to_string())
+        .bind(task.priority().to_string())
+        .bind(&roles_json)
+        .bind(task.assigned_to().map(|a| *a.as_uuid()))
+        .bind(task.assigned_at())
+        .bind(task.stale_after_secs().map(|v| v as i64))
+        .bind(task.last_activity_at())
+        .bind(&tags_json)
+        .bind(task.result_summary())
+        .bind(task.archived_at())
+        .bind(task.created_by().map(|a| *a.as_uuid()))
+        .bind(task.created_at())
+        .bind(task.updated_at())
+        .bind(&status_strings)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Ok(false);
+        }
+
+        let events = task.drain_events();
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        Ok(true)
+    }
+
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
             "SELECT id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at

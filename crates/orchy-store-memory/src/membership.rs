@@ -20,7 +20,7 @@ impl MemoryOrgMembershipStore {
 
 #[async_trait]
 impl OrgMembershipStore for MemoryOrgMembershipStore {
-    async fn save(&self, membership: &OrgMembership) -> Result<()> {
+    async fn save(&self, membership: &mut OrgMembership) -> Result<()> {
         let mut memberships = self.state.memberships.write().await;
         let mut by_user = self.state.memberships_by_user.write().await;
         let mut by_org = self.state.memberships_by_org.write().await;
@@ -120,8 +120,8 @@ mod tests {
         let user_id = UserId::new();
         let org_id = OrganizationId::new("test-org").unwrap();
 
-        let membership = OrgMembership::new(user_id, org_id.clone(), OrgRole::Member);
-        store.save(&membership).await.unwrap();
+        let mut membership = OrgMembership::new(user_id, org_id.clone(), OrgRole::Member);
+        store.save(&mut membership).await.unwrap();
 
         let found = store.find(&user_id, &org_id).await.unwrap();
         assert!(found.is_some());

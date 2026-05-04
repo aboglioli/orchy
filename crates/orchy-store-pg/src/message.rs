@@ -174,8 +174,12 @@ impl MessageStore for PgMessageStore {
             .as_ref()
             .and_then(|c| decode_cursor(c))
             .and_then(|s| s.parse::<Uuid>().ok());
-        let role_set: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
-        let ns_str = agent_namespace.to_string();
+
+        let role_targets: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
+        let ns_targets = namespace_ancestors(agent_namespace);
+        let user_targets: Vec<String> = agent_user_id
+            .map(|uid| vec![format!("user:{uid}")])
+            .unwrap_or_default();
 
         let rows = if let Some(cid) = cursor_id {
             sqlx::query(
@@ -189,16 +193,20 @@ impl MessageStore for PgMessageStore {
                    AND (
                         m.to_target = $1::text
                         OR (m.to_target = 'broadcast' AND m.from_agent != $1)
-                        OR (m.to_target LIKE 'role:%' AND m.from_agent != $1)
-                        OR (m.to_target LIKE 'ns:%' AND m.from_agent != $1)
-                        OR (m.to_target LIKE 'user:%' AND m.from_agent != $1)
+                        OR (m.to_target = ANY($5::text[]) AND m.from_agent != $1)
+                        OR (m.to_target = ANY($6::text[]) AND m.from_agent != $1)
+                        OR (m.to_target = ANY($7::text[]) AND m.from_agent != $1)
                    )
-                 ORDER BY m.id DESC LIMIT $5",
+                   AND (m.claimed_by IS NULL OR m.claimed_by = $1)
+                 ORDER BY m.id DESC LIMIT $8",
             )
             .bind(agent.as_uuid())
             .bind(org.to_string())
             .bind(project.to_string())
             .bind(cid)
+            .bind(&role_targets)
+            .bind(&ns_targets)
+            .bind(&user_targets)
             .bind(fetch_limit)
             .fetch_all(&self.pool)
             .await
@@ -214,15 +222,19 @@ impl MessageStore for PgMessageStore {
                    AND (
                         m.to_target = $1::text
                         OR (m.to_target = 'broadcast' AND m.from_agent != $1)
-                        OR (m.to_target LIKE 'role:%' AND m.from_agent != $1)
-                        OR (m.to_target LIKE 'ns:%' AND m.from_agent != $1)
-                        OR (m.to_target LIKE 'user:%' AND m.from_agent != $1)
+                        OR (m.to_target = ANY($4::text[]) AND m.from_agent != $1)
+                        OR (m.to_target = ANY($5::text[]) AND m.from_agent != $1)
+                        OR (m.to_target = ANY($6::text[]) AND m.from_agent != $1)
                    )
-                 ORDER BY m.id DESC LIMIT $4",
+                   AND (m.claimed_by IS NULL OR m.claimed_by = $1)
+                 ORDER BY m.id DESC LIMIT $7",
             )
             .bind(agent.as_uuid())
             .bind(org.to_string())
             .bind(project.to_string())
+            .bind(&role_targets)
+            .bind(&ns_targets)
+            .bind(&user_targets)
             .bind(fetch_limit)
             .fetch_all(&self.pool)
             .await
@@ -233,31 +245,6 @@ impl MessageStore for PgMessageStore {
             .iter()
             .map(row_to_message)
             .collect::<Result<Vec<_>>>()?;
-
-        let user_targets: Vec<String> = agent_user_id
-            .map(|uid| vec![format!("user:{uid}")])
-            .unwrap_or_default();
-        // App-layer filtering: role match + namespace hierarchy + user target + claim hiding
-        messages.retain(|m| {
-            let visible = match m.to() {
-                MessageTarget::Role(role) => role_set.contains(&format!("role:{role}")),
-                MessageTarget::Namespace(ns) => ns_str.starts_with(&ns.to_string()),
-                MessageTarget::User(uid) => user_targets.contains(&format!("user:{uid}")),
-                _ => true,
-            };
-            if !visible {
-                return false;
-            }
-            if m.is_directed_to(agent) && m.status() == MessageStatus::Read {
-                return false;
-            }
-            if let Some(claimed_by) = m.claimed_by()
-                && claimed_by != agent
-            {
-                return false;
-            }
-            true
-        });
 
         let has_more = messages.len() > page.limit as usize;
         if has_more {
@@ -348,6 +335,7 @@ impl MessageStore for PgMessageStore {
         message_id: &MessageId,
         limit: Option<usize>,
     ) -> Result<Vec<Message>> {
+        let thread_limit = limit.unwrap_or(1000).min(1000);
         let mut sql = String::from(
             "WITH RECURSIVE
              ancestors AS (
@@ -371,9 +359,12 @@ impl MessageStore for PgMessageStore {
              FROM thread ORDER BY created_at ASC",
         );
 
-        if let Some(n) = limit {
-            sql = format!("SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {n}");
+        if limit.is_some() {
+            sql =
+                format!("SELECT * FROM ({sql}) sub ORDER BY created_at DESC LIMIT {thread_limit}");
             sql = format!("SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC");
+        } else {
+            sql = format!("{sql} LIMIT {thread_limit}");
         }
 
         let rows = sqlx::query(&sql)
@@ -384,6 +375,17 @@ impl MessageStore for PgMessageStore {
 
         rows.iter().map(row_to_message).collect()
     }
+}
+
+fn namespace_ancestors(ns: &Namespace) -> Vec<String> {
+    let mut ancestors = vec![format!("ns:{}", Namespace::root())];
+    let mut current = ns.clone();
+    while !current.is_root() {
+        ancestors.push(format!("ns:{current}"));
+        current = current.parent();
+    }
+    ancestors.dedup();
+    ancestors
 }
 
 fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {

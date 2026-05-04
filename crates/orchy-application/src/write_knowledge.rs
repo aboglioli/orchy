@@ -160,7 +160,12 @@ impl WriteKnowledge {
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());
             let vector = emb.embed(&text).await?;
-            entry.set_embedding(vector, emb.model().to_string(), emb.dimensions())?;
+            let embedding = orchy_core::embeddings::Embedding::new(
+                vector,
+                emb.model().to_string(),
+                emb.dimensions(),
+            )?;
+            entry.set_embedding(embedding)?;
         }
 
         self.store.save(&mut entry).await?;
@@ -176,11 +181,10 @@ impl WriteKnowledge {
                     &entry.id().to_string(),
                     &RelationType::Produces,
                 )
-                .await
-                .unwrap_or(false);
+                .await?;
 
             if !edge_exists {
-                let mut edge = match Edge::new(
+                let mut edge = Edge::new(
                     org_id,
                     ResourceKind::Task,
                     task_id.clone(),
@@ -188,20 +192,9 @@ impl WriteKnowledge {
                     entry.id().to_string(),
                     RelationType::Produces,
                     agent_id,
-                ) {
-                    Ok(e) => e,
-                    Err(e) => {
-                        tracing::warn!("failed to create edge: {e}");
-                        return Ok(KnowledgeDto::from(&entry));
-                    }
-                }
+                )?
                 .with_source(ResourceKind::Task, task_id);
-                if let Err(e) = self.edges.save(&mut edge).await {
-                    tracing::warn!(
-                        "failed to create produces edge for knowledge {}: {e}",
-                        entry.id()
-                    );
-                }
+                self.edges.save(&mut edge).await?;
             }
         }
 

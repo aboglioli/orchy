@@ -23,7 +23,7 @@ impl SqliteOrgMembershipStore {
 
 #[async_trait]
 impl OrgMembershipStore for SqliteOrgMembershipStore {
-    async fn save(&self, membership: &OrgMembership) -> Result<()> {
+    async fn save(&self, membership: &mut OrgMembership) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
         conn.execute(

@@ -7,6 +7,7 @@ members = [
     "crates/orchy-store-memory",
     "crates/orchy-store-sqlite",
     "crates/orchy-store-pg",
+    "crates/orchy-store-conformance",
     "crates/orchy-server",
     "crates/orchy-runner",
     "crates/orchy-cli",
@@ -60,3 +61,13 @@ orchy-application = { path = "crates/orchy-application" }
 orchy-store-memory = { path = "crates/orchy-store-memory" }
 orchy-store-sqlite = { path = "crates/orchy-store-sqlite" }
 orchy-store-pg = { path = "crates/orchy-store-pg" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+redundant_closure = "warn"
+collapsible_if = "warn"
+needless_collect = "warn"
+str_to_string = "warn"

@@ -70,6 +70,81 @@ impl TaskStore for SqliteTaskStore {
         Ok(())
     }
 
+    async fn save_if_status(
+        &self,
+        task: &mut Task,
+        expected_statuses: &[TaskStatus],
+    ) -> Result<bool> {
+        if expected_statuses.is_empty() {
+            return Ok(false);
+        }
+        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let status_in: String = (21..=20 + expected_statuses.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            "UPDATE tasks SET organization_id=?2, project=?3, namespace=?4, title=?5, \
+             description=?6, acceptance_criteria=?7, status=?8, priority=?9, \
+             assigned_roles=?10, assigned_to=?11, assigned_at=?12, stale_after_secs=?13, \
+             last_activity_at=?14, tags=?15, result_summary=?16, archived_at=?17, \
+             created_by=?18, created_at=?19, updated_at=?20 \
+             WHERE id=?1 AND status IN ({status_in})"
+        );
+
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![
+                Box::new(task.id().to_string()),
+                Box::new(task.org_id().to_string()),
+                Box::new(task.project().to_string()),
+                Box::new(task.namespace().to_string()),
+                Box::new(task.title().to_string()),
+                Box::new(task.description().to_string()),
+                Box::new(task.acceptance_criteria().map(|s| s.to_string())),
+                Box::new(task.status().to_string()),
+                Box::new(task.priority().to_string()),
+                Box::new(serde_json::to_string(task.assigned_roles()).map_err(|e| {
+                    Error::Store(format!("failed to serialize assigned_roles: {e}"))
+                })?),
+                Box::new(task.assigned_to().map(|a| a.to_string())),
+                Box::new(task.assigned_at().map(|dt| dt.to_rfc3339())),
+                Box::new(task.stale_after_secs()),
+                Box::new(task.last_activity_at().to_rfc3339()),
+                Box::new(
+                    serde_json::to_string(task.tags())
+                        .map_err(|e| Error::Store(format!("failed to serialize tags: {e}")))?,
+                ),
+                Box::new(task.result_summary().map(|s| s.to_string())),
+                Box::new(task.archived_at().map(|dt| dt.to_rfc3339())),
+                Box::new(task.created_by().map(|a| a.to_string())),
+                Box::new(task.created_at().to_rfc3339()),
+                Box::new(task.updated_at().to_rfc3339()),
+            ];
+        for s in expected_statuses {
+            params.push(Box::new(s.to_string()));
+        }
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        let affected = tx
+            .execute(&sql, param_refs.as_slice())
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        if affected == 0 {
+            return Ok(false);
+        }
+
+        let events = task.drain_events();
+        crate::events::write_events_in_tx(&tx, &events)?;
+        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        Ok(true)
+    }
+
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id = ?1");
@@ -143,9 +218,9 @@ impl TaskStore for SqliteTaskStore {
         }
         if let Some(ref role) = filter.assigned_role {
             sql.push_str(&format!(
-                " AND (assigned_roles = '[]' OR assigned_roles LIKE ?{idx})"
+                " AND (assigned_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(assigned_roles) WHERE value = ?{idx}))"
             ));
-            params.push(Box::new(format!("%{role}%")));
+            params.push(Box::new(role.to_string()));
             idx += 1;
         }
         if let Some(ref assigned) = filter.assigned_to {
@@ -154,8 +229,10 @@ impl TaskStore for SqliteTaskStore {
             idx += 1;
         }
         if let Some(ref tag) = filter.tag {
-            sql.push_str(&format!(" AND tags LIKE ?{idx}"));
-            params.push(Box::new(format!("%{tag}%")));
+            sql.push_str(&format!(
+                " AND EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?{idx})"
+            ));
+            params.push(Box::new(tag.to_string()));
             idx += 1;
         }
         if !filter.include_archived.unwrap_or(false) {

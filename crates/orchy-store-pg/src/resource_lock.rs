@@ -24,6 +24,62 @@ impl PgLockStore {
 
 #[async_trait]
 impl LockStore for PgLockStore {
+    async fn acquire_if_free(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+        holder: &AgentId,
+        ttl_secs: u64,
+    ) -> Result<Option<ResourceLock>> {
+        let now = chrono::Utc::now();
+        let expires_at = now + chrono::Duration::seconds(ttl_secs as i64);
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let result = sqlx::query(
+            "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (organization_id, project, namespace, name) DO UPDATE
+             SET holder = EXCLUDED.holder, acquired_at = EXCLUDED.acquired_at, expires_at = EXCLUDED.expires_at
+             WHERE resource_locks.expires_at <= $6 OR resource_locks.holder = EXCLUDED.holder",
+        )
+        .bind(org.to_string())
+        .bind(project.to_string())
+        .bind(namespace.to_string())
+        .bind(name)
+        .bind(holder.as_uuid())
+        .bind(now)
+        .bind(expires_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+
+        let mut lock = ResourceLock::acquire(
+            org.clone(),
+            project.clone(),
+            namespace.clone(),
+            name.to_string(),
+            holder.clone(),
+            ttl_secs,
+        )?;
+        let events = lock.drain_events();
+        PgEventWriter::new_tx(&mut tx)
+            .write_all(&events)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        Ok(Some(lock))
+    }
+
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         let mut tx = self
             .pool
@@ -111,7 +167,7 @@ impl LockStore for PgLockStore {
     ) -> Result<Vec<ResourceLock>> {
         let rows = sqlx::query(
             "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
-             FROM resource_locks WHERE holder = $1 AND organization_id = $2",
+             FROM resource_locks WHERE holder = $1 AND organization_id = $2 LIMIT 1000",
         )
         .bind(holder.as_uuid())
         .bind(org.to_string())
@@ -120,6 +176,18 @@ impl LockStore for PgLockStore {
         .map_err(|e| Error::Store(e.to_string()))?;
 
         rows.iter().map(row_to_resource_lock).collect()
+    }
+
+    async fn release_for_agent(&self, holder: &AgentId, org: &OrganizationId) -> Result<u64> {
+        let result =
+            sqlx::query("DELETE FROM resource_locks WHERE holder = $1 AND organization_id = $2")
+                .bind(holder.as_uuid())
+                .bind(org.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?;
+
+        Ok(result.rows_affected())
     }
 
     async fn delete_expired(&self) -> Result<u64> {

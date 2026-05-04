@@ -31,6 +31,43 @@ impl MemoryLockStore {
 
 #[async_trait]
 impl LockStore for MemoryLockStore {
+    async fn acquire_if_free(
+        &self,
+        org: &OrganizationId,
+        project: &ProjectId,
+        namespace: &Namespace,
+        name: &str,
+        holder: &AgentId,
+        ttl_secs: u64,
+    ) -> Result<Option<ResourceLock>> {
+        let mut locks = self.state.resource_locks.write().await;
+        let key = lock_key(org, project, namespace, name);
+        if let Some(existing) = locks.get(&key) {
+            if !existing.is_expired() && !existing.is_held_by(holder) {
+                return Ok(None);
+            }
+        }
+        let mut lock = ResourceLock::acquire(
+            org.clone(),
+            project.clone(),
+            namespace.clone(),
+            name.to_string(),
+            holder.clone(),
+            ttl_secs,
+        )?;
+        let events = lock.drain_events();
+        locks.insert(key, lock.clone());
+        if !events.is_empty() {
+            let mut events_guard = self.state.events.write().await;
+            for event in events {
+                let serialized = orchy_events::SerializedEvent::from_event(&event)
+                    .map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+                events_guard.push(serialized);
+            }
+        }
+        Ok(Some(lock))
+    }
+
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
         {
             let mut locks = self.state.resource_locks.write().await;
@@ -85,6 +122,13 @@ impl LockStore for MemoryLockStore {
             .filter(|lock| *lock.holder() == *holder && lock.org_id() == org)
             .cloned()
             .collect())
+    }
+
+    async fn release_for_agent(&self, holder: &AgentId, org: &OrganizationId) -> Result<u64> {
+        let mut locks = self.state.resource_locks.write().await;
+        let before = locks.len();
+        locks.retain(|_, lock| !(lock.holder() == holder && lock.org_id() == org));
+        Ok((before - locks.len()) as u64)
     }
 
     async fn delete_expired(&self) -> Result<u64> {

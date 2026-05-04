@@ -1,0 +1,19 @@
+[package]
+name = "orchy-store-conformance"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+orchy-core.workspace = true
+orchy-events.workspace = true
+orchy-store-memory.workspace = true
+orchy-store-sqlite.workspace = true
+orchy-store-pg.workspace = true
+async-trait = "0.1"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
+chrono.workspace = true
+uuid.workspace = true
+
+[features]
+default = []
+pg-tests = []
