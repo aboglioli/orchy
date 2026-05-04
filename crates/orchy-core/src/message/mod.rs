@@ -246,6 +246,7 @@ impl Message {
             msg.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_SENT,
+            msg.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -302,6 +303,7 @@ impl Message {
                 self.org_id.as_str(),
                 message_events::NAMESPACE,
                 message_events::TOPIC_DELIVERED,
+                self.id.to_string(),
                 payload,
             )
             .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -325,6 +327,7 @@ impl Message {
             self.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_READ,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;

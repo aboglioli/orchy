@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::error::Result;
+use crate::event_key::EventKey;
 use crate::metadata::Metadata;
 use crate::namespace::Namespace;
 use crate::organization::OrganizationId;
@@ -53,6 +54,7 @@ pub struct Event {
     organization: OrganizationId,
     namespace: Namespace,
     topic: Topic,
+    key: EventKey,
     payload: Payload,
     metadata: Metadata,
     timestamp: DateTime<Utc>,
@@ -64,6 +66,7 @@ impl Event {
         organization: impl Into<String>,
         namespace: impl Into<String>,
         topic: impl Into<String>,
+        key: impl Into<String>,
         payload: Payload,
     ) -> Result<Self> {
         Ok(Self {
@@ -71,6 +74,7 @@ impl Event {
             organization: OrganizationId::new(organization)?,
             namespace: Namespace::new(namespace)?,
             topic: Topic::new(topic)?,
+            key: EventKey::new(key)?,
             payload,
             metadata: Metadata::new(),
             timestamp: Utc::now(),
@@ -89,6 +93,7 @@ impl Event {
             organization: r.organization,
             namespace: r.namespace,
             topic: r.topic,
+            key: r.key,
             payload: r.payload,
             metadata: r.metadata,
             timestamp: r.timestamp,
@@ -107,6 +112,9 @@ impl Event {
     }
     pub fn topic(&self) -> &Topic {
         &self.topic
+    }
+    pub fn key(&self) -> &EventKey {
+        &self.key
     }
     pub fn payload(&self) -> &Payload {
         &self.payload
@@ -127,6 +135,7 @@ pub struct RestoreEvent {
     pub organization: OrganizationId,
     pub namespace: Namespace,
     pub topic: Topic,
+    pub key: EventKey,
     pub payload: Payload,
     pub metadata: Metadata,
     pub timestamp: DateTime<Utc>,
@@ -140,10 +149,12 @@ mod tests {
     #[test]
     fn create_event() {
         let payload = Payload::from_json(&serde_json::json!({"task_id": "123"})).unwrap();
-        let event = Event::create("my-project", "/task", "task.created", payload).unwrap();
+        let event =
+            Event::create("my-project", "/task", "task.created", "task-123", payload).unwrap();
         assert_eq!(event.organization().as_str(), "my-project");
         assert_eq!(event.namespace().as_str(), "/task");
         assert_eq!(event.topic().as_str(), "task.created");
+        assert_eq!(event.key().as_str(), "task-123");
         assert_eq!(event.version(), 1);
     }
 
@@ -153,7 +164,7 @@ mod tests {
         let metadata = Metadata::new()
             .with("agent_id", "abc-123")
             .with("project", "my-project");
-        let event = Event::create("org", "/agent", "agent.registered", payload)
+        let event = Event::create("org", "/agent", "agent.registered", "agent-1", payload)
             .unwrap()
             .with_metadata(metadata);
         assert_eq!(event.metadata().get("agent_id"), Some("abc-123"));

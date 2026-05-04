@@ -199,7 +199,7 @@ async fn fetch_batch(
     after_seq: i64,
 ) -> Result<Vec<(SerializedEvent, i64)>> {
     let rows = sqlx::query(
-        "SELECT seq, id, organization, namespace, topic, payload, content_type, metadata, timestamp, version \
+        "SELECT seq, id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version \
          FROM events \
          WHERE seq > $1 AND organization = $2 \
          ORDER BY seq ASC \
@@ -222,6 +222,7 @@ async fn fetch_batch(
                 organization: row.get("organization"),
                 namespace: row.get("namespace"),
                 topic: row.get("topic"),
+                key: row.get("key"),
                 payload: row.get("payload"),
                 content_type: row.get("content_type"),
                 metadata: serde_json::from_value(metadata_json).unwrap_or_default(),

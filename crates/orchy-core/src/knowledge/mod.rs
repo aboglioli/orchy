@@ -294,6 +294,7 @@ impl Knowledge {
                 entry.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_CREATED,
+                entry.id.to_string(),
                 Payload::from_json(&knowledge_events::KnowledgeCreatedPayload {
                     org_id: entry.org_id.to_string(),
                     entry_id: entry.id.to_string(),
@@ -358,6 +359,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_UPDATED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -386,6 +388,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_KIND_CHANGED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -407,6 +410,7 @@ impl Knowledge {
                 self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAGGED,
+                self.id.to_string(),
                 payload,
             )
             .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -429,6 +433,7 @@ impl Knowledge {
                 self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAG_REMOVED,
+                self.id.to_string(),
                 payload,
             )
             .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -452,6 +457,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_MOVED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -474,6 +480,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_RENAMED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -496,6 +503,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_SET,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -518,6 +526,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_REMOVED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -535,6 +544,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_DELETED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -561,6 +571,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_ARCHIVED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -584,6 +595,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_RESTORED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -611,6 +623,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_EMBEDDING_UPDATED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -704,6 +717,7 @@ impl Knowledge {
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_VALIDITY_CHANGED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;

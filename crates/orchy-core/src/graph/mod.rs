@@ -328,6 +328,7 @@ impl Edge {
             edge.org_id.as_str(),
             events::NAMESPACE,
             events::TOPIC_CREATED,
+            edge.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -416,6 +417,7 @@ impl Edge {
             self.org_id.as_str(),
             events::NAMESPACE,
             events::TOPIC_INVALIDATED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;

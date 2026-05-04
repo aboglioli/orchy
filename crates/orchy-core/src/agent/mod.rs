@@ -139,6 +139,7 @@ impl Agent {
             agent.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_REGISTERED,
+            agent.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -195,6 +196,7 @@ impl Agent {
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_ROLES_CHANGED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -228,6 +230,7 @@ impl Agent {
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_RESUMED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -266,6 +269,7 @@ impl Agent {
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_CONTEXT_SWITCHED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -286,6 +290,7 @@ impl Agent {
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_METADATA_CHANGED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -309,6 +314,7 @@ impl Agent {
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_ALIAS_CHANGED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;

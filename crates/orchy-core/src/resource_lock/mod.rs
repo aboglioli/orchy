@@ -90,6 +90,7 @@ impl ResourceLock {
             lock.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_ACQUIRED,
+            lock.name.clone(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -123,6 +124,7 @@ impl ResourceLock {
             self.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_RELEASED,
+            self.name.clone(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;

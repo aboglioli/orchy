@@ -34,7 +34,7 @@ impl SqliteEventQuery {
     ) -> Result<Vec<SerializedEvent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
 
-        let sql = "SELECT id, organization, namespace, topic, payload, content_type, metadata, timestamp, version FROM events WHERE organization = ?1 AND timestamp >= ?2 ORDER BY timestamp DESC LIMIT ?3";
+        let sql = "SELECT id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version FROM events WHERE organization = ?1 AND timestamp >= ?2 ORDER BY timestamp DESC LIMIT ?3";
 
         let mut stmt = conn.prepare(sql).map_err(|e| Error::Store(e.to_string()))?;
 
@@ -42,21 +42,22 @@ impl SqliteEventQuery {
             .query_map(
                 rusqlite::params![organization, since.to_rfc3339(), limit as i64],
                 |row| {
-                    let payload_str: String = row.get(4)?;
-                    let metadata_str: String = row.get(6)?;
-                    let timestamp_str: String = row.get(7)?;
+                    let payload_str: String = row.get(5)?;
+                    let metadata_str: String = row.get(7)?;
+                    let timestamp_str: String = row.get(8)?;
                     Ok(SerializedEvent {
                         id: row.get(0)?,
                         organization: row.get(1)?,
                         namespace: row.get(2)?,
                         topic: row.get(3)?,
+                        key: row.get(4)?,
                         payload: crate::decode_json(&payload_str, "payload")?,
-                        content_type: row.get(5)?,
+                        content_type: row.get(6)?,
                         metadata: crate::decode_json(&metadata_str, "metadata")?,
                         timestamp: DateTime::parse_from_rfc3339(&timestamp_str)
                             .map(|dt| dt.with_timezone(&Utc))
                             .unwrap_or_else(|_| Utc::now()),
-                        version: row.get::<_, i64>(8)? as u64,
+                        version: row.get::<_, i64>(9)? as u64,
                     })
                 },
             )
@@ -78,13 +79,14 @@ fn serialize_event(event: &Event) -> orchy_events::Result<SerializedEvent> {
 fn append_event(conn: &rusqlite::Connection, event: &Event) -> orchy_events::Result<()> {
     let serialized = serialize_event(event)?;
     conn.execute(
-        "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO events (id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
             serialized.id,
             serialized.organization,
             serialized.namespace,
             serialized.topic,
+            serialized.key,
             serde_json::to_string(&serialized.payload)
                 .map_err(|e| orchy_events::Error::Store(format!("failed to serialize payload: {e}")))?,
             serialized.content_type,

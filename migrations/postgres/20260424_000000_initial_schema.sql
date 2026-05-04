@@ -206,6 +206,7 @@ CREATE TABLE IF NOT EXISTS events (
     organization TEXT NOT NULL,
     namespace TEXT NOT NULL,
     topic TEXT NOT NULL,
+    key TEXT NOT NULL DEFAULT '',
     payload JSONB NOT NULL,
     content_type TEXT NOT NULL DEFAULT 'application/json',
     metadata JSONB NOT NULL DEFAULT '{}',
@@ -219,6 +220,7 @@ CREATE INDEX IF NOT EXISTS events_namespace_idx ON events (namespace);
 CREATE INDEX IF NOT EXISTS events_timestamp_idx ON events (timestamp);
 CREATE INDEX IF NOT EXISTS events_organization_idx ON events (organization);
 CREATE INDEX IF NOT EXISTS idx_events_org_timestamp ON events (organization, timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_key ON events (key);
 
 -- Events NOTIFY trigger
 CREATE OR REPLACE FUNCTION notify_event_inserted()

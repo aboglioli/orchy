@@ -49,13 +49,14 @@ async fn append_to_pool(pool: &sqlx::PgPool, event: &Event) -> orchy_events::Res
     let (id, serialized) = serialize_event(event)?;
 
     sqlx::query(
-        "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "INSERT INTO events (id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(id)
     .bind(&serialized.organization)
     .bind(&serialized.namespace)
     .bind(&serialized.topic)
+    .bind(&serialized.key)
     .bind(&serialized.payload)
     .bind(&serialized.content_type)
     .bind(serialize_metadata(&serialized.metadata)?)
@@ -72,13 +73,14 @@ async fn append_to_tx(conn: &mut sqlx::PgConnection, event: &Event) -> orchy_eve
     let (id, serialized) = serialize_event(event)?;
 
     sqlx::query(
-        "INSERT INTO events (id, organization, namespace, topic, payload, content_type, metadata, timestamp, version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "INSERT INTO events (id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(id)
     .bind(&serialized.organization)
     .bind(&serialized.namespace)
     .bind(&serialized.topic)
+    .bind(&serialized.key)
     .bind(&serialized.payload)
     .bind(&serialized.content_type)
     .bind(serialize_metadata(&serialized.metadata)?)
@@ -122,7 +124,7 @@ impl PgEventQuery {
         limit: usize,
     ) -> Result<Vec<SerializedEvent>> {
         let rows = sqlx::query(
-            "SELECT id, organization, namespace, topic, payload, content_type, metadata, timestamp, version
+            "SELECT id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version
              FROM events
              WHERE organization = $1 AND timestamp >= $2
              ORDER BY timestamp DESC
@@ -145,6 +147,7 @@ impl PgEventQuery {
                     organization: row.get("organization"),
                     namespace: row.get("namespace"),
                     topic: row.get("topic"),
+                    key: row.get("key"),
                     payload: row.get("payload"),
                     content_type: row.get("content_type"),
                     metadata: serde_json::from_value(metadata_json).unwrap_or_default(),

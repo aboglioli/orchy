@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
 use crate::event::{Event, EventId, RestoreEvent};
+use crate::event_key::EventKey;
 use crate::metadata::Metadata;
 use crate::namespace::Namespace;
 use crate::organization::OrganizationId;
@@ -17,6 +18,7 @@ pub struct SerializedEvent {
     pub organization: String,
     pub namespace: String,
     pub topic: String,
+    pub key: String,
     pub payload: serde_json::Value,
     pub content_type: String,
     pub metadata: HashMap<String, String>,
@@ -39,6 +41,7 @@ impl SerializedEvent {
             organization: event.organization().to_string(),
             namespace: event.namespace().to_string(),
             topic: event.topic().to_string(),
+            key: event.key().to_string(),
             payload: payload_value,
             content_type: event.payload().content_type().to_string(),
             metadata: event.metadata().as_map().clone(),
@@ -64,6 +67,7 @@ impl SerializedEvent {
             organization: OrganizationId::new(&self.organization)?,
             namespace: Namespace::new(&self.namespace)?,
             topic: Topic::new(&self.topic)?,
+            key: EventKey::new(&self.key)?,
             payload: Payload::from_raw(data, content_type),
             metadata: Metadata::from(self.metadata.clone()),
             timestamp: self.timestamp,
@@ -79,12 +83,13 @@ mod tests {
     #[test]
     fn roundtrip() {
         let payload = Payload::from_json(&serde_json::json!({"key": "value"})).unwrap();
-        let event = Event::create("org", "/task", "task.created", payload).unwrap();
+        let event = Event::create("org", "/task", "task.created", "task-123", payload).unwrap();
 
         let serialized = SerializedEvent::from_event(&event).unwrap();
         assert_eq!(serialized.topic, "task.created");
         assert_eq!(serialized.namespace, "/task");
         assert_eq!(serialized.organization, "org");
+        assert_eq!(serialized.key, "task-123");
 
         let restored = serialized.to_event().unwrap();
         assert_eq!(restored.topic().as_str(), "task.created");

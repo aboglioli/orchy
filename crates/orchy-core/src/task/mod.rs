@@ -272,6 +272,7 @@ impl Task {
                 task.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_CREATED,
+                task.id.to_string(),
                 Payload::from_json(&task_events::TaskCreatedPayload {
                     org_id: task.org_id.to_string(),
                     task_id: task.id.to_string(),
@@ -329,6 +330,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_CLAIMED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskClaimedPayload {
                     task_id: self.id.to_string(),
                     agent_id: agent.to_string(),
@@ -357,6 +359,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_STARTED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskStartedPayload {
                     task_id: self.id.to_string(),
                     agent_id: agent.to_string(),
@@ -380,6 +383,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_COMPLETED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskCompletedPayload {
                     task_id: self.id.to_string(),
                     summary,
@@ -402,6 +406,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_AUTO_COMPLETED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskCompletedPayload {
                     task_id: self.id.to_string(),
                     summary: Some(summary),
@@ -425,6 +430,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_FAILED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskFailedPayload {
                     task_id: self.id.to_string(),
                     reason,
@@ -454,6 +460,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_RELEASED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskReleasedPayload {
                     task_id: self.id.to_string(),
                 })
@@ -481,6 +488,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_ASSIGNED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskAssignedPayload {
                     task_id: self.id.to_string(),
                     agent_id: new_agent.to_string(),
@@ -505,6 +513,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_BLOCKED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskBlockedPayload {
                     task_id: self.id.to_string(),
                 })
@@ -528,6 +537,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_UNBLOCKED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskUnblockedPayload {
                     task_id: self.id.to_string(),
                 })
@@ -549,6 +559,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_CANCELLED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskCancelledPayload {
                     task_id: self.id.to_string(),
                     reason,
@@ -582,6 +593,7 @@ impl Task {
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_ARCHIVED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -603,6 +615,7 @@ impl Task {
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_RESTORED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -663,6 +676,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_UPDATED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskUpdatedPayload {
                     task_id: self.id.to_string(),
                     title: new_title,
@@ -756,6 +770,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_TAGGED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskTaggedPayload {
                     task_id: self.id.to_string(),
                     tag,
@@ -779,6 +794,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_TAG_REMOVED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskTagRemovedPayload {
                     task_id: self.id.to_string(),
                     tag: tag.to_string(),
@@ -809,6 +825,7 @@ impl Task {
                 self.org_id.as_str(),
                 task_events::NAMESPACE,
                 task_events::TOPIC_MOVED,
+                self.id.to_string(),
                 Payload::from_json(&task_events::TaskMovedPayload {
                     task_id: self.id.to_string(),
                     from_namespace,

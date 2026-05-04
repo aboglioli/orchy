@@ -96,6 +96,7 @@ impl User {
             user.id.as_str(),
             events::NAMESPACE,
             events::TOPIC_CREATED,
+            user.id.as_str(),
             payload,
         )
         .map_err(|e| Error::store(format!("event creation: {e}")))?;
@@ -135,6 +136,7 @@ impl User {
             user.id.as_str(),
             events::NAMESPACE,
             events::TOPIC_CREATED,
+            user.id.as_str(),
             payload,
         )
         .map_err(|e| Error::store(format!("event creation: {e}")))?;
@@ -173,6 +175,7 @@ impl User {
                     self.id.as_str(),
                     events::NAMESPACE,
                     events::TOPIC_LOGIN_SUCCEEDED,
+                    self.id.as_str(),
                     payload,
                 )
                 .map_err(|e| Error::store(format!("event creation: {e}")))?;
@@ -192,6 +195,7 @@ impl User {
                     self.id.as_str(),
                     events::NAMESPACE,
                     events::TOPIC_LOGIN_FAILED,
+                    self.id.as_str(),
                     payload,
                 )
                 .map_err(|e| Error::store(format!("event creation: {e}")))?;
@@ -222,6 +226,7 @@ impl User {
             self.id.as_str(),
             events::NAMESPACE,
             events::TOPIC_PASSWORD_CHANGED,
+            self.id.as_str(),
             payload,
         )
         .map_err(|e| Error::store(format!("event creation: {e}")))?;
@@ -243,6 +248,7 @@ impl User {
             self.id.as_str(),
             events::NAMESPACE,
             events::TOPIC_DEACTIVATED,
+            self.id.as_str(),
             payload,
         )
         .map_err(|e| Error::store(format!("event creation: {e}")))?;
@@ -264,6 +270,7 @@ impl User {
             self.id.as_str(),
             events::NAMESPACE,
             events::TOPIC_PLATFORM_ADMIN_GRANTED,
+            self.id.as_str(),
             payload,
         )
         .map_err(|e| Error::store(format!("event creation: {e}")))?;
@@ -322,6 +329,7 @@ impl User {
             self.id.as_str(),
             events::NAMESPACE,
             events::TOPIC_MEMBERSHIP_ADDED,
+            self.id.as_str(),
             payload,
         )
         .map_err(|e| Error::store(format!("event creation: {e}")))?;

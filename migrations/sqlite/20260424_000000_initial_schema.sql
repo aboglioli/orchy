@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS events (
     organization TEXT NOT NULL,
     namespace TEXT NOT NULL,
     topic TEXT NOT NULL,
+    key TEXT NOT NULL DEFAULT '',
     payload TEXT NOT NULL,
     content_type TEXT NOT NULL DEFAULT 'application/json',
     metadata TEXT NOT NULL DEFAULT '{}',
@@ -224,6 +225,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS events_topic_idx ON events (topic);
+CREATE INDEX IF NOT EXISTS idx_events_key ON events (key);
 CREATE INDEX IF NOT EXISTS events_namespace_idx ON events (namespace);
 CREATE INDEX IF NOT EXISTS events_timestamp_idx ON events (timestamp);
 CREATE INDEX IF NOT EXISTS events_organization_idx ON events (organization);

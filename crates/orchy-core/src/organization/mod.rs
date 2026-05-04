@@ -48,6 +48,7 @@ impl Organization {
             org.id.as_str(),
             org_events::NAMESPACE,
             org_events::TOPIC_CREATED,
+            org.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;

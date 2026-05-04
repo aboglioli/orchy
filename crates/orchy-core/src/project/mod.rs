@@ -53,6 +53,7 @@ impl Project {
             project.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_CREATED,
+            project.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -87,6 +88,7 @@ impl Project {
             self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_DESCRIPTION_UPDATED,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
@@ -109,6 +111,7 @@ impl Project {
             self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_METADATA_SET,
+            self.id.to_string(),
             payload,
         )
         .map_err(|e| Error::Store(format!("event creation: {e}")))?;
