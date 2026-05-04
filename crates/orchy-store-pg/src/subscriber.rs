@@ -2,17 +2,14 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use futures::StreamExt;
-use futures::future::BoxFuture;
 use sqlx::PgPool;
 use tokio::task::JoinHandle;
 
+use orchy_events::Result;
 use orchy_events::io::{Acker, Filter, Handler, Reader};
-use orchy_events::{Event, Result};
 
 pub use super::consumer::ConsumerConfig;
 use super::consumer::PgReader;
-
-type BoxedHandlerFn = dyn Fn(Event) -> BoxFuture<'static, Result<()>> + Send + Sync + 'static;
 
 struct SubscriptionHandle {
     join: JoinHandle<()>,
@@ -35,7 +32,7 @@ impl PgSubscriber {
         self.handles.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    pub fn subscribe<H, F>(
+    pub async fn subscribe<H, F>(
         &self,
         group_id: impl Into<String>,
         organization: impl Into<String>,
@@ -47,7 +44,7 @@ impl PgSubscriber {
         F: Filter + Send + Sync + 'static,
     {
         let group_id = group_id.into();
-        let handler_fn = make_handler_fn(handler);
+        let handler = std::sync::Arc::new(handler);
         let filter = std::sync::Arc::new(filter);
         let reader = PgReader::new(
             self.pool.clone(),
@@ -55,7 +52,7 @@ impl PgSubscriber {
                 organization: organization.into(),
             },
         );
-        let mut stream = reader.read(&group_id)?;
+        let mut stream = reader.read(&group_id).await?;
 
         let task = tokio::spawn(async move {
             while let Some(result) = stream.next().await {
@@ -67,8 +64,7 @@ impl PgSubscriber {
                             let _ = acker.ack().await;
                             continue;
                         }
-                        let h = handler_fn.clone();
-                        match h(event).await {
+                        match handler.handle(event).await {
                             Ok(()) => {
                                 let _ = acker.ack().await;
                             }
@@ -100,14 +96,4 @@ impl PgSubscriber {
             let _ = handle.join.await;
         }
     }
-}
-
-fn make_handler_fn<H: Handler + Send + Sync + 'static>(
-    handler: H,
-) -> std::sync::Arc<BoxedHandlerFn> {
-    let handler = std::sync::Arc::new(handler);
-    std::sync::Arc::new(move |event: Event| {
-        let h = std::sync::Arc::clone(&handler);
-        Box::pin(async move { h.handle(event).await }) as BoxFuture<'static, Result<()>>
-    })
 }

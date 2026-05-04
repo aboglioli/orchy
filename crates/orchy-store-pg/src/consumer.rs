@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use futures::Stream;
 use sqlx::postgres::PgListener;
 use sqlx::{PgPool, Row};
@@ -25,25 +26,21 @@ pub(crate) struct PgAcker {
     seq: i64,
 }
 
+#[async_trait]
 impl Acker for PgAcker {
-    fn ack(&self) -> impl std::future::Future<Output = Result<()>> + Send {
-        let pool = self.pool.clone();
-        let group_id = self.group_id.clone();
-        let seq = self.seq;
-        async move {
-            sqlx::query(
-                "INSERT INTO consumer_offsets (group_id, last_seq, updated_at) \
-                 VALUES ($1, $2, NOW()) \
-                 ON CONFLICT (group_id) DO UPDATE \
-                 SET last_seq = EXCLUDED.last_seq, updated_at = NOW()",
-            )
-            .bind(&group_id)
-            .bind(seq)
-            .execute(&pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-            Ok(())
-        }
+    async fn ack(&self) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO consumer_offsets (group_id, last_seq, updated_at) \
+             VALUES ($1, $2, NOW()) \
+             ON CONFLICT (group_id) DO UPDATE \
+             SET last_seq = EXCLUDED.last_seq, updated_at = NOW()",
+        )
+        .bind(&self.group_id)
+        .bind(self.seq)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
+        Ok(())
     }
 
     async fn nack(&self) -> Result<()> {
@@ -85,11 +82,12 @@ impl PgReader {
     }
 }
 
+#[async_trait]
 impl Reader for PgReader {
     type Acker = OnceAcker<PgAcker>;
     type Stream = PgStream;
 
-    fn read(&self, consumer_group_id: &str) -> Result<Self::Stream> {
+    async fn read(&self, consumer_group_id: &str) -> Result<Self::Stream> {
         let pool = self.pool.clone();
         let group_id = consumer_group_id.to_string();
         let org = self.config.organization.clone();

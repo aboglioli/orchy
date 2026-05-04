@@ -1,16 +1,25 @@
 pub mod ackers;
 
-use std::future::Future;
-
 use async_trait::async_trait;
 use futures::Stream;
 
 use crate::error::Result;
 use crate::event::Event;
 
+#[async_trait]
 pub trait Acker: Send + Sync + Clone {
-    fn ack(&self) -> impl Future<Output = Result<()>> + Send;
-    fn nack(&self) -> impl Future<Output = Result<()>> + Send;
+    async fn ack(&self) -> Result<()>;
+    async fn nack(&self) -> Result<()>;
+}
+
+#[async_trait]
+impl<T: Acker + ?Sized> Acker for std::sync::Arc<T> {
+    async fn ack(&self) -> Result<()> {
+        (**self).ack().await
+    }
+    async fn nack(&self) -> Result<()> {
+        (**self).nack().await
+    }
 }
 
 pub struct Message<A: Acker> {
@@ -48,20 +57,48 @@ impl<A: Acker> Message<A> {
     }
 }
 
+#[async_trait]
 pub trait Handler: Send + Sync {
     fn id(&self) -> &str;
-    fn handle(&self, event: Event) -> impl Future<Output = Result<()>> + Send;
+    async fn handle(&self, event: Event) -> Result<()>;
+}
+
+#[async_trait]
+impl<T: Handler + ?Sized> Handler for std::sync::Arc<T> {
+    fn id(&self) -> &str {
+        (**self).id()
+    }
+    async fn handle(&self, event: Event) -> Result<()> {
+        (**self).handle(event).await
+    }
 }
 
 pub trait Filter: Send + Sync {
     fn matches(&self, event: &Event) -> bool;
 }
 
+impl<T: Filter + ?Sized> Filter for std::sync::Arc<T> {
+    fn matches(&self, event: &Event) -> bool {
+        (**self).matches(event)
+    }
+}
+
+#[async_trait]
 pub trait Reader: Send + Sync {
     type Acker: Acker;
     type Stream: Stream<Item = Result<Message<Self::Acker>>> + Send;
 
-    fn read(&self, consumer_group_id: &str) -> Result<Self::Stream>;
+    async fn read(&self, consumer_group_id: &str) -> Result<Self::Stream>;
+}
+
+#[async_trait]
+impl<T: Reader + ?Sized> Reader for std::sync::Arc<T> {
+    type Acker = T::Acker;
+    type Stream = T::Stream;
+
+    async fn read(&self, consumer_group_id: &str) -> Result<Self::Stream> {
+        (**self).read(consumer_group_id).await
+    }
 }
 
 #[async_trait]
