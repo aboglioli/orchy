@@ -1587,6 +1587,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "futures",
  "orchy-core",
  "orchy-events",
  "orchy-store-memory",
@@ -1642,6 +1643,8 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
+ "tracing",
  "uuid",
 ]
 
@@ -1721,6 +1724,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "futures",
  "orchy-application",
  "orchy-core",
  "orchy-events",
@@ -1738,6 +1742,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "futures",
+ "orchy-application",
  "orchy-core",
  "orchy-events",
  "pgvector",
@@ -1757,6 +1762,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "futures",
+ "orchy-application",
  "orchy-core",
  "orchy-events",
  "rusqlite",
@@ -3096,6 +3103,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

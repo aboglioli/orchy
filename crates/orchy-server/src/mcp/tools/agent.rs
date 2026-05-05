@@ -1,6 +1,8 @@
 use chrono::{Duration, Utc};
 use std::str::FromStr;
 
+use orchy_events::SerializedEvent;
+
 use orchy_core::agent::AgentId;
 use orchy_core::namespace::Namespace;
 
@@ -278,15 +280,18 @@ pub(super) async fn poll_updates(
     };
 
     let cmd = PollUpdatesCommand {
-        org_id: project.clone(),
+        organization: project.clone(),
         since: since.clone(),
         limit: params.limit,
+        topics: None,
+        namespace_prefix: None,
     };
 
     match h.container.app.poll_updates.execute(cmd).await {
         Ok(events) => {
             let updates: Vec<_> = events
                 .iter()
+                .filter_map(|e| SerializedEvent::from_event(e).ok())
                 .map(|e| {
                     serde_json::json!({
                         "topic": e.topic,

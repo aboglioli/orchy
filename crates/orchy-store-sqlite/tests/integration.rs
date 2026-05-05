@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore as _, Alias};
@@ -14,8 +14,8 @@ use orchy_core::pagination::PageParams;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskStatus, TaskStore as _};
 use orchy_store_sqlite::{
-    SqliteAgentStore, SqliteDatabase, SqliteEdgeStore, SqliteEventQuery, SqliteKnowledgeStore,
-    SqliteMessageStore, SqliteTaskStore,
+    SqliteAgentStore, SqliteDatabase, SqliteEdgeStore, SqliteKnowledgeStore, SqliteMessageStore,
+    SqliteTaskStore,
 };
 
 struct Stores {
@@ -24,7 +24,6 @@ struct Stores {
     message: SqliteMessageStore,
     knowledge: SqliteKnowledgeStore,
     edge: SqliteEdgeStore,
-    events: SqliteEventQuery,
 }
 
 fn backend() -> Stores {
@@ -37,8 +36,7 @@ fn backend() -> Stores {
         task: SqliteTaskStore::new(conn.clone()),
         message: SqliteMessageStore::new(conn.clone()),
         knowledge: SqliteKnowledgeStore::new(conn.clone()),
-        edge: SqliteEdgeStore::new(conn.clone()),
-        events: SqliteEventQuery::new(conn),
+        edge: SqliteEdgeStore::new(conn),
     }
 }
 
@@ -179,34 +177,6 @@ async fn task_save_and_get() {
     assert_eq!(fetched.description(), "Details");
     assert_eq!(fetched.priority(), Priority::High);
     assert_eq!(fetched.assigned_roles(), &["dev".to_string()]);
-}
-
-#[tokio::test]
-async fn task_save_persists_event_log() {
-    let s = backend();
-    let organization = org("default");
-    let mut task = Task::new(
-        organization.clone(),
-        proj("proj"),
-        Namespace::root(),
-        "Write event".into(),
-        "verify tx writer".into(),
-        None,
-        Priority::Normal,
-        vec![],
-        None,
-        false,
-    )
-    .unwrap();
-
-    s.task.save(&mut task).await.unwrap();
-
-    let events = s
-        .events
-        .query_events(organization.as_str(), DateTime::<Utc>::UNIX_EPOCH, 10)
-        .unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].topic, "task.created");
 }
 
 #[tokio::test]

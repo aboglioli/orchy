@@ -4,6 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+orchy-application.workspace = true
 orchy-core.workspace = true
 orchy-events.workspace = true
 async-trait = "0.1"

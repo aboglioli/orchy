@@ -10,12 +10,16 @@ mod message;
 mod namespace;
 mod organization;
 mod project;
+mod reader;
+mod reader_factory;
 mod resource_lock;
 mod task;
 mod user;
 
 use std::collections::{HashMap, HashSet};
-use tokio::sync::RwLock;
+use std::sync::Arc;
+
+use tokio::sync::{Notify, RwLock};
 
 use orchy_events::SerializedEvent;
 
@@ -36,13 +40,15 @@ use orchy_core::user::{MembershipId, OrgMembership, User, UserId};
 pub use agent::MemoryAgentStore;
 pub use api_key::MemoryApiKeyStore;
 pub use edge::MemoryEdgeStore;
-pub use events::{MemoryEventQuery, MemoryEventWriter};
+pub use events::MemoryEventWriter;
 pub use knowledge::MemoryKnowledgeStore;
 pub use membership::MemoryOrgMembershipStore;
 pub use message::MemoryMessageStore;
 pub use namespace::MemoryNamespaceStore;
 pub use organization::MemoryOrganizationStore;
 pub use project::MemoryProjectStore;
+pub use reader::{MemoryAcker, MemoryAckerVariant, MemoryReader, MemoryReaderConfig, MemoryStream};
+pub use reader_factory::MemoryReaderFactory;
 pub use resource_lock::MemoryLockStore;
 pub use task::MemoryTaskStore;
 pub use user::MemoryUserStore;
@@ -68,6 +74,7 @@ pub struct MemoryState {
     pub(crate) memberships_by_user: RwLock<HashMap<UserId, Vec<MembershipId>>>,
     pub(crate) memberships_by_org: RwLock<HashMap<OrganizationId, Vec<MembershipId>>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
+    pub(crate) events_notify: Arc<Notify>,
 }
 
 impl MemoryState {
@@ -93,6 +100,7 @@ impl MemoryState {
             memberships_by_user: RwLock::new(HashMap::new()),
             memberships_by_org: RwLock::new(HashMap::new()),
             events: RwLock::new(Vec::new()),
+            events_notify: Arc::new(Notify::new()),
         }
     }
 }
@@ -100,6 +108,12 @@ impl MemoryState {
 impl Default for MemoryState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl MemoryState {
+    pub async fn snapshot_events(&self) -> Vec<SerializedEvent> {
+        self.events.read().await.clone()
     }
 }
 

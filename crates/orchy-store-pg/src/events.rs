@@ -1,13 +1,10 @@
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use std::collections::HashMap;
-use std::result::Result as StdResult;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use orchy_core::error::{Error, Result};
-use orchy_events::io::{EventQuery, Writer};
+use orchy_events::io::Writer;
 use orchy_events::{Error as EventError, Event, Result as EventResult, SerializedEvent};
 
 pub struct PgEventWriter {
@@ -102,72 +99,5 @@ impl<'tx> Writer for PgTxEventWriter<'tx> {
     async fn write(&self, event: &Event) -> EventResult<()> {
         let mut tx = self.tx.lock().await;
         append_to_tx(*tx, event).await
-    }
-}
-
-pub struct PgEventQuery {
-    pool: PgPool,
-}
-
-impl PgEventQuery {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
-    }
-
-    pub async fn query_events(
-        &self,
-        organization: &str,
-        since: DateTime<Utc>,
-        limit: usize,
-    ) -> Result<Vec<SerializedEvent>> {
-        let rows = sqlx::query(
-            "SELECT id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version
-             FROM events
-             WHERE organization = $1 AND timestamp >= $2
-             ORDER BY timestamp DESC
-             LIMIT $3",
-        )
-        .bind(organization)
-        .bind(since)
-        .bind(limit as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| Error::Store(e.to_string()))?;
-
-        let mut events: Vec<SerializedEvent> = rows
-            .iter()
-            .map(|row| {
-                let id: Uuid = row.get("id");
-                let metadata_json: serde_json::Value = row.get("metadata");
-                SerializedEvent {
-                    id: id.to_string(),
-                    organization: row.get("organization"),
-                    namespace: row.get("namespace"),
-                    topic: row.get("topic"),
-                    key: row.get("key"),
-                    payload: row.get("payload"),
-                    content_type: row.get("content_type"),
-                    metadata: serde_json::from_value(metadata_json).unwrap_or_default(),
-                    timestamp: row.get("timestamp"),
-                    version: row.get::<i64, _>("version") as u64,
-                }
-            })
-            .collect();
-        events.reverse();
-        Ok(events)
-    }
-}
-
-#[async_trait]
-impl EventQuery for PgEventQuery {
-    async fn query_events(
-        &self,
-        organization: &str,
-        since: DateTime<Utc>,
-        limit: usize,
-    ) -> StdResult<Vec<SerializedEvent>, String> {
-        self.query_events(organization, since, limit)
-            .await
-            .map_err(|e| e.to_string())
     }
 }

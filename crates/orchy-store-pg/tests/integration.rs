@@ -1,5 +1,8 @@
-use chrono::{DateTime, Utc};
 use std::collections::HashMap;
+use std::time::Duration;
+
+use chrono::Utc;
+use futures::StreamExt;
 
 use orchy_core::agent::{Agent, AgentStore, Alias};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
@@ -7,6 +10,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
+use orchy_events::io::{Reader, Writer};
 use orchy_store_pg::*;
 
 const PG_URL: &str = "postgres://orchy:orchy@localhost:5432/orchy";
@@ -167,7 +171,6 @@ async fn task_save_and_get() {
 async fn task_save_persists_event_log() {
     let p = pool().await;
     let tasks = PgTaskStore::new(p.clone());
-    let event_query = PgEventQuery::new(p);
     let organization = org();
     let mut task = Task::new(
         organization.clone(),
@@ -184,12 +187,28 @@ async fn task_save_persists_event_log() {
     .unwrap();
     tasks.save(&mut task).await.unwrap();
 
-    let events = event_query
-        .query_events(organization.as_str(), DateTime::<Utc>::UNIX_EPOCH, 10)
-        .await
-        .unwrap();
+    let reader = PgReader::new(
+        p,
+        PgReaderConfig {
+            organization: orchy_events::OrganizationId::new(organization.as_str()).unwrap(),
+            consumer_group_id: None,
+            start_from: orchy_events::StartFrom::Earliest,
+            topics: None,
+            namespace_prefix: None,
+            end_at: Some(Utc::now()),
+            limit: Some(10),
+            batch_size: 10,
+            poll_interval: Duration::from_millis(50),
+        },
+    );
+    let mut stream = reader.read().await.unwrap();
+    let mut events = Vec::new();
+    while let Some(msg) = stream.next().await {
+        let msg = msg.unwrap();
+        events.push(msg.into_event());
+    }
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].topic, "task.created");
+    assert_eq!(events[0].topic().as_str(), "task.created");
 }
 
 #[tokio::test]
@@ -531,4 +550,144 @@ async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
         .await
         .unwrap();
     assert!(after_read.items.is_empty());
+}
+
+#[tokio::test]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
+async fn pg_reader_streaming_yields_events_in_order() {
+    let p = pool().await;
+    let writer = PgEventWriter::new(p.clone());
+    let org_events = orchy_events::OrganizationId::new("orgx").unwrap();
+    for i in 0..3 {
+        let e = orchy_events::Event::create(
+            "orgx",
+            "/x",
+            "thing.happened",
+            format!("k{i}"),
+            orchy_events::Payload::from_string(format!("v{i}")),
+        )
+        .unwrap();
+        writer.write(&e).await.unwrap();
+    }
+    let reader = PgReader::new(
+        p,
+        PgReaderConfig {
+            organization: org_events,
+            consumer_group_id: Some(orchy_events::ConsumerGroupId::new("test-group").unwrap()),
+            start_from: orchy_events::StartFrom::Earliest,
+            topics: None,
+            namespace_prefix: None,
+            end_at: None,
+            limit: Some(3),
+            batch_size: 10,
+            poll_interval: Duration::from_millis(50),
+        },
+    );
+    let mut stream = reader.read().await.unwrap();
+    let mut keys = Vec::new();
+    while let Some(msg) = stream.next().await {
+        let msg = msg.unwrap();
+        msg.ack().await.unwrap();
+        keys.push(msg.event().key().as_str().to_string());
+    }
+    assert_eq!(keys, vec!["k0", "k1", "k2"]);
+}
+
+#[tokio::test]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
+async fn pg_reader_bounded_terminates_after_limit() {
+    let p = pool().await;
+    let writer = PgEventWriter::new(p.clone());
+    let org_events = orchy_events::OrganizationId::new("orgy").unwrap();
+    for i in 0..5 {
+        let e = orchy_events::Event::create(
+            "orgy",
+            "/x",
+            "thing.happened",
+            format!("k{i}"),
+            orchy_events::Payload::from_string("v"),
+        )
+        .unwrap();
+        writer.write(&e).await.unwrap();
+    }
+    let reader = PgReader::new(
+        p,
+        PgReaderConfig {
+            organization: org_events,
+            consumer_group_id: None,
+            start_from: orchy_events::StartFrom::Earliest,
+            topics: None,
+            namespace_prefix: None,
+            end_at: Some(Utc::now()),
+            limit: Some(3),
+            batch_size: 10,
+            poll_interval: Duration::from_millis(50),
+        },
+    );
+    let mut stream = reader.read().await.unwrap();
+    let mut count = 0;
+    while let Some(_msg) = stream.next().await {
+        count += 1;
+    }
+    assert_eq!(count, 3);
+}
+
+#[tokio::test]
+#[cfg_attr(not(feature = "pg-tests"), ignore)]
+async fn pg_reader_resumes_from_offset() {
+    let p = pool().await;
+    let writer = PgEventWriter::new(p.clone());
+    let org_events = orchy_events::OrganizationId::new("orgz").unwrap();
+    for i in 0..4 {
+        let e = orchy_events::Event::create(
+            "orgz",
+            "/x",
+            "thing.happened",
+            format!("k{i}"),
+            orchy_events::Payload::from_string("v"),
+        )
+        .unwrap();
+        writer.write(&e).await.unwrap();
+    }
+    let group = orchy_events::ConsumerGroupId::new("resume-group").unwrap();
+
+    {
+        let reader = PgReader::new(
+            p.clone(),
+            PgReaderConfig {
+                organization: org_events.clone(),
+                consumer_group_id: Some(group.clone()),
+                start_from: orchy_events::StartFrom::Earliest,
+                topics: None,
+                namespace_prefix: None,
+                end_at: None,
+                limit: Some(2),
+                batch_size: 10,
+                poll_interval: Duration::from_millis(50),
+            },
+        );
+        let mut stream = reader.read().await.unwrap();
+        for _ in 0..2 {
+            let msg = stream.next().await.unwrap().unwrap();
+            msg.ack().await.unwrap();
+        }
+    }
+
+    let reader2 = PgReader::new(
+        p,
+        PgReaderConfig {
+            organization: org_events,
+            consumer_group_id: Some(group),
+            start_from: orchy_events::StartFrom::Earliest,
+            topics: None,
+            namespace_prefix: None,
+            end_at: None,
+            limit: Some(2),
+            batch_size: 10,
+            poll_interval: Duration::from_millis(50),
+        },
+    );
+    let mut stream = reader2.read().await.unwrap();
+    let msg = stream.next().await.unwrap().unwrap();
+    assert_eq!(msg.event().key().as_str(), "k2");
 }

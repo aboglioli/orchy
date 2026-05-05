@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::Duration;
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::error::Error;
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
@@ -166,7 +166,6 @@ async fn task_save_and_get() {
 async fn task_save_persists_event_log() {
     let s = state();
     let task_store = MemoryTaskStore::new(s.clone());
-    let event_query = MemoryEventQuery::new(s);
     let organization = org();
     let mut task = Task::new(
         organization.clone(),
@@ -184,12 +183,13 @@ async fn task_save_persists_event_log() {
 
     task_store.save(&mut task).await.unwrap();
 
-    let events = event_query
-        .query_events(organization.as_str(), DateTime::<Utc>::UNIX_EPOCH, 10)
-        .await
-        .unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].topic, "task.created");
+    let events = s.snapshot_events().await;
+    let org_events: Vec<_> = events
+        .iter()
+        .filter(|e| e.organization == organization.as_str())
+        .collect();
+    assert_eq!(org_events.len(), 1);
+    assert_eq!(org_events[0].topic, "task.created");
 }
 
 #[tokio::test]

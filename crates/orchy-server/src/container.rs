@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use orchy_application::{Application, ApplicationDeps, EventQuery};
+use orchy_application::{Application, ApplicationDeps, ReaderFactory};
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore};
 use orchy_core::embeddings::EmbeddingsProvider;
@@ -45,7 +45,7 @@ struct Stores {
     orgs: Arc<dyn OrganizationStore>,
     api_keys: Arc<dyn ApiKeyStore>,
     edges: Arc<dyn EdgeStore>,
-    event_query: Arc<dyn EventQuery>,
+    reader_factory: Arc<dyn ReaderFactory>,
     users: Arc<dyn UserStore>,
     memberships: Arc<dyn OrgMembershipStore>,
 }
@@ -80,7 +80,7 @@ impl Container {
             orgs: stores.orgs.clone(),
             edges: stores.edges.clone(),
             embeddings: embeddings.map(|e| e as Arc<dyn EmbeddingsProvider>),
-            event_query: stores.event_query.clone(),
+            reader_factory: stores.reader_factory.clone(),
             users: stores.users.clone(),
             memberships: stores.memberships.clone(),
             token_encoder: token_encoder.clone(),
@@ -211,7 +211,7 @@ impl Container {
             orgs: Arc::new(MemoryOrganizationStore::new(state.clone())),
             api_keys: Arc::new(MemoryApiKeyStore::new(state.clone())),
             edges: Arc::new(MemoryEdgeStore::new(state.clone())),
-            event_query: Arc::new(MemoryEventQuery::new(state.clone())),
+            reader_factory: Arc::new(MemoryReaderFactory::new(state.clone())),
             users: Arc::new(MemoryUserStore::new(state.clone())),
             memberships: Arc::new(MemoryOrgMembershipStore::new(state)),
         }
@@ -231,7 +231,7 @@ impl Container {
             orgs: Arc::new(SqliteOrganizationStore::new(conn.clone())),
             api_keys: Arc::new(SqliteApiKeyStore::new(conn.clone())),
             edges: Arc::new(SqliteEdgeStore::new(conn.clone())),
-            event_query: Arc::new(SqliteEventQuery::new(conn.clone())),
+            reader_factory: Arc::new(orchy_store_sqlite::SqliteReaderFactory::new(conn.clone())),
             users: Arc::new(SqliteUserStore::new(conn.clone())),
             memberships: Arc::new(SqliteOrgMembershipStore::new(conn)),
         }
@@ -251,7 +251,7 @@ impl Container {
             orgs: Arc::new(PgOrganizationStore::new(pool.clone())),
             api_keys: Arc::new(PgApiKeyStore::new(pool.clone())),
             edges: Arc::new(PgEdgeStore::new(pool.clone())),
-            event_query: Arc::new(orchy_store_pg::PgEventQuery::new(pool.clone())),
+            reader_factory: Arc::new(orchy_store_pg::PgReaderFactory::new(pool.clone())),
             users: Arc::new(PgUserStore::new(pool.clone())),
             memberships: Arc::new(PgOrgMembershipStore::new(pool)),
         }

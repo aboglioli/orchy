@@ -1,6 +1,5 @@
 mod agent;
 mod api_key;
-pub(crate) mod consumer;
 mod edge;
 mod events;
 mod knowledge;
@@ -8,22 +7,24 @@ mod message;
 mod namespace;
 mod organization;
 mod project;
+mod reader;
+mod reader_factory;
 mod resource_lock;
-mod subscriber;
 mod task;
 mod user;
 
 pub use agent::PgAgentStore;
 pub use api_key::PgApiKeyStore;
 pub use edge::PgEdgeStore;
-pub use events::{PgEventQuery, PgEventWriter};
+pub use events::PgEventWriter;
 pub use knowledge::PgKnowledgeStore;
 pub use message::PgMessageStore;
 pub use namespace::PgNamespaceStore;
 pub use organization::PgOrganizationStore;
 pub use project::PgProjectStore;
+pub use reader::{PgAcker, PgAckerVariant, PgReader, PgReaderConfig, PgStream};
+pub use reader_factory::PgReaderFactory;
 pub use resource_lock::PgLockStore;
-pub use subscriber::{ConsumerConfig, PgSubscriber};
 pub use task::PgTaskStore;
 pub use user::{PgOrgMembershipStore, PgUserStore};
 

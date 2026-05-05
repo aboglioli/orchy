@@ -263,7 +263,7 @@ pub use dto::{
     ProjectOverviewResponse, ResourceLockDto, TaskDto, TaskWithContextResponse, UserDto,
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
-pub use poll_updates::{EventQuery, PollUpdates, PollUpdatesCommand};
+pub use poll_updates::{PollUpdates, PollUpdatesCommand, ReaderFactory};
 
 pub struct ApplicationDeps {
     pub agents: Arc<dyn AgentStore>,
@@ -276,7 +276,7 @@ pub struct ApplicationDeps {
     pub orgs: Arc<dyn OrganizationStore>,
     pub edges: Arc<dyn EdgeStore>,
     pub embeddings: Option<Arc<dyn EmbeddingsProvider>>,
-    pub event_query: Arc<dyn EventQuery>,
+    pub reader_factory: Arc<dyn ReaderFactory>,
     pub users: Arc<dyn UserStore>,
     pub memberships: Arc<dyn OrgMembershipStore>,
     pub token_encoder: Option<Arc<dyn TokenEncoder>>,
@@ -404,7 +404,7 @@ impl Application {
         let orgs = deps.orgs;
         let edges = deps.edges;
         let embeddings = deps.embeddings;
-        let event_query = deps.event_query;
+        let reader_factory = deps.reader_factory;
         let users = deps.users;
         let memberships = deps.memberships;
         let token_encoder = deps.token_encoder;
@@ -537,7 +537,7 @@ impl Application {
             unlock_resource: UnlockResource::new(agents.clone(), locks.clone()),
             check_lock: CheckLock::new(locks),
 
-            poll_updates: PollUpdates::new(event_query),
+            poll_updates: PollUpdates::new(reader_factory),
             get_project_overview: GetProjectOverview::new(projects, agents, tasks, knowledge),
 
             create_organization: CreateOrganization::new(orgs.clone()),

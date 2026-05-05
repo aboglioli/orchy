@@ -75,7 +75,7 @@ fn build_app(_s: &Arc<MemoryState>) -> Application {
         orgs: Arc::new(MemoryOrganizationStore::new(_s.clone())),
         edges: Arc::new(MemoryEdgeStore::new(_s.clone())) as Arc<dyn EdgeStore>,
         embeddings: None,
-        event_query: Arc::new(MemoryEventQuery::new(_s.clone())),
+        reader_factory: Arc::new(MemoryReaderFactory::new(_s.clone())),
         users: Arc::new(MemoryUserStore::new(_s.clone())) as Arc<dyn UserStore>,
         memberships: Arc::new(MemoryOrgMembershipStore::new(_s.clone()))
             as Arc<dyn OrgMembershipStore>,

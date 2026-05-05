@@ -1,37 +1,84 @@
-use chrono::{DateTime, Utc};
+use std::result::Result as StdResult;
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
-use orchy_events::SerializedEvent;
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use futures::StreamExt;
 
-pub use orchy_events::EventQuery;
+use orchy_core::error::{Error, Result};
+use orchy_events::io::{BoxAcker, BoxStream, Reader};
+use orchy_events::{Event, Namespace, OrganizationId, Topic};
 
 pub struct PollUpdatesCommand {
-    pub org_id: String,
+    pub organization: String,
     pub since: String,
     pub limit: Option<u32>,
+    pub topics: Option<Vec<String>>,
+    pub namespace_prefix: Option<String>,
+}
+
+#[async_trait]
+pub trait ReaderFactory: Send + Sync {
+    async fn build_history_reader(
+        &self,
+        organization: OrganizationId,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+        limit: usize,
+        topics: Option<Vec<Topic>>,
+        namespace_prefix: Option<Namespace>,
+    ) -> Result<Arc<dyn Reader<Acker = BoxAcker, Stream = BoxStream> + Send + Sync>>;
 }
 
 pub struct PollUpdates {
-    events: Arc<dyn EventQuery>,
+    factory: Arc<dyn ReaderFactory>,
 }
 
 impl PollUpdates {
-    pub fn new(events: Arc<dyn EventQuery>) -> Self {
-        Self { events }
+    pub fn new(factory: Arc<dyn ReaderFactory>) -> Self {
+        Self { factory }
     }
 
-    pub async fn execute(&self, cmd: PollUpdatesCommand) -> Result<Vec<SerializedEvent>> {
-        let since = cmd
-            .since
-            .parse::<DateTime<Utc>>()
-            .map_err(|e| Error::InvalidInput(format!("invalid timestamp: {e}")))?;
-
+    pub async fn execute(&self, cmd: PollUpdatesCommand) -> Result<Vec<Event>> {
+        let organization = OrganizationId::new(&cmd.organization)
+            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let since: DateTime<Utc> = cmd.since.parse().map_err(|e: chrono::ParseError| {
+            Error::InvalidInput(format!("invalid timestamp: {e}"))
+        })?;
+        let topics = match cmd.topics {
+            None => None,
+            Some(ts) => Some(
+                ts.into_iter()
+                    .map(Topic::new)
+                    .collect::<StdResult<Vec<_>, _>>()
+                    .map_err(|e| Error::InvalidInput(e.to_string()))?,
+            ),
+        };
+        let namespace_prefix = match cmd.namespace_prefix {
+            None => None,
+            Some(s) => Some(Namespace::new(s).map_err(|e| Error::InvalidInput(e.to_string()))?),
+        };
         let limit = cmd.limit.unwrap_or(50) as usize;
+        let until = Utc::now();
 
-        self.events
-            .query_events(&cmd.org_id, since, limit)
+        let reader = self
+            .factory
+            .build_history_reader(organization, since, until, limit, topics, namespace_prefix)
+            .await?;
+
+        let mut stream = reader
+            .read()
             .await
-            .map_err(Error::Store)
+            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut events = Vec::with_capacity(limit);
+        while let Some(msg) = stream.next().await {
+            let msg = msg.map_err(|e| Error::Store(e.to_string()))?;
+            let _ = msg.ack().await;
+            events.push(msg.into_event());
+            if events.len() >= limit {
+                break;
+            }
+        }
+        Ok(events)
     }
 }

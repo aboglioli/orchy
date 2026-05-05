@@ -6,6 +6,7 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
+use orchy_events::SerializedEvent;
 use serde::Deserialize;
 
 use orchy_application::PollUpdatesCommand;
@@ -48,27 +49,31 @@ pub async fn poll(
         .parse::<DateTime<Utc>>()
         .unwrap_or_else(|_| Utc::now() - Duration::minutes(5));
 
-    let cmd = PollUpdatesCommand {
-        org_id: org,
-        since: since_str,
-        limit: query.limit,
+    let namespace_prefix = if let Some(ref ns) = query.namespace {
+        let namespace = parse_namespace(ns)?;
+        Some(namespace.to_string())
+    } else {
+        None
     };
 
-    let mut events = container
+    let cmd = PollUpdatesCommand {
+        organization: org.to_string(),
+        since: since_str,
+        limit: query.limit,
+        topics: None,
+        namespace_prefix,
+    };
+
+    let events = container
         .app
         .poll_updates
         .execute(cmd)
         .await
         .map_err(ApiError::from)?;
 
-    if let Some(ref ns) = query.namespace {
-        let namespace = parse_namespace(ns)?;
-        let ns_str = namespace.to_string();
-        events.retain(|e| e.namespace == ns_str || e.namespace.starts_with(&format!("{ns_str}/")));
-    }
-
     let updates: Vec<_> = events
         .iter()
+        .filter_map(|e| SerializedEvent::from_event(e).ok())
         .map(|e| {
             serde_json::json!({
                 "topic": e.topic,
