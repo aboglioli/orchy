@@ -17,3 +17,7 @@ aws-sdk-sqs.workspace = true
 
 [dev-dependencies]
 testcontainers.workspace = true
+
+[features]
+default = []
+integration-tests = []

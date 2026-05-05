@@ -15,15 +15,17 @@ Each scenario asserts an invariant that MUST hold identically across all backend
 ## How to run
 
 ```sh
-# Default: memory + sqlite
+# Default: memory + sqlite (no external services needed)
 cargo test -p orchy-store-conformance
 
-# With Postgres (requires DATABASE_URL pointing at a live PG instance with pgvector)
-DATABASE_URL=postgres://orchy:orchy@localhost:5432/orchy \
-  cargo test -p orchy-store-conformance --features pg-tests --test pg
+# With Postgres (uses testcontainers — requires podman or docker)
+# For rootless podman also set:
+#   export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock
+#   export TESTCONTAINERS_RYUK_DISABLED=true
+cargo test -p orchy-store-conformance --features integration-tests -- --test-threads=1
 ```
 
-The PG variant is gated behind the `pg-tests` Cargo feature so default workspace test runs do not require a database.
+The PG variant is gated behind the `integration-tests` Cargo feature so default workspace test runs do not require a container runtime.
 
 ## Adding a new scenario
 

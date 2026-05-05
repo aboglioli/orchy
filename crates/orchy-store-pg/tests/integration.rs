@@ -3,43 +3,54 @@ use std::time::Duration;
 
 use chrono::Utc;
 use futures::StreamExt;
+use testcontainers::core::{IntoContainerPort, WaitFor};
+use testcontainers::runners::AsyncRunner;
+use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 
 use orchy_core::agent::{Agent, AgentStore, Alias};
 use orchy_core::message::{Message, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
-use orchy_core::organization::OrganizationId;
+use orchy_core::organization::OrganizationId as CoreOrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_events::io::{Reader, Writer};
-use orchy_store_pg::*;
+use orchy_events::{ConsumerGroupId, Event, OrganizationId, StartFrom};
+use orchy_store_pg::{PgDatabase, PgEventWriter, PgReader, PgReaderConfig, *};
 
-const PG_URL: &str = "postgres://orchy:orchy@localhost:5432/orchy";
-
-/// Serialize PG test access — all tests share the same database.
-static PG_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-async fn pool() -> sqlx::PgPool {
-    let _guard = PG_MUTEX.lock().await;
-    let b = PgDatabase::new(PG_URL, None).await.unwrap();
-    b.run_migrations(&PgDatabase::migrations_dir())
+async fn start_postgres() -> (ContainerAsync<GenericImage>, sqlx::PgPool) {
+    let container = GenericImage::new("pgvector/pgvector", "0.8.2-pg17")
+        .with_exposed_port(5432.tcp())
+        .with_wait_for(WaitFor::message_on_stderr(
+            "database system is ready to accept connections",
+        ))
+        .with_env_var("POSTGRES_USER", "orchy")
+        .with_env_var("POSTGRES_PASSWORD", "orchy")
+        .with_env_var("POSTGRES_DB", "orchy")
+        .start()
+        .await
+        .expect("postgres start");
+    let port = container.get_host_port_ipv4(5432).await.unwrap();
+    let url = format!("postgres://orchy:orchy@127.0.0.1:{port}/orchy");
+    let db = PgDatabase::new(&url, None).await.unwrap();
+    db.run_migrations(&PgDatabase::migrations_dir())
         .await
         .unwrap();
-    b.truncate_all().await.unwrap();
-    b.pool()
+    let pool = db.pool();
+    (container, pool)
 }
 
 fn proj(s: &str) -> ProjectId {
     ProjectId::try_from(s).unwrap()
 }
 
-fn org() -> OrganizationId {
-    OrganizationId::new("default").unwrap()
+fn org() -> CoreOrganizationId {
+    CoreOrganizationId::new("default").unwrap()
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn agent_save_and_find() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
@@ -63,9 +74,9 @@ async fn agent_save_and_find() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn agent_save_updates_existing() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
@@ -91,9 +102,9 @@ async fn agent_save_updates_existing() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn agent_save_and_fetch_roundtrip() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
@@ -113,9 +124,9 @@ async fn agent_save_and_fetch_roundtrip() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn agent_find_timed_out() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p);
     let mut agent = Agent::register(
         org(),
@@ -141,9 +152,9 @@ async fn agent_find_timed_out() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn task_save_and_get() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let tasks = PgTaskStore::new(p);
 
     let mut task = Task::new(
@@ -167,9 +178,9 @@ async fn task_save_and_get() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn task_save_persists_event_log() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let tasks = PgTaskStore::new(p.clone());
     let organization = org();
     let mut task = Task::new(
@@ -190,9 +201,9 @@ async fn task_save_persists_event_log() {
     let reader = PgReader::new(
         p,
         PgReaderConfig {
-            organization: orchy_events::OrganizationId::new(organization.as_str()).unwrap(),
+            organization: OrganizationId::new(organization.as_str()).unwrap(),
             consumer_group_id: None,
-            start_from: orchy_events::StartFrom::Earliest,
+            start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,
             end_at: Some(Utc::now()),
@@ -212,9 +223,9 @@ async fn task_save_persists_event_log() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn task_list_sorted_by_priority() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let tasks = PgTaskStore::new(p);
 
     let mut low = Task::new(
@@ -256,9 +267,9 @@ async fn task_list_sorted_by_priority() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn message_save_and_find_unread() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p.clone());
     let messages = PgMessageStore::new(p);
 
@@ -340,9 +351,9 @@ async fn message_save_and_find_unread() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn message_find_by_id_and_mark_read() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p.clone());
     let messages = PgMessageStore::new(p);
 
@@ -396,9 +407,9 @@ async fn message_find_by_id_and_mark_read() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn message_find_by_id_preserves_claim_state() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p.clone());
     let messages = PgMessageStore::new(p);
 
@@ -457,9 +468,9 @@ async fn message_find_by_id_preserves_claim_state() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let agents = PgAgentStore::new(p.clone());
     let messages = PgMessageStore::new(p);
     let pr = proj("proj");
@@ -553,13 +564,13 @@ async fn message_find_unread_includes_broadcast_until_agent_reads_it() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn pg_reader_streaming_yields_events_in_order() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let writer = PgEventWriter::new(p.clone());
-    let org_events = orchy_events::OrganizationId::new("orgx").unwrap();
+    let org_events = OrganizationId::new("orgx").unwrap();
     for i in 0..3 {
-        let e = orchy_events::Event::create(
+        let e = Event::create(
             "orgx",
             "/x",
             "thing.happened",
@@ -573,8 +584,8 @@ async fn pg_reader_streaming_yields_events_in_order() {
         p,
         PgReaderConfig {
             organization: org_events,
-            consumer_group_id: Some(orchy_events::ConsumerGroupId::new("test-group").unwrap()),
-            start_from: orchy_events::StartFrom::Earliest,
+            consumer_group_id: Some(ConsumerGroupId::new("test-group").unwrap()),
+            start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,
             end_at: None,
@@ -594,13 +605,13 @@ async fn pg_reader_streaming_yields_events_in_order() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn pg_reader_bounded_terminates_after_limit() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let writer = PgEventWriter::new(p.clone());
-    let org_events = orchy_events::OrganizationId::new("orgy").unwrap();
+    let org_events = OrganizationId::new("orgy").unwrap();
     for i in 0..5 {
-        let e = orchy_events::Event::create(
+        let e = Event::create(
             "orgy",
             "/x",
             "thing.happened",
@@ -615,7 +626,7 @@ async fn pg_reader_bounded_terminates_after_limit() {
         PgReaderConfig {
             organization: org_events,
             consumer_group_id: None,
-            start_from: orchy_events::StartFrom::Earliest,
+            start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,
             end_at: Some(Utc::now()),
@@ -633,13 +644,13 @@ async fn pg_reader_bounded_terminates_after_limit() {
 }
 
 #[tokio::test]
-#[cfg_attr(not(feature = "pg-tests"), ignore)]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn pg_reader_resumes_from_offset() {
-    let p = pool().await;
+    let (_container, p) = start_postgres().await;
     let writer = PgEventWriter::new(p.clone());
-    let org_events = orchy_events::OrganizationId::new("orgz").unwrap();
+    let org_events = OrganizationId::new("orgz").unwrap();
     for i in 0..4 {
-        let e = orchy_events::Event::create(
+        let e = Event::create(
             "orgz",
             "/x",
             "thing.happened",
@@ -649,7 +660,7 @@ async fn pg_reader_resumes_from_offset() {
         .unwrap();
         writer.write(&e).await.unwrap();
     }
-    let group = orchy_events::ConsumerGroupId::new("resume-group").unwrap();
+    let group = ConsumerGroupId::new("resume-group").unwrap();
 
     {
         let reader = PgReader::new(
@@ -657,7 +668,7 @@ async fn pg_reader_resumes_from_offset() {
             PgReaderConfig {
                 organization: org_events.clone(),
                 consumer_group_id: Some(group.clone()),
-                start_from: orchy_events::StartFrom::Earliest,
+                start_from: StartFrom::Earliest,
                 topics: None,
                 namespace_prefix: None,
                 end_at: None,
@@ -678,7 +689,7 @@ async fn pg_reader_resumes_from_offset() {
         PgReaderConfig {
             organization: org_events,
             consumer_group_id: Some(group),
-            start_from: orchy_events::StartFrom::Earliest,
+            start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,
             end_at: None,

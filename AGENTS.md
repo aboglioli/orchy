@@ -498,7 +498,26 @@ cargo test -p orchy-events         # event library tests
 cargo test -p orchy-application    # application layer tests
 cargo test -p orchy-store-memory   # in-memory store tests
 cargo test -p orchy-store-sqlite   # SQLite tests (in-memory DB)
-cargo test -p orchy-store-pg       # PG tests (needs running postgres)
+cargo test -p orchy-store-pg       # PG unit tests (integration tests skipped)
 ```
 
-For PostgreSQL: `podman compose up -d` (uses `compose.yml`).
+Integration tests use testcontainers (auto-spawn Postgres / LocalStack /
+Kafka per test). Requires a container runtime — podman or docker. For
+rootless podman set:
+
+```bash
+export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock
+export TESTCONTAINERS_RYUK_DISABLED=true
+```
+
+Then run each crate's integration tests with `--test-threads=1`:
+
+```bash
+cargo test -p orchy-store-pg          --features integration-tests -- --test-threads=1
+cargo test -p orchy-store-conformance --features integration-tests -- --test-threads=1
+cargo test -p orchy-events-sqs        --features integration-tests -- --test-threads=1
+cargo test -p orchy-events-kafka      --features integration-tests -- --test-threads=1
+```
+
+The legacy `compose.yml` is kept for manual server runs (e.g. `cargo run -p
+orchy-server` against a persistent Postgres). Tests no longer require it.

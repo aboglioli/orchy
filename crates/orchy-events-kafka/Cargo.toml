@@ -16,3 +16,7 @@ rdkafka.workspace = true
 
 [dev-dependencies]
 testcontainers.workspace = true
+
+[features]
+default = []
+integration-tests = []

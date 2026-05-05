@@ -51,10 +51,15 @@ impl KafkaReader {
                     .map_err(|e| Error::Store(e.to_string()))?;
             }
             PartitionAssignment::Specific(parts) => {
+                let offset = match config.start_from {
+                    StartFrom::Earliest => rdkafka::Offset::Beginning,
+                    StartFrom::Latest => rdkafka::Offset::End,
+                    StartFrom::Timestamp(_) => rdkafka::Offset::Stored,
+                };
                 let mut tpl = TopicPartitionList::new();
                 for topic in &config.kafka_topics {
                     for p in parts {
-                        tpl.add_partition_offset(topic, *p, rdkafka::Offset::Stored)
+                        tpl.add_partition_offset(topic, *p, offset)
                             .map_err(|e| Error::Store(e.to_string()))?;
                     }
                 }

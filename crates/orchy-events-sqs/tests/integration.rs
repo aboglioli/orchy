@@ -50,7 +50,7 @@ fn make_event(org: &str, key: &str) -> Event {
 }
 
 #[tokio::test]
-#[ignore = "requires localstack via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn write_then_read_yields_event() {
     let (_c, client) = start_localstack().await;
     let queue_url = create_queue(&client, "q1").await;
@@ -72,7 +72,7 @@ async fn write_then_read_yields_event() {
 }
 
 #[tokio::test]
-#[ignore = "requires localstack via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn write_all_chunks_to_batches_of_10() {
     let (_c, client) = start_localstack().await;
     let queue_url = create_queue(&client, "q-batch").await;
@@ -100,7 +100,7 @@ async fn write_all_chunks_to_batches_of_10() {
 }
 
 #[tokio::test]
-#[ignore = "requires localstack via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn rejects_event_above_256kb() {
     let (_c, client) = start_localstack().await;
     let queue_url = create_queue(&client, "q-big").await;
@@ -118,7 +118,7 @@ async fn rejects_event_above_256kb() {
 }
 
 #[tokio::test]
-#[ignore = "requires localstack via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn org_mismatch_is_acked_and_skipped() {
     let (_c, client) = start_localstack().await;
     let queue_url = create_queue(&client, "q-org").await;

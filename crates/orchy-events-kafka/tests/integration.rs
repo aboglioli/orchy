@@ -1,3 +1,4 @@
+use std::net::TcpListener;
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -14,17 +15,29 @@ use orchy_events::{ConsumerGroupId, Event, OrganizationId, StartFrom};
 
 use orchy_events_kafka::{KafkaReader, KafkaReaderConfig, KafkaWriter, PartitionAssignment};
 
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
 async fn start_kafka() -> (ContainerAsync<GenericImage>, String) {
+    let host_port = free_port();
+    let advertised = format!("PLAINTEXT://localhost:{host_port}");
     let container = GenericImage::new("confluentinc/cp-kafka", "7.6.0")
         .with_exposed_port(9092.tcp())
         .with_wait_for(WaitFor::message_on_stdout("Kafka Server started"))
+        .with_mapped_port(host_port, 9092.tcp())
+        .with_env_var("CLUSTER_ID", "MkU3OEVBNTcwNTJENDM2Qk")
         .with_env_var("KAFKA_NODE_ID", "1")
         .with_env_var("KAFKA_PROCESS_ROLES", "broker,controller")
         .with_env_var(
             "KAFKA_LISTENERS",
             "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
         )
-        .with_env_var("KAFKA_ADVERTISED_LISTENERS", "PLAINTEXT://localhost:9092")
+        .with_env_var("KAFKA_ADVERTISED_LISTENERS", advertised)
         .with_env_var("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
         .with_env_var(
             "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP",
@@ -35,8 +48,7 @@ async fn start_kafka() -> (ContainerAsync<GenericImage>, String) {
         .start()
         .await
         .expect("kafka start");
-    let port = container.get_host_port_ipv4(9092).await.unwrap();
-    let brokers = format!("localhost:{port}");
+    let brokers = format!("localhost:{host_port}");
     (container, brokers)
 }
 
@@ -59,7 +71,7 @@ fn make_event(org: &str, topic: &str, key: &str) -> Event {
 }
 
 #[tokio::test]
-#[ignore = "requires Kafka via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn write_then_read_single_partition() {
     let (_c, brokers) = start_kafka().await;
     create_topic(&brokers, "topic-a", 1).await;
@@ -90,7 +102,7 @@ async fn write_then_read_single_partition() {
 }
 
 #[tokio::test]
-#[ignore = "requires Kafka via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn three_partitions_all_received() {
     let (_c, brokers) = start_kafka().await;
     create_topic(&brokers, "topic-3", 3).await;
@@ -127,7 +139,7 @@ async fn three_partitions_all_received() {
 }
 
 #[tokio::test]
-#[ignore = "requires Kafka via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn specific_partition_assignment() {
     let (_c, brokers) = start_kafka().await;
     create_topic(&brokers, "topic-pa", 3).await;
@@ -166,7 +178,7 @@ async fn specific_partition_assignment() {
 }
 
 #[tokio::test]
-#[ignore = "requires Kafka via testcontainers"]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
 async fn limit_terminates_stream() {
     let (_c, brokers) = start_kafka().await;
     create_topic(&brokers, "topic-lim", 1).await;
