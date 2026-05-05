@@ -1129,6 +1129,12 @@ fn workspace_root() -> std::path::PathBuf {
 }
 
 fn orchy_bin() -> Option<std::path::PathBuf> {
+    if let Ok(path) = std::env::var("CARGO_BIN_EXE_orchy") {
+        let bin = std::path::PathBuf::from(path);
+        if bin.exists() {
+            return Some(bin);
+        }
+    }
     let root = workspace_root();
     let bin = root.join("target").join("debug").join("orchy");
     if bin.exists() { Some(bin) } else { None }

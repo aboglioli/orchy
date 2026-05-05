@@ -36,3 +36,4 @@ hex.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+orchy-cli = { path = "../orchy-cli" }

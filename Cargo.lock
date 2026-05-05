@@ -2518,6 +2518,7 @@ dependencies = [
  "http-body-util",
  "jsonwebtoken",
  "orchy-application",
+ "orchy-cli",
  "orchy-core",
  "orchy-events",
  "orchy-store-memory",
