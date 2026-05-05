@@ -386,3 +386,182 @@ async fn sqlite_auth_invite_new_user() {
         "member"
     );
 }
+
+// ─── Helper: boot a SQLite server and return an authenticated client + API key ─
+
+struct TestContext {
+    pub base: String,
+    pub client: reqwest::Client,
+    pub api_key: String,
+    pub cookie: String,
+}
+
+async fn boot_authenticated(name: &str) -> TestContext {
+    let base = spawn_sqlite_server(name).await;
+    let client = reqwest::Client::new();
+
+    let login_resp = client
+        .post(format!("{base}/api/auth/login"))
+        .json(&serde_json::json!({"email": "admin@orchy.sh", "password": "12345678"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), 200);
+    let cookie = login_resp
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(";")
+        .next()
+        .unwrap()
+        .to_string();
+
+    let key_resp = client
+        .post(format!("{base}/api/api-keys"))
+        .header(reqwest::header::COOKIE, &cookie)
+        .json(&serde_json::json!({"name": format!("{name}-key")}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(key_resp.status(), 200);
+    let api_key = key_resp.json::<serde_json::Value>().await.unwrap()["api_key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    TestContext {
+        base,
+        client,
+        api_key,
+        cookie,
+    }
+}
+
+// ─── SQLite: full bootstrap auth flow ──────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_bootstrap_full_auth_flow() {
+    let ctx = boot_authenticated("full-auth").await;
+
+    // Verify login returned membership with owner role on default org
+    let me_resp = ctx
+        .client
+        .get(format!("{}/api/auth/me", ctx.base))
+        .header(reqwest::header::COOKIE, &ctx.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(me_resp.status(), 200);
+    let me_body: serde_json::Value = me_resp.json().await.unwrap();
+    assert!(
+        me_body["memberships"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["org_id"].as_str() == Some("default") && m["role"].as_str() == Some("owner"))
+    );
+
+    // Use API key to register an agent
+    let reg_resp = ctx
+        .client
+        .post(format!("{}/api/projects/smoke/agents", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .json(&serde_json::json!({
+            "alias": "bootstrap-agent",
+            "description": "registered via key"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reg_resp.status(), 200);
+    let reg_body: serde_json::Value = reg_resp.json().await.unwrap();
+    assert_eq!(
+        reg_body["agent"]["alias"].as_str().unwrap(),
+        "bootstrap-agent"
+    );
+}
+
+// ─── SQLite: API key revoke invalidates key ─────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_api_key_revoke_invalidates_key() {
+    let ctx = boot_authenticated("key-revoke").await;
+
+    // Get key ID from list (response is top-level array)
+    let list_resp = ctx
+        .client
+        .get(format!("{}/api/api-keys", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        list_resp.status(),
+        200,
+        "list keys failed: {}",
+        list_resp.text().await.unwrap_or_default()
+    );
+    let list_body = list_resp.json::<serde_json::Value>().await.unwrap();
+    let keys = list_body.as_array().unwrap_or_else(|| {
+        panic!("expected array, got: {list_body}");
+    });
+    let key_id = keys
+        .iter()
+        .find(|k| k["name"].as_str().unwrap_or("").contains("key-revoke"))
+        .map(|k| k["id"].as_str().unwrap())
+        .unwrap()
+        .to_string();
+
+    // Verify key works (use a GET endpoint that exists)
+    let verify_resp = ctx
+        .client
+        .get(format!("{}/api/projects/smoke", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(verify_resp.status(), 200, "key should work before revoke");
+
+    // Revoke (needs bearer auth)
+    let revoke_resp = ctx
+        .client
+        .delete(format!("{}/api/api-keys/{key_id}", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoke_resp.status(), 204);
+
+    // Key should now be rejected (use a GET endpoint)
+    let after_resp = ctx
+        .client
+        .get(format!("{}/api/projects/smoke", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        after_resp.status(),
+        401,
+        "revoked key must return 401, got {}",
+        after_resp.status()
+    );
+}
+
+// ─── SQLite: invalid API key returns 401 ────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_invalid_api_key_returns_401() {
+    let ctx = boot_authenticated("bad-key").await;
+
+    let resp = ctx
+        .client
+        .get(format!("{}/api/projects/smoke", ctx.base))
+        .bearer_auth("sk_0000000000000000000000000000000000000000000000000000000000000000")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
