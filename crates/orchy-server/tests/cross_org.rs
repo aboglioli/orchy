@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use orchy_application::{
     AddEdgeCommand, Application, ApplicationDeps, ClaimTaskCommand, CompleteTaskCommand,
-    GenerateApiKeyCommand, GetTaskCommand, PostTaskCommand, RemoveEdgeCommand, RevokeApiKeyCommand,
-    StartTaskCommand,
+    GenerateApiKeyCommand, GetTaskCommand, ListAgentsCommand, PostTaskCommand,
+    ReadKnowledgeCommand, RemoveEdgeCommand, RevokeApiKeyCommand, StartTaskCommand,
+    WriteKnowledgeCommand,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::api_key::ApiKeyStore;
@@ -256,4 +257,79 @@ async fn cross_org_revoke_api_key_returns_not_found() {
         matches!(result, Err(Error::NotFound(_))),
         "cross-org revoke_api_key must return NotFound, got: {result:?}"
     );
+}
+
+#[tokio::test]
+async fn cross_org_get_knowledge_returns_not_found() {
+    let s = mem();
+    let app = build_app(&s);
+
+    app.write_knowledge
+        .execute(WriteKnowledgeCommand {
+            org_id: "org-a".into(),
+            project: "proj".into(),
+            namespace: None,
+            path: "cross-test".into(),
+            kind: "note".into(),
+            title: "cross".into(),
+            content: "secret".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let result = app
+        .read_knowledge
+        .execute(ReadKnowledgeCommand {
+            org_id: "org-b".into(),
+            project: "proj".into(),
+            namespace: None,
+            path: "cross-test".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert!(
+        result.knowledge.is_none(),
+        "cross-org read_knowledge must return knowledge=None, got: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn cross_org_list_agents_is_empty_for_other_org() {
+    let s = mem();
+    let app = build_app(&s);
+
+    register_agent(&s, "org-a", "agent-a").await;
+
+    let a_agents = app
+        .list_agents
+        .execute(ListAgentsCommand {
+            org_id: "org-a".into(),
+            project: None,
+            after: None,
+            limit: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(a_agents.items.len(), 1);
+
+    let b_agents = app
+        .list_agents
+        .execute(ListAgentsCommand {
+            org_id: "org-b".into(),
+            project: None,
+            after: None,
+            limit: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(b_agents.items.len(), 0, "org-b should not see org-a agents");
 }

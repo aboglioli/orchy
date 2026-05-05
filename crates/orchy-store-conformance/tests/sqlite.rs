@@ -8,22 +8,23 @@ use orchy_store_sqlite::{
 
 struct SqliteBackend;
 
-#[async_trait::async_trait]
 impl Backend for SqliteBackend {
-    async fn build() -> Bundle {
-        let db = SqliteDatabase::new(":memory:", None).unwrap();
-        db.run_migrations(&SqliteDatabase::migrations_dir())
-            .unwrap();
-        let conn = db.conn();
-        Bundle {
-            agents: Arc::new(SqliteAgentStore::new(conn.clone())),
-            tasks: Arc::new(SqliteTaskStore::new(conn.clone())),
-            messages: Arc::new(SqliteMessageStore::new(conn.clone())),
-            knowledge: Arc::new(SqliteKnowledgeStore::new(conn.clone())),
-            edges: Arc::new(SqliteEdgeStore::new(conn.clone())),
-            locks: Arc::new(SqliteLockStore::new(conn.clone())),
-            api_keys: Arc::new(SqliteApiKeyStore::new(conn)),
-        }
+    fn build() -> std::pin::Pin<Box<dyn std::future::Future<Output = Bundle> + Send>> {
+        Box::pin(async {
+            let db = SqliteDatabase::new(":memory:", None).unwrap();
+            db.run_migrations(&SqliteDatabase::migrations_dir())
+                .unwrap();
+            let conn = db.conn();
+            Bundle {
+                agents: Arc::new(SqliteAgentStore::new(conn.clone())),
+                tasks: Arc::new(SqliteTaskStore::new(conn.clone())),
+                messages: Arc::new(SqliteMessageStore::new(conn.clone())),
+                knowledge: Arc::new(SqliteKnowledgeStore::new(conn.clone())),
+                edges: Arc::new(SqliteEdgeStore::new(conn.clone())),
+                locks: Arc::new(SqliteLockStore::new(conn.clone())),
+                api_keys: Arc::new(SqliteApiKeyStore::new(conn)),
+            }
+        })
     }
 }
 

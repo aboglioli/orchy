@@ -70,6 +70,9 @@ pub(super) fn parse_rel_type_alias(s: &str) -> std::result::Result<RelationType,
     canonical.parse::<RelationType>().map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
+mod tests;
+
 pub(super) fn parse_relation_options(p: Option<RelationOptionsParam>) -> Option<RelationOptions> {
     p.map(|opts| RelationOptions {
         rel_types: opts.rel_types.map(|v| {

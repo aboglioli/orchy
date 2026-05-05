@@ -86,11 +86,7 @@ fn build_app(_s: &Arc<MemoryState>) -> Application {
     })
 }
 
-async fn register_app_agent(
-    app: &Application,
-    org: &str,
-    alias: &str,
-) -> AgentId {
+async fn register_app_agent(app: &Application, org: &str, alias: &str) -> AgentId {
     let resp = app
         .register_agent
         .execute(RegisterAgentCommand {

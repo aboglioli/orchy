@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use orchy_core::agent::AgentId;
+use orchy_core::agent::{Agent, Alias};
 use orchy_core::error::Error;
 use orchy_core::graph::{Edge, RelationType};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath};
@@ -119,28 +119,66 @@ pub async fn knowledge_optimistic_concurrency(bundle: &Bundle) {
 }
 
 pub async fn message_claim_visibility(bundle: &Bundle) {
-    let sender = AgentId::new();
-    let agent_a = AgentId::new();
-    let agent_b = AgentId::new();
+    let mut sender = Agent::register(
+        org(),
+        project(),
+        Namespace::root(),
+        Alias::new("msg-sender").unwrap(),
+        vec![],
+        "sender".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    bundle.agents.save(&mut sender).await.unwrap();
+
+    let mut agent_a = Agent::register(
+        org(),
+        project(),
+        Namespace::root(),
+        Alias::new("msg-agent-a").unwrap(),
+        vec![],
+        "agent a".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    bundle.agents.save(&mut agent_a).await.unwrap();
+
+    let mut agent_b = Agent::register(
+        org(),
+        project(),
+        Namespace::root(),
+        Alias::new("msg-agent-b").unwrap(),
+        vec![],
+        "agent b".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    bundle.agents.save(&mut agent_b).await.unwrap();
 
     let mut msg = Message::new(
         org(),
         project(),
         Namespace::root(),
-        sender.clone(),
+        sender.id().clone(),
         MessageTarget::Broadcast,
         "hello everyone".to_string(),
         None,
         vec![],
     )
     .unwrap();
-    msg.claim(agent_a.clone()).unwrap();
+    msg.claim(agent_a.id().clone()).unwrap();
     bundle.messages.save(&mut msg).await.unwrap();
 
     let unread_b = bundle
         .messages
         .find_unread(
-            &agent_b,
+            agent_b.id(),
             &[],
             &Namespace::root(),
             None,
@@ -159,7 +197,7 @@ pub async fn message_claim_visibility(bundle: &Bundle) {
     let unread_a = bundle
         .messages
         .find_unread(
-            &agent_a,
+            agent_a.id(),
             &[],
             &Namespace::root(),
             None,

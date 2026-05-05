@@ -13,6 +13,7 @@ async-trait = "0.1"
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
 chrono.workspace = true
 uuid.workspace = true
+sqlx.workspace = true
 
 [features]
 default = []

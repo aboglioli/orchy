@@ -1710,6 +1710,7 @@ dependencies = [
  "orchy-store-memory",
  "orchy-store-pg",
  "orchy-store-sqlite",
+ "sqlx",
  "tokio",
  "uuid",
 ]

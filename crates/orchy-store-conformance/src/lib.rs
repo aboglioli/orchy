@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use orchy_core::agent::AgentStore;
@@ -18,9 +20,8 @@ pub struct Bundle {
     pub api_keys: Arc<dyn ApiKeyStore>,
 }
 
-#[async_trait::async_trait]
 pub trait Backend: Send + Sync + 'static {
-    async fn build() -> Bundle;
+    fn build() -> Pin<Box<dyn Future<Output = Bundle> + Send>>;
 }
 
 #[macro_export]

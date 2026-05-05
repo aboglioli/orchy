@@ -11,7 +11,11 @@ use orchy_store_pg::*;
 
 const PG_URL: &str = "postgres://orchy:orchy@localhost:5432/orchy";
 
+/// Serialize PG test access — all tests share the same database.
+static PG_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn pool() -> sqlx::PgPool {
+    let _guard = PG_MUTEX.lock().await;
     let b = PgDatabase::new(PG_URL, None).await.unwrap();
     b.run_migrations(&PgDatabase::migrations_dir())
         .await

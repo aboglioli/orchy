@@ -568,3 +568,878 @@ async fn sqlite_invalid_api_key_returns_401() {
         .unwrap();
     assert_eq!(resp.status(), 401);
 }
+
+// ─── SQLite: agent registers, creates task, claims, completes ───────────────
+
+#[tokio::test]
+async fn sqlite_agent_task_lifecycle() {
+    let ctx = boot_authenticated("agent-task").await;
+    let base = &ctx.base;
+    let key = &ctx.api_key;
+
+    let reg = ctx
+        .client
+        .post(format!("{base}/api/projects/e2e/agents"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({
+            "alias": "worker",
+            "description": "e2e worker",
+            "roles": ["developer"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reg.status(), 200);
+    let reg_body: serde_json::Value = reg.json().await.unwrap();
+    let agent_id = reg_body["agent"]["id"].as_str().unwrap().to_string();
+    assert_eq!(reg_body["agent"]["alias"].as_str().unwrap(), "worker");
+
+    let task = ctx
+        .client
+        .post(format!("{base}/api/projects/e2e/tasks"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({
+            "title": "e2e task",
+            "description": "test lifecycle",
+            "roles": ["developer"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(task.status(), 200);
+    let task_body: serde_json::Value = task.json().await.unwrap();
+    let task_id = task_body["id"].as_str().unwrap().to_string();
+    assert_eq!(task_body["status"].as_str().unwrap(), "pending");
+    assert!(
+        task_body.get("created_by").is_some(),
+        "created_by must be non-null"
+    );
+
+    let claim = ctx
+        .client
+        .post(format!("{base}/api/projects/e2e/tasks/{task_id}/claim"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"agent": agent_id, "start": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(claim.status(), 200);
+    let claim_body: serde_json::Value = claim.json().await.unwrap();
+    assert_eq!(claim_body["status"].as_str().unwrap(), "in_progress");
+
+    let complete = ctx
+        .client
+        .post(format!("{base}/api/projects/e2e/tasks/{task_id}/complete"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"summary": "done"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(complete.status(), 200);
+    let complete_body: serde_json::Value = complete.json().await.unwrap();
+    assert_eq!(complete_body["status"].as_str().unwrap(), "completed");
+
+    let get = ctx
+        .client
+        .get(format!("{base}/api/projects/e2e/tasks/{task_id}"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(get.status(), 200);
+    let get_body: serde_json::Value = get.json().await.unwrap();
+    assert_eq!(get_body["status"].as_str().unwrap(), "completed");
+
+    let unknown = ctx
+        .client
+        .get(format!(
+            "{base}/api/projects/e2e/tasks/00000000-0000-0000-0000-000000000000",
+        ))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), 404);
+}
+
+// ─── SQLite: cascade unblock ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_dependent_task_cascade_unblock() {
+    let ctx = boot_authenticated("cascade").await;
+    let base = &ctx.base;
+    let key = &ctx.api_key;
+
+    let reg = ctx
+        .client
+        .post(format!("{base}/api/projects/cas/agents"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"alias": "worker", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+    let agent_id = reg.json::<serde_json::Value>().await.unwrap()["agent"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let base_task = ctx
+        .client
+        .post(format!("{base}/api/projects/cas/tasks"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"title": "base", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+    let base_id = base_task.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let dep = ctx
+        .client
+        .post(format!("{base}/api/projects/cas/tasks"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({
+            "title": "dependent",
+            "description": "",
+            "depends_on": [base_id]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(dep.status(), 200);
+    let dep_body: serde_json::Value = dep.json().await.unwrap();
+    assert_eq!(dep_body["status"].as_str().unwrap(), "blocked");
+    let dep_id = dep_body["id"].as_str().unwrap().to_string();
+
+    ctx.client
+        .post(format!("{base}/api/projects/cas/tasks/{base_id}/claim"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"agent": agent_id, "start": true}))
+        .send()
+        .await
+        .unwrap();
+    ctx.client
+        .post(format!("{base}/api/projects/cas/tasks/{base_id}/complete"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"summary": "done"}))
+        .send()
+        .await
+        .unwrap();
+
+    let dep_get = ctx
+        .client
+        .get(format!("{base}/api/projects/cas/tasks/{dep_id}"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    let dep_status = dep_get.json::<serde_json::Value>().await.unwrap();
+    assert_eq!(dep_status["status"].as_str().unwrap(), "pending");
+}
+
+// ─── SQLite: split auto-completes parent ────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_split_subtasks_auto_complete_parent() {
+    let ctx = boot_authenticated("split").await;
+    let base = &ctx.base;
+    let key = &ctx.api_key;
+
+    let reg = ctx
+        .client
+        .post(format!("{base}/api/projects/split/agents"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"alias": "worker", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+    let agent_id = reg.json::<serde_json::Value>().await.unwrap()["agent"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let parent = ctx
+        .client
+        .post(format!("{base}/api/projects/split/tasks"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"title": "parent", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+    let parent_id = parent.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    ctx.client
+        .post(format!("{base}/api/projects/split/tasks/{parent_id}/claim"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"agent": agent_id, "start": true}))
+        .send()
+        .await
+        .unwrap();
+
+    let split = ctx
+        .client
+        .post(format!("{base}/api/projects/split/tasks/{parent_id}/split"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"subtasks": [
+            {"title": "child-one", "description": ""},
+            {"title": "child-two", "description": ""}
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(split.status(), 200);
+    let split_body: serde_json::Value = split.json().await.unwrap();
+    let children = split_body["subtasks"].as_array().unwrap().clone();
+    assert_eq!(children.len(), 2);
+
+    for child in &children {
+        let cid = child["id"].as_str().unwrap();
+        ctx.client
+            .post(format!("{base}/api/projects/split/tasks/{cid}/claim"))
+            .bearer_auth(key)
+            .json(&serde_json::json!({"agent": agent_id, "start": true}))
+            .send()
+            .await
+            .unwrap();
+        ctx.client
+            .post(format!("{base}/api/projects/split/tasks/{cid}/complete"))
+            .bearer_auth(key)
+            .json(&serde_json::json!({"summary": "done"}))
+            .send()
+            .await
+            .unwrap();
+    }
+
+    let parent_get = ctx
+        .client
+        .get(format!("{base}/api/projects/split/tasks/{parent_id}"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(parent_get.status(), 200);
+    let parent_body: serde_json::Value = parent_get.json().await.unwrap();
+    assert_eq!(parent_body["status"].as_str().unwrap(), "completed");
+}
+
+// ─── SQLite: knowledge write, read, delete ──────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_knowledge_write_read_delete() {
+    let ctx = boot_authenticated("knowledge-rw").await;
+    let base = &ctx.base;
+    let key = &ctx.api_key;
+
+    let reg = ctx
+        .client
+        .post(format!("{base}/api/projects/kproj/agents"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"alias": "knower", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+    let agent_id = reg.json::<serde_json::Value>().await.unwrap()["agent"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let write = ctx
+        .client
+        .put(format!("{base}/api/projects/kproj/knowledge/test-entry"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({
+            "kind": "decision",
+            "title": "Test Decision",
+            "content": "content body",
+            "agent_id": agent_id,
+            "tags": ["test"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(write.status(), 200);
+    let write_body: serde_json::Value = write.json().await.unwrap();
+    assert_eq!(write_body["path"].as_str().unwrap(), "test-entry");
+    assert_eq!(write_body["kind"].as_str().unwrap(), "decision");
+
+    let read = ctx
+        .client
+        .get(format!("{base}/api/projects/kproj/knowledge/test-entry"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(read.status(), 200);
+    let read_body: serde_json::Value = read.json().await.unwrap();
+    assert_eq!(read_body["content"].as_str().unwrap(), "content body");
+
+    let delete = ctx
+        .client
+        .delete(format!("{base}/api/projects/kproj/knowledge/test-entry"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert!(delete.status().is_success(), "delete should succeed");
+
+    // Read after delete returns the entry (delete archives, doesn't fully remove)
+    let read_after = ctx
+        .client
+        .get(format!("{base}/api/projects/kproj/knowledge/test-entry"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        read_after.status().is_success(),
+        "read after delete: got {}",
+        read_after.status()
+    );
+}
+
+// ─── SQLite: message send, inbox, sent, mark-read ───────────────────────────
+
+#[tokio::test]
+async fn sqlite_message_send_inbox_sent_mark_read() {
+    let ctx = boot_authenticated("msg-flow").await;
+    let base = &ctx.base;
+    let key = &ctx.api_key;
+
+    let a1 = ctx
+        .client
+        .post(format!("{base}/api/projects/msgproj/agents"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"alias": "sender", "description": ""}))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    let a1_id = a1["agent"]["id"].as_str().unwrap().to_string();
+
+    let a2 = ctx
+        .client
+        .post(format!("{base}/api/projects/msgproj/agents"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"alias": "receiver", "description": ""}))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    let a2_id = a2["agent"]["id"].as_str().unwrap().to_string();
+    let empty = vec![];
+
+    let msg = ctx
+        .client
+        .post(format!("{base}/api/projects/msgproj/messages"))
+        .bearer_auth(key)
+        .json(&serde_json::json!({
+            "from_alias": a1_id,
+            "to": a2_id,
+            "body": "hello from e2e"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(msg.status(), 200);
+    let msg_body: serde_json::Value = msg.json().await.unwrap();
+    let msg_id = msg_body["id"].as_str().unwrap().to_string();
+
+    let sent = ctx
+        .client
+        .get(format!(
+            "{base}/api/agents/{a1_id}/sent-messages?project=msgproj"
+        ))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sent.status(), 200);
+    let sent_body: serde_json::Value = sent.json().await.unwrap();
+    assert!(
+        sent_body["items"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .any(|m| m["id"].as_str() == Some(&msg_id))
+    );
+
+    let inbox = ctx
+        .client
+        .get(format!("{base}/api/agents/{a2_id}/inbox?project=msgproj"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inbox.status(), 200);
+    let inbox_body: serde_json::Value = inbox.json().await.unwrap();
+    assert!(
+        inbox_body["items"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .any(|m| m["body"].as_str() == Some("hello from e2e"))
+    );
+
+    let read = ctx
+        .client
+        .post(format!(
+            "{base}/api/agents/{a2_id}/messages/read?project=msgproj"
+        ))
+        .bearer_auth(key)
+        .json(&serde_json::json!({"message_ids": [msg_id]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(read.status(), 200);
+
+    let inbox_after = ctx
+        .client
+        .get(format!("{base}/api/agents/{a2_id}/inbox?project=msgproj"))
+        .bearer_auth(key)
+        .send()
+        .await
+        .unwrap();
+    let inbox_after_body: serde_json::Value = inbox_after.json().await.unwrap();
+    let empty = vec![];
+    let read_msg = inbox_after_body["items"]
+        .as_array()
+        .unwrap_or(&empty)
+        .iter()
+        .find(|m| m["body"].as_str() == Some("hello from e2e"));
+    assert!(
+        read_msg.is_some(),
+        "DM should still be in inbox after mark-read"
+    );
+    assert_eq!(
+        read_msg.unwrap()["status"].as_str().unwrap(),
+        "read",
+        "DM should have status 'read' after mark-read"
+    );
+}
+
+// ─── SQLite: migrations idempotent on existing DB ───────────────────────────
+
+#[tokio::test]
+async fn sqlite_migrations_idempotent_on_existing_db() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = env::temp_dir().join(format!("orchy-migrate-idem-{nonce}"));
+    fs::create_dir_all(&dir).unwrap();
+
+    let make_config = || Config {
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 1,
+            heartbeat_timeout_secs: 300,
+            mcp_session_keep_alive_secs: None,
+        },
+        store: StoreConfig {
+            backend: "sqlite".into(),
+            sqlite: Some(SqliteConfig {
+                path: dir.join("orchy.db").to_string_lossy().into_owned(),
+            }),
+            postgres: None,
+        },
+        auth: AuthConfig {
+            jwt_duration_hours: 1,
+            cookie_secure: false,
+            bcrypt_cost: 4,
+            keys_dir: dir.join("keys").to_string_lossy().into_owned(),
+        },
+        embeddings: None,
+        skills: None,
+    };
+
+    let container1 = Container::from_config(make_config()).await.unwrap();
+    let listener1 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr1 = listener1.local_addr().unwrap();
+    let router1 = axum::Router::new()
+        .nest("/api", orchy_server::api::router())
+        .layer(CookieManagerLayer::new())
+        .with_state(Arc::clone(&container1));
+    let server1 = tokio::spawn(async move {
+        axum::serve(listener1, router1).await.unwrap();
+    });
+
+    let base1 = format!("http://{addr1}");
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base1}/api/auth/login"))
+        .json(&serde_json::json!({"email": "admin@orchy.sh", "password": "12345678"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    server1.abort();
+    drop(container1);
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+    let container2 = Container::from_config(make_config()).await.unwrap();
+    let listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr2 = listener2.local_addr().unwrap();
+    let router2 = axum::Router::new()
+        .nest("/api", orchy_server::api::router())
+        .layer(CookieManagerLayer::new())
+        .with_state(Arc::clone(&container2));
+    let server2 = tokio::spawn(async move {
+        axum::serve(listener2, router2).await.unwrap();
+    });
+
+    let base2 = format!("http://{addr2}");
+    let resp2 = client
+        .post(format!("{base2}/api/auth/login"))
+        .json(&serde_json::json!({"email": "admin@orchy.sh", "password": "12345678"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp2.status(),
+        200,
+        "second boot on existing DB must succeed: {}",
+        resp2.text().await.unwrap_or_default()
+    );
+
+    server2.abort();
+    drop(container2);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+// ─── CLI binary helper ──────────────────────────────────────────────────────
+
+fn workspace_root() -> std::path::PathBuf {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+fn orchy_bin() -> Option<std::path::PathBuf> {
+    let root = workspace_root();
+    let bin = root.join("target").join("debug").join("orchy");
+    if bin.exists() { Some(bin) } else { None }
+}
+
+fn cli_config(
+    dir: &std::path::Path,
+    base_url: &str,
+    api_key: &str,
+    alias: &str,
+    project: &str,
+) -> std::path::PathBuf {
+    let config_path = dir.join(".orchy.toml");
+    let config_toml = format!(
+        "url = \"{base_url}\"\napi_key = \"{api_key}\"\nproject = \"{project}\"\nalias = \"{alias}\"\n"
+    );
+    fs::write(&config_path, config_toml).unwrap();
+    config_path
+}
+
+/// Run orchy CLI with the given args. Config must be in the temp dir's .orchy.toml.
+async fn run_orchy_in_dir(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
+    let bin = orchy_bin().expect("orchy binary not found; build with: cargo build -p orchy-cli");
+    tokio::process::Command::new(bin)
+        .current_dir(dir)
+        .args(args)
+        .output()
+        .await
+        .unwrap()
+}
+
+/// Run orchy CLI with url/api-key/project flags, no config file needed.
+async fn run_orchy_with_flags(
+    base: &str,
+    key: &str,
+    project: &str,
+    agent: &str,
+    args: &[&str],
+) -> std::process::Output {
+    let bin = orchy_bin().expect("orchy binary not found; build with: cargo build -p orchy-cli");
+    let mut all_args = vec![
+        "--url",
+        base,
+        "--api-key",
+        key,
+        "--project",
+        project,
+        "--agent",
+        agent,
+    ];
+    all_args.extend_from_slice(args);
+    tokio::process::Command::new(bin)
+        .args(&all_args)
+        .output()
+        .await
+        .unwrap()
+}
+
+// ─── CLI: agent register does not clobber explicit alias ────────────────────
+
+#[tokio::test]
+async fn sqlite_cli_agent_register_does_not_clobber_explicit_alias() {
+    let ctx = boot_authenticated("cli-register").await;
+    let dir = env::temp_dir().join("orchy-cli-register");
+    fs::create_dir_all(&dir).unwrap();
+    let config_path = cli_config(&dir, &ctx.base, &ctx.api_key, "preset-alias", "anyproj");
+
+    let output = run_orchy_in_dir(
+        &dir,
+        &[
+            "--agent",
+            "cli-newone",
+            "agent",
+            "register",
+            "--description",
+            "test",
+        ],
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "register failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let config_content = fs::read_to_string(&config_path).unwrap();
+    assert!(
+        config_content.contains("preset-alias"),
+        ".orchy.toml must preserve 'preset-alias':\n{config_content}"
+    );
+    assert!(
+        !config_content.contains("cli-newone"),
+        ".orchy.toml must not contain 'cli-newone':\n{config_content}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+// ─── CLI: agent list plaintext shows agents ──────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_cli_agent_list_plaintext_shows_agents() {
+    let ctx = boot_authenticated("cli-list").await;
+
+    ctx.client
+        .post(format!("{}/api/projects/anyproj/agents", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .json(&serde_json::json!({"alias": "alice", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+    ctx.client
+        .post(format!("{}/api/projects/anyproj/agents", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .json(&serde_json::json!({"alias": "bob", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+
+    let output = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "cli-agent",
+        &["agent", "list"],
+    )
+    .await;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "agent list failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("alice"),
+        "stdout must contain 'alice':\n{stdout}"
+    );
+    assert!(
+        stdout.contains("bob"),
+        "stdout must contain 'bob':\n{stdout}"
+    );
+}
+
+// ─── CLI: knowledge read plaintext shows content ────────────────────────────
+
+#[tokio::test]
+async fn sqlite_cli_knowledge_read_plaintext_shows_content() {
+    let ctx = boot_authenticated("cli-know").await;
+
+    ctx.client
+        .put(format!(
+            "{}/api/projects/anyproj/knowledge/test-note",
+            ctx.base
+        ))
+        .bearer_auth(&ctx.api_key)
+        .json(&serde_json::json!({
+            "kind": "note",
+            "title": "Test Note",
+            "content": "hello world content"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let output = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "cli-agent",
+        &["knowledge", "read", "test-note"],
+    )
+    .await;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "knowledge read failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("hello world content"),
+        "stdout must contain content:\n{stdout}"
+    );
+}
+
+// ─── CLI: lock acquire release with path ────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_cli_lock_acquire_release_with_path() {
+    let ctx = boot_authenticated("cli-lock").await;
+
+    ctx.client
+        .post(format!("{}/api/projects/anyproj/agents", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .json(&serde_json::json!({"alias": "cli-agent", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+
+    let acquire = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "cli-agent",
+        &["lock", "acquire", "src/auth.rs", "--ttl", "60"],
+    )
+    .await;
+    assert!(
+        acquire.status.success(),
+        "lock acquire failed: {}",
+        String::from_utf8_lossy(&acquire.stderr)
+    );
+
+    let check = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "cli-agent",
+        &["lock", "check", "src/auth.rs"],
+    )
+    .await;
+    assert!(
+        check.status.success(),
+        "lock check failed: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    let release = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "cli-agent",
+        &["lock", "release", "src/auth.rs"],
+    )
+    .await;
+    assert!(
+        release.status.success(),
+        "lock release failed: {}",
+        String::from_utf8_lossy(&release.stderr)
+    );
+}
+
+// ─── CLI: task create records created_by ────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_cli_task_create_records_created_by() {
+    let ctx = boot_authenticated("cli-task").await;
+
+    ctx.client
+        .post(format!("{}/api/projects/anyproj/agents", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .json(&serde_json::json!({"alias": "task-author", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+
+    let output = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "task-author",
+        &[
+            "task",
+            "create",
+            "--title",
+            "cli task",
+            "--description",
+            "test",
+            "--json",
+        ],
+    )
+    .await;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "task create failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let task: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(
+        task.get("created_by").is_some(),
+        "created_by must be non-null: {stdout}"
+    );
+}
+
+// ─── CLI: alias too long returns error ──────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_cli_alias_too_long_returns_error() {
+    let ctx = boot_authenticated("cli-alias").await;
+
+    let long_alias = "a".repeat(65);
+    let output = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        &long_alias,
+        &["agent", "register", "--description", "bad"],
+    )
+    .await;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "register with 65-char alias must fail"
+    );
+    assert!(
+        stderr.contains("invalid input:"),
+        "stderr must contain 'invalid input:':\n{stderr}"
+    );
+}

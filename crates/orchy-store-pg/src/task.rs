@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
-use sea_query_binder::SqlxBinder;
+use sea_query::{Value, Values};
+use sea_query_binder::SqlxValues;
 use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
@@ -13,51 +13,6 @@ use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStat
 use orchy_events::io::Writer;
 
 use crate::{decode_json_value, events::PgEventWriter, parse_namespace, parse_project_id};
-
-#[derive(Iden)]
-enum Tasks {
-    Table,
-    #[iden = "id"]
-    Id,
-    #[iden = "organization_id"]
-    OrganizationId,
-    #[iden = "project"]
-    Project,
-    #[iden = "namespace"]
-    Namespace,
-    #[iden = "title"]
-    Title,
-    #[iden = "description"]
-    Description,
-    #[iden = "acceptance_criteria"]
-    AcceptanceCriteria,
-    #[iden = "status"]
-    Status,
-    #[iden = "priority"]
-    Priority,
-    #[iden = "assigned_roles"]
-    AssignedRoles,
-    #[iden = "assigned_to"]
-    AssignedTo,
-    #[iden = "assigned_at"]
-    AssignedAt,
-    #[iden = "stale_after_secs"]
-    StaleAfterSecs,
-    #[iden = "last_activity_at"]
-    LastActivityAt,
-    #[iden = "tags"]
-    Tags,
-    #[iden = "result_summary"]
-    ResultSummary,
-    #[iden = "archived_at"]
-    ArchivedAt,
-    #[iden = "created_by"]
-    CreatedBy,
-    #[iden = "created_at"]
-    CreatedAt,
-    #[iden = "updated_at"]
-    UpdatedAt,
-}
 
 pub struct PgTaskStore {
     pool: PgPool,
@@ -236,87 +191,92 @@ impl TaskStore for PgTaskStore {
     }
 
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
-        let mut select = Query::select();
-        select.from(Tasks::Table).columns([
-            Tasks::Id,
-            Tasks::OrganizationId,
-            Tasks::Project,
-            Tasks::Namespace,
-            Tasks::Title,
-            Tasks::Description,
-            Tasks::AcceptanceCriteria,
-            Tasks::Status,
-            Tasks::Priority,
-            Tasks::AssignedRoles,
-            Tasks::AssignedTo,
-            Tasks::AssignedAt,
-            Tasks::StaleAfterSecs,
-            Tasks::LastActivityAt,
-            Tasks::Tags,
-            Tasks::ResultSummary,
-            Tasks::ArchivedAt,
-            Tasks::CreatedBy,
-            Tasks::CreatedAt,
-            Tasks::UpdatedAt,
-        ]);
+        let select_cols = "id, organization_id, project, namespace, title, description, \
+            acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, \
+            stale_after_secs, last_activity_at, tags, result_summary, archived_at, \
+            created_by, created_at, updated_at";
+
+        let mut conditions: Vec<String> = Vec::new();
+        let mut values: Vec<Value> = Vec::new();
+        let mut param_idx = 1usize;
 
         if let Some(ref org_id) = filter.org_id {
-            select.and_where(Expr::col(Tasks::OrganizationId).eq(org_id.to_string()));
+            conditions.push(format!("organization_id = ${}", param_idx));
+            values.push(Value::String(Some(Box::new(org_id.to_string()))));
+            param_idx += 1;
         }
         if let Some(ref ns) = filter.namespace
             && !ns.is_root()
         {
-            select.cond_where(
-                Cond::any()
-                    .add(Expr::col(Tasks::Namespace).eq(ns.to_string()))
-                    .add(Expr::col(Tasks::Namespace).like(format!("{}/%", ns))),
-            );
+            conditions.push(format!(
+                "(namespace = ${0} OR namespace LIKE ${0} || '/%')",
+                param_idx
+            ));
+            values.push(Value::String(Some(Box::new(ns.to_string()))));
+            param_idx += 1;
         }
         if let Some(ref project) = filter.project {
-            select.and_where(Expr::col(Tasks::Project).eq(project.to_string()));
+            conditions.push(format!("project = ${}", param_idx));
+            values.push(Value::String(Some(Box::new(project.to_string()))));
+            param_idx += 1;
         }
         if let Some(ref status) = filter.status {
-            select.and_where(Expr::col(Tasks::Status).eq(status.to_string()));
+            conditions.push(format!("status = ${}", param_idx));
+            values.push(Value::String(Some(Box::new(status.to_string()))));
+            param_idx += 1;
         }
         if let Some(ref role) = filter.assigned_role {
-            select.and_where(Expr::cust_with_values(
-                "(assigned_roles = '[]'::jsonb OR assigned_roles @> to_jsonb(?::text))",
-                [sea_query::Value::String(Some(Box::new(role.clone())))],
+            conditions.push(format!(
+                "(assigned_roles = '[]'::jsonb OR assigned_roles @> jsonb_build_array(${}::text))",
+                param_idx
             ));
+            values.push(Value::String(Some(Box::new(role.clone()))));
+            param_idx += 1;
         }
         if let Some(ref assigned) = filter.assigned_to {
-            select.and_where(Expr::col(Tasks::AssignedTo).eq(*assigned.as_uuid()));
+            conditions.push(format!("assigned_to = ${}", param_idx));
+            values.push(Value::Uuid(Some(Box::new(*assigned.as_uuid()))));
+            param_idx += 1;
         }
         if let Some(ref tag) = filter.tag {
-            select.and_where(Expr::cust_with_values(
-                "tags @> to_jsonb(?::text)",
-                [sea_query::Value::String(Some(Box::new(tag.clone())))],
-            ));
+            conditions.push(format!("tags @> jsonb_build_array(${}::text)", param_idx));
+            values.push(Value::String(Some(Box::new(tag.clone()))));
+            param_idx += 1;
         }
         if !filter.include_archived.unwrap_or(false) {
-            select.and_where(Expr::col(Tasks::ArchivedAt).is_null());
+            conditions.push("archived_at IS NULL".to_string());
         }
 
         if let Some(ref cursor) = page.after
             && let Some(decoded) = decode_cursor(cursor)
             && let Ok(cursor_uuid) = decoded.parse::<Uuid>()
         {
-            select.and_where(Expr::col(Tasks::Id).lt(cursor_uuid));
+            conditions.push(format!("id < ${}", param_idx));
+            values.push(Value::Uuid(Some(Box::new(cursor_uuid))));
         }
 
-        select
-            .order_by_expr(
-                Expr::cust(
-                    "CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END",
-                ),
-                sea_query::Order::Desc,
-            )
-            .order_by(Tasks::Id, sea_query::Order::Desc)
-            .limit((page.limit as u64).saturating_add(1));
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
 
-        let (sql, values) = select.build_sqlx(PostgresQueryBuilder);
+        let sql = format!(
+            "SELECT {} FROM tasks {} \
+             ORDER BY \
+               CASE priority \
+                 WHEN 'critical' THEN 3 WHEN 'high' THEN 2 \
+                 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 \
+                 ELSE 1 \
+               END DESC, \
+               id DESC \
+             LIMIT {}",
+            select_cols,
+            where_clause,
+            (page.limit as u64).saturating_add(1)
+        );
 
-        let rows = sqlx::query_with(&sql, values)
+        let rows = sqlx::query_with(&sql, SqlxValues(Values(values)))
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
