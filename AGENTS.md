@@ -490,34 +490,44 @@ Import types and common values; use short names everywhere except where module q
 
 ## Running
 
+All common commands live in the `justfile`. Run `just` (no args) to list
+recipes.
+
 ```bash
-cargo run -p orchy-server          # start MCP server (default: config.toml)
-cargo run -p orchy-cli -- --help   # CLI binary (orchy)
-cargo test -p orchy-core           # domain tests
-cargo test -p orchy-events         # event library tests
-cargo test -p orchy-application    # application layer tests
-cargo test -p orchy-store-memory   # in-memory store tests
-cargo test -p orchy-store-sqlite   # SQLite tests (in-memory DB)
-cargo test -p orchy-store-pg       # PG unit tests (integration tests skipped)
+just              # list available recipes
+just build        # cargo build --workspace
+just test         # unit tests (no containers)
+just lint         # cargo clippy --workspace --all-targets -- -D warnings
+just fmt          # cargo fmt --all
+just server       # cargo run -p orchy-server
+just cli -- --help
+
+# Integration tests (per-test testcontainers; podman/docker required)
+just it-pg          # orchy-store-pg
+just it-conformance # orchy-store-conformance
+just it-sqs         # orchy-events-sqs
+just it-kafka       # orchy-events-kafka
+just it             # all of the above
+
+# Single test by pattern, with stdout
+just t pg_reader_streaming
+
+# Manual postgres for `just server` against persistent DB (legacy flow)
+just db-up
+just db-down
 ```
 
-Integration tests use testcontainers (auto-spawn Postgres / LocalStack /
-Kafka per test). Requires a container runtime — podman or docker. For
-rootless podman set:
+The justfile auto-sets `DOCKER_HOST` to the rootless podman socket and
+disables ryuk. Override `DOCKER_HOST` externally if you use a different
+runtime.
+
+For raw cargo invocations without `just`:
 
 ```bash
 export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock
 export TESTCONTAINERS_RYUK_DISABLED=true
+cargo test -p <crate> --features integration-tests -- --test-threads=1
 ```
 
-Then run each crate's integration tests with `--test-threads=1`:
-
-```bash
-cargo test -p orchy-store-pg          --features integration-tests -- --test-threads=1
-cargo test -p orchy-store-conformance --features integration-tests -- --test-threads=1
-cargo test -p orchy-events-sqs        --features integration-tests -- --test-threads=1
-cargo test -p orchy-events-kafka      --features integration-tests -- --test-threads=1
-```
-
-The legacy `compose.yml` is kept for manual server runs (e.g. `cargo run -p
-orchy-server` against a persistent Postgres). Tests no longer require it.
+The legacy `compose.yml` is kept for manual server runs against a
+persistent Postgres. Tests no longer require it.
