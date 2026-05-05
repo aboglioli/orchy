@@ -472,6 +472,22 @@ path = "orchy.db"
 - Conventional commits: `type(scope): description`
 - Do not change repo or global commit signing settings. Agent-run signed commits often fail because GPG prompts for a password. If signing would block an agent-run commit, ask the user to run it or use a one-off unsigned commit only when explicitly appropriate. No Co-Authored-By, never push
 
+### Import Style
+
+Import types and common values; use short names everywhere except where module qualification adds clarity.
+
+**Types** (structs, enums, traits, type aliases): Always import and use the short name. Never write `std::sync::Arc`, `chrono::DateTime`, `sqlx::PgPool`, `uuid::Uuid`, or `serde_json::Value` inline in signatures, fields, or let bindings when an import works.
+
+**Stdlib**: Import and use short. `Arc::new()`, `HashMap::new()`, `io::Error::new()`, `iter::repeat_n`, `fmt::Display`, `env::var`. No inline `std::collections::HashMap` or `std::io::ErrorKind`.
+
+**External crate functions**: Prefer importing and using short, but keep module qualification when the function name is too generic and the module adds needed context. `sqlx::query(...)` and `sqlx::query_as(...)` stay qualified; `Utc::now()`, `Duration::seconds()`, `Value::String(...)` become short.
+
+**Internal `crate::` paths**: Import and use short. Do not write `crate::a::b::C` in type positions or expressions. `crate::apply_cursor_pagination` is fine for a top-level crate helper, but `crate::foo::bar::Baz` in a type annotation must be imported. Exception: `module::function()` for internal utilities where the module name provides semantic context.
+
+**Turbofish / disambiguation**: When the domain `Result` shadows `std::result::Result`, import it aliased (`use std::result::Result as StdResult;`) rather than spelling out the full path in turbofish. Same pattern for other shadowed stdlib types.
+
+**Macro syntax**: `$crate::` in macro bodies and `rusqlite::params![]` are fine — they are macro-level qualification, not type annotations.
+
 ## Running
 
 ```bash
