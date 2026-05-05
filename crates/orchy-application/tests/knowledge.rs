@@ -141,7 +141,10 @@ async fn delete_removes_entry() {
         })
         .await
         .unwrap();
-    assert!(result.knowledge.is_none(), "deleted entry knowledge should be None");
+    assert!(
+        result.knowledge.is_none(),
+        "deleted entry knowledge should be None"
+    );
 }
 
 // ─── list filters by kind and tag ───────────────────────────────────────────
@@ -156,7 +159,12 @@ async fn list_filters_by_kind_and_tag() {
         .await
         .unwrap();
     app.write_knowledge
-        .execute(write_cmd("decision-one", "decision", "Decision One", "decision"))
+        .execute(write_cmd(
+            "decision-one",
+            "decision",
+            "Decision One",
+            "decision",
+        ))
         .await
         .unwrap();
     // Write note-one again with tags
@@ -168,7 +176,8 @@ async fn list_filters_by_kind_and_tag() {
         .await
         .unwrap();
 
-    let notes = app.list_knowledge
+    let notes = app
+        .list_knowledge
         .execute(ListKnowledgeCommand {
             org_id: "default".into(),
             project: Some("test".into()),
@@ -186,7 +195,8 @@ async fn list_filters_by_kind_and_tag() {
         .unwrap();
     assert_eq!(notes.items.len(), 1, "expected 1 note entry");
 
-    let important = app.list_knowledge
+    let important = app
+        .list_knowledge
         .execute(ListKnowledgeCommand {
             org_id: "default".into(),
             project: Some("test".into()),
@@ -300,7 +310,8 @@ async fn temporal_validity_excludes_expired() {
         .await
         .unwrap();
 
-    let all = app.list_knowledge
+    let all = app
+        .list_knowledge
         .execute(ListKnowledgeCommand {
             org_id: "default".into(),
             project: Some("test".into()),
@@ -317,6 +328,12 @@ async fn temporal_validity_excludes_expired() {
         .await
         .unwrap();
     let paths: Vec<&str> = all.items.iter().map(|k| k.path.as_str()).collect();
-    assert!(paths.contains(&"active-entry"), "active entry should be listed: {paths:?}");
-    assert!(!paths.contains(&"expired-entry"), "expired entry should be excluded: {paths:?}");
+    assert!(
+        paths.contains(&"active-entry"),
+        "active entry should be listed: {paths:?}"
+    );
+    assert!(
+        !paths.contains(&"expired-entry"),
+        "expired entry should be excluded: {paths:?}"
+    );
 }

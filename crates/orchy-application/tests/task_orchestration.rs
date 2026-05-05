@@ -3,7 +3,8 @@ use std::sync::Arc;
 use orchy_application::{
     AddDependencyCommand, Application, ApplicationDeps, ArchiveTaskCommand, ClaimTaskCommand,
     CompleteTaskCommand, GetTaskCommand, ListEdgesCommand, ListTasksCommand, MergeTasksCommand,
-    MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, SplitTaskCommand, SubtaskInput, UnarchiveTaskCommand, UpdateTaskCommand,
+    MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, SplitTaskCommand, SubtaskInput,
+    UnarchiveTaskCommand, UpdateTaskCommand,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::api_key::{
@@ -662,16 +663,8 @@ async fn add_dependency_rejects_self_cycle() {
 async fn add_dependency_rejects_indirect_cycle() {
     let s = mem();
     let app = build_app(&s);
-    let a = app
-        .post_task
-        .execute(post_cmd("org", "a"))
-        .await
-        .unwrap();
-    let b = app
-        .post_task
-        .execute(post_cmd("org", "b"))
-        .await
-        .unwrap();
+    let a = app.post_task.execute(post_cmd("org", "a")).await.unwrap();
+    let b = app.post_task.execute(post_cmd("org", "b")).await.unwrap();
 
     app.add_dependency
         .execute(AddDependencyCommand {
@@ -762,7 +755,11 @@ async fn task_release_returns_to_pending() {
     let app = build_app(&s);
     let agent_id = seed_agent(&s, "org", "releaser").await;
 
-    let task = app.post_task.execute(post_cmd("org", "release me")).await.unwrap();
+    let task = app
+        .post_task
+        .execute(post_cmd("org", "release me"))
+        .await
+        .unwrap();
     let task_id = task.id.clone();
 
     app.claim_task
@@ -789,9 +786,16 @@ async fn task_release_returns_to_pending() {
         "in_progress"
     );
 
-    let released = app.release_task.execute(ReleaseTaskCommand { task_id }).await.unwrap();
+    let released = app
+        .release_task
+        .execute(ReleaseTaskCommand { task_id })
+        .await
+        .unwrap();
     assert_eq!(released.status, "pending");
-    assert!(released.assigned_to.is_none(), "assigned_to must be cleared on release");
+    assert!(
+        released.assigned_to.is_none(),
+        "assigned_to must be cleared on release"
+    );
 }
 
 // ─── task move to namespace ─────────────────────────────────────────────────
@@ -801,7 +805,11 @@ async fn task_move_to_namespace() {
     let s = mem();
     let app = build_app(&s);
 
-    let task = app.post_task.execute(post_cmd("org", "move me")).await.unwrap();
+    let task = app
+        .post_task
+        .execute(post_cmd("org", "move me"))
+        .await
+        .unwrap();
     assert_eq!(task.namespace, "/");
 
     let moved = app
@@ -822,7 +830,11 @@ async fn task_update_fields() {
     let s = mem();
     let app = build_app(&s);
 
-    let task = app.post_task.execute(post_cmd("org", "original")).await.unwrap();
+    let task = app
+        .post_task
+        .execute(post_cmd("org", "original"))
+        .await
+        .unwrap();
 
     let updated = app
         .update_task

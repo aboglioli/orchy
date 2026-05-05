@@ -174,8 +174,7 @@ mod tests {
 
     #[test]
     fn serde_rejects_invalid() {
-        let r: std::result::Result<KnowledgePath, _> =
-            serde_json::from_str("\"/leading-slash\"");
+        let r: std::result::Result<KnowledgePath, _> = serde_json::from_str("\"/leading-slash\"");
         assert!(r.is_err(), "leading slash must be rejected by serde");
     }
 }

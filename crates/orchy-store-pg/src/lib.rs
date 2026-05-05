@@ -61,11 +61,28 @@ impl PgDatabase {
     }
 
     pub async fn run_migrations(&self, dir: &Path) -> Result<()> {
-        sqlx::query("SELECT pg_advisory_lock(42)")
-            .execute(&self.pool)
+        let mut lock_conn = self
+            .pool
+            .acquire()
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
 
+        sqlx::query("SELECT pg_advisory_lock(42)")
+            .execute(&mut *lock_conn)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        let result = self.run_migrations_inner(dir).await;
+
+        sqlx::query("SELECT pg_advisory_unlock(42)")
+            .execute(&mut *lock_conn)
+            .await
+            .map_err(|e| Error::Store(e.to_string()))?;
+
+        result
+    }
+
+    async fn run_migrations_inner(&self, dir: &Path) -> Result<()> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS schema_migrations (
                 version TEXT PRIMARY KEY,
@@ -126,16 +143,17 @@ impl PgDatabase {
 
         self.init_vector_indexes().await?;
 
-        sqlx::query("SELECT pg_advisory_unlock(42)")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-
         Ok(())
     }
 
     async fn init_vector_indexes(&self) -> Result<()> {
-        if self.embedding_dimensions.is_some() {
+        let vector_count: bool =
+            sqlx::query_scalar("SELECT COUNT(*) > 0 FROM pg_extension WHERE extname = 'vector'")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| Error::Store(e.to_string()))?;
+
+        if self.embedding_dimensions.is_some() && vector_count {
             sqlx::query(
                 "CREATE INDEX IF NOT EXISTS knowledge_entries_embedding_hnsw_idx
                  ON knowledge_entries USING hnsw (embedding vector_cosine_ops)",

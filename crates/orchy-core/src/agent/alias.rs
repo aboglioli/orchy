@@ -131,8 +131,10 @@ mod tests {
 
     #[test]
     fn serde_rejects_invalid() {
-        let r: std::result::Result<Alias, _> =
-            serde_json::from_str("\"BadAlias\"");
-        assert!(r.is_err(), "TryFrom<String> must reject uppercase via serde");
+        let r: std::result::Result<Alias, _> = serde_json::from_str("\"BadAlias\"");
+        assert!(
+            r.is_err(),
+            "TryFrom<String> must reject uppercase via serde"
+        );
     }
 }
