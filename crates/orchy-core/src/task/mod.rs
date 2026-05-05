@@ -3,6 +3,7 @@ pub mod events;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -61,7 +62,7 @@ impl fmt::Display for TaskId {
 impl FromStr for TaskId {
     type Err = Error;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
             .map_err(|_| Error::invalid_input(format!("invalid task id: {s}")))
@@ -150,7 +151,7 @@ impl fmt::Display for TaskStatus {
 impl FromStr for TaskStatus {
     type Err = String;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         match s {
             "pending" => Ok(TaskStatus::Pending),
             "blocked" => Ok(TaskStatus::Blocked),
@@ -189,7 +190,7 @@ impl fmt::Display for Priority {
 impl FromStr for Priority {
     type Err = String;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         match s {
             "low" => Ok(Priority::Low),
             "normal" => Ok(Priority::Normal),

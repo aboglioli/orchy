@@ -1,8 +1,10 @@
+use sqlx::PgPool;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::mem;
+use std::sync::MutexGuard;
+use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
-use sqlx::PgPool;
 use tokio::task::JoinHandle;
 
 use orchy_events::Result;
@@ -28,7 +30,7 @@ impl PgSubscriber {
         }
     }
 
-    fn lock_handles(&self) -> std::sync::MutexGuard<'_, HashMap<String, SubscriptionHandle>> {
+    fn lock_handles(&self) -> MutexGuard<'_, HashMap<String, SubscriptionHandle>> {
         self.handles.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -44,8 +46,8 @@ impl PgSubscriber {
         F: Filter + Send + Sync + 'static,
     {
         let group_id = group_id.into();
-        let handler = std::sync::Arc::new(handler);
-        let filter = std::sync::Arc::new(filter);
+        let handler = Arc::new(handler);
+        let filter = Arc::new(filter);
         let reader = PgReader::new(
             self.pool.clone(),
             ConsumerConfig {
@@ -90,7 +92,7 @@ impl PgSubscriber {
     }
 
     pub async fn close(&self) {
-        let handles: HashMap<_, _> = std::mem::take(&mut *self.lock_handles());
+        let handles: HashMap<_, _> = mem::take(&mut *self.lock_handles());
         for (_, handle) in handles {
             handle.join.abort();
             let _ = handle.join.await;

@@ -1,3 +1,4 @@
+use axum::extract::Path;
 use std::sync::Arc;
 
 use axum::Json;
@@ -190,7 +191,7 @@ pub struct InviteResponse {
 pub async fn invite_user(
     State(container): State<Arc<Container>>,
     cookies: Cookies,
-    axum::extract::Path(org_id): axum::extract::Path<String>,
+    Path(org_id): Path<String>,
     Json(req): Json<InviteRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let auth = extract_user_auth(&cookies, &container)

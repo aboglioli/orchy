@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::graph::{RelationType, TraversalDirection};
@@ -80,5 +81,5 @@ pub struct RelationQuery {
     #[serde(flatten)]
     pub options: RelationOptions,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub as_of: Option<chrono::DateTime<chrono::Utc>>,
+    pub as_of: Option<DateTime<Utc>>,
 }

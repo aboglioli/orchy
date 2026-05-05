@@ -1,6 +1,7 @@
 use crate::error::Error;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -38,7 +39,7 @@ impl fmt::Display for OrgRole {
     }
 }
 
-impl std::str::FromStr for OrgRole {
+impl FromStr for OrgRole {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

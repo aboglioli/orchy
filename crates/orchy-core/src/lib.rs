@@ -26,7 +26,8 @@ mod graph_tests {
 
     #[test]
     fn graph_module_exports_edge() {
-        let _ = std::any::type_name::<Edge>();
+        use std::any::type_name;
+        let _ = type_name::<Edge>();
     }
 
     #[test]

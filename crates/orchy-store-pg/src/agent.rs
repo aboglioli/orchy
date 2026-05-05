@@ -1,8 +1,8 @@
+use sqlx::{PgPool, Row, postgres::PgRow};
 use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias, RestoreAgent};
@@ -203,7 +203,7 @@ impl AgentStore for PgAgentStore {
     }
 }
 
-fn row_to_agent(row: &sqlx::postgres::PgRow) -> Result<Agent> {
+fn row_to_agent(row: &PgRow) -> Result<Agent> {
     let id: Uuid = row.get("id");
     let alias: String = row.get("alias");
     let org_id_str: String = row.get("organization_id");

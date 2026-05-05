@@ -1,8 +1,9 @@
+use sqlx::{PgPool, Row, postgres::PgRow};
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -190,7 +191,7 @@ impl EdgeStore for PgEdgeStore {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<Option<Edge>> {
-        let row: Option<sqlx::postgres::PgRow> = sqlx::query(
+        let row: Option<PgRow> = sqlx::query(
             "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
              created_at, created_by, source_kind, source_id, valid_until \
              FROM edges \
@@ -305,7 +306,7 @@ impl EdgeStore for PgEdgeStore {
         let edges: Vec<Edge> = rows
             .iter()
             .map(row_to_edge)
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+            .collect::<StdResult<Vec<_>, _>>()?;
         let next_cursor = if has_more {
             edges.last().map(|e| encode_cursor(&e.id().to_string()))
         } else {
@@ -522,7 +523,7 @@ fn build_find_neighbors_sql(
     )
 }
 
-fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
+fn row_to_edge(row: &PgRow) -> Result<Edge> {
     let id_uuid: Uuid = row.try_get("id").map_err(|e| Error::Store(e.to_string()))?;
     let org_id_str: String = row
         .try_get("org_id")
@@ -542,7 +543,7 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
     let rel_type_str: String = row
         .try_get("rel_type")
         .map_err(|e| Error::Store(e.to_string()))?;
-    let created_at: chrono::DateTime<chrono::Utc> = row
+    let created_at: DateTime<Utc> = row
         .try_get("created_at")
         .map_err(|e| Error::Store(e.to_string()))?;
     let created_by_uuid: Option<Uuid> = row
@@ -550,8 +551,7 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
         .map_err(|e| Error::Store(e.to_string()))?;
     let source_kind_str: Option<String> = row.try_get("source_kind").unwrap_or(None);
     let source_id: Option<String> = row.try_get("source_id").unwrap_or(None);
-    let valid_until: Option<chrono::DateTime<chrono::Utc>> =
-        row.try_get("valid_until").unwrap_or(None);
+    let valid_until: Option<DateTime<Utc>> = row.try_get("valid_until").unwrap_or(None);
 
     let id = EdgeId::from_uuid(id_uuid);
     let org_id = OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?;
@@ -577,7 +577,7 @@ fn row_to_edge(row: &sqlx::postgres::PgRow) -> Result<Edge> {
     }))
 }
 
-fn row_to_traversal_hop(row: &sqlx::postgres::PgRow) -> Result<TraversalHop> {
+fn row_to_traversal_hop(row: &PgRow) -> Result<TraversalHop> {
     let edge = row_to_edge(row)?;
     let depth: i32 = row
         .try_get("depth")

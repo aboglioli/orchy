@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
+use rusqlite::Row as RusqliteRow;
+use std::result::Result as StdResult;
 use uuid::Uuid;
 
 use orchy_core::api_key::{
@@ -93,7 +95,7 @@ impl ApiKeyStore for SqliteApiKeyStore {
 
         stmt.query_map(rusqlite::params![org_id.to_string()], row_to_tuple)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?
             .into_iter()
             .map(build_api_key)
@@ -113,7 +115,7 @@ type ApiKeyRow = (
     Option<String>,
 );
 
-fn row_to_tuple(row: &rusqlite::Row) -> rusqlite::Result<ApiKeyRow> {
+fn row_to_tuple(row: &RusqliteRow) -> rusqlite::Result<ApiKeyRow> {
     Ok((
         row.get(0)?,
         row.get(1)?,

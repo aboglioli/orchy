@@ -11,6 +11,8 @@ pub mod projects;
 pub mod tasks;
 pub mod user_auth;
 
+use axum::response::Response;
+use axum::routing::{delete, get, patch, post};
 use std::sync::Arc;
 
 use axum::Json;
@@ -129,7 +131,7 @@ impl From<Error> for ApiError {
 }
 
 impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
+    fn into_response(self) -> Response {
         let body = ApiErrorEnvelope {
             error: ApiErrorBody {
                 code: self.1,
@@ -141,8 +143,6 @@ impl IntoResponse for ApiError {
 }
 
 pub fn router() -> Router<Arc<Container>> {
-    use axum::routing::{delete, get, post};
-
     Router::new()
         .route("/auth/register", post(user_auth::register))
         .route("/auth/login", post(user_auth::login))
@@ -161,10 +161,7 @@ pub fn router() -> Router<Arc<Container>> {
         .route("/projects/{project}/agents", post(agents::register))
         .route("/agents/{id}/context", get(agents::get_context))
         .route("/agents/{id}/summary", get(agents::get_summary))
-        .route(
-            "/agents/{id}/roles",
-            axum::routing::patch(agents::change_roles),
-        )
+        .route("/agents/{id}/roles", patch(agents::change_roles))
         .route("/agents/{id}/rename", post(agents::rename_alias))
         .route("/agents/{id}/switch-context", post(agents::switch_context))
         .route("/agents/{id}/inbox", get(messages::inbox_for_agent))

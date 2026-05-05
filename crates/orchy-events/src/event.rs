@@ -1,4 +1,6 @@
 use std::fmt;
+use std::result::Result as StdResult;
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -40,10 +42,10 @@ impl fmt::Display for EventId {
     }
 }
 
-impl std::str::FromStr for EventId {
+impl FromStr for EventId {
     type Err = uuid::Error;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Ok(Self(Uuid::parse_str(s)?))
     }
 }

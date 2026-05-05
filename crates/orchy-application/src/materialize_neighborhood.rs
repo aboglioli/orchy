@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ pub struct MaterializeNeighborhoodCommand {
     pub anchor_kind: String,
     pub anchor_id: String,
     pub options: RelationOptions,
-    pub as_of: Option<chrono::DateTime<chrono::Utc>>,
+    pub as_of: Option<DateTime<Utc>>,
     pub project: Option<String>,
     pub namespace: Option<String>,
     pub semantic_query: Option<String>,

@@ -128,8 +128,6 @@ async fn delete_removes_entry() {
         .await
         .unwrap();
 
-    use orchy_application::ReadKnowledgeDto;
-
     let result = app
         .read_knowledge
         .execute(ReadKnowledgeCommand {

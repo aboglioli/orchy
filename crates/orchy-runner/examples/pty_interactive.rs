@@ -6,6 +6,7 @@
 /// Env vars:
 ///   GHOST_TEXT="say hello"   — inject this prompt after the agent starts
 ///   GHOST_DELAY_SECS=3       — seconds to wait before injecting (default: 3)
+use std::collections::HashMap;
 use std::io::{self, ErrorKind, Read};
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,7 +40,7 @@ async fn main() -> Result<()> {
     };
 
     let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into());
-    let mut env = std::collections::HashMap::new();
+    let mut env = HashMap::new();
     env.insert("TERM".to_string(), term);
 
     let (rows, cols) = crossterm::terminal::size()

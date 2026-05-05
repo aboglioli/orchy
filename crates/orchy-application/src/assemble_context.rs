@@ -1,3 +1,4 @@
+use chrono::Utc;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -202,7 +203,7 @@ fn composite_score(k: &Knowledge) -> f64 {
         KnowledgeKind::Log => 0.3,
     };
     let days_old = {
-        let duration = chrono::Utc::now() - k.updated_at();
+        let duration = Utc::now() - k.updated_at();
         duration.num_seconds().max(0) as f64 / 86400.0
     };
     let recency = (-days_old / 14.0_f64.ln()).exp();

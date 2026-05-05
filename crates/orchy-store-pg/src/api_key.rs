@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use orchy_core::api_key::{
@@ -104,7 +104,7 @@ impl ApiKeyStore for PgApiKeyStore {
     }
 }
 
-fn build_api_key(row: &sqlx::postgres::PgRow) -> Result<ApiKey> {
+fn build_api_key(row: &PgRow) -> Result<ApiKey> {
     let id: Uuid = row.get("id");
     let org_id_str: String = row.get("organization_id");
     let name: String = row.get("name");

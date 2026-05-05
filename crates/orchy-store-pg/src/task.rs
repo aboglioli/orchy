@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -221,7 +221,7 @@ impl TaskStore for PgTaskStore {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let uuid_ids: Vec<uuid::Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+        let uuid_ids: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
         let rows = sqlx::query(
             "SELECT id, organization_id, project, namespace, title, description, \
              acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, \
@@ -337,7 +337,7 @@ impl TaskStore for PgTaskStore {
     }
 }
 
-fn row_to_task(row: &sqlx::postgres::PgRow) -> Result<Task> {
+fn row_to_task(row: &PgRow) -> Result<Task> {
     let id: Uuid = row.get("id");
     let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");

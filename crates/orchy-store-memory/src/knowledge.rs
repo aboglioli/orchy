@@ -1,3 +1,4 @@
+use chrono::Utc;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -120,7 +121,7 @@ impl KnowledgeStore for MemoryKnowledgeStore {
                     }
                     if !filter.include_expired.unwrap_or(false) {
                         if let Some(until) = e.valid_until() {
-                            if until < chrono::Utc::now() {
+                            if until < Utc::now() {
                                 return false;
                             }
                         }

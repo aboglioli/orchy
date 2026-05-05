@@ -1,4 +1,5 @@
 use crate::event::Event;
+use std::mem;
 
 #[derive(Debug, Clone)]
 pub struct EventCollector {
@@ -15,7 +16,7 @@ impl EventCollector {
     }
 
     pub fn drain(&mut self) -> Vec<Event> {
-        std::mem::take(&mut self.events)
+        mem::take(&mut self.events)
     }
 
     pub fn list(&self) -> &[Event] {

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::{
@@ -6,15 +7,17 @@ use orchy_core::user::{
     RestoreOrgMembership, RestoreUser, User, UserId, UserStore,
 };
 use orchy_events::io::Writer;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::events::PgEventWriter;
 
 pub struct PgUserStore {
-    pool: sqlx::PgPool,
+    pool: PgPool,
 }
 
 impl PgUserStore {
-    pub fn new(pool: sqlx::PgPool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
@@ -62,7 +65,7 @@ impl UserStore for PgUserStore {
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>> {
-        let row: Option<(uuid::Uuid, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let row: Option<(Uuid, String, String, bool, bool, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users WHERE id = $1"
         )
         .bind(id.as_uuid())
@@ -101,7 +104,7 @@ impl UserStore for PgUserStore {
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>> {
-        let row: Option<(uuid::Uuid, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let row: Option<(Uuid, String, String, bool, bool, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users WHERE email = $1"
         )
         .bind(email.as_str())
@@ -140,7 +143,7 @@ impl UserStore for PgUserStore {
     }
 
     async fn list_all(&self) -> Result<Vec<User>> {
-        let rows: Vec<(uuid::Uuid, String, String, bool, bool, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let rows: Vec<(Uuid, String, String, bool, bool, DateTime<Utc>, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT 1000"
         )
         .fetch_all(&self.pool)
@@ -172,11 +175,11 @@ impl UserStore for PgUserStore {
 }
 
 pub struct PgOrgMembershipStore {
-    pool: sqlx::PgPool,
+    pool: PgPool,
 }
 
 impl PgOrgMembershipStore {
-    pub fn new(pool: sqlx::PgPool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
@@ -205,13 +208,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
     }
 
     async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>> {
-        let row: Option<(
-            uuid::Uuid,
-            uuid::Uuid,
-            String,
-            String,
-            chrono::DateTime<chrono::Utc>,
-        )> = sqlx::query_as(
+        let row: Option<(Uuid, Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -223,7 +220,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
     }
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>> {
-        let rows: Vec<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let rows: Vec<(Uuid, Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1000"
         )
         .bind(user_id.as_uuid())
@@ -242,7 +239,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>> {
-        let rows: Vec<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let rows: Vec<(Uuid, Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE org_id = $1 ORDER BY created_at DESC LIMIT 1000"
         )
         .bind(org_id.to_string())
@@ -265,7 +262,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
         user_id: &UserId,
         org_id: &OrganizationId,
     ) -> Result<Option<OrgMembership>> {
-        let row: Option<(uuid::Uuid, uuid::Uuid, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        let row: Option<(Uuid, Uuid, String, String, DateTime<Utc>)> = sqlx::query_as(
             "SELECT id, user_id, org_id, role, created_at FROM org_memberships WHERE user_id = $1 AND org_id = $2"
         )
         .bind(user_id.as_uuid())
@@ -289,13 +286,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
 }
 
 fn row_to_membership(
-    row: Option<(
-        uuid::Uuid,
-        uuid::Uuid,
-        String,
-        String,
-        chrono::DateTime<chrono::Utc>,
-    )>,
+    row: Option<(Uuid, Uuid, String, String, DateTime<Utc>)>,
 ) -> Result<Option<OrgMembership>> {
     match row {
         Some((id, user_id, org_id, role, created_at)) => {

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -388,7 +388,7 @@ fn namespace_ancestors(ns: &Namespace) -> Vec<String> {
     ancestors
 }
 
-fn row_to_message(row: &sqlx::postgres::PgRow) -> Result<Message> {
+fn row_to_message(row: &PgRow) -> Result<Message> {
     let id: Uuid = row.get("id");
     let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");

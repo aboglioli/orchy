@@ -1,3 +1,9 @@
+use axum::body::Body;
+use axum::extract::{Query, Request};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::middleware::Next;
+use axum::response::Response;
+use axum::{Router, middleware, routing, serve};
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -85,19 +91,16 @@ async fn run() -> BootResult<()> {
     session_manager.session_config.keep_alive = container.config.server.mcp_session_keep_alive();
     let session_manager = Arc::new(session_manager);
 
-    let router = axum::Router::new()
+    let router = Router::new()
         .route(
             "/mcp",
-            axum::routing::post(move |headers, state, request: axum::extract::Request| {
+            routing::post(move |headers, state, request: Request| {
                 mcp_handler(headers, state, request, Arc::clone(&session_manager))
             }),
         )
-        .route(
-            "/bootstrap/{namespace}",
-            axum::routing::get(bootstrap_handler),
-        )
+        .route("/bootstrap/{namespace}", routing::get(bootstrap_handler))
         .nest("/api", api::router())
-        .layer(axum::middleware::from_fn_with_state(
+        .layer(middleware::from_fn_with_state(
             Arc::clone(&bootstrap_container),
             heartbeat_middleware,
         ))
@@ -111,7 +114,7 @@ async fn run() -> BootResult<()> {
 
     info!(%addr, "orchy server listening");
 
-    axum::serve(listener, router)
+    serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| BootError::Other(format!("server error: {e}")))?;
@@ -143,19 +146,15 @@ async fn shutdown_signal() {
 }
 
 async fn mcp_handler(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     State(container): State<Arc<Container>>,
-    request: axum::extract::Request,
+    request: Request,
     session_manager: Arc<LocalSessionManager>,
-) -> axum::response::Response {
+) -> Response {
     let auth = match resolve_mcp_auth(&headers, &container.app).await {
         Ok(auth) => auth,
         Err(e) => {
-            return (
-                axum::http::StatusCode::UNAUTHORIZED,
-                format!("Unauthorized: {e}"),
-            )
-                .into_response();
+            return (StatusCode::UNAUTHORIZED, format!("Unauthorized: {e}")).into_response();
         }
     };
 
@@ -172,21 +171,17 @@ async fn mcp_handler(
         Ok(response) => response.into_response(),
         Err(e) => {
             warn!(error = %e, "MCP service error");
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal error",
-            )
-                .into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
         }
     }
 }
 
 async fn resolve_mcp_auth(
-    headers: &axum::http::HeaderMap,
+    headers: &HeaderMap,
     app: &orchy_application::Application,
 ) -> Result<ApiKeyPrincipal, String> {
     let key = headers
-        .get(axum::http::header::AUTHORIZATION)
+        .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or("missing or invalid Authorization header")?;
@@ -205,13 +200,12 @@ async fn resolve_mcp_auth(
 
 async fn heartbeat_middleware(
     State(container): State<Arc<Container>>,
-    req: axum::http::Request<axum::body::Body>,
-    next: axum::middleware::Next,
-) -> axum::response::Response {
+    req: axum::http::Request<Body>,
+    next: Next,
+) -> Response {
     use std::collections::HashMap;
 
-    let query: axum::extract::Query<HashMap<String, String>> =
-        axum::extract::Query::try_from_uri(req.uri()).unwrap_or_default();
+    let query: Query<HashMap<String, String>> = Query::try_from_uri(req.uri()).unwrap_or_default();
 
     if let Some(session_id) = query.get("sessionId") {
         let session_agents = container.session_agents.read().await;
@@ -239,13 +233,13 @@ async fn bootstrap_handler(
 
     let project_id = match ProjectId::try_from(project_str) {
         Ok(p) => p,
-        Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
     };
 
     let ns = match scope {
         Some(s) => match Namespace::try_from(format!("/{s}")) {
             Ok(ns) => ns,
-            Err(e) => return (axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+            Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         },
         None => Namespace::root(),
     };
@@ -255,14 +249,11 @@ async fn bootstrap_handler(
 
     match bootstrap::generate_bootstrap_prompt(&project_id, &ns, host, port, &container.app).await {
         Ok(prompt) => (
-            [(
-                axum::http::header::CONTENT_TYPE,
-                "text/plain; charset=utf-8",
-            )],
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
             prompt,
         )
             .into_response(),
-        Err(e) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
 }
 

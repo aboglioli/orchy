@@ -27,10 +27,12 @@ pub use subscriber::{ConsumerConfig, PgSubscriber};
 pub use task::PgTaskStore;
 pub use user::{PgOrgMembershipStore, PgUserStore};
 
-use std::path::Path;
-
 use serde::de::DeserializeOwned;
 use sqlx::PgPool;
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+use std::result::Result as StdResult;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -93,7 +95,7 @@ impl PgDatabase {
         .await
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut files: Vec<_> = std::fs::read_dir(dir)
+        let mut files: Vec<_> = fs::read_dir(dir)
             .map_err(|e| Error::Store(format!("cannot read migrations dir: {e}")))?
             .filter_map(|e| e.ok())
             .filter(|e| {
@@ -119,7 +121,7 @@ impl PgDatabase {
                 continue;
             }
 
-            let sql = std::fs::read_to_string(entry.path())
+            let sql = fs::read_to_string(entry.path())
                 .map_err(|e| Error::Store(format!("cannot read {filename}: {e}")))?;
 
             let mut tx = self
@@ -180,7 +182,7 @@ impl PgDatabase {
         Ok(())
     }
 
-    pub fn migrations_dir() -> std::path::PathBuf {
+    pub fn migrations_dir() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations/postgres")
     }
 
@@ -219,7 +221,7 @@ pub(crate) fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {
     if trimmed.is_empty() {
         return None;
     }
-    let result: std::result::Result<Vec<f32>, _> = trimmed
+    let result: StdResult<Vec<f32>, _> = trimmed
         .split(',')
         .map(|v| v.trim().parse::<f32>())
         .collect();

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -71,7 +72,7 @@ impl AsRef<str> for ProjectId {
     }
 }
 
-impl std::str::FromStr for ProjectId {
+impl FromStr for ProjectId {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

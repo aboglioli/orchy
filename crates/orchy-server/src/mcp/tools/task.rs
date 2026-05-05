@@ -1,5 +1,6 @@
 use orchy_core::graph::neighborhood::LinkParam;
 use orchy_core::task::TaskId;
+use serde_json::{Value, json};
 
 use orchy_application::{
     AddDependencyCommand, ArchiveTaskCommand, AssignTaskCommand, CancelTaskCommand,
@@ -116,7 +117,7 @@ pub(super) async fn get_next_task(
                 .map_err(mcp_error)?;
             Ok(to_json(&ctx))
         }
-        Ok(None) => Ok(to_json(&serde_json::Value::Null)),
+        Ok(None) => Ok(to_json(&Value::Null)),
         Err(e) => Err(mcp_error(e)),
     }
 }
@@ -420,7 +421,7 @@ pub(super) async fn split_task(
 
     match h.container.app.split_task.execute(cmd).await {
         Ok((parent, children)) => {
-            let result = serde_json::json!({
+            let result = json!({
                 "parent": parent,
                 "subtasks": children,
             });
@@ -458,7 +459,7 @@ pub(super) async fn replace_task(
 
     match h.container.app.replace_task.execute(cmd).await {
         Ok((original, new_tasks)) => {
-            let result = serde_json::json!({
+            let result = json!({
                 "cancelled": original,
                 "replacements": new_tasks,
             });
@@ -486,7 +487,7 @@ pub(super) async fn merge_tasks(
 
     match h.container.app.merge_tasks.execute(cmd).await {
         Ok((merged, cancelled)) => {
-            let result = serde_json::json!({
+            let result = json!({
                 "merged": merged,
                 "cancelled": cancelled,
             });

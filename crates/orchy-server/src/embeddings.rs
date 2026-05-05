@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::error::{Error, Result};
@@ -15,7 +16,7 @@ pub struct OpenAiEmbeddingsProvider {
 #[derive(Serialize)]
 struct EmbeddingsRequest<'a> {
     model: &'a str,
-    input: serde_json::Value,
+    input: Value,
 }
 
 #[derive(Deserialize)]
@@ -47,7 +48,7 @@ impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         let request = EmbeddingsRequest {
             model: &self.model,
-            input: serde_json::Value::String(text.to_string()),
+            input: Value::String(text.to_string()),
         };
 
         let response = self
@@ -75,14 +76,11 @@ impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let input: Vec<serde_json::Value> = texts
-            .iter()
-            .map(|t| serde_json::Value::String(t.to_string()))
-            .collect();
+        let input: Vec<Value> = texts.iter().map(|t| Value::String(t.to_string())).collect();
 
         let request = EmbeddingsRequest {
             model: &self.model,
-            input: serde_json::Value::Array(input),
+            input: Value::Array(input),
         };
 
         let response = self

@@ -1,3 +1,8 @@
+use chrono::DateTime;
+use serde_json::{Value, json};
+use std::cmp::Reverse;
+use std::collections::HashMap;
+
 use orchy_application::{
     CheckLockCommand, GetProjectCommand, ListAgentsCommand, ListNamespacesCommand,
     ListTasksCommand, LockResourceCommand, SetProjectMetadataCommand, UnlockResourceCommand,
@@ -72,7 +77,7 @@ pub(super) async fn get_project(
         .map_err(mcp_error)?
         .items;
 
-    let mut by_status = std::collections::HashMap::new();
+    let mut by_status = HashMap::new();
     for task in &all_tasks {
         *by_status.entry(task.status.clone()).or_insert(0u32) += 1;
     }
@@ -81,13 +86,13 @@ pub(super) async fn get_project(
         .iter()
         .filter(|t| t.status == "completed" || t.status == "failed")
         .collect();
-    recent.sort_by_key(|b| std::cmp::Reverse(&b.updated_at));
+    recent.sort_by_key(|b| Reverse(&b.updated_at));
     recent.truncate(10);
 
     let recent_items: Vec<_> = recent
         .iter()
         .map(|t| {
-            serde_json::json!({
+            json!({
                 "id": &t.id,
                 "title": &t.title,
                 "status": &t.status,
@@ -97,8 +102,7 @@ pub(super) async fn get_project(
         .collect();
 
     let agent_id = h.get_session_agent().await;
-    let mut my_workload_by_status: std::collections::HashMap<String, Vec<serde_json::Value>> =
-        std::collections::HashMap::new();
+    let mut my_workload_by_status: HashMap<String, Vec<Value>> = HashMap::new();
     if let Some(ref aid) = agent_id {
         let aid_str = aid.to_string();
         for task in &all_tasks {
@@ -106,7 +110,7 @@ pub(super) async fn get_project(
                 my_workload_by_status
                     .entry(task.status.clone())
                     .or_default()
-                    .push(serde_json::json!({
+                    .push(json!({
                         "id": &task.id,
                         "title": &task.title,
                         "priority": &task.priority,
@@ -117,7 +121,7 @@ pub(super) async fn get_project(
 
     let my_task_count: usize = my_workload_by_status.values().map(|v| v.len()).sum();
 
-    let summary = serde_json::json!({
+    let summary = json!({
         "agents_online": project_agents.len(),
         "tasks_by_status": by_status,
         "total_tasks": all_tasks.len(),
@@ -128,7 +132,7 @@ pub(super) async fn get_project(
         },
     });
 
-    Ok(to_json(&serde_json::json!({
+    Ok(to_json(&json!({
         "project": project,
         "summary": summary,
     })))
@@ -154,7 +158,7 @@ pub(super) async fn update_project(
         .map_err(mcp_error)?;
 
     if let Some(expected) = params.version {
-        let updated = chrono::DateTime::parse_from_rfc3339(&project.updated_at)
+        let updated = DateTime::parse_from_rfc3339(&project.updated_at)
             .map(|dt| dt.timestamp() as u64)
             .unwrap_or(0);
         if expected != updated {
@@ -296,7 +300,7 @@ pub(super) async fn check_lock(
 
     match h.container.app.check_lock.execute(cmd).await {
         Ok(Some(lock)) => Ok(to_json(&lock)),
-        Ok(None) => Ok(to_json(&serde_json::Value::Null)),
+        Ok(None) => Ok(to_json(&Value::Null)),
         Err(e) => Err(mcp_error(e)),
     }
 }

@@ -1,4 +1,8 @@
+use rusqlite::{Error as RusqliteError, Row as RusqliteRow, types::Type as RusqliteType};
 use std::collections::HashMap;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::iter::repeat_n;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -280,7 +284,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         let mut entries: Vec<Knowledge> = stmt
             .query_map(param_refs.as_slice(), row_to_entry)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let has_more = entries.len() > page.limit as usize;
@@ -350,9 +354,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let placeholders: String = std::iter::repeat_n("?", ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let placeholders: String = repeat_n("?", ids.len()).collect::<Vec<_>>().join(", ");
         let sql = format!(
             "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at \
              FROM knowledge_entries WHERE id IN ({placeholders})"
@@ -369,7 +371,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         let entries = stmt
             .query_map(param_refs.as_slice(), row_to_entry)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(entries)
     }
@@ -427,7 +429,7 @@ fn search_knowledge_vec(
     let entries = stmt
         .query_map(param_refs.as_slice(), row_to_entry)
         .map_err(|e| Error::Store(e.to_string()))?
-        .collect::<std::result::Result<Vec<_>, _>>()
+        .collect::<StdResult<Vec<_>, _>>()
         .map_err(|e| Error::Store(e.to_string()))?;
 
     Ok(entries)
@@ -481,7 +483,7 @@ fn search_knowledge_fts(
     let entries = stmt
         .query_map(param_refs.as_slice(), row_to_entry)
         .map_err(|e| Error::Store(e.to_string()))?
-        .collect::<std::result::Result<Vec<_>, _>>()
+        .collect::<StdResult<Vec<_>, _>>()
         .map_err(|e| Error::Store(e.to_string()))?;
 
     Ok(entries)
@@ -526,13 +528,13 @@ fn search_knowledge_like(
     let entries = stmt
         .query_map(param_refs.as_slice(), row_to_entry)
         .map_err(|e| Error::Store(e.to_string()))?
-        .collect::<std::result::Result<Vec<_>, _>>()
+        .collect::<StdResult<Vec<_>, _>>()
         .map_err(|e| Error::Store(e.to_string()))?;
 
     Ok(entries)
 }
 
-fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
+fn row_to_entry(row: &RusqliteRow) -> rusqlite::Result<Knowledge> {
     let id_str: String = row.get(0)?;
     let org_id_str: String = row.get(1)?;
     let project_str: Option<String> = row.get(2)?;
@@ -553,65 +555,60 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Knowledge> {
     let created_at_str: String = row.get(17)?;
     let updated_at_str: String = row.get(18)?;
 
-    let id = KnowledgeId::from_str(&id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })?;
+    let id = KnowledgeId::from_str(&id_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(0, RusqliteType::Text, Box::new(e)))?;
     let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             1,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e.to_string(),
-            )),
+            RusqliteType::Text,
+            Box::new(IoError::new(IoErrorKind::InvalidData, e.to_string())),
         )
     })?;
     let project = project_str
         .map(ProjectId::try_from)
         .transpose()
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
+            RusqliteError::FromSqlConversionFailure(
                 2,
-                rusqlite::types::Type::Text,
-                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+                RusqliteType::Text,
+                Box::new(IoError::new(IoErrorKind::InvalidData, e)),
             )
         })?;
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             3,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            RusqliteType::Text,
+            Box::new(IoError::new(IoErrorKind::InvalidData, e)),
         )
     })?;
     let path = KnowledgePath::new(&path_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             4,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            RusqliteType::Text,
+            Box::new(IoError::new(IoErrorKind::InvalidData, e)),
         )
     })?;
     let kind = KnowledgeKind::from_str(&kind_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             5,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            RusqliteType::Text,
+            Box::new(IoError::new(IoErrorKind::InvalidData, e)),
         )
     })?;
-    let tags: Vec<String> = serde_json::from_str(&tags_json).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e))
-    })?;
+    let tags: Vec<String> = serde_json::from_str(&tags_json)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(8, RusqliteType::Text, Box::new(e)))?;
     let metadata: HashMap<String, String> = serde_json::from_str(&metadata_json).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e))
+        RusqliteError::FromSqlConversionFailure(11, RusqliteType::Text, Box::new(e))
     })?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(15, rusqlite::types::Type::Text, Box::new(e))
+            RusqliteError::FromSqlConversionFailure(15, RusqliteType::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
+            RusqliteError::FromSqlConversionFailure(16, RusqliteType::Text, Box::new(e))
         })?;
 
     let valid_from = valid_from_str

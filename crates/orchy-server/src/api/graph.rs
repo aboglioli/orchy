@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -132,7 +133,7 @@ pub async fn query_relations(
         .as_of
         .as_deref()
         .map(|s| {
-            chrono::DateTime::parse_from_rfc3339(s).map_err(|e| {
+            DateTime::parse_from_rfc3339(s).map_err(|e| {
                 ApiError(
                     StatusCode::BAD_REQUEST,
                     "INVALID_PARAM",
@@ -192,7 +193,7 @@ pub async fn list_edges(
         .as_of
         .as_deref()
         .map(|s| {
-            chrono::DateTime::parse_from_rfc3339(s).map_err(|e| {
+            DateTime::parse_from_rfc3339(s).map_err(|e| {
                 ApiError(
                     StatusCode::BAD_REQUEST,
                     "INVALID_PARAM",

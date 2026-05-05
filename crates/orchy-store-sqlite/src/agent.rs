@@ -1,7 +1,11 @@
+use rusqlite::{Error as RusqliteError, Row as RusqliteRow, types::Type as RusqliteType};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::iter::repeat_n;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rusqlite::OptionalExtension;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias, RestoreAgent};
@@ -137,7 +141,7 @@ impl AgentStore for SqliteAgentStore {
         let mut agents: Vec<Agent> = stmt
             .query_map(param_refs.as_slice(), row_to_agent)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let has_more = agents.len() > page.limit as usize;
@@ -158,9 +162,7 @@ impl AgentStore for SqliteAgentStore {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let placeholders: String = std::iter::repeat_n("?", ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let placeholders: String = repeat_n("?", ids.len()).collect::<Vec<_>>().join(", ");
         let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id IN ({placeholders})");
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
@@ -174,14 +176,14 @@ impl AgentStore for SqliteAgentStore {
         let agents = stmt
             .query_map(param_refs.as_slice(), row_to_agent)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(agents)
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let cutoff = Utc::now() - chrono::Duration::seconds(timeout_secs as i64);
+        let cutoff = Utc::now() - Duration::seconds(timeout_secs as i64);
 
         let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE last_seen < ?1");
         let mut stmt = conn
@@ -191,25 +193,22 @@ impl AgentStore for SqliteAgentStore {
         let agents = stmt
             .query_map(rusqlite::params![cutoff.to_rfc3339()], row_to_agent)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(agents)
     }
 }
 
-fn conversion_err(col: usize, msg: impl Into<String>) -> rusqlite::Error {
-    rusqlite::Error::FromSqlConversionFailure(
+fn conversion_err(col: usize, msg: impl Into<String>) -> RusqliteError {
+    RusqliteError::FromSqlConversionFailure(
         col,
-        rusqlite::types::Type::Text,
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            msg.into(),
-        )),
+        RusqliteType::Text,
+        Box::new(IoError::new(IoErrorKind::InvalidData, msg.into())),
     )
 }
 
-fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
+fn row_to_agent(row: &RusqliteRow) -> rusqlite::Result<Agent> {
     let id_str: String = row.get(0)?;
     let alias: String = row.get(1)?;
     let org_id_str: String = row.get(2)?;
@@ -236,20 +235,12 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
         last_seen: DateTime::parse_from_rfc3339(&last_seen_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    7,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
+                RusqliteError::FromSqlConversionFailure(7, RusqliteType::Text, Box::new(e))
             })?,
         connected_at: DateTime::parse_from_rfc3339(&connected_str)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    8,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
+                RusqliteError::FromSqlConversionFailure(8, RusqliteType::Text, Box::new(e))
             })?,
         metadata: decode_json(&metadata_str, "metadata")?,
         user_id,

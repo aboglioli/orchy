@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+use std::collections::HashMap;
 
 use crate::client::{CliError, CliResult, OrchyClient};
 use crate::config::Config;
@@ -566,7 +567,7 @@ pub async fn run(
         } => {
             let mut body = serde_json::json!({});
             if !set.is_empty() {
-                let map: std::collections::HashMap<String, String> = set
+                let map: HashMap<String, String> = set
                     .iter()
                     .filter_map(|s| {
                         s.split_once('=')

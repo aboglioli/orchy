@@ -1,3 +1,7 @@
+use rusqlite::{Error as RusqliteError, Row as RusqliteRow, types::Type as RusqliteType};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::iter::repeat_n;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -164,9 +168,7 @@ impl TaskStore for SqliteTaskStore {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let placeholders: String = std::iter::repeat_n("?", ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let placeholders: String = repeat_n("?", ids.len()).collect::<Vec<_>>().join(", ");
         let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id IN ({placeholders})");
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let mut stmt = conn
@@ -180,7 +182,7 @@ impl TaskStore for SqliteTaskStore {
         let tasks = stmt
             .query_map(param_refs.as_slice(), row_to_task)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(tasks)
     }
@@ -261,7 +263,7 @@ impl TaskStore for SqliteTaskStore {
         let mut tasks: Vec<Task> = stmt
             .query_map(param_refs.as_slice(), row_to_task)
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
         let has_more = tasks.len() > page.limit as usize;
@@ -279,7 +281,7 @@ impl TaskStore for SqliteTaskStore {
     }
 }
 
-fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
+fn row_to_task(row: &RusqliteRow) -> rusqlite::Result<Task> {
     let id_str: String = row.get(0)?;
     let org_id_str: String = row.get(1)?;
     let project_str: String = row.get(2)?;
@@ -303,31 +305,27 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
 
     let tags: Vec<String> = decode_json(&tags_str, "tags")?;
 
-    let id = TaskId::from_str(&id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })?;
+    let id = TaskId::from_str(&id_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(0, RusqliteType::Text, Box::new(e)))?;
     let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             1,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                e.to_string(),
-            )),
+            RusqliteType::Text,
+            Box::new(IoError::new(IoErrorKind::InvalidData, e.to_string())),
         )
     })?;
     let project = ProjectId::try_from(project_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             2,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            RusqliteType::Text,
+            Box::new(IoError::new(IoErrorKind::InvalidData, e)),
         )
     })?;
     let namespace = Namespace::try_from(namespace_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             3,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            RusqliteType::Text,
+            Box::new(IoError::new(IoErrorKind::InvalidData, e)),
         )
     })?;
     let status = status_str
@@ -342,7 +340,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let last_activity_at = DateTime::parse_from_rfc3339(&last_activity_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(13, rusqlite::types::Type::Text, Box::new(e))
+            RusqliteError::FromSqlConversionFailure(13, RusqliteType::Text, Box::new(e))
         })?;
     let archived_at = archived_at_str
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
@@ -351,12 +349,12 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(18, rusqlite::types::Type::Text, Box::new(e))
+            RusqliteError::FromSqlConversionFailure(18, RusqliteType::Text, Box::new(e))
         })?;
     let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(19, rusqlite::types::Type::Text, Box::new(e))
+            RusqliteError::FromSqlConversionFailure(19, RusqliteType::Text, Box::new(e))
         })?;
 
     Ok(Task::restore(RestoreTask {

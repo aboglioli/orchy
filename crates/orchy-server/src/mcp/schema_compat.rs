@@ -1,7 +1,7 @@
+use serde_json::{Map, Value};
 use std::sync::Arc;
 
 use rmcp::model::JsonObject;
-use serde_json::Value;
 
 pub(crate) fn compat_tool_input_schema(schema: Arc<JsonObject>) -> Arc<JsonObject> {
     let mut v = Value::Object((*schema).clone());
@@ -31,7 +31,7 @@ fn normalize_schema(val: &mut Value) {
     }
 }
 
-fn flatten_nullable_type_array(map: &mut serde_json::Map<String, Value>) {
+fn flatten_nullable_type_array(map: &mut Map<String, Value>) {
     let Some(Value::Array(types)) = map.get("type") else {
         return;
     };
@@ -49,11 +49,12 @@ fn flatten_nullable_type_array(map: &mut serde_json::Map<String, Value>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::from_value;
     use serde_json::json;
 
     #[test]
     fn removes_schema_and_flattens_optional_string() {
-        let schema: JsonObject = serde_json::from_value(json!({
+        let schema: JsonObject = from_value(json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "properties": {
@@ -64,7 +65,7 @@ mod tests {
         }))
         .unwrap();
         let out = compat_tool_input_schema(Arc::new(schema));
-        let v = serde_json::Value::Object(out.as_ref().clone());
+        let v = Value::Object(out.as_ref().clone());
         assert!(v.get("$schema").is_none());
         assert_eq!(v["properties"]["alias"]["type"], json!("string"));
     }

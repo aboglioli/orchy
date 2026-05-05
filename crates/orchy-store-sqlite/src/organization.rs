@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
+use std::result::Result as StdResult;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::{
@@ -87,7 +88,7 @@ impl OrganizationStore for SqliteOrganizationStore {
             ))
         })
         .map_err(|e| Error::Store(e.to_string()))?
-        .collect::<std::result::Result<Vec<_>, _>>()
+        .collect::<StdResult<Vec<_>, _>>()
         .map_err(|e| Error::Store(e.to_string()))?
         .into_iter()
         .map(|(id_str, name, created_at_str, updated_at_str)| {

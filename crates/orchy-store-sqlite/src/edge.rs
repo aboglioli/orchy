@@ -1,3 +1,7 @@
+use rusqlite::{Error as RusqliteError, Row as RusqliteRow, types::Type as RusqliteType};
+use std::error::Error as StdError;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -16,11 +20,8 @@ use orchy_core::resource_ref::{ResourceKind, ResourceRef};
 
 use crate::{SqliteConn, events};
 
-fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
-    Box::new(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        e.to_string(),
-    ))
+fn str_err(e: impl ToString) -> Box<dyn StdError + Send + Sync> {
+    Box::new(IoError::new(IoErrorKind::InvalidData, e.to_string()))
 }
 
 fn build_time_clause(as_of: Option<&DateTime<Utc>>) -> String {
@@ -142,7 +143,7 @@ impl EdgeStore for SqliteEdgeStore {
                 row_to_edge,
             )
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(edges)
     }
@@ -173,7 +174,7 @@ impl EdgeStore for SqliteEdgeStore {
                 row_to_edge,
             )
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(edges)
     }
@@ -280,7 +281,7 @@ impl EdgeStore for SqliteEdgeStore {
                         row_to_edge,
                     )
                     .map_err(|e| Error::Store(e.to_string()))?
-                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .collect::<StdResult<Vec<_>, _>>()
                     .map_err(|e| Error::Store(e.to_string()))?
                 } else {
                     vec![]
@@ -299,7 +300,7 @@ impl EdgeStore for SqliteEdgeStore {
                     row_to_edge,
                 )
                 .map_err(|e| Error::Store(e.to_string()))?
-                .collect::<std::result::Result<Vec<_>, _>>()
+                .collect::<StdResult<Vec<_>, _>>()
                 .map_err(|e| Error::Store(e.to_string()))?
             }
         } else if let Some(ref cursor) = page.after {
@@ -317,7 +318,7 @@ impl EdgeStore for SqliteEdgeStore {
                     row_to_edge,
                 )
                 .map_err(|e| Error::Store(e.to_string()))?
-                .collect::<std::result::Result<Vec<_>, _>>()
+                .collect::<StdResult<Vec<_>, _>>()
                 .map_err(|e| Error::Store(e.to_string()))?
             } else {
                 vec![]
@@ -333,7 +334,7 @@ impl EdgeStore for SqliteEdgeStore {
                 .map_err(|e| Error::Store(e.to_string()))?;
             stmt.query_map(rusqlite::params![org.to_string(), fetch_limit], row_to_edge)
                 .map_err(|e| Error::Store(e.to_string()))?
-                .collect::<std::result::Result<Vec<_>, _>>()
+                .collect::<StdResult<Vec<_>, _>>()
                 .map_err(|e| Error::Store(e.to_string()))?
         };
 
@@ -379,7 +380,7 @@ impl EdgeStore for SqliteEdgeStore {
                 row_to_traversal_hop,
             )
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
         Ok(hops)
     }
@@ -542,7 +543,7 @@ fn build_find_neighbors_sql(
     )
 }
 
-fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
+fn row_to_edge(row: &RusqliteRow) -> rusqlite::Result<Edge> {
     let id_str: String = row.get(0)?;
     let org_id_str: String = row.get(1)?;
     let from_kind_str: String = row.get(2)?;
@@ -556,43 +557,30 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
     let source_id: Option<String> = row.get(10).ok().flatten();
     let valid_until_str: Option<String> = row.get(11).ok().flatten();
 
-    let id = EdgeId::from_str(&id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
-    })?;
-    let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, str_err(e))
-    })?;
-    let from_kind = ResourceKind::from_str(&from_kind_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, str_err(e))
-    })?;
-    let to_kind = ResourceKind::from_str(&to_kind_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, str_err(e))
-    })?;
-    let rel_type = RelationType::from_str(&rel_type_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, str_err(e))
-    })?;
+    let id = EdgeId::from_str(&id_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(0, RusqliteType::Text, str_err(e)))?;
+    let org_id = OrganizationId::new(&org_id_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(1, RusqliteType::Text, str_err(e)))?;
+    let from_kind = ResourceKind::from_str(&from_kind_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(2, RusqliteType::Text, str_err(e)))?;
+    let to_kind = ResourceKind::from_str(&to_kind_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(4, RusqliteType::Text, str_err(e)))?;
+    let rel_type = RelationType::from_str(&rel_type_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(6, RusqliteType::Text, str_err(e)))?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, str_err(e))
-        })?;
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(7, RusqliteType::Text, str_err(e)))?;
     let created_by = created_by_str
         .map(|s| AgentId::from_str(&s))
         .transpose()
-        .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, str_err(e))
-        })?;
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(8, RusqliteType::Text, str_err(e)))?;
     let source_kind = source_kind_str.and_then(|s| s.parse::<ResourceKind>().ok());
     let valid_until = valid_until_str
         .map(|s| {
             DateTime::parse_from_rfc3339(&s)
                 .map(|dt| dt.with_timezone(&Utc))
                 .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        11,
-                        rusqlite::types::Type::Text,
-                        str_err(e),
-                    )
+                    RusqliteError::FromSqlConversionFailure(11, RusqliteType::Text, str_err(e))
                 })
         })
         .transpose()?;
@@ -613,7 +601,7 @@ fn row_to_edge(row: &rusqlite::Row) -> rusqlite::Result<Edge> {
     }))
 }
 
-fn row_to_traversal_hop(row: &rusqlite::Row) -> rusqlite::Result<TraversalHop> {
+fn row_to_traversal_hop(row: &RusqliteRow) -> rusqlite::Result<TraversalHop> {
     let edge = row_to_edge(row)?;
     let depth: i64 = row.get(12)?;
     let direction_str: String = row.get(13)?;

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use std::result::Result as StdResult;
 
 use orchy_core::error::{Error, Result};
 use orchy_events::io::{EventQuery, Writer};
@@ -126,7 +127,7 @@ impl EventQuery for SqliteEventQuery {
         organization: &str,
         since: DateTime<Utc>,
         limit: usize,
-    ) -> std::result::Result<Vec<SerializedEvent>, String> {
+    ) -> StdResult<Vec<SerializedEvent>, String> {
         self.query_events(organization, since, limit)
             .map_err(|e| e.to_string())
     }

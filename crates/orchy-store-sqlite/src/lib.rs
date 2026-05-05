@@ -14,7 +14,12 @@ mod resource_lock;
 mod task;
 mod user;
 
-use std::path::Path;
+use rusqlite::{Error as RusqliteError, types::Type as RusqliteType};
+use std::fs;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::mem;
+use std::path::{Path, PathBuf};
+use std::result::Result as StdResult;
 use std::sync::Arc;
 
 use rusqlite::Connection;
@@ -46,7 +51,7 @@ impl SqliteDatabase {
     pub fn new(path: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
         #[allow(clippy::missing_transmute_annotations)]
         unsafe {
-            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+            rusqlite::ffi::sqlite3_auto_extension(Some(mem::transmute(
                 sqlite_vec::sqlite3_vec_init as *const (),
             )));
         }
@@ -95,7 +100,7 @@ impl SqliteDatabase {
         )
         .map_err(|e| Error::Store(e.to_string()))?;
 
-        let mut files: Vec<_> = std::fs::read_dir(dir)
+        let mut files: Vec<_> = fs::read_dir(dir)
             .map_err(|e| Error::Store(format!("cannot read migrations dir: {e}")))?
             .filter_map(|e| e.ok())
             .filter(|e| {
@@ -122,7 +127,7 @@ impl SqliteDatabase {
                 continue;
             }
 
-            let sql = std::fs::read_to_string(entry.path())
+            let sql = fs::read_to_string(entry.path())
                 .map_err(|e| Error::Store(format!("cannot read {filename}: {e}")))?;
 
             let tx = conn
@@ -142,7 +147,7 @@ impl SqliteDatabase {
         Ok(())
     }
 
-    pub fn migrations_dir() -> std::path::PathBuf {
+    pub fn migrations_dir() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations/sqlite")
     }
 }
@@ -150,13 +155,13 @@ impl SqliteDatabase {
 pub(crate) fn decode_json<T: serde::de::DeserializeOwned>(
     raw: &str,
     col: &str,
-) -> std::result::Result<T, rusqlite::Error> {
+) -> StdResult<T, RusqliteError> {
     serde_json::from_str(raw).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
+        RusqliteError::FromSqlConversionFailure(
             0,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
+            RusqliteType::Text,
+            Box::new(IoError::new(
+                IoErrorKind::InvalidData,
                 format!("column {col}: {e}"),
             )),
         )

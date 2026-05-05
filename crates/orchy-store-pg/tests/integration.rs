@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
 use orchy_core::agent::{Agent, AgentStore, Alias};
@@ -180,11 +181,7 @@ async fn task_save_persists_event_log() {
     tasks.save(&mut task).await.unwrap();
 
     let events = event_query
-        .query_events(
-            organization.as_str(),
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-            10,
-        )
+        .query_events(organization.as_str(), DateTime::<Utc>::UNIX_EPOCH, 10)
         .await
         .unwrap();
     assert_eq!(events.len(), 1);

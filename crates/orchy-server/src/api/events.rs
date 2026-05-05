@@ -1,3 +1,4 @@
+use chrono::{DateTime, Duration, Utc};
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -31,7 +32,7 @@ pub async fn poll(
     let org = auth.org.id.clone();
     let since_str = match query.since.as_deref() {
         Some(s) => {
-            chrono::DateTime::parse_from_rfc3339(s).map_err(|e| {
+            DateTime::parse_from_rfc3339(s).map_err(|e| {
                 ApiError(
                     StatusCode::BAD_REQUEST,
                     "INVALID_PARAM",
@@ -40,12 +41,12 @@ pub async fn poll(
             })?;
             s.to_string()
         }
-        None => (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339(),
+        None => (Utc::now() - Duration::minutes(5)).to_rfc3339(),
     };
 
     let since_parsed = since_str
-        .parse::<chrono::DateTime<chrono::Utc>>()
-        .unwrap_or_else(|_| chrono::Utc::now() - chrono::Duration::minutes(5));
+        .parse::<DateTime<Utc>>()
+        .unwrap_or_else(|_| Utc::now() - Duration::minutes(5));
 
     let cmd = PollUpdatesCommand {
         org_id: org,

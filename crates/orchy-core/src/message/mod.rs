@@ -3,6 +3,7 @@ pub mod events;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -82,7 +83,7 @@ impl fmt::Display for MessageId {
 impl FromStr for MessageId {
     type Err = Error;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
             .map_err(|_| Error::invalid_input(format!("invalid message id: {s}")))
@@ -168,7 +169,7 @@ pub enum MessageStatus {
 impl FromStr for MessageStatus {
     type Err = String;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         match s {
             "pending" => Ok(MessageStatus::Pending),
             "delivered" => Ok(MessageStatus::Delivered),
@@ -239,7 +240,7 @@ impl Message {
                 .refs
                 .iter()
                 .map(serde_json::to_value)
-                .collect::<std::result::Result<Vec<_>, _>>()
+                .collect::<StdResult<Vec<_>, _>>()
                 .map_err(|e| Error::InvalidInput(format!("invalid resource ref: {e}")))?,
         })
         .map_err(|e| Error::Store(format!("event serialization: {e}")))?;

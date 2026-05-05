@@ -191,7 +191,10 @@ async fn add_edge_if_not_exists_returns_existing() {
         })
         .await
         .unwrap();
-    assert_eq!(first.id, second.id, "if_not_exists should return the same edge id");
+    assert_eq!(
+        first.id, second.id,
+        "if_not_exists should return the same edge id"
+    );
 }
 
 // ─── list edges returns created edges ──────────────────────────────────────

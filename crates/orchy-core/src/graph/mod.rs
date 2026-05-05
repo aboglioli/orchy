@@ -4,6 +4,7 @@ pub mod relation_options;
 pub mod rules;
 
 use std::fmt;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -137,7 +138,7 @@ impl fmt::Display for EdgeId {
 impl FromStr for EdgeId {
     type Err = Error;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
             .map_err(|_| Error::invalid_input(format!("invalid edge id: {s}")))
@@ -221,7 +222,7 @@ impl fmt::Display for RelationType {
 impl FromStr for RelationType {
     type Err = String;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         if let Some(rt) = Self::aliases().iter().find(|(alias, _)| *alias == s) {
             return Ok(rt.1);
         }

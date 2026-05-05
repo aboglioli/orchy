@@ -1,3 +1,6 @@
+use chrono::Utc;
+use std::env;
+use std::fs;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -74,7 +77,7 @@ async fn full_agent_loop() {
     let client_a = reqwest::Client::new();
     let client_b = reqwest::Client::new();
 
-    let start_ts = chrono::Utc::now();
+    let start_ts = Utc::now();
 
     let reg_a = client_a
         .post(format!("{base}/api/projects/smoke/agents"))
@@ -277,8 +280,8 @@ fn sqlite_test_config(name: &str) -> Config {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("orchy-{name}-{nonce}"));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = env::temp_dir().join(format!("orchy-{name}-{nonce}"));
+    fs::create_dir_all(&dir).unwrap();
 
     Config {
         server: ServerConfig {

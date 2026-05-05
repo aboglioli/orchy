@@ -1,3 +1,4 @@
+use serde_json::{json, to_string_pretty};
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -280,7 +281,7 @@ pub(crate) fn parse_agent_id(s: &str) -> Result<AgentId, String> {
 }
 
 pub(crate) fn to_json<T: serde::Serialize>(val: &T) -> String {
-    serde_json::to_string_pretty(val).unwrap_or_else(|e| format!("serialization error: {e}"))
+    to_string_pretty(val).unwrap_or_else(|e| format!("serialization error: {e}"))
 }
 
 pub(crate) fn mcp_error(e: Error) -> String {
@@ -294,7 +295,7 @@ pub(crate) fn mcp_error(e: Error) -> String {
         Error::Store(_) => ("INTERNAL_ERROR", e.to_string()),
         Error::AuthenticationFailed(_) => ("UNAUTHORIZED", e.to_string()),
     };
-    serde_json::json!({ "error": { "code": code, "message": message } }).to_string()
+    json!({ "error": { "code": code, "message": message } }).to_string()
 }
 
 pub(crate) const INSTRUCTIONS: &str = "\

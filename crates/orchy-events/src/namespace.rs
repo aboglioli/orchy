@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -122,7 +123,7 @@ impl AsRef<str> for Namespace {
     }
 }
 
-impl std::str::FromStr for Namespace {
+impl FromStr for Namespace {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {

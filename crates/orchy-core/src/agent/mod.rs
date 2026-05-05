@@ -3,10 +3,11 @@ pub mod events;
 
 pub use alias::Alias;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::result::Result as StdResult;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -57,7 +58,7 @@ impl fmt::Display for AgentId {
 impl FromStr for AgentId {
     type Err = Error;
 
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
             .map_err(|_| Error::invalid_input(format!("invalid agent id: {s}")))
@@ -323,7 +324,7 @@ impl Agent {
     }
 
     pub fn is_timed_out(&self, timeout_secs: u64) -> bool {
-        (Utc::now() - self.last_seen) > chrono::Duration::seconds(timeout_secs as i64)
+        (Utc::now() - self.last_seen) > Duration::seconds(timeout_secs as i64)
     }
 
     pub fn drain_events(&mut self) -> Vec<Event> {
@@ -386,6 +387,7 @@ pub struct RestoreAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::thread::sleep;
     use std::time::Duration;
 

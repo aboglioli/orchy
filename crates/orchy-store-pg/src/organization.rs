@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgRow};
 
 use orchy_core::error::{Error, Result};
 use orchy_core::organization::{
@@ -77,7 +77,7 @@ impl OrganizationStore for PgOrganizationStore {
     }
 }
 
-fn build_org(row: &sqlx::postgres::PgRow) -> Result<Organization> {
+fn build_org(row: &PgRow) -> Result<Organization> {
     let id_str: String = row.get("id");
     let name: String = row.get("name");
     let created_at: DateTime<Utc> = row.get("created_at");

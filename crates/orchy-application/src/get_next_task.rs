@@ -180,7 +180,7 @@ impl GetNextTask {
 mod tests {
     use std::sync::Arc;
 
-    use chrono::Utc;
+    use chrono::{Duration, Utc};
     use orchy_core::agent::AgentId;
     use orchy_core::namespace::{Namespace, ProjectId};
     use orchy_core::organization::OrganizationId;
@@ -209,7 +209,7 @@ mod tests {
             assigned_to: Some(agent),
             assigned_at: None,
             stale_after_secs: Some(1),
-            last_activity_at: Utc::now() - chrono::Duration::minutes(5),
+            last_activity_at: Utc::now() - Duration::minutes(5),
             tags: vec![],
             result_summary: None,
             archived_at: None,

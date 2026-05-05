@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::error::Error;
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
@@ -15,6 +12,8 @@ use orchy_core::pagination::PageParams;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_store_memory::*;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 fn state() -> Arc<MemoryState> {
     Arc::new(MemoryState::new())
@@ -186,11 +185,7 @@ async fn task_save_persists_event_log() {
     task_store.save(&mut task).await.unwrap();
 
     let events = event_query
-        .query_events(
-            organization.as_str(),
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-            10,
-        )
+        .query_events(organization.as_str(), DateTime::<Utc>::UNIX_EPOCH, 10)
         .await
         .unwrap();
     assert_eq!(events.len(), 1);
@@ -1458,7 +1453,7 @@ async fn assemble_context_returns_linked_knowledge() {
         "Auth Decision".to_string(),
         "We chose JWT for auth".to_string(),
         vec![],
-        std::collections::HashMap::new(),
+        HashMap::new(),
     )
     .unwrap();
     knowledge_store.save(&mut decision).await.unwrap();
@@ -1472,7 +1467,7 @@ async fn assemble_context_returns_linked_knowledge() {
         "Recent Note".to_string(),
         "Found a bug in login flow".to_string(),
         vec![],
-        std::collections::HashMap::new(),
+        HashMap::new(),
     )
     .unwrap();
     knowledge_store.save(&mut note).await.unwrap();
@@ -1602,7 +1597,7 @@ async fn assemble_context_surfaces_decision_above_log() {
         "Important Decision".to_string(),
         "We chose Rust for performance".to_string(),
         vec![],
-        std::collections::HashMap::new(),
+        HashMap::new(),
     )
     .unwrap();
     knowledge_store.save(&mut decision).await.unwrap();
@@ -1616,7 +1611,7 @@ async fn assemble_context_surfaces_decision_above_log() {
         "Activity Log".to_string(),
         "Ran some tests".to_string(),
         vec![],
-        std::collections::HashMap::new(),
+        HashMap::new(),
     )
     .unwrap();
     knowledge_store.save(&mut log).await.unwrap();

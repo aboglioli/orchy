@@ -3,11 +3,13 @@
 pub mod ackers;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use futures::Stream;
 
 use crate::error::Result;
 use crate::event::Event;
 use crate::serialization::SerializedEvent;
+use std::result::Result as StdResult;
 
 #[async_trait]
 pub trait Acker: Send + Sync + Clone {
@@ -132,7 +134,7 @@ pub trait EventQuery: Send + Sync {
     async fn query_events(
         &self,
         organization: &str,
-        since: chrono::DateTime<chrono::Utc>,
+        since: DateTime<Utc>,
         limit: usize,
-    ) -> std::result::Result<Vec<SerializedEvent>, String>;
+    ) -> StdResult<Vec<SerializedEvent>, String>;
 }

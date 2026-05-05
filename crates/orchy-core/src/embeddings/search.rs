@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -33,7 +34,7 @@ pub fn reciprocal_rank_fusion<K: Eq + Hash + Clone, T: Clone>(
         .filter_map(|(score, item)| item.map(|i| (score, i)))
         .collect();
 
-    combined.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    combined.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
     combined.truncate(limit);
     combined.into_iter().map(|(_, item)| item).collect()
 }

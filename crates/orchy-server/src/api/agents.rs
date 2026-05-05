@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -170,7 +171,7 @@ pub struct RegisterAgentBody {
     pub agent_type: Option<String>,
     pub namespace: Option<String>,
     #[serde(default)]
-    pub metadata: std::collections::HashMap<String, String>,
+    pub metadata: HashMap<String, String>,
 }
 
 #[tracing::instrument(skip_all)]

@@ -1,3 +1,5 @@
+use serde_json::{Value, json};
+
 use orchy_application::{
     AppendKnowledgeCommand, ArchiveKnowledgeCommand, AssembleContextCommand,
     ChangeKnowledgeKindCommand, ConsolidateKnowledgeCommand, DeleteKnowledgeCommand,
@@ -27,10 +29,10 @@ pub(super) async fn list_knowledge_types(
     _h: &OrchyHandler,
     _params: ListKnowledgeTypesParams,
 ) -> Result<String, String> {
-    let types: Vec<serde_json::Value> = KnowledgeKind::all()
+    let types: Vec<Value> = KnowledgeKind::all()
         .iter()
         .map(|t| {
-            serde_json::json!({
+            json!({
                 "type": t.to_string(),
                 "description": t.description(),
             })

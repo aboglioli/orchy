@@ -1,3 +1,4 @@
+use chrono::{Duration, Utc};
 use std::str::FromStr;
 
 use orchy_core::agent::AgentId;
@@ -273,7 +274,7 @@ pub(super) async fn poll_updates(
 
     let since = match params.since.as_deref() {
         Some(s) => s.to_string(),
-        None => (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339(),
+        None => (Utc::now() - Duration::minutes(5)).to_rfc3339(),
     };
 
     let cmd = PollUpdatesCommand {

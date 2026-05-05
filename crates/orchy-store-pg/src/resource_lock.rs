@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
@@ -33,7 +33,7 @@ impl LockStore for PgLockStore {
         holder: &AgentId,
         ttl_secs: u64,
     ) -> Result<Option<ResourceLock>> {
-        let now = chrono::Utc::now();
+        let now = Utc::now();
         let expires_at = now + chrono::Duration::seconds(ttl_secs as i64);
         let mut tx = self
             .pool
@@ -200,7 +200,7 @@ impl LockStore for PgLockStore {
     }
 }
 
-fn row_to_resource_lock(row: &sqlx::postgres::PgRow) -> Result<ResourceLock> {
+fn row_to_resource_lock(row: &PgRow) -> Result<ResourceLock> {
     let org_id_str: String = row.get("organization_id");
     let project: String = row.get("project");
     let namespace: String = row.get("namespace");

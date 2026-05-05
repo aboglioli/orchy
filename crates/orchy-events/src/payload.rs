@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::FromStr;
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -25,7 +26,7 @@ impl fmt::Display for ContentType {
     }
 }
 
-impl std::str::FromStr for ContentType {
+impl FromStr for ContentType {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {

@@ -1,6 +1,3 @@
-use std::str::FromStr;
-use std::sync::Arc;
-
 use chrono::Utc;
 use orchy_application::{
     AddDependency, AddDependencyCommand, AddEdge, AddEdgeCommand, AppendKnowledge,
@@ -37,6 +34,8 @@ use orchy_core::user::{
     UserStore,
 };
 use orchy_store_memory::*;
+use std::str::FromStr;
+use std::sync::Arc;
 
 fn org() -> OrganizationId {
     OrganizationId::new("default").unwrap()

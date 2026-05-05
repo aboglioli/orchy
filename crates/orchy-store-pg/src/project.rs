@@ -1,8 +1,8 @@
+use sqlx::{PgPool, Row, postgres::PgRow};
 use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
 
 use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
@@ -77,7 +77,7 @@ impl ProjectStore for PgProjectStore {
     }
 }
 
-fn row_to_project(row: &sqlx::postgres::PgRow) -> Result<Project> {
+fn row_to_project(row: &PgRow) -> Result<Project> {
     let org_id_str: String = row.get("organization_id");
     let name: String = row.get("name");
     let description: String = row.get("description");

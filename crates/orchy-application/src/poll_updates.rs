@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 
 use orchy_core::error::{Error, Result};
@@ -23,7 +24,7 @@ impl PollUpdates {
     pub async fn execute(&self, cmd: PollUpdatesCommand) -> Result<Vec<SerializedEvent>> {
         let since = cmd
             .since
-            .parse::<chrono::DateTime<chrono::Utc>>()
+            .parse::<DateTime<Utc>>()
             .map_err(|e| Error::InvalidInput(format!("invalid timestamp: {e}")))?;
 
         let limit = cmd.limit.unwrap_or(50) as usize;

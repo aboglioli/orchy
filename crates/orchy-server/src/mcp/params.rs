@@ -1,5 +1,6 @@
 use rmcp::schemars;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct RegisterAgentParams {
@@ -11,7 +12,7 @@ pub struct RegisterAgentParams {
     pub roles: Option<Vec<String>>,
     /// Informative only (e.g. claude-code, opencode, pi). Not part of identity.
     pub agent_type: Option<String>,
-    pub metadata: Option<std::collections::HashMap<String, String>>,
+    pub metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]

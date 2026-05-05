@@ -1,3 +1,4 @@
+use sqlx::{PgPool, Row, postgres::PgRow};
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -5,7 +6,6 @@ use chrono::{DateTime, Utc};
 use pgvector::Vector;
 use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
-use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use orchy_core::error::{Error, Result};
@@ -199,7 +199,7 @@ impl KnowledgeStore for PgKnowledgeStore {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let uuid_ids: Vec<uuid::Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
+        let uuid_ids: Vec<Uuid> = ids.iter().map(|id| *id.as_uuid()).collect();
         let rows = sqlx::query(&format!(
             "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE id = ANY($1::uuid[])"
         ))
@@ -391,7 +391,7 @@ impl KnowledgeStore for PgKnowledgeStore {
 }
 
 async fn search_by_embedding(
-    pool: &sqlx::PgPool,
+    pool: &PgPool,
     org: &OrganizationId,
     embedding: &[f32],
     namespace: Option<&Namespace>,
@@ -450,7 +450,7 @@ async fn search_by_embedding(
         .collect()
 }
 
-fn row_to_entry(row: &sqlx::postgres::PgRow) -> Result<Knowledge> {
+fn row_to_entry(row: &PgRow) -> Result<Knowledge> {
     let id: Uuid = row.get("id");
     let org_id_str: String = row.get("organization_id");
     let project: Option<String> = row.get("project");

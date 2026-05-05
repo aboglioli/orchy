@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::{PgPool, Row};
 
 use orchy_core::error::{Error, Result};
@@ -28,7 +29,7 @@ impl NamespaceStore for PgNamespaceStore {
         )
         .bind(project.to_string())
         .bind(namespace.to_string())
-        .bind(chrono::Utc::now())
+        .bind(Utc::now())
         .execute(&self.pool)
         .await
         .map_err(|e| Error::Store(e.to_string()))?;

@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
+use std::collections::HashMap;
+use std::result::Result as StdResult;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -9,21 +11,19 @@ use orchy_events::io::{EventQuery, Writer};
 use orchy_events::{Error as EventError, Event, Result as EventResult, SerializedEvent};
 
 pub struct PgEventWriter {
-    pool: sqlx::PgPool,
+    pool: PgPool,
 }
 
 pub struct PgTxEventWriter<'tx> {
-    tx: Mutex<&'tx mut sqlx::PgConnection>,
+    tx: Mutex<&'tx mut PgConnection>,
 }
 
 impl PgEventWriter {
-    pub fn new(pool: sqlx::PgPool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
-    pub fn new_tx<'a, 'c>(
-        tx: &'a mut sqlx::Transaction<'c, sqlx::Postgres>,
-    ) -> PgTxEventWriter<'a> {
+    pub fn new_tx<'a, 'c>(tx: &'a mut Transaction<'c, Postgres>) -> PgTxEventWriter<'a> {
         PgTxEventWriter {
             tx: Mutex::new(&mut **tx),
         }
@@ -37,14 +37,12 @@ fn serialize_event(event: &Event) -> EventResult<(Uuid, SerializedEvent)> {
     Ok((id, serialized))
 }
 
-fn serialize_metadata(
-    metadata: &std::collections::HashMap<String, String>,
-) -> EventResult<serde_json::Value> {
+fn serialize_metadata(metadata: &HashMap<String, String>) -> EventResult<serde_json::Value> {
     serde_json::to_value(metadata)
         .map_err(|e| EventError::Store(format!("failed to serialize metadata: {e}")))
 }
 
-async fn append_to_pool(pool: &sqlx::PgPool, event: &Event) -> EventResult<()> {
+async fn append_to_pool(pool: &PgPool, event: &Event) -> EventResult<()> {
     let (id, serialized) = serialize_event(event)?;
 
     sqlx::query(
@@ -68,7 +66,7 @@ async fn append_to_pool(pool: &sqlx::PgPool, event: &Event) -> EventResult<()> {
     Ok(())
 }
 
-async fn append_to_tx(conn: &mut sqlx::PgConnection, event: &Event) -> EventResult<()> {
+async fn append_to_tx(conn: &mut PgConnection, event: &Event) -> EventResult<()> {
     let (id, serialized) = serialize_event(event)?;
 
     sqlx::query(
@@ -108,11 +106,11 @@ impl<'tx> Writer for PgTxEventWriter<'tx> {
 }
 
 pub struct PgEventQuery {
-    pool: sqlx::PgPool,
+    pool: PgPool,
 }
 
 impl PgEventQuery {
-    pub fn new(pool: sqlx::PgPool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
@@ -167,7 +165,7 @@ impl EventQuery for PgEventQuery {
         organization: &str,
         since: DateTime<Utc>,
         limit: usize,
-    ) -> std::result::Result<Vec<SerializedEvent>, String> {
+    ) -> StdResult<Vec<SerializedEvent>, String> {
         self.query_events(organization, since, limit)
             .await
             .map_err(|e| e.to_string())

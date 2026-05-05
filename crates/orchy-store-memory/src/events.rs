@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -46,7 +47,7 @@ impl MemoryEventQuery {
     pub async fn query_events(
         &self,
         organization: &str,
-        since: chrono::DateTime<chrono::Utc>,
+        since: DateTime<Utc>,
         limit: usize,
     ) -> Result<Vec<SerializedEvent>> {
         let store = self.state.events.read().await;
@@ -67,7 +68,7 @@ impl EventQuery for MemoryEventQuery {
     async fn query_events(
         &self,
         organization: &str,
-        since: chrono::DateTime<chrono::Utc>,
+        since: DateTime<Utc>,
         limit: usize,
     ) -> std::result::Result<Vec<SerializedEvent>, String> {
         self.query_events(organization, since, limit)

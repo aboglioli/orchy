@@ -1,11 +1,11 @@
+use sqlx::postgres::PgListener;
+use sqlx::{PgPool, Row};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Stream;
-use sqlx::postgres::PgListener;
-use sqlx::{PgPool, Row};
 use tokio::sync::watch;
 use uuid::Uuid;
 

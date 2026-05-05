@@ -1,6 +1,5 @@
+use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
-
-use chrono::Utc;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore as _, Alias};
 use orchy_core::error::Error;
@@ -204,11 +203,7 @@ async fn task_save_persists_event_log() {
 
     let events = s
         .events
-        .query_events(
-            organization.as_str(),
-            chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
-            10,
-        )
+        .query_events(organization.as_str(), DateTime::<Utc>::UNIX_EPOCH, 10)
         .unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].topic, "task.created");
@@ -1046,7 +1041,7 @@ async fn edge_traverse_both_reaches_edges_connected_via_incoming_neighbor() {
 
 #[tokio::test]
 async fn edge_as_of_returns_historical_snapshot() {
-    use chrono::Duration;
+    use Duration;
     let s = backend();
     let org = org("default");
     let mut edge = Edge::new(

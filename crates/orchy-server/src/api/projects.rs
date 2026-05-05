@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -37,7 +38,7 @@ pub struct IncludeSummaryQuery {
 pub struct ProjectDto {
     pub id: String,
     pub description: String,
-    pub metadata: std::collections::HashMap<String, String>,
+    pub metadata: HashMap<String, String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -96,7 +97,7 @@ pub async fn get(
         .await
         .map_err(ApiError::from)?;
 
-    let mut by_status = std::collections::HashMap::new();
+    let mut by_status = HashMap::new();
     for task in &overview.tasks {
         *by_status.entry(task.status.clone()).or_insert(0u32) += 1;
     }

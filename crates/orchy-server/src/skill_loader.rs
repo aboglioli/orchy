@@ -1,4 +1,8 @@
+use std::error::Error as StdError;
+use std::fs;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 
 use orchy_application::{Application, WriteKnowledgeCommand};
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -7,7 +11,7 @@ use tracing::{info, warn};
 pub async fn load_skills_from_dir(
     dir: &Path,
     app: &Application,
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> Result<usize, Box<dyn StdError>> {
     if !dir.exists() {
         warn!(path = %dir.display(), "skills directory does not exist, skipping");
         return Ok(0);
@@ -25,11 +29,9 @@ fn load_recursive<'a>(
     current: &'a Path,
     app: &'a Application,
     count: &'a mut usize,
-) -> std::pin::Pin<
-    Box<dyn std::future::Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>,
-> {
+) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn StdError>>> + Send + 'a>> {
     Box::pin(async move {
-        let mut entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
+        let mut entries: Vec<_> = fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
         entries.sort_by_key(|e| e.file_name());
 
         for entry in entries {
@@ -83,7 +85,7 @@ fn load_recursive<'a>(
                 .unwrap_or("unknown")
                 .to_string();
 
-            let raw = std::fs::read_to_string(&path)?;
+            let raw = fs::read_to_string(&path)?;
             let (description, content) = parse_frontmatter(&raw, &name);
 
             let cmd = WriteKnowledgeCommand {

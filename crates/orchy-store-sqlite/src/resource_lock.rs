@@ -1,7 +1,11 @@
+use rusqlite::{Error as RusqliteError, Row as RusqliteRow, types::Type as RusqliteType};
+use std::error::Error as StdError;
+use std::io::{Error as IoError, ErrorKind as IoErrorKind};
+use std::result::Result as StdResult;
 use std::str::FromStr;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rusqlite::OptionalExtension;
 
 use orchy_core::agent::AgentId;
@@ -12,11 +16,8 @@ use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
 use crate::{SqliteConn, events};
 
-fn str_err(e: impl ToString) -> Box<dyn std::error::Error + Send + Sync> {
-    Box::new(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        e.to_string(),
-    ))
+fn str_err(e: impl ToString) -> Box<dyn StdError + Send + Sync> {
+    Box::new(IoError::new(IoErrorKind::InvalidData, e.to_string()))
 }
 
 pub struct SqliteLockStore {
@@ -40,8 +41,8 @@ impl LockStore for SqliteLockStore {
         holder: &AgentId,
         ttl_secs: u64,
     ) -> Result<Option<ResourceLock>> {
-        let now = chrono::Utc::now();
-        let expires_at = now + chrono::Duration::seconds(ttl_secs as i64);
+        let now = Utc::now();
+        let expires_at = now + Duration::seconds(ttl_secs as i64);
 
         let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
         let tx = conn
@@ -185,7 +186,7 @@ impl LockStore for SqliteLockStore {
                 row_to_resource_lock,
             )
             .map_err(|e| Error::Store(e.to_string()))?
-            .collect::<std::result::Result<Vec<_>, _>>()
+            .collect::<StdResult<Vec<_>, _>>()
             .map_err(|e| Error::Store(e.to_string()))?;
 
         Ok(locks)
@@ -216,7 +217,7 @@ impl LockStore for SqliteLockStore {
     }
 }
 
-fn row_to_resource_lock(row: &rusqlite::Row) -> rusqlite::Result<ResourceLock> {
+fn row_to_resource_lock(row: &RusqliteRow) -> rusqlite::Result<ResourceLock> {
     let org_id_str: String = row.get(0)?;
     let project_str: String = row.get(1)?;
     let namespace_str: String = row.get(2)?;
@@ -225,28 +226,20 @@ fn row_to_resource_lock(row: &rusqlite::Row) -> rusqlite::Result<ResourceLock> {
     let acquired_at_str: String = row.get(5)?;
     let expires_at_str: String = row.get(6)?;
 
-    let org_id = OrganizationId::new(&org_id_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, str_err(e))
-    })?;
-    let project = ProjectId::try_from(project_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, str_err(e))
-    })?;
-    let namespace = Namespace::try_from(namespace_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, str_err(e))
-    })?;
-    let holder = AgentId::from_str(&holder_str).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, str_err(e))
-    })?;
+    let org_id = OrganizationId::new(&org_id_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(0, RusqliteType::Text, str_err(e)))?;
+    let project = ProjectId::try_from(project_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(1, RusqliteType::Text, str_err(e)))?;
+    let namespace = Namespace::try_from(namespace_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(2, RusqliteType::Text, str_err(e)))?;
+    let holder = AgentId::from_str(&holder_str)
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(4, RusqliteType::Text, str_err(e)))?;
     let acquired_at = DateTime::parse_from_rfc3339(&acquired_at_str)
         .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, str_err(e))
-        })?;
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(5, RusqliteType::Text, str_err(e)))?;
     let expires_at = DateTime::parse_from_rfc3339(&expires_at_str)
         .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, str_err(e))
-        })?;
+        .map_err(|e| RusqliteError::FromSqlConversionFailure(6, RusqliteType::Text, str_err(e)))?;
 
     Ok(ResourceLock::restore(RestoreResourceLock {
         org_id,

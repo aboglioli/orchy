@@ -1,7 +1,6 @@
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use chrono::Utc;
 
 use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgePath, KnowledgeStore, Version};
@@ -47,12 +46,12 @@ impl PatchKnowledgeMetadata {
 
         let valid_from = cmd
             .valid_from
-            .map(|s| chrono::DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
             .map_err(|e| Error::InvalidInput(format!("invalid valid_from: {e}")))?;
         let valid_until = cmd
             .valid_until
-            .map(|s| chrono::DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
             .map_err(|e| Error::InvalidInput(format!("invalid valid_until: {e}")))?;
 
