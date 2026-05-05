@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/orchy-events",
+    "crates/orchy-events-sqs",
+    "crates/orchy-events-kafka",
     "crates/orchy-core",
     "crates/orchy-application",
     "crates/orchy-store-memory",
@@ -19,6 +21,13 @@ version = "0.1.0"
 license = "MIT"
 
 [workspace.dependencies]
+# AWS
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-sdk-sqs = "1.50"
+
+# Kafka
+rdkafka = { version = "0.36", features = ["cmake-build", "tokio"] }
+
 # Domain
 base64 = "0.22"
 uuid = { version = "1", features = ["v7", "serde"] }
@@ -54,6 +63,7 @@ sea-query-binder = { version = "0.7", features = ["sqlx-postgres", "with-uuid", 
 # Config
 toml = "0.8"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+testcontainers = "0.23"
 
 # Internal
 orchy-events = { path = "crates/orchy-events" }
