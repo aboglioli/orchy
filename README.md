@@ -10,17 +10,79 @@ the coordination layer and enforces the rules.
 
 ## Quick start
 
+### Prerequisites
+
+- **Docker** (or Podman with `podman-compose` / `docker-compose`)
+- **Rust 1.85+** (for building from source)
+
+### Docker Compose (recommended)
+
 ```bash
-cargo run -p orchy-server   # MCP + REST API
-cargo run -p orchy-cli      # CLI binary (requires a running server)
+git clone https://github.com/aboglioli/orchy.git
+cd orchy
+
+docker compose up -d
+# or: podman compose up -d
 ```
 
-MCP server at `http://127.0.0.1:3100/mcp`. Bootstrap prompt at
-`http://127.0.0.1:3100/bootstrap/<project>`.
+The server binds to `http://localhost:3100`. Uses PostgreSQL with pgvector.
+The CLI is available inside the container as `orchy`:
 
-CLI quickstart:
 ```bash
-# Configure once (or use env vars: ORCHY_URL, ORCHY_API_KEY, ORCHY_PROJECT, ORCHY_ALIAS)
+docker compose exec server orchy bootstrap --json
+docker compose exec server orchy task list --json
+```
+
+```
+MCP endpoint:  http://localhost:3100/mcp
+Bootstrap:     http://localhost:3100/bootstrap/<project>
+REST API:      http://localhost:3100/api/
+```
+
+### From source (SQLite)
+
+No database container needed. SQLite works out of the box for single-node usage.
+
+```bash
+git clone https://github.com/aboglioli/orchy.git
+cd orchy
+
+cargo run -p orchy-server
+```
+
+Creates `orchy.db` in the working directory. The server starts at `http://127.0.0.1:3100`.
+
+### From source (PostgreSQL)
+
+Start PostgreSQL first, then point the server at it:
+
+```bash
+# Start Postgres (or use compose.yml)
+docker compose up -d postgres
+# or: podman compose up -d postgres
+
+# Run the server with postgres config
+cat > config.toml <<EOF
+[server]
+host = "127.0.0.1"
+port = 3100
+
+[store]
+backend = "postgres"
+
+[store.postgres]
+url = "postgres://orchy:orchy@localhost:5432/orchy"
+EOF
+
+cargo run -p orchy-server
+```
+
+### CLI setup
+
+The `orchy` CLI targets agents without MCP support. Configure once:
+
+```bash
+# ~/.orchy/config.toml or env vars: ORCHY_URL, ORCHY_API_KEY, ORCHY_PROJECT, ORCHY_ALIAS
 cat > ~/.orchy/config.toml <<EOF
 url      = "http://localhost:3100"
 api_key  = "your-key"
@@ -29,7 +91,7 @@ alias    = "coder-1"
 EOF
 
 orchy bootstrap              # agent briefing: inbox, tasks, skills, handoff context
-orchy task list --json       # machine-readable output for agents
+orchy task list --json
 orchy task claim <id>
 orchy knowledge write auth/decision --kind decision --title "..." --content "..."
 ```
@@ -43,13 +105,19 @@ port = 3100
 heartbeat_timeout_secs = 300
 
 [store]
-backend = "sqlite"              # "sqlite", "postgres", or "memory"
+backend = "sqlite"              # "sqlite" (default), "postgres", or "memory"
 
 [store.sqlite]
 path = "orchy.db"
 
 # [store.postgres]
 # url = "postgres://orchy:orchy@localhost:5432/orchy"
+
+# [auth]
+# jwt_duration_hours = 24
+# cookie_secure = false
+# bcrypt_cost = 10
+# keys_dir = "keys"
 
 # [skills]
 # dir = "skills"
@@ -1077,6 +1145,41 @@ Locks auto-expire after `ttl_secs` (default 300).
 | `project` | no | Override session project |
 
 ---
+
+## Development
+
+Build and test commands via [just](https://github.com/casey/just):
+
+```bash
+just              # list all recipes
+just build        # cargo build --workspace
+just test         # unit tests (no containers)
+just lint         # cargo clippy --workspace --all-targets -- -D warnings
+just fmt          # cargo fmt --all
+just server       # cargo run -p orchy-server
+just cli -- --help
+
+# Integration tests (testcontainers, requires Docker/Podman)
+just it-pg          # PostgreSQL store tests
+just it-conformance # store conformance suite
+just it-sqs         # SQS event backend
+just it-kafka       # Kafka event backend
+just it             # all of the above
+
+# Single test by pattern
+just t pg_reader_streaming
+```
+
+The justfile auto-sets `DOCKER_HOST` for rootless Podman and disables Ryuk.
+Override `DOCKER_HOST` if using a different container runtime.
+
+For raw cargo invocations:
+
+```bash
+export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock
+export TESTCONTAINERS_RYUK_DISABLED=true
+cargo test -p <crate> --features integration-tests -- --test-threads=1
+```
 
 ## License
 
