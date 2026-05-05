@@ -31,11 +31,19 @@ use std::str::FromStr;
 #[tracing::instrument(skip_all)]
 pub async fn claim_message(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path(msg_id): Path<String>,
-    Json(body): Json<ClaimMessageBody>,
+    Query(query): Query<ClaimMessageQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let agent_id = AgentId::from_str(&body.agent_id)
+    let org_id = parse_org(&auth.org.id)?;
+    let (agent_id_str, _project) = resolve_agent_id_for_messages(
+        &container,
+        &org_id,
+        &query.agent_id,
+        query.project.as_deref(),
+    )
+    .await?;
+    let agent_id = AgentId::from_str(&agent_id_str)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     let message_id = MessageId::from_str(&msg_id)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
@@ -53,11 +61,19 @@ pub async fn claim_message(
 #[tracing::instrument(skip_all)]
 pub async fn unclaim_message(
     State(container): State<Arc<Container>>,
-    _auth: OrgAuth,
+    auth: OrgAuth,
     Path(msg_id): Path<String>,
-    Json(body): Json<ClaimMessageBody>,
+    Query(query): Query<ClaimMessageQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let agent_id = AgentId::from_str(&body.agent_id)
+    let org_id = parse_org(&auth.org.id)?;
+    let (agent_id_str, _project) = resolve_agent_id_for_messages(
+        &container,
+        &org_id,
+        &query.agent_id,
+        query.project.as_deref(),
+    )
+    .await?;
+    let agent_id = AgentId::from_str(&agent_id_str)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
     let message_id = MessageId::from_str(&msg_id)
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
@@ -73,8 +89,9 @@ pub async fn unclaim_message(
 }
 
 #[derive(Deserialize)]
-pub struct ClaimMessageBody {
+pub struct ClaimMessageQuery {
     pub agent_id: String,
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize)]

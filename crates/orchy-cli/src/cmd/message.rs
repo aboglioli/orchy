@@ -39,6 +39,10 @@ pub enum MessageSubcommand {
         #[arg(long)]
         limit: Option<u32>,
     },
+    /// Claim a logical (role/ns/broadcast/user) message for exclusive handling
+    Claim { id: String },
+    /// Release a previously claimed logical message
+    Unclaim { id: String },
 }
 
 pub async fn run(cmd: &MessageSubcommand, client: &OrchyClient, config: &Config) -> CliResult<()> {
@@ -177,6 +181,40 @@ pub async fn run(cmd: &MessageSubcommand, client: &OrchyClient, config: &Config)
                     .or_else(|| v.get("items").and_then(|v| v.as_array()))
                     .unwrap_or(&empty);
                 print!("{}", output::format_message_list(items));
+            }
+        }
+        MessageSubcommand::Claim { id } => {
+            let alias = client.alias.clone().ok_or(CliError::MissingAgentId)?;
+            let v = client
+                .post_json(
+                    &format!(
+                        "/messages/{id}/claim?agent_id={alias}&project={}",
+                        client.project
+                    ),
+                    None,
+                )
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Message {id} claimed.");
+            }
+        }
+        MessageSubcommand::Unclaim { id } => {
+            let alias = client.alias.clone().ok_or(CliError::MissingAgentId)?;
+            let v = client
+                .post_json(
+                    &format!(
+                        "/messages/{id}/unclaim?agent_id={alias}&project={}",
+                        client.project
+                    ),
+                    None,
+                )
+                .await?;
+            if config.json {
+                output::print_json(config, &v);
+            } else {
+                println!("Message {id} unclaimed.");
             }
         }
     }
