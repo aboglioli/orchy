@@ -23,7 +23,6 @@ pub enum AgentSubcommand {
         alias: Option<String>,
     },
     /// List all agents in the org
-    /// List all agents in the org
     List {
         #[arg(long, help = "Filter agents by project")]
         project: Option<String>,
