@@ -63,7 +63,10 @@ async fn run() -> BootResult<()> {
         .map_err(|e| BootError::Config(format!("invalid config: {e}")))?;
 
     let host = config.server.host.clone();
-    let port = config.server.port;
+    let port = std::env::var("ORCHY_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(config.server.port);
 
     let container = Container::from_config(config).await?;
 

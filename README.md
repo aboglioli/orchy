@@ -25,7 +25,7 @@ docker compose up -d
 # or: podman compose up -d
 ```
 
-The server binds to `http://localhost:3100`. Uses PostgreSQL with pgvector.
+The server binds to `http://localhost:4310`. Uses PostgreSQL with pgvector.
 The CLI is available inside the container as `orchy`:
 
 ```bash
@@ -34,9 +34,9 @@ docker compose exec server orchy task list --json
 ```
 
 ```
-MCP endpoint:  http://localhost:3100/mcp
-Bootstrap:     http://localhost:3100/bootstrap/<project>
-REST API:      http://localhost:3100/api/
+MCP endpoint:  http://localhost:4310/mcp
+Bootstrap:     http://localhost:4310/bootstrap/<project>
+REST API:      http://localhost:4310/api/
 ```
 
 ### From source (SQLite)
@@ -50,7 +50,7 @@ cd orchy
 cargo run -p orchy-server
 ```
 
-Creates `orchy.db` in the working directory. The server starts at `http://127.0.0.1:3100`.
+Creates `orchy.db` in the working directory. The server starts at `http://127.0.0.1:4310`.
 
 ### From source (PostgreSQL)
 
@@ -65,7 +65,7 @@ docker compose up -d postgres
 cat > config.toml <<EOF
 [server]
 host = "127.0.0.1"
-port = 3100
+port = 4310
 
 [store]
 backend = "postgres"
@@ -84,7 +84,7 @@ The `orchy` CLI targets agents without MCP support. Configure once:
 ```bash
 # ~/.orchy/config.toml or env vars: ORCHY_URL, ORCHY_API_KEY, ORCHY_PROJECT, ORCHY_ALIAS
 cat > ~/.orchy/config.toml <<EOF
-url      = "http://localhost:3100"
+url      = "http://localhost:4310"
 api_key  = "your-key"
 project  = "myproject"
 alias    = "coder-1"
@@ -101,7 +101,7 @@ orchy knowledge write auth/decision --kind decision --title "..." --content "...
 ```toml
 [server]
 host = "127.0.0.1"
-port = 3100
+port = 4310
 heartbeat_timeout_secs = 300
 
 [store]

@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         alias: "test-agent".to_string(),
         agent_type: "unknown".to_string(),
         description: "test agent".to_string(),
-        url: "http://127.0.0.1:3100/mcp".to_string(),
+        url: "http://127.0.0.1:4310/mcp".to_string(),
         project: "default".to_string(),
         namespace: None,
         command: command.clone(),

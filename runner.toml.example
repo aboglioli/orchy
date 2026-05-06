@@ -15,7 +15,7 @@ spawn_mode = "pipe"        # "pty" for interactive CLIs, "pipe" for structured o
 # ANTHROPIC_API_KEY = "sk-..."
 
 [orchy]
-url = "http://127.0.0.1:3100/mcp"
+url = "http://127.0.0.1:4310/mcp"
 project = "my-project"
 description = "Autonomous Claude worker managed by orchy-runner"
 # namespace = "/backend"

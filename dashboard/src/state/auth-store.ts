@@ -31,7 +31,7 @@ type AuthState = {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      baseUrl: 'http://localhost:3100',
+      baseUrl: 'http://localhost:4310',
       user: null,
       memberships: null,
       isAuthenticated: false,

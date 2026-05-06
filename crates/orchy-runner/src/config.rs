@@ -10,7 +10,7 @@ pub struct Cli {
     #[arg(long, env = "ORCHY_ALIAS")]
     pub alias: String,
 
-    #[arg(long, env = "ORCHY_URL", default_value = "http://127.0.0.1:3100/mcp")]
+    #[arg(long, env = "ORCHY_URL", default_value = "http://127.0.0.1:4310/mcp")]
     pub url: String,
 
     #[arg(long, env = "ORCHY_PROJECT")]

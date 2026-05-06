@@ -423,7 +423,7 @@ A "janitor" agent can compact and reorganize:
 ```toml
 [server]
 host = "127.0.0.1"
-port = 3100
+port = 4310
 heartbeat_timeout_secs = 300
 
 [store]
