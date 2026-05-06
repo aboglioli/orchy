@@ -26,6 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: install rdkafka build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config \
+            libsasl2-dev libssl-dev libcurl4-openssl-dev zlib1g-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -37,31 +42,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: install rdkafka build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config \
+            libsasl2-dev libssl-dev libcurl4-openssl-dev zlib1g-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
+      - run: cargo test --workspace --no-fail-fast
 
-  pg-test:
-    name: cargo test (pg-tests)
+  integration:
+    name: integration tests (testcontainers)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:0.8.2-pg17
-        env:
-          POSTGRES_USER: orchy
-          POSTGRES_PASSWORD: orchy
-          POSTGRES_DB: orchy
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgres://orchy:orchy@localhost:5432/orchy
     steps:
       - uses: actions/checkout@v4
+      - name: install rdkafka build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config \
+            libsasl2-dev libssl-dev libcurl4-openssl-dev zlib1g-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p orchy-store-pg --features pg-tests -- --test-threads=2
-      - run: cargo test -p orchy-store-conformance --test pg --features pg-tests -- --test-threads=2
+      - run: cargo test -p orchy-store-pg --features integration-tests -- --test-threads=1
+      - run: cargo test -p orchy-store-conformance --features integration-tests -- --test-threads=1
+      - run: cargo test -p orchy-events-sqs --features integration-tests -- --test-threads=1
+      - run: cargo test -p orchy-events-kafka --features integration-tests -- --test-threads=1
