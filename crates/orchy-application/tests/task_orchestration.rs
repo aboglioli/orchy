@@ -661,7 +661,11 @@ async fn add_dependency_blocks_pending_task() {
     let s = mem();
     let app = build_app(&s);
 
-    let prereq = app.post_task.execute(post_cmd("org", "prereq")).await.unwrap();
+    let prereq = app
+        .post_task
+        .execute(post_cmd("org", "prereq"))
+        .await
+        .unwrap();
     let dependent = app
         .post_task
         .execute(post_cmd("org", "dependent"))
@@ -679,7 +683,10 @@ async fn add_dependency_blocks_pending_task() {
         .await
         .unwrap();
 
-    assert_eq!(after.status, "blocked", "dependent must be blocked after adding dependency on pending task");
+    assert_eq!(
+        after.status, "blocked",
+        "dependent must be blocked after adding dependency on pending task"
+    );
 }
 
 #[tokio::test]
@@ -688,7 +695,11 @@ async fn add_dependency_cascade_unblocks_on_complete() {
     let app = build_app(&s);
     let agent_id = seed_agent(&s, "org", "worker-cascade-add").await;
 
-    let prereq = app.post_task.execute(post_cmd("org", "prereq")).await.unwrap();
+    let prereq = app
+        .post_task
+        .execute(post_cmd("org", "prereq"))
+        .await
+        .unwrap();
     let dependent = app
         .post_task
         .execute(post_cmd("org", "dependent"))
@@ -745,7 +756,11 @@ async fn remove_dependency_unblocks_task() {
     let s = mem();
     let app = build_app(&s);
 
-    let prereq = app.post_task.execute(post_cmd("org", "prereq")).await.unwrap();
+    let prereq = app
+        .post_task
+        .execute(post_cmd("org", "prereq"))
+        .await
+        .unwrap();
     let dependent = app
         .post_task
         .execute(post_cmd("org", "dependent"))
@@ -791,9 +806,11 @@ async fn remove_dependency_unblocks_task() {
         .await
         .unwrap();
 
-    assert_eq!(after.status, "pending", "dependent must unblock when sole dependency is removed");
+    assert_eq!(
+        after.status, "pending",
+        "dependent must unblock when sole dependency is removed"
+    );
 }
-
 // TODO: indirect cycle detection not wired yet — add_dependency doesn't traverse the graph
 // Enable this test once cycle detection is implemented
 #[tokio::test]

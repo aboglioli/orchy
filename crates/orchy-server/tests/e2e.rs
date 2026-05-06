@@ -1441,6 +1441,157 @@ async fn sqlite_cli_task_create_records_created_by() {
     );
 }
 
+// ─── CLI: task add-dep and remove-dep ───────────────────────────────────────
+
+#[tokio::test]
+async fn sqlite_cli_task_add_remove_dep() {
+    let ctx = boot_authenticated("cli-add-remove-dep").await;
+
+    ctx.client
+        .post(format!("{}/api/projects/anyproj/agents", ctx.base))
+        .bearer_auth(&ctx.api_key)
+        .json(&serde_json::json!({"alias": "dep-worker", "description": ""}))
+        .send()
+        .await
+        .unwrap();
+
+    // Create two tasks
+    let task_a = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &[
+            "task",
+            "create",
+            "--title",
+            "Task A",
+            "--description",
+            "A",
+            "--json",
+        ],
+    )
+    .await;
+    assert!(task_a.status.success(), "task A create failed");
+    let task_a_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&task_a.stdout)).unwrap();
+    let id_a = task_a_json["id"].as_str().unwrap();
+
+    let task_b = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &[
+            "task",
+            "create",
+            "--title",
+            "Task B",
+            "--description",
+            "B",
+            "--json",
+        ],
+    )
+    .await;
+    assert!(task_b.status.success(), "task B create failed");
+    let task_b_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&task_b.stdout)).unwrap();
+    let id_b = task_b_json["id"].as_str().unwrap();
+
+    // Add dependency: B depends on A
+    let add_out = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &["task", "add-dep", id_b, "--dep", id_a, "--json"],
+    )
+    .await;
+    assert!(add_out.status.success(), "add-dep failed");
+    let add_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&add_out.stdout)).unwrap();
+    assert_eq!(
+        add_json["status"].as_str(),
+        Some("blocked"),
+        "task B must be blocked after adding dependency"
+    );
+
+    // Complete task A
+    let _ = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &["task", "claim", id_a, "--start", "true"],
+    )
+    .await;
+    let _ = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &["task", "complete", id_a, "--summary", "done"],
+    )
+    .await;
+
+    // Verify B is unblocked
+    let b_after = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &["task", "get", id_b, "--json"],
+    )
+    .await;
+    assert!(b_after.status.success(), "get task B failed");
+    let b_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&b_after.stdout)).unwrap();
+    assert_eq!(
+        b_json["status"].as_str(),
+        Some("pending"),
+        "task B must unblock when A completes"
+    );
+
+    // Re-add dependency for remove test
+    let _ = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &["task", "add-dep", id_b, "--dep", id_a, "--json"],
+    )
+    .await;
+
+    // Remove dependency
+    let remove_out = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &["task", "remove-dep", id_b, "--dep", id_a],
+    )
+    .await;
+    assert!(remove_out.status.success(), "remove-dep failed");
+
+    // Verify B is unblocked after remove
+    let b_removed = run_orchy_with_flags(
+        &ctx.base,
+        &ctx.api_key,
+        "anyproj",
+        "dep-worker",
+        &["task", "get", id_b, "--json"],
+    )
+    .await;
+    assert!(b_removed.status.success(), "get task B after remove failed");
+    let b_removed_json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&b_removed.stdout)).unwrap();
+    assert_eq!(
+        b_removed_json["status"].as_str(),
+        Some("pending"),
+        "task B must unblock when dependency is removed"
+    );
+}
+
 // ─── CLI: alias too long returns error ──────────────────────────────────────
 
 #[tokio::test]
