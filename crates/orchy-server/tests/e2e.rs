@@ -1128,16 +1128,34 @@ fn workspace_root() -> std::path::PathBuf {
         .to_path_buf()
 }
 
-fn orchy_bin() -> Option<std::path::PathBuf> {
-    if let Ok(path) = std::env::var("CARGO_BIN_EXE_orchy") {
-        let bin = std::path::PathBuf::from(path);
-        if bin.exists() {
-            return Some(bin);
+fn orchy_bin() -> std::path::PathBuf {
+    use std::sync::OnceLock;
+    static BIN: OnceLock<std::path::PathBuf> = OnceLock::new();
+    BIN.get_or_init(|| {
+        if let Ok(path) = std::env::var("CARGO_BIN_EXE_orchy") {
+            let bin = std::path::PathBuf::from(path);
+            if bin.exists() {
+                return bin;
+            }
         }
-    }
-    let root = workspace_root();
-    let bin = root.join("target").join("debug").join("orchy");
-    if bin.exists() { Some(bin) } else { None }
+        let root = workspace_root();
+        let bin = root.join("target").join("debug").join("orchy");
+        if bin.exists() {
+            return bin;
+        }
+        let status = std::process::Command::new("cargo")
+            .current_dir(&root)
+            .args(["build", "-p", "orchy-cli"])
+            .status()
+            .expect("failed to invoke cargo build -p orchy-cli");
+        assert!(status.success(), "cargo build -p orchy-cli failed");
+        assert!(
+            bin.exists(),
+            "orchy binary still missing after build: {bin:?}"
+        );
+        bin
+    })
+    .clone()
 }
 
 fn cli_config(
@@ -1157,7 +1175,7 @@ fn cli_config(
 
 /// Run orchy CLI with the given args. Config must be in the temp dir's .orchy.toml.
 async fn run_orchy_in_dir(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
-    let bin = orchy_bin().expect("orchy binary not found; build with: cargo build -p orchy-cli");
+    let bin = orchy_bin();
     tokio::process::Command::new(bin)
         .current_dir(dir)
         .args(args)
@@ -1174,7 +1192,7 @@ async fn run_orchy_with_flags(
     agent: &str,
     args: &[&str],
 ) -> std::process::Output {
-    let bin = orchy_bin().expect("orchy binary not found; build with: cargo build -p orchy-cli");
+    let bin = orchy_bin();
     let mut all_args = vec![
         "--url",
         base,
