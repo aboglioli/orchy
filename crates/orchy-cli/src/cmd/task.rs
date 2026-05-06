@@ -204,6 +204,9 @@ pub async fn run(cmd: &TaskSubcommand, client: &OrchyClient, config: &Config) ->
                         .collect(),
                 );
             }
+            if let Some(ns) = client.namespace.as_deref() {
+                body["namespace"] = serde_json::Value::String(ns.to_string());
+            }
             if let Some(alias) = client.alias.as_deref() {
                 body["agent"] = serde_json::Value::String(alias.to_string());
             }

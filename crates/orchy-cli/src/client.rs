@@ -9,6 +9,7 @@ pub struct OrchyClient {
     api_key: SecretString,
     pub project: String,
     pub alias: Option<String>,
+    pub namespace: Option<String>,
 }
 
 impl OrchyClient {
@@ -20,6 +21,11 @@ impl OrchyClient {
             api_key: config.api_key.clone(),
             project: config.project.clone(),
             alias: config.alias.clone(),
+            namespace: if config.namespace.is_empty() || config.namespace == "/" {
+                None
+            } else {
+                Some(config.namespace.clone())
+            },
         }
     }
 
