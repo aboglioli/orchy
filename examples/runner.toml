@@ -1,5 +1,5 @@
 # orchy-runner configuration
-# Copy to runner.toml and adjust for your setup
+# Copy to runner.toml in the project root and adjust for your setup
 
 [agent]
 name = "claude-worker"
@@ -12,7 +12,11 @@ spawn_mode = "pipe"        # "pty" for interactive CLIs, "pipe" for structured o
 
 # Environment variables for the agent process
 # [agent.env]
-# ANTHROPIC_API_KEY = "sk-..."
+# ANTHROPIC_API_KEY = "sk-ant-..."
+# OPENROUTER_API_KEY = "sk-or-v1-..."
+# GROQ_API_KEY = "gsk-..."
+# CEREBRAS_API_KEY = "csk-..."
+# MISTRAL_API_KEY = "..."
 
 [orchy]
 url = "http://127.0.0.1:4310/mcp"

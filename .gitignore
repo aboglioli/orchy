@@ -13,4 +13,3 @@ dashboard/.vite/
 dashboard/coverage/
 keys/
 .worktrees/
-.orchy.toml

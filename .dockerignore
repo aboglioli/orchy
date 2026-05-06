@@ -6,6 +6,7 @@ keys/
 .mcp.json
 .orchy.toml
 .worktrees/
+examples/
 dashboard/
 .env
 *.md

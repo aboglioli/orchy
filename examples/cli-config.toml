@@ -1,0 +1,21 @@
+# orchy CLI configuration
+# Place at ~/.orchy/config.toml or .orchy.toml in project root
+#
+# Required fields:
+#   url     — server endpoint
+#   project — your project name
+#
+# Optional fields (shown below with defaults):
+#   namespace = "/"           # root scope
+#   alias     = "cli-agent"  # identifies you to server
+#   roles     = ["developer"] # auto-assigned from task demand if omitted
+#
+# Org is derived from the API key server-side — do not set it here.
+
+url        = "http://localhost:4310"
+api_key    = "your-api-key"
+project    = "my-project"
+
+# namespace = "/backend"
+# alias     = "coder-1"
+# roles     = ["developer", "reviewer"]

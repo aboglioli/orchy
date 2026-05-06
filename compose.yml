@@ -20,7 +20,7 @@ services:
     ports:
       - "4310:4310"
     volumes:
-      - ./config.docker.toml:/app/config.toml:ro
+      - ./examples/server-docker.toml:/app/config.toml:ro
     depends_on:
       postgres:
         condition: service_healthy

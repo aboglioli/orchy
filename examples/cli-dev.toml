@@ -1,0 +1,5 @@
+url       = "http://localhost:4310"
+api_key   = "ok_test_key_123"
+project   = "test"
+namespace = "/"
+alias  = "architect"
