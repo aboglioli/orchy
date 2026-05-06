@@ -702,3 +702,45 @@ async fn pg_reader_resumes_from_offset() {
     let msg = stream.next().await.unwrap().unwrap();
     assert_eq!(msg.event().key().as_str(), "k2");
 }
+
+#[tokio::test]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
+async fn namespace_store_isolates_orgs() {
+    use orchy_core::namespace::NamespaceStore;
+
+    let (_container, p) = start_postgres().await;
+    let store = PgNamespaceStore::new(p);
+
+    let org_a = CoreOrganizationId::new("org-a").unwrap();
+    let org_b = CoreOrganizationId::new("org-b").unwrap();
+    let project = proj("demo");
+    let ns = Namespace::try_from("/backend").unwrap();
+
+    store.register(&org_a, &project, &ns).await.unwrap();
+
+    let in_a = store.list(&org_a, &project).await.unwrap();
+    let in_b = store.list(&org_b, &project).await.unwrap();
+
+    assert_eq!(in_a.len(), 1);
+    assert_eq!(in_a[0].as_str(), "/backend");
+    assert!(in_b.is_empty(), "org-b must not see org-a's namespace");
+}
+
+#[tokio::test]
+#[cfg_attr(not(feature = "integration-tests"), ignore)]
+async fn namespace_store_register_is_idempotent_per_org() {
+    use orchy_core::namespace::NamespaceStore;
+
+    let (_container, p) = start_postgres().await;
+    let store = PgNamespaceStore::new(p);
+
+    let org = CoreOrganizationId::new("org-a").unwrap();
+    let project = proj("demo");
+    let ns = Namespace::try_from("/backend").unwrap();
+
+    store.register(&org, &project, &ns).await.unwrap();
+    store.register(&org, &project, &ns).await.unwrap();
+
+    let listed = store.list(&org, &project).await.unwrap();
+    assert_eq!(listed.len(), 1);
+}

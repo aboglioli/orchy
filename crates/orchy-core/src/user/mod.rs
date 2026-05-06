@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orchy_events::{Event, EventCollector, Payload};
+use orchy_events::{Event, EventCollector, OrganizationId, Payload};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -93,7 +93,7 @@ impl User {
         .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
         let event = Event::create(
-            user.id.as_str(),
+            OrganizationId::PLATFORM,
             events::NAMESPACE,
             events::TOPIC_CREATED,
             user.id.as_str(),
@@ -133,7 +133,7 @@ impl User {
         .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
         let event = Event::create(
-            user.id.as_str(),
+            OrganizationId::PLATFORM,
             events::NAMESPACE,
             events::TOPIC_CREATED,
             user.id.as_str(),
@@ -172,7 +172,7 @@ impl User {
                 .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
                 let event = Event::create(
-                    self.id.as_str(),
+                    OrganizationId::PLATFORM,
                     events::NAMESPACE,
                     events::TOPIC_LOGIN_SUCCEEDED,
                     self.id.as_str(),
@@ -192,7 +192,7 @@ impl User {
                 .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
                 let event = Event::create(
-                    self.id.as_str(),
+                    OrganizationId::PLATFORM,
                     events::NAMESPACE,
                     events::TOPIC_LOGIN_FAILED,
                     self.id.as_str(),
@@ -223,7 +223,7 @@ impl User {
         .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
         let event = Event::create(
-            self.id.as_str(),
+            OrganizationId::PLATFORM,
             events::NAMESPACE,
             events::TOPIC_PASSWORD_CHANGED,
             self.id.as_str(),
@@ -245,7 +245,7 @@ impl User {
         .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
         let event = Event::create(
-            self.id.as_str(),
+            OrganizationId::PLATFORM,
             events::NAMESPACE,
             events::TOPIC_DEACTIVATED,
             self.id.as_str(),
@@ -267,7 +267,7 @@ impl User {
         .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
         let event = Event::create(
-            self.id.as_str(),
+            OrganizationId::PLATFORM,
             events::NAMESPACE,
             events::TOPIC_PLATFORM_ADMIN_GRANTED,
             self.id.as_str(),
@@ -326,7 +326,7 @@ impl User {
         .map_err(|e| Error::store(format!("event serialization: {e}")))?;
 
         let event = Event::create(
-            self.id.as_str(),
+            org_id,
             events::NAMESPACE,
             events::TOPIC_MEMBERSHIP_ADDED,
             self.id.as_str(),
@@ -376,6 +376,7 @@ mod tests {
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].topic().as_str(), events::TOPIC_CREATED);
+        assert_eq!(events[0].organization().as_str(), OrganizationId::PLATFORM);
     }
 
     #[test]
@@ -394,6 +395,7 @@ mod tests {
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].topic().as_str(), events::TOPIC_LOGIN_SUCCEEDED);
+        assert_eq!(events[0].organization().as_str(), OrganizationId::PLATFORM);
     }
 
     #[test]
@@ -413,6 +415,7 @@ mod tests {
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].topic().as_str(), events::TOPIC_LOGIN_FAILED);
+        assert_eq!(events[0].organization().as_str(), OrganizationId::PLATFORM);
     }
 
     #[test]
@@ -446,6 +449,7 @@ mod tests {
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].topic().as_str(), events::TOPIC_PASSWORD_CHANGED);
+        assert_eq!(events[0].organization().as_str(), OrganizationId::PLATFORM);
 
         let old_login = user.login(&old_password, &hasher);
         assert!(old_login.is_err());
@@ -467,6 +471,7 @@ mod tests {
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].topic().as_str(), events::TOPIC_CREATED);
+        assert_eq!(events[0].organization().as_str(), OrganizationId::PLATFORM);
     }
 
     #[test]
@@ -485,6 +490,7 @@ mod tests {
         let events = user.drain_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].topic().as_str(), events::TOPIC_MEMBERSHIP_ADDED);
+        assert_eq!(events[0].organization().as_str(), "test-org");
     }
 
     #[test]
@@ -507,5 +513,24 @@ mod tests {
             events[0].topic().as_str(),
             events::TOPIC_PLATFORM_ADMIN_GRANTED
         );
+        assert_eq!(events[0].organization().as_str(), OrganizationId::PLATFORM);
+    }
+
+    #[test]
+    fn user_deactivate_emits_event_with_platform_organization() {
+        let hasher = MockPasswordHasher;
+        let id = UserId::new();
+        let email = Email::new("test@example.com").unwrap();
+        let password = PlainPassword::new("password123").unwrap();
+
+        let mut user = User::register(id, email, &password, &hasher).unwrap();
+        user.drain_events();
+
+        user.deactivate().unwrap();
+
+        let events = user.drain_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].topic().as_str(), events::TOPIC_DEACTIVATED);
+        assert_eq!(events[0].organization().as_str(), OrganizationId::PLATFORM);
     }
 }

@@ -20,13 +20,16 @@ impl PgNamespaceStore {
 impl NamespaceStore for PgNamespaceStore {
     async fn register(
         &self,
-        _org: &OrganizationId,
+        org: &OrganizationId,
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO namespaces (project, namespace, created_at) VALUES ($1, $2, $3) ON CONFLICT (project, namespace) DO NOTHING",
+            "INSERT INTO namespaces (organization_id, project, namespace, created_at) \
+             VALUES ($1, $2, $3, $4) \
+             ON CONFLICT (organization_id, project, namespace) DO NOTHING",
         )
+        .bind(org.to_string())
         .bind(project.to_string())
         .bind(namespace.to_string())
         .bind(Utc::now())
@@ -36,10 +39,13 @@ impl NamespaceStore for PgNamespaceStore {
         Ok(())
     }
 
-    async fn list(&self, _org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
+    async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
         let rows = sqlx::query(
-            "SELECT namespace FROM namespaces WHERE project = $1 ORDER BY namespace LIMIT 1000",
+            "SELECT namespace FROM namespaces \
+             WHERE organization_id = $1 AND project = $2 \
+             ORDER BY namespace LIMIT 1000",
         )
+        .bind(org.to_string())
         .bind(project.to_string())
         .fetch_all(&self.pool)
         .await

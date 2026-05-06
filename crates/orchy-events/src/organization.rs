@@ -9,6 +9,8 @@ use crate::error::{Error, Result};
 pub struct OrganizationId(String);
 
 impl OrganizationId {
+    pub const PLATFORM: &'static str = "_platform";
+
     pub fn new(s: impl Into<String>) -> Result<Self> {
         let s = s.into();
         if s.is_empty() {
@@ -21,6 +23,10 @@ impl OrganizationId {
             return Err(Error::InvalidOrganization(format!("invalid: {s}")));
         }
         Ok(Self(s))
+    }
+
+    pub fn platform() -> Self {
+        Self(Self::PLATFORM.to_string())
     }
 
     pub fn as_str(&self) -> &str {
@@ -44,5 +50,22 @@ impl TryFrom<String> for OrganizationId {
 impl From<OrganizationId> for String {
     fn from(o: OrganizationId) -> Self {
         o.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn platform_sentinel_is_constructible() {
+        let p = OrganizationId::platform();
+        assert_eq!(p.as_str(), "_platform");
+    }
+
+    #[test]
+    fn platform_sentinel_round_trips_through_validation() {
+        let parsed = OrganizationId::new("_platform").unwrap();
+        assert_eq!(parsed, OrganizationId::platform());
     }
 }
