@@ -184,7 +184,6 @@ pub fn format_agent_summary(v: &serde_json::Value) -> String {
 pub fn format_bootstrap(
     agent_v: &serde_json::Value,
     project_v: &serde_json::Value,
-    org: Option<&str>,
     project: &str,
     verbose: bool,
 ) -> String {
@@ -209,9 +208,8 @@ pub fn format_bootstrap(
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let org_display = org.unwrap_or("(from API key)");
     out.push_str(&format!(
-        "Identity\n  Agent:     @{alias} ({desc})\n  Org:       {org_display}\n  Project:   {project}"
+        "Identity\n  Agent:     @{alias} ({desc})\n  Project:   {project}"
     ));
     if !proj_desc.is_empty() {
         out.push_str(&format!(" — {proj_desc}"));

@@ -7,7 +7,6 @@ use serde::Deserialize;
 pub struct Config {
     pub url: String,
     pub api_key: SecretString,
-    pub org: Option<String>,
     pub project: String,
     pub namespace: String,
     pub alias: Option<String>,
@@ -21,7 +20,6 @@ pub struct Config {
 pub struct FileConfig {
     pub url: Option<String>,
     pub api_key: Option<String>,
-    pub org: Option<String>,
     pub project: Option<String>,
     pub namespace: Option<String>,
     pub alias: Option<String>,
@@ -60,7 +58,6 @@ impl Config {
     pub fn resolve(
         flag_url: Option<&str>,
         flag_api_key: Option<&str>,
-        flag_org: Option<&str>,
         flag_project: Option<&str>,
         flag_namespace: Option<&str>,
         flag_agent: Option<&str>,
@@ -73,7 +70,6 @@ impl Config {
 
         let env_url = env("ORCHY_URL");
         let env_api_key = env("ORCHY_API_KEY");
-        let env_org = env("ORCHY_ORG");
         let env_project = env("ORCHY_PROJECT");
         let env_namespace = env("ORCHY_NAMESPACE");
         let env_alias = env("ORCHY_ALIAS");
@@ -111,13 +107,6 @@ impl Config {
             ])
             .unwrap_or_default()
         };
-
-        let org = pick_opt(&[
-            global.as_ref().and_then(|c| c.org.as_deref()),
-            local.as_ref().and_then(|c| c.org.as_deref()),
-            env_org.as_deref(),
-            flag_org,
-        ]);
 
         let project = if requires_project {
             pick(
@@ -171,7 +160,6 @@ impl Config {
         let config = Config {
             url: url.clone(),
             api_key: SecretString::new(api_key.into_boxed_str()),
-            org,
             project: project.clone(),
             namespace: namespace.clone(),
             alias,

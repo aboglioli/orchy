@@ -19,13 +19,7 @@ pub async fn run(client: &OrchyClient, config: &Config, verbose: bool) -> CliRes
     } else {
         print!(
             "{}",
-            output::format_bootstrap(
-                &agent_v,
-                &project_v,
-                config.org.as_deref(),
-                &config.project,
-                verbose,
-            )
+            output::format_bootstrap(&agent_v, &project_v, &config.project, verbose,)
         );
     }
     Ok(())

@@ -18,8 +18,6 @@ struct Cli {
     url: Option<String>,
     #[arg(long, help = "API key")]
     api_key: Option<String>,
-    #[arg(long, help = "Organization ID")]
-    org: Option<String>,
     #[arg(long, help = "Project ID")]
     project: Option<String>,
     #[arg(long, help = "Namespace")]
@@ -62,16 +60,12 @@ enum Commands {
 async fn main() {
     let cli = Cli::parse();
 
-    let requires_api_key = !matches!(
-        cli.command,
-        Commands::Org(cmd::org::OrgSubcommand::Create { .. })
-    );
+    let requires_api_key = !matches!(cli.command, Commands::Org(_));
     let requires_project = !matches!(cli.command, Commands::Org(_));
 
     let config = match Config::resolve(
         cli.url.as_deref(),
         cli.api_key.as_deref(),
-        cli.org.as_deref(),
         cli.project.as_deref(),
         cli.namespace.as_deref(),
         cli.agent.as_deref(),
