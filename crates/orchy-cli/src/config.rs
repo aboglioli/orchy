@@ -199,7 +199,7 @@ impl Config {
         if !self.url.contains("://") || self.url.ends_with("://") {
             return Err(ConfigError::InvalidField {
                 field: "url".into(),
-                message: "must be a valid URL (e.g., http://localhost:4310)".into(),
+                message: "must be a valid URL including scheme, host, and port (e.g., http://localhost:PORT)".into(),
             });
         }
 
