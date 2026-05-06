@@ -3,8 +3,8 @@ use std::sync::Arc;
 use orchy_application::{
     AddDependencyCommand, Application, ApplicationDeps, ArchiveTaskCommand, ClaimTaskCommand,
     CompleteTaskCommand, GetTaskCommand, ListEdgesCommand, ListTasksCommand, MergeTasksCommand,
-    MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, SplitTaskCommand, SubtaskInput,
-    UnarchiveTaskCommand, UpdateTaskCommand,
+    MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand,
+    SplitTaskCommand, SubtaskInput, UnarchiveTaskCommand, UpdateTaskCommand,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::api_key::{
@@ -654,6 +654,144 @@ async fn add_dependency_rejects_self_cycle() {
         matches!(err, Error::Conflict(_)),
         "expected Conflict, got: {err:?}"
     );
+}
+
+#[tokio::test]
+async fn add_dependency_blocks_pending_task() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let prereq = app.post_task.execute(post_cmd("org", "prereq")).await.unwrap();
+    let dependent = app
+        .post_task
+        .execute(post_cmd("org", "dependent"))
+        .await
+        .unwrap();
+    assert_eq!(dependent.status, "pending");
+
+    let after = app
+        .add_dependency
+        .execute(AddDependencyCommand {
+            org_id: "org".into(),
+            task_id: dependent.id.clone(),
+            dependency_id: prereq.id.clone(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(after.status, "blocked", "dependent must be blocked after adding dependency on pending task");
+}
+
+#[tokio::test]
+async fn add_dependency_cascade_unblocks_on_complete() {
+    let s = mem();
+    let app = build_app(&s);
+    let agent_id = seed_agent(&s, "org", "worker-cascade-add").await;
+
+    let prereq = app.post_task.execute(post_cmd("org", "prereq")).await.unwrap();
+    let dependent = app
+        .post_task
+        .execute(post_cmd("org", "dependent"))
+        .await
+        .unwrap();
+
+    app.add_dependency
+        .execute(AddDependencyCommand {
+            org_id: "org".into(),
+            task_id: dependent.id.clone(),
+            dependency_id: prereq.id.clone(),
+        })
+        .await
+        .unwrap();
+
+    app.claim_task
+        .execute(ClaimTaskCommand {
+            task_id: prereq.id.clone(),
+            agent_id: agent_id.to_string(),
+            org_id: "org".into(),
+            start: Some(true),
+        })
+        .await
+        .unwrap();
+
+    app.complete_task
+        .execute(CompleteTaskCommand {
+            task_id: prereq.id.clone(),
+            org_id: "org".into(),
+            summary: Some("done".into()),
+            links: vec![],
+        })
+        .await
+        .unwrap();
+
+    let after = app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: dependent.id.clone(),
+            org_id: "org".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        after.status, "pending",
+        "dependent must auto-unblock after sole prereq completes"
+    );
+}
+
+#[tokio::test]
+async fn remove_dependency_unblocks_task() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let prereq = app.post_task.execute(post_cmd("org", "prereq")).await.unwrap();
+    let dependent = app
+        .post_task
+        .execute(post_cmd("org", "dependent"))
+        .await
+        .unwrap();
+
+    app.add_dependency
+        .execute(AddDependencyCommand {
+            org_id: "org".into(),
+            task_id: dependent.id.clone(),
+            dependency_id: prereq.id.clone(),
+        })
+        .await
+        .unwrap();
+
+    let blocked = app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: dependent.id.clone(),
+            org_id: "org".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(blocked.status, "blocked");
+
+    app.remove_dependency
+        .execute(RemoveDependencyCommand {
+            org_id: "org".into(),
+            task_id: dependent.id.clone(),
+            dependency_id: prereq.id.clone(),
+        })
+        .await
+        .unwrap();
+
+    let after = app
+        .get_task
+        .execute(GetTaskCommand {
+            task_id: dependent.id.clone(),
+            org_id: "org".into(),
+            relations: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(after.status, "pending", "dependent must unblock when sole dependency is removed");
 }
 
 // TODO: indirect cycle detection not wired yet — add_dependency doesn't traverse the graph
