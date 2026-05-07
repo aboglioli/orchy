@@ -31,7 +31,7 @@ impl AgentStore for MemoryAgentStore {
                     && a.alias() == agent.alias()
                     && a.id() != agent.id()
             }) {
-                return Err(Error::Conflict(format!(
+                return Err(Error::conflict(format!(
                     "alias '{}' already in use by agent {}",
                     agent.alias(),
                     existing.id()
@@ -43,8 +43,7 @@ impl AgentStore for MemoryAgentStore {
         let events = agent.drain_events();
         if !events.is_empty() {
             for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
                 self.state.events.write().await.push(serialized);
             }
         }

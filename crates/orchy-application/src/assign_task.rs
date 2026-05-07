@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::task::{TaskId, TaskStore};
 
 use crate::dto::TaskDto;
@@ -22,20 +23,26 @@ impl AssignTask {
         Self { agents, tasks }
     }
 
-    pub async fn execute(&self, cmd: AssignTaskCommand) -> Result<TaskDto> {
+    pub async fn execute(&self, cmd: AssignTaskCommand) -> ApplicationResult<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
 
         self.agents
             .find_by_id(&agent_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Agent,
+                id: agent_id.to_string(),
+            })?;
 
         let mut task = self
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         task.assign(agent_id)?;
         self.tasks.save(&mut task).await?;

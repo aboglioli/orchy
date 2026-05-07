@@ -1,4 +1,4 @@
-use serde_json::{json, to_string_pretty};
+use serde_json::to_string_pretty;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -151,14 +151,7 @@ impl OrchyHandler {
         policy: NamespacePolicy,
     ) -> Result<Namespace, String> {
         let ns = match param {
-            Some(s) if !s.is_empty() => {
-                let normalized = if s.starts_with('/') {
-                    s.to_string()
-                } else {
-                    format!("/{s}")
-                };
-                Namespace::try_from(normalized).map_err(|e| e.to_string())?
-            }
+            Some(s) if !s.is_empty() => Namespace::new(s).map_err(|e| e.to_string())?,
             _ => match policy {
                 NamespacePolicy::SessionDefault => self
                     .get_session_namespace()
@@ -200,14 +193,7 @@ impl OrchyHandler {
         explicit_project: Option<&ProjectId>,
     ) -> Result<Namespace, String> {
         let ns = match param {
-            Some(s) if !s.is_empty() => {
-                let normalized = if s.starts_with('/') {
-                    s.to_string()
-                } else {
-                    format!("/{s}")
-                };
-                Namespace::try_from(normalized).map_err(|e| e.to_string())?
-            }
+            Some(s) if !s.is_empty() => Namespace::new(s).map_err(|e| e.to_string())?,
             _ => return self.resolve_namespace(None, policy).await,
         };
 
@@ -259,7 +245,7 @@ impl OrchyHandler {
                 relations: None,
             })
             .await
-            .map_err(mcp_error)?;
+            .map_err(mcp_app_error)?;
 
         if agent.org_id != org.to_string() || agent.project != project.to_string() {
             return Err(format!("agent not found in current project: '{s}'"));
@@ -285,17 +271,26 @@ pub(crate) fn to_json<T: serde::Serialize>(val: &T) -> String {
 }
 
 pub(crate) fn mcp_error(e: Error) -> String {
-    let (code, message) = match &e {
-        Error::NotFound(_) => ("NOT_FOUND", e.to_string()),
-        Error::InvalidInput(_) | Error::InvalidTransition { .. } | Error::DependencyNotMet(_) => {
-            ("INVALID_INPUT", e.to_string())
+    crate::error_mapping::error_to_mcp_json(&e)
+}
+
+pub(crate) fn mcp_app_error(e: orchy_application::ApplicationError) -> String {
+    use orchy_application::ApplicationError;
+    let core_err = match e {
+        ApplicationError::Core(c) => c,
+        ApplicationError::AuthenticationFailed(_) | ApplicationError::PermissionDenied(_) => {
+            return serde_json::json!({"error":{"code":"UNAUTHORIZED","message":e.to_string()}})
+                .to_string();
         }
-        Error::Conflict(_) | Error::VersionMismatch { .. } => ("CONFLICT", e.to_string()),
-        Error::Embeddings(_) => ("EMBEDDINGS_ERROR", e.to_string()),
-        Error::Store(_) => ("INTERNAL_ERROR", e.to_string()),
-        Error::AuthenticationFailed(_) => ("UNAUTHORIZED", e.to_string()),
+        ApplicationError::OrganizationMismatch => {
+            return serde_json::json!({"error":{"code":"FORBIDDEN","message":e.to_string()}})
+                .to_string();
+        }
+        ApplicationError::EmbeddingsProvider(_) => {
+            return serde_json::json!({"error":{"code":"EMBEDDINGS_ERROR","message":e.to_string()}}).to_string();
+        }
     };
-    json!({ "error": { "code": code, "message": message } }).to_string()
+    crate::error_mapping::error_to_mcp_json(&core_err)
 }
 
 pub(crate) const INSTRUCTIONS: &str = "\

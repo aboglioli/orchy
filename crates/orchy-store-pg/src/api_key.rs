@@ -6,7 +6,7 @@ use uuid::Uuid;
 use orchy_core::api_key::{
     ApiKey, ApiKeyId, ApiKeyPrefix, ApiKeyStore, ApiKeySuffix, HashedApiKey, RestoreApiKey,
 };
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
 
@@ -27,11 +27,7 @@ impl PgApiKeyStore {
 #[async_trait]
 impl ApiKeyStore for PgApiKeyStore {
     async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
@@ -51,15 +47,12 @@ impl ApiKeyStore for PgApiKeyStore {
         .bind(api_key.user_id().map(|u| u.as_uuid()))
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = api_key.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -71,7 +64,7 @@ impl ApiKeyStore for PgApiKeyStore {
         .bind(*id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?
+        .map_err(crate::error::store_err)?
         .map(|r| build_api_key(&r))
         .transpose()
     }
@@ -84,7 +77,7 @@ impl ApiKeyStore for PgApiKeyStore {
         .bind(hash.as_str())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?
+        .map_err(crate::error::store_err)?
         .map(|r| build_api_key(&r))
         .transpose()
     }
@@ -97,7 +90,7 @@ impl ApiKeyStore for PgApiKeyStore {
         .bind(org_id.as_str())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?
+        .map_err(crate::error::store_err)?
         .iter()
         .map(build_api_key)
         .collect()
@@ -117,7 +110,7 @@ fn build_api_key(row: &PgRow) -> Result<ApiKey> {
 
     Ok(ApiKey::restore(RestoreApiKey {
         id: ApiKeyId::from_uuid(id),
-        org_id: OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?,
+        org_id: OrganizationId::new(&org_id_str)?,
         name,
         hashed_key: HashedApiKey::new(key_hash)?,
         key_prefix: ApiKeyPrefix::new(key_prefix)?,

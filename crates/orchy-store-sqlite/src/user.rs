@@ -3,7 +3,7 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use rusqlite::OptionalExtension;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::user::{Email, HashedPassword, RestoreUser, User, UserId, UserStore};
 
 use crate::{SqliteConn, events};
@@ -21,10 +21,8 @@ impl SqliteUserStore {
 #[async_trait]
 impl UserStore for SqliteUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let tx = conn.transaction().map_err(crate::error::store_err)?;
 
         tx.execute(
             "INSERT INTO users (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at)
@@ -45,17 +43,17 @@ impl UserStore for SqliteUserStore {
                 user.updated_at().to_rfc3339(),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = user.drain_events();
         events::write_events_in_tx(&tx, &events)?;
 
-        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().map_err(crate::error::store_err)?;
         Ok(())
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let row = conn
             .query_row(
@@ -75,7 +73,7 @@ impl UserStore for SqliteUserStore {
                 },
             )
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         match row {
             Some((
@@ -87,18 +85,39 @@ impl UserStore for SqliteUserStore {
                 created_at,
                 updated_at,
             )) => {
-                let id = UserId::from_str(&id)
-                    .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
-                let email = Email::new(&email)
-                    .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
-                let password_hash = HashedPassword::new(&password_hash)
-                    .map_err(|e| Error::Store(format!("invalid password hash in db: {e}")))?;
-                let created_at = created_at
-                    .parse()
-                    .map_err(|e| Error::Store(format!("invalid created_at in db: {e}")))?;
-                let updated_at = updated_at
-                    .parse()
-                    .map_err(|e| Error::Store(format!("invalid updated_at in db: {e}")))?;
+                let id = UserId::from_str(&id).map_err(|e| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "user_id".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let email = Email::new(&email).map_err(|e| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "email".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
+                    Error::Store(StoreError::Other(format!(
+                        "invalid password hash in db: {e}"
+                    )))
+                })?;
+                let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "created_at".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "updated_at".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
 
                 Ok(Some(User::restore(RestoreUser {
                     id,
@@ -115,7 +134,7 @@ impl UserStore for SqliteUserStore {
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let row = conn
             .query_row(
@@ -135,7 +154,7 @@ impl UserStore for SqliteUserStore {
                 },
             )
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         match row {
             Some((
@@ -147,18 +166,39 @@ impl UserStore for SqliteUserStore {
                 created_at,
                 updated_at,
             )) => {
-                let id = UserId::from_str(&id)
-                    .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
-                let email = Email::new(&email)
-                    .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
-                let password_hash = HashedPassword::new(&password_hash)
-                    .map_err(|e| Error::Store(format!("invalid password hash in db: {e}")))?;
-                let created_at = created_at
-                    .parse()
-                    .map_err(|e| Error::Store(format!("invalid created_at in db: {e}")))?;
-                let updated_at = updated_at
-                    .parse()
-                    .map_err(|e| Error::Store(format!("invalid updated_at in db: {e}")))?;
+                let id = UserId::from_str(&id).map_err(|e| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "user_id".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let email = Email::new(&email).map_err(|e| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "email".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
+                    Error::Store(StoreError::Other(format!(
+                        "invalid password hash in db: {e}"
+                    )))
+                })?;
+                let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "created_at".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "updated_at".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
 
                 Ok(Some(User::restore(RestoreUser {
                     id,
@@ -175,14 +215,14 @@ impl UserStore for SqliteUserStore {
     }
 
     async fn list_all(&self) -> Result<Vec<User>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
                  FROM users ORDER BY created_at DESC"
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let rows = stmt
             .query_map([], |row| {
@@ -196,25 +236,46 @@ impl UserStore for SqliteUserStore {
                     row.get::<_, String>(6)?,
                 ))
             })
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let mut users = Vec::new();
         for row in rows {
             let (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at) =
-                row.map_err(|e| Error::Store(e.to_string()))?;
+                row.map_err(crate::error::store_err)?;
 
-            let id = UserId::from_str(&id)
-                .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
-            let email = Email::new(&email)
-                .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
-            let password_hash = HashedPassword::new(&password_hash)
-                .map_err(|e| Error::Store(format!("invalid password hash in db: {e}")))?;
-            let created_at = created_at
-                .parse()
-                .map_err(|e| Error::Store(format!("invalid created_at in db: {e}")))?;
-            let updated_at = updated_at
-                .parse()
-                .map_err(|e| Error::Store(format!("invalid updated_at in db: {e}")))?;
+            let id = UserId::from_str(&id).map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "users".to_string(),
+                    column: "user_id".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let email = Email::new(&email).map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "users".to_string(),
+                    column: "email".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "invalid password hash in db: {e}"
+                )))
+            })?;
+            let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
+                Error::Store(StoreError::Decode {
+                    table: "users".to_string(),
+                    column: "created_at".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
+                Error::Store(StoreError::Decode {
+                    table: "users".to_string(),
+                    column: "updated_at".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
 
             users.push(User::restore(RestoreUser {
                 id,
@@ -233,7 +294,7 @@ impl UserStore for SqliteUserStore {
 
 #[cfg(test)]
 mod tests {
-    use orchy_core::error::{Error, Result};
+    use orchy_core::error::DomainResult;
     use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
     use orchy_core::user::{
         Email, HashedPassword, OrgMembership, OrgMembershipStore, OrgRole, PasswordHasher,
@@ -247,16 +308,16 @@ mod tests {
     struct NoopHasher;
 
     impl PasswordHasher for NoopHasher {
-        fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+        fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword> {
             HashedPassword::new(plain.as_str())
         }
 
-        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
+        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()> {
             if plain.as_str() == hashed.as_str() {
                 return Ok(());
             }
 
-            Err(Error::AuthenticationFailed("password mismatch".to_string()))
+            Err(orchy_core::error::DomainError::PasswordMismatch)
         }
     }
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 use orchy_core::user::{
     Email, OrgMembership, OrgMembershipStore, OrgRole, PasswordHasher, PlainPassword, User, UserId,
@@ -31,7 +31,7 @@ impl BootstrapAdmin {
         }
     }
 
-    pub async fn execute(&self) -> Result<Option<UserDto>> {
+    pub async fn execute(&self) -> ApplicationResult<Option<UserDto>> {
         let existing_users = self.users.list_all().await?;
         if !existing_users.is_empty() {
             return Ok(None);
@@ -44,8 +44,7 @@ impl BootstrapAdmin {
         let mut user = User::register_platform_admin(id, email, &password, self.hasher.as_ref())?;
         self.users.save(&mut user).await?;
 
-        let org_id =
-            OrganizationId::new("default").map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id = OrganizationId::new("default")?;
         if self.orgs.find_by_id(&org_id).await?.is_none() {
             let mut org = Organization::new(org_id.clone(), "Default Organization".to_string())?;
             self.orgs.save(&mut org).await?;
@@ -71,20 +70,21 @@ mod tests {
     };
 
     use super::*;
+    use orchy_core::error::DomainResult;
 
     struct NoopHasher;
 
     impl PasswordHasher for NoopHasher {
-        fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+        fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword> {
             HashedPassword::new(plain.as_str())
         }
 
-        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
+        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()> {
             if plain.as_str() == hashed.as_str() {
                 return Ok(());
             }
 
-            Err(Error::AuthenticationFailed("password mismatch".to_string()))
+            Err(orchy_core::error::DomainError::PasswordMismatch)
         }
     }
 

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use orchy_application::{
-    AddEdgeCommand, Application, ApplicationDeps, ClaimTaskCommand, CompleteTaskCommand,
-    GenerateApiKeyCommand, GetTaskCommand, ListAgentsCommand, PostTaskCommand,
+    AddEdgeCommand, Application, ApplicationDeps, ApplicationError, ClaimTaskCommand,
+    CompleteTaskCommand, GenerateApiKeyCommand, GetTaskCommand, ListAgentsCommand, PostTaskCommand,
     ReadKnowledgeCommand, RemoveEdgeCommand, RevokeApiKeyCommand, StartTaskCommand,
     WriteKnowledgeCommand,
 };
@@ -111,7 +111,7 @@ async fn cross_org_get_task_returns_not_found() {
         .await;
 
     assert!(
-        matches!(result, Err(Error::NotFound(_))),
+        matches!(result, Err(ApplicationError::Core(Error::NotFound { .. }))),
         "cross-org get_task must return NotFound, got: {result:?}"
     );
 }
@@ -135,7 +135,7 @@ async fn cross_org_claim_task_returns_not_found() {
         .await;
 
     assert!(
-        matches!(result, Err(Error::NotFound(_))),
+        matches!(result, Err(ApplicationError::Core(Error::NotFound { .. }))),
         "cross-org claim_task must return NotFound, got: {result:?}"
     );
 }
@@ -158,7 +158,7 @@ async fn cross_org_start_task_returns_not_found() {
         .await;
 
     assert!(
-        matches!(result, Err(Error::NotFound(_))),
+        matches!(result, Err(ApplicationError::Core(Error::NotFound { .. }))),
         "cross-org start_task must return NotFound, got: {result:?}"
     );
 }
@@ -181,7 +181,7 @@ async fn cross_org_complete_task_returns_not_found() {
         .await;
 
     assert!(
-        matches!(result, Err(Error::NotFound(_))),
+        matches!(result, Err(ApplicationError::Core(Error::NotFound { .. }))),
         "cross-org complete_task must return NotFound, got: {result:?}"
     );
 }
@@ -218,7 +218,7 @@ async fn cross_org_remove_edge_returns_not_found() {
         .await;
 
     assert!(
-        matches!(result, Err(Error::NotFound(_))),
+        matches!(result, Err(ApplicationError::Core(Error::NotFound { .. }))),
         "cross-org remove_edge must return NotFound, got: {result:?}"
     );
 }
@@ -254,7 +254,7 @@ async fn cross_org_revoke_api_key_returns_not_found() {
         .await;
 
     assert!(
-        matches!(result, Err(Error::NotFound(_))),
+        matches!(result, Err(ApplicationError::Core(Error::NotFound { .. }))),
         "cross-org revoke_api_key must return NotFound, got: {result:?}"
     );
 }

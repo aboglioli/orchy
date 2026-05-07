@@ -9,7 +9,7 @@ use orchy_application::{
     UpdateProjectCommand,
 };
 
-use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
+use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_app_error, to_json};
 use crate::mcp::params::{
     CheckLockParams, GetProjectParams, ListNamespacesParams, LockResourceParams,
     SetProjectMetadataParams, UnlockResourceParams, UpdateProjectParams,
@@ -33,7 +33,7 @@ pub(super) async fn get_project(
         .get_project
         .execute(cmd)
         .await
-        .map_err(mcp_error)?;
+        .map_err(mcp_app_error)?;
 
     if !params.include_summary.unwrap_or(false) {
         return Ok(to_json(&project));
@@ -51,7 +51,7 @@ pub(super) async fn get_project(
         .list_agents
         .execute(agents_cmd)
         .await
-        .map_err(mcp_error)?
+        .map_err(mcp_app_error)?
         .items
         .into_iter()
         // Status is derived (active/idle/stale); all agents are included
@@ -74,7 +74,7 @@ pub(super) async fn get_project(
         .list_tasks
         .execute(tasks_cmd)
         .await
-        .map_err(mcp_error)?
+        .map_err(mcp_app_error)?
         .items;
 
     let mut by_status = HashMap::new();
@@ -155,7 +155,7 @@ pub(super) async fn update_project(
         .get_project
         .execute(project_cmd)
         .await
-        .map_err(mcp_error)?;
+        .map_err(mcp_app_error)?;
 
     if let Some(expected) = params.version {
         let updated = DateTime::parse_from_rfc3339(&project.updated_at)
@@ -181,7 +181,7 @@ pub(super) async fn update_project(
 
     match h.container.app.update_project.execute(cmd).await {
         Ok(project) => Ok(to_json(&project)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -201,7 +201,7 @@ pub(super) async fn set_project_metadata(
 
     match h.container.app.set_project_metadata.execute(cmd).await {
         Ok(project) => Ok(to_json(&project)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -225,7 +225,7 @@ pub(super) async fn list_namespaces(
 
     match h.container.app.list_namespaces.execute(cmd).await {
         Ok(namespaces) => Ok(to_json(&namespaces)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -251,7 +251,7 @@ pub(super) async fn lock_resource(
 
     match h.container.app.lock_resource.execute(cmd).await {
         Ok(lock) => Ok(to_json(&lock)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -276,7 +276,7 @@ pub(super) async fn unlock_resource(
 
     match h.container.app.unlock_resource.execute(cmd).await {
         Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -301,6 +301,6 @@ pub(super) async fn check_lock(
     match h.container.app.check_lock.execute(cmd).await {
         Ok(Some(lock)) => Ok(to_json(&lock)),
         Ok(None) => Ok(to_json(&Value::Null)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }

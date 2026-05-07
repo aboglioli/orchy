@@ -2,7 +2,7 @@ use chrono::Utc;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::graph::{EdgeStore, RelationType, TraversalDirection};
 use orchy_core::knowledge::{Knowledge, KnowledgeId, KnowledgeKind, KnowledgeStore};
 use orchy_core::organization::OrganizationId;
@@ -37,13 +37,12 @@ impl AssembleContext {
         }
     }
 
-    pub async fn execute(&self, cmd: AssembleContextCommand) -> Result<AssembleContextResponse> {
-        let org =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let kind = cmd
-            .kind
-            .parse::<ResourceKind>()
-            .map_err(Error::InvalidInput)?;
+    pub async fn execute(
+        &self,
+        cmd: AssembleContextCommand,
+    ) -> ApplicationResult<AssembleContextResponse> {
+        let org = OrganizationId::new(&cmd.org_id)?;
+        let kind = cmd.kind.parse::<ResourceKind>()?;
         let content_limit = cmd.max_tokens.unwrap_or(4000) / 5;
 
         let from_edges = self

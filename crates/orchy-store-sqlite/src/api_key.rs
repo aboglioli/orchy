@@ -8,7 +8,7 @@ use uuid::Uuid;
 use orchy_core::api_key::{
     ApiKey, ApiKeyId, ApiKeyPrefix, ApiKeyStore, ApiKeySuffix, HashedApiKey, RestoreApiKey,
 };
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
 
@@ -27,10 +27,8 @@ impl SqliteApiKeyStore {
 #[async_trait]
 impl ApiKeyStore for SqliteApiKeyStore {
     async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let tx = conn.transaction().map_err(crate::error::store_err)?;
 
         tx.execute(
             "INSERT OR REPLACE INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
@@ -47,17 +45,17 @@ impl ApiKeyStore for SqliteApiKeyStore {
                 api_key.user_id().map(|u| u.to_string()),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = api_key.drain_events();
         events::write_events_in_tx(&tx, &events)?;
 
-        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().map_err(crate::error::store_err)?;
         Ok(())
     }
 
     async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         conn.query_row(
             "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
              FROM api_keys WHERE id = ?1",
@@ -65,13 +63,13 @@ impl ApiKeyStore for SqliteApiKeyStore {
             row_to_tuple,
         )
         .optional()
-        .map_err(|e| Error::Store(e.to_string()))?
+        .map_err(crate::error::store_err)?
         .map(build_api_key)
         .transpose()
     }
 
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         conn.query_row(
             "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
              FROM api_keys WHERE key_hash = ?1",
@@ -79,24 +77,24 @@ impl ApiKeyStore for SqliteApiKeyStore {
             row_to_tuple,
         )
         .optional()
-        .map_err(|e| Error::Store(e.to_string()))?
+        .map_err(crate::error::store_err)?
         .map(build_api_key)
         .transpose()
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
                  FROM api_keys WHERE organization_id = ?1 ORDER BY created_at",
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         stmt.query_map(rusqlite::params![org_id.to_string()], row_to_tuple)
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .into_iter()
             .map(build_api_key)
             .collect()
@@ -145,8 +143,14 @@ fn build_api_key(row: ApiKeyRow) -> Result<ApiKey> {
     Ok(ApiKey::restore(RestoreApiKey {
         id: Uuid::parse_str(&id_str)
             .map(ApiKeyId::from_uuid)
-            .map_err(|e| Error::Store(format!("invalid api_keys.id: {e}")))?,
-        org_id: OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?,
+            .map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "api_keys".to_string(),
+                    column: "id".to_string(),
+                    cause: e.to_string(),
+                })
+            })?,
+        org_id: OrganizationId::new(&org_id_str)?,
         name,
         hashed_key: HashedApiKey::new(key_hash)?,
         key_prefix: ApiKeyPrefix::new(key_prefix)?,
@@ -154,10 +158,20 @@ fn build_api_key(row: ApiKeyRow) -> Result<ApiKey> {
         user_id: user_id_str
             .map(|s| s.parse::<UserId>())
             .transpose()
-            .map_err(|e| Error::Store(format!("invalid api_keys.user_id: {e}")))?,
+            .map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "api_keys".to_string(),
+                    column: "user_id".to_string(),
+                    cause: e.to_string(),
+                })
+            })?,
         is_active: is_active != 0,
         created_at: DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| Error::Store(format!("invalid api_keys.created_at: {e}")))?,
+            .map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "invalid api_keys.created_at: {e}"
+                )))
+            })?,
     }))
 }

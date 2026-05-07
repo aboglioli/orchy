@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use orchy_events::{Event, EventCollector, OrganizationId, Payload};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 
 pub mod email;
 pub mod events;
@@ -16,8 +16,8 @@ pub use membership::{OrgMembership, OrgMembershipStore, RestoreOrgMembership};
 pub use role::OrgRole;
 
 pub trait PasswordHasher: Send + Sync {
-    fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword>;
-    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()>;
+    fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword>;
+    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ pub struct TokenClaims {
 
 pub trait TokenEncoder: Send + Sync {
     fn encode(&self, user_id: &UserId, email: &Email) -> Result<String>;
-    fn decode(&self, token: &str) -> Result<TokenClaims>;
+    fn decode(&self, token: &str) -> DomainResult<TokenClaims>;
 }
 
 #[async_trait::async_trait]
@@ -70,39 +70,8 @@ impl User {
         email: Email,
         password: &PlainPassword,
         hasher: &dyn PasswordHasher,
-    ) -> Result<Self> {
-        let password_hash = hasher.hash(password)?;
-        let now = Utc::now();
-
-        let mut user = Self {
-            id,
-            email,
-            password_hash,
-            is_active: true,
-            is_platform_admin: false,
-            created_at: now,
-            updated_at: now,
-            collector: EventCollector::new(),
-        };
-
-        let payload = Payload::from_json(&events::UserCreatedPayload {
-            user_id: user.id.as_str(),
-            email: user.email.as_str().to_string(),
-            is_platform_admin: user.is_platform_admin,
-        })
-        .map_err(|e| Error::store(format!("event serialization: {e}")))?;
-
-        let event = Event::create(
-            OrganizationId::PLATFORM,
-            events::NAMESPACE,
-            events::TOPIC_CREATED,
-            user.id.as_str(),
-            payload,
-        )
-        .map_err(|e| Error::store(format!("event creation: {e}")))?;
-        user.collector.collect(event);
-
-        Ok(user)
+    ) -> DomainResult<Self> {
+        Self::new_user(id, email, password, hasher, false)
     }
 
     pub fn register_platform_admin(
@@ -110,7 +79,17 @@ impl User {
         email: Email,
         password: &PlainPassword,
         hasher: &dyn PasswordHasher,
-    ) -> Result<Self> {
+    ) -> DomainResult<Self> {
+        Self::new_user(id, email, password, hasher, true)
+    }
+
+    fn new_user(
+        id: UserId,
+        email: Email,
+        password: &PlainPassword,
+        hasher: &dyn PasswordHasher,
+        is_platform_admin: bool,
+    ) -> DomainResult<Self> {
         let password_hash = hasher.hash(password)?;
         let now = Utc::now();
 
@@ -119,7 +98,7 @@ impl User {
             email,
             password_hash,
             is_active: true,
-            is_platform_admin: true,
+            is_platform_admin,
             created_at: now,
             updated_at: now,
             collector: EventCollector::new(),
@@ -129,8 +108,7 @@ impl User {
             user_id: user.id.as_str(),
             email: user.email.as_str().to_string(),
             is_platform_admin: user.is_platform_admin,
-        })
-        .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+        })?;
 
         let event = Event::create(
             OrganizationId::PLATFORM,
@@ -138,8 +116,7 @@ impl User {
             events::TOPIC_CREATED,
             user.id.as_str(),
             payload,
-        )
-        .map_err(|e| Error::store(format!("event creation: {e}")))?;
+        )?;
         user.collector.collect(event);
 
         Ok(user)
@@ -158,9 +135,13 @@ impl User {
         }
     }
 
-    pub fn login(&mut self, password: &PlainPassword, hasher: &dyn PasswordHasher) -> Result<()> {
+    pub fn login(
+        &mut self,
+        password: &PlainPassword,
+        hasher: &dyn PasswordHasher,
+    ) -> DomainResult<()> {
         if !self.is_active {
-            return Err(Error::authentication_failed("user is deactivated"));
+            return Err(DomainError::Deactivated);
         }
 
         match hasher.verify(password, &self.password_hash) {
@@ -168,8 +149,7 @@ impl User {
                 let payload = Payload::from_json(&events::UserLoginSucceededPayload {
                     user_id: self.id.as_str(),
                     email: self.email.as_str().to_string(),
-                })
-                .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+                })?;
 
                 let event = Event::create(
                     OrganizationId::PLATFORM,
@@ -177,8 +157,7 @@ impl User {
                     events::TOPIC_LOGIN_SUCCEEDED,
                     self.id.as_str(),
                     payload,
-                )
-                .map_err(|e| Error::store(format!("event creation: {e}")))?;
+                )?;
                 self.collector.collect(event);
 
                 self.updated_at = Utc::now();
@@ -188,8 +167,7 @@ impl User {
                 let payload = Payload::from_json(&events::UserLoginFailedPayload {
                     email: self.email.as_str().to_string(),
                     reason: "invalid password".to_string(),
-                })
-                .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+                })?;
 
                 let event = Event::create(
                     OrganizationId::PLATFORM,
@@ -197,11 +175,10 @@ impl User {
                     events::TOPIC_LOGIN_FAILED,
                     self.id.as_str(),
                     payload,
-                )
-                .map_err(|e| Error::store(format!("event creation: {e}")))?;
+                )?;
                 self.collector.collect(event);
 
-                Err(Error::authentication_failed("invalid credentials"))
+                Err(DomainError::PasswordMismatch)
             }
         }
     }
@@ -211,7 +188,7 @@ impl User {
         old_password: &PlainPassword,
         new_password: &PlainPassword,
         hasher: &dyn PasswordHasher,
-    ) -> Result<()> {
+    ) -> DomainResult<()> {
         hasher.verify(old_password, &self.password_hash)?;
 
         self.password_hash = hasher.hash(new_password)?;
@@ -219,8 +196,7 @@ impl User {
 
         let payload = Payload::from_json(&events::UserPasswordChangedPayload {
             user_id: self.id.as_str(),
-        })
-        .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+        })?;
 
         let event = Event::create(
             OrganizationId::PLATFORM,
@@ -228,21 +204,19 @@ impl User {
             events::TOPIC_PASSWORD_CHANGED,
             self.id.as_str(),
             payload,
-        )
-        .map_err(|e| Error::store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
 
         Ok(())
     }
 
-    pub fn deactivate(&mut self) -> Result<()> {
+    pub fn deactivate(&mut self) -> DomainResult<()> {
         self.is_active = false;
         self.updated_at = Utc::now();
 
         let payload = Payload::from_json(&events::UserDeactivatedPayload {
             user_id: self.id.as_str(),
-        })
-        .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+        })?;
 
         let event = Event::create(
             OrganizationId::PLATFORM,
@@ -250,21 +224,19 @@ impl User {
             events::TOPIC_DEACTIVATED,
             self.id.as_str(),
             payload,
-        )
-        .map_err(|e| Error::store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
 
         Ok(())
     }
 
-    pub fn make_platform_admin(&mut self) -> Result<()> {
+    pub fn make_platform_admin(&mut self) -> DomainResult<()> {
         self.is_platform_admin = true;
         self.updated_at = Utc::now();
 
         let payload = Payload::from_json(&events::UserPlatformAdminGrantedPayload {
             user_id: self.id.as_str(),
-        })
-        .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+        })?;
 
         let event = Event::create(
             OrganizationId::PLATFORM,
@@ -272,8 +244,7 @@ impl User {
             events::TOPIC_PLATFORM_ADMIN_GRANTED,
             self.id.as_str(),
             payload,
-        )
-        .map_err(|e| Error::store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
 
         Ok(())
@@ -316,14 +287,13 @@ impl User {
         membership_id: &str,
         org_id: &str,
         role: &str,
-    ) -> Result<()> {
+    ) -> DomainResult<()> {
         let payload = Payload::from_json(&events::UserMembershipAddedPayload {
             membership_id: membership_id.to_string(),
             user_id: self.id.as_str(),
             org_id: org_id.to_string(),
             role: role.to_string(),
-        })
-        .map_err(|e| Error::store(format!("event serialization: {e}")))?;
+        })?;
 
         let event = Event::create(
             org_id,
@@ -331,8 +301,7 @@ impl User {
             events::TOPIC_MEMBERSHIP_ADDED,
             self.id.as_str(),
             payload,
-        )
-        .map_err(|e| Error::store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
 
         Ok(())
@@ -346,16 +315,16 @@ mod tests {
     struct MockPasswordHasher;
 
     impl PasswordHasher for MockPasswordHasher {
-        fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+        fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword> {
             HashedPassword::new(&format!("hashed_{}", plain.as_str()))
         }
 
-        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
+        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()> {
             let expected = format!("hashed_{}", plain.as_str());
             if hashed.as_str() == expected {
                 Ok(())
             } else {
-                Err(Error::authentication_failed("invalid password"))
+                Err(DomainError::PasswordMismatch)
             }
         }
     }

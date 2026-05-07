@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::graph::Relation;
 use orchy_core::graph::RelationOptions;
 use orchy_core::knowledge::{KnowledgePath, KnowledgeStore};
@@ -10,10 +10,9 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 
+use crate::dto::KnowledgeDto;
 use crate::materialize_neighborhood::{MaterializeNeighborhood, MaterializeNeighborhoodCommand};
 use crate::parse_namespace;
-
-use crate::dto::KnowledgeDto;
 
 pub struct ReadKnowledgeCommand {
     pub org_id: String,
@@ -46,16 +45,11 @@ impl ReadKnowledge {
         }
     }
 
-    pub async fn execute(&self, cmd: ReadKnowledgeCommand) -> Result<ReadKnowledgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: ReadKnowledgeCommand) -> ApplicationResult<ReadKnowledgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let path: KnowledgePath = cmd
-            .path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let path: KnowledgePath = cmd.path.parse::<KnowledgePath>()?;
 
         let entry = self
             .store

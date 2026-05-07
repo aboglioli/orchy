@@ -1,4 +1,4 @@
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{DomainError, DomainResult};
 use orchy_core::user::{HashedPassword, PasswordHasher, PlainPassword};
 
 pub struct BcryptPasswordHasher {
@@ -24,19 +24,19 @@ impl Default for BcryptPasswordHasher {
 }
 
 impl PasswordHasher for BcryptPasswordHasher {
-    fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+    fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword> {
         let hash = bcrypt::hash(plain.as_str(), self.cost)
-            .map_err(|e| Error::store(format!("failed to hash password: {e}")))?;
+            .map_err(|e| DomainError::Internal(format!("bcrypt hash: {e}")))?;
         HashedPassword::new(&hash)
     }
 
-    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
+    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()> {
         let valid = bcrypt::verify(plain.as_str(), hashed.as_str())
-            .map_err(|e| Error::store(format!("bcrypt error: {e}")))?;
+            .map_err(|e| DomainError::Internal(format!("bcrypt verify: {e}")))?;
         if valid {
             Ok(())
         } else {
-            Err(Error::authentication_failed("invalid credentials"))
+            Err(DomainError::PasswordMismatch)
         }
     }
 }

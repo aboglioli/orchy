@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore, Alias};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::LockStore;
@@ -29,22 +30,23 @@ impl LockResource {
         Self { agents, store }
     }
 
-    pub async fn execute(&self, cmd: LockResourceCommand) -> Result<ResourceLockDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: LockResourceCommand) -> ApplicationResult<ResourceLockDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let holder = if let Ok(id) = AgentId::from_str(&cmd.holder_agent_id) {
             id
         } else {
             let alias = Alias::new(&cmd.holder_agent_id).map_err(|_| {
-                Error::InvalidInput(format!("invalid agent id: {}", cmd.holder_agent_id))
+                Error::invalid_input(format!("invalid agent id: {}", cmd.holder_agent_id))
             })?;
             self.agents
                 .find_by_alias(&org_id, &project, &alias)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("agent alias @{}", cmd.holder_agent_id)))?
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Agent,
+                    id: cmd.holder_agent_id.to_string(),
+                })?
                 .id()
                 .clone()
         };
@@ -52,14 +54,17 @@ impl LockResource {
         self.agents
             .find_by_id(&holder)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {holder}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Agent,
+                id: holder.to_string(),
+            })?;
         let ttl_secs = cmd.ttl_secs.unwrap_or(300);
 
         let lock = self
             .store
             .acquire_if_free(&org_id, &project, &namespace, &cmd.name, &holder, ttl_secs)
             .await?
-            .ok_or_else(|| Error::Conflict(format!("resource '{}' is locked", cmd.name)))?;
+            .ok_or_else(|| Error::conflict(format!("resource '{}' is locked", cmd.name)))?;
         Ok(ResourceLockDto::from(&lock))
     }
 }

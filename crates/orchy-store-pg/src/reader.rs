@@ -303,14 +303,9 @@ async fn fetch_batch(
          FROM events WHERE seq > $1 AND organization = $2",
     );
     let mut bind_index = 3usize;
-    let mut topic_idx: Option<usize> = None;
-    let mut ns_idx: Option<usize> = None;
-    let mut start_idx: Option<usize> = None;
-    let mut end_idx: Option<usize> = None;
 
     if config.topics.is_some() {
         sql.push_str(&format!(" AND topic = ANY(${bind_index})"));
-        topic_idx = Some(bind_index);
         bind_index += 1;
     }
     if let Some(prefix) = config.namespace_prefix.as_ref()
@@ -319,17 +314,14 @@ async fn fetch_batch(
         sql.push_str(&format!(
             " AND (namespace = ${bind_index} OR namespace LIKE ${bind_index} || '/%')"
         ));
-        ns_idx = Some(bind_index);
         bind_index += 1;
     }
     if lower_bound_ts.is_some() {
         sql.push_str(&format!(" AND timestamp >= ${bind_index}"));
-        start_idx = Some(bind_index);
         bind_index += 1;
     }
     if config.end_at.is_some() {
         sql.push_str(&format!(" AND timestamp <= ${bind_index}"));
-        end_idx = Some(bind_index);
         bind_index += 1;
     }
     sql.push_str(&format!(" ORDER BY seq ASC LIMIT ${bind_index}"));
@@ -337,31 +329,20 @@ async fn fetch_batch(
     let mut q = sqlx::query(&sql)
         .bind(after_seq)
         .bind(config.organization.as_str());
-    if topic_idx.is_some() {
-        let topics: Vec<String> = config
-            .topics
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|t| t.as_str().to_string())
-            .collect();
+    if let Some(topics) = config.topics.as_ref() {
+        let topics: Vec<String> = topics.iter().map(|t| t.as_str().to_string()).collect();
         q = q.bind(topics);
     }
-    if ns_idx.is_some() {
-        q = q.bind(
-            config
-                .namespace_prefix
-                .as_ref()
-                .unwrap()
-                .as_str()
-                .to_string(),
-        );
+    if let Some(prefix) = config.namespace_prefix.as_ref()
+        && !prefix.is_root()
+    {
+        q = q.bind(prefix.as_str().to_string());
     }
-    if start_idx.is_some() {
-        q = q.bind(lower_bound_ts.unwrap());
+    if let Some(ts) = lower_bound_ts {
+        q = q.bind(ts);
     }
-    if end_idx.is_some() {
-        q = q.bind(config.end_at.unwrap());
+    if let Some(end_at) = config.end_at {
+        q = q.bind(end_at);
     }
     q = q.bind(take as i64);
 

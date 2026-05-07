@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
@@ -25,14 +25,13 @@ impl PgProjectStore {
 #[async_trait]
 impl ProjectStore for PgProjectStore {
     async fn save(&self, project: &mut Project) -> Result<()> {
-        let metadata_json = serde_json::to_value(project.metadata())
-            .map_err(|e| Error::Store(format!("failed to serialize projects.metadata: {e}")))?;
+        let metadata_json = serde_json::to_value(project.metadata()).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize projects.metadata: {e}"
+            )))
+        })?;
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO projects (organization_id, name, description, metadata, created_at, updated_at)
@@ -50,15 +49,12 @@ impl ProjectStore for PgProjectStore {
         .bind(project.updated_at())
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = project.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -71,7 +67,7 @@ impl ProjectStore for PgProjectStore {
         .bind(id.to_string())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_project(&r)).transpose()
     }
@@ -91,8 +87,11 @@ fn row_to_project(row: &PgRow) -> Result<Project> {
 
     Ok(Project::restore(RestoreProject {
         id,
-        org_id: OrganizationId::new(&org_id_str)
-            .map_err(|e| Error::Store(format!("invalid projects.organization_id: {e}")))?,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "invalid projects.organization_id: {e}"
+            )))
+        })?,
         description,
         metadata,
         created_at,

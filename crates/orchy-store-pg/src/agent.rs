@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias, RestoreAgent};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
@@ -30,16 +30,18 @@ impl PgAgentStore {
 #[async_trait]
 impl AgentStore for PgAgentStore {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
-        let roles_json = serde_json::to_value(agent.roles())
-            .map_err(|e| Error::Store(format!("failed to serialize agents.roles: {e}")))?;
-        let metadata_json = serde_json::to_value(agent.metadata())
-            .map_err(|e| Error::Store(format!("failed to serialize agents.metadata: {e}")))?;
+        let roles_json = serde_json::to_value(agent.roles()).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize agents.roles: {e}"
+            )))
+        })?;
+        let metadata_json = serde_json::to_value(agent.metadata()).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize agents.metadata: {e}"
+            )))
+        })?;
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id)
@@ -69,15 +71,12 @@ impl AgentStore for PgAgentStore {
         .bind(agent.user_id().map(|u| u.as_uuid()))
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = agent.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -87,7 +86,7 @@ impl AgentStore for PgAgentStore {
             .bind(id.as_uuid())
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_agent(&r)).transpose()
     }
@@ -107,7 +106,7 @@ impl AgentStore for PgAgentStore {
             .bind(alias.as_str())
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         row.map(|r| row_to_agent(&r)).transpose()
     }
 
@@ -131,7 +130,7 @@ impl AgentStore for PgAgentStore {
                 .bind(decoded)
                 .fetch_all(&self.pool)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
                 .iter()
                 .map(row_to_agent)
                 .collect::<Result<Vec<_>>>()?;
@@ -157,7 +156,7 @@ impl AgentStore for PgAgentStore {
             .bind(org.to_string())
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .iter()
             .map(row_to_agent)
             .collect::<Result<Vec<_>>>()?;
@@ -185,7 +184,7 @@ impl AgentStore for PgAgentStore {
             .bind(&uuid_ids)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         rows.iter().map(row_to_agent).collect()
     }
 
@@ -197,7 +196,7 @@ impl AgentStore for PgAgentStore {
             .bind(cutoff)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         rows.iter().map(row_to_agent).collect()
     }
@@ -220,8 +219,11 @@ fn row_to_agent(row: &PgRow) -> Result<Agent> {
     Ok(Agent::restore(RestoreAgent {
         id: AgentId::from_uuid(id),
         alias: Alias::from_string_unchecked(alias),
-        org_id: OrganizationId::new(&org_id_str)
-            .map_err(|e| Error::Store(format!("invalid agents.organization_id: {e}")))?,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "invalid agents.organization_id: {e}"
+            )))
+        })?,
         project: parse_project_id(project, "agents", "project")?,
         namespace: parse_namespace(namespace, "agents", "namespace")?,
         roles: decode_json_value(roles, "agents", "roles")?,

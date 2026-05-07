@@ -236,7 +236,7 @@ async fn bootstrap_handler(
 
     let project_id = match ProjectId::try_from(project_str) {
         Ok(p) => p,
-        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
     let ns = match scope {

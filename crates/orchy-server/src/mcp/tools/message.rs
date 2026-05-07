@@ -5,7 +5,7 @@ use orchy_core::message::MessageId;
 use orchy_core::message::MessageTarget;
 use orchy_core::resource_ref::ResourceRef;
 
-use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
+use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_app_error, to_json};
 use crate::mcp::params::{ClaimMessageParams, RefParam, SendMessageParams, UnclaimMessageParams};
 
 fn convert_ref_param(param: RefParam) -> Result<ResourceRef, String> {
@@ -83,7 +83,7 @@ pub(super) async fn send_message(
 
     match h.container.app.send_message.execute(cmd).await {
         Ok(message) => Ok(to_json(&message)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -101,7 +101,7 @@ pub(super) async fn claim_message(
         .claim_message
         .execute(agent_id, message_id)
         .await
-        .map_err(mcp_error)?;
+        .map_err(mcp_app_error)?;
     Ok(to_json(&serde_json::json!({"ok": true})))
 }
 
@@ -119,6 +119,6 @@ pub(super) async fn unclaim_message(
         .unclaim_message
         .execute(agent_id, message_id)
         .await
-        .map_err(mcp_error)?;
+        .map_err(mcp_app_error)?;
     Ok(to_json(&serde_json::json!({"ok": true})))
 }

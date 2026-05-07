@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
@@ -30,30 +31,28 @@ impl PromoteKnowledge {
         Self { knowledge, edges }
     }
 
-    pub async fn execute(&self, cmd: PromoteKnowledgeCommand) -> Result<KnowledgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: PromoteKnowledgeCommand) -> ApplicationResult<KnowledgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let source_path: KnowledgePath = cmd
-            .source_path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let source_path: KnowledgePath = cmd.source_path.parse::<KnowledgePath>()?;
 
         let source = self
             .knowledge
             .find_by_path(&org_id, Some(&project), &namespace, &source_path)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("knowledge {source_path}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Knowledge,
+                id: source_path.to_string(),
+            })?;
 
         match source.kind() {
             KnowledgeKind::Decision | KnowledgeKind::Discovery | KnowledgeKind::Pattern => {}
             other => {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "cannot promote kind '{}': only decision, discovery, or pattern can be promoted",
                     other
-                )));
+                )).into());
             }
         }
 
@@ -66,10 +65,7 @@ impl PromoteKnowledge {
             source.content().to_string()
         };
 
-        let target_path: KnowledgePath = cmd
-            .target_path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let target_path: KnowledgePath = cmd.target_path.parse::<KnowledgePath>()?;
         let mut promoted = Knowledge::new(
             org_id.clone(),
             Some(project.clone()),

@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore, Alias};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::message::{Message, MessageId, MessageStore, MessageTarget};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -45,22 +46,23 @@ impl SendMessage {
         }
     }
 
-    pub async fn execute(&self, cmd: SendMessageCommand) -> Result<MessageDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: SendMessageCommand) -> ApplicationResult<MessageDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
         let from = if let Ok(id) = AgentId::from_str(&cmd.from_agent_id) {
             id
         } else {
             let alias = Alias::new(&cmd.from_agent_id).map_err(|_| {
-                Error::InvalidInput(format!("invalid agent id: {}", cmd.from_agent_id))
+                Error::invalid_input(format!("invalid agent id: {}", cmd.from_agent_id))
             })?;
             self.agents
                 .find_by_alias(&org_id, &project, &alias)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("agent alias @{}", cmd.from_agent_id)))?
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Agent,
+                    id: cmd.from_agent_id.to_string(),
+                })?
                 .id()
                 .clone()
         };
@@ -69,16 +71,21 @@ impl SendMessage {
             .agents
             .find_by_id(&from)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {from}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Agent,
+                id: from.to_string(),
+            })?;
         if sender.org_id() != &org_id {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "agent {from} belongs to a different organization"
-            )));
+            ))
+            .into());
         }
         if sender.project() != &project {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "agent {from} belongs to a different project"
-            )));
+            ))
+            .into());
         }
 
         let to = if let Some(alias_str) = cmd.to.strip_prefix('@') {
@@ -87,7 +94,10 @@ impl SendMessage {
                 .agents
                 .find_by_alias(&org_id, &project, &alias)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("agent alias @{alias_str}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Agent,
+                    id: alias_str.to_string(),
+                })?;
             MessageTarget::Agent(target_agent.id().clone())
         } else {
             let target = MessageTarget::parse(&cmd.to)?;
@@ -95,21 +105,21 @@ impl SendMessage {
                 self.users
                     .find_by_id(uid)
                     .await?
-                    .ok_or_else(|| Error::NotFound(format!("user {uid}")))?;
+                    .ok_or_else(|| Error::NotFound {
+                        resource: Resource::User,
+                        id: uid.to_string(),
+                    })?;
                 let membership = self.memberships.find(uid, &org_id).await?;
                 if membership.is_none() {
-                    return Err(Error::InvalidInput(format!(
+                    return Err(Error::invalid_input(format!(
                         "user {uid} does not belong to organization {org_id}"
-                    )));
+                    ))
+                    .into());
                 }
             }
             target
         };
-        let reply_to = cmd
-            .reply_to
-            .map(|s| s.parse::<MessageId>())
-            .transpose()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let reply_to = cmd.reply_to.map(|s| s.parse::<MessageId>()).transpose()?;
 
         let mut msg = Message::new(
             org_id, project, namespace, from, to, cmd.body, reply_to, cmd.refs,

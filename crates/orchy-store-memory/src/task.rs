@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource, Result};
 use orchy_core::pagination::{Page, PageParams};
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
@@ -29,8 +29,7 @@ impl TaskStore for MemoryTaskStore {
         let events = task.drain_events();
         if !events.is_empty() {
             for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
                 self.state.events.write().await.push(serialized);
             }
         }
@@ -49,7 +48,7 @@ impl TaskStore for MemoryTaskStore {
         let mut tasks = self.state.tasks.write().await;
         let stored = tasks
             .get(&task.id())
-            .ok_or_else(|| Error::NotFound(format!("task {}", task.id())))?;
+            .ok_or_else(|| Error::not_found(Resource::Task, task.id().to_string()))?;
         if !expected_statuses.contains(&stored.status()) {
             return Ok(false);
         }
@@ -58,8 +57,7 @@ impl TaskStore for MemoryTaskStore {
         if !events.is_empty() {
             let mut events_guard = self.state.events.write().await;
             for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
                 events_guard.push(serialized);
             }
         }

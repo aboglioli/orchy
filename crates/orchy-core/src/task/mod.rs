@@ -11,7 +11,7 @@ use orchy_events::{Event, EventCollector, Payload};
 
 use self::events as task_events;
 use crate::agent::AgentId;
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
@@ -60,12 +60,12 @@ impl fmt::Display for TaskId {
 }
 
 impl FromStr for TaskId {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
-            .map_err(|_| Error::invalid_input(format!("invalid task id: {s}")))
+            .map_err(|_| DomainError::validation(format!("invalid task id: {s}")))
     }
 }
 
@@ -121,14 +121,14 @@ impl TaskStatus {
         )
     }
 
-    fn transition_to(self, target: TaskStatus) -> Result<TaskStatus> {
+    fn transition_to(self, target: TaskStatus) -> DomainResult<TaskStatus> {
         if self.can_transition_to(&target) {
             Ok(target)
         } else {
-            Err(Error::InvalidTransition {
-                from: self.to_string(),
-                to: target.to_string(),
-            })
+            Err(DomainError::invalid_transition(
+                self.to_string(),
+                target.to_string(),
+            ))
         }
     }
 }
@@ -149,7 +149,7 @@ impl fmt::Display for TaskStatus {
 }
 
 impl FromStr for TaskStatus {
-    type Err = String;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         match s {
@@ -160,7 +160,9 @@ impl FromStr for TaskStatus {
             "completed" => Ok(TaskStatus::Completed),
             "failed" => Ok(TaskStatus::Failed),
             "cancelled" => Ok(TaskStatus::Cancelled),
-            other => Err(format!("unknown task status: {other}")),
+            other => Err(DomainError::validation(format!(
+                "unknown task status: {other}"
+            ))),
         }
     }
 }
@@ -188,7 +190,7 @@ impl fmt::Display for Priority {
 }
 
 impl FromStr for Priority {
-    type Err = String;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         match s {
@@ -196,7 +198,9 @@ impl FromStr for Priority {
             "normal" => Ok(Priority::Normal),
             "high" => Ok(Priority::High),
             "critical" => Ok(Priority::Critical),
-            other => Err(format!("unknown priority: {other}")),
+            other => Err(DomainError::validation(format!(
+                "unknown priority: {other}"
+            ))),
         }
     }
 }
@@ -240,9 +244,9 @@ impl Task {
         assigned_roles: Vec<String>,
         created_by: Option<AgentId>,
         is_blocked: bool,
-    ) -> Result<Self> {
+    ) -> DomainResult<Self> {
         if title.trim().is_empty() {
-            return Err(Error::InvalidInput("task title must not be empty".into()));
+            return Err(DomainError::validation("task title must not be empty"));
         }
 
         let now = Utc::now();
@@ -274,27 +278,23 @@ impl Task {
             collector: EventCollector::new(),
         };
 
-        task.collector.collect(
-            Event::create(
-                task.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_CREATED,
-                task.id.to_string(),
-                Payload::from_json(&task_events::TaskCreatedPayload {
-                    org_id: task.org_id.to_string(),
-                    task_id: task.id.to_string(),
-                    project: task.project.to_string(),
-                    namespace: task.namespace.to_string(),
-                    title: task.title.clone(),
-                    description: task.description.clone(),
-                    acceptance_criteria: task.acceptance_criteria.clone(),
-                    priority: task.priority.to_string(),
-                    assigned_roles: task.assigned_roles.clone(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        task.collector.collect(Event::create(
+            task.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_CREATED,
+            task.id.to_string(),
+            Payload::from_json(&task_events::TaskCreatedPayload {
+                org_id: task.org_id.to_string(),
+                task_id: task.id.to_string(),
+                project: task.project.to_string(),
+                namespace: task.namespace.to_string(),
+                title: task.title.clone(),
+                description: task.description.clone(),
+                acceptance_criteria: task.acceptance_criteria.clone(),
+                priority: task.priority.to_string(),
+                assigned_roles: task.assigned_roles.clone(),
+            })?,
+        )?);
 
         Ok(task)
     }
@@ -325,32 +325,28 @@ impl Task {
         }
     }
 
-    pub fn claim(&mut self, agent: AgentId) -> Result<()> {
+    pub fn claim(&mut self, agent: AgentId) -> DomainResult<()> {
         self.status = self.status.transition_to(TaskStatus::Claimed)?;
         self.assigned_to = Some(agent.clone());
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
         self.touch();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_CLAIMED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskClaimedPayload {
-                    task_id: self.id.to_string(),
-                    agent_id: agent.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_CLAIMED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskClaimedPayload {
+                task_id: self.id.to_string(),
+                agent_id: agent.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn claim_if_available(&mut self, agent: &AgentId) -> Result<bool> {
+    pub fn claim_if_available(&mut self, agent: &AgentId) -> DomainResult<bool> {
         if !self.can_be_claimed() {
             return Ok(false);
         }
@@ -358,9 +354,9 @@ impl Task {
         Ok(true)
     }
 
-    pub fn start(&mut self, agent: &AgentId) -> Result<()> {
+    pub fn start(&mut self, agent: &AgentId) -> DomainResult<()> {
         if self.assigned_to.as_ref() != Some(agent) {
-            return Err(Error::InvalidInput(format!(
+            return Err(DomainError::validation(format!(
                 "task {} is not claimed by agent {}",
                 self.id, agent
             )));
@@ -369,127 +365,107 @@ impl Task {
         self.updated_at = Utc::now();
         self.touch();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_STARTED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskStartedPayload {
-                    task_id: self.id.to_string(),
-                    agent_id: agent.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_STARTED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskStartedPayload {
+                task_id: self.id.to_string(),
+                agent_id: agent.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn complete(&mut self, summary: Option<String>) -> Result<()> {
+    pub fn complete(&mut self, summary: Option<String>) -> DomainResult<()> {
         self.status = self.status.transition_to(TaskStatus::Completed)?;
         self.result_summary = summary.clone();
         self.updated_at = Utc::now();
         self.touch();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_COMPLETED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskCompletedPayload {
-                    task_id: self.id.to_string(),
-                    summary,
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_COMPLETED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskCompletedPayload {
+                task_id: self.id.to_string(),
+                summary,
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn auto_complete(&mut self, summary: String) -> Result<()> {
+    pub fn auto_complete(&mut self, summary: String) -> DomainResult<()> {
         self.status = self.status.transition_to(TaskStatus::Completed)?;
         self.result_summary = Some(summary.clone());
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_AUTO_COMPLETED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskCompletedPayload {
-                    task_id: self.id.to_string(),
-                    summary: Some(summary),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_AUTO_COMPLETED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskCompletedPayload {
+                task_id: self.id.to_string(),
+                summary: Some(summary),
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn fail(&mut self, reason: Option<String>) -> Result<()> {
+    pub fn fail(&mut self, reason: Option<String>) -> DomainResult<()> {
         self.status = self.status.transition_to(TaskStatus::Failed)?;
         self.result_summary = reason.clone();
         self.updated_at = Utc::now();
         self.touch();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_FAILED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskFailedPayload {
-                    task_id: self.id.to_string(),
-                    reason,
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_FAILED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskFailedPayload {
+                task_id: self.id.to_string(),
+                reason,
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn release(&mut self) -> Result<()> {
+    pub fn release(&mut self) -> DomainResult<()> {
         if !matches!(self.status, TaskStatus::Claimed | TaskStatus::InProgress) {
-            return Err(Error::InvalidTransition {
-                from: self.status.to_string(),
-                to: TaskStatus::Pending.to_string(),
-            });
+            return Err(DomainError::invalid_transition(
+                self.status.to_string(),
+                TaskStatus::Pending.to_string(),
+            ));
         }
         self.status = self.status.transition_to(TaskStatus::Pending)?;
         self.assigned_to = None;
         self.assigned_at = None;
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_RELEASED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskReleasedPayload {
-                    task_id: self.id.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_RELEASED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskReleasedPayload {
+                task_id: self.id.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn assign(&mut self, new_agent: AgentId) -> Result<()> {
+    pub fn assign(&mut self, new_agent: AgentId) -> DomainResult<()> {
         if !matches!(self.status, TaskStatus::Claimed | TaskStatus::InProgress) {
-            return Err(Error::InvalidInput(format!(
+            return Err(DomainError::validation(format!(
                 "task {} cannot be reassigned from status {}",
                 self.id, self.status
             )));
@@ -498,101 +474,85 @@ impl Task {
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_ASSIGNED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskAssignedPayload {
-                    task_id: self.id.to_string(),
-                    agent_id: new_agent.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_ASSIGNED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskAssignedPayload {
+                task_id: self.id.to_string(),
+                agent_id: new_agent.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn block(&mut self) -> Result<()> {
+    pub fn block(&mut self) -> DomainResult<()> {
         if self.status == TaskStatus::Blocked {
             return Ok(());
         }
         self.status = self.status.transition_to(TaskStatus::Blocked)?;
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_BLOCKED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskBlockedPayload {
-                    task_id: self.id.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_BLOCKED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskBlockedPayload {
+                task_id: self.id.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn unblock(&mut self) -> Result<()> {
+    pub fn unblock(&mut self) -> DomainResult<()> {
         if self.status != TaskStatus::Blocked {
             return Ok(());
         }
         self.status = self.status.transition_to(TaskStatus::Pending)?;
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_UNBLOCKED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskUnblockedPayload {
-                    task_id: self.id.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_UNBLOCKED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskUnblockedPayload {
+                task_id: self.id.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn cancel(&mut self, reason: Option<String>) -> Result<()> {
+    pub fn cancel(&mut self, reason: Option<String>) -> DomainResult<()> {
         self.status = self.status.transition_to(TaskStatus::Cancelled)?;
         self.result_summary = reason.clone();
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_CANCELLED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskCancelledPayload {
-                    task_id: self.id.to_string(),
-                    reason,
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_CANCELLED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskCancelledPayload {
+                task_id: self.id.to_string(),
+                reason,
+            })?,
+        )?);
 
         Ok(())
     }
 
-    pub fn archive(&mut self, reason: Option<String>) -> Result<()> {
+    pub fn archive(&mut self, reason: Option<String>) -> DomainResult<()> {
         if self.archived_at.is_some() {
-            return Err(Error::InvalidInput("task is already archived".into()));
+            return Err(DomainError::validation("task is already archived"));
         }
         if !self.status().is_terminal() {
-            return Err(Error::InvalidInput(format!(
+            return Err(DomainError::validation(format!(
                 "can only archive terminal tasks, got {}",
                 self.status()
             )));
@@ -602,38 +562,34 @@ impl Task {
         let payload = Payload::from_json(&task_events::TaskArchivedPayload {
             task_id: self.id.to_string(),
             reason,
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_ARCHIVED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn unarchive(&mut self) -> Result<()> {
+    pub fn unarchive(&mut self) -> DomainResult<()> {
         if self.archived_at.is_none() {
-            return Err(Error::InvalidInput("task is not archived".into()));
+            return Err(DomainError::validation("task is not archived"));
         }
         self.archived_at = None;
         self.updated_at = Utc::now();
         let payload = Payload::from_json(&task_events::TaskRestoredPayload {
             task_id: self.id.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             task_events::NAMESPACE,
             task_events::TOPIC_RESTORED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
@@ -644,19 +600,19 @@ impl Task {
         description: Option<String>,
         acceptance_criteria: Option<String>,
         priority: Option<Priority>,
-    ) -> Result<()> {
+    ) -> DomainResult<()> {
         if title.is_none()
             && description.is_none()
             && acceptance_criteria.is_none()
             && priority.is_none()
         {
-            return Err(Error::InvalidInput("no task fields to update".into()));
+            return Err(DomainError::validation("no task fields to update"));
         }
         if matches!(
             self.status,
             TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
         ) {
-            return Err(Error::InvalidInput(format!(
+            return Err(DomainError::validation(format!(
                 "cannot update task in status {}",
                 self.status
             )));
@@ -667,7 +623,7 @@ impl Task {
         let mut new_priority = None;
         if let Some(t) = title {
             if t.trim().is_empty() {
-                return Err(Error::InvalidInput("task title must not be empty".into()));
+                return Err(DomainError::validation("task title must not be empty"));
             }
             new_title = Some(t.clone());
             self.title = t;
@@ -686,23 +642,19 @@ impl Task {
         }
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_UPDATED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskUpdatedPayload {
-                    task_id: self.id.to_string(),
-                    title: new_title,
-                    description: new_description,
-                    acceptance_criteria: new_acceptance_criteria,
-                    priority: new_priority,
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_UPDATED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskUpdatedPayload {
+                task_id: self.id.to_string(),
+                title: new_title,
+                description: new_description,
+                acceptance_criteria: new_acceptance_criteria,
+                priority: new_priority,
+            })?,
+        )?);
 
         Ok(())
     }
@@ -773,51 +725,43 @@ impl Task {
     pub fn tags(&self) -> &[String] {
         &self.tags
     }
-    pub fn add_tag(&mut self, tag: String) -> Result<()> {
+    pub fn add_tag(&mut self, tag: String) -> DomainResult<()> {
         if self.tags.contains(&tag) {
             return Ok(());
         }
         self.tags.push(tag.clone());
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_TAGGED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskTaggedPayload {
-                    task_id: self.id.to_string(),
-                    tag,
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_TAGGED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskTaggedPayload {
+                task_id: self.id.to_string(),
+                tag,
+            })?,
+        )?);
 
         Ok(())
     }
-    pub fn remove_tag(&mut self, tag: &str) -> Result<()> {
+    pub fn remove_tag(&mut self, tag: &str) -> DomainResult<()> {
         let Some(pos) = self.tags.iter().position(|t| t == tag) else {
             return Ok(());
         };
         self.tags.remove(pos);
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_TAG_REMOVED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskTagRemovedPayload {
-                    task_id: self.id.to_string(),
-                    tag: tag.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_TAG_REMOVED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskTagRemovedPayload {
+                task_id: self.id.to_string(),
+                tag: tag.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }
@@ -830,26 +774,22 @@ impl Task {
     pub fn is_archived(&self) -> bool {
         self.archived_at.is_some()
     }
-    pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
+    pub fn move_to(&mut self, namespace: Namespace) -> DomainResult<()> {
         let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
         self.updated_at = Utc::now();
 
-        self.collector.collect(
-            Event::create(
-                self.org_id.as_str(),
-                task_events::NAMESPACE,
-                task_events::TOPIC_MOVED,
-                self.id.to_string(),
-                Payload::from_json(&task_events::TaskMovedPayload {
-                    task_id: self.id.to_string(),
-                    from_namespace,
-                    to_namespace: self.namespace.to_string(),
-                })
-                .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?,
-        );
+        self.collector.collect(Event::create(
+            self.org_id.as_str(),
+            task_events::NAMESPACE,
+            task_events::TOPIC_MOVED,
+            self.id.to_string(),
+            Payload::from_json(&task_events::TaskMovedPayload {
+                task_id: self.id.to_string(),
+                from_namespace,
+                to_namespace: self.namespace.to_string(),
+            })?,
+        )?);
 
         Ok(())
     }

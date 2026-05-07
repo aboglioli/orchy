@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchy_core::embeddings::{Embedding, EmbeddingsProvider};
-use orchy_core::error::{Error, Result};
+use crate::embeddings::EmbeddingsProvider;
+use crate::error::ApplicationResult;
+use orchy_core::embeddings::Embedding;
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
-use crate::parse_namespace;
-
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 
 pub struct AppendKnowledgeCommand {
     pub org_id: String,
@@ -36,20 +36,12 @@ impl AppendKnowledge {
         Self { store, embeddings }
     }
 
-    pub async fn execute(&self, cmd: AppendKnowledgeCommand) -> Result<KnowledgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: AppendKnowledgeCommand) -> ApplicationResult<KnowledgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let kind = cmd
-            .kind
-            .parse::<KnowledgeKind>()
-            .map_err(Error::InvalidInput)?;
-        let path: KnowledgePath = cmd
-            .path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let kind = cmd.kind.parse::<KnowledgeKind>()?;
+        let path: KnowledgePath = cmd.path.parse::<KnowledgePath>()?;
         let separator = cmd.separator.as_deref().unwrap_or("\n");
 
         let existing = self

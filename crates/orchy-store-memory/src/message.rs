@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::message::{Message, MessageId, MessageStatus, MessageStore, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -47,8 +47,7 @@ impl MessageStore for MemoryMessageStore {
         let events = message.drain_events();
         if !events.is_empty() {
             for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
                 self.state.events.write().await.push(serialized);
             }
         }

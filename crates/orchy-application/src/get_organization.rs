@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::organization::{OrganizationId, OrganizationStore};
 
 use crate::dto::OrganizationDto;
@@ -18,13 +19,16 @@ impl GetOrganization {
         Self { orgs }
     }
 
-    pub async fn execute(&self, cmd: GetOrganizationCommand) -> Result<OrganizationDto> {
-        let id = OrganizationId::new(&cmd.id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: GetOrganizationCommand) -> ApplicationResult<OrganizationDto> {
+        let id = OrganizationId::new(&cmd.id)?;
         let org = self
             .orgs
             .find_by_id(&id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("organization {id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Organization,
+                id: id.to_string(),
+            })?;
         Ok(OrganizationDto::from(&org))
     }
 }

@@ -23,28 +23,10 @@ use serde::{Deserialize, Serialize};
 
 use orchy_core::graph::RelationOptions;
 use orchy_core::graph::{RelationType, TraversalDirection};
-use orchy_core::namespace::Namespace;
 
 use orchy_core::error::Error;
 
 use crate::container::Container;
-
-pub(crate) fn parse_namespace(s: &str) -> Result<Namespace, ApiError> {
-    let normalized = if s.is_empty() || s == "/" {
-        "/".to_string()
-    } else if s.starts_with('/') {
-        s.to_string()
-    } else {
-        format!("/{s}")
-    };
-    Namespace::try_from(normalized).map_err(|e| {
-        ApiError(
-            StatusCode::BAD_REQUEST,
-            "INVALID_PARAM",
-            format!("invalid namespace: {e}"),
-        )
-    })
-}
 
 #[derive(Deserialize, Default)]
 pub struct InlineRelationQuery {
@@ -69,7 +51,7 @@ impl InlineRelationQuery {
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()
-            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
+            .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
         let direction = match self.direction.as_deref() {
             Some("outgoing") => TraversalDirection::Outgoing,
@@ -102,29 +84,29 @@ pub struct ApiError(pub StatusCode, pub &'static str, pub String);
 
 impl From<Error> for ApiError {
     fn from(e: Error) -> Self {
-        use orchy_core::error::Error;
-        match &e {
-            Error::NotFound(_) => ApiError(StatusCode::NOT_FOUND, "NOT_FOUND", e.to_string()),
-            Error::InvalidInput(_)
-            | Error::InvalidTransition { .. }
-            | Error::DependencyNotMet(_) => ApiError(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "INVALID_INPUT",
-                e.to_string(),
-            ),
-            Error::Conflict(_) | Error::VersionMismatch { .. } => {
-                ApiError(StatusCode::CONFLICT, "CONFLICT", e.to_string())
+        let (status, code, message) = crate::error_mapping::error_to_code_and_message(&e);
+        ApiError(status, code, message)
+    }
+}
+
+impl From<orchy_application::ApplicationError> for ApiError {
+    fn from(e: orchy_application::ApplicationError) -> Self {
+        use orchy_application::ApplicationError;
+        match e {
+            ApplicationError::Core(core_err) => core_err.into(),
+            ApplicationError::AuthenticationFailed(msg) => {
+                ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg)
             }
-            Error::Embeddings(_) => {
-                ApiError(StatusCode::BAD_GATEWAY, "EMBEDDINGS_ERROR", e.to_string())
+            ApplicationError::PermissionDenied(msg) => {
+                ApiError(StatusCode::FORBIDDEN, "FORBIDDEN", msg)
             }
-            Error::Store(_) => ApiError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "INTERNAL_ERROR",
-                e.to_string(),
+            ApplicationError::OrganizationMismatch => ApiError(
+                StatusCode::FORBIDDEN,
+                "FORBIDDEN",
+                "organization mismatch".into(),
             ),
-            Error::AuthenticationFailed(_) => {
-                ApiError(StatusCode::UNAUTHORIZED, "UNAUTHORIZED", e.to_string())
+            ApplicationError::EmbeddingsProvider(msg) => {
+                ApiError(StatusCode::BAD_GATEWAY, "EMBEDDINGS_ERROR", msg)
             }
         }
     }

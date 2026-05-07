@@ -6,7 +6,7 @@ use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::message::{
     Message, MessageId, MessageStatus, MessageStore, MessageTarget, RestoreMessage,
 };
@@ -59,11 +59,7 @@ impl PgMessageStore {
 #[async_trait]
 impl MessageStore for PgMessageStore {
     async fn save(&self, message: &mut Message) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at, refs, claimed_by, claimed_at)
@@ -100,15 +96,12 @@ impl MessageStore for PgMessageStore {
         .bind(message.claimed_at())
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = message.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -120,7 +113,7 @@ impl MessageStore for PgMessageStore {
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_message(&r)).transpose()
     }
@@ -138,7 +131,7 @@ impl MessageStore for PgMessageStore {
         .bind(&uuid_ids)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         rows.iter().map(row_to_message).collect()
     }
 
@@ -153,7 +146,7 @@ impl MessageStore for PgMessageStore {
             .bind(agent.as_uuid())
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         }
         Ok(())
     }
@@ -210,7 +203,7 @@ impl MessageStore for PgMessageStore {
             .bind(fetch_limit)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
         } else {
             sqlx::query(
                 "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs, m.claimed_by, m.claimed_at
@@ -238,7 +231,7 @@ impl MessageStore for PgMessageStore {
             .bind(fetch_limit)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
         };
 
         let mut messages: Vec<Message> = rows
@@ -312,7 +305,7 @@ impl MessageStore for PgMessageStore {
         let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let mut messages: Vec<Message> = rows
             .iter()
@@ -371,7 +364,7 @@ impl MessageStore for PgMessageStore {
             .bind(message_id.as_uuid())
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         rows.iter().map(row_to_message).collect()
     }
@@ -406,8 +399,11 @@ fn row_to_message(row: &PgRow) -> Result<Message> {
 
     Ok(Message::restore(RestoreMessage {
         id: MessageId::from_uuid(id),
-        org_id: OrganizationId::new(&org_id_str)
-            .map_err(|e| Error::Store(format!("invalid messages.organization_id: {e}")))?,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "invalid messages.organization_id: {e}"
+            )))
+        })?,
         project: parse_project_id(project, "messages", "project")?,
         namespace: parse_namespace(namespace, "messages", "namespace")?,
         from: AgentId::from_uuid(from_agent),

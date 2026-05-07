@@ -8,7 +8,7 @@ use sea_query::{Cond, Expr, Iden, PostgresQueryBuilder, Query};
 use sea_query_binder::SqlxBinder;
 use uuid::Uuid;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource, Result, StoreError};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore,
     RestoreKnowledge, Version,
@@ -83,18 +83,16 @@ impl KnowledgeStore for PgKnowledgeStore {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
         let vec_binding = entry.embedding().map(|e| Vector::from(e.to_vec()));
         let tags_json = serde_json::to_value(entry.tags()).map_err(|e| {
-            Error::Store(format!("failed to serialize knowledge_entries.tags: {e}"))
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize knowledge_entries.tags: {e}"
+            )))
         })?;
         let metadata_json = serde_json::to_value(entry.metadata()).map_err(|e| {
-            Error::Store(format!(
+            Error::Store(StoreError::Other(format!(
                 "failed to serialize knowledge_entries.metadata: {e}"
-            ))
+            )))
         })?;
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         if let Some(pv) = entry.persisted_version() {
             let result = sqlx::query(
@@ -122,7 +120,7 @@ impl KnowledgeStore for PgKnowledgeStore {
             .bind(pv.as_u64() as i64)
             .execute(&mut *tx)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
             if result.rows_affected() == 0 {
                 let stored_version: Option<i64> = sqlx::query_scalar(
@@ -131,14 +129,11 @@ impl KnowledgeStore for PgKnowledgeStore {
                 .bind(entry.id().as_uuid())
                 .fetch_optional(&mut *tx)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?;
+                .map_err(crate::error::store_err)?;
 
                 return Err(match stored_version {
-                    Some(v) => Error::VersionMismatch {
-                        expected: pv.as_u64(),
-                        actual: v as u64,
-                    },
-                    None => Error::NotFound(format!("knowledge entry {}", entry.id())),
+                    Some(v) => Error::version_mismatch(pv.as_u64(), v as u64),
+                    None => Error::not_found(Resource::Knowledge, entry.id().to_string()),
                 });
             }
         } else {
@@ -167,16 +162,13 @@ impl KnowledgeStore for PgKnowledgeStore {
             .bind(entry.updated_at())
             .execute(&mut *tx)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         }
 
         let events = entry.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
 
         entry.mark_persisted();
 
@@ -190,7 +182,7 @@ impl KnowledgeStore for PgKnowledgeStore {
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_entry(&r)).transpose()
     }
@@ -206,7 +198,7 @@ impl KnowledgeStore for PgKnowledgeStore {
         .bind(&uuid_ids)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         rows.iter().map(row_to_entry).collect()
     }
 
@@ -226,7 +218,7 @@ impl KnowledgeStore for PgKnowledgeStore {
         .bind(path.as_str())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_entry(&r)).transpose()
     }
@@ -301,7 +293,7 @@ impl KnowledgeStore for PgKnowledgeStore {
         let rows = sqlx::query_with(&sql, values)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let mut entries: Vec<Knowledge> =
             rows.iter().map(row_to_entry).collect::<Result<Vec<_>>>()?;
@@ -351,7 +343,7 @@ impl KnowledgeStore for PgKnowledgeStore {
                 .bind(limit as i64)
                 .fetch_all(&self.pool)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
         } else {
             let sql = format!(
                 "WITH search AS (
@@ -371,7 +363,7 @@ impl KnowledgeStore for PgKnowledgeStore {
                 .bind(limit as i64)
                 .fetch_all(&self.pool)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
         };
 
         rows.iter()
@@ -384,7 +376,7 @@ impl KnowledgeStore for PgKnowledgeStore {
             .bind(id.as_uuid())
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Ok(())
     }
@@ -419,7 +411,7 @@ async fn search_by_embedding(
             .bind(limit as i64)
             .fetch_all(pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         return rows
             .iter()
@@ -439,7 +431,7 @@ async fn search_by_embedding(
         .bind(limit as i64)
         .fetch_all(pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
     rows.iter()
         .map(|r| {
@@ -471,18 +463,24 @@ fn row_to_entry(row: &PgRow) -> Result<Knowledge> {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    let path = KnowledgePath::new(&path_str)
-        .map_err(|e| Error::Store(format!("invalid knowledge_entries.path: {e}")))?;
+    let path = KnowledgePath::new(&path_str).map_err(|e| {
+        Error::Store(StoreError::Other(format!(
+            "invalid knowledge_entries.path: {e}"
+        )))
+    })?;
     let kind = KnowledgeKind::from_str(&kind_str).map_err(|e| {
-        Error::Store(format!(
+        Error::Store(StoreError::Other(format!(
             "invalid knowledge_entries.kind value `{kind_str}`: {e}"
-        ))
+        )))
     })?;
 
     Ok(Knowledge::restore(RestoreKnowledge {
         id: KnowledgeId::from_uuid(id),
-        org_id: OrganizationId::new(&org_id_str)
-            .map_err(|e| Error::Store(format!("invalid knowledge_entries.organization_id: {e}")))?,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "invalid knowledge_entries.organization_id: {e}"
+            )))
+        })?,
         project: project
             .map(|p| parse_project_id(p, "knowledge_entries", "project"))
             .transpose()?,

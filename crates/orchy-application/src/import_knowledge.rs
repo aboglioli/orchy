@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use orchy_core::embeddings::{Embedding, EmbeddingsProvider};
-use orchy_core::error::{Error, Result};
+use crate::embeddings::EmbeddingsProvider;
+use crate::error::ApplicationResult;
+use orchy_core::embeddings::Embedding;
+use orchy_core::error::{Error, Resource};
 use orchy_core::knowledge::{Knowledge, KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
-use crate::parse_namespace;
-
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 
 pub struct ImportKnowledgeCommand {
     pub source_org_id: String,
@@ -34,16 +35,11 @@ impl ImportKnowledge {
         Self { store, embeddings }
     }
 
-    pub async fn execute(&self, cmd: ImportKnowledgeCommand) -> Result<KnowledgeDto> {
-        let source_org = OrganizationId::new(&cmd.source_org_id)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let source_project = ProjectId::try_from(cmd.source_project)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: ImportKnowledgeCommand) -> ApplicationResult<KnowledgeDto> {
+        let source_org = OrganizationId::new(&cmd.source_org_id)?;
+        let source_project = ProjectId::try_from(cmd.source_project)?;
         let source_namespace = parse_namespace(cmd.source_namespace.as_deref())?;
-        let source_path: KnowledgePath = cmd
-            .source_path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let source_path: KnowledgePath = cmd.source_path.parse::<KnowledgePath>()?;
 
         let source = self
             .store
@@ -54,19 +50,18 @@ impl ImportKnowledge {
                 &source_path,
             )
             .await?
-            .ok_or_else(|| Error::NotFound(format!("source knowledge entry: {source_path}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Knowledge,
+                id: source_path.to_string(),
+            })?;
 
-        let target_org = OrganizationId::new(&cmd.target_org_id)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let target_project = ProjectId::try_from(cmd.target_project)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let target_org = OrganizationId::new(&cmd.target_org_id)?;
+        let target_project = ProjectId::try_from(cmd.target_project)?;
         let target_namespace = parse_namespace(cmd.target_namespace.as_deref())?;
         let target_path_str = cmd
             .target_path
             .unwrap_or_else(|| source.path().as_str().to_string());
-        let target_path: KnowledgePath = target_path_str
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let target_path: KnowledgePath = target_path_str.parse::<KnowledgePath>()?;
 
         let mut entry = Knowledge::new(
             target_org,

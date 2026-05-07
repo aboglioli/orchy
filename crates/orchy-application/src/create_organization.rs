@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
 
 use crate::dto::OrganizationDto;
@@ -19,8 +19,11 @@ impl CreateOrganization {
         Self { orgs }
     }
 
-    pub async fn execute(&self, cmd: CreateOrganizationCommand) -> Result<OrganizationDto> {
-        let id = OrganizationId::new(&cmd.id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: CreateOrganizationCommand,
+    ) -> ApplicationResult<OrganizationDto> {
+        let id = OrganizationId::new(&cmd.id)?;
         let mut org = Organization::new(id, cmd.name)?;
         self.orgs.save(&mut org).await?;
         Ok(OrganizationDto::from(&org))

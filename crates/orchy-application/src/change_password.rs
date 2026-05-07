@@ -1,7 +1,8 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::user::{PasswordHasher, PlainPassword, UserId, UserStore};
 
 use crate::dto::UserDto;
@@ -22,7 +23,7 @@ impl ChangePassword {
         Self { users, hasher }
     }
 
-    pub async fn execute(&self, cmd: ChangePasswordCommand) -> Result<UserDto> {
+    pub async fn execute(&self, cmd: ChangePasswordCommand) -> ApplicationResult<UserDto> {
         let user_id = UserId::from_str(&cmd.user_id)
             .map_err(|e| Error::invalid_input(format!("invalid user id: {}", e)))?;
 
@@ -33,7 +34,7 @@ impl ChangePassword {
             .users
             .find_by_id(&user_id)
             .await?
-            .ok_or_else(|| Error::not_found("user"))?;
+            .ok_or_else(|| Error::not_found(Resource::User, user_id.to_string()))?;
 
         user.change_password(&old_password, &new_password, self.hasher.as_ref())?;
         self.users.save(&mut user).await?;

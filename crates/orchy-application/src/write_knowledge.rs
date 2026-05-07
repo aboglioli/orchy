@@ -4,9 +4,11 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
+use crate::embeddings::EmbeddingsProvider;
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::embeddings::{Embedding, EmbeddingsProvider};
-use orchy_core::error::{Error, Result};
+use orchy_core::embeddings::Embedding;
+use orchy_core::error::Error;
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore, Version,
@@ -17,9 +19,8 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::TaskId;
 
-use crate::parse_namespace;
-
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 
 pub struct WriteKnowledgeCommand {
     pub org_id: String,
@@ -59,16 +60,11 @@ impl WriteKnowledge {
         }
     }
 
-    pub async fn execute(&self, cmd: WriteKnowledgeCommand) -> Result<KnowledgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: WriteKnowledgeCommand) -> ApplicationResult<KnowledgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let kind = cmd
-            .kind
-            .parse::<KnowledgeKind>()
-            .map_err(Error::InvalidInput)?;
+        let kind = cmd.kind.parse::<KnowledgeKind>()?;
         let agent_id = cmd.agent_id.map(|s| AgentId::from_str(&s)).transpose()?;
         let expected_version = cmd.version.map(Version::new);
         let task_id_str = cmd.task_id.clone();
@@ -77,12 +73,12 @@ impl WriteKnowledge {
             .valid_from
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
-            .map_err(|e| Error::InvalidInput(format!("invalid valid_from: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("invalid valid_from: {e}")))?;
         let valid_until = cmd
             .valid_until
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
-            .map_err(|e| Error::InvalidInput(format!("invalid valid_until: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("invalid valid_until: {e}")))?;
 
         let write_cmd = WriteKnowledgeCmd {
             org_id: org_id.clone(),
@@ -115,10 +111,11 @@ impl WriteKnowledge {
                 .expected_version
                 .filter(|v| existing.version() != *v)
             {
-                return Err(Error::VersionMismatch {
-                    expected: expected.as_u64(),
-                    actual: existing.version().as_u64(),
-                });
+                return Err(Error::version_mismatch(
+                    expected.as_u64(),
+                    existing.version().as_u64(),
+                )
+                .into());
             }
             existing.update(write_cmd.title, write_cmd.content)?;
             for tag in &write_cmd.tags {
@@ -134,10 +131,7 @@ impl WriteKnowledge {
             existing
         } else {
             if let Some(expected) = write_cmd.expected_version {
-                return Err(Error::VersionMismatch {
-                    expected: expected.as_u64(),
-                    actual: 0,
-                });
+                return Err(Error::version_mismatch(expected.as_u64(), 0).into());
             }
             let mut created = Knowledge::new(
                 write_cmd.org_id,

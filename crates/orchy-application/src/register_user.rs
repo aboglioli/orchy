@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::Error;
 use orchy_core::user::{Email, PasswordHasher, PlainPassword, User, UserId, UserStore};
 
 use crate::dto::UserDto;
@@ -24,12 +25,12 @@ impl RegisterUser {
         Self { users, hasher }
     }
 
-    pub async fn execute(&self, cmd: RegisterUserCommand) -> Result<RegisterUserDto> {
+    pub async fn execute(&self, cmd: RegisterUserCommand) -> ApplicationResult<RegisterUserDto> {
         let email = Email::new(&cmd.email)?;
         let password = PlainPassword::new(&cmd.password)?;
 
         if self.users.find_by_email(&email).await?.is_some() {
-            return Err(Error::conflict("user with this email already exists"));
+            return Err(Error::conflict("user with this email already exists").into());
         }
 
         let id = UserId::new();

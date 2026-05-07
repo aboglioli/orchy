@@ -8,6 +8,7 @@ use orchy_core::message::{Message, MessageTarget};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
+use orchy_core::resource_lock::ResourceLock;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus};
 
@@ -241,4 +242,96 @@ pub async fn edge_alias_blocks_normalizes_to_depends_on(bundle: &Bundle) {
         RelationType::DependsOn,
         "stored edge must preserve DependsOn after round-trip"
     );
+}
+
+pub async fn agent_save_then_find_returns_same(bundle: &Bundle) {
+    let mut agent = Agent::register(
+        org(),
+        project(),
+        Namespace::root(),
+        Alias::new("conformance-agent").unwrap(),
+        vec!["tester".to_string()],
+        "conformance agent".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    bundle.agents.save(&mut agent).await.unwrap();
+
+    let found = bundle.agents.find_by_id(agent.id()).await.unwrap().unwrap();
+    assert_eq!(found.alias(), agent.alias());
+    assert_eq!(found.id(), agent.id());
+    assert_eq!(found.roles(), agent.roles());
+}
+
+pub async fn pagination_respects_limit(bundle: &Bundle) {
+    let mut t1 = build_task("task-a", vec![]);
+    bundle.tasks.save(&mut t1).await.unwrap();
+    let mut t2 = build_task("task-b", vec![]);
+    bundle.tasks.save(&mut t2).await.unwrap();
+    let mut t3 = build_task("task-c", vec![]);
+    bundle.tasks.save(&mut t3).await.unwrap();
+
+    let page = bundle
+        .tasks
+        .list(
+            TaskFilter {
+                org_id: Some(org()),
+                project: Some(project()),
+                ..Default::default()
+            },
+            PageParams::new(None, Some(2)),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(page.items.len(), 2, "pagination limit must be respected");
+}
+
+pub async fn lock_acquire_and_release(bundle: &Bundle) {
+    let mut agent = Agent::register(
+        org(),
+        project(),
+        Namespace::root(),
+        Alias::new("lock-agent").unwrap(),
+        vec![],
+        "lock holder".into(),
+        None,
+        HashMap::new(),
+        None,
+    )
+    .unwrap();
+    bundle.agents.save(&mut agent).await.unwrap();
+
+    let mut lock = ResourceLock::acquire(
+        org(),
+        project(),
+        Namespace::root(),
+        "test-resource".to_string(),
+        agent.id().clone(),
+        3600,
+    )
+    .unwrap();
+    bundle.locks.save(&mut lock).await.unwrap();
+
+    let found = bundle
+        .locks
+        .find(&org(), &project(), &Namespace::root(), "test-resource")
+        .await
+        .unwrap();
+    assert!(found.is_some(), "lock must exist after acquire");
+
+    bundle
+        .locks
+        .delete(&org(), &project(), &Namespace::root(), "test-resource")
+        .await
+        .unwrap();
+
+    let gone = bundle
+        .locks
+        .find(&org(), &project(), &Namespace::root(), "test-resource")
+        .await
+        .unwrap();
+    assert!(gone.is_none(), "lock must be gone after release");
 }

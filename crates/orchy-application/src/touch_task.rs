@@ -1,7 +1,8 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::task::{TaskId, TaskStore};
 
 use crate::dto::TaskDto;
@@ -20,13 +21,16 @@ impl TouchTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: TouchTaskCommand) -> Result<TaskDto> {
+    pub async fn execute(&self, cmd: TouchTaskCommand) -> ApplicationResult<TaskDto> {
         let task_id = TaskId::from_str(&cmd.task_id)?;
         let mut task = self
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         task.touch();
         self.tasks.save(&mut task).await?;

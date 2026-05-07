@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Embedding {
@@ -10,19 +10,17 @@ pub struct Embedding {
 }
 
 impl Embedding {
-    pub fn new(values: Vec<f32>, model: String, expected_dimensions: u32) -> Result<Self> {
+    pub fn new(values: Vec<f32>, model: String, expected_dimensions: u32) -> DomainResult<Self> {
         if model.trim().is_empty() {
-            return Err(Error::InvalidInput(
-                "embedding model must not be empty".into(),
-            ));
+            return Err(DomainError::validation("embedding model must not be empty"));
         }
         if expected_dimensions == 0 {
-            return Err(Error::InvalidInput(
-                "embedding dimensions must be positive".into(),
+            return Err(DomainError::validation(
+                "embedding dimensions must be positive",
             ));
         }
         if values.len() as u32 != expected_dimensions {
-            return Err(Error::InvalidInput(format!(
+            return Err(DomainError::validation(format!(
                 "embedding dimension mismatch: got {}, expected {}",
                 values.len(),
                 expected_dimensions
@@ -30,7 +28,7 @@ impl Embedding {
         }
         for (i, v) in values.iter().enumerate() {
             if !v.is_finite() {
-                return Err(Error::InvalidInput(format!(
+                return Err(DomainError::validation(format!(
                     "embedding value at index {i} is not finite: {v}"
                 )));
             }

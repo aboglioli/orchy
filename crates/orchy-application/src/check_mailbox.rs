@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -28,19 +29,23 @@ impl CheckMailbox {
         Self { messages, agents }
     }
 
-    pub async fn execute(&self, cmd: CheckMailboxCommand) -> Result<PageResponse<MessageDto>> {
+    pub async fn execute(
+        &self,
+        cmd: CheckMailboxCommand,
+    ) -> ApplicationResult<PageResponse<MessageDto>> {
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let page = PageParams::new(cmd.after, cmd.limit);
 
         let agent = self
             .agents
             .find_by_id(&agent_id)
             .await?
-            .ok_or(Error::NotFound("agent not found".to_string()))?;
+            .ok_or(Error::NotFound {
+                resource: Resource::Agent,
+                id: String::new(),
+            })?;
         let agent_roles = agent.roles().to_vec();
         let agent_namespace = agent.namespace().clone();
 

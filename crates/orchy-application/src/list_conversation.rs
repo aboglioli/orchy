@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::message::{MessageId, MessageStore};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -23,11 +24,12 @@ impl ListConversation {
         Self { messages }
     }
 
-    pub async fn execute(&self, cmd: ListConversationCommand) -> Result<Vec<MessageDto>> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: ListConversationCommand,
+    ) -> ApplicationResult<Vec<MessageDto>> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let message_id = cmd.message_id.parse::<MessageId>()?;
 
         let limit = cmd.limit.map(|l| l as usize);
@@ -36,7 +38,11 @@ impl ListConversation {
         if let Some(root) = messages.first()
             && (root.org_id() != &org_id || root.project() != &project)
         {
-            return Err(Error::NotFound("message not found in project".to_string()));
+            return Err(Error::NotFound {
+                resource: Resource::Project,
+                id: String::new(),
+            }
+            .into());
         }
 
         Ok(messages.iter().map(MessageDto::from).collect())

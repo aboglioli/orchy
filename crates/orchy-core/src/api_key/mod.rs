@@ -8,7 +8,7 @@ use orchy_events::{Event, EventCollector, Payload};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 use crate::organization::OrganizationId;
 use crate::user::UserId;
 
@@ -38,9 +38,9 @@ const KEY_LEN: usize = 67;
 pub struct PlainApiKey(String);
 
 impl PlainApiKey {
-    pub fn new(s: String) -> Result<Self> {
+    pub fn new(s: String) -> DomainResult<Self> {
         if !s.starts_with(KEY_PREFIX) || s.len() != KEY_LEN {
-            return Err(Error::invalid_input(
+            return Err(DomainError::validation(
                 "API key must be 'sk_' followed by 64 hex characters",
             ));
         }
@@ -71,9 +71,9 @@ impl fmt::Display for PlainApiKey {
 pub struct HashedApiKey(String);
 
 impl HashedApiKey {
-    pub fn new(s: String) -> Result<Self> {
+    pub fn new(s: String) -> DomainResult<Self> {
         if s.is_empty() {
-            return Err(Error::invalid_input("API key hash cannot be empty"));
+            return Err(DomainError::validation("API key hash cannot be empty"));
         }
         Ok(Self(s))
     }
@@ -94,9 +94,9 @@ impl fmt::Display for HashedApiKey {
 pub struct ApiKeyPrefix(String);
 
 impl ApiKeyPrefix {
-    pub fn new(s: String) -> Result<Self> {
+    pub fn new(s: String) -> DomainResult<Self> {
         if s.len() != 8 {
-            return Err(Error::invalid_input(
+            return Err(DomainError::validation(
                 "API key prefix must be exactly 8 characters",
             ));
         }
@@ -119,9 +119,9 @@ impl fmt::Display for ApiKeyPrefix {
 pub struct ApiKeySuffix(String);
 
 impl ApiKeySuffix {
-    pub fn new(s: String) -> Result<Self> {
+    pub fn new(s: String) -> DomainResult<Self> {
         if s.len() != 4 {
-            return Err(Error::invalid_input(
+            return Err(DomainError::validation(
                 "API key suffix must be exactly 4 characters",
             ));
         }
@@ -170,12 +170,12 @@ impl fmt::Display for ApiKeyId {
 }
 
 impl FromStr for ApiKeyId {
-    type Err = Error;
+    type Err = DomainError;
 
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> DomainResult<Self> {
         Uuid::parse_str(s)
             .map(Self)
-            .map_err(|e| Error::invalid_input(format!("invalid api key id: {e}")))
+            .map_err(|e| DomainError::validation(format!("invalid api key id: {e}")))
     }
 }
 

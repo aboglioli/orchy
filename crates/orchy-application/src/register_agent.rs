@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{Agent, AgentStore, Alias};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Error;
 use orchy_core::message::MessageStore;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -13,6 +14,9 @@ use std::str::FromStr;
 
 use crate::dto::{AgentDto, RegisterAgentDto};
 use crate::parse_namespace;
+
+const INBOX_PREVIEW_LIMIT: u32 = 50;
+const TASKS_PREVIEW_LIMIT: u32 = 100;
 
 pub struct RegisterAgentCommand {
     pub org_id: String,
@@ -45,11 +49,9 @@ impl RegisterAgent {
         }
     }
 
-    pub async fn execute(&self, cmd: RegisterAgentCommand) -> Result<RegisterAgentDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: RegisterAgentCommand) -> ApplicationResult<RegisterAgentDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
         let alias = Alias::new(&cmd.alias)?;
@@ -59,7 +61,7 @@ impl RegisterAgent {
             .as_deref()
             .map(UserId::from_str)
             .transpose()
-            .map_err(|e| Error::InvalidInput(format!("invalid auth_user_id: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("invalid auth_user_id: {e}")))?;
 
         let agent = if let Some(mut existing) =
             self.agents.find_by_alias(&org_id, &project, &alias).await?
@@ -67,10 +69,11 @@ impl RegisterAgent {
             // Apply ownership resume conflict rule
             match (existing.user_id(), auth_user_id.as_ref()) {
                 (Some(existing_uid), Some(provided_uid)) if existing_uid != provided_uid => {
-                    return Err(Error::Conflict(format!(
+                    return Err(Error::conflict(format!(
                         "agent '{}' is owned by a different user",
                         cmd.alias
-                    )));
+                    ))
+                    .into());
                 }
                 (None, Some(provided_uid)) => {
                     existing.attach_user(*provided_uid);
@@ -128,7 +131,7 @@ impl RegisterAgent {
                 agent.user_id(),
                 &org_id,
                 &project,
-                PageParams::unbounded(),
+                PageParams::new(None, Some(INBOX_PREVIEW_LIMIT)),
             )
             .await?;
 
@@ -145,7 +148,7 @@ impl RegisterAgent {
                     namespace: Some(namespace.clone()),
                     include_archived: None,
                 },
-                PageParams::unbounded(),
+                PageParams::new(None, Some(TASKS_PREVIEW_LIMIT)),
             )
             .await?;
 
@@ -162,7 +165,7 @@ impl RegisterAgent {
                     namespace: Some(namespace.clone()),
                     include_archived: None,
                 },
-                PageParams::unbounded(),
+                PageParams::new(None, Some(TASKS_PREVIEW_LIMIT)),
             )
             .await?;
 

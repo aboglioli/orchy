@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row, postgres::PgRow};
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::organization::{
     Organization, OrganizationId, OrganizationStore, RestoreOrganization,
 };
@@ -23,11 +23,7 @@ impl PgOrganizationStore {
 #[async_trait]
 impl OrganizationStore for PgOrganizationStore {
     async fn save(&self, org: &mut Organization) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO organizations (id, name, created_at, updated_at)
@@ -42,15 +38,12 @@ impl OrganizationStore for PgOrganizationStore {
         .bind(org.updated_at())
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = org.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -60,7 +53,7 @@ impl OrganizationStore for PgOrganizationStore {
                 .bind(id.as_str())
                 .fetch_optional(&self.pool)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?;
+                .map_err(crate::error::store_err)?;
 
         row.map(|r| build_org(&r)).transpose()
     }
@@ -71,7 +64,7 @@ impl OrganizationStore for PgOrganizationStore {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         rows.iter().map(build_org).collect()
     }
@@ -83,8 +76,13 @@ fn build_org(row: &PgRow) -> Result<Organization> {
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
 
-    let id = OrganizationId::new(&id_str)
-        .map_err(|e| Error::Store(format!("invalid organizations.id: {e}")))?;
+    let id = OrganizationId::new(&id_str).map_err(|e| {
+        Error::Store(StoreError::Decode {
+            table: "organizations".to_string(),
+            column: "id".to_string(),
+            cause: e.to_string(),
+        })
+    })?;
 
     Ok(Organization::restore(RestoreOrganization {
         id,

@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::message::{
     Message, MessageId, MessageStatus, MessageStore, MessageTarget, RestoreMessage,
 };
@@ -38,10 +38,8 @@ impl SqliteMessageStore {
 #[async_trait]
 impl MessageStore for SqliteMessageStore {
     async fn save(&self, message: &mut Message) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let tx = conn.transaction().map_err(crate::error::store_err)?;
 
         tx.execute(
             "INSERT OR REPLACE INTO messages (id, organization_id, project, namespace, from_agent, to_target, body, reply_to, status, created_at, refs, claimed_by, claimed_at)
@@ -66,47 +64,45 @@ impl MessageStore for SqliteMessageStore {
                 message.claimed_at().map(|dt| dt.to_rfc3339()),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = message.drain_events();
         events::write_events_in_tx(&tx, &events)?;
 
-        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().map_err(crate::error::store_err)?;
         Ok(())
     }
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs, claimed_by, claimed_at
                  FROM messages WHERE id = ?1",
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         use rusqlite::OptionalExtension;
         let result = stmt
             .query_row(rusqlite::params![id.to_string()], row_to_message)
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Ok(result)
     }
 
     async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let tx = conn.transaction().map_err(crate::error::store_err)?;
         let now = Utc::now().to_rfc3339();
         for id in message_ids {
             tx.execute(
                 "INSERT OR REPLACE INTO message_receipts (message_id, agent_id, read_at) VALUES (?1, ?2, ?3)",
                 rusqlite::params![id.to_string(), agent.to_string(), &now],
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         }
-        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -120,21 +116,21 @@ impl MessageStore for SqliteMessageStore {
         project: &ProjectId,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let role_targets: Vec<String> = agent_roles.iter().map(|r| format!("role:{r}")).collect();
         let role_targets_json = serde_json::to_string(&role_targets)
-            .map_err(|e| Error::Store(format!("serialize role targets: {e}")))?;
+            .map_err(|e| Error::Store(StoreError::Serialization(format!("role targets: {e}"))))?;
 
         let ns_targets = namespace_ancestors(agent_namespace);
         let ns_targets_json = serde_json::to_string(&ns_targets)
-            .map_err(|e| Error::Store(format!("serialize ns targets: {e}")))?;
+            .map_err(|e| Error::Store(StoreError::Serialization(format!("ns targets: {e}"))))?;
 
         let user_targets: Vec<String> = agent_user_id
             .map(|uid| vec![format!("user:{uid}")])
             .unwrap_or_default();
         let user_targets_json = serde_json::to_string(&user_targets)
-            .map_err(|e| Error::Store(format!("serialize user targets: {e}")))?;
+            .map_err(|e| Error::Store(StoreError::Serialization(format!("user targets: {e}"))))?;
 
         let mut sql = String::from(
             "SELECT m.id, m.organization_id, m.project, m.namespace, m.from_agent, m.to_target, m.body, m.status, m.created_at, m.reply_to, m.refs, m.claimed_by, m.claimed_at
@@ -177,16 +173,14 @@ impl MessageStore for SqliteMessageStore {
         let fetch_limit = (page.limit as u64).saturating_add(1);
         sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
         let mut messages: Vec<Message> = stmt
             .query_map(param_refs.as_slice(), row_to_message)
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let has_more = messages.len() > page.limit as usize;
         if has_more {
@@ -209,7 +203,7 @@ impl MessageStore for SqliteMessageStore {
         namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let mut sql = String::from(
             "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs FROM messages WHERE from_agent = ?1 AND organization_id = ?2 AND project = ?3",
@@ -241,16 +235,14 @@ impl MessageStore for SqliteMessageStore {
         let fetch_limit = (page.limit as u64).saturating_add(1);
         sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
         let mut messages: Vec<Message> = stmt
             .query_map(param_refs.as_slice(), row_to_message)
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let has_more = messages.len() > page.limit as usize;
         if has_more {
@@ -270,7 +262,7 @@ impl MessageStore for SqliteMessageStore {
         message_id: &MessageId,
         limit: Option<usize>,
     ) -> Result<Vec<Message>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let mut sql = String::from(
             "WITH RECURSIVE
@@ -302,15 +294,13 @@ impl MessageStore for SqliteMessageStore {
             sql = format!("SELECT * FROM ({sql}) sub2 ORDER BY created_at ASC");
         }
 
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
 
         let messages = stmt
             .query_map(rusqlite::params![message_id.to_string()], row_to_message)
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Ok(messages)
     }
@@ -324,10 +314,8 @@ impl MessageStore for SqliteMessageStore {
             "SELECT id, organization_id, project, namespace, from_agent, to_target, body, status, created_at, reply_to, refs, claimed_by, claimed_at \
              FROM messages WHERE id IN ({placeholders})"
         );
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
         let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
             .iter()
@@ -335,9 +323,9 @@ impl MessageStore for SqliteMessageStore {
             .collect();
         let messages = stmt
             .query_map(param_refs.as_slice(), row_to_message)
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         Ok(messages)
     }
 }

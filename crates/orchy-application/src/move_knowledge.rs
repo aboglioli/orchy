@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::knowledge::{KnowledgePath, KnowledgeStore};
+use orchy_core::namespace::Namespace;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
-use crate::parse_namespace;
-
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 
 pub struct MoveKnowledgeCommand {
     pub org_id: String,
@@ -26,23 +27,21 @@ impl MoveKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: MoveKnowledgeCommand) -> Result<KnowledgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: MoveKnowledgeCommand) -> ApplicationResult<KnowledgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let new_namespace = parse_namespace(Some(&cmd.new_namespace))?;
-        let path: KnowledgePath = cmd
-            .path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let new_namespace = Namespace::new(cmd.new_namespace.as_str())?;
+        let path: KnowledgePath = cmd.path.parse::<KnowledgePath>()?;
 
         let mut entry = self
             .store
             .find_by_path(&org_id, Some(&project), &namespace, &path)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {path}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Knowledge,
+                id: path.to_string(),
+            })?;
 
         entry.move_to(new_namespace)?;
         self.store.save(&mut entry).await?;

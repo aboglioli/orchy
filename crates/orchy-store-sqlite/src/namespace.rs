@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 
@@ -24,7 +24,7 @@ impl NamespaceStore for SqliteNamespaceStore {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         conn.execute(
             "INSERT OR IGNORE INTO namespaces (organization_id, project, namespace, created_at) \
              VALUES (?1, ?2, ?3, ?4)",
@@ -35,19 +35,19 @@ impl NamespaceStore for SqliteNamespaceStore {
                 chrono::Utc::now().to_rfc3339(),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 
     async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let mut stmt = conn
             .prepare(
                 "SELECT namespace FROM namespaces \
                  WHERE organization_id = ?1 AND project = ?2 \
                  ORDER BY namespace",
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let rows = stmt
             .query_map(
@@ -57,13 +57,16 @@ impl NamespaceStore for SqliteNamespaceStore {
                     Ok(ns)
                 },
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let mut result = Vec::new();
         for row in rows {
-            let ns_str = row.map_err(|e| Error::Store(e.to_string()))?;
-            let ns = Namespace::try_from(ns_str.as_str())
-                .map_err(|e| Error::Store(format!("invalid namespace in database: {e}")))?;
+            let ns_str = row.map_err(crate::error::store_err)?;
+            let ns = Namespace::try_from(ns_str.as_str()).map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "invalid namespace in database: {e}"
+                )))
+            })?;
             result.push(ns);
         }
         Ok(result)

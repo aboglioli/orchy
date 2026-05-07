@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::graph::{EdgeStore, RelationType};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
@@ -26,16 +26,14 @@ impl ListEdges {
         Self { edges }
     }
 
-    pub async fn execute(&self, cmd: ListEdgesCommand) -> Result<PageResponse<EdgeDto>> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: ListEdgesCommand) -> ApplicationResult<PageResponse<EdgeDto>> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
 
         let rel_type = cmd
             .rel_type
             .as_deref()
             .map(|s| s.parse::<RelationType>())
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+            .transpose()?;
 
         let page = self
             .edges

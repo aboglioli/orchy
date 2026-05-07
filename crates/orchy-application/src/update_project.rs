@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore};
@@ -22,11 +22,9 @@ impl UpdateProject {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: UpdateProjectCommand) -> Result<ProjectDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: UpdateProjectCommand) -> ApplicationResult<ProjectDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
 
         let mut p = match self.store.find_by_id(&org_id, &project).await? {
             Some(project) => project,

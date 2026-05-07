@@ -3,8 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use orchy_core::embeddings::EmbeddingsProvider;
-use orchy_core::error::{Error, Result};
+use orchy_application::{ApplicationError, ApplicationResult, EmbeddingsProvider};
 
 pub struct OpenAiEmbeddingsProvider {
     client: Client,
@@ -45,7 +44,7 @@ impl OpenAiEmbeddingsProvider {
 
 #[async_trait]
 impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+    async fn embed(&self, text: &str) -> ApplicationResult<Vec<f32>> {
         let request = EmbeddingsRequest {
             model: &self.model,
             input: Value::String(text.to_string()),
@@ -57,25 +56,28 @@ impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|e| Error::Embeddings(e.to_string()))?;
+            .map_err(|e| ApplicationError::EmbeddingsProvider(e.to_string()))?;
 
         if !response.status().is_success() {
-            return Err(Error::Embeddings(format!("HTTP {}", response.status())));
+            return Err(ApplicationError::EmbeddingsProvider(format!(
+                "HTTP {}",
+                response.status()
+            )));
         }
 
         let body: EmbeddingsResponse = response
             .json()
             .await
-            .map_err(|e| Error::Embeddings(e.to_string()))?;
+            .map_err(|e| ApplicationError::EmbeddingsProvider(e.to_string()))?;
 
         body.data
             .into_iter()
             .next()
             .map(|d| d.embedding)
-            .ok_or_else(|| Error::Embeddings("empty response".into()))
+            .ok_or_else(|| ApplicationError::EmbeddingsProvider("empty response".into()))
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    async fn embed_batch(&self, texts: &[&str]) -> ApplicationResult<Vec<Vec<f32>>> {
         let input: Vec<Value> = texts.iter().map(|t| Value::String(t.to_string())).collect();
 
         let request = EmbeddingsRequest {
@@ -89,16 +91,19 @@ impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|e| Error::Embeddings(e.to_string()))?;
+            .map_err(|e| ApplicationError::EmbeddingsProvider(e.to_string()))?;
 
         if !response.status().is_success() {
-            return Err(Error::Embeddings(format!("HTTP {}", response.status())));
+            return Err(ApplicationError::EmbeddingsProvider(format!(
+                "HTTP {}",
+                response.status()
+            )));
         }
 
         let body: EmbeddingsResponse = response
             .json()
             .await
-            .map_err(|e| Error::Embeddings(e.to_string()))?;
+            .map_err(|e| ApplicationError::EmbeddingsProvider(e.to_string()))?;
 
         Ok(body.data.into_iter().map(|d| d.embedding).collect())
     }
@@ -118,13 +123,13 @@ pub enum EmbeddingsBackend {
 
 #[async_trait]
 impl EmbeddingsProvider for EmbeddingsBackend {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+    async fn embed(&self, text: &str) -> ApplicationResult<Vec<f32>> {
         match self {
             EmbeddingsBackend::OpenAi(p) => p.embed(text).await,
         }
     }
 
-    async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    async fn embed_batch(&self, texts: &[&str]) -> ApplicationResult<Vec<Vec<f32>>> {
         match self {
             EmbeddingsBackend::OpenAi(p) => p.embed_batch(texts).await,
         }

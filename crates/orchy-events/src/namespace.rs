@@ -12,8 +12,15 @@ pub struct Namespace(String);
 impl Namespace {
     pub fn new(s: impl Into<String>) -> Result<Self> {
         let s = s.into();
-        Self::validate(&s)?;
-        Ok(Self(s))
+        let normalized = if s.is_empty() || s == "/" {
+            "/".to_string()
+        } else if s.starts_with('/') {
+            s
+        } else {
+            format!("/{s}")
+        };
+        Self::validate(&normalized)?;
+        Ok(Self(normalized))
     }
 
     pub fn root() -> Self {
@@ -159,9 +166,16 @@ mod tests {
     }
 
     #[test]
-    fn namespace_must_start_with_slash() {
-        assert!(Namespace::new("backend").is_err());
-        assert!(Namespace::new("").is_err());
+    fn namespace_auto_prepends_slash() {
+        let ns = Namespace::new("backend").unwrap();
+        assert_eq!(ns.as_ref(), "/backend");
+    }
+
+    #[test]
+    fn empty_namespace_is_root() {
+        let ns = Namespace::new("").unwrap();
+        assert_eq!(ns.as_ref(), "/");
+        assert!(ns.is_root());
     }
 
     #[test]

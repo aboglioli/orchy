@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore, Alias};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 
 use crate::dto::AgentDto;
 
@@ -20,14 +21,17 @@ impl RenameAlias {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: RenameAliasCommand) -> Result<AgentDto> {
+    pub async fn execute(&self, cmd: RenameAliasCommand) -> ApplicationResult<AgentDto> {
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
         let new_alias = Alias::new(&cmd.new_alias)?;
-        let mut agent = self
-            .agents
-            .find_by_id(&agent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
+        let mut agent =
+            self.agents
+                .find_by_id(&agent_id)
+                .await?
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Agent,
+                    id: agent_id.to_string(),
+                })?;
 
         if agent.alias() != &new_alias {
             if let Some(existing) = self
@@ -36,10 +40,9 @@ impl RenameAlias {
                 .await?
                 && existing.id() != &agent_id
             {
-                return Err(Error::Conflict(format!(
-                    "alias '{}' already taken",
-                    cmd.new_alias
-                )));
+                return Err(
+                    Error::conflict(format!("alias '{}' already taken", cmd.new_alias)).into(),
+                );
             }
             agent.set_alias(new_alias)?;
             self.agents.save(&mut agent).await?;

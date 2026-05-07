@@ -136,10 +136,7 @@ impl OrchyClient {
     }
 
     async fn send(&self, req: RequestBuilder) -> CliResult<Response> {
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let resp = req.send().await?;
         if resp.status().is_client_error() || resp.status().is_server_error() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -154,20 +151,14 @@ impl OrchyClient {
     /// Convenience: GET an org-scoped URL and return parsed JSON value.
     pub async fn get_json(&self, path: &str) -> CliResult<serde_json::Value> {
         let resp = self.get(path).await?;
-        let v = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let v = resp.json::<serde_json::Value>().await?;
         Ok(v)
     }
 
     /// Convenience: GET a project-scoped URL and return parsed JSON value.
     pub async fn get_project_json(&self, path: &str) -> CliResult<serde_json::Value> {
         let resp = self.get_project(path).await?;
-        let v = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let v = resp.json::<serde_json::Value>().await?;
         Ok(v)
     }
 
@@ -196,10 +187,7 @@ impl OrchyClient {
         body: Option<&serde_json::Value>,
     ) -> CliResult<serde_json::Value> {
         let resp = self.post(path, body).await?;
-        let v = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let v = resp.json::<serde_json::Value>().await?;
         Ok(v)
     }
 
@@ -210,10 +198,7 @@ impl OrchyClient {
         body: Option<&serde_json::Value>,
     ) -> CliResult<serde_json::Value> {
         let resp = self.post_project(path, body).await?;
-        let v = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let v = resp.json::<serde_json::Value>().await?;
         Ok(v)
     }
 
@@ -224,10 +209,7 @@ impl OrchyClient {
         body: Option<&serde_json::Value>,
     ) -> CliResult<serde_json::Value> {
         let resp = self.patch(path, body).await?;
-        let v = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let v = resp.json::<serde_json::Value>().await?;
         Ok(v)
     }
 
@@ -238,10 +220,7 @@ impl OrchyClient {
         body: Option<&serde_json::Value>,
     ) -> CliResult<serde_json::Value> {
         let resp = self.patch_project(path, body).await?;
-        let v = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let v = resp.json::<serde_json::Value>().await?;
         Ok(v)
     }
 
@@ -252,32 +231,24 @@ impl OrchyClient {
         body: Option<&serde_json::Value>,
     ) -> CliResult<serde_json::Value> {
         let resp = self.put_project(path, body).await?;
-        let v = resp
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|e| CliError::Request(e.to_string()))?;
+        let v = resp.json::<serde_json::Value>().await?;
         Ok(v)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum CliError {
-    Request(String),
-    Http { status: u16, body: String },
-    MissingAgentId,
-}
+    #[error(transparent)]
+    Request(#[from] reqwest::Error),
 
-impl std::fmt::Display for CliError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CliError::Request(e) => write!(f, "request error: {e}"),
-            CliError::Http { status, body } => write!(f, "HTTP {status}: {body}"),
-            CliError::MissingAgentId => write!(
-                f,
-                "alias is required — set it in config or pass --agent <id>"
-            ),
-        }
-    }
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+
+    #[error("HTTP {status}: {body}")]
+    Http { status: u16, body: String },
+
+    #[error("alias is required — set it in config or pass --agent <id>")]
+    MissingAgentId,
 }
 
 pub type CliResult<T> = Result<T, CliError>;

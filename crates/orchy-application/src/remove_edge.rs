@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{EdgeId, EdgeStore};
 use orchy_core::organization::OrganizationId;
 
@@ -18,22 +19,28 @@ impl RemoveEdge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: RemoveEdgeCommand) -> Result<()> {
+    pub async fn execute(&self, cmd: RemoveEdgeCommand) -> ApplicationResult<()> {
         let id = cmd.edge_id.parse::<EdgeId>()?;
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id = OrganizationId::new(&cmd.org_id)?;
 
         let mut edge = self
             .store
             .find_by_id(&id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("edge: {}", cmd.edge_id)))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Edge,
+                id: cmd.edge_id.to_string(),
+            })?;
 
         if edge.org_id() != &org_id {
-            return Err(Error::NotFound(format!("edge: {}", cmd.edge_id)));
+            return Err(Error::NotFound {
+                resource: Resource::Edge,
+                id: cmd.edge_id.to_string(),
+            }
+            .into());
         }
 
         edge.invalidate()?;
-        self.store.save(&mut edge).await
+        self.store.save(&mut edge).await.map_err(Into::into)
     }
 }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentStore;
-use orchy_core::error::{Error, Result};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
@@ -24,14 +24,13 @@ impl ListAgents {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: ListAgentsCommand) -> Result<PageResponse<AgentDto>> {
-        let org =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: ListAgentsCommand,
+    ) -> ApplicationResult<PageResponse<AgentDto>> {
+        let org = OrganizationId::new(&cmd.org_id)?;
 
-        let project = cmd
-            .project
-            .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+        let project = cmd.project.map(ProjectId::try_from).transpose()?;
 
         if let Some(ref project) = project {
             let limit = cmd.limit.unwrap_or(50) as usize;

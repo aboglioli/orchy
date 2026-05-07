@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use orchy_application::EmbeddingsProvider;
 use orchy_application::{Application, ApplicationDeps, ReaderFactory};
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore};
-use orchy_core::embeddings::EmbeddingsProvider;
 use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
@@ -143,7 +143,9 @@ impl Container {
                     user.email,
                     user.id
                 );
-                tracing::info!("Default credentials: admin@orchy.sh / 12345678");
+                tracing::info!(
+                    "Default admin email: admin@orchy.sh (password set during bootstrap)"
+                );
             }
             Ok(None) => {
                 tracing::debug!("Admin user already exists, skipping bootstrap");
@@ -170,8 +172,7 @@ impl Container {
                         "store.sqlite config required when backend = \"sqlite\"".to_string(),
                     )
                 })?;
-                let backend = SqliteDatabase::new(&store_config.path, embedding_dims)
-                    .map_err(|e| BootError::Store(e.to_string()))?;
+                let backend = SqliteDatabase::new(&store_config.path, embedding_dims)?;
                 backend
                     .run_migrations(&SqliteDatabase::migrations_dir())
                     .map_err(|e| BootError::Migration(e.to_string()))?;
@@ -183,9 +184,7 @@ impl Container {
                         "store.postgres config required when backend = \"postgres\"".to_string(),
                     )
                 })?;
-                let backend = PgDatabase::new(&store_config.url, embedding_dims)
-                    .await
-                    .map_err(|e| BootError::Store(e.to_string()))?;
+                let backend = PgDatabase::new(&store_config.url, embedding_dims).await?;
                 backend
                     .run_migrations(&PgDatabase::migrations_dir())
                     .await
@@ -261,7 +260,7 @@ impl Container {
         match config.provider.as_str() {
             "openai" => {
                 let openai = config.openai.as_ref().ok_or_else(|| {
-                    BootError::Embeddings(
+                    BootError::EmbeddingsProvider(
                         "embeddings.openai config required when provider = \"openai\"".to_string(),
                     )
                 })?;
@@ -271,7 +270,7 @@ impl Container {
                     openai.dimensions,
                 )))
             }
-            other => Err(BootError::Embeddings(format!(
+            other => Err(BootError::EmbeddingsProvider(format!(
                 "unsupported embeddings provider: {other}"
             ))),
         }

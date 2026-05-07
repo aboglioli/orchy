@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::task::{TaskId, TaskStore};
 
 use crate::dto::TaskDto;
@@ -20,16 +21,16 @@ impl ArchiveTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ArchiveTaskCommand) -> Result<TaskDto> {
-        let task_id = cmd
-            .task_id
-            .parse::<TaskId>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: ArchiveTaskCommand) -> ApplicationResult<TaskDto> {
+        let task_id = cmd.task_id.parse::<TaskId>()?;
         let mut task = self
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         task.archive(cmd.reason)?;
         self.tasks.save(&mut task).await?;

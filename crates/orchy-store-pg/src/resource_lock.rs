@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
@@ -35,11 +35,7 @@ impl LockStore for PgLockStore {
     ) -> Result<Option<ResourceLock>> {
         let now = Utc::now();
         let expires_at = now + chrono::Duration::seconds(ttl_secs as i64);
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         let result = sqlx::query(
             "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
@@ -57,7 +53,7 @@ impl LockStore for PgLockStore {
         .bind(expires_at)
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         if result.rows_affected() == 0 {
             return Ok(None);
@@ -72,20 +68,13 @@ impl LockStore for PgLockStore {
             ttl_secs,
         )?;
         let events = lock.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(Some(lock))
     }
 
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
@@ -105,15 +94,12 @@ impl LockStore for PgLockStore {
         .bind(lock.expires_at())
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = lock.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -134,7 +120,7 @@ impl LockStore for PgLockStore {
         .bind(name)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_resource_lock(&r)).transpose()
     }
@@ -155,7 +141,7 @@ impl LockStore for PgLockStore {
         .bind(name)
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         Ok(())
     }
@@ -173,7 +159,7 @@ impl LockStore for PgLockStore {
         .bind(org.to_string())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         rows.iter().map(row_to_resource_lock).collect()
     }
@@ -185,7 +171,7 @@ impl LockStore for PgLockStore {
                 .bind(org.to_string())
                 .execute(&self.pool)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?;
+                .map_err(crate::error::store_err)?;
 
         Ok(result.rows_affected())
     }
@@ -194,7 +180,7 @@ impl LockStore for PgLockStore {
         let result = sqlx::query("DELETE FROM resource_locks WHERE expires_at < NOW()")
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Ok(result.rows_affected())
     }
@@ -210,8 +196,11 @@ fn row_to_resource_lock(row: &PgRow) -> Result<ResourceLock> {
     let expires_at: DateTime<Utc> = row.get("expires_at");
 
     Ok(ResourceLock::restore(RestoreResourceLock {
-        org_id: OrganizationId::new(&org_id_str)
-            .map_err(|e| Error::Store(format!("invalid resource_locks.organization_id: {e}")))?,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "invalid resource_locks.organization_id: {e}"
+            )))
+        })?,
         project: parse_project_id(project, "resource_locks", "project")?,
         namespace: parse_namespace(namespace, "resource_locks", "namespace")?,
         name,

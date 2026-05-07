@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentStore;
-use orchy_core::error::{Error, Result};
 use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
+use orchy_core::namespace::Namespace;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
@@ -10,7 +11,6 @@ use orchy_core::project::{Project, ProjectStore};
 use orchy_core::task::{TaskFilter, TaskStore};
 
 use crate::dto::{AgentDto, KnowledgeDto, ProjectDto, ProjectOverviewResponse, TaskDto};
-use crate::parse_namespace;
 
 pub struct GetProjectOverviewCommand {
     pub org_id: String,
@@ -40,15 +40,17 @@ impl GetProjectOverview {
         }
     }
 
-    pub async fn execute(&self, cmd: GetProjectOverviewCommand) -> Result<ProjectOverviewResponse> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project_id =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: GetProjectOverviewCommand,
+    ) -> ApplicationResult<ProjectOverviewResponse> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project_id = ProjectId::try_from(cmd.project)?;
         let namespace = cmd
             .namespace
             .as_deref()
-            .map(|s| parse_namespace(Some(s)))
+            .filter(|s| !s.is_empty())
+            .map(Namespace::new)
             .transpose()?;
 
         let project = match self.projects.find_by_id(&org_id, &project_id).await? {

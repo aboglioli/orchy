@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::{
     Email, HashedPassword, MembershipId, OrgMembership, OrgMembershipStore, OrgRole,
@@ -25,11 +25,7 @@ impl PgUserStore {
 #[async_trait]
 impl UserStore for PgUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             r#"
@@ -52,15 +48,12 @@ impl UserStore for PgUserStore {
         .bind(user.updated_at())
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = user.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -71,7 +64,7 @@ impl UserStore for PgUserStore {
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         match row {
             Some((
@@ -84,10 +77,18 @@ impl UserStore for PgUserStore {
                 updated_at,
             )) => {
                 let id = UserId::from_uuid(id);
-                let email = Email::new(&email)
-                    .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
-                let password_hash = HashedPassword::new(&password_hash)
-                    .map_err(|e| Error::Store(format!("invalid password hash in db: {e}")))?;
+                let email = Email::new(&email).map_err(|e| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "email".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
+                    Error::Store(StoreError::Other(format!(
+                        "invalid password hash in db: {e}"
+                    )))
+                })?;
 
                 Ok(Some(User::restore(RestoreUser {
                     id,
@@ -110,7 +111,7 @@ impl UserStore for PgUserStore {
         .bind(email.as_str())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         match row {
             Some((
@@ -123,10 +124,18 @@ impl UserStore for PgUserStore {
                 updated_at,
             )) => {
                 let id = UserId::from_uuid(id);
-                let email = Email::new(&email)
-                    .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
-                let password_hash = HashedPassword::new(&password_hash)
-                    .map_err(|e| Error::Store(format!("invalid password hash in db: {e}")))?;
+                let email = Email::new(&email).map_err(|e| {
+                    Error::Store(StoreError::Decode {
+                        table: "users".to_string(),
+                        column: "email".to_string(),
+                        cause: e.to_string(),
+                    })
+                })?;
+                let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
+                    Error::Store(StoreError::Other(format!(
+                        "invalid password hash in db: {e}"
+                    )))
+                })?;
 
                 Ok(Some(User::restore(RestoreUser {
                     id,
@@ -148,16 +157,24 @@ impl UserStore for PgUserStore {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let mut users = Vec::new();
         for (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at) in rows
         {
             let id = UserId::from_uuid(id);
-            let email = Email::new(&email)
-                .map_err(|e| Error::Store(format!("invalid email in db: {e}")))?;
-            let password_hash = HashedPassword::new(&password_hash)
-                .map_err(|e| Error::Store(format!("invalid password hash in db: {e}")))?;
+            let email = Email::new(&email).map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "users".to_string(),
+                    column: "email".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "invalid password hash in db: {e}"
+                )))
+            })?;
 
             users.push(User::restore(RestoreUser {
                 id,
@@ -202,7 +219,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
         .bind(membership.created_at())
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         Ok(())
     }
@@ -214,7 +231,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row_to_membership(row)
     }
@@ -226,7 +243,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
         .bind(user_id.as_uuid())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let mut memberships = Vec::new();
         for row in rows {
@@ -245,7 +262,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
         .bind(org_id.to_string())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let mut memberships = Vec::new();
         for row in rows {
@@ -269,7 +286,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
         .bind(org_id.to_string())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row_to_membership(row)
     }
@@ -279,7 +296,7 @@ impl OrgMembershipStore for PgOrgMembershipStore {
             .bind(id.as_uuid())
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Ok(())
     }
@@ -292,11 +309,20 @@ fn row_to_membership(
         Some((id, user_id, org_id, role, created_at)) => {
             let id = MembershipId::from_uuid(id);
             let user_id = UserId::from_uuid(user_id);
-            let org_id = OrganizationId::new(&org_id)
-                .map_err(|e| Error::Store(format!("invalid org id in db: {e}")))?;
-            let role = role
-                .parse::<OrgRole>()
-                .map_err(|e| Error::Store(format!("invalid role in db: {e}")))?;
+            let org_id = OrganizationId::new(&org_id).map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "users".to_string(),
+                    column: "org_id".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let role = role.parse::<OrgRole>().map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "users".to_string(),
+                    column: "role".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
 
             Ok(Some(OrgMembership::restore(RestoreOrgMembership {
                 id,

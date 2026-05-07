@@ -15,7 +15,7 @@ use orchy_events::{Event, EventCollector, Payload};
 
 use self::events as knowledge_events;
 use crate::embeddings::Embedding;
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
@@ -75,12 +75,12 @@ impl fmt::Display for KnowledgeId {
 }
 
 impl FromStr for KnowledgeId {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
-            .map_err(|_| Error::invalid_input(format!("invalid knowledge id: {s}")))
+            .map_err(|_| DomainError::validation(format!("invalid knowledge id: {s}")))
     }
 }
 
@@ -170,7 +170,7 @@ impl fmt::Display for KnowledgeKind {
 }
 
 impl FromStr for KnowledgeKind {
-    type Err = String;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
@@ -188,7 +188,9 @@ impl FromStr for KnowledgeKind {
             "overview" => Ok(KnowledgeKind::Overview),
             "summary" => Ok(KnowledgeKind::Summary),
             "report" => Ok(KnowledgeKind::Report),
-            other => Err(format!("unknown knowledge kind: {other}")),
+            other => Err(DomainError::validation(format!(
+                "unknown knowledge kind: {other}"
+            ))),
         }
     }
 }
@@ -260,9 +262,9 @@ impl Knowledge {
         content: String,
         tags: Vec<String>,
         metadata: HashMap<String, String>,
-    ) -> Result<Self> {
+    ) -> DomainResult<Self> {
         if title.trim().is_empty() {
-            return Err(Error::InvalidInput("title must not be empty".into()));
+            return Err(DomainError::validation("title must not be empty"));
         }
 
         let now = Utc::now();
@@ -290,28 +292,24 @@ impl Knowledge {
             collector: EventCollector::new(),
         };
 
-        entry.collector.collect(
-            Event::create(
-                entry.org_id.as_str(),
-                knowledge_events::NAMESPACE,
-                knowledge_events::TOPIC_CREATED,
-                entry.id.to_string(),
-                Payload::from_json(&knowledge_events::KnowledgeCreatedPayload {
-                    org_id: entry.org_id.to_string(),
-                    entry_id: entry.id.to_string(),
-                    project: entry.project.as_ref().map(|p| p.to_string()),
-                    namespace: entry.namespace.to_string(),
-                    path: entry.path.to_string(),
-                    kind: entry.kind.to_string(),
-                    title: entry.title.clone(),
-                    content: entry.content.clone(),
-                    tags: entry.tags.clone(),
-                    metadata: entry.metadata.clone(),
-                })
-                .map_err(|e| Error::InvalidInput(e.to_string()))?,
-            )
-            .map_err(|e| Error::InvalidInput(e.to_string()))?,
-        );
+        entry.collector.collect(Event::create(
+            entry.org_id.as_str(),
+            knowledge_events::NAMESPACE,
+            knowledge_events::TOPIC_CREATED,
+            entry.id.to_string(),
+            Payload::from_json(&knowledge_events::KnowledgeCreatedPayload {
+                org_id: entry.org_id.to_string(),
+                entry_id: entry.id.to_string(),
+                project: entry.project.as_ref().map(|p| p.to_string()),
+                namespace: entry.namespace.to_string(),
+                path: entry.path.to_string(),
+                kind: entry.kind.to_string(),
+                title: entry.title.clone(),
+                content: entry.content.clone(),
+                tags: entry.tags.clone(),
+                metadata: entry.metadata.clone(),
+            })?,
+        )?);
 
         Ok(entry)
     }
@@ -342,7 +340,7 @@ impl Knowledge {
         }
     }
 
-    pub fn update(&mut self, title: String, content: String) -> Result<()> {
+    pub fn update(&mut self, title: String, content: String) -> DomainResult<()> {
         self.title = title;
         self.content = content;
         self.version = self.version.next();
@@ -354,21 +352,19 @@ impl Knowledge {
             title: self.title.clone(),
             content: self.content.clone(),
             version: self.version.as_u64(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_UPDATED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn change_kind(&mut self, new_kind: KnowledgeKind) -> Result<()> {
+    pub fn change_kind(&mut self, new_kind: KnowledgeKind) -> DomainResult<()> {
         if self.kind == new_kind {
             return Ok(());
         }
@@ -383,21 +379,19 @@ impl Knowledge {
             old_kind: old_kind.to_string(),
             new_kind: self.kind.to_string(),
             version: self.version.as_u64(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_KIND_CHANGED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn add_tag(&mut self, tag: String) -> Result<()> {
+    pub fn add_tag(&mut self, tag: String) -> DomainResult<()> {
         if !self.tags.contains(&tag) {
             self.tags.push(tag.clone());
             self.updated_at = Utc::now();
@@ -405,22 +399,20 @@ impl Knowledge {
             let payload = Payload::from_json(&knowledge_events::KnowledgeTaggedPayload {
                 entry_id: self.id.to_string(),
                 tag,
-            })
-            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            })?;
             let event = Event::create(
                 self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAGGED,
                 self.id.to_string(),
                 payload,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            )?;
             self.collector.collect(event);
         }
         Ok(())
     }
 
-    pub fn remove_tag(&mut self, tag: &str) -> Result<()> {
+    pub fn remove_tag(&mut self, tag: &str) -> DomainResult<()> {
         if let Some(pos) = self.tags.iter().position(|t| t == tag) {
             self.tags.remove(pos);
             self.updated_at = Utc::now();
@@ -428,22 +420,20 @@ impl Knowledge {
             let payload = Payload::from_json(&knowledge_events::KnowledgeTagRemovedPayload {
                 entry_id: self.id.to_string(),
                 tag: tag.to_string(),
-            })
-            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            })?;
             let event = Event::create(
                 self.org_id.as_str(),
                 knowledge_events::NAMESPACE,
                 knowledge_events::TOPIC_TAG_REMOVED,
                 self.id.to_string(),
                 payload,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            )?;
             self.collector.collect(event);
         }
         Ok(())
     }
 
-    pub fn move_to(&mut self, namespace: Namespace) -> Result<()> {
+    pub fn move_to(&mut self, namespace: Namespace) -> DomainResult<()> {
         let from_namespace = self.namespace.to_string();
         self.namespace = namespace;
         self.updated_at = Utc::now();
@@ -452,21 +442,19 @@ impl Knowledge {
             entry_id: self.id.to_string(),
             from_namespace,
             to_namespace: self.namespace.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_MOVED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn rename(&mut self, path: KnowledgePath) -> Result<()> {
+    pub fn rename(&mut self, path: KnowledgePath) -> DomainResult<()> {
         let old_path = self.path.as_str().to_string();
         self.path = path;
         self.updated_at = Utc::now();
@@ -475,22 +463,20 @@ impl Knowledge {
             entry_id: self.id.to_string(),
             old_path,
             new_path: self.path.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_RENAMED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
 
         Ok(())
     }
 
-    pub fn set_metadata(&mut self, key: String, value: String) -> Result<()> {
+    pub fn set_metadata(&mut self, key: String, value: String) -> DomainResult<()> {
         self.metadata.insert(key.clone(), value.clone());
         self.updated_at = Utc::now();
 
@@ -498,21 +484,19 @@ impl Knowledge {
             entry_id: self.id.to_string(),
             key,
             value,
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_SET,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn remove_metadata(&mut self, key: &str) -> Result<bool> {
+    pub fn remove_metadata(&mut self, key: &str) -> DomainResult<bool> {
         if self.metadata.remove(key).is_none() {
             return Ok(false);
         }
@@ -521,42 +505,38 @@ impl Knowledge {
         let payload = Payload::from_json(&knowledge_events::KnowledgeMetadataRemovedPayload {
             entry_id: self.id.to_string(),
             key: key.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_METADATA_REMOVED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(true)
     }
 
-    pub fn mark_deleted(&mut self) -> Result<()> {
+    pub fn mark_deleted(&mut self) -> DomainResult<()> {
         let payload = Payload::from_json(&knowledge_events::KnowledgeDeletedPayload {
             entry_id: self.id.to_string(),
             path: self.path.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_DELETED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn archive(&mut self, reason: Option<String>) -> Result<()> {
+    pub fn archive(&mut self, reason: Option<String>) -> DomainResult<()> {
         if self.archived_at.is_some() {
-            return Err(Error::InvalidInput(
-                "knowledge entry is already archived".into(),
+            return Err(DomainError::validation(
+                "knowledge entry is already archived",
             ));
         }
         self.archived_at = Some(Utc::now());
@@ -566,45 +546,39 @@ impl Knowledge {
             entry_id: self.id.to_string(),
             path: self.path.to_string(),
             reason,
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_ARCHIVED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
-    pub fn unarchive(&mut self) -> Result<()> {
+    pub fn unarchive(&mut self) -> DomainResult<()> {
         if self.archived_at.is_none() {
-            return Err(Error::InvalidInput(
-                "knowledge entry is not archived".into(),
-            ));
+            return Err(DomainError::validation("knowledge entry is not archived"));
         }
         self.archived_at = None;
         self.updated_at = Utc::now();
         let payload = Payload::from_json(&knowledge_events::KnowledgeRestoredPayload {
             entry_id: self.id.to_string(),
             path: self.path.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_RESTORED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn set_embedding(&mut self, embedding: Embedding) -> Result<()> {
+    pub fn set_embedding(&mut self, embedding: Embedding) -> DomainResult<()> {
         let model = embedding.model().to_string();
         let dimensions = embedding.dimensions();
         let values = embedding.into_values();
@@ -617,16 +591,14 @@ impl Knowledge {
             entry_id: self.id.to_string(),
             model,
             dimensions,
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_EMBEDDING_UPDATED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
@@ -701,7 +673,7 @@ impl Knowledge {
         &mut self,
         from: Option<DateTime<Utc>>,
         until: Option<DateTime<Utc>>,
-    ) -> Result<()> {
+    ) -> DomainResult<()> {
         self.valid_from = from;
         self.valid_until = until;
         self.updated_at = Utc::now();
@@ -711,16 +683,14 @@ impl Knowledge {
             path: self.path.to_string(),
             valid_from: self.valid_from.map(|dt| dt.to_rfc3339()),
             valid_until: self.valid_until.map(|dt| dt.to_rfc3339()),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             knowledge_events::NAMESPACE,
             knowledge_events::TOPIC_VALIDITY_CHANGED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }

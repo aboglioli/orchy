@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::graph::{
     Edge, EdgeId, EdgeStore, RelationDirection, RelationType, RestoreEdge, TraversalDirection,
     TraversalHop,
@@ -32,11 +32,7 @@ impl PgEdgeStore {
 #[async_trait]
 impl EdgeStore for PgEdgeStore {
     async fn save(&self, edge: &mut Edge) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, created_at, created_by, source_kind, source_id, valid_until)
@@ -68,15 +64,12 @@ impl EdgeStore for PgEdgeStore {
         .bind(edge.valid_until())
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = edge.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -89,7 +82,7 @@ impl EdgeStore for PgEdgeStore {
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_edge(&r)).transpose()
     }
@@ -99,7 +92,7 @@ impl EdgeStore for PgEdgeStore {
             .bind(id.as_uuid())
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -125,7 +118,7 @@ impl EdgeStore for PgEdgeStore {
             .bind(id)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         rows.iter().map(row_to_edge).collect()
     }
 
@@ -151,7 +144,7 @@ impl EdgeStore for PgEdgeStore {
             .bind(id)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         rows.iter().map(row_to_edge).collect()
     }
 
@@ -178,7 +171,7 @@ impl EdgeStore for PgEdgeStore {
         .bind(rel_type.to_string())
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(count > 0)
     }
 
@@ -207,7 +200,7 @@ impl EdgeStore for PgEdgeStore {
         .bind(rel_type.to_string())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(row.as_ref().map(row_to_edge).transpose()?)
     }
 
@@ -247,7 +240,7 @@ impl EdgeStore for PgEdgeStore {
                         .bind(fetch_limit)
                         .fetch_all(&self.pool)
                         .await
-                        .map_err(|e| Error::Store(e.to_string()))?
+                        .map_err(crate::error::store_err)?
                 } else {
                     vec![]
                 }
@@ -264,7 +257,7 @@ impl EdgeStore for PgEdgeStore {
                     .bind(fetch_limit)
                     .fetch_all(&self.pool)
                     .await
-                    .map_err(|e| Error::Store(e.to_string()))?
+                    .map_err(crate::error::store_err)?
             }
         } else if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
@@ -280,7 +273,7 @@ impl EdgeStore for PgEdgeStore {
                     .bind(fetch_limit)
                     .fetch_all(&self.pool)
                     .await
-                    .map_err(|e| Error::Store(e.to_string()))?
+                    .map_err(crate::error::store_err)?
             } else {
                 vec![]
             }
@@ -296,7 +289,7 @@ impl EdgeStore for PgEdgeStore {
                 .bind(fetch_limit)
                 .fetch_all(&self.pool)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
         };
 
         let has_more = rows.len() > page.limit as usize;
@@ -337,7 +330,7 @@ impl EdgeStore for PgEdgeStore {
             .bind(limit as i64)
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         rows.iter().map(row_to_traversal_hop).collect()
     }
 
@@ -355,7 +348,7 @@ impl EdgeStore for PgEdgeStore {
         .bind(id)
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -381,7 +374,7 @@ impl EdgeStore for PgEdgeStore {
         .bind(rel_type.to_string())
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 }
@@ -524,40 +517,25 @@ fn build_find_neighbors_sql(
 }
 
 fn row_to_edge(row: &PgRow) -> Result<Edge> {
-    let id_uuid: Uuid = row.try_get("id").map_err(|e| Error::Store(e.to_string()))?;
-    let org_id_str: String = row
-        .try_get("org_id")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let from_kind_str: String = row
-        .try_get("from_kind")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let from_id: String = row
-        .try_get("from_id")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let to_kind_str: String = row
-        .try_get("to_kind")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let to_id: String = row
-        .try_get("to_id")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let rel_type_str: String = row
-        .try_get("rel_type")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let created_at: DateTime<Utc> = row
-        .try_get("created_at")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let created_by_uuid: Option<Uuid> = row
-        .try_get("created_by")
-        .map_err(|e| Error::Store(e.to_string()))?;
+    let id_uuid: Uuid = row.try_get("id").map_err(crate::error::store_err)?;
+    let org_id_str: String = row.try_get("org_id").map_err(crate::error::store_err)?;
+    let from_kind_str: String = row.try_get("from_kind").map_err(crate::error::store_err)?;
+    let from_id: String = row.try_get("from_id").map_err(crate::error::store_err)?;
+    let to_kind_str: String = row.try_get("to_kind").map_err(crate::error::store_err)?;
+    let to_id: String = row.try_get("to_id").map_err(crate::error::store_err)?;
+    let rel_type_str: String = row.try_get("rel_type").map_err(crate::error::store_err)?;
+    let created_at: DateTime<Utc> = row.try_get("created_at").map_err(crate::error::store_err)?;
+    let created_by_uuid: Option<Uuid> =
+        row.try_get("created_by").map_err(crate::error::store_err)?;
     let source_kind_str: Option<String> = row.try_get("source_kind").unwrap_or(None);
     let source_id: Option<String> = row.try_get("source_id").unwrap_or(None);
     let valid_until: Option<DateTime<Utc>> = row.try_get("valid_until").unwrap_or(None);
 
     let id = EdgeId::from_uuid(id_uuid);
-    let org_id = OrganizationId::new(&org_id_str).map_err(|e| Error::Store(e.to_string()))?;
-    let from_kind = ResourceKind::from_str(&from_kind_str).map_err(Error::Store)?;
-    let to_kind = ResourceKind::from_str(&to_kind_str).map_err(Error::Store)?;
-    let rel_type = RelationType::from_str(&rel_type_str).map_err(Error::Store)?;
+    let org_id = OrganizationId::new(&org_id_str)?;
+    let from_kind = ResourceKind::from_str(&from_kind_str)?;
+    let to_kind = ResourceKind::from_str(&to_kind_str)?;
+    let rel_type = RelationType::from_str(&rel_type_str)?;
     let created_by = created_by_uuid.map(AgentId::from_uuid);
     let source_kind = source_kind_str.and_then(|s| s.parse::<ResourceKind>().ok());
 
@@ -579,12 +557,8 @@ fn row_to_edge(row: &PgRow) -> Result<Edge> {
 
 fn row_to_traversal_hop(row: &PgRow) -> Result<TraversalHop> {
     let edge = row_to_edge(row)?;
-    let depth: i32 = row
-        .try_get("depth")
-        .map_err(|e| Error::Store(e.to_string()))?;
-    let direction_str: String = row
-        .try_get("direction")
-        .map_err(|e| Error::Store(e.to_string()))?;
+    let depth: i32 = row.try_get("depth").map_err(crate::error::store_err)?;
+    let direction_str: String = row.try_get("direction").map_err(crate::error::store_err)?;
     let direction = match direction_str.as_str() {
         "outgoing" => RelationDirection::Outgoing,
         _ => RelationDirection::Incoming,

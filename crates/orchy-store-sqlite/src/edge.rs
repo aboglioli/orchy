@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::graph::{
     Edge, EdgeId, EdgeStore, RelationDirection, RelationType, RestoreEdge, TraversalDirection,
     TraversalHop,
@@ -60,10 +60,8 @@ impl SqliteEdgeStore {
 #[async_trait]
 impl EdgeStore for SqliteEdgeStore {
     async fn save(&self, edge: &mut Edge) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let tx = conn.transaction().map_err(crate::error::store_err)?;
 
         tx.execute(
             "INSERT OR REPLACE INTO edges (id, org_id, from_kind, from_id, to_kind, to_id, rel_type, created_at, created_by, source_kind, source_id, valid_until)
@@ -83,37 +81,37 @@ impl EdgeStore for SqliteEdgeStore {
                 edge.valid_until().map(|dt| dt.to_rfc3339()),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = edge.drain_events();
         events::write_events_in_tx(&tx, &events)?;
 
-        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().map_err(crate::error::store_err)?;
         Ok(())
     }
 
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
                  created_at, created_by, source_kind, source_id, valid_until \
                  FROM edges WHERE id = ?1",
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         stmt.query_row(rusqlite::params![id.to_string()], row_to_edge)
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))
+            .map_err(crate::error::store_err)
     }
 
     async fn delete(&self, id: &EdgeId) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         conn.execute(
             "DELETE FROM edges WHERE id = ?1",
             rusqlite::params![id.to_string()],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -133,18 +131,16 @@ impl EdgeStore for SqliteEdgeStore {
              FROM edges WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3{rel_clause}{time_clause} \
              ORDER BY created_at ASC"
         );
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let edges = stmt
             .query_map(
                 rusqlite::params![org.to_string(), kind.to_string(), id],
                 row_to_edge,
             )
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         Ok(edges)
     }
 
@@ -164,18 +160,16 @@ impl EdgeStore for SqliteEdgeStore {
              FROM edges WHERE org_id = ?1 AND to_kind = ?2 AND to_id = ?3{rel_clause}{time_clause} \
              ORDER BY created_at ASC"
         );
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let edges = stmt
             .query_map(
                 rusqlite::params![org.to_string(), kind.to_string(), id],
                 row_to_edge,
             )
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         Ok(edges)
     }
 
@@ -188,7 +182,7 @@ impl EdgeStore for SqliteEdgeStore {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<bool> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM edges
@@ -205,7 +199,7 @@ impl EdgeStore for SqliteEdgeStore {
                 ],
                 |row| row.get(0),
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         Ok(count > 0)
     }
 
@@ -218,7 +212,7 @@ impl EdgeStore for SqliteEdgeStore {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<Option<Edge>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, created_at, created_by, source_kind, source_id, valid_until
@@ -227,7 +221,7 @@ impl EdgeStore for SqliteEdgeStore {
                    AND to_kind = ?4 AND to_id = ?5 AND rel_type = ?6
                    AND valid_until IS NULL",
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         let edge = stmt
             .query_row(
                 rusqlite::params![
@@ -262,7 +256,7 @@ impl EdgeStore for SqliteEdgeStore {
         } else {
             String::new()
         };
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let fetch_limit = (page.limit as i64) + 1;
 
         let mut edges = if let Some(rt) = rel_type {
@@ -273,16 +267,14 @@ impl EdgeStore for SqliteEdgeStore {
                          FROM edges WHERE org_id = ?1 AND rel_type = ?2 AND id > ?3{active_clause}
                          ORDER BY created_at ASC LIMIT ?4"
                     );
-                    let mut stmt = conn
-                        .prepare(&sql)
-                        .map_err(|e| Error::Store(e.to_string()))?;
+                    let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
                     stmt.query_map(
                         rusqlite::params![org.to_string(), rt.to_string(), decoded, fetch_limit],
                         row_to_edge,
                     )
-                    .map_err(|e| Error::Store(e.to_string()))?
+                    .map_err(crate::error::store_err)?
                     .collect::<StdResult<Vec<_>, _>>()
-                    .map_err(|e| Error::Store(e.to_string()))?
+                    .map_err(crate::error::store_err)?
                 } else {
                     vec![]
                 }
@@ -292,16 +284,14 @@ impl EdgeStore for SqliteEdgeStore {
                      FROM edges WHERE org_id = ?1 AND rel_type = ?2{active_clause}
                      ORDER BY created_at ASC LIMIT ?3"
                 );
-                let mut stmt = conn
-                    .prepare(&sql)
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
                 stmt.query_map(
                     rusqlite::params![org.to_string(), rt.to_string(), fetch_limit],
                     row_to_edge,
                 )
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
                 .collect::<StdResult<Vec<_>, _>>()
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
             }
         } else if let Some(ref cursor) = page.after {
             if let Some(decoded) = decode_cursor(cursor) {
@@ -310,16 +300,14 @@ impl EdgeStore for SqliteEdgeStore {
                      FROM edges WHERE org_id = ?1 AND id > ?2{active_clause}
                      ORDER BY created_at ASC LIMIT ?3"
                 );
-                let mut stmt = conn
-                    .prepare(&sql)
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
                 stmt.query_map(
                     rusqlite::params![org.to_string(), decoded, fetch_limit],
                     row_to_edge,
                 )
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
                 .collect::<StdResult<Vec<_>, _>>()
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
             } else {
                 vec![]
             }
@@ -329,13 +317,11 @@ impl EdgeStore for SqliteEdgeStore {
                  FROM edges WHERE org_id = ?1{active_clause}
                  ORDER BY created_at ASC LIMIT ?2"
             );
-            let mut stmt = conn
-                .prepare(&sql)
-                .map_err(|e| Error::Store(e.to_string()))?;
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
             stmt.query_map(rusqlite::params![org.to_string(), fetch_limit], row_to_edge)
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
                 .collect::<StdResult<Vec<_>, _>>()
-                .map_err(|e| Error::Store(e.to_string()))?
+                .map_err(crate::error::store_err)?
         };
 
         let has_more = edges.len() > page.limit as usize;
@@ -364,10 +350,8 @@ impl EdgeStore for SqliteEdgeStore {
     ) -> Result<Vec<TraversalHop>> {
         let max_depth = max_depth.max(1);
         let sql = build_find_neighbors_sql(rel_types, target_kinds, direction, &as_of);
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let hops = stmt
             .query_map(
                 rusqlite::params![
@@ -379,9 +363,9 @@ impl EdgeStore for SqliteEdgeStore {
                 ],
                 row_to_traversal_hop,
             )
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         Ok(hops)
     }
 
@@ -391,12 +375,12 @@ impl EdgeStore for SqliteEdgeStore {
         kind: &ResourceKind,
         id: &str,
     ) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         conn.execute(
             "DELETE FROM edges WHERE org_id = ?1 AND ((from_kind = ?2 AND from_id = ?3) OR (to_kind = ?2 AND to_id = ?3))",
             rusqlite::params![org.to_string(), kind.to_string(), id],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -409,7 +393,7 @@ impl EdgeStore for SqliteEdgeStore {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         conn.execute(
             "DELETE FROM edges
              WHERE org_id = ?1 AND from_kind = ?2 AND from_id = ?3
@@ -423,7 +407,7 @@ impl EdgeStore for SqliteEdgeStore {
                 rel_type.to_string(),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 }

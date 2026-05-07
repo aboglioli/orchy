@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
@@ -32,10 +32,8 @@ impl SqliteTaskStore {
 #[async_trait]
 impl TaskStore for SqliteTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let tx = conn.transaction().map_err(crate::error::store_err)?;
 
         tx.execute(
             "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at)
@@ -51,13 +49,13 @@ impl TaskStore for SqliteTaskStore {
                 task.status().to_string(),
                 task.priority().to_string(),
                 serde_json::to_string(task.assigned_roles())
-                    .map_err(|e| Error::Store(format!("failed to serialize assigned_roles: {e}")))?,
+                    .map_err(|e| Error::Store(StoreError::Serialization(format!("assigned_roles: {e}"))))?,
                 task.assigned_to().map(|a| a.to_string()),
                 task.assigned_at().map(|dt| dt.to_rfc3339()),
                 task.stale_after_secs(),
                 task.last_activity_at().to_rfc3339(),
                 serde_json::to_string(task.tags())
-                    .map_err(|e| Error::Store(format!("failed to serialize tags: {e}")))?,
+                    .map_err(|e| Error::Store(StoreError::Serialization(format!("tags: {e}"))))?,
                 task.result_summary().map(|s| s.to_string()),
                 task.archived_at().map(|dt| dt.to_rfc3339()),
                 task.created_by().map(|a| a.to_string()),
@@ -65,12 +63,12 @@ impl TaskStore for SqliteTaskStore {
                 task.updated_at().to_rfc3339(),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = task.drain_events();
         events::write_events_in_tx(&tx, &events)?;
 
-        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -82,10 +80,8 @@ impl TaskStore for SqliteTaskStore {
         if expected_statuses.is_empty() {
             return Ok(false);
         }
-        let mut conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let tx = conn.transaction().map_err(crate::error::store_err)?;
 
         let status_in: String = (21..=20 + expected_statuses.len())
             .map(|i| format!("?{i}"))
@@ -101,34 +97,35 @@ impl TaskStore for SqliteTaskStore {
              WHERE id=?1 AND status IN ({status_in})"
         );
 
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![
-                Box::new(task.id().to_string()),
-                Box::new(task.org_id().to_string()),
-                Box::new(task.project().to_string()),
-                Box::new(task.namespace().to_string()),
-                Box::new(task.title().to_string()),
-                Box::new(task.description().to_string()),
-                Box::new(task.acceptance_criteria().map(|s| s.to_string())),
-                Box::new(task.status().to_string()),
-                Box::new(task.priority().to_string()),
-                Box::new(serde_json::to_string(task.assigned_roles()).map_err(|e| {
-                    Error::Store(format!("failed to serialize assigned_roles: {e}"))
-                })?),
-                Box::new(task.assigned_to().map(|a| a.to_string())),
-                Box::new(task.assigned_at().map(|dt| dt.to_rfc3339())),
-                Box::new(task.stale_after_secs()),
-                Box::new(task.last_activity_at().to_rfc3339()),
-                Box::new(
-                    serde_json::to_string(task.tags())
-                        .map_err(|e| Error::Store(format!("failed to serialize tags: {e}")))?,
-                ),
-                Box::new(task.result_summary().map(|s| s.to_string())),
-                Box::new(task.archived_at().map(|dt| dt.to_rfc3339())),
-                Box::new(task.created_by().map(|a| a.to_string())),
-                Box::new(task.created_at().to_rfc3339()),
-                Box::new(task.updated_at().to_rfc3339()),
-            ];
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+            Box::new(task.id().to_string()),
+            Box::new(task.org_id().to_string()),
+            Box::new(task.project().to_string()),
+            Box::new(task.namespace().to_string()),
+            Box::new(task.title().to_string()),
+            Box::new(task.description().to_string()),
+            Box::new(task.acceptance_criteria().map(|s| s.to_string())),
+            Box::new(task.status().to_string()),
+            Box::new(task.priority().to_string()),
+            Box::new(serde_json::to_string(task.assigned_roles()).map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "failed to serialize assigned_roles: {e}"
+                )))
+            })?),
+            Box::new(task.assigned_to().map(|a| a.to_string())),
+            Box::new(task.assigned_at().map(|dt| dt.to_rfc3339())),
+            Box::new(task.stale_after_secs()),
+            Box::new(task.last_activity_at().to_rfc3339()),
+            Box::new(
+                serde_json::to_string(task.tags())
+                    .map_err(|e| Error::Store(StoreError::Serialization(format!("tags: {e}"))))?,
+            ),
+            Box::new(task.result_summary().map(|s| s.to_string())),
+            Box::new(task.archived_at().map(|dt| dt.to_rfc3339())),
+            Box::new(task.created_by().map(|a| a.to_string())),
+            Box::new(task.created_at().to_rfc3339()),
+            Box::new(task.updated_at().to_rfc3339()),
+        ];
         for s in expected_statuses {
             params.push(Box::new(s.to_string()));
         }
@@ -137,7 +134,7 @@ impl TaskStore for SqliteTaskStore {
             params.iter().map(|p| p.as_ref()).collect();
         let affected = tx
             .execute(&sql, param_refs.as_slice())
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         if affected == 0 {
             return Ok(false);
@@ -145,21 +142,19 @@ impl TaskStore for SqliteTaskStore {
 
         let events = task.drain_events();
         events::write_events_in_tx(&tx, &events)?;
-        tx.commit().map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().map_err(crate::error::store_err)?;
         Ok(true)
     }
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id = ?1");
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
 
         let result = stmt
             .query_row(rusqlite::params![id.to_string()], row_to_task)
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Ok(result)
     }
@@ -170,10 +165,8 @@ impl TaskStore for SqliteTaskStore {
         }
         let placeholders: String = repeat_n("?", ids.len()).collect::<Vec<_>>().join(", ");
         let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id IN ({placeholders})");
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
         let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
             .iter()
@@ -181,14 +174,14 @@ impl TaskStore for SqliteTaskStore {
             .collect();
         let tasks = stmt
             .query_map(param_refs.as_slice(), row_to_task)
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         Ok(tasks)
     }
 
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let mut sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE 1=1");
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -255,16 +248,14 @@ impl TaskStore for SqliteTaskStore {
         let fetch_limit = (page.limit as u64).saturating_add(1);
         sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
-        let mut stmt = conn
-            .prepare(&sql)
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
         let mut tasks: Vec<Task> = stmt
             .query_map(param_refs.as_slice(), row_to_task)
-            .map_err(|e| Error::Store(e.to_string()))?
+            .map_err(crate::error::store_err)?
             .collect::<StdResult<Vec<_>, _>>()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let has_more = tasks.len() > page.limit as usize;
         if has_more {

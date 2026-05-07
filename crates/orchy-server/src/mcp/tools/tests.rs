@@ -324,11 +324,11 @@ async fn mcp_register_agent_rejects_invalid_alias() {
     .expect_err("alias 'x' is too short and must be rejected");
 
     assert!(
-        err.contains("invalid input:"),
+        err.contains("validation failed:"),
         "error must contain 'invalid input:', got: {err}"
     );
     assert_eq!(
-        err.matches("invalid input:").count(),
+        err.matches("validation failed:").count(),
         1,
         "exactly one 'invalid input:' prefix expected, got: {err}"
     );

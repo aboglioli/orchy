@@ -10,7 +10,7 @@ use orchy_application::{
 };
 use orchy_core::knowledge::KnowledgeKind;
 
-use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
+use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_app_error, to_json};
 use crate::mcp::params::{
     AppendKnowledgeParams, ArchiveKnowledgeParams, AssembleContextParams,
     ChangeKnowledgeKindParams, ConsolidateKnowledgeParams, DeleteKnowledgeParams,
@@ -78,7 +78,7 @@ pub(super) async fn write_knowledge(
 
     match h.container.app.write_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -110,7 +110,7 @@ pub(super) async fn patch_knowledge_metadata(
 
     match h.container.app.patch_knowledge_metadata.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -140,7 +140,7 @@ pub(super) async fn read_knowledge(
 
     match h.container.app.read_knowledge.execute(cmd).await {
         Ok(resp) => Ok(to_json(&resp)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -184,7 +184,7 @@ pub(super) async fn list_knowledge(
 
     match h.container.app.list_knowledge.execute(cmd).await {
         Ok(page) => Ok(to_json(&page)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -214,7 +214,7 @@ pub(super) async fn search_knowledge(
 
     match h.container.app.search_knowledge.execute(cmd).await {
         Ok(entries) => Ok(to_json(&entries)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -238,7 +238,7 @@ pub(super) async fn delete_knowledge(
 
     match h.container.app.delete_knowledge.execute(cmd).await {
         Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -258,7 +258,7 @@ pub(super) async fn archive_knowledge(
     };
     match h.container.app.archive_knowledge.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -277,7 +277,7 @@ pub(super) async fn unarchive_knowledge(
     };
     match h.container.app.unarchive_knowledge.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -308,7 +308,7 @@ pub(super) async fn append_knowledge(
 
     match h.container.app.append_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -337,7 +337,7 @@ pub(super) async fn move_knowledge(
 
     match h.container.app.move_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -362,7 +362,7 @@ pub(super) async fn rename_knowledge(
 
     match h.container.app.rename_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -388,7 +388,7 @@ pub(super) async fn change_knowledge_kind(
 
     match h.container.app.change_knowledge_kind.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -413,7 +413,7 @@ pub(super) async fn tag_knowledge(
 
     match h.container.app.tag_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -438,7 +438,7 @@ pub(super) async fn untag_knowledge(
 
     match h.container.app.untag_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -466,7 +466,7 @@ pub(super) async fn import_knowledge(
 
     match h.container.app.import_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -486,7 +486,7 @@ pub(super) async fn assemble_context(
 
     match h.container.app.assemble_context.execute(cmd).await {
         Ok(resp) => Ok(to_json(&resp)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -513,7 +513,7 @@ pub(super) async fn promote_knowledge(
 
     match h.container.app.promote_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -540,6 +540,6 @@ pub(super) async fn consolidate_knowledge(
 
     match h.container.app.consolidate_knowledge.execute(cmd).await {
         Ok(entry) => Ok(to_json(&entry)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }

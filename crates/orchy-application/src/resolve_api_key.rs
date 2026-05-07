@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore, PlainApiKey};
-use orchy_core::error::Result;
 use orchy_core::organization::OrganizationStore;
 
 use crate::dto::OrganizationDto;
@@ -35,7 +35,10 @@ impl ResolveApiKey {
         }
     }
 
-    pub async fn execute(&self, cmd: ResolveApiKeyCommand) -> Result<Option<ApiKeyPrincipal>> {
+    pub async fn execute(
+        &self,
+        cmd: ResolveApiKeyCommand,
+    ) -> ApplicationResult<Option<ApiKeyPrincipal>> {
         let plain = match PlainApiKey::new(cmd.raw_key) {
             Ok(k) => k,
             Err(_) => return Ok(None),

@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -7,34 +7,34 @@ use std::fmt;
 pub struct Email(String);
 
 impl Email {
-    pub fn new(s: &str) -> Result<Self> {
+    pub fn new(s: &str) -> DomainResult<Self> {
         let s = s.trim();
 
         if s.is_empty() {
-            return Err(Error::invalid_input("email cannot be empty"));
+            return Err(DomainError::validation("email cannot be empty"));
         }
 
         if s.contains(char::is_whitespace) {
-            return Err(Error::invalid_input("email cannot contain whitespace"));
+            return Err(DomainError::validation("email cannot contain whitespace"));
         }
 
         let at_idx = s
             .find('@')
-            .ok_or_else(|| Error::invalid_input("email must contain @"))?;
+            .ok_or_else(|| DomainError::validation("email must contain @"))?;
 
         let local = &s[..at_idx];
         let domain = &s[at_idx + 1..];
 
         if local.is_empty() {
-            return Err(Error::invalid_input("email local part cannot be empty"));
+            return Err(DomainError::validation("email local part cannot be empty"));
         }
 
         if domain.is_empty() {
-            return Err(Error::invalid_input("email domain cannot be empty"));
+            return Err(DomainError::validation("email domain cannot be empty"));
         }
 
         if !domain.contains('.') {
-            return Err(Error::invalid_input("email domain must contain a dot"));
+            return Err(DomainError::validation("email domain must contain a dot"));
         }
 
         Ok(Self(s.to_lowercase()))
@@ -56,9 +56,9 @@ impl fmt::Display for Email {
 pub struct PlainPassword(String);
 
 impl PlainPassword {
-    pub fn new(s: &str) -> Result<Self> {
+    pub fn new(s: &str) -> DomainResult<Self> {
         if s.len() < 8 {
-            return Err(Error::invalid_input(
+            return Err(DomainError::validation(
                 "password must be at least 8 characters",
             ));
         }
@@ -76,9 +76,9 @@ impl PlainPassword {
 pub struct HashedPassword(String);
 
 impl HashedPassword {
-    pub fn new(s: &str) -> Result<Self> {
+    pub fn new(s: &str) -> DomainResult<Self> {
         if s.is_empty() {
-            return Err(Error::invalid_input("password hash cannot be empty"));
+            return Err(DomainError::validation("password hash cannot be empty"));
         }
 
         Ok(Self(s.to_string()))

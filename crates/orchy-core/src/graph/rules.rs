@@ -1,9 +1,9 @@
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult};
 use crate::task::TaskId;
 
-pub fn check_no_cycle(from: &TaskId, reachable_from_to: &[TaskId]) -> Result<()> {
+pub fn check_no_cycle(from: &TaskId, reachable_from_to: &[TaskId]) -> DomainResult<()> {
     if reachable_from_to.contains(from) {
-        return Err(Error::InvalidInput(
+        return Err(DomainError::validation(
             "dependency would create a cycle".to_string(),
         ));
     }

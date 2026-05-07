@@ -1,10 +1,11 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::user::{OrgMembershipStore, UserId, UserStore};
 
 use crate::dto::{AuthResponse, OrgMembershipDto, UserDto};
+use crate::error::{ApplicationError, ApplicationResult};
 
 pub struct GetCurrentUserCommand {
     pub user_id: String,
@@ -20,7 +21,7 @@ impl GetCurrentUser {
         Self { users, memberships }
     }
 
-    pub async fn execute(&self, cmd: GetCurrentUserCommand) -> Result<AuthResponse> {
+    pub async fn execute(&self, cmd: GetCurrentUserCommand) -> ApplicationResult<AuthResponse> {
         let user_id = UserId::from_str(&cmd.user_id)
             .map_err(|e| Error::invalid_input(format!("invalid user id: {}", e)))?;
 
@@ -28,10 +29,12 @@ impl GetCurrentUser {
             .users
             .find_by_id(&user_id)
             .await?
-            .ok_or_else(|| Error::not_found("user"))?;
+            .ok_or_else(|| Error::not_found(Resource::User, user_id.to_string()))?;
 
         if !user.is_active() {
-            return Err(Error::authentication_failed("user is deactivated"));
+            return Err(ApplicationError::authentication_failed(
+                "user is deactivated",
+            ));
         }
 
         let memberships = self.memberships.find_by_user(&user_id).await?;

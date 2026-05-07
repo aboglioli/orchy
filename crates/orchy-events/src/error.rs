@@ -29,12 +29,6 @@ pub enum Error {
     #[error("store error: {0}")]
     Store(String),
 
-    #[error("stream closed")]
-    StreamClosed,
-
-    #[error("cancelled")]
-    Cancelled,
-
     #[error("timeout: {0}")]
     Timeout(String),
 }

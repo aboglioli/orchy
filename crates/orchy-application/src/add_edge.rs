@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::check_no_cycle;
@@ -31,17 +32,10 @@ impl AddEdge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: AddEdgeCommand) -> Result<EdgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let from_kind = cmd
-            .from_kind
-            .parse::<ResourceKind>()
-            .map_err(Error::InvalidInput)?;
-        let to_kind = cmd
-            .to_kind
-            .parse::<ResourceKind>()
-            .map_err(Error::InvalidInput)?;
+    pub async fn execute(&self, cmd: AddEdgeCommand) -> ApplicationResult<EdgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let from_kind = cmd.from_kind.parse::<ResourceKind>()?;
+        let to_kind = cmd.to_kind.parse::<ResourceKind>()?;
         let rel_type = parse_rel_type_with_aliases(&cmd.rel_type)?;
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
@@ -60,10 +54,11 @@ impl AddEdge {
             if cmd.if_not_exists {
                 return Ok(EdgeDto::from(&existing));
             }
-            return Err(Error::Conflict(format!(
+            return Err(Error::conflict(format!(
                 "edge {from_kind}:{} --{rel_type}--> {to_kind}:{} already exists",
                 cmd.from_id, cmd.to_id
-            )));
+            ))
+            .into());
         }
 
         if rel_type == RelationType::DependsOn
@@ -73,7 +68,7 @@ impl AddEdge {
             let from_task_id: TaskId = cmd
                 .from_id
                 .parse()
-                .map_err(|_| Error::InvalidInput("invalid task id in from_id".to_string()))?;
+                .map_err(|_| Error::invalid_input("invalid task id in from_id".to_string()))?;
             let reachable = self
                 .store
                 .find_neighbors(
@@ -124,7 +119,5 @@ fn parse_rel_type_with_aliases(s: &str) -> Result<RelationType> {
         "based_on" | "from" => "derived_from",
         other => other,
     };
-    canonical
-        .parse::<RelationType>()
-        .map_err(Error::InvalidInput)
+    canonical.parse::<RelationType>().map_err(Error::from)
 }

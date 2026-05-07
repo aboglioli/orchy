@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource, Result};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
@@ -24,38 +25,42 @@ impl AddDependency {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: AddDependencyCommand) -> Result<TaskDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: AddDependencyCommand) -> ApplicationResult<TaskDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let dependency_id = cmd.dependency_id.parse::<TaskId>()?;
 
         self.tasks
             .find_by_id(&dependency_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("dependency task {dependency_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: dependency_id.to_string(),
+            })?;
 
         if task_id == dependency_id {
-            return Err(Error::Conflict(format!(
-                "task {task_id} cannot depend on itself"
-            )));
+            return Err(Error::conflict(format!("task {task_id} cannot depend on itself")).into());
         }
 
         let mut task = self
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         if matches!(
             task.status(),
             TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
         ) {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "cannot add dependency to task {} with status {}",
                 task_id,
                 task.status()
-            )));
+            ))
+            .into());
         }
 
         let already_exists = self
@@ -116,7 +121,10 @@ impl AddDependency {
                 .tasks
                 .find_by_id(&dep_id)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: dep_id.to_string(),
+                })?;
             if dep.status() != TaskStatus::Completed {
                 return Ok(false);
             }

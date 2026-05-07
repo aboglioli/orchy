@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskId, TaskStatus, TaskStore};
@@ -34,26 +35,33 @@ impl SplitTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: SplitTaskCommand) -> Result<(TaskDto, Vec<TaskDto>)> {
+    pub async fn execute(
+        &self,
+        cmd: SplitTaskCommand,
+    ) -> ApplicationResult<(TaskDto, Vec<TaskDto>)> {
         let parent_id = cmd.task_id.parse::<TaskId>()?;
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
-        let mut parent = self
-            .tasks
-            .find_by_id(&parent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("task {parent_id}")))?;
+        let mut parent =
+            self.tasks
+                .find_by_id(&parent_id)
+                .await?
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: parent_id.to_string(),
+                })?;
 
         if matches!(
             parent.status(),
             TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
         ) {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "cannot split task {} with status {}",
                 parent_id,
                 parent.status()
-            )));
+            ))
+            .into());
         }
 
         struct SubtaskSpec {
@@ -70,8 +78,7 @@ impl SplitTask {
             let priority = input
                 .priority
                 .map(|p| p.parse::<Priority>())
-                .transpose()
-                .map_err(Error::InvalidInput)?
+                .transpose()?
                 .unwrap_or_default();
 
             let depends_on_ids = input
@@ -79,13 +86,13 @@ impl SplitTask {
                 .unwrap_or_default()
                 .into_iter()
                 .map(|s| s.parse::<TaskId>())
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(|e| Error::InvalidInput(e.to_string()))?;
+                .collect::<std::result::Result<Vec<_>, _>>()?;
 
             if depends_on_ids.contains(&parent_id) {
-                return Err(Error::Conflict(format!(
+                return Err(Error::conflict(format!(
                     "subtask depends on parent {parent_id}, which would create a cycle"
-                )));
+                ))
+                .into());
             }
 
             specs.push(SubtaskSpec {

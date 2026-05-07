@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::knowledge::{Knowledge, KnowledgeKind, KnowledgePath, KnowledgeStore};
 use orchy_core::namespace::ProjectId;
@@ -30,36 +31,38 @@ impl ConsolidateKnowledge {
         Self { knowledge, edges }
     }
 
-    pub async fn execute(&self, cmd: ConsolidateKnowledgeCommand) -> Result<KnowledgeDto> {
+    pub async fn execute(
+        &self,
+        cmd: ConsolidateKnowledgeCommand,
+    ) -> ApplicationResult<KnowledgeDto> {
         if cmd.source_paths.len() < 2 {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "consolidate requires at least 2 source paths".to_string(),
-            ));
+            )
+            .into());
         }
 
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
         let kind = cmd
             .target_kind
             .as_deref()
             .unwrap_or("summary")
-            .parse::<KnowledgeKind>()
-            .map_err(Error::InvalidInput)?;
+            .parse::<KnowledgeKind>()?;
 
         let mut sources = Vec::new();
         for path_str in &cmd.source_paths {
-            let path: KnowledgePath = path_str
-                .parse::<KnowledgePath>()
-                .map_err(|e| Error::InvalidInput(e.to_string()))?;
+            let path: KnowledgePath = path_str.parse::<KnowledgePath>()?;
             let entry = self
                 .knowledge
                 .find_by_path(&org_id, Some(&project), &namespace, &path)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("knowledge {path_str}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Knowledge,
+                    id: path_str.to_string(),
+                })?;
             sources.push(entry);
         }
 
@@ -73,10 +76,7 @@ impl ConsolidateKnowledge {
             content.push_str(src.content());
         }
 
-        let target_path: KnowledgePath = cmd
-            .target_path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let target_path: KnowledgePath = cmd.target_path.parse::<KnowledgePath>()?;
         let mut consolidated = Knowledge::new(
             org_id.clone(),
             Some(project.clone()),

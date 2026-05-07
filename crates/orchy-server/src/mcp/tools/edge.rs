@@ -4,7 +4,7 @@ use orchy_core::resource_ref::ResourceKind;
 
 use orchy_application::{AddEdgeCommand, MaterializeNeighborhoodCommand, RemoveEdgeCommand};
 
-use crate::mcp::handler::{OrchyHandler, mcp_error, to_json};
+use crate::mcp::handler::{OrchyHandler, mcp_app_error, mcp_error, to_json};
 use crate::mcp::params::{AddEdgeParams, QueryRelationsParams, RemoveEdgeParams};
 
 use super::{parse_as_of, parse_direction, parse_rel_type_alias};
@@ -26,7 +26,7 @@ pub(super) async fn add_edge(h: &OrchyHandler, params: AddEdgeParams) -> Result<
 
     match h.container.app.add_edge.execute(cmd).await {
         Ok(edge) => Ok(to_json(&edge)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -45,7 +45,7 @@ pub(super) async fn remove_edge(
 
     match h.container.app.remove_edge.execute(cmd).await {
         Ok(()) => Ok(r#"{"deleted":true}"#.to_string()),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -56,7 +56,7 @@ pub(super) async fn query_relations(
 ) -> Result<String, String> {
     let (_, session_project, session_namespace) = h.require_session().await?;
     let org = h.org();
-    let as_of = parse_as_of(params.as_of).map_err(|e| mcp_error(Error::InvalidInput(e)))?;
+    let as_of = parse_as_of(params.as_of).map_err(|e| mcp_error(Error::invalid_input(e)))?;
 
     let options = RelationOptions {
         rel_types: params.rel_types.map(|v| {
@@ -96,6 +96,6 @@ pub(super) async fn query_relations(
 
     match h.container.app.materialize_neighborhood.execute(cmd).await {
         Ok(neighborhood) => Ok(to_json(&neighborhood)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }

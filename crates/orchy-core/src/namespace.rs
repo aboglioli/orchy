@@ -28,18 +28,24 @@ pub trait NamespaceStore: Send + Sync {
 pub struct ProjectId(String);
 
 impl TryFrom<String> for ProjectId {
-    type Error = String;
+    type Error = error::DomainError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         if s.is_empty() {
-            return Err("project must not be empty".to_string());
+            return Err(error::DomainError::validation(
+                "project must not be empty".to_string(),
+            ));
         }
         if s.contains('/') {
-            return Err("project must be a single segment without slashes".to_string());
+            return Err(error::DomainError::validation(
+                "project must be a single segment without slashes".to_string(),
+            ));
         }
         for ch in s.chars() {
             if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
-                return Err(format!("invalid character '{ch}' in project"));
+                return Err(error::DomainError::validation(format!(
+                    "invalid character '{ch}' in project"
+                )));
             }
         }
         Ok(ProjectId(s))
@@ -47,7 +53,7 @@ impl TryFrom<String> for ProjectId {
 }
 
 impl TryFrom<&str> for ProjectId {
-    type Error = String;
+    type Error = error::DomainError;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         Self::try_from(s.to_string())
@@ -73,7 +79,7 @@ impl AsRef<str> for ProjectId {
 }
 
 impl FromStr for ProjectId {
-    type Err = String;
+    type Err = error::DomainError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::try_from(s.to_string())

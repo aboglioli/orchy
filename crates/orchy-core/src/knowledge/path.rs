@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -8,7 +8,7 @@ use std::str::FromStr;
 pub struct KnowledgePath(String);
 
 impl KnowledgePath {
-    pub fn new(path: &str) -> Result<Self> {
+    pub fn new(path: &str) -> DomainResult<Self> {
         validate_path(path)?;
         Ok(Self(path.to_lowercase()))
     }
@@ -31,18 +31,18 @@ impl From<KnowledgePath> for String {
 }
 
 impl TryFrom<String> for KnowledgePath {
-    type Error = Error;
+    type Error = DomainError;
 
-    fn try_from(value: String) -> Result<Self> {
+    fn try_from(value: String) -> DomainResult<Self> {
         validate_path(&value)?;
         Ok(Self(value.to_lowercase()))
     }
 }
 
 impl FromStr for KnowledgePath {
-    type Err = Error;
+    type Err = DomainError;
 
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> DomainResult<Self> {
         Self::new(s)
     }
 }
@@ -71,27 +71,27 @@ impl std::borrow::Borrow<str> for KnowledgePath {
     }
 }
 
-fn validate_path(path: &str) -> Result<()> {
+fn validate_path(path: &str) -> DomainResult<()> {
     if path.is_empty() {
-        return Err(Error::InvalidInput("path must not be empty".into()));
+        return Err(DomainError::validation("path must not be empty"));
     }
     if path.starts_with('/') || path.ends_with('/') {
-        return Err(Error::InvalidInput(
-            "path must not start or end with '/'".into(),
+        return Err(DomainError::validation(
+            "path must not start or end with '/'",
         ));
     }
     if path.contains("//") {
-        return Err(Error::InvalidInput("path must not contain '//'".into()));
+        return Err(DomainError::validation("path must not contain '//'"));
     }
     for segment in path.split('/') {
         if segment.is_empty() {
-            return Err(Error::InvalidInput("path contains empty segment".into()));
+            return Err(DomainError::validation("path contains empty segment"));
         }
         if !segment
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         {
-            return Err(Error::InvalidInput(format!(
+            return Err(DomainError::validation(format!(
                 "invalid character in path segment: {segment}"
             )));
         }
@@ -156,10 +156,10 @@ mod tests {
     fn error_message_has_single_invalid_input_prefix() {
         let err = KnowledgePath::new("/leading-slash").unwrap_err();
         let msg = err.to_string();
-        let count = msg.matches("invalid input:").count();
+        let count = msg.matches("validation failed:").count();
         assert_eq!(
             count, 1,
-            "expected exactly one 'invalid input:' prefix, got: {msg}"
+            "expected exactly one 'validation failed:' prefix, got: {msg}"
         );
     }
 

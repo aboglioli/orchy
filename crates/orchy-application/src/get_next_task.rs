@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{DomainError, Error, Resource, Result};
 use orchy_core::graph::{EdgeStore, RelationType};
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
@@ -12,7 +13,6 @@ use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
 use crate::dto::TaskDto;
-use crate::parse_namespace;
 
 pub struct GetNextTaskCommand {
     pub org_id: Option<String>,
@@ -33,21 +33,12 @@ impl GetNextTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: GetNextTaskCommand) -> Result<Option<TaskDto>> {
-        let org_id = cmd
-            .org_id
-            .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+    pub async fn execute(&self, cmd: GetNextTaskCommand) -> ApplicationResult<Option<TaskDto>> {
+        let org_id = cmd.org_id.map(|s| OrganizationId::new(&s)).transpose()?;
 
-        let project = cmd
-            .project
-            .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+        let project = cmd.project.map(ProjectId::try_from).transpose()?;
 
-        let namespace = cmd
-            .namespace
-            .map(|s| parse_namespace(Some(&s)))
-            .transpose()?;
+        let namespace = cmd.namespace.map(Namespace::new).transpose()?;
 
         let candidates = self
             .sorted_claimable_for_roles(&cmd.roles, org_id.clone(), project, namespace)
@@ -68,7 +59,7 @@ impl GetNextTask {
             .agent_id
             .map(|s| AgentId::from_str(&s))
             .transpose()?
-            .ok_or_else(|| Error::InvalidInput("agent_id required when claiming".into()))?;
+            .ok_or_else(|| Error::invalid_input("agent_id required when claiming"))?;
 
         for mut task in candidates {
             if !self.all_deps_completed(org_id.as_ref(), &task).await? {
@@ -84,8 +75,8 @@ impl GetNextTask {
                     self.tasks.save(&mut task).await?;
                     return Ok(Some(TaskDto::from(&task)));
                 }
-                Err(Error::InvalidTransition { .. }) => continue,
-                Err(e) => return Err(e),
+                Err(DomainError::InvalidTransition { .. }) => continue,
+                Err(e) => return Err(e.into()),
             }
         }
 
@@ -167,7 +158,10 @@ impl GetNextTask {
                 .tasks
                 .find_by_id(&dep_id)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: dep_id.to_string(),
+                })?;
             if dep.status() != TaskStatus::Completed {
                 return Ok(false);
             }

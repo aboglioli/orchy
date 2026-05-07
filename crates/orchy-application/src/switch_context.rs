@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 
 use crate::dto::AgentDto;
 use orchy_core::namespace::{Namespace, ProjectId};
@@ -11,8 +12,6 @@ use orchy_core::pagination::PageParams;
 use orchy_core::project::ProjectStore;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::{TaskFilter, TaskStore};
-
-use crate::parse_namespace;
 
 pub struct SwitchContextCommand {
     pub org_id: String,
@@ -43,27 +42,27 @@ impl SwitchContext {
         }
     }
 
-    pub async fn execute(&self, cmd: SwitchContextCommand) -> Result<AgentDto> {
+    pub async fn execute(&self, cmd: SwitchContextCommand) -> ApplicationResult<AgentDto> {
         if cmd.project.is_none() && cmd.namespace.is_none() {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "at least one of project or namespace is required".to_string(),
-            ));
+            )
+            .into());
         }
 
-        let org =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org = OrganizationId::new(&cmd.org_id)?;
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
 
-        let target_project = cmd
-            .project
-            .map(|p| ProjectId::try_from(p).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+        let target_project = cmd.project.map(ProjectId::try_from).transpose()?;
 
-        let mut agent = self
-            .agents
-            .find_by_id(&agent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
+        let mut agent =
+            self.agents
+                .find_by_id(&agent_id)
+                .await?
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Agent,
+                    id: agent_id.to_string(),
+                })?;
 
         let current_project = agent.project().clone();
 
@@ -72,7 +71,7 @@ impl SwitchContext {
             .is_some_and(|p| *p != current_project);
 
         let target_namespace = match &cmd.namespace {
-            Some(ns) => parse_namespace(Some(ns))?,
+            Some(ns) => Namespace::new(ns)?,
             None if project_changed => Namespace::root(),
             None => agent.namespace().clone(),
         };
@@ -81,7 +80,10 @@ impl SwitchContext {
             self.projects
                 .find_by_id(&org, p)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("project {p}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Project,
+                    id: p.to_string(),
+                })?;
         }
 
         if project_changed {

@@ -11,3 +11,9 @@ pub enum Error {
     #[error("agent process exited unexpectedly")]
     ProcessExited,
 }
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::Io(e.to_string())
+    }
+}

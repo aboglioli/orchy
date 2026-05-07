@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Error;
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
 use serde::Serialize;
@@ -31,16 +32,18 @@ impl GenerateApiKey {
         }
     }
 
-    pub async fn execute(&self, cmd: GenerateApiKeyCommand) -> Result<GenerateApiKeyResponse> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: GenerateApiKeyCommand,
+    ) -> ApplicationResult<GenerateApiKeyResponse> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
 
         let user_id = cmd
             .user_id
             .as_deref()
             .map(UserId::from_str)
             .transpose()
-            .map_err(|e| Error::InvalidInput(format!("invalid user_id: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("invalid user_id: {e}")))?;
 
         let (plain, mut api_key) = self.generator.generate(&org_id, user_id, cmd.name)?;
         self.api_keys.save(&mut api_key).await?;

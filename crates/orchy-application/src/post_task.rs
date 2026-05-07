@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
@@ -36,18 +37,15 @@ impl PostTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: PostTaskCommand) -> Result<TaskDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: PostTaskCommand) -> ApplicationResult<TaskDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
         let priority = cmd
             .priority
             .map(|p| p.parse::<Priority>())
-            .transpose()
-            .map_err(Error::InvalidInput)?
+            .transpose()?
             .unwrap_or_default();
 
         let assigned_roles = cmd.assigned_roles.unwrap_or_default();
@@ -70,16 +68,21 @@ impl PostTask {
         self.tasks.save(&mut task).await?;
 
         if let Some(parent_id_str) = cmd.parent_id {
-            let parent_id = parent_id_str
-                .parse::<TaskId>()
-                .map_err(|e| Error::InvalidInput(e.to_string()))?;
-            let parent = self
-                .tasks
-                .find_by_id(&parent_id)
-                .await?
-                .ok_or_else(|| Error::NotFound(format!("parent task {parent_id}")))?;
+            let parent_id = parent_id_str.parse::<TaskId>()?;
+            let parent =
+                self.tasks
+                    .find_by_id(&parent_id)
+                    .await?
+                    .ok_or_else(|| Error::NotFound {
+                        resource: Resource::Task,
+                        id: parent_id.to_string(),
+                    })?;
             if parent.org_id() != &org_id {
-                return Err(Error::NotFound(format!("parent task {parent_id}")));
+                return Err(Error::NotFound {
+                    resource: Resource::Task,
+                    id: parent_id.to_string(),
+                }
+                .into());
             }
 
             let mut edge = Edge::new(
@@ -97,16 +100,21 @@ impl PostTask {
         let mut has_incomplete_dep = false;
         if let Some(dep_ids) = cmd.depends_on {
             for dep_id_str in dep_ids {
-                let dep_id = dep_id_str
-                    .parse::<TaskId>()
-                    .map_err(|e| Error::InvalidInput(e.to_string()))?;
+                let dep_id = dep_id_str.parse::<TaskId>()?;
                 let dep = self
                     .tasks
                     .find_by_id(&dep_id)
                     .await?
-                    .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
+                    .ok_or_else(|| Error::NotFound {
+                        resource: Resource::Task,
+                        id: dep_id.to_string(),
+                    })?;
                 if dep.org_id() != &org_id {
-                    return Err(Error::NotFound(format!("dependency task {dep_id}")));
+                    return Err(Error::NotFound {
+                        resource: Resource::Task,
+                        id: dep_id.to_string(),
+                    }
+                    .into());
                 }
 
                 let mut edge = Edge::new(

@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{Agent, AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
 use orchy_core::graph::RelationOptions;
 use orchy_core::graph::{
     AgentSummary, EntityNeighborhood, KnowledgeSummary, MessageSummary, PeerEntity, Relation,
@@ -53,13 +53,12 @@ impl MaterializeNeighborhood {
         }
     }
 
-    pub async fn execute(&self, cmd: MaterializeNeighborhoodCommand) -> Result<EntityNeighborhood> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let anchor_kind = cmd
-            .anchor_kind
-            .parse::<ResourceKind>()
-            .map_err(Error::InvalidInput)?;
+    pub async fn execute(
+        &self,
+        cmd: MaterializeNeighborhoodCommand,
+    ) -> ApplicationResult<EntityNeighborhood> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let anchor_kind = cmd.anchor_kind.parse::<ResourceKind>()?;
         let anchor = ResourceRef::new(anchor_kind.clone(), cmd.anchor_id.clone());
 
         let rel_types = cmd.options.resolve_rel_types(&anchor_kind);
@@ -141,10 +140,7 @@ impl MaterializeNeighborhood {
             let project = cmd
                 .project
                 .as_deref()
-                .map(|p| {
-                    ProjectId::try_from(p.to_string())
-                        .map_err(|e| Error::InvalidInput(e.to_string()))
-                })
+                .map(|p| ProjectId::try_from(p.to_string()))
                 .transpose()?;
             let namespace = Namespace::root();
             for path_str in &knowledge_paths {

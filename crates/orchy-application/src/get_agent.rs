@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::Relation;
 use orchy_core::graph::RelationOptions;
 use orchy_core::resource_ref::ResourceKind;
@@ -50,13 +51,16 @@ impl GetAgent {
         }
     }
 
-    pub async fn execute(&self, cmd: GetAgentCommand) -> Result<GetAgentDto> {
+    pub async fn execute(&self, cmd: GetAgentCommand) -> ApplicationResult<GetAgentDto> {
         let id = AgentId::from_str(&cmd.agent_id)?;
         let agent = self
             .agents
             .find_by_id(&id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Agent,
+                id: id.to_string(),
+            })?;
 
         let relations = if let (Some(opts), Some(mat), Some(org_id)) =
             (cmd.relations, &self.materializer, cmd.org_id)

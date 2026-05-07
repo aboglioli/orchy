@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::result::Result as StdResult;
@@ -40,11 +40,11 @@ impl fmt::Display for UserId {
 }
 
 impl FromStr for UserId {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         let uuid = Uuid::parse_str(s)
-            .map_err(|e| Error::invalid_input(format!("invalid user id: {}", e)))?;
+            .map_err(|e| DomainError::validation(format!("invalid user id: {}", e)))?;
         Ok(Self::from_uuid(uuid))
     }
 }
@@ -84,11 +84,11 @@ impl fmt::Display for MembershipId {
 }
 
 impl FromStr for MembershipId {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         let uuid = Uuid::parse_str(s)
-            .map_err(|e| Error::invalid_input(format!("invalid membership id: {}", e)))?;
+            .map_err(|e| DomainError::validation(format!("invalid membership id: {}", e)))?;
         Ok(Self::from_uuid(uuid))
     }
 }

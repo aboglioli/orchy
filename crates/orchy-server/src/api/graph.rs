@@ -113,7 +113,7 @@ pub async fn query_relations(
                 .collect::<Result<Vec<_>, _>>()
         })
         .transpose()
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e))?;
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
     let direction = match query.direction.as_deref() {
         Some("outgoing") => TraversalDirection::Outgoing,

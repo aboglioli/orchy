@@ -11,7 +11,7 @@ use orchy_events::{Event, EventCollector, Payload};
 
 use self::events as message_events;
 use crate::agent::AgentId;
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
@@ -81,12 +81,12 @@ impl fmt::Display for MessageId {
 }
 
 impl FromStr for MessageId {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
-            .map_err(|_| Error::invalid_input(format!("invalid message id: {s}")))
+            .map_err(|_| DomainError::validation(format!("invalid message id: {s}")))
     }
 }
 
@@ -101,31 +101,30 @@ pub enum MessageTarget {
 }
 
 impl MessageTarget {
-    pub fn parse(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> DomainResult<Self> {
         if s == "broadcast" {
             return Ok(MessageTarget::Broadcast);
         }
         if let Some(role) = s.strip_prefix("role:") {
             if role.is_empty() {
-                return Err(Error::InvalidInput(
+                return Err(DomainError::validation(
                     "role name must not be empty".to_string(),
                 ));
             }
             return Ok(MessageTarget::Role(role.to_string()));
         }
         if let Some(ns) = s.strip_prefix("ns:") {
-            return Namespace::try_from(ns.to_string())
-                .map(MessageTarget::Namespace)
-                .map_err(|e| Error::InvalidInput(e.to_string()));
+            let ns = Namespace::try_from(ns.to_string())?;
+            return Ok(MessageTarget::Namespace(ns));
         }
         if let Some(user_id) = s.strip_prefix("user:") {
             return UserId::from_str(user_id)
                 .map(MessageTarget::User)
-                .map_err(|_| Error::InvalidInput(format!("invalid user target: '{s}'")));
+                .map_err(|_| DomainError::validation(format!("invalid user target: '{s}'")));
         }
         match AgentId::from_str(s) {
             Ok(id) => Ok(MessageTarget::Agent(id)),
-            Err(_) => Err(Error::InvalidInput(format!(
+            Err(_) => Err(DomainError::validation(format!(
                 "cannot parse message target: '{s}'"
             ))),
         }
@@ -133,9 +132,9 @@ impl MessageTarget {
 }
 
 impl TryFrom<String> for MessageTarget {
-    type Error = Error;
+    type Error = DomainError;
 
-    fn try_from(s: String) -> Result<Self> {
+    fn try_from(s: String) -> DomainResult<Self> {
         Self::parse(&s)
     }
 }
@@ -167,14 +166,16 @@ pub enum MessageStatus {
 }
 
 impl FromStr for MessageStatus {
-    type Err = String;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         match s {
             "pending" => Ok(MessageStatus::Pending),
             "delivered" => Ok(MessageStatus::Delivered),
             "read" => Ok(MessageStatus::Read),
-            other => Err(format!("unknown message status: {other}")),
+            other => Err(DomainError::validation(format!(
+                "unknown message status: {other}"
+            ))),
         }
     }
 }
@@ -209,7 +210,7 @@ impl Message {
         body: String,
         reply_to: Option<MessageId>,
         refs: Vec<ResourceRef>,
-    ) -> Result<Self> {
+    ) -> DomainResult<Self> {
         let mut msg = Self {
             id: MessageId::new(),
             org_id,
@@ -241,17 +242,15 @@ impl Message {
                 .iter()
                 .map(serde_json::to_value)
                 .collect::<StdResult<Vec<_>, _>>()
-                .map_err(|e| Error::InvalidInput(format!("invalid resource ref: {e}")))?,
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+                .map_err(|e| DomainError::validation(format!("invalid resource ref: {e}")))?,
+        })?;
         let event = Event::create(
             msg.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_SENT,
             msg.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         msg.collector.collect(event);
 
         Ok(msg)
@@ -276,7 +275,7 @@ impl Message {
         }
     }
 
-    pub fn reply(&self, from: AgentId, body: String) -> Result<Self> {
+    pub fn reply(&self, from: AgentId, body: String) -> DomainResult<Self> {
         Self::new(
             self.org_id.clone(),
             self.project.clone(),
@@ -289,7 +288,7 @@ impl Message {
         )
     }
 
-    pub fn deliver(&mut self) -> Result<()> {
+    pub fn deliver(&mut self) -> DomainResult<()> {
         if self.status == MessageStatus::Pending {
             self.status = MessageStatus::Delivered;
 
@@ -299,22 +298,20 @@ impl Message {
                 from: self.from.to_string(),
                 to: self.to.to_string(),
                 status: "delivered".to_string(),
-            })
-            .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+            })?;
             let event = Event::create(
                 self.org_id.as_str(),
                 message_events::NAMESPACE,
                 message_events::TOPIC_DELIVERED,
                 self.id.to_string(),
                 payload,
-            )
-            .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+            )?;
             self.collector.collect(event);
         }
         Ok(())
     }
 
-    pub fn mark_read(&mut self) -> Result<()> {
+    pub fn mark_read(&mut self) -> DomainResult<()> {
         if self.status == MessageStatus::Read {
             return Ok(());
         }
@@ -326,16 +323,14 @@ impl Message {
             from: self.from.to_string(),
             to: self.to.to_string(),
             status: "read".to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_READ,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
@@ -373,16 +368,16 @@ impl Message {
         )
     }
 
-    pub fn claim(&mut self, agent_id: AgentId) -> Result<()> {
+    pub fn claim(&mut self, agent_id: AgentId) -> DomainResult<()> {
         if !self.is_logical_target() {
-            return Err(Error::InvalidInput(
+            return Err(DomainError::validation(
                 "only logical targets can be claimed".to_string(),
             ));
         }
         if let Some(existing) = &self.claimed_by {
             if *existing != agent_id {
-                return Err(Error::Conflict(
-                    "message already claimed by another agent".to_string(),
+                return Err(DomainError::rule_violation(
+                    "message already claimed by another agent",
                 ));
             }
             return Ok(());
@@ -394,24 +389,22 @@ impl Message {
             org_id: self.org_id.to_string(),
             message_id: self.id.to_string(),
             agent_id: agent_id.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_CLAIMED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
 
         Ok(())
     }
 
-    pub fn unclaim(&mut self, agent_id: &AgentId) -> Result<()> {
+    pub fn unclaim(&mut self, agent_id: &AgentId) -> DomainResult<()> {
         if self.claimed_by.as_ref() != Some(agent_id) {
-            return Err(Error::InvalidInput(
+            return Err(DomainError::validation(
                 "only the claimant can unclaim".to_string(),
             ));
         }
@@ -422,16 +415,14 @@ impl Message {
             org_id: self.org_id.to_string(),
             message_id: self.id.to_string(),
             agent_id: agent_id.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             message_events::NAMESPACE,
             message_events::TOPIC_UNCLAIMED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
 
         Ok(())

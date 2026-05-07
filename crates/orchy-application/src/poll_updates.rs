@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 
+use crate::error::ApplicationResult;
 use orchy_core::error::{Error, Result};
 use orchy_events::io::{BoxAcker, BoxStream, Reader};
 use orchy_events::{Event, Namespace, OrganizationId, Topic};
@@ -39,24 +40,22 @@ impl PollUpdates {
         Self { factory }
     }
 
-    pub async fn execute(&self, cmd: PollUpdatesCommand) -> Result<Vec<Event>> {
-        let organization = OrganizationId::new(&cmd.organization)
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: PollUpdatesCommand) -> ApplicationResult<Vec<Event>> {
+        let organization = OrganizationId::new(&cmd.organization)?;
         let since: DateTime<Utc> = cmd.since.parse().map_err(|e: chrono::ParseError| {
-            Error::InvalidInput(format!("invalid timestamp: {e}"))
+            Error::invalid_input(format!("invalid timestamp: {e}"))
         })?;
         let topics = match cmd.topics {
             None => None,
             Some(ts) => Some(
                 ts.into_iter()
                     .map(Topic::new)
-                    .collect::<StdResult<Vec<_>, _>>()
-                    .map_err(|e| Error::InvalidInput(e.to_string()))?,
+                    .collect::<StdResult<Vec<_>, _>>()?,
             ),
         };
         let namespace_prefix = match cmd.namespace_prefix {
             None => None,
-            Some(s) => Some(Namespace::new(s).map_err(|e| Error::InvalidInput(e.to_string()))?),
+            Some(s) => Some(Namespace::new(s)?),
         };
         let limit = cmd.limit.unwrap_or(50) as usize;
         let until = Utc::now();
@@ -66,13 +65,10 @@ impl PollUpdates {
             .build_history_reader(organization, since, until, limit, topics, namespace_prefix)
             .await?;
 
-        let mut stream = reader
-            .read()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut stream = reader.read().await?;
         let mut events = Vec::with_capacity(limit);
         while let Some(msg) = stream.next().await {
-            let msg = msg.map_err(|e| Error::Store(e.to_string()))?;
+            let msg = msg?;
             let _ = msg.ack().await;
             events.push(msg.into_event());
             if events.len() >= limit {

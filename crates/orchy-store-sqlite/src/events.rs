@@ -46,7 +46,7 @@ fn append_event(conn: &rusqlite::Connection, event: &Event) -> EventsResult<()> 
 
 pub(crate) fn write_events_in_tx(tx: &rusqlite::Transaction<'_>, events: &[Event]) -> Result<()> {
     for event in events {
-        append_event(tx, event).map_err(|e| orchy_core::error::Error::Store(e.to_string()))?;
+        append_event(tx, event)?;
     }
 
     Ok(())

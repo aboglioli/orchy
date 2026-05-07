@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
@@ -56,12 +56,12 @@ impl fmt::Display for AgentId {
 }
 
 impl FromStr for AgentId {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
-            .map_err(|_| Error::invalid_input(format!("invalid agent id: {s}")))
+            .map_err(|_| DomainError::validation(format!("invalid agent id: {s}")))
     }
 }
 
@@ -109,7 +109,7 @@ impl Agent {
         id: Option<AgentId>,
         metadata: HashMap<String, String>,
         user_id: Option<UserId>,
-    ) -> Result<Self> {
+    ) -> DomainResult<Self> {
         let now = Utc::now();
         let id = id.unwrap_or_default();
         let mut agent = Self {
@@ -134,16 +134,14 @@ impl Agent {
             project: agent.project.to_string(),
             namespace: agent.namespace.to_string(),
             roles: agent.roles.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             agent.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_REGISTERED,
             agent.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         agent.collector.collect(event);
 
         Ok(agent)
@@ -168,7 +166,7 @@ impl Agent {
 
     /// No event emitted: heartbeat is high-frequency and would flood
     /// the event log. This is the only mutation that skips event emission.
-    pub fn heartbeat(&mut self) -> Result<()> {
+    pub fn heartbeat(&mut self) -> DomainResult<()> {
         self.last_seen = Utc::now();
         Ok(())
     }
@@ -184,23 +182,21 @@ impl Agent {
         }
     }
 
-    pub fn change_roles(&mut self, roles: Vec<String>) -> Result<()> {
+    pub fn change_roles(&mut self, roles: Vec<String>) -> DomainResult<()> {
         self.roles = roles;
 
         let payload = Payload::from_json(&agent_events::AgentRolesChangedPayload {
             org_id: self.org_id.to_string(),
             agent_id: self.id.to_string(),
             roles: self.roles.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_ROLES_CHANGED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
@@ -210,7 +206,7 @@ impl Agent {
         namespace: Namespace,
         roles: Vec<String>,
         description: String,
-    ) -> Result<()> {
+    ) -> DomainResult<()> {
         self.namespace = namespace;
         if !roles.is_empty() {
             self.roles = roles;
@@ -225,16 +221,14 @@ impl Agent {
             agent_id: self.id.to_string(),
             namespace: self.namespace.to_string(),
             roles: self.roles.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_RESUMED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
@@ -243,7 +237,7 @@ impl Agent {
         &mut self,
         project: Option<ProjectId>,
         namespace: Namespace,
-    ) -> Result<()> {
+    ) -> DomainResult<()> {
         let old_project = self.project.to_string();
         let old_namespace = self.namespace.to_string();
 
@@ -264,42 +258,38 @@ impl Agent {
             new_project: self.project.to_string(),
             old_namespace,
             new_namespace: self.namespace.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_CONTEXT_SWITCHED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn set_metadata(&mut self, metadata: HashMap<String, String>) -> Result<()> {
+    pub fn set_metadata(&mut self, metadata: HashMap<String, String>) -> DomainResult<()> {
         self.metadata = metadata;
 
         let payload = Payload::from_json(&agent_events::AgentMetadataChangedPayload {
             org_id: self.org_id.to_string(),
             agent_id: self.id.to_string(),
             metadata: self.metadata.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_METADATA_CHANGED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn set_alias(&mut self, alias: Alias) -> Result<()> {
+    pub fn set_alias(&mut self, alias: Alias) -> DomainResult<()> {
         if self.alias == alias {
             return Ok(());
         }
@@ -309,16 +299,14 @@ impl Agent {
             org_id: self.org_id.to_string(),
             agent_id: self.id.to_string(),
             new_alias: alias.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             agent_events::NAMESPACE,
             agent_events::TOPIC_ALIAS_CHANGED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }

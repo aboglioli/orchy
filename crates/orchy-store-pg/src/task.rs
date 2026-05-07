@@ -6,7 +6,7 @@ use sqlx::{PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
 
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
@@ -27,15 +27,17 @@ impl PgTaskStore {
 #[async_trait]
 impl TaskStore for PgTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        let roles_json = serde_json::to_value(task.assigned_roles())
-            .map_err(|e| Error::Store(format!("failed to serialize tasks.assigned_roles: {e}")))?;
-        let tags_json = serde_json::to_value(task.tags())
-            .map_err(|e| Error::Store(format!("failed to serialize tasks.tags: {e}")))?;
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let roles_json = serde_json::to_value(task.assigned_roles()).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize tasks.assigned_roles: {e}"
+            )))
+        })?;
+        let tags_json = serde_json::to_value(task.tags()).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize tasks.tags: {e}"
+            )))
+        })?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         sqlx::query(
             "INSERT INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at)
@@ -81,15 +83,12 @@ impl TaskStore for PgTaskStore {
         .bind(task.updated_at())
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let events = task.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -101,16 +100,18 @@ impl TaskStore for PgTaskStore {
         if expected_statuses.is_empty() {
             return Ok(false);
         }
-        let roles_json = serde_json::to_value(task.assigned_roles())
-            .map_err(|e| Error::Store(format!("failed to serialize tasks.assigned_roles: {e}")))?;
-        let tags_json = serde_json::to_value(task.tags())
-            .map_err(|e| Error::Store(format!("failed to serialize tasks.tags: {e}")))?;
+        let roles_json = serde_json::to_value(task.assigned_roles()).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize tasks.assigned_roles: {e}"
+            )))
+        })?;
+        let tags_json = serde_json::to_value(task.tags()).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to serialize tasks.tags: {e}"
+            )))
+        })?;
         let status_strings: Vec<String> = expected_statuses.iter().map(|s| s.to_string()).collect();
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
         let result = sqlx::query(
             "UPDATE tasks SET organization_id=$2, project=$3, namespace=$4, title=$5, \
@@ -143,19 +144,16 @@ impl TaskStore for PgTaskStore {
         .bind(&status_strings)
         .execute(&mut *tx)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         if result.rows_affected() == 0 {
             return Ok(false);
         }
 
         let events = task.drain_events();
-        PgEventWriter::new_tx(&mut tx)
-            .write_all(&events)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
 
-        tx.commit().await.map_err(|e| Error::Store(e.to_string()))?;
+        tx.commit().await.map_err(crate::error::store_err)?;
         Ok(true)
     }
 
@@ -167,7 +165,7 @@ impl TaskStore for PgTaskStore {
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_task(&r)).transpose()
     }
@@ -186,7 +184,7 @@ impl TaskStore for PgTaskStore {
         .bind(&uuid_ids)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         rows.iter().map(row_to_task).collect()
     }
 
@@ -279,7 +277,7 @@ impl TaskStore for PgTaskStore {
         let rows = sqlx::query_with(&sql, SqlxValues(Values(values)))
             .fetch_all(&self.pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let mut tasks: Vec<Task> = rows.iter().map(row_to_task).collect::<Result<Vec<_>>>()?;
 
@@ -321,8 +319,11 @@ fn row_to_task(row: &PgRow) -> Result<Task> {
 
     Ok(Task::restore(RestoreTask {
         id: TaskId::from_uuid(id),
-        org_id: OrganizationId::new(&org_id_str)
-            .map_err(|e| Error::Store(format!("invalid tasks.organization_id: {e}")))?,
+        org_id: OrganizationId::new(&org_id_str).map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "invalid tasks.organization_id: {e}"
+            )))
+        })?,
         project: parse_project_id(project, "tasks", "project")?,
         namespace: parse_namespace(namespace, "tasks", "namespace")?,
         title,

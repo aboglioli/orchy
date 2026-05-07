@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::{PgPool, Row};
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 
@@ -35,7 +35,7 @@ impl NamespaceStore for PgNamespaceStore {
         .bind(Utc::now())
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 
@@ -49,13 +49,16 @@ impl NamespaceStore for PgNamespaceStore {
         .bind(project.to_string())
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let mut result = Vec::new();
         for row in rows {
             let ns_str: String = row.get("namespace");
-            let ns = Namespace::try_from(ns_str.as_str())
-                .map_err(|e| Error::Store(format!("invalid namespace in database: {e}")))?;
+            let ns = Namespace::try_from(ns_str.as_str()).map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "invalid namespace in database: {e}"
+                )))
+            })?;
             result.push(ns);
         }
         Ok(result)

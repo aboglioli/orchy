@@ -24,7 +24,7 @@ impl fmt::Display for ResourceKind {
 }
 
 impl FromStr for ResourceKind {
-    type Err = String;
+    type Err = crate::error::DomainError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -32,7 +32,9 @@ impl FromStr for ResourceKind {
             "knowledge" => Ok(ResourceKind::Knowledge),
             "agent" => Ok(ResourceKind::Agent),
             "message" => Ok(ResourceKind::Message),
-            other => Err(format!("unknown resource kind: {other}")),
+            other => Err(crate::error::DomainError::validation(format!(
+                "unknown resource kind: {other}"
+            ))),
         }
     }
 }

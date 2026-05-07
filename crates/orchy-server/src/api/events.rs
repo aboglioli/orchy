@@ -10,11 +10,12 @@ use orchy_events::SerializedEvent;
 use serde::Deserialize;
 
 use orchy_application::PollUpdatesCommand;
+use orchy_core::namespace::Namespace;
 
 use crate::container::Container;
 
+use super::ApiError;
 use super::auth::OrgAuth;
-use super::{ApiError, parse_namespace};
 
 #[derive(Deserialize)]
 pub struct PollQuery {
@@ -50,7 +51,13 @@ pub async fn poll(
         .unwrap_or_else(|_| Utc::now() - Duration::minutes(5));
 
     let namespace_prefix = if let Some(ref ns) = query.namespace {
-        let namespace = parse_namespace(ns)?;
+        let namespace = Namespace::new(ns).map_err(|e| {
+            ApiError(
+                StatusCode::BAD_REQUEST,
+                "INVALID_PARAM",
+                format!("invalid namespace: {e}"),
+            )
+        })?;
         Some(namespace.to_string())
     } else {
         None

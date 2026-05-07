@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::api_key::ApiKeyStore;
-use orchy_core::error::{Error, Result};
 use orchy_core::organization::OrganizationId;
 
 use crate::dto::ApiKeyDto;
@@ -19,9 +19,8 @@ impl ListApiKeys {
         Self { api_keys }
     }
 
-    pub async fn execute(&self, cmd: ListApiKeysCommand) -> Result<Vec<ApiKeyDto>> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: ListApiKeysCommand) -> ApplicationResult<Vec<ApiKeyDto>> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
         let keys = self.api_keys.find_by_org(&org_id).await?;
         Ok(keys.iter().map(ApiKeyDto::from).collect())
     }

@@ -5,6 +5,7 @@ pub mod config;
 pub mod container;
 pub mod embeddings;
 pub mod error;
+pub mod error_mapping;
 pub mod heartbeat;
 pub mod mcp;
 pub mod skill_loader;

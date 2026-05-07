@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use orchy_events::{Event, EventCollector, Payload};
 
 use crate::agent::AgentId;
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 use crate::namespace::{Namespace, ProjectId};
 use crate::organization::OrganizationId;
 
@@ -68,11 +68,9 @@ impl ResourceLock {
         name: String,
         holder: AgentId,
         ttl_secs: u64,
-    ) -> Result<Self> {
+    ) -> DomainResult<Self> {
         if name.trim().is_empty() {
-            return Err(Error::InvalidInput(
-                "resource name must not be empty".into(),
-            ));
+            return Err(DomainError::validation("resource name must not be empty"));
         }
 
         let now = Utc::now();
@@ -94,16 +92,14 @@ impl ResourceLock {
             name: lock.name.clone(),
             holder: lock.holder.to_string(),
             ttl_secs,
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             lock.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_ACQUIRED,
             lock.name.clone(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         lock.collector.collect(event);
 
         Ok(lock)
@@ -122,22 +118,20 @@ impl ResourceLock {
         }
     }
 
-    pub fn mark_released(&mut self) -> Result<()> {
+    pub fn mark_released(&mut self) -> DomainResult<()> {
         let payload = Payload::from_json(&lock_events::LockReleasedPayload {
             org_id: self.org_id.to_string(),
             project: self.project.to_string(),
             namespace: self.namespace.to_string(),
             name: self.name.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             lock_events::NAMESPACE,
             lock_events::TOPIC_RELEASED,
             self.name.clone(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }

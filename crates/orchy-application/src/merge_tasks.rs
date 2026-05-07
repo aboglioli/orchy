@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource, Result};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
@@ -30,24 +31,23 @@ impl MergeTasks {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: MergeTasksCommand) -> Result<(TaskDto, Vec<TaskDto>)> {
+    pub async fn execute(
+        &self,
+        cmd: MergeTasksCommand,
+    ) -> ApplicationResult<(TaskDto, Vec<TaskDto>)> {
         let task_ids = cmd
             .task_ids
             .iter()
             .map(|s| s.parse::<TaskId>())
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         if task_ids.len() < 2 {
-            return Err(Error::InvalidInput(
-                "merge requires at least 2 tasks".into(),
-            ));
+            return Err(Error::invalid_input("merge requires at least 2 tasks").into());
         }
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id = OrganizationId::new(&cmd.org_id)?;
 
         let mut sources = Vec::with_capacity(task_ids.len());
         for id in &task_ids {
@@ -55,26 +55,31 @@ impl MergeTasks {
                 .tasks
                 .find_by_id(id)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("task {id}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: id.to_string(),
+                })?;
             sources.push(task);
         }
 
         let first_project = sources[0].project().clone();
         for task in &sources {
             if *task.project() != first_project {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "task {} belongs to project {}, expected {}",
                     task.id(),
                     task.project(),
                     first_project
-                )));
+                ))
+                .into());
             }
             if !task.status().is_mergeable() {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "task {} has status {} which cannot be merged",
                     task.id(),
                     task.status()
-                )));
+                ))
+                .into());
             }
         }
 
@@ -205,7 +210,10 @@ impl MergeTasks {
                 .tasks
                 .find_by_id(dep_id)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: dep_id.to_string(),
+                })?;
             if dep.status() != TaskStatus::Completed {
                 return Ok(false);
             }

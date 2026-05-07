@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use orchy_application::{
-    Application, ApplicationDeps, CheckLockCommand, LockResourceCommand, RegisterAgentCommand,
-    UnlockResourceCommand,
+    Application, ApplicationDeps, ApplicationError, CheckLockCommand, LockResourceCommand,
+    RegisterAgentCommand, UnlockResourceCommand,
 };
 use orchy_core::agent::{AgentId, AgentStore};
 use orchy_core::api_key::{
     ApiKey, ApiKeyGenerator, ApiKeyPrefix, ApiKeyStore, ApiKeySuffix, HashedApiKey, PlainApiKey,
 };
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{DomainError, DomainResult, Error, Result};
 use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
@@ -24,14 +24,14 @@ use orchy_store_memory::*;
 struct NoopHasher;
 
 impl PasswordHasher for NoopHasher {
-    fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+    fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword> {
         HashedPassword::new(plain.as_str())
     }
-    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
+    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()> {
         if plain.as_str() == hashed.as_str() {
             Ok(())
         } else {
-            Err(Error::InvalidInput("password mismatch".into()))
+            Err(DomainError::PasswordMismatch)
         }
     }
 }
@@ -195,7 +195,7 @@ async fn lock_contention_returns_conflict() {
         .await
         .expect_err("lock contention should fail");
     assert!(
-        matches!(err, Error::Conflict(_)),
+        matches!(err, ApplicationError::Core(Error::Conflict(_))),
         "expected Conflict, got: {err:?}"
     );
 }

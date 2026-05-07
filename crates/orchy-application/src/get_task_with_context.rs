@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource, Result};
 use orchy_core::graph::{EdgeStore, RelationType};
 use orchy_core::knowledge::{KnowledgeId, KnowledgeKind, KnowledgeStore};
 use orchy_core::organization::OrganizationId;
@@ -39,11 +40,15 @@ impl GetTaskWithContext {
         }
     }
 
-    pub async fn execute(&self, cmd: GetTaskWithContextCommand) -> Result<TaskWithContextResponse> {
+    pub async fn execute(
+        &self,
+        cmd: GetTaskWithContextCommand,
+    ) -> ApplicationResult<TaskWithContextResponse> {
         let id = cmd.task_id.parse::<TaskId>()?;
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        self.get_with_context(&id, &org_id, cmd).await
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        self.get_with_context(&id, &org_id, cmd)
+            .await
+            .map_err(Into::into)
     }
 
     async fn get_with_context(
@@ -56,7 +61,10 @@ impl GetTaskWithContext {
             .tasks
             .find_by_id(id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: id.to_string(),
+            })?;
 
         let mut ancestors = Vec::new();
         let mut current_id = id.to_string();
@@ -163,7 +171,7 @@ impl GetTaskWithContext {
         tag_filter: Option<&str>,
         content_limit: usize,
     ) -> Result<Vec<KnowledgeDto>> {
-        let org = OrganizationId::new(org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org = OrganizationId::new(org_id)?;
 
         let mut edges = self
             .edges
@@ -176,7 +184,7 @@ impl GetTaskWithContext {
         );
 
         let expected_kind = kind_filter
-            .map(|k| k.parse::<KnowledgeKind>().map_err(Error::InvalidInput))
+            .map(|k| k.parse::<KnowledgeKind>().map_err(Error::from))
             .transpose()?;
 
         let mut results = Vec::new();

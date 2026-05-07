@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::namespace::Namespace;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
-
-use crate::parse_namespace;
 
 pub struct SuggestRolesCommand {
     pub org_id: Option<String>,
@@ -24,18 +23,15 @@ impl SuggestRoles {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: SuggestRolesCommand) -> Result<Vec<String>> {
-        let org_id = cmd
-            .org_id
-            .map(|s| OrganizationId::new(&s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+    pub async fn execute(&self, cmd: SuggestRolesCommand) -> ApplicationResult<Vec<String>> {
+        let org_id = cmd.org_id.map(|s| OrganizationId::new(&s)).transpose()?;
 
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = cmd
             .namespace
             .as_deref()
-            .map(|s| parse_namespace(Some(s)))
+            .filter(|s| !s.is_empty())
+            .map(Namespace::new)
             .transpose()?;
 
         let mut role_counts: HashMap<String, usize> = HashMap::new();

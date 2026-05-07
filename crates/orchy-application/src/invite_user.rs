@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::Error;
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::{
     Email, OrgMembership, OrgMembershipStore, OrgRole, PasswordHasher, PlainPassword, User, UserId,
@@ -45,7 +46,7 @@ impl InviteUser {
         }
     }
 
-    pub async fn execute(&self, cmd: InviteUserCommand) -> Result<InviteUserDto> {
+    pub async fn execute(&self, cmd: InviteUserCommand) -> ApplicationResult<InviteUserDto> {
         let org_id = OrganizationId::new(&cmd.org_id).map_err(map_org_error)?;
         let role = cmd.role.parse::<OrgRole>()?;
 
@@ -54,7 +55,7 @@ impl InviteUser {
         let (mut user, is_new_user) =
             if let Some(existing_user) = self.users.find_by_email(&email).await? {
                 if !existing_user.is_active() {
-                    return Err(Error::invalid_input("user is deactivated"));
+                    return Err(Error::invalid_input("user is deactivated").into());
                 }
                 (existing_user, false)
             } else {
@@ -65,9 +66,7 @@ impl InviteUser {
             };
 
         if self.memberships.find(user.id(), &org_id).await?.is_some() {
-            return Err(Error::conflict(
-                "user is already a member of this organization",
-            ));
+            return Err(Error::conflict("user is already a member of this organization").into());
         }
 
         if is_new_user {

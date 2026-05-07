@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource, Result};
 use orchy_core::graph::{EdgeStore, RelationType};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
@@ -24,9 +25,8 @@ impl RemoveDependency {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: RemoveDependencyCommand) -> Result<TaskDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: RemoveDependencyCommand) -> ApplicationResult<TaskDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let dependency_id = cmd.dependency_id.parse::<TaskId>()?;
 
@@ -34,7 +34,10 @@ impl RemoveDependency {
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         let dep_edges = self
             .edges
@@ -85,7 +88,10 @@ impl RemoveDependency {
                 .tasks
                 .find_by_id(&dep_id)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: dep_id.to_string(),
+                })?;
             if dep.status() != TaskStatus::Completed {
                 return Ok(false);
             }

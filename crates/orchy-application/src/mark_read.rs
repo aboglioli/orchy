@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::message::{MessageId, MessageStore};
 
 pub struct MarkReadCommand {
@@ -20,25 +21,31 @@ impl MarkRead {
         Self { messages, agents }
     }
 
-    pub async fn execute(&self, cmd: MarkReadCommand) -> Result<()> {
+    pub async fn execute(&self, cmd: MarkReadCommand) -> ApplicationResult<()> {
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
         self.agents
             .find_by_id(&agent_id)
             .await?
-            .ok_or(Error::NotFound("agent not found".to_string()))?;
+            .ok_or(Error::NotFound {
+                resource: Resource::Agent,
+                id: String::new(),
+            })?;
 
         let message_ids = cmd
             .message_ids
             .iter()
             .map(|s| s.parse::<MessageId>())
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let mut receipt_ids = Vec::new();
 
         for id in &message_ids {
             let Some(mut msg) = self.messages.find_by_id(id).await? else {
-                return Err(Error::NotFound(format!("message {id}")));
+                return Err(Error::NotFound {
+                    resource: Resource::Message,
+                    id: id.to_string(),
+                }
+                .into());
             };
 
             if msg.is_directed_to(&agent_id) {

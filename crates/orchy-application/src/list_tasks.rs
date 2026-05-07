@@ -1,15 +1,15 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::namespace::Namespace;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 
 use crate::dto::{PageResponse, TaskDto};
-use crate::parse_namespace;
 
 pub struct ListTasksCommand {
     pub org_id: String,
@@ -32,25 +32,14 @@ impl ListTasks {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ListTasksCommand) -> Result<PageResponse<TaskDto>> {
-        let org_id =
-            Some(OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?);
+    pub async fn execute(&self, cmd: ListTasksCommand) -> ApplicationResult<PageResponse<TaskDto>> {
+        let org_id = Some(OrganizationId::new(&cmd.org_id)?);
 
-        let project = cmd
-            .project
-            .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+        let project = cmd.project.map(ProjectId::try_from).transpose()?;
 
-        let namespace = cmd
-            .namespace
-            .map(|s| parse_namespace(Some(&s)))
-            .transpose()?;
+        let namespace = cmd.namespace.map(Namespace::new).transpose()?;
 
-        let status = cmd
-            .status
-            .map(|s| s.parse::<TaskStatus>())
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let status = cmd.status.map(|s| s.parse::<TaskStatus>()).transpose()?;
 
         let assigned_to = cmd.assigned_to.map(|s| AgentId::from_str(&s)).transpose()?;
 

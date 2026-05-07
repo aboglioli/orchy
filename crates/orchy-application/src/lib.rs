@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use orchy_core::agent::AgentStore;
 use orchy_core::api_key::{ApiKeyGenerator, ApiKeyStore};
-use orchy_core::embeddings::EmbeddingsProvider;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::Result;
 use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
@@ -15,8 +14,12 @@ use orchy_core::task::TaskStore;
 use orchy_core::user::{OrgMembershipStore, PasswordHasher, TokenEncoder, UserStore};
 
 pub mod dto;
+pub mod embeddings;
+pub mod error;
 
-// User/Auth
+pub use embeddings::EmbeddingsProvider;
+pub use error::{ApplicationError, ApplicationResult};
+
 mod bootstrap_admin;
 mod change_password;
 mod decode_token;
@@ -31,20 +34,6 @@ mod assemble_context;
 mod list_edges;
 pub mod materialize_neighborhood;
 mod remove_edge;
-
-pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
-    match ns {
-        Some(s) if !s.is_empty() => {
-            let normalized = if s.starts_with('/') {
-                s.to_string()
-            } else {
-                format!("/{s}")
-            };
-            Namespace::try_from(normalized).map_err(|e| Error::InvalidInput(e.to_string()))
-        }
-        _ => Ok(Namespace::root()),
-    }
-}
 
 // Agent
 mod change_roles;
@@ -264,6 +253,10 @@ pub use dto::{
 };
 pub use get_project_overview::{GetProjectOverview, GetProjectOverviewCommand};
 pub use poll_updates::{PollUpdates, PollUpdatesCommand, ReaderFactory};
+
+pub(crate) fn parse_namespace(ns: Option<&str>) -> Result<Namespace> {
+    Ok(Namespace::new(ns.unwrap_or(""))?)
+}
 
 pub struct ApplicationDeps {
     pub agents: Arc<dyn AgentStore>,

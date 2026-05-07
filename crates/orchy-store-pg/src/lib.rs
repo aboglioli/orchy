@@ -1,6 +1,7 @@
 mod agent;
 mod api_key;
 mod edge;
+mod error;
 mod events;
 mod knowledge;
 mod message;
@@ -16,6 +17,7 @@ mod user;
 pub use agent::PgAgentStore;
 pub use api_key::PgApiKeyStore;
 pub use edge::PgEdgeStore;
+pub use error::{PgError, PgResult};
 pub use events::PgEventWriter;
 pub use knowledge::PgKnowledgeStore;
 pub use message::PgMessageStore;
@@ -35,7 +37,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::{Namespace, ProjectId};
 
 pub struct PgDatabase {
@@ -47,7 +49,7 @@ impl PgDatabase {
     pub async fn new(url: &str, embedding_dimensions: Option<u32>) -> Result<Self> {
         let pool = PgPool::connect(url)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Ok(Self {
             pool,
@@ -65,7 +67,7 @@ impl PgDatabase {
         PgPoolOptions::new()
             .max_connections(max_connections)
             .connect_lazy(url)
-            .map_err(|e| Error::Store(e.to_string()))
+            .map_err(crate::error::store_err)
     }
 
     /// Run pending migrations on an arbitrary pool (no PgDatabase instance needed).
@@ -95,10 +97,14 @@ impl PgDatabase {
         )
         .execute(pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let mut files: Vec<_> = fs::read_dir(dir)
-            .map_err(|e| Error::Store(format!("cannot read migrations dir: {e}")))?
+            .map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "cannot read migrations dir: {e}"
+                )))
+            })?
             .filter_map(|e| e.ok())
             .filter(|e| {
                 e.path()
@@ -117,31 +123,38 @@ impl PgDatabase {
                     .bind(&filename)
                     .fetch_one(pool)
                     .await
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                    .map_err(crate::error::store_err)?;
 
             if applied {
                 continue;
             }
 
-            let sql = fs::read_to_string(entry.path())
-                .map_err(|e| Error::Store(format!("cannot read {filename}: {e}")))?;
+            let sql = fs::read_to_string(entry.path()).map_err(|e| {
+                Error::Store(StoreError::Migration(format!(
+                    "cannot read {filename}: {e}"
+                )))
+            })?;
 
-            let mut tx = pool
-                .begin()
-                .await
-                .map_err(|e| Error::Store(format!("migration {filename} tx begin: {e}")))?;
-            sqlx::raw_sql(&sql)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| Error::Store(format!("migration {filename} failed: {e}")))?;
+            let mut tx = pool.begin().await.map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "migration {filename} tx begin: {e}"
+                )))
+            })?;
+            sqlx::raw_sql(&sql).execute(&mut *tx).await.map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "migration {filename} failed: {e}"
+                )))
+            })?;
             sqlx::query("INSERT INTO schema_migrations (version) VALUES ($1)")
                 .bind(&filename)
                 .execute(&mut *tx)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?;
-            tx.commit()
-                .await
-                .map_err(|e| Error::Store(format!("migration {filename} commit: {e}")))?;
+                .map_err(crate::error::store_err)?;
+            tx.commit().await.map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "migration {filename} commit: {e}"
+                )))
+            })?;
         }
 
         Self::init_vector_indexes_static(pool, embedding_dimensions).await?;
@@ -157,7 +170,7 @@ impl PgDatabase {
             sqlx::query_scalar("SELECT COUNT(*) > 0 FROM pg_extension WHERE extname = 'vector'")
                 .fetch_one(pool)
                 .await
-                .map_err(|e| Error::Store(e.to_string()))?;
+                .map_err(crate::error::store_err)?;
 
         if embedding_dimensions.is_some() && vector_count {
             sqlx::query(
@@ -166,7 +179,7 @@ impl PgDatabase {
             )
             .execute(pool)
             .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
         }
 
         sqlx::query(
@@ -174,14 +187,14 @@ impl PgDatabase {
         )
         .execute(pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS knowledge_entries_search_idx ON knowledge_entries USING gin (to_tsvector('english', title || ' ' || content))",
         )
         .execute(pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         Ok(())
     }
@@ -198,7 +211,7 @@ impl PgDatabase {
         )
         .execute(&self.pool)
         .await
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 }
@@ -208,18 +221,27 @@ pub(crate) fn decode_json_value<T: DeserializeOwned>(
     table: &str,
     column: &str,
 ) -> Result<T> {
-    serde_json::from_value(value)
-        .map_err(|e| Error::Store(format!("invalid {table}.{column} JSON: {e}")))
+    serde_json::from_value(value).map_err(|e| {
+        Error::Store(StoreError::Other(format!(
+            "invalid {table}.{column} JSON: {e}"
+        )))
+    })
 }
 
 pub(crate) fn parse_project_id(value: String, table: &str, column: &str) -> Result<ProjectId> {
-    ProjectId::try_from(value.clone())
-        .map_err(|e| Error::Store(format!("invalid {table}.{column} value `{value}`: {e}")))
+    ProjectId::try_from(value.clone()).map_err(|e| {
+        Error::Store(StoreError::Other(format!(
+            "invalid {table}.{column} value `{value}`: {e}"
+        )))
+    })
 }
 
 pub(crate) fn parse_namespace(value: String, table: &str, column: &str) -> Result<Namespace> {
-    Namespace::try_from(value.clone())
-        .map_err(|e| Error::Store(format!("invalid {table}.{column} value `{value}`: {e}")))
+    Namespace::try_from(value.clone()).map_err(|e| {
+        Error::Store(StoreError::Other(format!(
+            "invalid {table}.{column} value `{value}`: {e}"
+        )))
+    })
 }
 
 pub(crate) fn parse_pg_vector_text(s: &str) -> Option<Vec<f32>> {

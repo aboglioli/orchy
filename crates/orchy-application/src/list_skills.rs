@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::Result;
 use orchy_core::knowledge::{Knowledge, KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
-
-use crate::parse_namespace;
 
 pub struct ListSkillsCommand {
     pub org_id: String,
@@ -25,11 +25,9 @@ impl ListSkills {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: ListSkillsCommand) -> Result<Vec<KnowledgeDto>> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: ListSkillsCommand) -> ApplicationResult<Vec<KnowledgeDto>> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
         let entries = self

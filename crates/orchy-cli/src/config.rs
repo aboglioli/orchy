@@ -29,23 +29,13 @@ pub struct FileConfig {
 }
 
 /// CLI config validation errors.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ConfigError {
-    MissingField { field: String, source: String },
-    InvalidField { field: String, message: String },
-}
+    #[error("{field} is required — set it in {set_in}")]
+    MissingField { field: String, set_in: String },
 
-impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfigError::MissingField { field, source } => {
-                write!(f, "{field} is required — set it in {source}")
-            }
-            ConfigError::InvalidField { field, message } => {
-                write!(f, "invalid {field}: {message}")
-            }
-        }
-    }
+    #[error("invalid {field}: {message}")]
+    InvalidField { field: String, message: String },
 }
 
 impl Config {
@@ -255,7 +245,7 @@ fn pick(
         .map(|s| s.to_string())
         .ok_or_else(|| ConfigError::MissingField {
             field: name.to_string(),
-            source: source_hint.to_string(),
+            set_in: source_hint.to_string(),
         })
 }
 

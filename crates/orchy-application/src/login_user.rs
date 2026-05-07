@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use orchy_core::error::{Error, Result};
 use orchy_core::user::{
     Email, OrgMembershipStore, PasswordHasher, PlainPassword, TokenEncoder, UserStore,
 };
 
 use crate::dto::{OrgMembershipDto, UserDto};
+use crate::error::{ApplicationError, ApplicationResult};
 
 pub struct LoginUserCommand {
     pub email: String,
@@ -43,7 +43,7 @@ impl LoginUser {
         }
     }
 
-    pub async fn execute(&self, cmd: LoginUserCommand) -> Result<LoginUserResponse> {
+    pub async fn execute(&self, cmd: LoginUserCommand) -> ApplicationResult<LoginUserResponse> {
         let email = Email::new(&cmd.email)?;
         let password = PlainPassword::new(&cmd.password)?;
 
@@ -51,7 +51,7 @@ impl LoginUser {
             .users
             .find_by_email(&email)
             .await?
-            .ok_or_else(|| Error::authentication_failed("invalid credentials"))?;
+            .ok_or_else(|| ApplicationError::authentication_failed("invalid credentials"))?;
 
         user.login(&password, self.hasher.as_ref())?;
         self.users.save(&mut user).await?;

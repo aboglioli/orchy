@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::Relation;
 use orchy_core::graph::RelationOptions;
 use orchy_core::organization::OrganizationId;
@@ -50,19 +51,25 @@ impl GetTask {
         }
     }
 
-    pub async fn execute(&self, cmd: GetTaskCommand) -> Result<GetTaskDto> {
+    pub async fn execute(&self, cmd: GetTaskCommand) -> ApplicationResult<GetTaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id = OrganizationId::new(&cmd.org_id)?;
 
         let task = self
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         if task.org_id() != &org_id {
-            return Err(Error::NotFound(format!("task {task_id}")));
+            return Err(Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            }
+            .into());
         }
 
         let relations = if let (Some(opts), Some(mat)) = (cmd.relations, &self.materializer) {

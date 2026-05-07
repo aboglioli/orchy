@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{DomainError, DomainResult, Error, Result, StoreError};
 use orchy_core::user::{Email, TokenClaims, TokenEncoder, UserId};
 
 pub struct JwtTokenEncoder {
@@ -16,10 +16,11 @@ impl JwtTokenEncoder {
         public_pem: &[u8],
         duration_hours: i64,
     ) -> Result<Self> {
-        let encoding_key = EncodingKey::from_rsa_pem(private_pem)
-            .map_err(|e| Error::store(format!("invalid RSA private key: {e}")))?;
+        let encoding_key = EncodingKey::from_rsa_pem(private_pem).map_err(|e| {
+            Error::Store(StoreError::Other(format!("invalid RSA private key: {e}")))
+        })?;
         let decoding_key = DecodingKey::from_rsa_pem(public_pem)
-            .map_err(|e| Error::store(format!("invalid RSA public key: {e}")))?;
+            .map_err(|e| Error::Store(StoreError::Other(format!("invalid RSA public key: {e}"))))?;
 
         Ok(Self {
             encoding_key,
@@ -40,16 +41,16 @@ impl TokenEncoder for JwtTokenEncoder {
         };
 
         jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, &self.encoding_key)
-            .map_err(|e| Error::store(format!("failed to encode JWT: {e}")))
+            .map_err(|e| Error::Store(StoreError::Other(format!("failed to encode JWT: {e}"))))
     }
 
-    fn decode(&self, token: &str) -> Result<TokenClaims> {
+    fn decode(&self, token: &str) -> DomainResult<TokenClaims> {
         let decoded = jsonwebtoken::decode::<TokenClaims>(
             token,
             &self.decoding_key,
             &Validation::new(Algorithm::RS256),
         )
-        .map_err(|e| Error::authentication_failed(format!("invalid token: {e}")))?;
+        .map_err(|e| DomainError::validation(format!("invalid token: {e}")))?;
 
         Ok(decoded.claims)
     }
@@ -60,17 +61,28 @@ pub fn generate_rsa_keypair() -> Result<(String, String)> {
     use rsa::RsaPrivateKey;
 
     let mut rng = rand::thread_rng();
-    let private_key = RsaPrivateKey::new(&mut rng, 2048)
-        .map_err(|e| Error::store(format!("failed to generate RSA key: {e}")))?;
+    let private_key = RsaPrivateKey::new(&mut rng, 2048).map_err(|e| {
+        Error::Store(StoreError::Other(format!(
+            "failed to generate RSA key: {e}"
+        )))
+    })?;
 
     let private_pem = private_key
         .to_pkcs8_pem(pkcs8::LineEnding::default())
-        .map_err(|e| Error::store(format!("failed to encode private key: {e}")))?;
+        .map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to encode private key: {e}"
+            )))
+        })?;
 
     let public_key = private_key.to_public_key();
     let public_pem = public_key
         .to_public_key_pem(pkcs8::LineEnding::default())
-        .map_err(|e| Error::store(format!("failed to encode public key: {e}")))?;
+        .map_err(|e| {
+            Error::Store(StoreError::Other(format!(
+                "failed to encode public key: {e}"
+            )))
+        })?;
 
     Ok((private_pem.to_string(), public_pem))
 }

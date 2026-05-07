@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use orchy_core::error::Result;
+use crate::error::ApplicationResult;
 use orchy_core::organization::OrganizationStore;
 use orchy_core::user::{OrgMembershipStore, TokenEncoder, UserId};
 
@@ -36,7 +36,10 @@ impl ResolveToken {
         }
     }
 
-    pub async fn execute(&self, cmd: ResolveTokenCommand) -> Result<Option<TokenPrincipal>> {
+    pub async fn execute(
+        &self,
+        cmd: ResolveTokenCommand,
+    ) -> ApplicationResult<Option<TokenPrincipal>> {
         let claims = match self.token_encoder.decode(&cmd.token) {
             Ok(c) => c,
             Err(_) => return Ok(None),

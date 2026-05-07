@@ -1614,7 +1614,7 @@ async fn sqlite_cli_alias_too_long_returns_error() {
         "register with 65-char alias must fail"
     );
     assert!(
-        stderr.contains("invalid input:"),
+        stderr.contains("validation failed:"),
         "stderr must contain 'invalid input:':\n{stderr}"
     );
 }

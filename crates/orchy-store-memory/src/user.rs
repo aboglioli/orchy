@@ -56,22 +56,22 @@ impl UserStore for MemoryUserStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orchy_core::error::Error;
+    use orchy_core::error::DomainResult;
     use orchy_core::user::{HashedPassword, PasswordHasher, PlainPassword};
 
     struct MockPasswordHasher;
 
     impl PasswordHasher for MockPasswordHasher {
-        fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+        fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword> {
             HashedPassword::new(&format!("hashed_{}", plain.as_str()))
         }
 
-        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
+        fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()> {
             let expected = format!("hashed_{}", plain.as_str());
             if hashed.as_str() == expected {
                 Ok(())
             } else {
-                Err(Error::authentication_failed("invalid password"))
+                Err(orchy_core::error::DomainError::PasswordMismatch)
             }
         }
     }

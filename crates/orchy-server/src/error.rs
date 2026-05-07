@@ -6,9 +6,6 @@ pub enum BootError {
     #[error("config error: {0}")]
     Config(String),
 
-    #[error("store backend error: {0}")]
-    Store(String),
-
     #[error("migration error: {0}")]
     Migration(String),
 
@@ -16,19 +13,16 @@ pub enum BootError {
     Auth(String),
 
     #[error("embeddings setup error: {0}")]
-    Embeddings(String),
+    EmbeddingsProvider(String),
 
-    #[error("io error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Domain(#[from] CoreError),
 
     #[error("other: {0}")]
     Other(String),
-}
-
-impl From<CoreError> for BootError {
-    fn from(e: CoreError) -> Self {
-        BootError::Store(e.to_string())
-    }
 }
 
 impl From<Box<dyn std::error::Error>> for BootError {
@@ -42,19 +36,20 @@ pub type BootResult<T> = std::result::Result<T, BootError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchy_core::error::StoreError;
 
     #[test]
-    fn boot_error_from_orchy_error_maps_to_store() {
-        let core_err = CoreError::Store("oops".to_string());
+    fn boot_error_from_core_error_preserves_variant() {
+        let core_err = CoreError::Store(StoreError::Other("oops".to_string()));
         let boot_err = BootError::from(core_err);
-        assert!(matches!(boot_err, BootError::Store(_)));
+        assert!(matches!(
+            boot_err,
+            BootError::Domain(CoreError::Store(StoreError::Other(_)))
+        ));
     }
 
     #[test]
     fn boot_error_displays_with_prefix() {
-        let err = BootError::Store("db gone".to_string());
-        assert_eq!(err.to_string(), "store backend error: db gone");
-
         let err = BootError::Config("missing field".to_string());
         assert_eq!(err.to_string(), "config error: missing field");
 
@@ -64,7 +59,7 @@ mod tests {
         let err = BootError::Auth("no keys".to_string());
         assert_eq!(err.to_string(), "auth bootstrap error: no keys");
 
-        let err = BootError::Embeddings("bad provider".to_string());
+        let err = BootError::EmbeddingsProvider("bad provider".to_string());
         assert_eq!(err.to_string(), "embeddings setup error: bad provider");
     }
 }

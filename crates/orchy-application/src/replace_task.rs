@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
@@ -27,16 +28,22 @@ impl ReplaceTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: ReplaceTaskCommand) -> Result<(TaskDto, Vec<TaskDto>)> {
+    pub async fn execute(
+        &self,
+        cmd: ReplaceTaskCommand,
+    ) -> ApplicationResult<(TaskDto, Vec<TaskDto>)> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
-        let mut original = self
-            .tasks
-            .find_by_id(&task_id)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+        let mut original =
+            self.tasks
+                .find_by_id(&task_id)
+                .await?
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: task_id.to_string(),
+                })?;
 
         let org_id = original.org_id().clone();
 
@@ -55,8 +62,7 @@ impl ReplaceTask {
             let priority = input
                 .priority
                 .map(|p| p.parse::<Priority>())
-                .transpose()
-                .map_err(Error::InvalidInput)?
+                .transpose()?
                 .unwrap_or_default();
 
             let depends_on = input
@@ -64,8 +70,7 @@ impl ReplaceTask {
                 .unwrap_or_default()
                 .into_iter()
                 .map(|s| s.parse::<TaskId>())
-                .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(|e| Error::InvalidInput(e.to_string()))?;
+                .collect::<std::result::Result<Vec<_>, _>>()?;
             let is_blocked = !depends_on.is_empty();
 
             let mut task = Task::new(

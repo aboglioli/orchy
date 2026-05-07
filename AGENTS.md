@@ -152,6 +152,60 @@ crates/
 
 ## Key Patterns
 
+### Layered Errors
+
+Errors are split per layer. `From` impls compose them via `?`.
+
+```
+orchy-core::error
+  DomainError      — pure rules: Validation, InvalidTransition,
+                     DependencyNotMet, RuleViolation, PasswordMismatch,
+                     Deactivated, Internal
+  StoreError       — infra: Connection, PoolExhausted, Timeout, Constraint,
+                     NotFound, Decode{table,column,cause}, Serialization,
+                     Migration, Other
+  Resource         — typed enum (Agent, ApiKey, Edge, Knowledge, Lock,
+                     Message, Namespace, Organization, Project, Task, User)
+  Error            — repository-tier: NotFound{Resource,id}, Conflict,
+                     VersionMismatch, Store(#[from]), Domain(#[from])
+
+orchy-store-pg::PgError      — Sqlx, Json, Domain via #[from]
+orchy-store-sqlite::SqliteError — Sqlite, Json, Poisoned, Domain via #[from]
+  Both: From<Self> for orchy_core::Error categorizes backend errors
+
+orchy-application::ApplicationError
+  - Core(#[from] CoreError)
+  - AuthenticationFailed (HTTP 401)
+  - PermissionDenied (HTTP 403)
+  - OrganizationMismatch
+  - EmbeddingsProvider
+  PasswordMismatch and Deactivated DomainErrors auto-map to AuthenticationFailed.
+```
+
+**Constructor helpers** route through the proper layer:
+
+```rust
+Error::invalid_input(s)        // routes to Error::Domain(DomainError::Validation(s))
+Error::invalid_transition(a,b) // routes to Error::Domain(DomainError::InvalidTransition{..})
+Error::dependency_not_met(id)  // routes to Error::Domain(DomainError::DependencyNotMet(id))
+Error::not_found(Resource::Task, "t1")
+Error::version_mismatch(1, 2)
+DomainError::validation(s) / rule_violation(s) / invalid_transition(a,b)
+```
+
+**Layer return types:**
+- aggregate methods → `DomainResult<_>`
+- store traits → `Result<_, Error>`  (repository-tier facade)
+- use cases (orchy-application) → `ApplicationResult<_>`
+- API/MCP handlers convert ApplicationError to HTTP/MCP response via `ApiError`/`mcp_app_error`
+
+**Pattern matching uses Domain wrapper for explicit layering:**
+
+```rust
+matches!(e, Error::Domain(DomainError::Validation(_)))
+matches!(app_err, ApplicationError::Core(Error::NotFound { .. }))
+```
+
 ### Event Sourcing
 
 Every aggregate has an `EventCollector`. Every mutation collects a semantic

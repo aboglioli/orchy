@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
+use orchy_core::namespace::Namespace;
 use orchy_core::task::{TaskId, TaskStore};
-
-use crate::parse_namespace;
 
 use crate::dto::TaskDto;
 
@@ -21,16 +21,19 @@ impl MoveTask {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: MoveTaskCommand) -> Result<TaskDto> {
+    pub async fn execute(&self, cmd: MoveTaskCommand) -> ApplicationResult<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
 
-        let namespace = parse_namespace(Some(&cmd.new_namespace))?;
+        let namespace = Namespace::new(cmd.new_namespace.as_str())?;
 
         let mut task = self
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         task.move_to(namespace)?;
         self.tasks.save(&mut task).await?;

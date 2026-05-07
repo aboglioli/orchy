@@ -15,7 +15,7 @@ use uuid::Uuid;
 use orchy_events::{Event, EventCollector, Payload};
 
 use crate::agent::AgentId;
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult, Result};
 use crate::organization::OrganizationId;
 use crate::pagination::{Page, PageParams};
 use crate::resource_ref::{ResourceKind, ResourceRef};
@@ -136,12 +136,12 @@ impl fmt::Display for EdgeId {
 }
 
 impl FromStr for EdgeId {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         Uuid::parse_str(s)
             .map(Self)
-            .map_err(|_| Error::invalid_input(format!("invalid edge id: {s}")))
+            .map_err(|_| DomainError::validation(format!("invalid edge id: {s}")))
     }
 }
 
@@ -220,7 +220,7 @@ impl fmt::Display for RelationType {
 }
 
 impl FromStr for RelationType {
-    type Err = String;
+    type Err = crate::error::DomainError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
         if let Some(rt) = Self::aliases().iter().find(|(alias, _)| *alias == s) {
@@ -242,9 +242,9 @@ impl FromStr for RelationType {
             "owned_by" => Ok(RelationType::OwnedBy),
             "reviewed_by" => Ok(RelationType::ReviewedBy),
             "confirms" => Ok(RelationType::Confirms),
-            other => Err(format!(
+            other => Err(crate::error::DomainError::validation(format!(
                 "unknown relation type: {other}. valid: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on, invalidates, supported_by, contradicted_by, owned_by, reviewed_by, confirms"
-            )),
+            ))),
         }
     }
 }
@@ -301,12 +301,12 @@ impl Edge {
         to_id: String,
         rel_type: RelationType,
         created_by: Option<AgentId>,
-    ) -> Result<Self> {
+    ) -> DomainResult<Self> {
         if from_id.trim().is_empty() {
-            return Err(Error::InvalidInput("edge from_id must not be empty".into()));
+            return Err(DomainError::validation("edge from_id must not be empty"));
         }
         if to_id.trim().is_empty() {
-            return Err(Error::InvalidInput("edge to_id must not be empty".into()));
+            return Err(DomainError::validation("edge to_id must not be empty"));
         }
         let id = EdgeId::new();
         let mut edge = Self {
@@ -333,16 +333,14 @@ impl Edge {
             to_kind: edge.to_kind.to_string(),
             to_id: edge.to_id.clone(),
             rel_type: edge.rel_type.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             edge.org_id.as_str(),
             events::NAMESPACE,
             events::TOPIC_CREATED,
             edge.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         edge.collector.collect(event);
 
         Ok(edge)
@@ -416,22 +414,20 @@ impl Edge {
         self.source_id.as_deref()
     }
 
-    pub fn invalidate(&mut self) -> Result<()> {
+    pub fn invalidate(&mut self) -> DomainResult<()> {
         self.valid_until = Some(Utc::now());
 
         let payload = Payload::from_json(&events::EdgeInvalidatedPayload {
             org_id: self.org_id.to_string(),
             edge_id: self.id.to_string(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             events::NAMESPACE,
             events::TOPIC_INVALIDATED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
@@ -471,6 +467,7 @@ pub struct RestoreEdge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::DomainError;
 
     #[test]
     fn relation_type_aliases() {
@@ -579,7 +576,7 @@ mod tests {
             RelationType::Produces,
             None,
         );
-        assert!(matches!(result, Err(Error::InvalidInput(_))));
+        assert!(matches!(result, Err(DomainError::Validation(_))));
     }
 
     #[test]
@@ -594,6 +591,6 @@ mod tests {
             RelationType::Produces,
             None,
         );
-        assert!(matches!(result, Err(Error::InvalidInput(_))));
+        assert!(matches!(result, Err(DomainError::Validation(_))));
     }
 }

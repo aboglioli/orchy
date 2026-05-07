@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
 use orchy_core::message::MessageStore;
 use orchy_core::organization::OrganizationId;
@@ -43,19 +44,28 @@ impl GetAgentSummary {
         }
     }
 
-    pub async fn execute(&self, cmd: GetAgentSummaryCommand) -> Result<AgentSummaryResponse> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: GetAgentSummaryCommand,
+    ) -> ApplicationResult<AgentSummaryResponse> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
         let agent_id: AgentId = cmd.agent_id.parse()?;
 
         let agent = self
             .agents
             .find_by_id(&agent_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Agent,
+                id: agent_id.to_string(),
+            })?;
 
         if agent.org_id() != &org_id {
-            return Err(Error::NotFound(format!("agent {agent_id}")));
+            return Err(Error::NotFound {
+                resource: Resource::Agent,
+                id: agent_id.to_string(),
+            }
+            .into());
         }
 
         let project = Some(

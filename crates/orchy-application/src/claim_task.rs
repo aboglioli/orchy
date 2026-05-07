@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{EdgeStore, RelationType};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
@@ -36,32 +37,42 @@ impl ClaimTask {
         }
     }
 
-    pub async fn execute(&self, cmd: ClaimTaskCommand) -> Result<TaskDto> {
+    pub async fn execute(&self, cmd: ClaimTaskCommand) -> ApplicationResult<TaskDto> {
         let task_id = cmd.task_id.parse::<TaskId>()?;
         let agent_id = AgentId::from_str(&cmd.agent_id)?;
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let org_id = OrganizationId::new(&cmd.org_id)?;
 
         self.agents
             .find_by_id(&agent_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent {agent_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Agent,
+                id: agent_id.to_string(),
+            })?;
 
         let mut task = self
             .tasks
             .find_by_id(&task_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            })?;
 
         if task.org_id() != &org_id {
-            return Err(Error::NotFound(format!("task {task_id}")));
+            return Err(Error::NotFound {
+                resource: Resource::Task,
+                id: task_id.to_string(),
+            }
+            .into());
         }
 
         if !task.can_be_claimed() {
-            return Err(Error::InvalidTransition {
-                from: task.status().to_string(),
-                to: TaskStatus::Claimed.to_string(),
-            });
+            return Err(Error::invalid_transition(
+                task.status().to_string(),
+                TaskStatus::Claimed.to_string(),
+            )
+            .into());
         }
 
         let dep_edges = self
@@ -84,18 +95,19 @@ impl ClaimTask {
                 .tasks
                 .find_by_id(&dep_id)
                 .await?
-                .ok_or_else(|| Error::NotFound(format!("dependency task {dep_id}")))?;
+                .ok_or_else(|| Error::NotFound {
+                    resource: Resource::Task,
+                    id: dep_id.to_string(),
+                })?;
             if dep.status() != TaskStatus::Completed {
-                return Err(Error::DependencyNotMet(task_id.to_string()));
+                return Err(Error::dependency_not_met(task_id.to_string()).into());
             }
         }
 
         let expected = vec![task.status()];
 
         if !task.claim_if_available(&agent_id)? {
-            return Err(Error::Conflict(format!(
-                "task {task_id} no longer claimable"
-            )));
+            return Err(Error::conflict(format!("task {task_id} no longer claimable")).into());
         }
 
         if cmd.start.unwrap_or(false) {
@@ -104,9 +116,7 @@ impl ClaimTask {
 
         let saved = self.tasks.save_if_status(&mut task, &expected).await?;
         if !saved {
-            return Err(Error::Conflict(format!(
-                "task {task_id} was claimed concurrently"
-            )));
+            return Err(Error::conflict(format!("task {task_id} was claimed concurrently")).into());
         }
         Ok(TaskDto::from(&task))
     }

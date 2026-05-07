@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use orchy_core::embeddings::{Embedding, EmbeddingsProvider};
-use orchy_core::error::{Error, Result};
+use crate::embeddings::EmbeddingsProvider;
+use crate::error::ApplicationResult;
+use orchy_core::embeddings::Embedding;
+use orchy_core::error::{Error, Resource};
 use orchy_core::knowledge::{KnowledgeKind, KnowledgePath, KnowledgeStore, Version};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
-use crate::parse_namespace;
-
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 
 pub struct ChangeKnowledgeKindCommand {
     pub org_id: String,
@@ -32,35 +33,32 @@ impl ChangeKnowledgeKind {
         Self { store, embeddings }
     }
 
-    pub async fn execute(&self, cmd: ChangeKnowledgeKindCommand) -> Result<KnowledgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: ChangeKnowledgeKindCommand,
+    ) -> ApplicationResult<KnowledgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let new_kind = cmd
-            .new_kind
-            .parse::<KnowledgeKind>()
-            .map_err(Error::InvalidInput)?;
-        let path: KnowledgePath = cmd
-            .path
-            .parse::<KnowledgePath>()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let new_kind = cmd.new_kind.parse::<KnowledgeKind>()?;
+        let path: KnowledgePath = cmd.path.parse::<KnowledgePath>()?;
         let expected_version = cmd.version.map(Version::new);
 
         let mut entry = self
             .store
             .find_by_path(&org_id, Some(&project), &namespace, &path)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {path}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Knowledge,
+                id: path.to_string(),
+            })?;
 
         if let Some(expected) = expected_version
             && entry.version() != expected
         {
-            return Err(Error::VersionMismatch {
-                expected: expected.as_u64(),
-                actual: entry.version().as_u64(),
-            });
+            return Err(
+                Error::version_mismatch(expected.as_u64(), entry.version().as_u64()).into(),
+            );
         }
 
         if entry.kind() == new_kind {

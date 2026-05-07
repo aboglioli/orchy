@@ -817,10 +817,10 @@ async fn register_agent_invalid_alias_error_has_single_invalid_input_prefix() {
         .expect_err("alias 'x' is too short and must be rejected");
 
     let msg = err.to_string();
-    let count = msg.matches("invalid input:").count();
+    let count = msg.matches("validation failed:").count();
     assert_eq!(
         count, 1,
-        "expected exactly one 'invalid input:' prefix, got: {msg}"
+        "expected exactly one 'validation failed:' prefix, got: {msg}"
     );
 }
 

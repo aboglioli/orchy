@@ -2,31 +2,35 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::{DomainError, DomainResult};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct Alias(String);
 
 impl Alias {
-    pub fn new(s: impl Into<String>) -> Result<Self> {
+    pub fn new(s: impl Into<String>) -> DomainResult<Self> {
         let s = s.into();
         if s.len() < 2 {
-            return Err(Error::invalid_input("alias must be at least 2 characters"));
+            return Err(DomainError::validation(
+                "alias must be at least 2 characters",
+            ));
         }
         if s.len() > 64 {
-            return Err(Error::invalid_input("alias must be at most 64 characters"));
+            return Err(DomainError::validation(
+                "alias must be at most 64 characters",
+            ));
         }
         if !s
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         {
-            return Err(Error::invalid_input(
+            return Err(DomainError::validation(
                 "alias must be lowercase alphanumeric with hyphens only",
             ));
         }
         if s.starts_with('-') || s.ends_with('-') {
-            return Err(Error::invalid_input(
+            return Err(DomainError::validation(
                 "alias must not start or end with hyphen",
             ));
         }
@@ -49,17 +53,17 @@ impl fmt::Display for Alias {
 }
 
 impl TryFrom<String> for Alias {
-    type Error = Error;
+    type Error = DomainError;
 
-    fn try_from(s: String) -> Result<Self> {
+    fn try_from(s: String) -> DomainResult<Self> {
         Alias::new(s)
     }
 }
 
 impl TryFrom<&str> for Alias {
-    type Error = Error;
+    type Error = DomainError;
 
-    fn try_from(s: &str) -> Result<Self> {
+    fn try_from(s: &str) -> DomainResult<Self> {
         Alias::new(s)
     }
 }
@@ -94,7 +98,7 @@ mod tests {
         let err = Alias::new("a".repeat(65)).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "invalid input: alias must be at most 64 characters"
+            "validation failed: alias must be at most 64 characters"
         );
     }
 
@@ -113,10 +117,10 @@ mod tests {
     fn error_message_has_single_invalid_input_prefix() {
         let err = Alias::new("a").unwrap_err();
         let msg = err.to_string();
-        let count = msg.matches("invalid input:").count();
+        let count = msg.matches("validation failed:").count();
         assert_eq!(
             count, 1,
-            "expected exactly one 'invalid input:' prefix, got: {msg}"
+            "expected exactly one 'validation failed:' prefix, got: {msg}"
         );
     }
 

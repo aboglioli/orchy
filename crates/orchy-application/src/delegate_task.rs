@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::graph::{Edge, EdgeStore, RelationType};
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::{Priority, Task, TaskId, TaskStore};
@@ -29,7 +30,7 @@ impl DelegateTask {
         Self { tasks, edges }
     }
 
-    pub async fn execute(&self, cmd: DelegateTaskCommand) -> Result<TaskDto> {
+    pub async fn execute(&self, cmd: DelegateTaskCommand) -> ApplicationResult<TaskDto> {
         let parent_id = cmd.task_id.parse::<TaskId>()?;
 
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
@@ -38,13 +39,15 @@ impl DelegateTask {
             .tasks
             .find_by_id(&parent_id)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("task {parent_id}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Task,
+                id: parent_id.to_string(),
+            })?;
 
         let priority = cmd
             .priority
             .map(|p| p.parse::<Priority>())
-            .transpose()
-            .map_err(Error::InvalidInput)?
+            .transpose()?
             .unwrap_or_default();
 
         let mut subtask = Task::new(
@@ -72,9 +75,9 @@ impl DelegateTask {
         ) {
             Ok(e) => e.with_source(ResourceKind::Task, parent_id.to_string()),
             Err(e) => {
-                return Err(Error::InvalidInput(format!(
-                    "cannot create delegation edge: {e}"
-                )));
+                return Err(
+                    Error::invalid_input(format!("cannot create delegation edge: {e}")).into(),
+                );
             }
         };
 

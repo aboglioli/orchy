@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
 use orchy_application::{
-    AddDependencyCommand, Application, ApplicationDeps, ArchiveTaskCommand, ClaimTaskCommand,
-    CompleteTaskCommand, GetTaskCommand, ListEdgesCommand, ListTasksCommand, MergeTasksCommand,
-    MoveTaskCommand, PostTaskCommand, ReleaseTaskCommand, RemoveDependencyCommand,
-    SplitTaskCommand, SubtaskInput, UnarchiveTaskCommand, UpdateTaskCommand,
+    AddDependencyCommand, Application, ApplicationDeps, ApplicationError, ArchiveTaskCommand,
+    CancelTaskCommand, ClaimTaskCommand, CompleteTaskCommand, FailTaskCommand, GetTaskCommand,
+    ListEdgesCommand, ListTasksCommand, MergeTasksCommand, MoveTaskCommand, PostTaskCommand,
+    ReleaseTaskCommand, RemoveDependencyCommand, SplitTaskCommand, SubtaskInput,
+    UnarchiveTaskCommand, UpdateTaskCommand,
 };
 use orchy_core::agent::{Agent, AgentId, AgentStore, Alias};
 use orchy_core::api_key::{
     ApiKey, ApiKeyGenerator, ApiKeyPrefix, ApiKeyStore, ApiKeySuffix, HashedApiKey, PlainApiKey,
 };
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{DomainError, DomainResult, Error, Result};
 use orchy_core::graph::EdgeStore;
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::message::MessageStore;
@@ -27,15 +28,15 @@ use orchy_store_memory::*;
 struct NoopHasher;
 
 impl PasswordHasher for NoopHasher {
-    fn hash(&self, plain: &PlainPassword) -> Result<HashedPassword> {
+    fn hash(&self, plain: &PlainPassword) -> DomainResult<HashedPassword> {
         HashedPassword::new(plain.as_str())
     }
 
-    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> Result<()> {
+    fn verify(&self, plain: &PlainPassword, hashed: &HashedPassword) -> DomainResult<()> {
         if plain.as_str() == hashed.as_str() {
             Ok(())
         } else {
-            Err(Error::InvalidInput("password mismatch".into()))
+            Err(DomainError::PasswordMismatch)
         }
     }
 }
@@ -651,7 +652,7 @@ async fn add_dependency_rejects_self_cycle() {
         .await
         .expect_err("task cannot depend on itself");
     assert!(
-        matches!(err, Error::Conflict(_)),
+        matches!(err, ApplicationError::Core(Error::Conflict(_))),
         "expected Conflict, got: {err:?}"
     );
 }
@@ -840,7 +841,7 @@ async fn add_dependency_rejects_indirect_cycle() {
         .await
         .expect_err("indirect cycle must be rejected");
     assert!(
-        matches!(err, Error::Conflict(_)),
+        matches!(err, ApplicationError::Core(Error::Conflict(_))),
         "expected Conflict, got: {err:?}"
     );
 }
@@ -1006,6 +1007,62 @@ async fn task_update_fields() {
     assert_eq!(updated.description, "updated desc");
     assert_eq!(updated.acceptance_criteria, Some("must pass".into()));
     assert_eq!(updated.priority, "high");
+}
+
+// ─── fail_task and cancel_task org_id validation ────────────────────────────
+
+#[tokio::test]
+async fn fail_task_rejects_wrong_org_id() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let task = app
+        .post_task
+        .execute(post_cmd("test-org", "fail task"))
+        .await
+        .unwrap();
+
+    let err = app
+        .fail_task
+        .execute(FailTaskCommand {
+            task_id: task.id.clone(),
+            org_id: "other-org".into(),
+            reason: None,
+        })
+        .await
+        .expect_err("fail_task with wrong org_id should fail");
+
+    assert!(
+        matches!(err, ApplicationError::Core(Error::NotFound { .. })),
+        "expected NotFound, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn cancel_task_rejects_wrong_org_id() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let task = app
+        .post_task
+        .execute(post_cmd("test-org", "cancel task"))
+        .await
+        .unwrap();
+
+    let err = app
+        .cancel_task
+        .execute(CancelTaskCommand {
+            task_id: task.id.clone(),
+            org_id: "other-org".into(),
+            reason: None,
+        })
+        .await
+        .expect_err("cancel_task with wrong org_id should fail");
+
+    assert!(
+        matches!(err, ApplicationError::Core(Error::NotFound { .. })),
+        "expected NotFound, got: {err:?}"
+    );
 }
 
 // ─── list tasks filters by status and namespace ─────────────────────────────

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::{Error, Result};
+use crate::error::{DomainResult, Result};
 use crate::namespace::ProjectId;
 use crate::organization::OrganizationId;
 
@@ -31,7 +31,7 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(org_id: OrganizationId, id: ProjectId, description: String) -> Result<Self> {
+    pub fn new(org_id: OrganizationId, id: ProjectId, description: String) -> DomainResult<Self> {
         let now = Utc::now();
         let mut project = Self {
             org_id,
@@ -47,16 +47,14 @@ impl Project {
             org_id: project.org_id.to_string(),
             project: project.id.to_string(),
             description: project.description.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             project.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_CREATED,
             project.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         project.collector.collect(event);
 
         Ok(project)
@@ -74,7 +72,7 @@ impl Project {
         }
     }
 
-    pub fn update_description(&mut self, description: String) -> Result<()> {
+    pub fn update_description(&mut self, description: String) -> DomainResult<()> {
         self.description = description;
         self.updated_at = Utc::now();
 
@@ -82,21 +80,19 @@ impl Project {
             org_id: self.org_id.to_string(),
             project: self.id.to_string(),
             description: self.description.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_DESCRIPTION_UPDATED,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }
 
-    pub fn set_metadata(&mut self, key: String, value: String) -> Result<()> {
+    pub fn set_metadata(&mut self, key: String, value: String) -> DomainResult<()> {
         self.metadata.insert(key.clone(), value.clone());
         self.updated_at = Utc::now();
 
@@ -105,16 +101,14 @@ impl Project {
             project: self.id.to_string(),
             key,
             value,
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             self.org_id.as_str(),
             project_events::NAMESPACE,
             project_events::TOPIC_METADATA_SET,
             self.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         self.collector.collect(event);
         Ok(())
     }

@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::knowledge::{KnowledgeKind, KnowledgeStore};
 
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
 use crate::list_skills::ListSkills;
-use crate::parse_namespace;
 
 pub struct ListOverviewsCommand {
     pub org_id: String,
@@ -27,11 +27,9 @@ impl ListOverviews {
         }
     }
 
-    pub async fn execute(&self, cmd: ListOverviewsCommand) -> Result<Vec<KnowledgeDto>> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(&self, cmd: ListOverviewsCommand) -> ApplicationResult<Vec<KnowledgeDto>> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
 
         let entries = self

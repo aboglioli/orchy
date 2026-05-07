@@ -13,7 +13,7 @@ use orchy_application::{
     SwitchContextCommand,
 };
 
-use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, parse_project, to_json};
+use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_app_error, parse_project, to_json};
 use crate::mcp::params::{
     ChangeRolesParams, CheckMailboxParams, CheckSentMessagesParams, GetAgentContextParams,
     ListAgentsParams, ListConversationParams, MarkReadParams, PollUpdatesParams,
@@ -80,7 +80,7 @@ pub(super) async fn register_agent(
             h.set_session(agent_id, project, ns).await;
             Ok(to_json(&response))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -136,7 +136,7 @@ pub(super) async fn list_agents(
     };
     match h.container.app.list_agents.execute(cmd).await {
         Ok(page) => Ok(to_json(&page)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -152,7 +152,7 @@ pub(super) async fn change_roles(
     };
     match h.container.app.change_roles.execute(cmd).await {
         Ok(agent) => Ok(to_json(&agent)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -164,7 +164,7 @@ pub(super) async fn heartbeat(h: &OrchyHandler) -> Result<String, String> {
     };
     match h.container.app.heartbeat.execute(cmd).await {
         Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -177,7 +177,7 @@ pub(super) async fn rename_alias(h: &OrchyHandler, new_alias: String) -> Result<
     };
     match h.container.app.rename_alias.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -228,7 +228,7 @@ pub(super) async fn switch_context(
             h.set_session_project_and_namespace(project, ns).await;
             Ok(to_json(&response))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -249,7 +249,7 @@ pub(super) async fn get_agent_context(
         };
         return match h.container.app.get_agent.execute(cmd).await {
             Ok(resp) => Ok(to_json(&resp)),
-            Err(e) => Err(mcp_error(e)),
+            Err(e) => Err(mcp_app_error(e)),
         };
     }
 
@@ -260,7 +260,7 @@ pub(super) async fn get_agent_context(
 
     match h.container.app.get_agent_summary.execute(cmd).await {
         Ok(summary) => Ok(to_json(&summary)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -310,7 +310,7 @@ pub(super) async fn poll_updates(
 
             Ok(to_json(&result))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -341,7 +341,7 @@ pub(super) async fn check_mailbox(
 
     match h.container.app.check_mailbox.execute(cmd).await {
         Ok(page) => Ok(to_json(&page)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -373,7 +373,7 @@ pub(super) async fn check_sent_messages(
 
     match h.container.app.check_sent_messages.execute(cmd).await {
         Ok(page) => Ok(to_json(&page)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -387,7 +387,7 @@ pub(super) async fn mark_read(h: &OrchyHandler, params: MarkReadParams) -> Resul
 
     match h.container.app.mark_read.execute(cmd).await {
         Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -407,6 +407,6 @@ pub(super) async fn list_conversation(
 
     match h.container.app.list_conversation.execute(cmd).await {
         Ok(messages) => Ok(to_json(&messages)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }

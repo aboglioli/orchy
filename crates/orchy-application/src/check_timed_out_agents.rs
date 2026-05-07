@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::AgentStore;
-use orchy_core::error::Result;
 use orchy_core::pagination::PageParams;
 use orchy_core::resource_lock::LockStore;
 use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
@@ -33,7 +33,7 @@ impl CheckTimedOutAgents {
         }
     }
 
-    pub async fn execute(&self, timeout_secs: u64) -> Result<CheckTimedOutAgentsResult> {
+    pub async fn execute(&self, timeout_secs: u64) -> ApplicationResult<CheckTimedOutAgentsResult> {
         let agents = self.agents.find_timed_out(timeout_secs).await?;
 
         let mut locks_released = 0u64;

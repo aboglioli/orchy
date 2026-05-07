@@ -1,17 +1,17 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use orchy_core::embeddings::EmbeddingsProvider;
-use orchy_core::error::{Error, Result};
+use crate::embeddings::EmbeddingsProvider;
+use crate::error::ApplicationResult;
 use orchy_core::graph::{EdgeStore, TraversalDirection};
 use orchy_core::knowledge::KnowledgeStore;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 
+use orchy_core::namespace::Namespace;
 use orchy_core::namespace::ProjectId;
 
 use crate::dto::KnowledgeDto;
-use crate::parse_namespace;
 
 pub struct SearchKnowledgeCommand {
     pub org_id: String,
@@ -45,14 +45,17 @@ impl SearchKnowledge {
         }
     }
 
-    pub async fn execute(&self, cmd: SearchKnowledgeCommand) -> Result<Vec<KnowledgeDto>> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: SearchKnowledgeCommand,
+    ) -> ApplicationResult<Vec<KnowledgeDto>> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
 
         let namespace = cmd
             .namespace
             .as_deref()
-            .map(|s| parse_namespace(Some(s)))
+            .filter(|s| !s.is_empty())
+            .map(Namespace::new)
             .transpose()?;
 
         let limit = cmd.limit.unwrap_or(20) as usize;
@@ -63,10 +66,7 @@ impl SearchKnowledge {
             None
         };
 
-        let project = cmd
-            .project
-            .map(|s| ProjectId::try_from(s).map_err(|e| Error::InvalidInput(e.to_string())))
-            .transpose()?;
+        let project = cmd.project.map(ProjectId::try_from).transpose()?;
 
         let mut scored = self
             .store
@@ -147,7 +147,7 @@ impl SearchKnowledge {
         org: &OrganizationId,
         kind: ResourceKind,
         id: &str,
-    ) -> Result<HashSet<String>> {
+    ) -> ApplicationResult<HashSet<String>> {
         let mut ids = HashSet::new();
         let from = self.edges.find_from(org, &kind, id, &[], None).await?;
         for e in from {
@@ -168,7 +168,7 @@ impl SearchKnowledge {
         &self,
         org: &OrganizationId,
         task_id: &str,
-    ) -> Result<HashSet<String>> {
+    ) -> ApplicationResult<HashSet<String>> {
         let traversal = self
             .edges
             .find_neighbors(

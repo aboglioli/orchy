@@ -11,7 +11,7 @@ use orchy_application::{
     TagTaskCommand, UnarchiveTaskCommand, UnblockTaskCommand, UntagTaskCommand, UpdateTaskCommand,
 };
 
-use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_error, to_json};
+use crate::mcp::handler::{NamespacePolicy, OrchyHandler, mcp_app_error, to_json};
 use crate::mcp::params::{
     AddDependencyParams, ArchiveTaskParams, AssignTaskParams, CancelTaskParams, ClaimTaskParams,
     CompleteTaskParams, DelegateTaskParams, FailTaskParams, GetNextTaskParams, GetTaskParams,
@@ -48,7 +48,7 @@ pub(super) async fn post_task(h: &OrchyHandler, params: PostTaskParams) -> Resul
 
     match h.container.app.post_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -114,11 +114,11 @@ pub(super) async fn get_next_task(
                     knowledge_content_limit: 500,
                 })
                 .await
-                .map_err(mcp_error)?;
+                .map_err(mcp_app_error)?;
             Ok(to_json(&ctx))
         }
         Ok(None) => Ok(to_json(&Value::Null)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -151,7 +151,7 @@ pub(super) async fn list_tasks(
 
     match h.container.app.list_tasks.execute(cmd).await {
         Ok(page) => Ok(to_json(&page)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -187,10 +187,10 @@ pub(super) async fn claim_task(
                     knowledge_content_limit: 500,
                 })
                 .await
-                .map_err(mcp_error)?;
+                .map_err(mcp_app_error)?;
             Ok(to_json(&ctx))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -225,10 +225,10 @@ pub(super) async fn start_task(
                     knowledge_content_limit: 500,
                 })
                 .await
-                .map_err(mcp_error)?;
+                .map_err(mcp_app_error)?;
             Ok(to_json(&ctx))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -262,7 +262,7 @@ pub(super) async fn complete_task(
 
     match h.container.app.complete_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -278,7 +278,7 @@ pub(super) async fn fail_task(h: &OrchyHandler, params: FailTaskParams) -> Resul
 
     match h.container.app.fail_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -297,7 +297,7 @@ pub(super) async fn cancel_task(
 
     match h.container.app.cancel_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -315,7 +315,7 @@ pub(super) async fn archive_task(
     };
     match h.container.app.archive_task.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -332,7 +332,7 @@ pub(super) async fn unarchive_task(
     };
     match h.container.app.unarchive_task.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -353,7 +353,7 @@ pub(super) async fn update_task(
 
     match h.container.app.update_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -370,7 +370,7 @@ pub(super) async fn unblock_task(
 
     match h.container.app.unblock_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -390,7 +390,7 @@ pub(super) async fn assign_task(
 
     match h.container.app.assign_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -427,7 +427,7 @@ pub(super) async fn split_task(
             });
             Ok(to_json(&result))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -465,7 +465,7 @@ pub(super) async fn replace_task(
             });
             Ok(to_json(&result))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -493,7 +493,7 @@ pub(super) async fn merge_tasks(
             });
             Ok(to_json(&result))
         }
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -515,7 +515,7 @@ pub(super) async fn delegate_task(
 
     match h.container.app.delegate_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -534,7 +534,7 @@ pub(super) async fn add_dependency(
 
     match h.container.app.add_dependency.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -553,7 +553,7 @@ pub(super) async fn remove_dependency(
 
     match h.container.app.remove_dependency.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -572,7 +572,7 @@ pub(super) async fn move_task(h: &OrchyHandler, params: MoveTaskParams) -> Resul
 
     match h.container.app.move_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -587,7 +587,7 @@ pub(super) async fn tag_task(h: &OrchyHandler, params: TagTaskParams) -> Result<
 
     match h.container.app.tag_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -605,7 +605,7 @@ pub(super) async fn untag_task(
 
     match h.container.app.untag_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -622,7 +622,7 @@ pub(super) async fn release_task(
 
     match h.container.app.release_task.execute(cmd).await {
         Ok(task) => Ok(to_json(&task)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -647,7 +647,7 @@ pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<
             .await
         {
             Ok(resp) => return Ok(to_json(&resp)),
-            Err(e) => return Err(mcp_error(e)),
+            Err(e) => return Err(mcp_app_error(e)),
         }
     }
 
@@ -668,7 +668,7 @@ pub(super) async fn get_task(h: &OrchyHandler, params: GetTaskParams) -> Result<
         .await
     {
         Ok(ctx) => Ok(to_json(&ctx)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -688,7 +688,7 @@ pub(super) async fn list_tags(h: &OrchyHandler, params: ListTagsParams) -> Resul
 
     match h.container.app.list_tags.execute(cmd).await {
         Ok(tags) => Ok(to_json(&tags)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }
 
@@ -701,6 +701,6 @@ pub(super) async fn touch_task(h: &OrchyHandler, task_id: String) -> Result<Stri
     };
     match h.container.app.touch_task.execute(cmd).await {
         Ok(response) => Ok(to_json(&response)),
-        Err(e) => Err(mcp_error(e)),
+        Err(e) => Err(mcp_app_error(e)),
     }
 }

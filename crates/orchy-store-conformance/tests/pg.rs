@@ -76,3 +76,21 @@ async fn edge_alias_blocks_normalizes_to_depends_on() {
     let (_container, b) = bundle().await;
     orchy_store_conformance::scenarios::edge_alias_blocks_normalizes_to_depends_on(&b).await;
 }
+
+#[tokio::test]
+async fn agent_save_then_find_returns_same() {
+    let (_container, b) = bundle().await;
+    orchy_store_conformance::scenarios::agent_save_then_find_returns_same(&b).await;
+}
+
+#[tokio::test]
+async fn pagination_respects_limit() {
+    let (_container, b) = bundle().await;
+    orchy_store_conformance::scenarios::pagination_respects_limit(&b).await;
+}
+
+#[tokio::test]
+async fn lock_acquire_and_release() {
+    let (_container, b) = bundle().await;
+    orchy_store_conformance::scenarios::lock_acquire_and_release(&b).await;
+}

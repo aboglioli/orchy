@@ -2,14 +2,14 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
+use orchy_core::error::{Error, Resource};
 use orchy_core::knowledge::{KnowledgePath, KnowledgeStore, Version};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
-use crate::parse_namespace;
-
 use crate::dto::KnowledgeDto;
+use crate::parse_namespace;
 
 pub struct PatchKnowledgeMetadataCommand {
     pub org_id: String,
@@ -32,42 +32,42 @@ impl PatchKnowledgeMetadata {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: PatchKnowledgeMetadataCommand) -> Result<KnowledgeDto> {
-        let org_id =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project =
-            ProjectId::try_from(cmd.project).map_err(|e| Error::InvalidInput(e.to_string()))?;
+    pub async fn execute(
+        &self,
+        cmd: PatchKnowledgeMetadataCommand,
+    ) -> ApplicationResult<KnowledgeDto> {
+        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
         let namespace = parse_namespace(cmd.namespace.as_deref())?;
-        let path: KnowledgePath = cmd
-            .path
-            .parse()
-            .map_err(|e: Error| Error::InvalidInput(e.to_string()))?;
+        let path: KnowledgePath = cmd.path.parse()?;
         let expected_version = cmd.version.map(Version::new);
 
         let valid_from = cmd
             .valid_from
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
-            .map_err(|e| Error::InvalidInput(format!("invalid valid_from: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("invalid valid_from: {e}")))?;
         let valid_until = cmd
             .valid_until
             .map(|s| DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)))
             .transpose()
-            .map_err(|e| Error::InvalidInput(format!("invalid valid_until: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("invalid valid_until: {e}")))?;
 
         let mut entry = self
             .store
             .find_by_path(&org_id, Some(&project), &namespace, &path)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("knowledge entry: {path}")))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Knowledge,
+                id: path.to_string(),
+            })?;
 
         if let Some(expected) = expected_version
             && entry.version() != expected
         {
-            return Err(Error::VersionMismatch {
-                expected: expected.as_u64(),
-                actual: entry.version().as_u64(),
-            });
+            return Err(
+                Error::version_mismatch(expected.as_u64(), entry.version().as_u64()).into(),
+            );
         }
 
         if cmd.set.is_empty()

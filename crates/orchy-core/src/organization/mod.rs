@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use orchy_events::{Event, EventCollector, Payload};
 
-use crate::error::{Error, Result};
+use crate::error::{DomainResult, Result};
 
 use self::events as org_events;
 
@@ -29,7 +29,7 @@ pub struct Organization {
 }
 
 impl Organization {
-    pub fn new(id: OrganizationId, name: String) -> Result<Self> {
+    pub fn new(id: OrganizationId, name: String) -> DomainResult<Self> {
         let now = Utc::now();
         let mut org = Self {
             id,
@@ -42,16 +42,14 @@ impl Organization {
         let payload = Payload::from_json(&org_events::OrgCreatedPayload {
             org_id: org.id.to_string(),
             name: org.name.clone(),
-        })
-        .map_err(|e| Error::Store(format!("event serialization: {e}")))?;
+        })?;
         let event = Event::create(
             org.id.as_str(),
             org_events::NAMESPACE,
             org_events::TOPIC_CREATED,
             org.id.to_string(),
             payload,
-        )
-        .map_err(|e| Error::Store(format!("event creation: {e}")))?;
+        )?;
         org.collector.collect(event);
 
         Ok(org)

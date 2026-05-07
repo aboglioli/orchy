@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use crate::error::ApplicationResult;
 use orchy_core::agent::{AgentId, AgentStore, Alias};
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Resource};
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 
@@ -22,10 +23,9 @@ impl ResolveAgent {
         Self { agents }
     }
 
-    pub async fn execute(&self, cmd: ResolveAgentCommand) -> Result<AgentDto> {
-        let org =
-            OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?;
-        let project = ProjectId::try_from(cmd.project).map_err(Error::InvalidInput)?;
+    pub async fn execute(&self, cmd: ResolveAgentCommand) -> ApplicationResult<AgentDto> {
+        let org = OrganizationId::new(&cmd.org_id)?;
+        let project = ProjectId::try_from(cmd.project)?;
 
         if let Ok(agent_id) = cmd.id_or_alias.parse::<AgentId>()
             && let Some(agent) = self.agents.find_by_id(&agent_id).await?
@@ -40,7 +40,10 @@ impl ResolveAgent {
             .agents
             .find_by_alias(&org, &project, &alias)
             .await?
-            .ok_or_else(|| Error::NotFound(format!("agent '{}'", cmd.id_or_alias)))?;
+            .ok_or_else(|| Error::NotFound {
+                resource: Resource::Agent,
+                id: cmd.id_or_alias.to_string(),
+            })?;
 
         Ok(AgentDto::from(&agent))
     }

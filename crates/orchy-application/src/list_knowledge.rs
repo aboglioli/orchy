@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use orchy_core::error::{Error, Result};
+use crate::error::ApplicationResult;
 use orchy_core::knowledge::{KnowledgeFilter, KnowledgeKind, KnowledgeStore};
+use orchy_core::namespace::Namespace;
 use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::PageParams;
 
 use crate::dto::{KnowledgeDto, PageResponse};
-use crate::parse_namespace;
 
 pub struct ListKnowledgeCommand {
     pub org_id: String,
@@ -32,27 +32,22 @@ impl ListKnowledge {
         Self { store }
     }
 
-    pub async fn execute(&self, cmd: ListKnowledgeCommand) -> Result<PageResponse<KnowledgeDto>> {
-        let org_id =
-            Some(OrganizationId::new(&cmd.org_id).map_err(|e| Error::InvalidInput(e.to_string()))?);
+    pub async fn execute(
+        &self,
+        cmd: ListKnowledgeCommand,
+    ) -> ApplicationResult<PageResponse<KnowledgeDto>> {
+        let org_id = Some(OrganizationId::new(&cmd.org_id)?);
 
-        let project = cmd
-            .project
-            .map(ProjectId::try_from)
-            .transpose()
-            .map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let project = cmd.project.map(ProjectId::try_from).transpose()?;
 
         let namespace = cmd
             .namespace
             .as_deref()
-            .map(|s| parse_namespace(Some(s)))
+            .filter(|s| !s.is_empty())
+            .map(Namespace::new)
             .transpose()?;
 
-        let kind = cmd
-            .kind
-            .map(|s| s.parse::<KnowledgeKind>())
-            .transpose()
-            .map_err(Error::InvalidInput)?;
+        let kind = cmd.kind.map(|s| s.parse::<KnowledgeKind>()).transpose()?;
 
         let filter = KnowledgeFilter {
             org_id,

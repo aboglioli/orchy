@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -40,14 +40,14 @@ impl fmt::Display for OrgRole {
 }
 
 impl FromStr for OrgRole {
-    type Err = Error;
+    type Err = DomainError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "owner" => Ok(OrgRole::Owner),
             "admin" => Ok(OrgRole::Admin),
             "member" => Ok(OrgRole::Member),
-            _ => Err(Error::invalid_input(format!("invalid org role: {}", s))),
+            _ => Err(DomainError::validation(format!("invalid org role: {}", s))),
         }
     }
 }

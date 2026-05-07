@@ -32,6 +32,9 @@ macro_rules! conformance_suite {
         $crate::declare_test! { $backend, knowledge_optimistic_concurrency, $crate::scenarios::knowledge_optimistic_concurrency }
         $crate::declare_test! { $backend, message_claim_visibility, $crate::scenarios::message_claim_visibility }
         $crate::declare_test! { $backend, edge_alias_blocks_normalizes_to_depends_on, $crate::scenarios::edge_alias_blocks_normalizes_to_depends_on }
+        $crate::declare_test! { $backend, agent_save_then_find_returns_same, $crate::scenarios::agent_save_then_find_returns_same }
+        $crate::declare_test! { $backend, pagination_respects_limit, $crate::scenarios::pagination_respects_limit }
+        $crate::declare_test! { $backend, lock_acquire_and_release, $crate::scenarios::lock_acquire_and_release }
     };
 }
 

@@ -3,7 +3,7 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use rusqlite::OptionalExtension;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::{
     MembershipId, OrgMembership, OrgMembershipStore, OrgRole, RestoreOrgMembership, UserId,
@@ -24,7 +24,7 @@ impl SqliteOrgMembershipStore {
 #[async_trait]
 impl OrgMembershipStore for SqliteOrgMembershipStore {
     async fn save(&self, membership: &mut OrgMembership) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         conn.execute(
             "INSERT OR REPLACE INTO org_memberships (id, user_id, org_id, role, created_at)
@@ -37,13 +37,13 @@ impl OrgMembershipStore for SqliteOrgMembershipStore {
                 membership.created_at().to_rfc3339(),
             ],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         Ok(())
     }
 
     async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let row = conn
             .query_row(
@@ -61,20 +61,20 @@ impl OrgMembershipStore for SqliteOrgMembershipStore {
                 },
             )
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         row_to_membership(row)
     }
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, user_id, org_id, role, created_at
                  FROM org_memberships WHERE user_id = ?1 ORDER BY created_at DESC",
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let rows = stmt
             .query_map(rusqlite::params![user_id.to_string()], |row| {
@@ -86,12 +86,11 @@ impl OrgMembershipStore for SqliteOrgMembershipStore {
                     row.get::<_, String>(4)?,
                 ))
             })
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let mut memberships = Vec::new();
         for row in rows {
-            if let Some(m) = row_to_membership(Some(row.map_err(|e| Error::Store(e.to_string()))?))?
-            {
+            if let Some(m) = row_to_membership(Some(row.map_err(crate::error::store_err)?))? {
                 memberships.push(m);
             }
         }
@@ -100,14 +99,14 @@ impl OrgMembershipStore for SqliteOrgMembershipStore {
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let mut stmt = conn
             .prepare(
                 "SELECT id, user_id, org_id, role, created_at
                  FROM org_memberships WHERE org_id = ?1 ORDER BY created_at DESC",
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let rows = stmt
             .query_map(rusqlite::params![org_id.to_string()], |row| {
@@ -119,12 +118,11 @@ impl OrgMembershipStore for SqliteOrgMembershipStore {
                     row.get::<_, String>(4)?,
                 ))
             })
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         let mut memberships = Vec::new();
         for row in rows {
-            if let Some(m) = row_to_membership(Some(row.map_err(|e| Error::Store(e.to_string()))?))?
-            {
+            if let Some(m) = row_to_membership(Some(row.map_err(crate::error::store_err)?))? {
                 memberships.push(m);
             }
         }
@@ -137,7 +135,7 @@ impl OrgMembershipStore for SqliteOrgMembershipStore {
         user_id: &UserId,
         org_id: &OrganizationId,
     ) -> Result<Option<OrgMembership>> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         let row = conn
             .query_row(
@@ -155,19 +153,19 @@ impl OrgMembershipStore for SqliteOrgMembershipStore {
                 },
             )
             .optional()
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         row_to_membership(row)
     }
 
     async fn delete(&self, id: &MembershipId) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         conn.execute(
             "DELETE FROM org_memberships WHERE id = ?1",
             rusqlite::params![id.to_string()],
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         Ok(())
     }
@@ -178,18 +176,39 @@ fn row_to_membership(
 ) -> Result<Option<OrgMembership>> {
     match row {
         Some((id, user_id, org_id, role, created_at)) => {
-            let id = MembershipId::from_str(&id)
-                .map_err(|e| Error::Store(format!("invalid membership id in db: {e}")))?;
-            let user_id = UserId::from_str(&user_id)
-                .map_err(|e| Error::Store(format!("invalid user id in db: {e}")))?;
-            let org_id = OrganizationId::new(&org_id)
-                .map_err(|e| Error::Store(format!("invalid org id in db: {e}")))?;
-            let role = role
-                .parse::<OrgRole>()
-                .map_err(|e| Error::Store(format!("invalid role in db: {e}")))?;
-            let created_at = created_at
-                .parse()
-                .map_err(|e| Error::Store(format!("invalid created_at in db: {e}")))?;
+            let id = MembershipId::from_str(&id).map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "invalid membership id in db: {e}"
+                )))
+            })?;
+            let user_id = UserId::from_str(&user_id).map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "membership".to_string(),
+                    column: "user_id".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let org_id = OrganizationId::new(&org_id).map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "membership".to_string(),
+                    column: "org_id".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let role = role.parse::<OrgRole>().map_err(|e| {
+                Error::Store(StoreError::Decode {
+                    table: "membership".to_string(),
+                    column: "role".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
+            let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
+                Error::Store(StoreError::Decode {
+                    table: "membership".to_string(),
+                    column: "created_at".to_string(),
+                    cause: e.to_string(),
+                })
+            })?;
 
             Ok(Some(OrgMembership::restore(RestoreOrgMembership {
                 id,

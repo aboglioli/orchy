@@ -34,10 +34,10 @@ impl KnowledgeStore for MemoryKnowledgeStore {
             if let Some(pv) = entry.persisted_version() {
                 if let Some(existing) = entries.get(&entry.id()) {
                     if existing.version() != pv {
-                        return Err(Error::VersionMismatch {
-                            expected: pv.as_u64(),
-                            actual: existing.version().as_u64(),
-                        });
+                        return Err(Error::version_mismatch(
+                            pv.as_u64(),
+                            existing.version().as_u64(),
+                        ));
                     }
                 }
             }
@@ -49,8 +49,7 @@ impl KnowledgeStore for MemoryKnowledgeStore {
         let events = entry.drain_events();
         if !events.is_empty() {
             for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)
-                    .map_err(|e| Error::Store(e.to_string()))?;
+                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
                 self.state.events.write().await.push(serialized);
             }
         }

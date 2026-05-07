@@ -3,6 +3,7 @@
 mod agent;
 mod api_key;
 mod edge;
+mod error;
 mod events;
 mod knowledge;
 mod membership;
@@ -27,11 +28,12 @@ use std::sync::Arc;
 use rusqlite::Connection;
 use std::sync::Mutex;
 
-use orchy_core::error::{Error, Result};
+use orchy_core::error::{Error, Result, StoreError};
 
 pub use agent::SqliteAgentStore;
 pub use api_key::SqliteApiKeyStore;
 pub use edge::SqliteEdgeStore;
+pub use error::{SqliteError, SqliteResult};
 pub use events::SqliteEventWriter;
 pub use knowledge::SqliteKnowledgeStore;
 pub use membership::SqliteOrgMembershipStore;
@@ -65,11 +67,11 @@ impl SqliteDatabase {
         } else {
             Connection::open(path)
         }
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let _: String = conn
             .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
-            .map_err(|e| Error::Store(e.to_string()))?;
+            .map_err(crate::error::store_err)?;
 
         Self::init_vec0_table(&conn, embedding_dimensions)?;
 
@@ -89,12 +91,12 @@ impl SqliteDatabase {
         conn.execute_batch(&format!(
             "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_vec USING vec0(embedding float[{dims}])"
         ))
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
         Ok(())
     }
 
     pub fn run_migrations(&self, dir: &Path) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -102,10 +104,14 @@ impl SqliteDatabase {
                 applied_at TEXT NOT NULL
             )",
         )
-        .map_err(|e| Error::Store(e.to_string()))?;
+        .map_err(crate::error::store_err)?;
 
         let mut files: Vec<_> = fs::read_dir(dir)
-            .map_err(|e| Error::Store(format!("cannot read migrations dir: {e}")))?
+            .map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "cannot read migrations dir: {e}"
+                )))
+            })?
             .filter_map(|e| e.ok())
             .filter(|e| {
                 e.path()
@@ -125,27 +131,38 @@ impl SqliteDatabase {
                     rusqlite::params![&filename],
                     |row| row.get(0),
                 )
-                .map_err(|e| Error::Store(e.to_string()))?;
+                .map_err(crate::error::store_err)?;
 
             if applied {
                 continue;
             }
 
-            let sql = fs::read_to_string(entry.path())
-                .map_err(|e| Error::Store(format!("cannot read {filename}: {e}")))?;
+            let sql = fs::read_to_string(entry.path()).map_err(|e| {
+                Error::Store(StoreError::Migration(format!(
+                    "cannot read {filename}: {e}"
+                )))
+            })?;
 
-            let tx = conn
-                .unchecked_transaction()
-                .map_err(|e| Error::Store(format!("migration {filename} tx begin: {e}")))?;
-            tx.execute_batch(&sql)
-                .map_err(|e| Error::Store(format!("migration {filename} failed: {e}")))?;
+            let tx = conn.unchecked_transaction().map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "migration {filename} tx begin: {e}"
+                )))
+            })?;
+            tx.execute_batch(&sql).map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "migration {filename} failed: {e}"
+                )))
+            })?;
             tx.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
                 rusqlite::params![&filename, chrono::Utc::now().to_rfc3339()],
             )
-            .map_err(|e| Error::Store(e.to_string()))?;
-            tx.commit()
-                .map_err(|e| Error::Store(format!("migration {filename} commit: {e}")))?;
+            .map_err(crate::error::store_err)?;
+            tx.commit().map_err(|e| {
+                Error::Store(StoreError::Other(format!(
+                    "migration {filename} commit: {e}"
+                )))
+            })?;
         }
 
         Ok(())
