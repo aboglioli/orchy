@@ -19,11 +19,6 @@ use crate::pagination::{Page, PageParams};
 #[async_trait::async_trait]
 pub trait TaskStore: Send + Sync {
     async fn save(&self, task: &mut Task) -> Result<()>;
-    async fn save_if_status(
-        &self,
-        task: &mut Task,
-        expected_statuses: &[TaskStatus],
-    ) -> Result<bool>;
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
     async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>>;
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>>;
@@ -228,6 +223,10 @@ pub struct Task {
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(skip)]
+    version: u64,
+    #[serde(skip)]
+    persisted_version: Option<u64>,
+    #[serde(skip)]
     collector: EventCollector,
 }
 
@@ -275,6 +274,8 @@ impl Task {
             created_by,
             created_at: now,
             updated_at: now,
+            version: 1,
+            persisted_version: None,
             collector: EventCollector::new(),
         };
 
@@ -321,6 +322,8 @@ impl Task {
             created_by: r.created_by,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            version: r.version,
+            persisted_version: Some(r.version),
             collector: EventCollector::new(),
         }
     }
@@ -331,6 +334,7 @@ impl Task {
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
         self.touch();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -346,12 +350,16 @@ impl Task {
         Ok(())
     }
 
-    pub fn claim_if_available(&mut self, agent: &AgentId) -> DomainResult<bool> {
-        if !self.can_be_claimed() {
-            return Ok(false);
-        }
-        self.claim(agent.clone())?;
-        Ok(true)
+    pub fn persisted_version(&self) -> Option<u64> {
+        self.persisted_version
+    }
+
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+
+    pub fn mark_persisted(&mut self) {
+        self.persisted_version = Some(self.version);
     }
 
     pub fn start(&mut self, agent: &AgentId) -> DomainResult<()> {
@@ -364,6 +372,7 @@ impl Task {
         self.status = self.status.transition_to(TaskStatus::InProgress)?;
         self.updated_at = Utc::now();
         self.touch();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -384,6 +393,7 @@ impl Task {
         self.result_summary = summary.clone();
         self.updated_at = Utc::now();
         self.touch();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -403,6 +413,7 @@ impl Task {
         self.status = self.status.transition_to(TaskStatus::Completed)?;
         self.result_summary = Some(summary.clone());
         self.updated_at = Utc::now();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -423,6 +434,7 @@ impl Task {
         self.result_summary = reason.clone();
         self.updated_at = Utc::now();
         self.touch();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -449,6 +461,7 @@ impl Task {
         self.assigned_to = None;
         self.assigned_at = None;
         self.updated_at = Utc::now();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -473,6 +486,7 @@ impl Task {
         self.assigned_to = Some(new_agent.clone());
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -494,6 +508,7 @@ impl Task {
         }
         self.status = self.status.transition_to(TaskStatus::Blocked)?;
         self.updated_at = Utc::now();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -532,6 +547,7 @@ impl Task {
         self.status = self.status.transition_to(TaskStatus::Cancelled)?;
         self.result_summary = reason.clone();
         self.updated_at = Utc::now();
+        self.version += 1;
 
         self.collector.collect(Event::create(
             self.org_id.as_str(),
@@ -617,6 +633,7 @@ impl Task {
                 self.status
             )));
         }
+        self.version += 1;
         let mut new_title = None;
         let mut new_description = None;
         let mut new_acceptance_criteria = None;
@@ -850,6 +867,7 @@ pub struct RestoreTask {
     pub created_by: Option<AgentId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub version: u64,
 }
 
 pub struct SubtaskDef {
@@ -902,6 +920,7 @@ mod tests {
             created_by: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            version: 1,
         })
     }
 

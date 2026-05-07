@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use orchy_core::error::{Error, Resource, Result};
+use orchy_core::error::{Error, Result};
 use orchy_core::pagination::{Page, PageParams};
-use orchy_core::task::{Task, TaskFilter, TaskId, TaskStatus, TaskStore};
+use orchy_core::task::{Task, TaskFilter, TaskId, TaskStore};
 
 use crate::MemoryState;
 
@@ -23,8 +23,17 @@ impl TaskStore for MemoryTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
         {
             let mut tasks = self.state.tasks.write().await;
+            if let Some(pv) = task.persisted_version() {
+                let stored = tasks.get(&task.id()).ok_or_else(|| {
+                    Error::not_found(orchy_core::error::Resource::Task, task.id().to_string())
+                })?;
+                if stored.version() != pv {
+                    return Err(Error::version_mismatch(pv, stored.version()));
+                }
+            }
             tasks.insert(task.id(), task.clone());
         }
+        task.mark_persisted();
 
         let events = task.drain_events();
         if !events.is_empty() {
@@ -35,33 +44,6 @@ impl TaskStore for MemoryTaskStore {
         }
 
         Ok(())
-    }
-
-    async fn save_if_status(
-        &self,
-        task: &mut Task,
-        expected_statuses: &[TaskStatus],
-    ) -> Result<bool> {
-        if expected_statuses.is_empty() {
-            return Ok(false);
-        }
-        let mut tasks = self.state.tasks.write().await;
-        let stored = tasks
-            .get(&task.id())
-            .ok_or_else(|| Error::not_found(Resource::Task, task.id().to_string()))?;
-        if !expected_statuses.contains(&stored.status()) {
-            return Ok(false);
-        }
-        tasks.insert(task.id(), task.clone());
-        let events = task.drain_events();
-        if !events.is_empty() {
-            let mut events_guard = self.state.events.write().await;
-            for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
-                events_guard.push(serialized);
-            }
-        }
-        Ok(true)
     }
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {

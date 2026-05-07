@@ -67,14 +67,6 @@ impl ClaimTask {
             .into());
         }
 
-        if !task.can_be_claimed() {
-            return Err(Error::invalid_transition(
-                task.status().to_string(),
-                TaskStatus::Claimed.to_string(),
-            )
-            .into());
-        }
-
         let dep_edges = self
             .edges
             .find_from(
@@ -104,20 +96,13 @@ impl ClaimTask {
             }
         }
 
-        let expected = vec![task.status()];
-
-        if !task.claim_if_available(&agent_id)? {
-            return Err(Error::conflict(format!("task {task_id} no longer claimable")).into());
-        }
+        task.claim(agent_id.clone())?;
 
         if cmd.start.unwrap_or(false) {
             task.start(&agent_id)?;
         }
 
-        let saved = self.tasks.save_if_status(&mut task, &expected).await?;
-        if !saved {
-            return Err(Error::conflict(format!("task {task_id} was claimed concurrently")).into());
-        }
+        self.tasks.save(&mut task).await?;
         Ok(TaskDto::from(&task))
     }
 }

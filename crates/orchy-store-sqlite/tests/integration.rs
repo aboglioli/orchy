@@ -219,6 +219,7 @@ async fn task_save_overwrites_existing() {
         created_by: None,
         created_at: task.created_at(),
         updated_at: task.updated_at(),
+        version: 1,
     });
     s.task.save(&mut updated).await.unwrap();
 

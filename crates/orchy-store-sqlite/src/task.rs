@@ -17,7 +17,7 @@ use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStat
 
 use crate::{SqliteConn, decode_json, events};
 
-const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at";
+const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at, version";
 
 pub struct SqliteTaskStore {
     conn: SqliteConn,
@@ -35,115 +35,91 @@ impl TaskStore for SqliteTaskStore {
         let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let tx = conn.transaction().map_err(crate::error::store_err)?;
 
-        tx.execute(
-            "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
-            rusqlite::params![
-                task.id().to_string(),
-                task.org_id().to_string(),
-                task.project().to_string(),
-                task.namespace().to_string(),
-                task.title(),
-                task.description(),
-                task.acceptance_criteria().map(|s| s.to_string()),
-                task.status().to_string(),
-                task.priority().to_string(),
-                serde_json::to_string(task.assigned_roles())
-                    .map_err(|e| Error::Store(StoreError::Serialization(format!("assigned_roles: {e}"))))?,
-                task.assigned_to().map(|a| a.to_string()),
-                task.assigned_at().map(|dt| dt.to_rfc3339()),
-                task.stale_after_secs(),
-                task.last_activity_at().to_rfc3339(),
-                serde_json::to_string(task.tags())
-                    .map_err(|e| Error::Store(StoreError::Serialization(format!("tags: {e}"))))?,
-                task.result_summary().map(|s| s.to_string()),
-                task.archived_at().map(|dt| dt.to_rfc3339()),
-                task.created_by().map(|a| a.to_string()),
-                task.created_at().to_rfc3339(),
-                task.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
+        if let Some(pv) = task.persisted_version() {
+            let affected = tx
+                .execute(
+                    "UPDATE tasks SET organization_id=?2, project=?3, namespace=?4, title=?5, \
+                     description=?6, acceptance_criteria=?7, status=?8, priority=?9, \
+                     assigned_roles=?10, assigned_to=?11, assigned_at=?12, stale_after_secs=?13, \
+                     last_activity_at=?14, tags=?15, result_summary=?16, archived_at=?17, \
+                     created_by=?18, created_at=?19, updated_at=?20, version=?21 \
+                     WHERE id=?1 AND version=?22",
+                    rusqlite::params![
+                        task.id().to_string(),
+                        task.org_id().to_string(),
+                        task.project().to_string(),
+                        task.namespace().to_string(),
+                        task.title(),
+                        task.description(),
+                        task.acceptance_criteria().map(|s| s.to_string()),
+                        task.status().to_string(),
+                        task.priority().to_string(),
+                        serde_json::to_string(task.assigned_roles()).map_err(|e| {
+                            Error::Store(StoreError::Serialization(format!("assigned_roles: {e}")))
+                        })?,
+                        task.assigned_to().map(|a| a.to_string()),
+                        task.assigned_at().map(|dt| dt.to_rfc3339()),
+                        task.stale_after_secs(),
+                        task.last_activity_at().to_rfc3339(),
+                        serde_json::to_string(task.tags()).map_err(|e| {
+                            Error::Store(StoreError::Serialization(format!("tags: {e}")))
+                        })?,
+                        task.result_summary().map(|s| s.to_string()),
+                        task.archived_at().map(|dt| dt.to_rfc3339()),
+                        task.created_by().map(|a| a.to_string()),
+                        task.created_at().to_rfc3339(),
+                        task.updated_at().to_rfc3339(),
+                        task.version(),
+                        pv,
+                    ],
+                )
+                .map_err(crate::error::store_err)?;
+
+            if affected == 0 {
+                return Err(Error::version_mismatch(pv, task.version()));
+            }
+        } else {
+            tx.execute(
+                "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at, version)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                rusqlite::params![
+                    task.id().to_string(),
+                    task.org_id().to_string(),
+                    task.project().to_string(),
+                    task.namespace().to_string(),
+                    task.title(),
+                    task.description(),
+                    task.acceptance_criteria().map(|s| s.to_string()),
+                    task.status().to_string(),
+                    task.priority().to_string(),
+                    serde_json::to_string(task.assigned_roles()).map_err(|e| {
+                        Error::Store(StoreError::Serialization(format!("assigned_roles: {e}")))
+                    })?,
+                    task.assigned_to().map(|a| a.to_string()),
+                    task.assigned_at().map(|dt| dt.to_rfc3339()),
+                    task.stale_after_secs(),
+                    task.last_activity_at().to_rfc3339(),
+                    serde_json::to_string(task.tags()).map_err(|e| {
+                        Error::Store(StoreError::Serialization(format!("tags: {e}")))
+                    })?,
+                    task.result_summary().map(|s| s.to_string()),
+                    task.archived_at().map(|dt| dt.to_rfc3339()),
+                    task.created_by().map(|a| a.to_string()),
+                    task.created_at().to_rfc3339(),
+                    task.updated_at().to_rfc3339(),
+                    task.version(),
+                ],
+            )
+            .map_err(crate::error::store_err)?;
+        }
+
+        task.mark_persisted();
 
         let events = task.drain_events();
         events::write_events_in_tx(&tx, &events)?;
 
         tx.commit().map_err(crate::error::store_err)?;
         Ok(())
-    }
-
-    async fn save_if_status(
-        &self,
-        task: &mut Task,
-        expected_statuses: &[TaskStatus],
-    ) -> Result<bool> {
-        if expected_statuses.is_empty() {
-            return Ok(false);
-        }
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        let status_in: String = (21..=20 + expected_statuses.len())
-            .map(|i| format!("?{i}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let sql = format!(
-            "UPDATE tasks SET organization_id=?2, project=?3, namespace=?4, title=?5, \
-             description=?6, acceptance_criteria=?7, status=?8, priority=?9, \
-             assigned_roles=?10, assigned_to=?11, assigned_at=?12, stale_after_secs=?13, \
-             last_activity_at=?14, tags=?15, result_summary=?16, archived_at=?17, \
-             created_by=?18, created_at=?19, updated_at=?20 \
-             WHERE id=?1 AND status IN ({status_in})"
-        );
-
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
-            Box::new(task.id().to_string()),
-            Box::new(task.org_id().to_string()),
-            Box::new(task.project().to_string()),
-            Box::new(task.namespace().to_string()),
-            Box::new(task.title().to_string()),
-            Box::new(task.description().to_string()),
-            Box::new(task.acceptance_criteria().map(|s| s.to_string())),
-            Box::new(task.status().to_string()),
-            Box::new(task.priority().to_string()),
-            Box::new(serde_json::to_string(task.assigned_roles()).map_err(|e| {
-                Error::Store(StoreError::Other(format!(
-                    "failed to serialize assigned_roles: {e}"
-                )))
-            })?),
-            Box::new(task.assigned_to().map(|a| a.to_string())),
-            Box::new(task.assigned_at().map(|dt| dt.to_rfc3339())),
-            Box::new(task.stale_after_secs()),
-            Box::new(task.last_activity_at().to_rfc3339()),
-            Box::new(
-                serde_json::to_string(task.tags())
-                    .map_err(|e| Error::Store(StoreError::Serialization(format!("tags: {e}"))))?,
-            ),
-            Box::new(task.result_summary().map(|s| s.to_string())),
-            Box::new(task.archived_at().map(|dt| dt.to_rfc3339())),
-            Box::new(task.created_by().map(|a| a.to_string())),
-            Box::new(task.created_at().to_rfc3339()),
-            Box::new(task.updated_at().to_rfc3339()),
-        ];
-        for s in expected_statuses {
-            params.push(Box::new(s.to_string()));
-        }
-
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
-        let affected = tx
-            .execute(&sql, param_refs.as_slice())
-            .map_err(crate::error::store_err)?;
-
-        if affected == 0 {
-            return Ok(false);
-        }
-
-        let events = task.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(true)
     }
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
@@ -293,6 +269,7 @@ fn row_to_task(row: &RusqliteRow) -> rusqlite::Result<Task> {
     let created_by_str: Option<String> = row.get(17)?;
     let created_at_str: String = row.get(18)?;
     let updated_at_str: String = row.get(19)?;
+    let version: u64 = row.get(20)?;
 
     let tags: Vec<String> = decode_json(&tags_str, "tags")?;
 
@@ -369,5 +346,6 @@ fn row_to_task(row: &RusqliteRow) -> rusqlite::Result<Task> {
         created_by,
         created_at,
         updated_at,
+        version,
     }))
 }

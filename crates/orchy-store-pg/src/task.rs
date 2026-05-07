@@ -28,62 +28,103 @@ impl PgTaskStore {
 impl TaskStore for PgTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
         let roles_json = serde_json::to_value(task.assigned_roles()).map_err(|e| {
-            Error::Store(StoreError::Other(format!(
-                "failed to serialize tasks.assigned_roles: {e}"
+            Error::Store(StoreError::Serialization(format!(
+                "tasks.assigned_roles: {e}"
             )))
         })?;
-        let tags_json = serde_json::to_value(task.tags()).map_err(|e| {
-            Error::Store(StoreError::Other(format!(
-                "failed to serialize tasks.tags: {e}"
-            )))
-        })?;
+        let tags_json = serde_json::to_value(task.tags())
+            .map_err(|e| Error::Store(StoreError::Serialization(format!("tasks.tags: {e}"))))?;
         let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
 
-        sqlx::query(
-            "INSERT INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-             ON CONFLICT (id) DO UPDATE SET
-                organization_id = EXCLUDED.organization_id,
-                project = EXCLUDED.project,
-                namespace = EXCLUDED.namespace,
-                title = EXCLUDED.title,
-                description = EXCLUDED.description,
-                acceptance_criteria = EXCLUDED.acceptance_criteria,
-                status = EXCLUDED.status,
-                priority = EXCLUDED.priority,
-                assigned_roles = EXCLUDED.assigned_roles,
-                assigned_to = EXCLUDED.assigned_to,
-                assigned_at = EXCLUDED.assigned_at,
-                stale_after_secs = EXCLUDED.stale_after_secs,
-                last_activity_at = EXCLUDED.last_activity_at,
-                tags = EXCLUDED.tags,
-                result_summary = EXCLUDED.result_summary,
-                archived_at = EXCLUDED.archived_at,
-                updated_at = EXCLUDED.updated_at",
-        )
-        .bind(task.id().as_uuid())
-        .bind(task.org_id().to_string())
-        .bind(task.project().to_string())
-        .bind(task.namespace().to_string())
-        .bind(task.title())
-        .bind(task.description())
-        .bind(task.acceptance_criteria())
-        .bind(task.status().to_string())
-        .bind(task.priority().to_string())
-        .bind(&roles_json)
-        .bind(task.assigned_to().map(|a| *a.as_uuid()))
-        .bind(task.assigned_at())
-        .bind(task.stale_after_secs().map(|v| v as i64))
-        .bind(task.last_activity_at())
-        .bind(&tags_json)
-        .bind(task.result_summary())
-        .bind(task.archived_at())
-        .bind(task.created_by().map(|a| *a.as_uuid()))
-        .bind(task.created_at())
-        .bind(task.updated_at())
-        .execute(&mut *tx)
-        .await
-        .map_err(crate::error::store_err)?;
+        if let Some(pv) = task.persisted_version() {
+            let result = sqlx::query(
+                "UPDATE tasks SET organization_id=$2, project=$3, namespace=$4, title=$5, \
+                 description=$6, acceptance_criteria=$7, status=$8, priority=$9, \
+                 assigned_roles=$10, assigned_to=$11, assigned_at=$12, stale_after_secs=$13, \
+                 last_activity_at=$14, tags=$15, result_summary=$16, archived_at=$17, \
+                 created_by=$18, created_at=$19, updated_at=$20, version=$21 \
+                 WHERE id=$1 AND version=$22",
+            )
+            .bind(task.id().as_uuid())
+            .bind(task.org_id().to_string())
+            .bind(task.project().to_string())
+            .bind(task.namespace().to_string())
+            .bind(task.title())
+            .bind(task.description())
+            .bind(task.acceptance_criteria())
+            .bind(task.status().to_string())
+            .bind(task.priority().to_string())
+            .bind(&roles_json)
+            .bind(task.assigned_to().map(|a| *a.as_uuid()))
+            .bind(task.assigned_at())
+            .bind(task.stale_after_secs().map(|v| v as i64))
+            .bind(task.last_activity_at())
+            .bind(&tags_json)
+            .bind(task.result_summary())
+            .bind(task.archived_at())
+            .bind(task.created_by().map(|a| *a.as_uuid()))
+            .bind(task.created_at())
+            .bind(task.updated_at())
+            .bind(task.version() as i64)
+            .bind(pv as i64)
+            .execute(&mut *tx)
+            .await
+            .map_err(crate::error::store_err)?;
+
+            if result.rows_affected() == 0 {
+                return Err(Error::version_mismatch(pv, task.version()));
+            }
+        } else {
+            sqlx::query(
+                "INSERT INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at, version)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                 ON CONFLICT (id) DO UPDATE SET
+                    organization_id = EXCLUDED.organization_id,
+                    project = EXCLUDED.project,
+                    namespace = EXCLUDED.namespace,
+                    title = EXCLUDED.title,
+                    description = EXCLUDED.description,
+                    acceptance_criteria = EXCLUDED.acceptance_criteria,
+                    status = EXCLUDED.status,
+                    priority = EXCLUDED.priority,
+                    assigned_roles = EXCLUDED.assigned_roles,
+                    assigned_to = EXCLUDED.assigned_to,
+                    assigned_at = EXCLUDED.assigned_at,
+                    stale_after_secs = EXCLUDED.stale_after_secs,
+                    last_activity_at = EXCLUDED.last_activity_at,
+                    tags = EXCLUDED.tags,
+                    result_summary = EXCLUDED.result_summary,
+                    archived_at = EXCLUDED.archived_at,
+                    updated_at = EXCLUDED.updated_at,
+                    version = EXCLUDED.version",
+            )
+            .bind(task.id().as_uuid())
+            .bind(task.org_id().to_string())
+            .bind(task.project().to_string())
+            .bind(task.namespace().to_string())
+            .bind(task.title())
+            .bind(task.description())
+            .bind(task.acceptance_criteria())
+            .bind(task.status().to_string())
+            .bind(task.priority().to_string())
+            .bind(&roles_json)
+            .bind(task.assigned_to().map(|a| *a.as_uuid()))
+            .bind(task.assigned_at())
+            .bind(task.stale_after_secs().map(|v| v as i64))
+            .bind(task.last_activity_at())
+            .bind(&tags_json)
+            .bind(task.result_summary())
+            .bind(task.archived_at())
+            .bind(task.created_by().map(|a| *a.as_uuid()))
+            .bind(task.created_at())
+            .bind(task.updated_at())
+            .bind(task.version() as i64)
+            .execute(&mut *tx)
+            .await
+            .map_err(crate::error::store_err)?;
+        }
+
+        task.mark_persisted();
 
         let events = task.drain_events();
         PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
@@ -92,74 +133,9 @@ impl TaskStore for PgTaskStore {
         Ok(())
     }
 
-    async fn save_if_status(
-        &self,
-        task: &mut Task,
-        expected_statuses: &[TaskStatus],
-    ) -> Result<bool> {
-        if expected_statuses.is_empty() {
-            return Ok(false);
-        }
-        let roles_json = serde_json::to_value(task.assigned_roles()).map_err(|e| {
-            Error::Store(StoreError::Other(format!(
-                "failed to serialize tasks.assigned_roles: {e}"
-            )))
-        })?;
-        let tags_json = serde_json::to_value(task.tags()).map_err(|e| {
-            Error::Store(StoreError::Other(format!(
-                "failed to serialize tasks.tags: {e}"
-            )))
-        })?;
-        let status_strings: Vec<String> = expected_statuses.iter().map(|s| s.to_string()).collect();
-        let mut tx = self.pool.begin().await.map_err(crate::error::store_err)?;
-
-        let result = sqlx::query(
-            "UPDATE tasks SET organization_id=$2, project=$3, namespace=$4, title=$5, \
-             description=$6, acceptance_criteria=$7, status=$8, priority=$9, \
-             assigned_roles=$10, assigned_to=$11, assigned_at=$12, stale_after_secs=$13, \
-             last_activity_at=$14, tags=$15, result_summary=$16, archived_at=$17, \
-             created_by=$18, created_at=$19, updated_at=$20 \
-             WHERE id=$1 AND status::text = ANY($21::text[])",
-        )
-        .bind(task.id().as_uuid())
-        .bind(task.org_id().to_string())
-        .bind(task.project().to_string())
-        .bind(task.namespace().to_string())
-        .bind(task.title())
-        .bind(task.description())
-        .bind(task.acceptance_criteria())
-        .bind(task.status().to_string())
-        .bind(task.priority().to_string())
-        .bind(&roles_json)
-        .bind(task.assigned_to().map(|a| *a.as_uuid()))
-        .bind(task.assigned_at())
-        .bind(task.stale_after_secs().map(|v| v as i64))
-        .bind(task.last_activity_at())
-        .bind(&tags_json)
-        .bind(task.result_summary())
-        .bind(task.archived_at())
-        .bind(task.created_by().map(|a| *a.as_uuid()))
-        .bind(task.created_at())
-        .bind(task.updated_at())
-        .bind(&status_strings)
-        .execute(&mut *tx)
-        .await
-        .map_err(crate::error::store_err)?;
-
-        if result.rows_affected() == 0 {
-            return Ok(false);
-        }
-
-        let events = task.drain_events();
-        PgEventWriter::new_tx(&mut tx).write_all(&events).await?;
-
-        tx.commit().await.map_err(crate::error::store_err)?;
-        Ok(true)
-    }
-
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
         let row = sqlx::query(
-            "SELECT id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at
+            "SELECT id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at, version
              FROM tasks WHERE id = $1",
         )
         .bind(id.as_uuid())
@@ -178,7 +154,8 @@ impl TaskStore for PgTaskStore {
         let rows = sqlx::query(
             "SELECT id, organization_id, project, namespace, title, description, \
              acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, \
-             stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at \
+             stale_after_secs, last_activity_at, tags, result_summary, archived_at, \
+             created_by, created_at, updated_at, version \
              FROM tasks WHERE id = ANY($1::uuid[])",
         )
         .bind(&uuid_ids)
@@ -192,7 +169,7 @@ impl TaskStore for PgTaskStore {
         let select_cols = "id, organization_id, project, namespace, title, description, \
             acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, \
             stale_after_secs, last_activity_at, tags, result_summary, archived_at, \
-            created_by, created_at, updated_at";
+            created_by, created_at, updated_at, version";
 
         let mut conditions: Vec<String> = Vec::new();
         let mut values: Vec<Value> = Vec::new();
@@ -267,7 +244,7 @@ impl TaskStore for PgTaskStore {
                  WHEN 'normal' THEN 1 WHEN 'low' THEN 0 \
                  ELSE 1 \
                END DESC, \
-               id DESC \
+             id DESC \
              LIMIT {}",
             select_cols,
             where_clause,
@@ -316,12 +293,13 @@ fn row_to_task(row: &PgRow) -> Result<Task> {
     let created_by: Option<Uuid> = row.get("created_by");
     let created_at: DateTime<Utc> = row.get("created_at");
     let updated_at: DateTime<Utc> = row.get("updated_at");
+    let version: i64 = row.get("version");
 
     Ok(Task::restore(RestoreTask {
         id: TaskId::from_uuid(id),
         org_id: OrganizationId::new(&org_id_str).map_err(|e| {
-            Error::Store(StoreError::Other(format!(
-                "invalid tasks.organization_id: {e}"
+            Error::Store(StoreError::Serialization(format!(
+                "tasks.organization_id: {e}"
             )))
         })?,
         project: parse_project_id(project, "tasks", "project")?,
@@ -342,5 +320,6 @@ fn row_to_task(row: &PgRow) -> Result<Task> {
         created_by: created_by.map(AgentId::from_uuid),
         created_at,
         updated_at,
+        version: version as u64,
     }))
 }

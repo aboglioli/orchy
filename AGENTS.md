@@ -113,9 +113,9 @@ crates/
 │       ├── resource_ref.rs # ResourceRef for cross-entity links
 │       ├── pagination.rs  # PageParams + Page<T> for paginated queries
 │       ├── error.rs       # Domain error types
-│       └── embeddings/    # EmbeddingsProvider trait
+│       └── embeddings/    # Embedding value object + search (RRF algorithm)
 │
-├── orchy-application/     # use cases / application layer
+├── orchy-application/     # use cases / application layer + EmbeddingsProvider trait
 │
 ├── orchy-store-memory/    # in-memory HashMap backend (dev/test)
 ├── orchy-store-sqlite/    # SQLite + sea-query backend (single-node)
@@ -432,7 +432,7 @@ A "janitor" agent can compact and reorganize:
   remain as raw SQL (not expressible in sea-query's AST).
 - Restore structs over positional params for DB reconstruction.
 - UUID v7 everywhere for time-ordered identifiers.
-- Embeddings provider lives in server crate, core only defines the trait.
+- Embeddings provider trait lives in orchy-application; implementations live in orchy-server crate.
 - TaskService was removed; all orchestration lives in orchy-application use cases.
 - poll_updates queries the events table, not task projections.
 - All tools require a registered session except `register_agent`,
