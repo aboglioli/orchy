@@ -13,12 +13,12 @@ impl Backend for MemoryBackend {
         Box::pin(async {
             let state = Arc::new(MemoryState::new());
             Bundle {
-                agents: Arc::new(MemoryAgentStore::new(state.clone())),
-                tasks: Arc::new(MemoryTaskStore::new(state.clone())),
-                messages: Arc::new(MemoryMessageStore::new(state.clone())),
-                knowledge: Arc::new(MemoryKnowledgeStore::new(state.clone())),
-                edges: Arc::new(MemoryEdgeStore::new(state.clone())),
-                locks: Arc::new(MemoryLockStore::new(state.clone())),
+                agents: Arc::new(MemoryAgentStore::new(Arc::clone(&state))),
+                tasks: Arc::new(MemoryTaskStore::new(Arc::clone(&state))),
+                messages: Arc::new(MemoryMessageStore::new(Arc::clone(&state))),
+                knowledge: Arc::new(MemoryKnowledgeStore::new(Arc::clone(&state))),
+                edges: Arc::new(MemoryEdgeStore::new(Arc::clone(&state))),
+                locks: Arc::new(MemoryLockStore::new(Arc::clone(&state))),
                 api_keys: Arc::new(MemoryApiKeyStore::new(state)),
             }
         })

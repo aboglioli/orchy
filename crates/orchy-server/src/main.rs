@@ -164,7 +164,8 @@ async fn mcp_handler(
     let container_clone = Arc::clone(&container);
     let mut service = StreamableHttpService::new(
         move || {
-            OrchyHandler::new(container_clone.clone(), auth.clone()).map_err(std::io::Error::other)
+            OrchyHandler::new(Arc::clone(&container_clone), auth.clone())
+                .map_err(std::io::Error::other)
         },
         session_manager,
         Default::default(),

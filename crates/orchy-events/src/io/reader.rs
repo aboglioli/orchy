@@ -126,7 +126,7 @@ mod tests {
     #[tokio::test]
     async fn into_arced_yields_shared_reader() {
         let reader: ArcReader = UnitReader.into_arced();
-        let clone = reader.clone();
+        let clone = Arc::clone(&reader);
         let mut stream = clone.read().await.unwrap();
         let msg = stream.next().await.unwrap().unwrap();
         msg.ack().await.unwrap();

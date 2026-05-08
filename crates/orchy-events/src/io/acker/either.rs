@@ -50,8 +50,8 @@ mod tests {
         let ack = Arc::new(AtomicUsize::new(0));
         let nack = Arc::new(AtomicUsize::new(0));
         let acker: Either<Counting, Counting> = Either::Left(Counting {
-            ack: ack.clone(),
-            nack: nack.clone(),
+            ack: Arc::clone(&ack),
+            nack: Arc::clone(&nack),
         });
         acker.ack().await.unwrap();
         acker.nack().await.unwrap();
@@ -64,8 +64,8 @@ mod tests {
         let ack = Arc::new(AtomicUsize::new(0));
         let nack = Arc::new(AtomicUsize::new(0));
         let acker: Either<Counting, Counting> = Either::Right(Counting {
-            ack: ack.clone(),
-            nack: nack.clone(),
+            ack: Arc::clone(&ack),
+            nack: Arc::clone(&nack),
         });
         acker.ack().await.unwrap();
         acker.nack().await.unwrap();

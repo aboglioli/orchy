@@ -131,8 +131,8 @@ impl OrchyHandler {
     }
 
     pub(crate) fn touch_heartbeat(&self) {
-        let session = self.session.clone();
-        let container = self.container.clone();
+        let session = Arc::clone(&self.session);
+        let container = Arc::clone(&self.container);
         tokio::spawn(async move {
             if let Some(agent_id) = session.read().await.as_ref().map(|s| s.agent_id.clone()) {
                 let cmd = orchy_application::HeartbeatCommand {

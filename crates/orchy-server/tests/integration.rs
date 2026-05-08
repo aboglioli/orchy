@@ -52,31 +52,31 @@ fn state() -> Arc<MemoryState> {
 }
 
 fn agents(s: &Arc<MemoryState>) -> Arc<MemoryAgentStore> {
-    Arc::new(MemoryAgentStore::new(s.clone()))
+    Arc::new(MemoryAgentStore::new(Arc::clone(s)))
 }
 fn tasks(s: &Arc<MemoryState>) -> Arc<MemoryTaskStore> {
-    Arc::new(MemoryTaskStore::new(s.clone()))
+    Arc::new(MemoryTaskStore::new(Arc::clone(s)))
 }
 fn messages(s: &Arc<MemoryState>) -> Arc<MemoryMessageStore> {
-    Arc::new(MemoryMessageStore::new(s.clone()))
+    Arc::new(MemoryMessageStore::new(Arc::clone(s)))
 }
 fn edges(s: &Arc<MemoryState>) -> Arc<MemoryEdgeStore> {
-    Arc::new(MemoryEdgeStore::new(s.clone()))
+    Arc::new(MemoryEdgeStore::new(Arc::clone(s)))
 }
 fn locks(s: &Arc<MemoryState>) -> Arc<MemoryLockStore> {
-    Arc::new(MemoryLockStore::new(s.clone()))
+    Arc::new(MemoryLockStore::new(Arc::clone(s)))
 }
 fn users(s: &Arc<MemoryState>) -> Arc<MemoryUserStore> {
-    Arc::new(MemoryUserStore::new(s.clone()))
+    Arc::new(MemoryUserStore::new(Arc::clone(s)))
 }
 fn memberships(s: &Arc<MemoryState>) -> Arc<MemoryOrgMembershipStore> {
-    Arc::new(MemoryOrgMembershipStore::new(s.clone()))
+    Arc::new(MemoryOrgMembershipStore::new(Arc::clone(s)))
 }
 fn projects(s: &Arc<MemoryState>) -> Arc<MemoryProjectStore> {
-    Arc::new(MemoryProjectStore::new(s.clone()))
+    Arc::new(MemoryProjectStore::new(Arc::clone(s)))
 }
 fn knowledge(s: &Arc<MemoryState>) -> Arc<MemoryKnowledgeStore> {
-    Arc::new(MemoryKnowledgeStore::new(s.clone()))
+    Arc::new(MemoryKnowledgeStore::new(Arc::clone(s)))
 }
 
 async fn register(agent_store: &Arc<MemoryAgentStore>, alias: &str) -> AgentId {
@@ -175,7 +175,7 @@ async fn send_message_resolves_alias_for_from() {
     let receiver_id = register(&a, "receiver").await;
 
     let send = SendMessage::new(
-        a.clone() as Arc<dyn AgentStore>,
+        Arc::clone(&a) as Arc<dyn AgentStore>,
         messages(&s) as Arc<dyn MessageStore>,
         users(&s) as Arc<dyn UserStore>,
         memberships(&s) as Arc<dyn OrgMembershipStore>,
@@ -221,7 +221,7 @@ async fn lock_resource_resolves_alias() {
     let agent_id = register(&a, "locker").await;
 
     let lock = LockResource::new(
-        a.clone() as Arc<dyn AgentStore>,
+        Arc::clone(&a) as Arc<dyn AgentStore>,
         locks(&s) as Arc<dyn LockStore>,
     );
 
@@ -833,8 +833,8 @@ async fn knowledge_append_creates_or_extends() {
     let e = edges(&s);
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     let resp = write
@@ -859,7 +859,7 @@ async fn knowledge_append_creates_or_extends() {
         .unwrap();
     assert_eq!(resp.version, 1);
 
-    let append = AppendKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let append = AppendKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>, None);
     let appended = append
         .execute(AppendKnowledgeCommand {
             org_id: "default".into(),
@@ -887,8 +887,8 @@ async fn knowledge_rename_changes_path() {
     let e = edges(&s);
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     write
@@ -912,7 +912,7 @@ async fn knowledge_rename_changes_path() {
         .await
         .unwrap();
 
-    let rename = RenameKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    let rename = RenameKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>);
     let renamed = rename
         .execute(RenameKnowledgeCommand {
             org_id: "default".into(),
@@ -925,7 +925,7 @@ async fn knowledge_rename_changes_path() {
         .unwrap();
     assert_eq!(renamed.path, "new-path");
 
-    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let read = ReadKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>, None);
     let found = read
         .execute(ReadKnowledgeCommand {
             org_id: "default".into(),
@@ -958,8 +958,8 @@ async fn knowledge_move_changes_namespace() {
     let e = edges(&s);
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     write
@@ -983,7 +983,7 @@ async fn knowledge_move_changes_namespace() {
         .await
         .unwrap();
 
-    let mv = MoveKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    let mv = MoveKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>);
     let moved = mv
         .execute(MoveKnowledgeCommand {
             org_id: "default".into(),
@@ -996,7 +996,7 @@ async fn knowledge_move_changes_namespace() {
         .unwrap();
     assert_eq!(moved.namespace, "/backend");
 
-    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let read = ReadKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>, None);
     let found = read
         .execute(ReadKnowledgeCommand {
             org_id: "default".into(),
@@ -1017,8 +1017,8 @@ async fn knowledge_tag_and_untag() {
     let e = edges(&s);
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     write
@@ -1042,7 +1042,7 @@ async fn knowledge_tag_and_untag() {
         .await
         .unwrap();
 
-    let tag = TagKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    let tag = TagKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>);
     tag.execute(TagKnowledgeCommand {
         org_id: "default".into(),
         project: "test".into(),
@@ -1063,7 +1063,7 @@ async fn knowledge_tag_and_untag() {
     .await
     .unwrap();
 
-    let untag = UntagKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>);
+    let untag = UntagKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>);
     untag
         .execute(UntagKnowledgeCommand {
             org_id: "default".into(),
@@ -1075,7 +1075,7 @@ async fn knowledge_tag_and_untag() {
         .await
         .unwrap();
 
-    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let read = ReadKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>, None);
     let resp = read
         .execute(ReadKnowledgeCommand {
             org_id: "default".into(),
@@ -1098,8 +1098,8 @@ async fn knowledge_change_kind() {
     let e = edges(&s);
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     let original = write
@@ -1124,7 +1124,7 @@ async fn knowledge_change_kind() {
         .unwrap();
     assert_eq!(original.kind, "note");
 
-    let change = ChangeKnowledgeKind::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let change = ChangeKnowledgeKind::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>, None);
     let changed = change
         .execute(ChangeKnowledgeKindCommand {
             org_id: "default".into(),
@@ -1147,8 +1147,8 @@ async fn knowledge_promote_to_skill() {
     let e = edges(&s);
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     write
@@ -1173,8 +1173,8 @@ async fn knowledge_promote_to_skill() {
         .unwrap();
 
     let promote = PromoteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
     );
     let skill = promote
         .execute(PromoteKnowledgeCommand {
@@ -1191,7 +1191,7 @@ async fn knowledge_promote_to_skill() {
     assert_eq!(skill.kind, "skill");
     assert_eq!(skill.path, "promote-skill");
 
-    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let read = ReadKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>, None);
     let skill_entry = read
         .execute(ReadKnowledgeCommand {
             org_id: "default".into(),
@@ -1224,8 +1224,8 @@ async fn knowledge_consolidate_merges_entries() {
     let e = edges(&s);
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     let src1 = write
@@ -1270,8 +1270,8 @@ async fn knowledge_consolidate_merges_entries() {
         .unwrap();
 
     let consolidate = ConsolidateKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
     );
     let merged = consolidate
         .execute(ConsolidateKnowledgeCommand {
@@ -1289,7 +1289,7 @@ async fn knowledge_consolidate_merges_entries() {
     assert!(merged.content.contains("content-b"));
     assert_eq!(merged.kind, "summary");
 
-    let read = ReadKnowledge::new(k.clone() as Arc<dyn KnowledgeStore>, None);
+    let read = ReadKnowledge::new(Arc::clone(&k) as Arc<dyn KnowledgeStore>, None);
     let src_a = read
         .execute(ReadKnowledgeCommand {
             org_id: "default".into(),
@@ -1350,7 +1350,7 @@ async fn agent_change_roles_updates_roles() {
     let a = agents(&s);
     let agent_id = register(&a, "role-agent").await;
 
-    let change_roles = ChangeRoles::new(a.clone() as Arc<dyn AgentStore>);
+    let change_roles = ChangeRoles::new(Arc::clone(&a) as Arc<dyn AgentStore>);
     change_roles
         .execute(ChangeRolesCommand {
             agent_id: agent_id.to_string(),
@@ -2062,8 +2062,8 @@ async fn knowledge_write_with_task_id_creates_produces_edge() {
     let t = tasks(&s);
 
     let post = PostTask::new(
-        t.clone() as Arc<dyn TaskStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&t) as Arc<dyn TaskStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
     );
     let task = post
         .execute(PostTaskCommand {
@@ -2083,8 +2083,8 @@ async fn knowledge_write_with_task_id_creates_produces_edge() {
         .unwrap();
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     let knowledge_entry = write
@@ -2191,8 +2191,8 @@ async fn task_touch_updates_timestamp() {
     let e = edges(&s);
 
     let post = PostTask::new(
-        t.clone() as Arc<dyn TaskStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&t) as Arc<dyn TaskStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
     );
     let task = post
         .execute(PostTaskCommand {
@@ -2213,7 +2213,7 @@ async fn task_touch_updates_timestamp() {
 
     let claim = ClaimTask::new(
         agents(&s) as Arc<dyn AgentStore>,
-        t.clone() as Arc<dyn TaskStore>,
+        Arc::clone(&t) as Arc<dyn TaskStore>,
         edges(&s) as Arc<dyn EdgeStore>,
     );
     claim
@@ -2226,7 +2226,7 @@ async fn task_touch_updates_timestamp() {
         .await
         .unwrap();
 
-    let touch = TouchTask::new(t.clone() as Arc<dyn TaskStore>);
+    let touch = TouchTask::new(Arc::clone(&t) as Arc<dyn TaskStore>);
     let touched = touch
         .execute(TouchTaskCommand {
             task_id: task.id.clone(),
@@ -2249,8 +2249,8 @@ async fn task_complete_preserves_summary() {
     let e = edges(&s);
 
     let post = PostTask::new(
-        t.clone() as Arc<dyn TaskStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&t) as Arc<dyn TaskStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
     );
     let task = post
         .execute(PostTaskCommand {
@@ -2275,8 +2275,8 @@ async fn task_complete_preserves_summary() {
 
     let claim = ClaimTask::new(
         agents(&s) as Arc<dyn AgentStore>,
-        t.clone() as Arc<dyn TaskStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&t) as Arc<dyn TaskStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
     );
     claim
         .execute(ClaimTaskCommand {
@@ -2290,7 +2290,7 @@ async fn task_complete_preserves_summary() {
 
     let start = StartTask::new(
         agents(&s) as Arc<dyn AgentStore>,
-        t.clone() as Arc<dyn TaskStore>,
+        Arc::clone(&t) as Arc<dyn TaskStore>,
     );
     start
         .execute(StartTaskCommand {
@@ -2301,7 +2301,10 @@ async fn task_complete_preserves_summary() {
         .await
         .unwrap();
 
-    let complete = CompleteTask::new(t.clone() as Arc<dyn TaskStore>, e as Arc<dyn EdgeStore>);
+    let complete = CompleteTask::new(
+        Arc::clone(&t) as Arc<dyn TaskStore>,
+        e as Arc<dyn EdgeStore>,
+    );
     let done = complete
         .execute(CompleteTaskCommand {
             task_id: task.id.clone(),
@@ -2357,7 +2360,7 @@ async fn list_edges_returns_created_edges() {
     let s = state();
     let e = edges(&s);
 
-    let add = AddEdge::new(e.clone() as Arc<dyn EdgeStore>);
+    let add = AddEdge::new(Arc::clone(&e) as Arc<dyn EdgeStore>);
     add.execute(AddEdgeCommand {
         org_id: "default".into(),
         from_kind: "knowledge".into(),
@@ -2403,8 +2406,8 @@ async fn query_relations_traverses_task_knowledge_graph() {
     let m = messages(&s);
 
     let post = PostTask::new(
-        t.clone() as Arc<dyn TaskStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&t) as Arc<dyn TaskStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
     );
     let task = post
         .execute(PostTaskCommand {
@@ -2424,8 +2427,8 @@ async fn query_relations_traverses_task_knowledge_graph() {
         .unwrap();
 
     let write = WriteKnowledge::new(
-        k.clone() as Arc<dyn KnowledgeStore>,
-        e.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&k) as Arc<dyn KnowledgeStore>,
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
         None,
     );
     write

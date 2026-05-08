@@ -217,8 +217,8 @@ mod tests {
     #[tokio::test]
     async fn get_next_task_returns_stale_claimed_task() {
         let state = Arc::new(MemoryState::new());
-        let task_store = Arc::new(MemoryTaskStore::new(state.clone()));
-        let edge_store = Arc::new(MemoryEdgeStore::new(state.clone()));
+        let task_store = Arc::new(MemoryTaskStore::new(Arc::clone(&state)));
+        let edge_store = Arc::new(MemoryEdgeStore::new(Arc::clone(&state)));
 
         let org_id = OrganizationId::new("test-org").unwrap();
         let project = ProjectId::try_from("test-project").unwrap();
@@ -229,6 +229,7 @@ mod tests {
         let task_id = stale_task.id();
         state.insert_task(stale_task).await;
 
+        #[allow(clippy::clone_on_ref_ptr)]
         let use_case = GetNextTask::new(task_store.clone(), edge_store);
         let result = use_case
             .execute(GetNextTaskCommand {

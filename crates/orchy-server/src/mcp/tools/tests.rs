@@ -45,7 +45,7 @@ fn test_principal(org: &str) -> ApiKeyPrincipal {
 async fn make_handler(org: &str) -> (Arc<Container>, OrchyHandler) {
     let container = Container::from_config(memory_config()).await.unwrap();
     let auth = test_principal(org);
-    let handler = OrchyHandler::new(container.clone(), auth).unwrap();
+    let handler = OrchyHandler::new(Arc::clone(&container), auth).unwrap();
     (container, handler)
 }
 

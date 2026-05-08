@@ -217,8 +217,8 @@ mod tests {
         let ack_calls = Arc::new(AtomicUsize::new(0));
         let ack_total = Arc::new(AtomicUsize::new(0));
         let flusher = CountingFlusher {
-            ack_calls: ack_calls.clone(),
-            ack_total: ack_total.clone(),
+            ack_calls: Arc::clone(&ack_calls),
+            ack_total: Arc::clone(&ack_total),
             nack_calls: Arc::new(AtomicUsize::new(0)),
             nack_total: Arc::new(AtomicUsize::new(0)),
         };
@@ -243,8 +243,8 @@ mod tests {
         let ack_calls = Arc::new(AtomicUsize::new(0));
         let ack_total = Arc::new(AtomicUsize::new(0));
         let flusher = CountingFlusher {
-            ack_calls: ack_calls.clone(),
-            ack_total: ack_total.clone(),
+            ack_calls: Arc::clone(&ack_calls),
+            ack_total: Arc::clone(&ack_total),
             nack_calls: Arc::new(AtomicUsize::new(0)),
             nack_total: Arc::new(AtomicUsize::new(0)),
         };
@@ -267,7 +267,7 @@ mod tests {
         let ack_total = Arc::new(AtomicUsize::new(0));
         let flusher = CountingFlusher {
             ack_calls: Arc::new(AtomicUsize::new(0)),
-            ack_total: ack_total.clone(),
+            ack_total: Arc::clone(&ack_total),
             nack_calls: Arc::new(AtomicUsize::new(0)),
             nack_total: Arc::new(AtomicUsize::new(0)),
         };
@@ -292,9 +292,9 @@ mod tests {
         let nack_total = Arc::new(AtomicUsize::new(0));
         let flusher = CountingFlusher {
             ack_calls: Arc::new(AtomicUsize::new(0)),
-            ack_total: ack_total.clone(),
+            ack_total: Arc::clone(&ack_total),
             nack_calls: Arc::new(AtomicUsize::new(0)),
-            nack_total: nack_total.clone(),
+            nack_total: Arc::clone(&nack_total),
         };
         let buf = AckBuffer::spawn(
             flusher,

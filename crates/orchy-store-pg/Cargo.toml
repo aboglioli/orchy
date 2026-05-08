@@ -27,3 +27,6 @@ testcontainers.workspace = true
 [features]
 default = []
 integration-tests = []
+
+[lints]
+workspace = true

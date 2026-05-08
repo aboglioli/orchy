@@ -294,6 +294,8 @@ impl UserStore for SqliteUserStore {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use orchy_core::error::DomainResult;
     use orchy_core::organization::{Organization, OrganizationId, OrganizationStore};
     use orchy_core::user::{
@@ -327,8 +329,8 @@ mod tests {
         db.run_migrations(&SqliteDatabase::migrations_dir())
             .unwrap();
         let conn = db.conn();
-        let users = SqliteUserStore::new(conn.clone());
-        let orgs = SqliteOrganizationStore::new(conn.clone());
+        let users = SqliteUserStore::new(Arc::clone(&conn));
+        let orgs = SqliteOrganizationStore::new(Arc::clone(&conn));
         let memberships = SqliteOrgMembershipStore::new(conn);
         let hasher = NoopHasher;
 

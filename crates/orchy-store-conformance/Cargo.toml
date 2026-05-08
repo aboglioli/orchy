@@ -21,3 +21,6 @@ testcontainers.workspace = true
 [features]
 default = []
 integration-tests = ["orchy-store-pg/integration-tests"]
+
+[lints]
+workspace = true

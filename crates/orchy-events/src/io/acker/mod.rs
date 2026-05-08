@@ -86,8 +86,8 @@ mod tests {
     async fn into_boxed_yields_dyn_acker() {
         let (acks, nacks) = counters();
         let acker: BoxAcker = CountingAcker {
-            acks: acks.clone(),
-            nacks: nacks.clone(),
+            acks: Arc::clone(&acks),
+            nacks: Arc::clone(&nacks),
         }
         .into_boxed();
         acker.ack().await.unwrap();
@@ -100,11 +100,11 @@ mod tests {
     async fn into_arced_yields_shared_acker() {
         let (acks, _) = counters();
         let acker: ArcAcker = CountingAcker {
-            acks: acks.clone(),
+            acks: Arc::clone(&acks),
             nacks: Arc::new(AtomicUsize::new(0)),
         }
         .into_arced();
-        let clone = acker.clone();
+        let clone = Arc::clone(&acker);
         acker.ack().await.unwrap();
         clone.ack().await.unwrap();
         assert_eq!(acks.load(Ordering::SeqCst), 2);
@@ -117,7 +117,7 @@ mod tests {
         }
         let (acks, nacks) = counters();
         let boxed: BoxAcker = CountingAcker {
-            acks: acks.clone(),
+            acks: Arc::clone(&acks),
             nacks,
         }
         .into_boxed();
@@ -132,7 +132,7 @@ mod tests {
         }
         let (acks, nacks) = counters();
         let arced: ArcAcker = CountingAcker {
-            acks: acks.clone(),
+            acks: Arc::clone(&acks),
             nacks,
         }
         .into_arced();

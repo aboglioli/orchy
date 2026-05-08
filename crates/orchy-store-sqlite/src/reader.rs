@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -112,7 +113,7 @@ impl Reader for SqliteReader {
     type Stream = SqliteStream;
 
     async fn read(&self) -> Result<Self::Stream> {
-        let conn = self.conn.clone();
+        let conn = Arc::clone(&self.conn);
         let config = self.config.clone();
         let (tx, rx) = mpsc::channel(64);
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
@@ -164,7 +165,7 @@ impl Reader for SqliteReader {
                     };
                     let acker = if let Some(group) = config.consumer_group_id.as_ref() {
                         Either::Left(OnceAcker::new(SqliteAcker {
-                            conn: conn.clone(),
+                            conn: Arc::clone(&conn),
                             group_id: group.clone(),
                             seq: next_seq,
                         }))

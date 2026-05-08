@@ -156,7 +156,7 @@ mod tests {
         let h = FilteredHandler::new(
             CountingHandler {
                 id: "h".into(),
-                count: count.clone(),
+                count: Arc::clone(&count),
             },
             AllowAll,
         );
@@ -170,7 +170,7 @@ mod tests {
         let h = FilteredHandler::new(
             CountingHandler {
                 id: "h".into(),
-                count: count.clone(),
+                count: Arc::clone(&count),
             },
             AllowNothing,
         );
@@ -195,7 +195,7 @@ mod tests {
         let count = Arc::new(AtomicUsize::new(0));
         let handler: BoxHandler = CountingHandler {
             id: "h".into(),
-            count: count.clone(),
+            count: Arc::clone(&count),
         }
         .into_boxed();
         assert_eq!(handler.id(), "h");
@@ -208,10 +208,10 @@ mod tests {
         let count = Arc::new(AtomicUsize::new(0));
         let handler: ArcHandler = CountingHandler {
             id: "h".into(),
-            count: count.clone(),
+            count: Arc::clone(&count),
         }
         .into_arced();
-        let clone = handler.clone();
+        let clone = Arc::clone(&handler);
         handler.handle(ev()).await.unwrap();
         clone.handle(ev()).await.unwrap();
         assert_eq!(count.load(Ordering::SeqCst), 2);
@@ -225,7 +225,7 @@ mod tests {
         let count = Arc::new(AtomicUsize::new(0));
         let boxed: BoxHandler = CountingHandler {
             id: "h".into(),
-            count: count.clone(),
+            count: Arc::clone(&count),
         }
         .into_boxed();
         take(boxed, ev()).await;
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn filter_into_arced_yields_shared_filter() {
         let f: ArcFilter = AllowAll.into_arced();
-        let clone = f.clone();
+        let clone = Arc::clone(&f);
         assert!(f.matches(&ev()));
         assert!(clone.matches(&ev()));
     }

@@ -165,7 +165,7 @@ async fn task_save_and_get() {
 #[tokio::test]
 async fn task_save_persists_event_log() {
     let s = state();
-    let task_store = MemoryTaskStore::new(s.clone());
+    let task_store = MemoryTaskStore::new(Arc::clone(&s));
     let organization = org();
     let mut task = Task::new(
         organization.clone(),
@@ -905,7 +905,7 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
 #[tokio::test]
 async fn delete_knowledge_cleans_up_associated_edges() {
     let s = state();
-    let knowledge_store = MemoryKnowledgeStore::new(s.clone());
+    let knowledge_store = MemoryKnowledgeStore::new(Arc::clone(&s));
     let edge_store = MemoryEdgeStore::new(s);
     let o = org();
 
@@ -962,7 +962,7 @@ async fn split_task_creates_spawns_edges() {
     use orchy_application::{SplitTask, SplitTaskCommand, SubtaskInput};
 
     let s = state();
-    let task_store = Arc::new(MemoryTaskStore::new(s.clone()));
+    let task_store = Arc::new(MemoryTaskStore::new(Arc::clone(&s)));
     let edge_store = Arc::new(MemoryEdgeStore::new(s));
     let o = org();
 
@@ -1006,8 +1006,8 @@ async fn split_task_creates_spawns_edges() {
     };
 
     let split = SplitTask::new(
-        task_store.clone() as Arc<dyn TaskStore>,
-        edge_store.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&task_store) as Arc<dyn TaskStore>,
+        Arc::clone(&edge_store) as Arc<dyn EdgeStore>,
     );
     split.execute(cmd).await.unwrap();
 
@@ -1062,14 +1062,16 @@ async fn split_task_creates_depends_on_edges_for_subtask_deps() {
     use orchy_application::{PostTask, PostTaskCommand, SplitTask, SplitTaskCommand, SubtaskInput};
 
     let s = state();
-    let task_store = Arc::new(MemoryTaskStore::new(s.clone()));
+    let task_store = Arc::new(MemoryTaskStore::new(Arc::clone(&s)));
     let edge_store = Arc::new(MemoryEdgeStore::new(s));
 
+    #[allow(clippy::clone_on_ref_ptr)]
     let tasks: Arc<dyn TaskStore> = task_store.clone();
+    #[allow(clippy::clone_on_ref_ptr)]
     let edges: Arc<dyn EdgeStore> = edge_store.clone();
 
-    let post = PostTask::new(tasks.clone(), edges.clone());
-    let split = SplitTask::new(tasks.clone(), edges.clone());
+    let post = PostTask::new(Arc::clone(&tasks), Arc::clone(&edges));
+    let split = SplitTask::new(Arc::clone(&tasks), Arc::clone(&edges));
 
     let dep = post
         .execute(PostTaskCommand {
@@ -1208,13 +1210,13 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
     };
 
     let s = state();
-    let tasks: Arc<dyn TaskStore> = Arc::new(MemoryTaskStore::new(s.clone()));
-    let edges: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(s.clone()));
+    let tasks: Arc<dyn TaskStore> = Arc::new(MemoryTaskStore::new(Arc::clone(&s)));
+    let edges: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(Arc::clone(&s)));
     let knowledge: Arc<dyn KnowledgeStore> = Arc::new(MemoryKnowledgeStore::new(s));
 
-    let post_task = PostTask::new(tasks.clone(), edges.clone());
-    let add_edge = AddEdge::new(edges.clone());
-    let write_knowledge = WriteKnowledge::new(knowledge.clone(), edges.clone(), None);
+    let post_task = PostTask::new(Arc::clone(&tasks), Arc::clone(&edges));
+    let add_edge = AddEdge::new(Arc::clone(&edges));
+    let write_knowledge = WriteKnowledge::new(Arc::clone(&knowledge), Arc::clone(&edges), None);
     let get_task = GetTaskWithContext::new(tasks, edges, knowledge);
 
     let dep = post_task
@@ -1315,7 +1317,7 @@ async fn search_knowledge_task_proximity_boost() {
     use orchy_application::{SearchKnowledge, SearchKnowledgeCommand};
 
     let s = state();
-    let knowledge_store = Arc::new(MemoryKnowledgeStore::new(s.clone()));
+    let knowledge_store = Arc::new(MemoryKnowledgeStore::new(Arc::clone(&s)));
     let edge_store = Arc::new(MemoryEdgeStore::new(s));
     let o = org();
 
@@ -1358,9 +1360,9 @@ async fn search_knowledge_task_proximity_boost() {
         task_id: None,
     };
     let results_no_boost = SearchKnowledge::new(
-        knowledge_store.clone() as Arc<dyn KnowledgeStore>,
+        Arc::clone(&knowledge_store) as Arc<dyn KnowledgeStore>,
         None,
-        edge_store.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&edge_store) as Arc<dyn EdgeStore>,
     )
     .execute(cmd_no_boost)
     .await
@@ -1379,9 +1381,9 @@ async fn search_knowledge_task_proximity_boost() {
         task_id: Some("task-123".to_string()),
     };
     let results_with_boost = SearchKnowledge::new(
-        knowledge_store.clone() as Arc<dyn KnowledgeStore>,
+        Arc::clone(&knowledge_store) as Arc<dyn KnowledgeStore>,
         None,
-        edge_store.clone() as Arc<dyn EdgeStore>,
+        Arc::clone(&edge_store) as Arc<dyn EdgeStore>,
     )
     .execute(cmd_with_boost)
     .await
@@ -1438,8 +1440,9 @@ async fn assemble_context_returns_linked_knowledge() {
     use orchy_application::{AssembleContext, AssembleContextCommand};
 
     let s = state();
-    let knowledge_store: Arc<dyn KnowledgeStore> = Arc::new(MemoryKnowledgeStore::new(s.clone()));
-    let edge_store: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(s.clone()));
+    let knowledge_store: Arc<dyn KnowledgeStore> =
+        Arc::new(MemoryKnowledgeStore::new(Arc::clone(&s)));
+    let edge_store: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(Arc::clone(&s)));
     let task_store: Arc<dyn TaskStore> = Arc::new(MemoryTaskStore::new(s));
     let o = org();
     let p = proj("p");
@@ -1582,8 +1585,9 @@ async fn assemble_context_surfaces_decision_above_log() {
     use orchy_application::{AssembleContext, AssembleContextCommand};
 
     let s = state();
-    let knowledge_store: Arc<dyn KnowledgeStore> = Arc::new(MemoryKnowledgeStore::new(s.clone()));
-    let edge_store: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(s.clone()));
+    let knowledge_store: Arc<dyn KnowledgeStore> =
+        Arc::new(MemoryKnowledgeStore::new(Arc::clone(&s)));
+    let edge_store: Arc<dyn EdgeStore> = Arc::new(MemoryEdgeStore::new(Arc::clone(&s)));
     let task_store: Arc<dyn TaskStore> = Arc::new(MemoryTaskStore::new(s));
     let o = org();
     let p = proj("p");

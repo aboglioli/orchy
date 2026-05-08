@@ -21,3 +21,6 @@ tracing = { workspace = true }
 orchy-store-memory = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 chrono = { workspace = true }
+
+[lints]
+workspace = true

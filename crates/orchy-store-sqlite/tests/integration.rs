@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use orchy_core::agent::{Agent, AgentId, AgentStore as _, Alias};
 use orchy_core::error::Error;
@@ -32,10 +33,10 @@ fn backend() -> Stores {
         .unwrap();
     let conn = db.conn();
     Stores {
-        agent: SqliteAgentStore::new(conn.clone()),
-        task: SqliteTaskStore::new(conn.clone()),
-        message: SqliteMessageStore::new(conn.clone()),
-        knowledge: SqliteKnowledgeStore::new(conn.clone()),
+        agent: SqliteAgentStore::new(Arc::clone(&conn)),
+        task: SqliteTaskStore::new(Arc::clone(&conn)),
+        message: SqliteMessageStore::new(Arc::clone(&conn)),
+        knowledge: SqliteKnowledgeStore::new(Arc::clone(&conn)),
         edge: SqliteEdgeStore::new(conn),
     }
 }

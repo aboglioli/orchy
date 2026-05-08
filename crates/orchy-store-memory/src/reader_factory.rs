@@ -39,8 +39,8 @@ impl ReaderFactory for MemoryReaderFactory {
         namespace_prefix: Option<Namespace>,
     ) -> Result<BoxReader> {
         let reader = MemoryReader::new(
-            self.state.clone(),
-            self.offsets.clone(),
+            Arc::clone(&self.state),
+            Arc::clone(&self.offsets),
             MemoryReaderConfig {
                 organization,
                 consumer_group_id: None,

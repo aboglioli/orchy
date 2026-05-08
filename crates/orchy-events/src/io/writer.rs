@@ -89,7 +89,7 @@ mod tests {
     async fn into_boxed_yields_dyn_writer() {
         let writes = Arc::new(AtomicUsize::new(0));
         let writer: BoxWriter = CountingWriter {
-            writes: writes.clone(),
+            writes: Arc::clone(&writes),
         }
         .into_boxed();
         writer.write(&ev()).await.unwrap();
@@ -101,10 +101,10 @@ mod tests {
     async fn into_arced_yields_shared_writer() {
         let writes = Arc::new(AtomicUsize::new(0));
         let writer: ArcWriter = CountingWriter {
-            writes: writes.clone(),
+            writes: Arc::clone(&writes),
         }
         .into_arced();
-        let clone = writer.clone();
+        let clone = Arc::clone(&writer);
         writer.write(&ev()).await.unwrap();
         clone.write(&ev()).await.unwrap();
         assert_eq!(writes.load(Ordering::SeqCst), 2);
@@ -117,7 +117,7 @@ mod tests {
         }
         let writes = Arc::new(AtomicUsize::new(0));
         let boxed: BoxWriter = CountingWriter {
-            writes: writes.clone(),
+            writes: Arc::clone(&writes),
         }
         .into_boxed();
         take(boxed, &ev()).await;
@@ -131,7 +131,7 @@ mod tests {
         }
         let writes = Arc::new(AtomicUsize::new(0));
         let arced: ArcWriter = CountingWriter {
-            writes: writes.clone(),
+            writes: Arc::clone(&writes),
         }
         .into_arced();
         take(arced, &ev()).await;

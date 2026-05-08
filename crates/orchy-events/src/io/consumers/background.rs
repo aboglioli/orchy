@@ -54,7 +54,7 @@ where
 
     async fn run(self, cancel: CancellationToken, tracker: TaskTracker) -> Result<()> {
         let stream = self.reader.read().await?;
-        let handler = self.handler.clone();
+        let handler = Arc::clone(&self.handler);
         let filter = self.filter.clone();
         let timeout = self.handler_timeout;
         let concurrency = self.concurrency;
@@ -63,7 +63,7 @@ where
         stream
             .take_until(async move { cancel_for_take.cancelled().await })
             .for_each_concurrent(concurrency, |msg_result| {
-                let handler = handler.clone();
+                let handler = Arc::clone(&handler);
                 let filter = filter.clone();
                 let tracker = tracker.clone();
                 async move {
@@ -246,7 +246,7 @@ mod tests {
             VecReader::new(events),
             CountingHandler {
                 id: "h".into(),
-                count: count.clone(),
+                count: Arc::clone(&count),
             },
             2,
         );
@@ -263,7 +263,7 @@ mod tests {
             VecReader::new(events),
             CountingHandler {
                 id: "h".into(),
-                count: count.clone(),
+                count: Arc::clone(&count),
             },
             1,
         )
@@ -281,7 +281,7 @@ mod tests {
             VecReader::new(events),
             FailingHandler {
                 id: "h".into(),
-                count: count.clone(),
+                count: Arc::clone(&count),
             },
             1,
         )

@@ -139,8 +139,8 @@ impl Reader for MemoryReader {
     type Stream = MemoryStream;
 
     async fn read(&self) -> Result<Self::Stream> {
-        let state = self.state.clone();
-        let offsets = self.offsets.clone();
+        let state = Arc::clone(&self.state);
+        let offsets = Arc::clone(&self.offsets);
         let config = self.config.clone();
         let (tx, rx) = mpsc::channel(64);
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
@@ -194,7 +194,7 @@ impl Reader for MemoryReader {
                         let next_offset = idx + 1;
                         let acker = if let Some(group) = config.consumer_group_id.as_ref() {
                             Either::Left(MemoryAcker {
-                                offsets: offsets.clone(),
+                                offsets: Arc::clone(&offsets),
                                 group_id: group.clone(),
                                 next_offset,
                             })

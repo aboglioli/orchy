@@ -38,7 +38,7 @@ impl Drop for SqsStream {
         if let Some(h) = self.handle.take() {
             h.abort();
         }
-        let buf = self.ack_buffer.clone();
+        let buf = Arc::clone(&self.ack_buffer);
         tokio::spawn(async move {
             let _ = buf.shutdown().await;
         });

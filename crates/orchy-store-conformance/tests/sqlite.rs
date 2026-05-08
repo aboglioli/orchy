@@ -16,12 +16,12 @@ impl Backend for SqliteBackend {
                 .unwrap();
             let conn = db.conn();
             Bundle {
-                agents: Arc::new(SqliteAgentStore::new(conn.clone())),
-                tasks: Arc::new(SqliteTaskStore::new(conn.clone())),
-                messages: Arc::new(SqliteMessageStore::new(conn.clone())),
-                knowledge: Arc::new(SqliteKnowledgeStore::new(conn.clone())),
-                edges: Arc::new(SqliteEdgeStore::new(conn.clone())),
-                locks: Arc::new(SqliteLockStore::new(conn.clone())),
+                agents: Arc::new(SqliteAgentStore::new(Arc::clone(&conn))),
+                tasks: Arc::new(SqliteTaskStore::new(Arc::clone(&conn))),
+                messages: Arc::new(SqliteMessageStore::new(Arc::clone(&conn))),
+                knowledge: Arc::new(SqliteKnowledgeStore::new(Arc::clone(&conn))),
+                edges: Arc::new(SqliteEdgeStore::new(Arc::clone(&conn))),
+                locks: Arc::new(SqliteLockStore::new(Arc::clone(&conn))),
                 api_keys: Arc::new(SqliteApiKeyStore::new(conn)),
             }
         })

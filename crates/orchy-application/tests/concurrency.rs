@@ -65,23 +65,23 @@ fn mem() -> Arc<MemoryState> {
 
 fn build_app(_s: &Arc<MemoryState>) -> Application {
     Application::new(ApplicationDeps {
-        agents: Arc::new(MemoryAgentStore::new(_s.clone())) as Arc<dyn AgentStore>,
-        tasks: Arc::new(MemoryTaskStore::new(_s.clone())) as Arc<dyn TaskStore>,
-        projects: Arc::new(MemoryProjectStore::new(_s.clone())) as Arc<dyn ProjectStore>,
-        knowledge: Arc::new(MemoryKnowledgeStore::new(_s.clone())) as Arc<dyn KnowledgeStore>,
-        messages: Arc::new(MemoryMessageStore::new(_s.clone())) as Arc<dyn MessageStore>,
-        locks: Arc::new(MemoryLockStore::new(_s.clone())) as Arc<dyn LockStore>,
-        namespaces: Arc::new(MemoryNamespaceStore::new(_s.clone())),
-        orgs: Arc::new(MemoryOrganizationStore::new(_s.clone())),
-        edges: Arc::new(MemoryEdgeStore::new(_s.clone())) as Arc<dyn EdgeStore>,
+        agents: Arc::new(MemoryAgentStore::new(Arc::clone(_s))) as Arc<dyn AgentStore>,
+        tasks: Arc::new(MemoryTaskStore::new(Arc::clone(_s))) as Arc<dyn TaskStore>,
+        projects: Arc::new(MemoryProjectStore::new(Arc::clone(_s))) as Arc<dyn ProjectStore>,
+        knowledge: Arc::new(MemoryKnowledgeStore::new(Arc::clone(_s))) as Arc<dyn KnowledgeStore>,
+        messages: Arc::new(MemoryMessageStore::new(Arc::clone(_s))) as Arc<dyn MessageStore>,
+        locks: Arc::new(MemoryLockStore::new(Arc::clone(_s))) as Arc<dyn LockStore>,
+        namespaces: Arc::new(MemoryNamespaceStore::new(Arc::clone(_s))),
+        orgs: Arc::new(MemoryOrganizationStore::new(Arc::clone(_s))),
+        edges: Arc::new(MemoryEdgeStore::new(Arc::clone(_s))) as Arc<dyn EdgeStore>,
         embeddings: None,
-        reader_factory: Arc::new(MemoryReaderFactory::new(_s.clone())),
-        users: Arc::new(MemoryUserStore::new(_s.clone())) as Arc<dyn UserStore>,
-        memberships: Arc::new(MemoryOrgMembershipStore::new(_s.clone()))
+        reader_factory: Arc::new(MemoryReaderFactory::new(Arc::clone(_s))),
+        users: Arc::new(MemoryUserStore::new(Arc::clone(_s))) as Arc<dyn UserStore>,
+        memberships: Arc::new(MemoryOrgMembershipStore::new(Arc::clone(_s)))
             as Arc<dyn OrgMembershipStore>,
         token_encoder: None,
         hasher: Arc::new(NoopHasher),
-        api_keys: Arc::new(MemoryApiKeyStore::new(_s.clone())) as Arc<dyn ApiKeyStore>,
+        api_keys: Arc::new(MemoryApiKeyStore::new(Arc::clone(_s))) as Arc<dyn ApiKeyStore>,
         api_key_generator: Arc::new(NoopApiKeyGenerator),
     })
 }

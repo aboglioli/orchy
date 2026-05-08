@@ -75,7 +75,7 @@ orchy-store-sqlite = { path = "crates/orchy-store-sqlite" }
 orchy-store-pg = { path = "crates/orchy-store-pg" }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -83,3 +83,5 @@ redundant_closure = "warn"
 collapsible_if = "warn"
 needless_collect = "warn"
 str_to_string = "warn"
+await_holding_lock = "warn"
+clone_on_ref_ptr = "warn"

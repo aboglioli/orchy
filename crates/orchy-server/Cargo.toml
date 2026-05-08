@@ -34,3 +34,6 @@ http-body-util = "0.1"
 sha2.workspace = true
 hex.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -91,12 +91,15 @@ mod tests {
     #[tokio::test]
     async fn bootstrap_admin_creates_default_org_membership() {
         let state = Arc::new(MemoryState::new());
-        let users = Arc::new(MemoryUserStore::new(state.clone()));
-        let orgs = Arc::new(MemoryOrganizationStore::new(state.clone()));
+        let users = Arc::new(MemoryUserStore::new(Arc::clone(&state)));
+        let orgs = Arc::new(MemoryOrganizationStore::new(Arc::clone(&state)));
         let memberships = Arc::new(MemoryOrgMembershipStore::new(state));
         let hasher = Arc::new(NoopHasher);
 
-        let bootstrap = BootstrapAdmin::new(users, orgs.clone(), memberships.clone(), hasher);
+        let bootstrap = {
+            #[allow(clippy::clone_on_ref_ptr)]
+            BootstrapAdmin::new(users, orgs.clone(), memberships.clone(), hasher)
+        };
         let admin = bootstrap.execute().await.unwrap().unwrap();
 
         let org_id = OrganizationId::new("default").unwrap();

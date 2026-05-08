@@ -126,7 +126,7 @@ impl Drop for KafkaStream {
         if let Some(h) = self.handle.take() {
             h.abort();
         }
-        let buf = self.ack_buffer.clone();
+        let buf = Arc::clone(&self.ack_buffer);
         tokio::spawn(async move {
             let _ = buf.shutdown().await;
         });
@@ -146,9 +146,9 @@ impl Reader for KafkaReader {
     type Stream = KafkaStream;
 
     async fn read(&self) -> Result<Self::Stream> {
-        let consumer = self.consumer.clone();
+        let consumer = Arc::clone(&self.consumer);
         let config = self.config.clone();
-        let flusher = KafkaFlusher::new(consumer.clone());
+        let flusher = KafkaFlusher::new(Arc::clone(&consumer));
         let ack_buffer = AckBuffer::spawn(flusher, config.ack_buffer.clone());
         let tx_ack = ack_buffer.sender();
 

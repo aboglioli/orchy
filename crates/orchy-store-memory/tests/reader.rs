@@ -13,7 +13,7 @@ use orchy_store_memory::{MemoryEventWriter, MemoryReader, MemoryReaderConfig, Me
 #[tokio::test]
 async fn streaming_reads_events_in_order() {
     let state = Arc::new(MemoryState::new());
-    let writer = MemoryEventWriter::new(state.clone());
+    let writer = MemoryEventWriter::new(Arc::clone(&state));
     let offsets = Arc::new(RwLock::new(Default::default()));
 
     for i in 0..3 {
@@ -55,7 +55,7 @@ async fn streaming_reads_events_in_order() {
 #[tokio::test]
 async fn bounded_terminates_with_limit() {
     let state = Arc::new(MemoryState::new());
-    let writer = MemoryEventWriter::new(state.clone());
+    let writer = MemoryEventWriter::new(Arc::clone(&state));
     let offsets = Arc::new(RwLock::new(Default::default()));
 
     for i in 0..5 {
@@ -95,11 +95,11 @@ async fn bounded_terminates_with_limit() {
 #[tokio::test]
 async fn write_wakes_streaming_reader() {
     let state = Arc::new(MemoryState::new());
-    let writer = MemoryEventWriter::new(state.clone());
+    let writer = MemoryEventWriter::new(Arc::clone(&state));
     let offsets = Arc::new(RwLock::new(Default::default()));
 
     let reader = MemoryReader::new(
-        state.clone(),
+        Arc::clone(&state),
         offsets,
         MemoryReaderConfig {
             organization: OrganizationId::new("orgc").unwrap(),
@@ -138,7 +138,7 @@ async fn write_wakes_streaming_reader() {
 #[tokio::test]
 async fn topic_and_namespace_filters() {
     let state = Arc::new(MemoryState::new());
-    let writer = MemoryEventWriter::new(state.clone());
+    let writer = MemoryEventWriter::new(Arc::clone(&state));
     let offsets = Arc::new(RwLock::new(Default::default()));
 
     let pairs = [

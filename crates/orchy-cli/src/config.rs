@@ -332,6 +332,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(unsafe_code)]
     fn env_returns_owned_string_not_leaked() {
         unsafe { std::env::set_var("ORCHY_TEST_OWNED", "hello") };
         let result: Option<String> = env("ORCHY_TEST_OWNED");

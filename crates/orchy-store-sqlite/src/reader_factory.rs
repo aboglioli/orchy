@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -33,7 +34,7 @@ impl ReaderFactory for SqliteReaderFactory {
         namespace_prefix: Option<Namespace>,
     ) -> Result<BoxReader> {
         let reader = SqliteReader::new(
-            self.conn.clone(),
+            Arc::clone(&self.conn),
             SqliteReaderConfig {
                 organization,
                 consumer_group_id: None,

@@ -1,4 +1,5 @@
 #![allow(clippy::collapsible_if)]
+#![allow(unsafe_code)]
 
 mod agent;
 mod api_key;
@@ -81,7 +82,7 @@ impl SqliteDatabase {
     }
 
     pub fn conn(&self) -> SqliteConn {
-        self.conn.clone()
+        Arc::clone(&self.conn)
     }
 
     fn init_vec0_table(conn: &Connection, embedding_dimensions: Option<u32>) -> Result<()> {

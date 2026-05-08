@@ -22,3 +22,6 @@ chrono = { workspace = true }
 secrecy = { version = "0.10", features = ["serde"] }
 thiserror = { workspace = true }
 urlencoding = "2"
+
+[lints]
+workspace = true
