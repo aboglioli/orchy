@@ -119,6 +119,9 @@ impl Reader for PgReader {
     async fn read(&self) -> Result<Self::Stream> {
         let pool = self.pool.clone();
         let config = self.config.clone();
+        // Sized to the configured batch_size (clamped to [1, 64]) so the
+        // producer can stage one batch ahead of the consumer; blocks
+        // producer when consumer is slow.
         let (tx, rx) = mpsc::channel(config.batch_size.clamp(1, 64));
         let cancel = CancellationToken::new();
         let cancel_for_task = cancel.clone();

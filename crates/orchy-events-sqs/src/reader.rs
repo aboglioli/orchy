@@ -65,6 +65,9 @@ impl Reader for SqsReader {
         let ack_buffer = AckBuffer::spawn(flusher, config.ack_buffer.clone());
         let tx_ack = ack_buffer.sender();
 
+        // 2x max_in_flight: lets the producer stage the next ReceiveMessage
+        // batch while the consumer drains the current one; blocks producer
+        // beyond that to avoid unbounded growth on slow consumers.
         let (tx, rx) = mpsc::channel(config.max_in_flight * 2);
         let cancel = CancellationToken::new();
         let cancel_for_task = cancel.clone();

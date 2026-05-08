@@ -108,6 +108,10 @@ impl AgentDriver {
     }
 
     pub async fn start(config: RunnerConfig) -> Result<(AgentSession, JoinHandle<Result<()>>)> {
+        // PTY byte streams: unbounded because dropping any byte corrupts
+        // the agent transcript, and an interactive PTY consumer is always
+        // close to real-time. Memory growth is bounded by the agent's own
+        // output rate, which is human-scale.
         let (output_tx, output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (input_tx, input_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 

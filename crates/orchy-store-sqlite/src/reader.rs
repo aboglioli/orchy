@@ -116,6 +116,8 @@ impl Reader for SqliteReader {
     async fn read(&self) -> Result<Self::Stream> {
         let conn = Arc::clone(&self.conn);
         let config = self.config.clone();
+        // 64 in-flight messages: blocks the producer task when the consumer
+        // stalls so we don't keep round-tripping to SQLite ahead of demand.
         let (tx, rx) = mpsc::channel(64);
         let cancel = CancellationToken::new();
         let cancel_for_task = cancel.clone();

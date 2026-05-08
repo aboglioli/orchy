@@ -45,6 +45,9 @@ pub struct AckBuffer<F: BatchFlusher> {
 
 impl<F: BatchFlusher + 'static> AckBuffer<F> {
     pub fn spawn(flusher: F, config: AckBufferConfig) -> Arc<Self> {
+        // 4x max_pending (min 16): absorbs ack/nack bursts that arrive
+        // faster than the flusher drains; blocks ackers beyond that so
+        // the buffer never grows unbounded.
         let cap = (config.max_pending * 4).max(16);
         let (tx, mut rx) = mpsc::channel(cap);
         let flusher = Arc::new(flusher);

@@ -153,6 +153,8 @@ impl Reader for KafkaReader {
         let ack_buffer = AckBuffer::spawn(flusher, config.ack_buffer.clone());
         let tx_ack = ack_buffer.sender();
 
+        // Sized to one Kafka poll batch so the producer can stage exactly
+        // one batch ahead of the consumer; blocks producer otherwise.
         let (tx, rx) = mpsc::channel(config.max_poll_records);
         let cancel = CancellationToken::new();
         let cancel_for_task = cancel.clone();

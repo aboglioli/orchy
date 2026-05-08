@@ -143,6 +143,9 @@ impl Reader for MemoryReader {
         let state = Arc::clone(&self.state);
         let offsets = Arc::clone(&self.offsets);
         let config = self.config.clone();
+        // 64 in-flight messages: blocks the producer task when the consumer
+        // stalls so the in-memory event log doesn't get re-snapshotted faster
+        // than the consumer can drain.
         let (tx, rx) = mpsc::channel(64);
         let cancel = CancellationToken::new();
         let cancel_for_task = cancel.clone();
