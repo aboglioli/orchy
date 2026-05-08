@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use futures::Stream;
 use tokio::sync::{mpsc, watch};
 
-use orchy_events::io::ackers::{NoopAcker, OnceAcker};
+use orchy_events::io::ackers::{Either, NoopAcker, OnceAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
     ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,
@@ -70,27 +70,7 @@ impl Acker for SqliteAcker {
     }
 }
 
-pub enum SqliteAckerVariant {
-    Durable(OnceAcker<SqliteAcker>),
-    Ephemeral(NoopAcker),
-}
-
-#[async_trait]
-impl Acker for SqliteAckerVariant {
-    async fn ack(&self) -> Result<()> {
-        match self {
-            SqliteAckerVariant::Durable(a) => a.ack().await,
-            SqliteAckerVariant::Ephemeral(a) => a.ack().await,
-        }
-    }
-
-    async fn nack(&self) -> Result<()> {
-        match self {
-            SqliteAckerVariant::Durable(a) => a.nack().await,
-            SqliteAckerVariant::Ephemeral(a) => a.nack().await,
-        }
-    }
-}
+pub type SqliteAckerVariant = Either<OnceAcker<SqliteAcker>, NoopAcker>;
 
 pub struct SqliteStream {
     rx: mpsc::Receiver<Result<Message<SqliteAckerVariant>>>,
@@ -183,13 +163,13 @@ impl Reader for SqliteReader {
                         }
                     };
                     let acker = if let Some(group) = config.consumer_group_id.as_ref() {
-                        SqliteAckerVariant::Durable(OnceAcker::new(SqliteAcker {
+                        Either::Left(OnceAcker::new(SqliteAcker {
                             conn: conn.clone(),
                             group_id: group.clone(),
                             seq: next_seq,
                         }))
                     } else {
-                        SqliteAckerVariant::Ephemeral(NoopAcker)
+                        Either::Right(NoopAcker)
                     };
                     if tx.send(Ok(Message::new(event, acker))).await.is_err() {
                         return;

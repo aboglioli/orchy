@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -7,7 +6,7 @@ use sqlx::PgPool;
 
 use orchy_application::ReaderFactory;
 use orchy_core::error::Result;
-use orchy_events::io::{BoxAcker, BoxStream, Reader, ReaderExt};
+use orchy_events::io::{BoxReader, ReaderExt};
 use orchy_events::{Namespace, OrganizationId, StartFrom, Topic};
 
 use crate::reader::{PgReader, PgReaderConfig};
@@ -32,7 +31,7 @@ impl ReaderFactory for PgReaderFactory {
         limit: usize,
         topics: Option<Vec<Topic>>,
         namespace_prefix: Option<Namespace>,
-    ) -> Result<Arc<dyn Reader<Acker = BoxAcker, Stream = BoxStream> + Send + Sync>> {
+    ) -> Result<BoxReader> {
         let reader = PgReader::new(
             self.pool.clone(),
             PgReaderConfig {
@@ -47,6 +46,6 @@ impl ReaderFactory for PgReaderFactory {
                 poll_interval: Duration::from_millis(100),
             },
         );
-        Ok(Arc::new(reader.into_boxed()))
+        Ok(reader.into_boxed())
     }
 }

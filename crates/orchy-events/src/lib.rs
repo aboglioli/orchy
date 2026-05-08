@@ -27,4 +27,4 @@ pub use topic::Topic;
 
 pub use io::{Acker, Filter, FilteredHandler, Handler, Message, Reader, Writer};
 pub use io::{BackgroundConsumer, ConsumerHandle};
-pub use io::{BoxAcker, BoxStream, BoxedReader, ReaderExt};
+pub use io::{BoxAcker, BoxReader, BoxStream, ReaderExt};

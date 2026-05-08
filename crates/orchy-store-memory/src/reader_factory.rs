@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use orchy_application::ReaderFactory;
 use orchy_core::error::Result;
-use orchy_events::io::{BoxAcker, BoxStream, Reader, ReaderExt};
+use orchy_events::io::{BoxReader, ReaderExt};
 use orchy_events::{ConsumerGroupId, Namespace, OrganizationId, StartFrom, Topic};
 
 use crate::MemoryState;
@@ -37,7 +37,7 @@ impl ReaderFactory for MemoryReaderFactory {
         limit: usize,
         topics: Option<Vec<Topic>>,
         namespace_prefix: Option<Namespace>,
-    ) -> Result<Arc<dyn Reader<Acker = BoxAcker, Stream = BoxStream> + Send + Sync>> {
+    ) -> Result<BoxReader> {
         let reader = MemoryReader::new(
             self.state.clone(),
             self.offsets.clone(),
@@ -51,6 +51,6 @@ impl ReaderFactory for MemoryReaderFactory {
                 limit: Some(limit),
             },
         );
-        Ok(Arc::new(reader.into_boxed()))
+        Ok(reader.into_boxed())
     }
 }

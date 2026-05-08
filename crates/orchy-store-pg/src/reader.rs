@@ -10,7 +10,7 @@ use sqlx::{PgPool, Row};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
-use orchy_events::io::ackers::{NoopAcker, OnceAcker};
+use orchy_events::io::ackers::{Either, NoopAcker, OnceAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
     ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,
@@ -74,27 +74,7 @@ impl Acker for PgAcker {
     }
 }
 
-pub enum PgAckerVariant {
-    Durable(OnceAcker<PgAcker>),
-    Ephemeral(NoopAcker),
-}
-
-#[async_trait]
-impl Acker for PgAckerVariant {
-    async fn ack(&self) -> Result<()> {
-        match self {
-            PgAckerVariant::Durable(a) => a.ack().await,
-            PgAckerVariant::Ephemeral(a) => a.ack().await,
-        }
-    }
-
-    async fn nack(&self) -> Result<()> {
-        match self {
-            PgAckerVariant::Durable(a) => a.nack().await,
-            PgAckerVariant::Ephemeral(a) => a.nack().await,
-        }
-    }
-}
+pub type PgAckerVariant = Either<OnceAcker<PgAcker>, NoopAcker>;
 
 pub struct PgStream {
     rx: mpsc::Receiver<Result<Message<PgAckerVariant>>>,
@@ -225,13 +205,13 @@ impl Reader for PgReader {
                         }
                     };
                     let acker = if let Some(group) = config.consumer_group_id.as_ref() {
-                        PgAckerVariant::Durable(OnceAcker::new(PgAcker {
+                        Either::Left(OnceAcker::new(PgAcker {
                             pool: pool.clone(),
                             group_id: group.clone(),
                             seq: next_seq,
                         }))
                     } else {
-                        PgAckerVariant::Ephemeral(NoopAcker)
+                        Either::Right(NoopAcker)
                     };
                     if tx.send(Ok(Message::new(event, acker))).await.is_err() {
                         return;

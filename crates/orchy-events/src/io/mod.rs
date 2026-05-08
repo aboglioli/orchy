@@ -41,5 +41,5 @@ impl<T: Acker + ?Sized> Acker for Box<T> {
 pub use consumers::{BackgroundConsumer, ConsumerHandle};
 pub use handler::{Filter, FilteredHandler, Handler};
 pub use message::Message;
-pub use reader::{BoxAcker, BoxStream, BoxedReader, Reader, ReaderExt};
+pub use reader::{BoxAcker, BoxReader, BoxStream, Reader, ReaderExt};
 pub use writer::Writer;

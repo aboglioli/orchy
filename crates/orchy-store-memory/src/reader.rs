@@ -8,9 +8,8 @@ use chrono::{DateTime, Utc};
 use futures::Stream;
 use tokio::sync::{RwLock, mpsc, watch};
 
-use orchy_events::io::Acker;
-use orchy_events::io::ackers::NoopAcker;
-use orchy_events::io::{Message, Reader};
+use orchy_events::io::ackers::{Either, NoopAcker};
+use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
     ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,
 };
@@ -51,27 +50,7 @@ impl Acker for MemoryAcker {
     }
 }
 
-pub enum MemoryAckerVariant {
-    Durable(MemoryAcker),
-    Ephemeral(NoopAcker),
-}
-
-#[async_trait]
-impl Acker for MemoryAckerVariant {
-    async fn ack(&self) -> Result<()> {
-        match self {
-            MemoryAckerVariant::Durable(a) => a.ack().await,
-            MemoryAckerVariant::Ephemeral(a) => a.ack().await,
-        }
-    }
-
-    async fn nack(&self) -> Result<()> {
-        match self {
-            MemoryAckerVariant::Durable(a) => a.nack().await,
-            MemoryAckerVariant::Ephemeral(a) => a.nack().await,
-        }
-    }
-}
+pub type MemoryAckerVariant = Either<MemoryAcker, NoopAcker>;
 
 pub struct MemoryStream {
     rx: mpsc::Receiver<Result<Message<MemoryAckerVariant>>>,
@@ -214,13 +193,13 @@ impl Reader for MemoryReader {
                         };
                         let next_offset = idx + 1;
                         let acker = if let Some(group) = config.consumer_group_id.as_ref() {
-                            MemoryAckerVariant::Durable(MemoryAcker {
+                            Either::Left(MemoryAcker {
                                 offsets: offsets.clone(),
                                 group_id: group.clone(),
                                 next_offset,
                             })
                         } else {
-                            MemoryAckerVariant::Ephemeral(NoopAcker)
+                            Either::Right(NoopAcker)
                         };
                         if tx.send(Ok(Message::new(event, acker))).await.is_err() {
                             return;

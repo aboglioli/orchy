@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -6,7 +5,7 @@ use chrono::{DateTime, Utc};
 
 use orchy_application::ReaderFactory;
 use orchy_core::error::Result;
-use orchy_events::io::{BoxAcker, BoxStream, Reader, ReaderExt};
+use orchy_events::io::{BoxReader, ReaderExt};
 use orchy_events::{Namespace, OrganizationId, StartFrom, Topic};
 
 use crate::SqliteConn;
@@ -32,7 +31,7 @@ impl ReaderFactory for SqliteReaderFactory {
         limit: usize,
         topics: Option<Vec<Topic>>,
         namespace_prefix: Option<Namespace>,
-    ) -> Result<Arc<dyn Reader<Acker = BoxAcker, Stream = BoxStream> + Send + Sync>> {
+    ) -> Result<BoxReader> {
         let reader = SqliteReader::new(
             self.conn.clone(),
             SqliteReaderConfig {
@@ -46,6 +45,6 @@ impl ReaderFactory for SqliteReaderFactory {
                 poll_interval: Duration::from_millis(50),
             },
         );
-        Ok(Arc::new(reader.into_boxed()))
+        Ok(reader.into_boxed())
     }
 }

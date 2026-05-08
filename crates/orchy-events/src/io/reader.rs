@@ -2,14 +2,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 
 use crate::error::Result;
 use crate::io::Acker;
 use crate::io::message::Message;
 
 pub type BoxAcker = Box<dyn Acker + Send + Sync>;
-pub type BoxStream = Pin<Box<dyn Stream<Item = Result<Message<BoxAcker>>> + Send>>;
+pub type BoxStream<A = BoxAcker> = Pin<Box<dyn Stream<Item = Result<Message<A>>> + Send>>;
+pub type BoxReader<A = BoxAcker> = Box<dyn Reader<Acker = A, Stream = BoxStream<A>> + Send + Sync>;
 
 #[async_trait]
 pub trait Reader: Send + Sync {
@@ -29,60 +30,47 @@ impl<T: Reader + ?Sized> Reader for Arc<T> {
     }
 }
 
-pub struct BoxedReader {
-    inner: Box<dyn ReaderObject + Send + Sync>,
-}
-
-#[async_trait]
-trait ReaderObject {
-    async fn read_box(&self) -> Result<BoxStream>;
-}
-
-#[async_trait]
-impl<R> ReaderObject for R
+pub trait ReaderExt: Reader + Send + Sync + Sized + 'static
 where
-    R: Reader + Send + Sync,
+    Self::Acker: 'static,
+    Self::Stream: 'static,
+{
+    fn into_boxed(self) -> BoxReader<BoxAcker> {
+        Box::new(DynReader(self))
+    }
+}
+
+impl<R> ReaderExt for R
+where
+    R: Reader + Send + Sync + 'static,
     R::Acker: 'static,
     R::Stream: 'static,
 {
-    async fn read_box(&self) -> Result<BoxStream> {
-        use futures::StreamExt;
-        let stream = self.read().await?;
+}
+
+struct DynReader<R>(R);
+
+#[async_trait]
+impl<R> Reader for DynReader<R>
+where
+    R: Reader + Send + Sync + 'static,
+    R::Acker: 'static,
+    R::Stream: 'static,
+{
+    type Acker = BoxAcker;
+    type Stream = BoxStream<BoxAcker>;
+
+    async fn read(&self) -> Result<BoxStream<BoxAcker>> {
+        let stream = self.0.read().await?;
         Ok(Box::pin(stream.map(|res| {
-            res.map(|msg| {
-                let (event, acker) = msg.into_parts();
-                let boxed: BoxAcker = Box::new(acker);
-                Message::new(event, boxed)
-            })
+            res.map(|msg| msg.map_acker(|a| Box::new(a) as BoxAcker))
         })))
     }
 }
 
-#[async_trait]
-impl Reader for BoxedReader {
-    type Acker = BoxAcker;
-    type Stream = BoxStream;
-
-    async fn read(&self) -> Result<Self::Stream> {
-        self.inner.read_box().await
-    }
-}
-
-pub trait ReaderExt: Reader + Send + Sync + 'static + Sized {
-    fn into_boxed(self) -> BoxedReader {
-        BoxedReader {
-            inner: Box::new(self),
-        }
-    }
-}
-
-impl<R: Reader + Send + Sync + 'static> ReaderExt for R {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::sync::Arc;
 
     use async_trait::async_trait;
     use futures::stream;
@@ -115,16 +103,24 @@ mod tests {
 
     #[tokio::test]
     async fn into_boxed_yields_dyn_safe_reader() {
-        let reader: BoxedReader = UnitReader.into_boxed();
-        let arc: Arc<dyn Reader<Acker = BoxAcker, Stream = BoxStream> + Send + Sync> =
-            Arc::new(reader);
-        let mut stream = arc.read().await.unwrap();
-        use futures::StreamExt;
+        let reader: BoxReader = UnitReader.into_boxed();
+        let mut stream = reader.read().await.unwrap();
         let msg = stream.next().await.unwrap().unwrap();
         msg.ack().await.unwrap();
     }
 
+    #[tokio::test]
+    async fn vec_of_boxed_readers_dispatches_each() {
+        let readers: Vec<BoxReader> = vec![UnitReader.into_boxed(), UnitReader.into_boxed()];
+        for r in &readers {
+            let mut stream = r.read().await.unwrap();
+            let msg = stream.next().await.unwrap().unwrap();
+            msg.ack().await.unwrap();
+        }
+    }
+
     fn _assert_reader_dyn_safe() {
-        fn _take(_: Arc<dyn Reader<Acker = BoxAcker, Stream = BoxStream> + Send + Sync>) {}
+        fn _take(_: BoxReader) {}
+        fn _take_with_concrete_acker(_: BoxReader<NoopAcker>) {}
     }
 }

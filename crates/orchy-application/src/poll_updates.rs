@@ -7,7 +7,7 @@ use futures::StreamExt;
 
 use crate::error::ApplicationResult;
 use orchy_core::error::{Error, Result};
-use orchy_events::io::{BoxAcker, BoxStream, Reader};
+use orchy_events::io::BoxReader;
 use orchy_events::{Event, Namespace, OrganizationId, Topic};
 
 pub struct PollUpdatesCommand {
@@ -28,7 +28,7 @@ pub trait ReaderFactory: Send + Sync {
         limit: usize,
         topics: Option<Vec<Topic>>,
         namespace_prefix: Option<Namespace>,
-    ) -> Result<Arc<dyn Reader<Acker = BoxAcker, Stream = BoxStream> + Send + Sync>>;
+    ) -> Result<BoxReader>;
 }
 
 pub struct PollUpdates {
