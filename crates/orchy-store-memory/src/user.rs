@@ -20,36 +20,30 @@ impl MemoryUserStore {
 #[async_trait]
 impl UserStore for MemoryUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
-        let mut users = self.state.users.write().await;
-        let mut by_email = self.state.user_by_email.write().await;
-
         let id = *user.id();
         let email = user.email().as_str().to_string();
 
-        users.insert(id, user.clone());
-        by_email.insert(email, id);
+        self.state.users.insert(id, user.clone());
+        self.state.user_by_email.insert(email, id);
 
         user.drain_events();
         Ok(())
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>> {
-        let users = self.state.users.read().await;
-        Ok(users.get(id).cloned())
+        Ok(self.state.users.get(id).map(|r| r.clone()))
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>> {
-        let users = self.state.users.read().await;
-        let by_email = self.state.user_by_email.read().await;
-
-        Ok(by_email
-            .get(email.as_str())
-            .and_then(|id| users.get(id).cloned()))
+        let id = match self.state.user_by_email.get(email.as_str()) {
+            Some(r) => *r,
+            None => return Ok(None),
+        };
+        Ok(self.state.users.get(&id).map(|r| r.clone()))
     }
 
     async fn list_all(&self) -> Result<Vec<User>> {
-        let users = self.state.users.read().await;
-        Ok(users.values().cloned().collect())
+        Ok(self.state.users.iter().map(|e| e.value().clone()).collect())
     }
 }
 

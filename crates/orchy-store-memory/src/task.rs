@@ -21,19 +21,16 @@ impl MemoryTaskStore {
 #[async_trait]
 impl TaskStore for MemoryTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        {
-            let mut tasks = self.state.tasks.write().await;
-            if let Some(pv) = task.persisted_version() {
-                let stored = tasks.get(&task.id()).ok_or_else(|| {
-                    Error::not_found(orchy_core::error::Resource::Task, task.id().to_string())
-                })?;
-                if stored.version() != pv {
-                    return Err(Error::version_mismatch(pv, stored.version()));
-                }
+        if let Some(pv) = task.persisted_version() {
+            let stored = self.state.tasks.get(&task.id()).ok_or_else(|| {
+                Error::not_found(orchy_core::error::Resource::Task, task.id().to_string())
+            })?;
+            if stored.version() != pv {
+                return Err(Error::version_mismatch(pv, stored.version()));
             }
-            task.mark_persisted();
-            tasks.insert(task.id(), task.clone());
         }
+        task.mark_persisted();
+        self.state.tasks.insert(task.id(), task.clone());
 
         let events = task.drain_events();
         self.state.append_events(events).await?;
@@ -42,16 +39,16 @@ impl TaskStore for MemoryTaskStore {
     }
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
-        let tasks = self.state.tasks.read().await;
-        Ok(tasks.get(id).cloned())
+        Ok(self.state.tasks.get(id).map(|r| r.clone()))
     }
 
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
-        let tasks = self.state.tasks.read().await;
-
-        let mut results: Vec<Task> = tasks
-            .values()
-            .filter(|t| {
+        let mut results: Vec<Task> = self
+            .state
+            .tasks
+            .iter()
+            .filter(|entry| {
+                let t = entry.value();
                 if let Some(ref org_id) = filter.org_id {
                     if t.org_id() != org_id {
                         return false;
@@ -94,7 +91,7 @@ impl TaskStore for MemoryTaskStore {
                 }
                 true
             })
-            .cloned()
+            .map(|e| e.value().clone())
             .collect();
 
         results.sort_by_key(|t| std::cmp::Reverse(t.priority()));
@@ -105,7 +102,9 @@ impl TaskStore for MemoryTaskStore {
     }
 
     async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>> {
-        let tasks = self.state.tasks.read().await;
-        Ok(ids.iter().filter_map(|id| tasks.get(id)).cloned().collect())
+        Ok(ids
+            .iter()
+            .filter_map(|id| self.state.tasks.get(id).map(|r| r.clone()))
+            .collect())
     }
 }

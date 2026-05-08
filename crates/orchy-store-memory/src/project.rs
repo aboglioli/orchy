@@ -22,10 +22,9 @@ impl MemoryProjectStore {
 #[async_trait]
 impl ProjectStore for MemoryProjectStore {
     async fn save(&self, project: &mut Project) -> Result<()> {
-        {
-            let mut projects = self.state.projects.write().await;
-            projects.insert(project.id().clone(), project.clone());
-        }
+        self.state
+            .projects
+            .insert(project.id().clone(), project.clone());
 
         let events = project.drain_events();
         self.state.append_events(events).await?;
@@ -34,7 +33,11 @@ impl ProjectStore for MemoryProjectStore {
     }
 
     async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
-        let projects = self.state.projects.read().await;
-        Ok(projects.get(id).filter(|p| p.org_id() == org).cloned())
+        Ok(self
+            .state
+            .projects
+            .get(id)
+            .filter(|r| r.value().org_id() == org)
+            .map(|r| r.clone()))
     }
 }

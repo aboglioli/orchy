@@ -227,7 +227,7 @@ mod tests {
 
         let stale_task = make_stale_claimed_task(&org_id, &project, original_agent);
         let task_id = stale_task.id();
-        state.insert_task(stale_task).await;
+        state.insert_task(stale_task);
 
         #[allow(clippy::clone_on_ref_ptr)]
         let use_case = GetNextTask::new(task_store.clone(), edge_store);

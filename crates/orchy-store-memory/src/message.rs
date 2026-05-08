@@ -25,19 +25,13 @@ impl MemoryMessageStore {
 #[async_trait]
 impl MessageStore for MemoryMessageStore {
     async fn save(&self, message: &mut Message) -> Result<()> {
-        let is_new = {
-            let mut messages = self.state.messages.write().await;
-            let is_new = !messages.contains_key(&message.id());
-            messages.insert(message.id(), message.clone());
-            is_new
-        };
+        let is_new = !self.state.messages.contains_key(&message.id());
+        self.state.messages.insert(message.id(), message.clone());
 
         if is_new {
             if let Some(parent_id) = message.reply_to() {
                 self.state
                     .message_replies
-                    .write()
-                    .await
                     .entry(parent_id)
                     .or_default()
                     .push(message.id());
@@ -51,14 +45,12 @@ impl MessageStore for MemoryMessageStore {
     }
 
     async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>> {
-        let messages = self.state.messages.read().await;
-        Ok(messages.get(id).cloned())
+        Ok(self.state.messages.get(id).map(|r| r.clone()))
     }
 
     async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()> {
-        let mut receipts = self.state.message_receipts.write().await;
         for id in message_ids {
-            receipts.insert((*id, agent.clone()));
+            self.state.message_receipts.insert((*id, agent.clone()));
         }
         Ok(())
     }
@@ -73,17 +65,19 @@ impl MessageStore for MemoryMessageStore {
         project: &ProjectId,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let messages = self.state.messages.read().await;
-        let receipts = self.state.message_receipts.read().await;
-
         let mut results = Vec::new();
 
-        for msg in messages.values() {
+        for entry in self.state.messages.iter() {
+            let msg = entry.value();
             if msg.org_id() != org || msg.project() != project {
                 continue;
             }
 
-            if receipts.contains(&(msg.id(), agent.clone())) {
+            if self
+                .state
+                .message_receipts
+                .contains(&(msg.id(), agent.clone()))
+            {
                 continue;
             }
             if msg.is_directed_to(agent) && msg.status() == MessageStatus::Read {
@@ -128,17 +122,18 @@ impl MessageStore for MemoryMessageStore {
         namespace: &Namespace,
         page: PageParams,
     ) -> Result<Page<Message>> {
-        let messages = self.state.messages.read().await;
-
-        let mut results: Vec<Message> = messages
-            .values()
-            .filter(|msg| {
+        let mut results: Vec<Message> = self
+            .state
+            .messages
+            .iter()
+            .filter(|entry| {
+                let msg = entry.value();
                 msg.from() == sender
                     && msg.org_id() == org
                     && msg.project() == project
                     && msg.namespace().starts_with(namespace)
             })
-            .cloned()
+            .map(|m| m.value().clone())
             .collect();
 
         results.sort_by_key(|m| std::cmp::Reverse(m.created_at()));
@@ -153,37 +148,38 @@ impl MessageStore for MemoryMessageStore {
         message_id: &MessageId,
         limit: Option<usize>,
     ) -> Result<Vec<Message>> {
-        let messages = self.state.messages.read().await;
-        let replies = self.state.message_replies.read().await;
-
-        let start = match messages.get(message_id) {
-            Some(m) => m.clone(),
+        let start = match self.state.messages.get(message_id).map(|r| r.clone()) {
+            Some(m) => m,
             None => return Ok(vec![]),
         };
 
         let mut root_id = start.id();
-        while let Some(msg) = messages.get(&root_id) {
-            match msg.reply_to() {
-                Some(parent_id) if messages.contains_key(&parent_id) => {
-                    root_id = parent_id;
-                }
-                _ => break,
+        loop {
+            let parent = self
+                .state
+                .messages
+                .get(&root_id)
+                .and_then(|r| r.reply_to())
+                .filter(|p| self.state.messages.contains_key(p));
+            match parent {
+                Some(p) => root_id = p,
+                None => break,
             }
         }
 
         let mut thread: Vec<Message> = Vec::new();
         let mut frontier = vec![root_id];
-        if let Some(root_msg) = messages.get(&root_id) {
-            thread.push(root_msg.clone());
+        if let Some(root_msg) = self.state.messages.get(&root_id).map(|r| r.clone()) {
+            thread.push(root_msg);
         }
 
         while !frontier.is_empty() {
             let mut next_frontier = Vec::new();
             for parent_id in &frontier {
-                if let Some(children) = replies.get(parent_id) {
-                    for child_id in children {
-                        if let Some(msg) = messages.get(child_id) {
-                            thread.push(msg.clone());
+                if let Some(children) = self.state.message_replies.get(parent_id) {
+                    for child_id in children.value() {
+                        if let Some(msg) = self.state.messages.get(child_id).map(|r| r.clone()) {
+                            thread.push(msg);
                             next_frontier.push(*child_id);
                         }
                     }
@@ -205,11 +201,9 @@ impl MessageStore for MemoryMessageStore {
     }
 
     async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>> {
-        let messages = self.state.messages.read().await;
         Ok(ids
             .iter()
-            .filter_map(|id| messages.get(id))
-            .cloned()
+            .filter_map(|id| self.state.messages.get(id).map(|r| r.clone()))
             .collect())
     }
 }

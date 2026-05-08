@@ -20,10 +20,9 @@ impl MemoryOrganizationStore {
 #[async_trait]
 impl OrganizationStore for MemoryOrganizationStore {
     async fn save(&self, org: &mut Organization) -> Result<()> {
-        {
-            let mut orgs = self.state.organizations.write().await;
-            orgs.insert(org.id().clone(), org.clone());
-        }
+        self.state
+            .organizations
+            .insert(org.id().clone(), org.clone());
 
         let events = org.drain_events();
         self.state.append_events(events).await?;
@@ -32,12 +31,15 @@ impl OrganizationStore for MemoryOrganizationStore {
     }
 
     async fn find_by_id(&self, id: &OrganizationId) -> Result<Option<Organization>> {
-        let orgs = self.state.organizations.read().await;
-        Ok(orgs.get(id).cloned())
+        Ok(self.state.organizations.get(id).map(|r| r.clone()))
     }
 
     async fn list(&self) -> Result<Vec<Organization>> {
-        let orgs = self.state.organizations.read().await;
-        Ok(orgs.values().cloned().collect())
+        Ok(self
+            .state
+            .organizations
+            .iter()
+            .map(|e| e.value().clone())
+            .collect())
     }
 }

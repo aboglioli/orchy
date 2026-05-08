@@ -40,36 +40,30 @@ impl LockStore for MemoryLockStore {
         holder: &AgentId,
         ttl_secs: u64,
     ) -> Result<Option<ResourceLock>> {
-        let (lock, events) = {
-            let mut locks = self.state.resource_locks.write().await;
-            let key = lock_key(org, project, namespace, name);
-            if let Some(existing) = locks.get(&key) {
-                if !existing.is_expired() && !existing.is_held_by(holder) {
-                    return Ok(None);
-                }
+        let key = lock_key(org, project, namespace, name);
+        if let Some(existing) = self.state.resource_locks.get(&key) {
+            if !existing.is_expired() && !existing.is_held_by(holder) {
+                return Ok(None);
             }
-            let mut lock = ResourceLock::acquire(
-                org.clone(),
-                project.clone(),
-                namespace.clone(),
-                name.to_string(),
-                holder.clone(),
-                ttl_secs,
-            )?;
-            let events = lock.drain_events();
-            locks.insert(key, lock.clone());
-            (lock, events)
-        };
+        }
+        let mut lock = ResourceLock::acquire(
+            org.clone(),
+            project.clone(),
+            namespace.clone(),
+            name.to_string(),
+            holder.clone(),
+            ttl_secs,
+        )?;
+        let events = lock.drain_events();
+        self.state.resource_locks.insert(key, lock.clone());
+
         self.state.append_events(events).await?;
         Ok(Some(lock))
     }
 
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
-        {
-            let mut locks = self.state.resource_locks.write().await;
-            let key = lock_key(lock.org_id(), lock.project(), lock.namespace(), lock.name());
-            locks.insert(key, lock.clone());
-        }
+        let key = lock_key(lock.org_id(), lock.project(), lock.namespace(), lock.name());
+        self.state.resource_locks.insert(key, lock.clone());
 
         let events = lock.drain_events();
         self.state.append_events(events).await?;
@@ -83,9 +77,8 @@ impl LockStore for MemoryLockStore {
         namespace: &Namespace,
         name: &str,
     ) -> Result<Option<ResourceLock>> {
-        let locks = self.state.resource_locks.read().await;
         let key = lock_key(org, project, namespace, name);
-        Ok(locks.get(&key).cloned())
+        Ok(self.state.resource_locks.get(&key).map(|r| r.clone()))
     }
 
     async fn delete(
@@ -95,9 +88,8 @@ impl LockStore for MemoryLockStore {
         namespace: &Namespace,
         name: &str,
     ) -> Result<()> {
-        let mut locks = self.state.resource_locks.write().await;
         let key = lock_key(org, project, namespace, name);
-        locks.remove(&key);
+        self.state.resource_locks.remove(&key);
         Ok(())
     }
 
@@ -106,25 +98,48 @@ impl LockStore for MemoryLockStore {
         holder: &AgentId,
         org: &OrganizationId,
     ) -> Result<Vec<ResourceLock>> {
-        let locks = self.state.resource_locks.read().await;
-        Ok(locks
-            .values()
-            .filter(|lock| *lock.holder() == *holder && lock.org_id() == org)
-            .cloned()
+        Ok(self
+            .state
+            .resource_locks
+            .iter()
+            .filter(|entry| {
+                let lock = entry.value();
+                *lock.holder() == *holder && lock.org_id() == org
+            })
+            .map(|e| e.value().clone())
             .collect())
     }
 
     async fn release_for_agent(&self, holder: &AgentId, org: &OrganizationId) -> Result<u64> {
-        let mut locks = self.state.resource_locks.write().await;
-        let before = locks.len();
-        locks.retain(|_, lock| !(lock.holder() == holder && lock.org_id() == org));
-        Ok((before - locks.len()) as u64)
+        let to_remove: Vec<String> = self
+            .state
+            .resource_locks
+            .iter()
+            .filter(|entry| {
+                let lock = entry.value();
+                lock.holder() == holder && lock.org_id() == org
+            })
+            .map(|e| e.key().clone())
+            .collect();
+        let count = to_remove.len() as u64;
+        for key in to_remove {
+            self.state.resource_locks.remove(&key);
+        }
+        Ok(count)
     }
 
     async fn delete_expired(&self) -> Result<u64> {
-        let mut locks = self.state.resource_locks.write().await;
-        let before = locks.len();
-        locks.retain(|_, lock| !lock.is_expired());
-        Ok((before - locks.len()) as u64)
+        let to_remove: Vec<String> = self
+            .state
+            .resource_locks
+            .iter()
+            .filter(|entry| entry.value().is_expired())
+            .map(|e| e.key().clone())
+            .collect();
+        let count = to_remove.len() as u64;
+        for key in to_remove {
+            self.state.resource_locks.remove(&key);
+        }
+        Ok(count)
     }
 }

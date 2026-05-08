@@ -22,30 +22,34 @@ impl MemoryApiKeyStore {
 impl ApiKeyStore for MemoryApiKeyStore {
     async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
         let events = api_key.drain_events();
-        {
-            let mut keys = self.state.api_keys.write().await;
-            keys.insert(api_key.id().clone(), api_key.clone());
-        }
+        self.state
+            .api_keys
+            .insert(api_key.id().clone(), api_key.clone());
         self.state.append_events(events).await?;
         Ok(())
     }
 
     async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>> {
-        let keys = self.state.api_keys.read().await;
-        Ok(keys.get(id).cloned())
+        Ok(self.state.api_keys.get(id).map(|r| r.clone()))
     }
 
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
-        let keys = self.state.api_keys.read().await;
-        Ok(keys.values().find(|k| k.hashed_key() == hash).cloned())
+        Ok(self.state.api_keys.iter().find_map(|entry| {
+            if entry.value().hashed_key() == hash {
+                Some(entry.value().clone())
+            } else {
+                None
+            }
+        }))
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>> {
-        let keys = self.state.api_keys.read().await;
-        Ok(keys
-            .values()
-            .filter(|k| k.org_id() == org_id)
-            .cloned()
+        Ok(self
+            .state
+            .api_keys
+            .iter()
+            .filter(|e| e.value().org_id() == org_id)
+            .map(|e| e.value().clone())
             .collect())
     }
 }

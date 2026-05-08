@@ -23,22 +23,26 @@ impl MemoryAgentStore {
 #[async_trait]
 impl AgentStore for MemoryAgentStore {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
-        {
-            let mut agents = self.state.agents.write().await;
-            if let Some(existing) = agents.values().find(|a| {
-                a.org_id() == agent.org_id()
-                    && a.project() == agent.project()
-                    && a.alias() == agent.alias()
-                    && a.id() != agent.id()
-            }) {
-                return Err(Error::conflict(format!(
-                    "alias '{}' already in use by agent {}",
-                    agent.alias(),
-                    existing.id()
-                )));
+        let conflict = self.state.agents.iter().find_map(|entry| {
+            let a = entry.value();
+            if a.org_id() == agent.org_id()
+                && a.project() == agent.project()
+                && a.alias() == agent.alias()
+                && a.id() != agent.id()
+            {
+                Some(a.id().clone())
+            } else {
+                None
             }
-            agents.insert(agent.id().clone(), agent.clone());
+        });
+        if let Some(existing) = conflict {
+            return Err(Error::conflict(format!(
+                "alias '{}' already in use by agent {}",
+                agent.alias(),
+                existing
+            )));
         }
+        self.state.agents.insert(agent.id().clone(), agent.clone());
 
         let events = agent.drain_events();
         self.state.append_events(events).await?;
@@ -47,8 +51,7 @@ impl AgentStore for MemoryAgentStore {
     }
 
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
-        let agents = self.state.agents.read().await;
-        Ok(agents.get(id).cloned())
+        Ok(self.state.agents.get(id).map(|r| r.clone()))
     }
 
     async fn find_by_alias(
@@ -57,19 +60,23 @@ impl AgentStore for MemoryAgentStore {
         project: &ProjectId,
         alias: &Alias,
     ) -> Result<Option<Agent>> {
-        let agents = self.state.agents.read().await;
-        Ok(agents
-            .values()
-            .find(|a| a.org_id() == org && a.project() == project && a.alias() == alias)
-            .cloned())
+        Ok(self.state.agents.iter().find_map(|entry| {
+            let a = entry.value();
+            if a.org_id() == org && a.project() == project && a.alias() == alias {
+                Some(a.clone())
+            } else {
+                None
+            }
+        }))
     }
 
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
-        let agents = self.state.agents.read().await;
-        let items: Vec<Agent> = agents
-            .values()
-            .filter(|a| a.org_id() == org)
-            .cloned()
+        let items: Vec<Agent> = self
+            .state
+            .agents
+            .iter()
+            .filter(|e| e.value().org_id() == org)
+            .map(|e| e.value().clone())
             .collect();
         Ok(crate::apply_cursor_pagination(items, &page, |a| {
             a.id().to_string()
@@ -77,21 +84,19 @@ impl AgentStore for MemoryAgentStore {
     }
 
     async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>> {
-        let agents = self.state.agents.read().await;
         Ok(ids
             .iter()
-            .filter_map(|id| agents.get(id))
-            .cloned()
+            .filter_map(|id| self.state.agents.get(id).map(|r| r.clone()))
             .collect())
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
-        let agents = self.state.agents.read().await;
-
-        Ok(agents
-            .values()
-            .filter(|a| a.is_timed_out(timeout_secs))
-            .cloned()
+        Ok(self
+            .state
+            .agents
+            .iter()
+            .filter(|e| e.value().is_timed_out(timeout_secs))
+            .map(|e| e.value().clone())
             .collect())
     }
 }

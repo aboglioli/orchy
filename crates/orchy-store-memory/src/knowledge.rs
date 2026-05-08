@@ -28,23 +28,21 @@ impl MemoryKnowledgeStore {
 #[async_trait]
 impl KnowledgeStore for MemoryKnowledgeStore {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
-        {
-            let mut entries = self.state.knowledge_entries.write().await;
-
-            if let Some(pv) = entry.persisted_version() {
-                if let Some(existing) = entries.get(&entry.id()) {
-                    if existing.version() != pv {
-                        return Err(Error::version_mismatch(
-                            pv.as_u64(),
-                            existing.version().as_u64(),
-                        ));
-                    }
+        if let Some(pv) = entry.persisted_version() {
+            if let Some(existing) = self.state.knowledge_entries.get(&entry.id()) {
+                if existing.version() != pv {
+                    return Err(Error::version_mismatch(
+                        pv.as_u64(),
+                        existing.version().as_u64(),
+                    ));
                 }
             }
-
-            entry.mark_persisted();
-            entries.insert(entry.id(), entry.clone());
         }
+
+        entry.mark_persisted();
+        self.state
+            .knowledge_entries
+            .insert(entry.id(), entry.clone());
 
         let events = entry.drain_events();
         self.state.append_events(events).await?;
@@ -52,8 +50,7 @@ impl KnowledgeStore for MemoryKnowledgeStore {
     }
 
     async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
-        let entries = self.state.knowledge_entries.read().await;
-        Ok(entries.get(id).cloned())
+        Ok(self.state.knowledge_entries.get(id).map(|r| r.clone()))
     }
 
     async fn find_by_path(
@@ -63,79 +60,81 @@ impl KnowledgeStore for MemoryKnowledgeStore {
         namespace: &Namespace,
         path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
-        let entries = self.state.knowledge_entries.read().await;
-        Ok(entries
-            .values()
-            .find(|e| {
-                e.org_id() == org
-                    && e.project() == project
-                    && e.namespace() == namespace
-                    && e.path().as_str() == path.as_str()
-            })
-            .cloned())
+        Ok(self.state.knowledge_entries.iter().find_map(|entry| {
+            let e = entry.value();
+            if e.org_id() == org
+                && e.project() == project
+                && e.namespace() == namespace
+                && e.path().as_str() == path.as_str()
+            {
+                Some(e.clone())
+            } else {
+                None
+            }
+        }))
     }
 
     async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
-        let results: Vec<Knowledge> = {
-            let entries = self.state.knowledge_entries.read().await;
-            entries
-                .values()
-                .filter(|e| {
-                    if let Some(ref org_id) = filter.org_id {
-                        if e.org_id() != org_id {
-                            return false;
-                        }
-                    }
-                    if let Some(ref project) = filter.project {
-                        let project_matches = e.project() == Some(project);
-                        let org_level = e.project().is_none();
-                        if !(project_matches || filter.include_org_level && org_level) {
-                            return false;
-                        }
-                    }
-                    if let Some(ref ns) = filter.namespace {
-                        if !e.namespace().starts_with(ns) {
-                            return false;
-                        }
-                    }
-                    if let Some(ref kind) = filter.kind {
-                        if e.kind() != *kind {
-                            return false;
-                        }
-                    }
-                    if let Some(ref tag) = filter.tag {
-                        if !e.tags().contains(tag) {
-                            return false;
-                        }
-                    }
-                    if let Some(ref prefix) = filter.path_prefix {
-                        if !e.path().as_str().starts_with(prefix.as_str()) {
-                            return false;
-                        }
-                    }
-                    if !filter.include_expired.unwrap_or(false) {
-                        if let Some(until) = e.valid_until() {
-                            if until < Utc::now() {
-                                return false;
-                            }
-                        }
-                    }
-                    if !filter.include_archived.unwrap_or(false) && e.is_archived() {
+        let results: Vec<Knowledge> = self
+            .state
+            .knowledge_entries
+            .iter()
+            .filter(|entry| {
+                let e = entry.value();
+                if let Some(ref org_id) = filter.org_id {
+                    if e.org_id() != org_id {
                         return false;
                     }
-                    true
-                })
-                .cloned()
-                .collect()
-        };
+                }
+                if let Some(ref project) = filter.project {
+                    let project_matches = e.project() == Some(project);
+                    let org_level = e.project().is_none();
+                    if !(project_matches || filter.include_org_level && org_level) {
+                        return false;
+                    }
+                }
+                if let Some(ref ns) = filter.namespace {
+                    if !e.namespace().starts_with(ns) {
+                        return false;
+                    }
+                }
+                if let Some(ref kind) = filter.kind {
+                    if e.kind() != *kind {
+                        return false;
+                    }
+                }
+                if let Some(ref tag) = filter.tag {
+                    if !e.tags().contains(tag) {
+                        return false;
+                    }
+                }
+                if let Some(ref prefix) = filter.path_prefix {
+                    if !e.path().as_str().starts_with(prefix.as_str()) {
+                        return false;
+                    }
+                }
+                if !filter.include_expired.unwrap_or(false) {
+                    if let Some(until) = e.valid_until() {
+                        if until < Utc::now() {
+                            return false;
+                        }
+                    }
+                }
+                if !filter.include_archived.unwrap_or(false) && e.is_archived() {
+                    return false;
+                }
+                true
+            })
+            .map(|e| e.value().clone())
+            .collect();
 
         let results = if let Some(orphaned) = filter.orphaned {
-            let edges = self.state.edges.read().await;
             results
                 .into_iter()
                 .filter(|entry| {
                     let id_str = entry.id().to_string();
-                    let has_link = edges.values().any(|e| {
+                    let has_link = self.state.edges.iter().any(|edge_entry| {
+                        let e = edge_entry.value();
                         e.to_kind() == &ResourceKind::Knowledge
                             && e.to_id() == id_str
                             && matches!(
@@ -164,12 +163,13 @@ impl KnowledgeStore for MemoryKnowledgeStore {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<(Knowledge, Option<f32>)>> {
-        let entries = self.state.knowledge_entries.read().await;
-
         let query_lower = query.to_lowercase();
-        let mut scored: Vec<(f32, &Knowledge)> = entries
-            .values()
-            .filter(|e| {
+        let mut scored: Vec<(f32, Knowledge)> = self
+            .state
+            .knowledge_entries
+            .iter()
+            .filter(|entry| {
+                let e = entry.value();
                 if e.org_id() != org {
                     return false;
                 }
@@ -183,16 +183,17 @@ impl KnowledgeStore for MemoryKnowledgeStore {
                 }
                 true
             })
-            .filter_map(|e| {
+            .filter_map(|entry| {
+                let e = entry.value();
                 if let (Some(qe), Some(ee)) = (embedding, e.embedding()) {
                     let score = crate::cosine_similarity(qe, ee);
                     if score > 0.0 {
-                        return Some((score, e));
+                        return Some((score, e.clone()));
                     }
                 }
                 let text = format!("{} {} {}", e.title(), e.content(), e.path()).to_lowercase();
                 if text.contains(&query_lower) {
-                    return Some((0.5, e));
+                    return Some((0.5, e.clone()));
                 }
                 None
             })
@@ -202,22 +203,19 @@ impl KnowledgeStore for MemoryKnowledgeStore {
         scored.truncate(limit);
         Ok(scored
             .into_iter()
-            .map(|(score, e)| (e.clone(), Some(score)))
+            .map(|(score, e)| (e, Some(score)))
             .collect())
     }
 
     async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>> {
-        let entries = self.state.knowledge_entries.read().await;
         Ok(ids
             .iter()
-            .filter_map(|id| entries.get(id))
-            .cloned()
+            .filter_map(|id| self.state.knowledge_entries.get(id).map(|r| r.clone()))
             .collect())
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
-        let mut entries = self.state.knowledge_entries.write().await;
-        entries.remove(id);
+        self.state.knowledge_entries.remove(id);
         Ok(())
     }
 }

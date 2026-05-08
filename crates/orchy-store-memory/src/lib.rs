@@ -16,9 +16,9 @@ mod resource_lock;
 mod task;
 mod user;
 
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use dashmap::{DashMap, DashSet};
 use tokio::sync::{Notify, RwLock};
 
 use orchy_events::{Event, SerializedEvent};
@@ -54,25 +54,25 @@ pub use task::MemoryTaskStore;
 pub use user::MemoryUserStore;
 
 pub struct MemoryState {
-    pub(crate) agents: RwLock<HashMap<AgentId, Agent>>,
-    pub(crate) edges: RwLock<HashMap<EdgeId, Edge>>,
-    pub(crate) edges_by_from: RwLock<HashMap<(ResourceKind, String), Vec<EdgeId>>>,
-    pub(crate) edges_by_to: RwLock<HashMap<(ResourceKind, String), Vec<EdgeId>>>,
-    pub(crate) tasks: RwLock<HashMap<TaskId, Task>>,
-    pub(crate) messages: RwLock<HashMap<MessageId, Message>>,
-    pub(crate) message_replies: RwLock<HashMap<MessageId, Vec<MessageId>>>,
-    pub(crate) message_receipts: RwLock<HashSet<(MessageId, AgentId)>>,
-    pub(crate) projects: RwLock<HashMap<ProjectId, Project>>,
-    pub(crate) knowledge_entries: RwLock<HashMap<KnowledgeId, Knowledge>>,
-    pub(crate) resource_locks: RwLock<HashMap<String, ResourceLock>>,
-    pub(crate) namespaces: RwLock<HashSet<(String, String, String)>>,
-    pub(crate) api_keys: RwLock<HashMap<ApiKeyId, ApiKey>>,
-    pub(crate) organizations: RwLock<HashMap<OrganizationId, Organization>>,
-    pub(crate) users: RwLock<HashMap<UserId, User>>,
-    pub(crate) user_by_email: RwLock<HashMap<String, UserId>>,
-    pub(crate) memberships: RwLock<HashMap<MembershipId, OrgMembership>>,
-    pub(crate) memberships_by_user: RwLock<HashMap<UserId, Vec<MembershipId>>>,
-    pub(crate) memberships_by_org: RwLock<HashMap<OrganizationId, Vec<MembershipId>>>,
+    pub(crate) agents: DashMap<AgentId, Agent>,
+    pub(crate) edges: DashMap<EdgeId, Edge>,
+    pub(crate) edges_by_from: DashMap<(ResourceKind, String), Vec<EdgeId>>,
+    pub(crate) edges_by_to: DashMap<(ResourceKind, String), Vec<EdgeId>>,
+    pub(crate) tasks: DashMap<TaskId, Task>,
+    pub(crate) messages: DashMap<MessageId, Message>,
+    pub(crate) message_replies: DashMap<MessageId, Vec<MessageId>>,
+    pub(crate) message_receipts: DashSet<(MessageId, AgentId)>,
+    pub(crate) projects: DashMap<ProjectId, Project>,
+    pub(crate) knowledge_entries: DashMap<KnowledgeId, Knowledge>,
+    pub(crate) resource_locks: DashMap<String, ResourceLock>,
+    pub(crate) namespaces: DashSet<(String, String, String)>,
+    pub(crate) api_keys: DashMap<ApiKeyId, ApiKey>,
+    pub(crate) organizations: DashMap<OrganizationId, Organization>,
+    pub(crate) users: DashMap<UserId, User>,
+    pub(crate) user_by_email: DashMap<String, UserId>,
+    pub(crate) memberships: DashMap<MembershipId, OrgMembership>,
+    pub(crate) memberships_by_user: DashMap<UserId, Vec<MembershipId>>,
+    pub(crate) memberships_by_org: DashMap<OrganizationId, Vec<MembershipId>>,
     pub(crate) events: RwLock<Vec<SerializedEvent>>,
     pub(crate) events_notify: Arc<Notify>,
 }
@@ -80,25 +80,25 @@ pub struct MemoryState {
 impl MemoryState {
     pub fn new() -> Self {
         Self {
-            agents: RwLock::new(HashMap::new()),
-            edges: RwLock::new(HashMap::new()),
-            edges_by_from: RwLock::new(HashMap::new()),
-            edges_by_to: RwLock::new(HashMap::new()),
-            tasks: RwLock::new(HashMap::new()),
-            messages: RwLock::new(HashMap::new()),
-            message_replies: RwLock::new(HashMap::new()),
-            message_receipts: RwLock::new(HashSet::new()),
-            projects: RwLock::new(HashMap::new()),
-            knowledge_entries: RwLock::new(HashMap::new()),
-            resource_locks: RwLock::new(HashMap::new()),
-            namespaces: RwLock::new(HashSet::new()),
-            api_keys: RwLock::new(HashMap::new()),
-            organizations: RwLock::new(HashMap::new()),
-            users: RwLock::new(HashMap::new()),
-            user_by_email: RwLock::new(HashMap::new()),
-            memberships: RwLock::new(HashMap::new()),
-            memberships_by_user: RwLock::new(HashMap::new()),
-            memberships_by_org: RwLock::new(HashMap::new()),
+            agents: DashMap::new(),
+            edges: DashMap::new(),
+            edges_by_from: DashMap::new(),
+            edges_by_to: DashMap::new(),
+            tasks: DashMap::new(),
+            messages: DashMap::new(),
+            message_replies: DashMap::new(),
+            message_receipts: DashSet::new(),
+            projects: DashMap::new(),
+            knowledge_entries: DashMap::new(),
+            resource_locks: DashMap::new(),
+            namespaces: DashSet::new(),
+            api_keys: DashMap::new(),
+            organizations: DashMap::new(),
+            users: DashMap::new(),
+            user_by_email: DashMap::new(),
+            memberships: DashMap::new(),
+            memberships_by_user: DashMap::new(),
+            memberships_by_org: DashMap::new(),
             events: RwLock::new(Vec::new()),
             events_notify: Arc::new(Notify::new()),
         }
@@ -116,8 +116,8 @@ impl MemoryState {
         self.events.read().await.clone()
     }
 
-    pub async fn insert_task(&self, task: Task) {
-        self.tasks.write().await.insert(task.id(), task);
+    pub fn insert_task(&self, task: Task) {
+        self.tasks.insert(task.id(), task);
     }
 
     pub(crate) async fn append_events(&self, events: Vec<Event>) -> orchy_core::error::Result<()> {

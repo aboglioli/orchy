@@ -24,33 +24,39 @@ impl MemoryEdgeStore {
     }
 }
 
+fn unindex_edge(state: &MemoryState, edge: &Edge) {
+    let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
+    if let Some(mut ids) = state.edges_by_from.get_mut(&from_key) {
+        ids.retain(|eid| eid != &edge.id());
+    }
+    let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
+    if let Some(mut ids) = state.edges_by_to.get_mut(&to_key) {
+        ids.retain(|eid| eid != &edge.id());
+    }
+}
+
 #[async_trait]
 impl EdgeStore for MemoryEdgeStore {
     async fn save(&self, edge: &mut Edge) -> Result<()> {
-        {
-            let mut store = self.state.edges.write().await;
-            let mut by_from = self.state.edges_by_from.write().await;
-            let mut by_to = self.state.edges_by_to.write().await;
-
-            if let Some(old) = store.get(&edge.id()) {
-                let from_key = (old.from_kind().clone(), old.from_id().to_string());
-                if let Some(ids) = by_from.get_mut(&from_key) {
-                    ids.retain(|id| id != &old.id());
-                }
-                let to_key = (old.to_kind().clone(), old.to_id().to_string());
-                if let Some(ids) = by_to.get_mut(&to_key) {
-                    ids.retain(|id| id != &old.id());
-                }
-            }
-
-            let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
-            by_from.entry(from_key).or_default().push(edge.id());
-
-            let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
-            by_to.entry(to_key).or_default().push(edge.id());
-
-            store.insert(edge.id(), edge.clone());
+        if let Some(old) = self.state.edges.get(&edge.id()).map(|r| r.clone()) {
+            unindex_edge(&self.state, &old);
         }
+
+        let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
+        self.state
+            .edges_by_from
+            .entry(from_key)
+            .or_default()
+            .push(edge.id());
+
+        let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
+        self.state
+            .edges_by_to
+            .entry(to_key)
+            .or_default()
+            .push(edge.id());
+
+        self.state.edges.insert(edge.id(), edge.clone());
 
         let events = edge.drain_events();
         self.state.append_events(events).await?;
@@ -59,24 +65,12 @@ impl EdgeStore for MemoryEdgeStore {
     }
 
     async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>> {
-        let store = self.state.edges.read().await;
-        Ok(store.get(id).cloned())
+        Ok(self.state.edges.get(id).map(|r| r.clone()))
     }
 
     async fn delete(&self, id: &EdgeId) -> Result<()> {
-        let mut store = self.state.edges.write().await;
-        let mut by_from = self.state.edges_by_from.write().await;
-        let mut by_to = self.state.edges_by_to.write().await;
-
-        if let Some(old) = store.remove(id) {
-            let from_key = (old.from_kind().clone(), old.from_id().to_string());
-            if let Some(ids) = by_from.get_mut(&from_key) {
-                ids.retain(|eid| eid != id);
-            }
-            let to_key = (old.to_kind().clone(), old.to_id().to_string());
-            if let Some(ids) = by_to.get_mut(&to_key) {
-                ids.retain(|eid| eid != id);
-            }
+        if let Some((_, old)) = self.state.edges.remove(id) {
+            unindex_edge(&self.state, &old);
         }
         Ok(())
     }
@@ -89,10 +83,12 @@ impl EdgeStore for MemoryEdgeStore {
         rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let store = self.state.edges.read().await;
-        let mut edges: Vec<Edge> = store
-            .values()
-            .filter(|e| {
+        let mut edges: Vec<Edge> = self
+            .state
+            .edges
+            .iter()
+            .filter(|entry| {
+                let e = entry.value();
                 e.org_id() == org
                     && e.from_kind() == kind
                     && e.from_id() == id
@@ -103,7 +99,7 @@ impl EdgeStore for MemoryEdgeStore {
                         e.is_active()
                     }
             })
-            .cloned()
+            .map(|e| e.value().clone())
             .collect();
         edges.sort_by_key(|e| e.created_at());
         Ok(edges)
@@ -117,10 +113,12 @@ impl EdgeStore for MemoryEdgeStore {
         rel_types: &[RelationType],
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Vec<Edge>> {
-        let store = self.state.edges.read().await;
-        let mut edges: Vec<Edge> = store
-            .values()
-            .filter(|e| {
+        let mut edges: Vec<Edge> = self
+            .state
+            .edges
+            .iter()
+            .filter(|entry| {
+                let e = entry.value();
                 e.org_id() == org
                     && e.to_kind() == kind
                     && e.to_id() == id
@@ -131,7 +129,7 @@ impl EdgeStore for MemoryEdgeStore {
                         e.is_active()
                     }
             })
-            .cloned()
+            .map(|e| e.value().clone())
             .collect();
         edges.sort_by_key(|e| e.created_at());
         Ok(edges)
@@ -146,8 +144,8 @@ impl EdgeStore for MemoryEdgeStore {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<bool> {
-        let store = self.state.edges.read().await;
-        Ok(store.values().any(|e| {
+        Ok(self.state.edges.iter().any(|entry| {
+            let e = entry.value();
             e.org_id() == org
                 && e.from_kind() == from_kind
                 && e.from_id() == from_id
@@ -167,19 +165,21 @@ impl EdgeStore for MemoryEdgeStore {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<Option<Edge>> {
-        let store = self.state.edges.read().await;
-        Ok(store
-            .values()
-            .find(|e| {
-                e.org_id() == org
-                    && e.from_kind() == from_kind
-                    && e.from_id() == from_id
-                    && e.to_kind() == to_kind
-                    && e.to_id() == to_id
-                    && e.rel_type() == rel_type
-                    && e.is_active()
-            })
-            .cloned())
+        Ok(self.state.edges.iter().find_map(|entry| {
+            let e = entry.value();
+            if e.org_id() == org
+                && e.from_kind() == from_kind
+                && e.from_id() == from_id
+                && e.to_kind() == to_kind
+                && e.to_id() == to_id
+                && e.rel_type() == rel_type
+                && e.is_active()
+            {
+                Some(e.clone())
+            } else {
+                None
+            }
+        }))
     }
 
     async fn list_by_org(
@@ -190,10 +190,12 @@ impl EdgeStore for MemoryEdgeStore {
         only_active: bool,
         as_of: Option<DateTime<Utc>>,
     ) -> Result<Page<Edge>> {
-        let store = self.state.edges.read().await;
-        let mut edges: Vec<Edge> = store
-            .values()
-            .filter(|e| {
+        let mut edges: Vec<Edge> = self
+            .state
+            .edges
+            .iter()
+            .filter(|entry| {
+                let e = entry.value();
                 e.org_id() == org
                     && rel_type.is_none_or(|rt| e.rel_type() == rt)
                     && if let Some(ts) = as_of {
@@ -202,7 +204,7 @@ impl EdgeStore for MemoryEdgeStore {
                         !only_active || e.is_active()
                     }
             })
-            .cloned()
+            .map(|e| e.value().clone())
             .collect();
         edges.sort_by_key(|e| e.created_at());
         Ok(crate::apply_cursor_pagination(edges, &page, |e| {
@@ -222,10 +224,6 @@ impl EdgeStore for MemoryEdgeStore {
         as_of: Option<DateTime<Utc>>,
         limit: u32,
     ) -> Result<Vec<TraversalHop>> {
-        let store = self.state.edges.read().await;
-        let by_from = self.state.edges_by_from.read().await;
-        let by_to = self.state.edges_by_to.read().await;
-
         let max_depth = max_depth.max(1);
         let mut result: Vec<TraversalHop> = vec![];
         let mut visited_edges: HashSet<EdgeId> = HashSet::new();
@@ -238,23 +236,30 @@ impl EdgeStore for MemoryEdgeStore {
             }
 
             let candidate_ids: Vec<EdgeId> = match direction {
-                TraversalDirection::Outgoing => by_from
+                TraversalDirection::Outgoing => self
+                    .state
+                    .edges_by_from
                     .get(&(cur_kind.clone(), cur_id.clone()))
-                    .cloned()
+                    .map(|r| r.clone())
                     .unwrap_or_default(),
-                TraversalDirection::Incoming => by_to
+                TraversalDirection::Incoming => self
+                    .state
+                    .edges_by_to
                     .get(&(cur_kind.clone(), cur_id.clone()))
-                    .cloned()
+                    .map(|r| r.clone())
                     .unwrap_or_default(),
                 TraversalDirection::Both => {
-                    let mut ids = by_from
+                    let mut ids = self
+                        .state
+                        .edges_by_from
                         .get(&(cur_kind.clone(), cur_id.clone()))
-                        .cloned()
+                        .map(|r| r.clone())
                         .unwrap_or_default();
                     ids.extend(
-                        by_to
+                        self.state
+                            .edges_by_to
                             .get(&(cur_kind.clone(), cur_id.clone()))
-                            .cloned()
+                            .map(|r| r.clone())
                             .unwrap_or_default(),
                     );
                     ids
@@ -269,7 +274,7 @@ impl EdgeStore for MemoryEdgeStore {
                     continue;
                 }
 
-                let Some(edge) = store.get(&edge_id) else {
+                let Some(edge) = self.state.edges.get(&edge_id).map(|r| r.clone()) else {
                     continue;
                 };
 
@@ -346,30 +351,22 @@ impl EdgeStore for MemoryEdgeStore {
         kind: &ResourceKind,
         id: &str,
     ) -> Result<()> {
-        let mut store = self.state.edges.write().await;
-        let mut by_from = self.state.edges_by_from.write().await;
-        let mut by_to = self.state.edges_by_to.write().await;
-
-        let to_remove: Vec<Edge> = store
-            .values()
-            .filter(|e| {
+        let to_remove: Vec<Edge> = self
+            .state
+            .edges
+            .iter()
+            .filter(|entry| {
+                let e = entry.value();
                 e.org_id() == org
                     && ((e.from_kind() == kind && e.from_id() == id)
                         || (e.to_kind() == kind && e.to_id() == id))
             })
-            .cloned()
+            .map(|e| e.value().clone())
             .collect();
 
         for old in &to_remove {
-            store.remove(&old.id());
-            let from_key = (old.from_kind().clone(), old.from_id().to_string());
-            if let Some(ids) = by_from.get_mut(&from_key) {
-                ids.retain(|eid| eid != &old.id());
-            }
-            let to_key = (old.to_kind().clone(), old.to_id().to_string());
-            if let Some(ids) = by_to.get_mut(&to_key) {
-                ids.retain(|eid| eid != &old.id());
-            }
+            self.state.edges.remove(&old.id());
+            unindex_edge(&self.state, old);
         }
 
         Ok(())
@@ -384,13 +381,12 @@ impl EdgeStore for MemoryEdgeStore {
         to_id: &str,
         rel_type: &RelationType,
     ) -> Result<()> {
-        let mut store = self.state.edges.write().await;
-        let mut by_from = self.state.edges_by_from.write().await;
-        let mut by_to = self.state.edges_by_to.write().await;
-
-        let to_remove: Vec<Edge> = store
-            .values()
-            .filter(|e| {
+        let to_remove: Vec<Edge> = self
+            .state
+            .edges
+            .iter()
+            .filter(|entry| {
+                let e = entry.value();
                 e.org_id() == org
                     && e.from_kind() == from_kind
                     && e.from_id() == from_id
@@ -398,19 +394,12 @@ impl EdgeStore for MemoryEdgeStore {
                     && e.to_id() == to_id
                     && e.rel_type() == rel_type
             })
-            .cloned()
+            .map(|e| e.value().clone())
             .collect();
 
         for old in &to_remove {
-            store.remove(&old.id());
-            let fk = (old.from_kind().clone(), old.from_id().to_string());
-            if let Some(ids) = by_from.get_mut(&fk) {
-                ids.retain(|eid| eid != &old.id());
-            }
-            let tk = (old.to_kind().clone(), old.to_id().to_string());
-            if let Some(ids) = by_to.get_mut(&tk) {
-                ids.retain(|eid| eid != &old.id());
-            }
+            self.state.edges.remove(&old.id());
+            unindex_edge(&self.state, old);
         }
 
         Ok(())

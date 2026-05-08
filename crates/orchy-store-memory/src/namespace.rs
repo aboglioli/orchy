@@ -26,20 +26,27 @@ impl NamespaceStore for MemoryNamespaceStore {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<()> {
-        let mut namespaces = self.state.namespaces.write().await;
-        namespaces.insert((org.to_string(), project.to_string(), namespace.to_string()));
+        self.state
+            .namespaces
+            .insert((org.to_string(), project.to_string(), namespace.to_string()));
         Ok(())
     }
 
     async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
-        let namespaces = self.state.namespaces.read().await;
-
         let org_str = org.to_string();
         let project_str = project.to_string();
-        let mut result: Vec<Namespace> = namespaces
+        let mut result: Vec<Namespace> = self
+            .state
+            .namespaces
             .iter()
-            .filter(|(o, p, _)| *o == org_str && *p == project_str)
-            .filter_map(|(_, _, ns)| Namespace::try_from(ns.as_str()).ok())
+            .filter(|entry| {
+                let (o, p, _) = entry.key();
+                *o == org_str && *p == project_str
+            })
+            .filter_map(|entry| {
+                let (_, _, ns) = entry.key();
+                Namespace::try_from(ns.as_str()).ok()
+            })
             .collect();
         result.sort_by(|a, b| a.as_ref().cmp(b.as_ref()));
         Ok(result)

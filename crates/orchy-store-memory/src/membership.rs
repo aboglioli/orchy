@@ -21,54 +21,51 @@ impl MemoryOrgMembershipStore {
 #[async_trait]
 impl OrgMembershipStore for MemoryOrgMembershipStore {
     async fn save(&self, membership: &mut OrgMembership) -> Result<()> {
-        let mut memberships = self.state.memberships.write().await;
-        let mut by_user = self.state.memberships_by_user.write().await;
-        let mut by_org = self.state.memberships_by_org.write().await;
-
         let id = *membership.id();
         let user_id = *membership.user_id();
         let org_id = membership.org_id().clone();
 
-        memberships.insert(id, membership.clone());
+        self.state.memberships.insert(id, membership.clone());
 
-        by_user.entry(user_id).or_default().retain(|m| *m != id);
-        by_user.entry(user_id).or_default().push(id);
-
-        let org_id2 = org_id.clone();
-        by_org.entry(org_id).or_default().retain(|m| *m != id);
-        by_org.entry(org_id2).or_default().push(id);
+        {
+            let mut by_user = self.state.memberships_by_user.entry(user_id).or_default();
+            by_user.retain(|m| *m != id);
+            by_user.push(id);
+        }
+        {
+            let mut by_org = self.state.memberships_by_org.entry(org_id).or_default();
+            by_org.retain(|m| *m != id);
+            by_org.push(id);
+        }
 
         Ok(())
     }
 
     async fn find_by_id(&self, id: &MembershipId) -> Result<Option<OrgMembership>> {
-        let memberships = self.state.memberships.read().await;
-        Ok(memberships.get(id).cloned())
+        Ok(self.state.memberships.get(id).map(|r| r.clone()))
     }
 
     async fn find_by_user(&self, user_id: &UserId) -> Result<Vec<OrgMembership>> {
-        let memberships = self.state.memberships.read().await;
-        let by_user = self.state.memberships_by_user.read().await;
-
-        Ok(by_user
+        Ok(self
+            .state
+            .memberships_by_user
             .get(user_id)
             .map(|ids| {
                 ids.iter()
-                    .filter_map(|id| memberships.get(id).cloned())
+                    .filter_map(|id| self.state.memberships.get(id).map(|r| r.clone()))
                     .collect()
             })
             .unwrap_or_default())
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<OrgMembership>> {
-        let memberships = self.state.memberships.read().await;
-        let by_org = self.state.memberships_by_org.read().await;
-
-        Ok(by_org
+        Ok(self
+            .state
+            .memberships_by_org
             .get(org_id)
             .map(|ids| {
                 ids.iter()
-                    .filter_map(|id| memberships.get(id).cloned())
+                    .filter_map(|id| self.state.memberships.get(id).map(|r| r.clone()))
                     .collect()
             })
             .unwrap_or_default())
@@ -79,27 +76,22 @@ impl OrgMembershipStore for MemoryOrgMembershipStore {
         user_id: &UserId,
         org_id: &OrganizationId,
     ) -> Result<Option<OrgMembership>> {
-        let memberships = self.state.memberships.read().await;
-        let by_user = self.state.memberships_by_user.read().await;
-
-        Ok(by_user.get(user_id).and_then(|ids| {
-            ids.iter()
-                .filter_map(|id| memberships.get(id))
-                .find(|m| m.org_id() == org_id)
-                .cloned()
-        }))
+        let ids = match self.state.memberships_by_user.get(user_id) {
+            Some(r) => r.clone(),
+            None => return Ok(None),
+        };
+        Ok(ids
+            .iter()
+            .filter_map(|id| self.state.memberships.get(id).map(|r| r.clone()))
+            .find(|m| m.org_id() == org_id))
     }
 
     async fn delete(&self, id: &MembershipId) -> Result<()> {
-        let mut memberships = self.state.memberships.write().await;
-        let mut by_user = self.state.memberships_by_user.write().await;
-        let mut by_org = self.state.memberships_by_org.write().await;
-
-        if let Some(membership) = memberships.remove(id) {
-            if let Some(ids) = by_user.get_mut(membership.user_id()) {
+        if let Some((_, membership)) = self.state.memberships.remove(id) {
+            if let Some(mut ids) = self.state.memberships_by_user.get_mut(membership.user_id()) {
                 ids.retain(|m| m != id);
             }
-            if let Some(ids) = by_org.get_mut(membership.org_id()) {
+            if let Some(mut ids) = self.state.memberships_by_org.get_mut(membership.org_id()) {
                 ids.retain(|m| m != id);
             }
         }
