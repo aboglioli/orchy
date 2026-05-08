@@ -589,8 +589,10 @@ async fn sqlite_agent_task_lifecycle() {
         .send()
         .await
         .unwrap();
-    assert_eq!(reg.status(), 200);
-    let reg_body: serde_json::Value = reg.json().await.unwrap();
+    let status = reg.status();
+    let body_text = reg.text().await.unwrap();
+    assert_eq!(status, 200, "register failed: {body_text}");
+    let reg_body: serde_json::Value = serde_json::from_str(&body_text).unwrap();
     let agent_id = reg_body["agent"]["id"].as_str().unwrap().to_string();
     assert_eq!(reg_body["agent"]["alias"].as_str().unwrap(), "worker");
 
