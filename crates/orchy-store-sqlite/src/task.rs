@@ -15,7 +15,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::task::{Priority, RestoreTask, Task, TaskFilter, TaskId, TaskStatus, TaskStore};
 
-use crate::{SqliteConn, decode_json, events};
+use crate::{SqliteConn, blocking, blocking_tx, decode_json, events};
 
 const SELECT_COLS: &str = "id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at, version";
 
@@ -32,219 +32,222 @@ impl SqliteTaskStore {
 #[async_trait]
 impl TaskStore for SqliteTaskStore {
     async fn save(&self, task: &mut Task) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
+        let snapshot = task.clone();
+        let drained = task.drain_events();
+        blocking_tx(&self.conn, move |tx| {
+            if let Some(pv) = snapshot.persisted_version() {
+                let affected = tx
+                    .execute(
+                        "UPDATE tasks SET organization_id=?2, project=?3, namespace=?4, title=?5, \
+                         description=?6, acceptance_criteria=?7, status=?8, priority=?9, \
+                         assigned_roles=?10, assigned_to=?11, assigned_at=?12, stale_after_secs=?13, \
+                         last_activity_at=?14, tags=?15, result_summary=?16, archived_at=?17, \
+                         created_by=?18, created_at=?19, updated_at=?20, version=?21 \
+                         WHERE id=?1 AND version=?22",
+                        rusqlite::params![
+                            snapshot.id().to_string(),
+                            snapshot.org_id().to_string(),
+                            snapshot.project().to_string(),
+                            snapshot.namespace().to_string(),
+                            snapshot.title(),
+                            snapshot.description(),
+                            snapshot.acceptance_criteria().map(|s| s.to_string()),
+                            snapshot.status().to_string(),
+                            snapshot.priority().to_string(),
+                            serde_json::to_string(snapshot.assigned_roles()).map_err(|e| {
+                                Error::Store(StoreError::Serialization(format!(
+                                    "assigned_roles: {e}"
+                                )))
+                            })?,
+                            snapshot.assigned_to().map(|a| a.to_string()),
+                            snapshot.assigned_at().map(|dt| dt.to_rfc3339()),
+                            snapshot.stale_after_secs(),
+                            snapshot.last_activity_at().to_rfc3339(),
+                            serde_json::to_string(snapshot.tags()).map_err(|e| {
+                                Error::Store(StoreError::Serialization(format!("tags: {e}")))
+                            })?,
+                            snapshot.result_summary().map(|s| s.to_string()),
+                            snapshot.archived_at().map(|dt| dt.to_rfc3339()),
+                            snapshot.created_by().map(|a| a.to_string()),
+                            snapshot.created_at().to_rfc3339(),
+                            snapshot.updated_at().to_rfc3339(),
+                            snapshot.version(),
+                            pv,
+                        ],
+                    )
+                    .map_err(crate::error::store_err)?;
 
-        if let Some(pv) = task.persisted_version() {
-            let affected = tx
-                .execute(
-                    "UPDATE tasks SET organization_id=?2, project=?3, namespace=?4, title=?5, \
-                     description=?6, acceptance_criteria=?7, status=?8, priority=?9, \
-                     assigned_roles=?10, assigned_to=?11, assigned_at=?12, stale_after_secs=?13, \
-                     last_activity_at=?14, tags=?15, result_summary=?16, archived_at=?17, \
-                     created_by=?18, created_at=?19, updated_at=?20, version=?21 \
-                     WHERE id=?1 AND version=?22",
+                if affected == 0 {
+                    return Err(Error::version_mismatch(pv, snapshot.version()));
+                }
+            } else {
+                tx.execute(
+                    "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at, version)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
                     rusqlite::params![
-                        task.id().to_string(),
-                        task.org_id().to_string(),
-                        task.project().to_string(),
-                        task.namespace().to_string(),
-                        task.title(),
-                        task.description(),
-                        task.acceptance_criteria().map(|s| s.to_string()),
-                        task.status().to_string(),
-                        task.priority().to_string(),
-                        serde_json::to_string(task.assigned_roles()).map_err(|e| {
+                        snapshot.id().to_string(),
+                        snapshot.org_id().to_string(),
+                        snapshot.project().to_string(),
+                        snapshot.namespace().to_string(),
+                        snapshot.title(),
+                        snapshot.description(),
+                        snapshot.acceptance_criteria().map(|s| s.to_string()),
+                        snapshot.status().to_string(),
+                        snapshot.priority().to_string(),
+                        serde_json::to_string(snapshot.assigned_roles()).map_err(|e| {
                             Error::Store(StoreError::Serialization(format!("assigned_roles: {e}")))
                         })?,
-                        task.assigned_to().map(|a| a.to_string()),
-                        task.assigned_at().map(|dt| dt.to_rfc3339()),
-                        task.stale_after_secs(),
-                        task.last_activity_at().to_rfc3339(),
-                        serde_json::to_string(task.tags()).map_err(|e| {
+                        snapshot.assigned_to().map(|a| a.to_string()),
+                        snapshot.assigned_at().map(|dt| dt.to_rfc3339()),
+                        snapshot.stale_after_secs(),
+                        snapshot.last_activity_at().to_rfc3339(),
+                        serde_json::to_string(snapshot.tags()).map_err(|e| {
                             Error::Store(StoreError::Serialization(format!("tags: {e}")))
                         })?,
-                        task.result_summary().map(|s| s.to_string()),
-                        task.archived_at().map(|dt| dt.to_rfc3339()),
-                        task.created_by().map(|a| a.to_string()),
-                        task.created_at().to_rfc3339(),
-                        task.updated_at().to_rfc3339(),
-                        task.version(),
-                        pv,
+                        snapshot.result_summary().map(|s| s.to_string()),
+                        snapshot.archived_at().map(|dt| dt.to_rfc3339()),
+                        snapshot.created_by().map(|a| a.to_string()),
+                        snapshot.created_at().to_rfc3339(),
+                        snapshot.updated_at().to_rfc3339(),
+                        snapshot.version(),
                     ],
                 )
                 .map_err(crate::error::store_err)?;
-
-            if affected == 0 {
-                return Err(Error::version_mismatch(pv, task.version()));
             }
-        } else {
-            tx.execute(
-                "INSERT OR REPLACE INTO tasks (id, organization_id, project, namespace, title, description, acceptance_criteria, status, priority, assigned_roles, assigned_to, assigned_at, stale_after_secs, last_activity_at, tags, result_summary, archived_at, created_by, created_at, updated_at, version)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
-                rusqlite::params![
-                    task.id().to_string(),
-                    task.org_id().to_string(),
-                    task.project().to_string(),
-                    task.namespace().to_string(),
-                    task.title(),
-                    task.description(),
-                    task.acceptance_criteria().map(|s| s.to_string()),
-                    task.status().to_string(),
-                    task.priority().to_string(),
-                    serde_json::to_string(task.assigned_roles()).map_err(|e| {
-                        Error::Store(StoreError::Serialization(format!("assigned_roles: {e}")))
-                    })?,
-                    task.assigned_to().map(|a| a.to_string()),
-                    task.assigned_at().map(|dt| dt.to_rfc3339()),
-                    task.stale_after_secs(),
-                    task.last_activity_at().to_rfc3339(),
-                    serde_json::to_string(task.tags()).map_err(|e| {
-                        Error::Store(StoreError::Serialization(format!("tags: {e}")))
-                    })?,
-                    task.result_summary().map(|s| s.to_string()),
-                    task.archived_at().map(|dt| dt.to_rfc3339()),
-                    task.created_by().map(|a| a.to_string()),
-                    task.created_at().to_rfc3339(),
-                    task.updated_at().to_rfc3339(),
-                    task.version(),
-                ],
-            )
-            .map_err(crate::error::store_err)?;
-        }
+
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await?;
 
         task.mark_persisted();
-
-        let events = task.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
         Ok(())
     }
 
     async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id = ?1");
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
-
-        let result = stmt
-            .query_row(rusqlite::params![id.to_string()], row_to_task)
-            .optional()
-            .map_err(crate::error::store_err)?;
-
-        Ok(result)
+        let id = id.to_string();
+        blocking(&self.conn, move |conn| {
+            let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id = ?1");
+            conn.query_row(&sql, rusqlite::params![id], row_to_task)
+                .optional()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let placeholders: String = repeat_n("?", ids.len()).collect::<Vec<_>>().join(", ");
-        let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id IN ({placeholders})");
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
-        let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
-            .iter()
-            .map(|s| s as &dyn rusqlite::ToSql)
-            .collect();
-        let tasks = stmt
-            .query_map(param_refs.as_slice(), row_to_task)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
-        Ok(tasks)
+        blocking(&self.conn, move |conn| {
+            let placeholders: String = repeat_n("?", id_strings.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE id IN ({placeholders})");
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
+            let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
+                .iter()
+                .map(|s| s as &dyn rusqlite::ToSql)
+                .collect();
+            stmt.query_map(param_refs.as_slice(), row_to_task)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        blocking(&self.conn, move |conn| {
+            let mut sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE 1=1");
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            let mut idx = 1;
 
-        let mut sql = format!("SELECT {SELECT_COLS} FROM tasks WHERE 1=1");
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut idx = 1;
-
-        if let Some(ref org_id) = filter.org_id {
-            sql.push_str(&format!(" AND organization_id = ?{idx}"));
-            params.push(Box::new(org_id.to_string()));
-            idx += 1;
-        }
-        if let Some(ref ns) = filter.namespace {
-            if !ns.is_root() {
+            if let Some(ref org_id) = filter.org_id {
+                sql.push_str(&format!(" AND organization_id = ?{idx}"));
+                params.push(Box::new(org_id.to_string()));
+                idx += 1;
+            }
+            if let Some(ref ns) = filter.namespace {
+                if !ns.is_root() {
+                    sql.push_str(&format!(
+                        " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+                    ));
+                    params.push(Box::new(ns.to_string()));
+                    idx += 1;
+                }
+            }
+            if let Some(ref project) = filter.project {
+                sql.push_str(&format!(" AND project = ?{idx}"));
+                params.push(Box::new(project.to_string()));
+                idx += 1;
+            }
+            if let Some(ref status) = filter.status {
+                sql.push_str(&format!(" AND status = ?{idx}"));
+                params.push(Box::new(status.to_string()));
+                idx += 1;
+            }
+            if let Some(ref role) = filter.assigned_role {
                 sql.push_str(&format!(
-                    " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+                    " AND (assigned_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(assigned_roles) WHERE value = ?{idx}))"
                 ));
-                params.push(Box::new(ns.to_string()));
+                params.push(Box::new(role.to_string()));
                 idx += 1;
             }
-        }
-        if let Some(ref project) = filter.project {
-            sql.push_str(&format!(" AND project = ?{idx}"));
-            params.push(Box::new(project.to_string()));
-            idx += 1;
-        }
-        if let Some(ref status) = filter.status {
-            sql.push_str(&format!(" AND status = ?{idx}"));
-            params.push(Box::new(status.to_string()));
-            idx += 1;
-        }
-        if let Some(ref role) = filter.assigned_role {
-            sql.push_str(&format!(
-                " AND (assigned_roles = '[]' OR EXISTS (SELECT 1 FROM json_each(assigned_roles) WHERE value = ?{idx}))"
-            ));
-            params.push(Box::new(role.to_string()));
-            idx += 1;
-        }
-        if let Some(ref assigned) = filter.assigned_to {
-            sql.push_str(&format!(" AND assigned_to = ?{idx}"));
-            params.push(Box::new(assigned.to_string()));
-            idx += 1;
-        }
-        if let Some(ref tag) = filter.tag {
-            sql.push_str(&format!(
-                " AND EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?{idx})"
-            ));
-            params.push(Box::new(tag.to_string()));
-            idx += 1;
-        }
-        if !filter.include_archived.unwrap_or(false) {
-            sql.push_str(" AND archived_at IS NULL");
-        }
-
-        if let Some(ref cursor) = page.after {
-            if let Some(decoded) = decode_cursor(cursor) {
-                sql.push_str(&format!(" AND id < ?{idx}"));
-                params.push(Box::new(decoded));
+            if let Some(ref assigned) = filter.assigned_to {
+                sql.push_str(&format!(" AND assigned_to = ?{idx}"));
+                params.push(Box::new(assigned.to_string()));
                 idx += 1;
             }
-        }
+            if let Some(ref tag) = filter.tag {
+                sql.push_str(&format!(
+                    " AND EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?{idx})"
+                ));
+                params.push(Box::new(tag.to_string()));
+                idx += 1;
+            }
+            if !filter.include_archived.unwrap_or(false) {
+                sql.push_str(" AND archived_at IS NULL");
+            }
 
-        let _ = idx;
-        sql.push_str(" ORDER BY CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END DESC, id DESC");
+            if let Some(ref cursor) = page.after {
+                if let Some(decoded) = decode_cursor(cursor) {
+                    sql.push_str(&format!(" AND id < ?{idx}"));
+                    params.push(Box::new(decoded));
+                    idx += 1;
+                }
+            }
 
-        let fetch_limit = (page.limit as u64).saturating_add(1);
-        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+            let _ = idx;
+            sql.push_str(" ORDER BY CASE priority WHEN 'critical' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 WHEN 'low' THEN 0 ELSE 1 END DESC, id DESC");
 
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
-        let mut tasks: Vec<Task> = stmt
-            .query_map(param_refs.as_slice(), row_to_task)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
+            let fetch_limit = (page.limit as u64).saturating_add(1);
+            sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
-        let has_more = tasks.len() > page.limit as usize;
-        if has_more {
-            tasks.truncate(page.limit as usize);
-        }
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+            let mut tasks: Vec<Task> = stmt
+                .query_map(param_refs.as_slice(), row_to_task)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)?;
 
-        let next_cursor = if has_more {
-            tasks.last().map(|t| encode_cursor(&t.id().to_string()))
-        } else {
-            None
-        };
+            let has_more = tasks.len() > page.limit as usize;
+            if has_more {
+                tasks.truncate(page.limit as usize);
+            }
 
-        Ok(Page::new(tasks, next_cursor))
+            let next_cursor = if has_more {
+                tasks.last().map(|t| encode_cursor(&t.id().to_string()))
+            } else {
+                None
+            };
+
+            Ok(Page::new(tasks, next_cursor))
+        })
+        .await
     }
 }
 

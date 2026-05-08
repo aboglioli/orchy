@@ -174,6 +174,37 @@ impl SqliteDatabase {
     }
 }
 
+pub(crate) async fn blocking<F, R>(conn: &SqliteConn, f: F) -> Result<R>
+where
+    F: FnOnce(&Connection) -> Result<R> + Send + 'static,
+    R: Send + 'static,
+{
+    let conn = Arc::clone(conn);
+    tokio::task::spawn_blocking(move || {
+        let guard = conn.lock().map_err(crate::error::lock_err)?;
+        f(&guard)
+    })
+    .await
+    .map_err(|e| Error::Store(StoreError::Other(format!("blocking task panicked: {e}"))))?
+}
+
+pub(crate) async fn blocking_tx<F, R>(conn: &SqliteConn, f: F) -> Result<R>
+where
+    F: FnOnce(&rusqlite::Transaction) -> Result<R> + Send + 'static,
+    R: Send + 'static,
+{
+    let conn = Arc::clone(conn);
+    tokio::task::spawn_blocking(move || {
+        let mut guard = conn.lock().map_err(crate::error::lock_err)?;
+        let tx = guard.transaction().map_err(crate::error::store_err)?;
+        let result = f(&tx)?;
+        tx.commit().map_err(crate::error::store_err)?;
+        Ok(result)
+    })
+    .await
+    .map_err(|e| Error::Store(StoreError::Other(format!("blocking task panicked: {e}"))))?
+}
+
 pub(crate) fn decode_json<T: serde::de::DeserializeOwned>(
     raw: &str,
     col: &str,

@@ -12,7 +12,7 @@ use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::organization::OrganizationId;
 use orchy_core::user::UserId;
 
-use crate::{SqliteConn, events};
+use crate::{SqliteConn, blocking, blocking_tx, events};
 
 pub struct SqliteApiKeyStore {
     conn: SqliteConn,
@@ -27,77 +27,84 @@ impl SqliteApiKeyStore {
 #[async_trait]
 impl ApiKeyStore for SqliteApiKeyStore {
     async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        tx.execute(
-            "INSERT OR REPLACE INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                api_key.id().to_string(),
-                api_key.org_id().to_string(),
-                api_key.name(),
-                api_key.hashed_key().as_str(),
-                api_key.key_prefix().as_str(),
-                api_key.key_suffix().as_str(),
-                api_key.is_active() as i32,
-                api_key.created_at().to_rfc3339(),
-                api_key.user_id().map(|u| u.to_string()),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-
-        let events = api_key.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(())
+        let id = api_key.id().to_string();
+        let org_id = api_key.org_id().to_string();
+        let name = api_key.name().to_string();
+        let key_hash = api_key.hashed_key().as_str().to_string();
+        let key_prefix = api_key.key_prefix().as_str().to_string();
+        let key_suffix = api_key.key_suffix().as_str().to_string();
+        let is_active = api_key.is_active() as i32;
+        let created_at = api_key.created_at().to_rfc3339();
+        let user_id = api_key.user_id().map(|u| u.to_string());
+        let drained = api_key.drain_events();
+        blocking_tx(&self.conn, move |tx| {
+            tx.execute(
+                "INSERT OR REPLACE INTO api_keys (id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![
+                    id, org_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id,
+                ],
+            )
+            .map_err(crate::error::store_err)?;
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn find_by_id(&self, id: &ApiKeyId) -> Result<Option<ApiKey>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        conn.query_row(
-            "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
-             FROM api_keys WHERE id = ?1",
-            rusqlite::params![id.to_string()],
-            row_to_tuple,
-        )
-        .optional()
-        .map_err(crate::error::store_err)?
-        .map(build_api_key)
-        .transpose()
+        let id = id.to_string();
+        blocking(&self.conn, move |conn| {
+            conn.query_row(
+                "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
+                 FROM api_keys WHERE id = ?1",
+                rusqlite::params![id],
+                row_to_tuple,
+            )
+            .optional()
+            .map_err(crate::error::store_err)?
+            .map(build_api_key)
+            .transpose()
+        })
+        .await
     }
 
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        conn.query_row(
-            "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
-             FROM api_keys WHERE key_hash = ?1",
-            rusqlite::params![hash.as_str()],
-            row_to_tuple,
-        )
-        .optional()
-        .map_err(crate::error::store_err)?
-        .map(build_api_key)
-        .transpose()
+        let hash = hash.as_str().to_string();
+        blocking(&self.conn, move |conn| {
+            conn.query_row(
+                "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
+                 FROM api_keys WHERE key_hash = ?1",
+                rusqlite::params![hash],
+                row_to_tuple,
+            )
+            .optional()
+            .map_err(crate::error::store_err)?
+            .map(build_api_key)
+            .transpose()
+        })
+        .await
     }
 
     async fn find_by_org(&self, org_id: &OrganizationId) -> Result<Vec<ApiKey>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
-                 FROM api_keys WHERE organization_id = ?1 ORDER BY created_at",
-            )
-            .map_err(crate::error::store_err)?;
+        let org_id = org_id.to_string();
+        blocking(&self.conn, move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
+                     FROM api_keys WHERE organization_id = ?1 ORDER BY created_at",
+                )
+                .map_err(crate::error::store_err)?;
 
-        stmt.query_map(rusqlite::params![org_id.to_string()], row_to_tuple)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?
-            .into_iter()
-            .map(build_api_key)
-            .collect()
+            stmt.query_map(rusqlite::params![org_id], row_to_tuple)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)?
+                .into_iter()
+                .map(build_api_key)
+                .collect()
+        })
+        .await
     }
 }
 

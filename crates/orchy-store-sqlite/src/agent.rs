@@ -15,7 +15,7 @@ use orchy_core::organization::OrganizationId;
 use orchy_core::pagination::{Page, PageParams, decode_cursor, encode_cursor};
 use orchy_core::user::UserId;
 
-use crate::{SqliteConn, decode_json, events};
+use crate::{SqliteConn, blocking, blocking_tx, decode_json, events};
 
 const SELECT_COLS: &str = "id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id";
 
@@ -32,59 +32,56 @@ impl SqliteAgentStore {
 #[async_trait]
 impl AgentStore for SqliteAgentStore {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        tx.execute(
-            "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-             ON CONFLICT (id) DO UPDATE SET
-                alias = EXCLUDED.alias,
-                organization_id = EXCLUDED.organization_id,
-                project = EXCLUDED.project,
-                namespace = EXCLUDED.namespace,
-                roles = EXCLUDED.roles,
-                description = EXCLUDED.description,
-                last_seen = EXCLUDED.last_seen,
-                connected_at = EXCLUDED.connected_at,
-                metadata = EXCLUDED.metadata,
-                user_id = EXCLUDED.user_id",
-            rusqlite::params![
-                agent.id().to_string(),
-                agent.alias().as_str(),
-                agent.org_id().to_string(),
-                agent.project().to_string(),
-                agent.namespace().to_string(),
-                serde_json::to_string(agent.roles())
-                    .map_err(|e| Error::Store(StoreError::Serialization(format!("roles: {e}"))))?,
-                agent.description(),
-                agent.last_seen().to_rfc3339(),
-                agent.connected_at().to_rfc3339(),
-                serde_json::to_string(agent.metadata())
-                    .map_err(|e| Error::Store(StoreError::Serialization(format!("metadata: {e}"))))?,
-                agent.user_id().map(|u| u.to_string()),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-
-        let events = agent.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(())
+        let id = agent.id().to_string();
+        let alias = agent.alias().as_str().to_string();
+        let org_id = agent.org_id().to_string();
+        let project = agent.project().to_string();
+        let namespace = agent.namespace().to_string();
+        let roles_json = serde_json::to_string(agent.roles())
+            .map_err(|e| Error::Store(StoreError::Serialization(format!("roles: {e}"))))?;
+        let description = agent.description().to_string();
+        let last_seen = agent.last_seen().to_rfc3339();
+        let connected_at = agent.connected_at().to_rfc3339();
+        let metadata_json = serde_json::to_string(agent.metadata())
+            .map_err(|e| Error::Store(StoreError::Serialization(format!("metadata: {e}"))))?;
+        let user_id = agent.user_id().map(|u| u.to_string());
+        let drained = agent.drain_events();
+        blocking_tx(&self.conn, move |tx| {
+            tx.execute(
+                "INSERT INTO agents (id, alias, organization_id, project, namespace, roles, description, last_seen, connected_at, metadata, user_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT (id) DO UPDATE SET
+                    alias = EXCLUDED.alias,
+                    organization_id = EXCLUDED.organization_id,
+                    project = EXCLUDED.project,
+                    namespace = EXCLUDED.namespace,
+                    roles = EXCLUDED.roles,
+                    description = EXCLUDED.description,
+                    last_seen = EXCLUDED.last_seen,
+                    connected_at = EXCLUDED.connected_at,
+                    metadata = EXCLUDED.metadata,
+                    user_id = EXCLUDED.user_id",
+                rusqlite::params![
+                    id, alias, org_id, project, namespace, roles_json, description, last_seen,
+                    connected_at, metadata_json, user_id,
+                ],
+            )
+            .map_err(crate::error::store_err)?;
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = ?1");
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
-
-        let result = stmt
-            .query_row(rusqlite::params![id.to_string()], row_to_agent)
-            .optional()
-            .map_err(crate::error::store_err)?;
-
-        Ok(result)
+        let id = id.to_string();
+        blocking(&self.conn, move |conn| {
+            let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id = ?1");
+            conn.query_row(&sql, rusqlite::params![id], row_to_agent)
+                .optional()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn find_by_alias(
@@ -93,98 +90,100 @@ impl AgentStore for SqliteAgentStore {
         project: &ProjectId,
         alias: &Alias,
     ) -> Result<Option<Agent>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let sql = format!(
-            "SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1 AND project = ?2 AND alias = ?3"
-        );
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
-        stmt.query_row(
-            rusqlite::params![org.to_string(), project.to_string(), alias.as_str()],
-            row_to_agent,
-        )
-        .optional()
-        .map_err(crate::error::store_err)
+        let org = org.to_string();
+        let project = project.to_string();
+        let alias = alias.as_str().to_string();
+        blocking(&self.conn, move |conn| {
+            let sql = format!(
+                "SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1 AND project = ?2 AND alias = ?3"
+            );
+            conn.query_row(&sql, rusqlite::params![org, project, alias], row_to_agent)
+                .optional()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn list(&self, org: &OrganizationId, page: PageParams) -> Result<Page<Agent>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let org = org.to_string();
+        blocking(&self.conn, move |conn| {
+            let mut sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1");
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(org)];
+            let mut idx = 2;
 
-        let mut sql = format!("SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1");
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(org.to_string())];
-        let mut idx = 2;
-
-        if let Some(ref cursor) = page.after {
-            if let Some(decoded) = decode_cursor(cursor) {
-                sql.push_str(&format!(" AND id < ?{idx}"));
-                params.push(Box::new(decoded));
-                idx += 1;
+            if let Some(ref cursor) = page.after {
+                if let Some(decoded) = decode_cursor(cursor) {
+                    sql.push_str(&format!(" AND id < ?{idx}"));
+                    params.push(Box::new(decoded));
+                    idx += 1;
+                }
             }
-        }
 
-        let _ = idx;
-        sql.push_str(" ORDER BY id DESC");
+            let _ = idx;
+            sql.push_str(" ORDER BY id DESC");
 
-        let fetch_limit = (page.limit as u64).saturating_add(1);
-        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+            let fetch_limit = (page.limit as u64).saturating_add(1);
+            sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
-        let mut agents: Vec<Agent> = stmt
-            .query_map(param_refs.as_slice(), row_to_agent)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+            let mut agents: Vec<Agent> = stmt
+                .query_map(param_refs.as_slice(), row_to_agent)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)?;
 
-        let has_more = agents.len() > page.limit as usize;
-        if has_more {
-            agents.truncate(page.limit as usize);
-        }
+            let has_more = agents.len() > page.limit as usize;
+            if has_more {
+                agents.truncate(page.limit as usize);
+            }
 
-        let next_cursor = if has_more {
-            agents.last().map(|a| encode_cursor(&a.id().to_string()))
-        } else {
-            None
-        };
+            let next_cursor = if has_more {
+                agents.last().map(|a| encode_cursor(&a.id().to_string()))
+            } else {
+                None
+            };
 
-        Ok(Page::new(agents, next_cursor))
+            Ok(Page::new(agents, next_cursor))
+        })
+        .await
     }
 
     async fn find_by_ids(&self, ids: &[AgentId]) -> Result<Vec<Agent>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let placeholders: String = repeat_n("?", ids.len()).collect::<Vec<_>>().join(", ");
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id IN ({placeholders})");
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
-        let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
-            .iter()
-            .map(|s| s as &dyn rusqlite::ToSql)
-            .collect();
-        let agents = stmt
-            .query_map(param_refs.as_slice(), row_to_agent)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
-        Ok(agents)
+        blocking(&self.conn, move |conn| {
+            let placeholders: String = repeat_n("?", id_strings.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE id IN ({placeholders})");
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
+            let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
+                .iter()
+                .map(|s| s as &dyn rusqlite::ToSql)
+                .collect();
+            stmt.query_map(param_refs.as_slice(), row_to_agent)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn find_timed_out(&self, timeout_secs: u64) -> Result<Vec<Agent>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let cutoff = Utc::now() - Duration::seconds(timeout_secs as i64);
-
-        let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE last_seen < ?1");
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
-
-        let agents = stmt
-            .query_map(rusqlite::params![cutoff.to_rfc3339()], row_to_agent)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
-
-        Ok(agents)
+        let cutoff = (Utc::now() - Duration::seconds(timeout_secs as i64)).to_rfc3339();
+        blocking(&self.conn, move |conn| {
+            let sql = format!("SELECT {SELECT_COLS} FROM agents WHERE last_seen < ?1");
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
+            stmt.query_map(rusqlite::params![cutoff], row_to_agent)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 }
 

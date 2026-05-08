@@ -8,7 +8,7 @@ use orchy_core::organization::{
     Organization, OrganizationId, OrganizationStore, RestoreOrganization,
 };
 
-use crate::{SqliteConn, events};
+use crate::{SqliteConn, blocking, blocking_tx, events};
 
 pub struct SqliteOrganizationStore {
     conn: SqliteConn,
@@ -23,76 +23,75 @@ impl SqliteOrganizationStore {
 #[async_trait]
 impl OrganizationStore for SqliteOrganizationStore {
     async fn save(&self, org: &mut Organization) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        tx.execute(
-            "INSERT OR REPLACE INTO organizations (id, name, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![
-                org.id().to_string(),
-                org.name(),
-                org.created_at().to_rfc3339(),
-                org.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-
-        let events = org.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(())
+        let id = org.id().to_string();
+        let name = org.name().to_string();
+        let created_at = org.created_at().to_rfc3339();
+        let updated_at = org.updated_at().to_rfc3339();
+        let drained = org.drain_events();
+        blocking_tx(&self.conn, move |tx| {
+            tx.execute(
+                "INSERT OR REPLACE INTO organizations (id, name, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, name, created_at, updated_at],
+            )
+            .map_err(crate::error::store_err)?;
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn find_by_id(&self, id: &OrganizationId) -> Result<Option<Organization>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let id = id.to_string();
+        blocking(&self.conn, move |conn| {
+            conn.query_row(
+                "SELECT id, name, created_at, updated_at FROM organizations WHERE id = ?1",
+                rusqlite::params![id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(crate::error::store_err)?
+            .map(|(id_str, name, created_at_str, updated_at_str)| {
+                build_org(id_str, name, created_at_str, updated_at_str)
+            })
+            .transpose()
+        })
+        .await
+    }
 
-        conn.query_row(
-            "SELECT id, name, created_at, updated_at FROM organizations WHERE id = ?1",
-            rusqlite::params![id.to_string()],
-            |row| {
+    async fn list(&self) -> Result<Vec<Organization>> {
+        blocking(&self.conn, move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at",
+                )
+                .map_err(crate::error::store_err)?;
+
+            stmt.query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                 ))
-            },
-        )
-        .optional()
-        .map_err(crate::error::store_err)?
-        .map(|(id_str, name, created_at_str, updated_at_str)| {
-            build_org(id_str, name, created_at_str, updated_at_str)
+            })
+            .map_err(crate::error::store_err)?
+            .collect::<StdResult<Vec<_>, _>>()
+            .map_err(crate::error::store_err)?
+            .into_iter()
+            .map(|(id_str, name, created_at_str, updated_at_str)| {
+                build_org(id_str, name, created_at_str, updated_at_str)
+            })
+            .collect()
         })
-        .transpose()
-    }
-
-    async fn list(&self) -> Result<Vec<Organization>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, name, created_at, updated_at FROM organizations ORDER BY created_at",
-            )
-            .map_err(crate::error::store_err)?;
-
-        stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })
-        .map_err(crate::error::store_err)?
-        .collect::<StdResult<Vec<_>, _>>()
-        .map_err(crate::error::store_err)?
-        .into_iter()
-        .map(|(id_str, name, created_at_str, updated_at_str)| {
-            build_org(id_str, name, created_at_str, updated_at_str)
-        })
-        .collect()
+        .await
     }
 }
 

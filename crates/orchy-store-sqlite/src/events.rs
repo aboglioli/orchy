@@ -4,6 +4,8 @@ use orchy_core::error::Result;
 use orchy_events::io::Writer;
 use orchy_events::{Error as EventsError, Event, Result as EventsResult, SerializedEvent};
 
+use std::sync::Arc;
+
 use crate::SqliteConn;
 
 pub struct SqliteEventWriter {
@@ -55,28 +57,34 @@ pub(crate) fn write_events_in_tx(tx: &rusqlite::Transaction<'_>, events: &[Event
 #[async_trait]
 impl Writer for SqliteEventWriter {
     async fn write(&self, event: &Event) -> EventsResult<()> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| EventsError::Store(e.to_string()))?;
-        append_event(&conn, event)
+        let conn = Arc::clone(&self.conn);
+        let event = event.clone();
+        tokio::task::spawn_blocking(move || {
+            let guard = conn.lock().map_err(|e| EventsError::Store(e.to_string()))?;
+            append_event(&guard, &event)
+        })
+        .await
+        .map_err(|e| EventsError::Store(format!("blocking task panicked: {e}")))?
     }
 
     async fn write_all(&self, events: &[Event]) -> EventsResult<()> {
         if events.is_empty() {
             return Ok(());
         }
-        let mut conn = self
-            .conn
-            .lock()
-            .map_err(|e| EventsError::Store(e.to_string()))?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| EventsError::Store(e.to_string()))?;
-        for event in events {
-            append_event(&tx, event)?;
-        }
-        tx.commit().map_err(|e| EventsError::Store(e.to_string()))?;
-        Ok(())
+        let conn = Arc::clone(&self.conn);
+        let events = events.to_vec();
+        tokio::task::spawn_blocking(move || {
+            let mut guard = conn.lock().map_err(|e| EventsError::Store(e.to_string()))?;
+            let tx = guard
+                .transaction()
+                .map_err(|e| EventsError::Store(e.to_string()))?;
+            for event in &events {
+                append_event(&tx, event)?;
+            }
+            tx.commit().map_err(|e| EventsError::Store(e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| EventsError::Store(format!("blocking task panicked: {e}")))?
     }
 }

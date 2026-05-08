@@ -11,7 +11,7 @@ use orchy_core::namespace::ProjectId;
 use orchy_core::organization::OrganizationId;
 use orchy_core::project::{Project, ProjectStore, RestoreProject};
 
-use crate::{SqliteConn, decode_json, events};
+use crate::{SqliteConn, blocking, blocking_tx, decode_json, events};
 
 pub struct SqliteProjectStore {
     conn: SqliteConn,
@@ -26,49 +26,41 @@ impl SqliteProjectStore {
 #[async_trait]
 impl ProjectStore for SqliteProjectStore {
     async fn save(&self, project: &mut Project) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        tx.execute(
-            "INSERT OR REPLACE INTO projects (organization_id, name, description, metadata, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                project.org_id().to_string(),
-                project.id().to_string(),
-                project.description(),
-                serde_json::to_string(project.metadata())
-                    .map_err(|e| Error::Store(StoreError::Serialization(format!("metadata: {e}"))))?,
-                project.created_at().to_rfc3339(),
-                project.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-
-        let events = project.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(())
+        let org_id = project.org_id().to_string();
+        let id = project.id().to_string();
+        let description = project.description().to_string();
+        let metadata = serde_json::to_string(project.metadata())
+            .map_err(|e| Error::Store(StoreError::Serialization(format!("metadata: {e}"))))?;
+        let created_at = project.created_at().to_rfc3339();
+        let updated_at = project.updated_at().to_rfc3339();
+        let drained = project.drain_events();
+        blocking_tx(&self.conn, move |tx| {
+            tx.execute(
+                "INSERT OR REPLACE INTO projects (organization_id, name, description, metadata, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![org_id, id, description, metadata, created_at, updated_at],
+            )
+            .map_err(crate::error::store_err)?;
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn find_by_id(&self, org: &OrganizationId, id: &ProjectId) -> Result<Option<Project>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn
-            .prepare(
+        let org = org.to_string();
+        let id = id.to_string();
+        blocking(&self.conn, move |conn| {
+            conn.query_row(
                 "SELECT organization_id, name, description, metadata, created_at, updated_at
                  FROM projects WHERE organization_id = ?1 AND name = ?2",
-            )
-            .map_err(crate::error::store_err)?;
-
-        let result = stmt
-            .query_row(
-                rusqlite::params![org.to_string(), id.to_string()],
+                rusqlite::params![org, id],
                 row_to_project,
             )
             .optional()
-            .map_err(crate::error::store_err)?;
-
-        Ok(result)
+            .map_err(crate::error::store_err)
+        })
+        .await
     }
 }
 

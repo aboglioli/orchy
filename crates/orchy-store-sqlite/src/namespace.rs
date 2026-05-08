@@ -4,7 +4,7 @@ use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::namespace::{Namespace, NamespaceStore, ProjectId};
 use orchy_core::organization::OrganizationId;
 
-use crate::SqliteConn;
+use crate::{SqliteConn, blocking};
 
 pub struct SqliteNamespaceStore {
     conn: SqliteConn,
@@ -24,52 +24,54 @@ impl NamespaceStore for SqliteNamespaceStore {
         project: &ProjectId,
         namespace: &Namespace,
     ) -> Result<()> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        conn.execute(
-            "INSERT OR IGNORE INTO namespaces (organization_id, project, namespace, created_at) \
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![
-                org.to_string(),
-                project.to_string(),
-                namespace.to_string(),
-                chrono::Utc::now().to_rfc3339(),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-        Ok(())
+        let org = org.to_string();
+        let project = project.to_string();
+        let namespace = namespace.to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        blocking(&self.conn, move |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO namespaces (organization_id, project, namespace, created_at) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![org, project, namespace, now],
+            )
+            .map_err(crate::error::store_err)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn list(&self, org: &OrganizationId, project: &ProjectId) -> Result<Vec<Namespace>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT namespace FROM namespaces \
-                 WHERE organization_id = ?1 AND project = ?2 \
-                 ORDER BY namespace",
-            )
-            .map_err(crate::error::store_err)?;
+        let org = org.to_string();
+        let project = project.to_string();
+        blocking(&self.conn, move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT namespace FROM namespaces \
+                     WHERE organization_id = ?1 AND project = ?2 \
+                     ORDER BY namespace",
+                )
+                .map_err(crate::error::store_err)?;
 
-        let rows = stmt
-            .query_map(
-                rusqlite::params![org.to_string(), project.to_string()],
-                |row| {
+            let rows = stmt
+                .query_map(rusqlite::params![org, project], |row| {
                     let ns: String = row.get(0)?;
                     Ok(ns)
-                },
-            )
-            .map_err(crate::error::store_err)?;
+                })
+                .map_err(crate::error::store_err)?;
 
-        let mut result = Vec::new();
-        for row in rows {
-            let ns_str = row.map_err(crate::error::store_err)?;
-            let ns = Namespace::try_from(ns_str.as_str()).map_err(|e| {
-                Error::Store(StoreError::Other(format!(
-                    "invalid namespace in database: {e}"
-                )))
-            })?;
-            result.push(ns);
-        }
-        Ok(result)
+            let mut result = Vec::new();
+            for row in rows {
+                let ns_str = row.map_err(crate::error::store_err)?;
+                let ns = Namespace::try_from(ns_str.as_str()).map_err(|e| {
+                    Error::Store(StoreError::Other(format!(
+                        "invalid namespace in database: {e}"
+                    )))
+                })?;
+                result.push(ns);
+            }
+            Ok(result)
+        })
+        .await
     }
 }
 

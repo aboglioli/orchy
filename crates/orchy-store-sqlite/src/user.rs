@@ -6,7 +6,55 @@ use rusqlite::OptionalExtension;
 use orchy_core::error::{Error, Result, StoreError};
 use orchy_core::user::{Email, HashedPassword, RestoreUser, User, UserId, UserStore};
 
-use crate::{SqliteConn, events};
+use crate::{SqliteConn, blocking, blocking_tx, events};
+
+type UserRow = (String, String, String, i32, i32, String, String);
+
+fn build_user(row: UserRow) -> Result<User> {
+    let (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at) = row;
+    let id = UserId::from_str(&id).map_err(|e| {
+        Error::Store(StoreError::Decode {
+            table: "users".to_string(),
+            column: "user_id".to_string(),
+            cause: e.to_string(),
+        })
+    })?;
+    let email = Email::new(&email).map_err(|e| {
+        Error::Store(StoreError::Decode {
+            table: "users".to_string(),
+            column: "email".to_string(),
+            cause: e.to_string(),
+        })
+    })?;
+    let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
+        Error::Store(StoreError::Other(format!(
+            "invalid password hash in db: {e}"
+        )))
+    })?;
+    let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
+        Error::Store(StoreError::Decode {
+            table: "users".to_string(),
+            column: "created_at".to_string(),
+            cause: e.to_string(),
+        })
+    })?;
+    let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
+        Error::Store(StoreError::Decode {
+            table: "users".to_string(),
+            column: "updated_at".to_string(),
+            cause: e.to_string(),
+        })
+    })?;
+    Ok(User::restore(RestoreUser {
+        id,
+        email,
+        password_hash,
+        is_active: is_active != 0,
+        is_platform_admin: is_platform_admin != 0,
+        created_at,
+        updated_at,
+    }))
+}
 
 pub struct SqliteUserStore {
     conn: SqliteConn,
@@ -21,45 +69,42 @@ impl SqliteUserStore {
 #[async_trait]
 impl UserStore for SqliteUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        tx.execute(
-            "INSERT INTO users (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(id) DO UPDATE SET
-                email = excluded.email,
-                password_hash = excluded.password_hash,
-                is_active = excluded.is_active,
-                is_platform_admin = excluded.is_platform_admin,
-                updated_at = excluded.updated_at",
-            rusqlite::params![
-                user.id().to_string(),
-                user.email().as_str(),
-                user.password_hash().as_str(),
-                user.is_active() as i32,
-                user.is_platform_admin() as i32,
-                user.created_at().to_rfc3339(),
-                user.updated_at().to_rfc3339(),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-
-        let events = user.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(())
+        let id = user.id().to_string();
+        let email = user.email().as_str().to_string();
+        let password_hash = user.password_hash().as_str().to_string();
+        let is_active = user.is_active() as i32;
+        let is_platform_admin = user.is_platform_admin() as i32;
+        let created_at = user.created_at().to_rfc3339();
+        let updated_at = user.updated_at().to_rfc3339();
+        let drained = user.drain_events();
+        blocking_tx(&self.conn, move |tx| {
+            tx.execute(
+                "INSERT INTO users (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(id) DO UPDATE SET
+                    email = excluded.email,
+                    password_hash = excluded.password_hash,
+                    is_active = excluded.is_active,
+                    is_platform_admin = excluded.is_platform_admin,
+                    updated_at = excluded.updated_at",
+                rusqlite::params![
+                    id, email, password_hash, is_active, is_platform_admin, created_at, updated_at,
+                ],
+            )
+            .map_err(crate::error::store_err)?;
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn find_by_id(&self, id: &UserId) -> Result<Option<User>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-
-        let row = conn
-            .query_row(
+        let id = id.to_string();
+        let row = blocking(&self.conn, move |conn| {
+            conn.query_row(
                 "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
                  FROM users WHERE id = ?1",
-                rusqlite::params![id.to_string()],
+                rusqlite::params![id],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -73,74 +118,20 @@ impl UserStore for SqliteUserStore {
                 },
             )
             .optional()
-            .map_err(crate::error::store_err)?;
+            .map_err(crate::error::store_err)
+        })
+        .await?;
 
-        match row {
-            Some((
-                id,
-                email,
-                password_hash,
-                is_active,
-                is_platform_admin,
-                created_at,
-                updated_at,
-            )) => {
-                let id = UserId::from_str(&id).map_err(|e| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "user_id".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-                let email = Email::new(&email).map_err(|e| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "email".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-                let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
-                    Error::Store(StoreError::Other(format!(
-                        "invalid password hash in db: {e}"
-                    )))
-                })?;
-                let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "created_at".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-                let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "updated_at".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-
-                Ok(Some(User::restore(RestoreUser {
-                    id,
-                    email,
-                    password_hash,
-                    is_active: is_active != 0,
-                    is_platform_admin: is_platform_admin != 0,
-                    created_at,
-                    updated_at,
-                })))
-            }
-            None => Ok(None),
-        }
+        row.map(build_user).transpose()
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-
-        let row = conn
-            .query_row(
+        let email = email.as_str().to_string();
+        let row = blocking(&self.conn, move |conn| {
+            conn.query_row(
                 "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
                  FROM users WHERE email = ?1",
-                rusqlite::params![email.as_str()],
+                rusqlite::params![email],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -154,78 +145,23 @@ impl UserStore for SqliteUserStore {
                 },
             )
             .optional()
-            .map_err(crate::error::store_err)?;
+            .map_err(crate::error::store_err)
+        })
+        .await?;
 
-        match row {
-            Some((
-                id,
-                email,
-                password_hash,
-                is_active,
-                is_platform_admin,
-                created_at,
-                updated_at,
-            )) => {
-                let id = UserId::from_str(&id).map_err(|e| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "user_id".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-                let email = Email::new(&email).map_err(|e| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "email".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-                let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
-                    Error::Store(StoreError::Other(format!(
-                        "invalid password hash in db: {e}"
-                    )))
-                })?;
-                let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "created_at".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-                let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
-                    Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "updated_at".to_string(),
-                        cause: e.to_string(),
-                    })
-                })?;
-
-                Ok(Some(User::restore(RestoreUser {
-                    id,
-                    email,
-                    password_hash,
-                    is_active: is_active != 0,
-                    is_platform_admin: is_platform_admin != 0,
-                    created_at,
-                    updated_at,
-                })))
-            }
-            None => Ok(None),
-        }
+        row.map(build_user).transpose()
     }
 
     async fn list_all(&self) -> Result<Vec<User>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let rows = blocking(&self.conn, move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
+                     FROM users ORDER BY created_at DESC"
+                )
+                .map_err(crate::error::store_err)?;
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
-                 FROM users ORDER BY created_at DESC"
-            )
-            .map_err(crate::error::store_err)?;
-
-        let rows = stmt
-            .query_map([], |row| {
+            stmt.query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -236,59 +172,13 @@ impl UserStore for SqliteUserStore {
                     row.get::<_, String>(6)?,
                 ))
             })
-            .map_err(crate::error::store_err)?;
+            .map_err(crate::error::store_err)?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(crate::error::store_err)
+        })
+        .await?;
 
-        let mut users = Vec::new();
-        for row in rows {
-            let (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at) =
-                row.map_err(crate::error::store_err)?;
-
-            let id = UserId::from_str(&id).map_err(|e| {
-                Error::Store(StoreError::Decode {
-                    table: "users".to_string(),
-                    column: "user_id".to_string(),
-                    cause: e.to_string(),
-                })
-            })?;
-            let email = Email::new(&email).map_err(|e| {
-                Error::Store(StoreError::Decode {
-                    table: "users".to_string(),
-                    column: "email".to_string(),
-                    cause: e.to_string(),
-                })
-            })?;
-            let password_hash = HashedPassword::new(&password_hash).map_err(|e| {
-                Error::Store(StoreError::Other(format!(
-                    "invalid password hash in db: {e}"
-                )))
-            })?;
-            let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
-                Error::Store(StoreError::Decode {
-                    table: "users".to_string(),
-                    column: "created_at".to_string(),
-                    cause: e.to_string(),
-                })
-            })?;
-            let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
-                Error::Store(StoreError::Decode {
-                    table: "users".to_string(),
-                    column: "updated_at".to_string(),
-                    cause: e.to_string(),
-                })
-            })?;
-
-            users.push(User::restore(RestoreUser {
-                id,
-                email,
-                password_hash,
-                is_active: is_active != 0,
-                is_platform_admin: is_platform_admin != 0,
-                created_at,
-                updated_at,
-            }));
-        }
-
-        Ok(users)
+        rows.into_iter().map(build_user).collect()
     }
 }
 

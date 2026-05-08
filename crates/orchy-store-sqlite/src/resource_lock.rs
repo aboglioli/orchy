@@ -14,7 +14,7 @@ use orchy_core::namespace::{Namespace, ProjectId};
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_lock::{LockStore, ResourceLock, RestoreResourceLock};
 
-use crate::{SqliteConn, events};
+use crate::{SqliteConn, blocking, blocking_tx, events};
 
 fn str_err(e: impl ToString) -> Box<dyn StdError + Send + Sync> {
     Box::new(IoError::new(IoErrorKind::InvalidData, e.to_string()))
@@ -43,71 +43,72 @@ impl LockStore for SqliteLockStore {
     ) -> Result<Option<ResourceLock>> {
         let now = Utc::now();
         let expires_at = now + Duration::seconds(ttl_secs as i64);
+        let org_owned = org.clone();
+        let project_owned = project.clone();
+        let namespace_owned = namespace.clone();
+        let name_owned = name.to_string();
+        let holder_owned = holder.clone();
 
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
+        let lock_opt = blocking_tx(&self.conn, move |tx| {
+            let affected = tx
+                .execute(
+                    "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                     ON CONFLICT (organization_id, project, namespace, name) DO UPDATE
+                     SET holder = excluded.holder, acquired_at = excluded.acquired_at, expires_at = excluded.expires_at
+                     WHERE resource_locks.expires_at <= ?6 OR resource_locks.holder = excluded.holder",
+                    rusqlite::params![
+                        org_owned.to_string(),
+                        project_owned.to_string(),
+                        namespace_owned.to_string(),
+                        name_owned,
+                        holder_owned.to_string(),
+                        now.to_rfc3339(),
+                        expires_at.to_rfc3339(),
+                    ],
+                )
+                .map_err(crate::error::store_err)?;
 
-        let affected = tx
-            .execute(
-                "INSERT INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 ON CONFLICT (organization_id, project, namespace, name) DO UPDATE
-                 SET holder = excluded.holder, acquired_at = excluded.acquired_at, expires_at = excluded.expires_at
-                 WHERE resource_locks.expires_at <= ?6 OR resource_locks.holder = excluded.holder",
-                rusqlite::params![
-                    org.to_string(),
-                    project.to_string(),
-                    namespace.to_string(),
-                    name,
-                    holder.to_string(),
-                    now.to_rfc3339(),
-                    expires_at.to_rfc3339(),
-                ],
-            )
-            .map_err(crate::error::store_err)?;
+            if affected == 0 {
+                return Ok(None);
+            }
 
-        if affected == 0 {
-            return Ok(None);
-        }
-
-        let mut lock = ResourceLock::acquire(
-            org.clone(),
-            project.clone(),
-            namespace.clone(),
-            name.to_string(),
-            holder.clone(),
-            ttl_secs,
-        )?;
-        let events = lock.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(Some(lock))
+            let mut lock = ResourceLock::acquire(
+                org_owned,
+                project_owned,
+                namespace_owned,
+                name_owned,
+                holder_owned,
+                ttl_secs,
+            )?;
+            let events = lock.drain_events();
+            events::write_events_in_tx(tx, &events)?;
+            Ok(Some(lock))
+        })
+        .await?;
+        Ok(lock_opt)
     }
 
     async fn save(&self, lock: &mut ResourceLock) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        tx.execute(
-            "INSERT OR REPLACE INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![
-                lock.org_id().to_string(),
-                lock.project().to_string(),
-                lock.namespace().to_string(),
-                lock.name(),
-                lock.holder().to_string(),
-                lock.acquired_at().to_rfc3339(),
-                lock.expires_at().to_rfc3339(),
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-
-        let events = lock.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
-        Ok(())
+        let org_id = lock.org_id().to_string();
+        let project = lock.project().to_string();
+        let namespace = lock.namespace().to_string();
+        let name = lock.name().to_string();
+        let holder = lock.holder().to_string();
+        let acquired_at = lock.acquired_at().to_rfc3339();
+        let expires_at = lock.expires_at().to_rfc3339();
+        let drained = lock.drain_events();
+        blocking_tx(&self.conn, move |tx| {
+            tx.execute(
+                "INSERT OR REPLACE INTO resource_locks (organization_id, project, namespace, name, holder, acquired_at, expires_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![org_id, project, namespace, name, holder, acquired_at, expires_at],
+            )
+            .map_err(crate::error::store_err)?;
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn find(
@@ -117,28 +118,21 @@ impl LockStore for SqliteLockStore {
         namespace: &Namespace,
         name: &str,
     ) -> Result<Option<ResourceLock>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn
-            .prepare(
+        let org = org.to_string();
+        let project = project.to_string();
+        let namespace = namespace.to_string();
+        let name = name.to_string();
+        blocking(&self.conn, move |conn| {
+            conn.query_row(
                 "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
                  FROM resource_locks WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND name = ?4",
-            )
-            .map_err(crate::error::store_err)?;
-
-        let result = stmt
-            .query_row(
-                rusqlite::params![
-                    org.to_string(),
-                    project.to_string(),
-                    namespace.to_string(),
-                    name
-                ],
+                rusqlite::params![org, project, namespace, name],
                 row_to_resource_lock,
             )
             .optional()
-            .map_err(crate::error::store_err)?;
-
-        Ok(result)
+            .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn delete(
@@ -148,19 +142,19 @@ impl LockStore for SqliteLockStore {
         namespace: &Namespace,
         name: &str,
     ) -> Result<()> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        conn.execute(
-            "DELETE FROM resource_locks WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND name = ?4",
-            rusqlite::params![
-                org.to_string(),
-                project.to_string(),
-                namespace.to_string(),
-                name
-            ],
-        )
-        .map_err(crate::error::store_err)?;
-
-        Ok(())
+        let org = org.to_string();
+        let project = project.to_string();
+        let namespace = namespace.to_string();
+        let name = name.to_string();
+        blocking(&self.conn, move |conn| {
+            conn.execute(
+                "DELETE FROM resource_locks WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND name = ?4",
+                rusqlite::params![org, project, namespace, name],
+            )
+            .map_err(crate::error::store_err)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn find_by_holder(
@@ -168,48 +162,51 @@ impl LockStore for SqliteLockStore {
         holder: &AgentId,
         org: &OrganizationId,
     ) -> Result<Vec<ResourceLock>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
-                 FROM resource_locks WHERE holder = ?1 AND organization_id = ?2",
-            )
-            .map_err(crate::error::store_err)?;
+        let holder = holder.to_string();
+        let org = org.to_string();
+        blocking(&self.conn, move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
+                     FROM resource_locks WHERE holder = ?1 AND organization_id = ?2",
+                )
+                .map_err(crate::error::store_err)?;
 
-        let locks = stmt
-            .query_map(
-                rusqlite::params![holder.to_string(), org.to_string()],
-                row_to_resource_lock,
-            )
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
-
-        Ok(locks)
+            stmt.query_map(rusqlite::params![holder, org], row_to_resource_lock)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn release_for_agent(&self, holder: &AgentId, org: &OrganizationId) -> Result<u64> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let count = conn
-            .execute(
-                "DELETE FROM resource_locks WHERE holder = ?1 AND organization_id = ?2",
-                rusqlite::params![holder.to_string(), org.to_string()],
-            )
-            .map_err(crate::error::store_err)?;
-        Ok(count as u64)
+        let holder = holder.to_string();
+        let org = org.to_string();
+        blocking(&self.conn, move |conn| {
+            let count = conn
+                .execute(
+                    "DELETE FROM resource_locks WHERE holder = ?1 AND organization_id = ?2",
+                    rusqlite::params![holder, org],
+                )
+                .map_err(crate::error::store_err)?;
+            Ok(count as u64)
+        })
+        .await
     }
 
     async fn delete_expired(&self) -> Result<u64> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
         let now = Utc::now().to_rfc3339();
-        let count = conn
-            .execute(
-                "DELETE FROM resource_locks WHERE expires_at < ?1",
-                rusqlite::params![now],
-            )
-            .map_err(crate::error::store_err)?;
-
-        Ok(count as u64)
+        blocking(&self.conn, move |conn| {
+            let count = conn
+                .execute(
+                    "DELETE FROM resource_locks WHERE expires_at < ?1",
+                    rusqlite::params![now],
+                )
+                .map_err(crate::error::store_err)?;
+            Ok(count as u64)
+        })
+        .await
     }
 }
 
