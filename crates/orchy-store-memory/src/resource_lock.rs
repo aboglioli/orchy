@@ -40,30 +40,27 @@ impl LockStore for MemoryLockStore {
         holder: &AgentId,
         ttl_secs: u64,
     ) -> Result<Option<ResourceLock>> {
-        let mut locks = self.state.resource_locks.write().await;
-        let key = lock_key(org, project, namespace, name);
-        if let Some(existing) = locks.get(&key) {
-            if !existing.is_expired() && !existing.is_held_by(holder) {
-                return Ok(None);
+        let (lock, events) = {
+            let mut locks = self.state.resource_locks.write().await;
+            let key = lock_key(org, project, namespace, name);
+            if let Some(existing) = locks.get(&key) {
+                if !existing.is_expired() && !existing.is_held_by(holder) {
+                    return Ok(None);
+                }
             }
-        }
-        let mut lock = ResourceLock::acquire(
-            org.clone(),
-            project.clone(),
-            namespace.clone(),
-            name.to_string(),
-            holder.clone(),
-            ttl_secs,
-        )?;
-        let events = lock.drain_events();
-        locks.insert(key, lock.clone());
-        if !events.is_empty() {
-            let mut events_guard = self.state.events.write().await;
-            for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
-                events_guard.push(serialized);
-            }
-        }
+            let mut lock = ResourceLock::acquire(
+                org.clone(),
+                project.clone(),
+                namespace.clone(),
+                name.to_string(),
+                holder.clone(),
+                ttl_secs,
+            )?;
+            let events = lock.drain_events();
+            locks.insert(key, lock.clone());
+            (lock, events)
+        };
+        self.state.append_events(events).await?;
         Ok(Some(lock))
     }
 
@@ -75,12 +72,7 @@ impl LockStore for MemoryLockStore {
         }
 
         let events = lock.drain_events();
-        if !events.is_empty() {
-            for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
-                self.state.events.write().await.push(serialized);
-            }
-        }
+        self.state.append_events(events).await?;
         Ok(())
     }
 

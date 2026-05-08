@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use tokio::sync::{Notify, RwLock};
 
-use orchy_events::SerializedEvent;
+use orchy_events::{Event, SerializedEvent};
 
 use orchy_core::agent::{Agent, AgentId};
 use orchy_core::api_key::{ApiKey, ApiKeyId};
@@ -118,6 +118,19 @@ impl MemoryState {
 
     pub async fn insert_task(&self, task: Task) {
         self.tasks.write().await.insert(task.id(), task);
+    }
+
+    pub(crate) async fn append_events(&self, events: Vec<Event>) -> orchy_core::error::Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let mut serialized = Vec::with_capacity(events.len());
+        for event in events {
+            serialized.push(SerializedEvent::from_event(&event)?);
+        }
+        self.events.write().await.extend(serialized);
+        self.events_notify.notify_waiters();
+        Ok(())
     }
 }
 

@@ -26,12 +26,7 @@ impl OrganizationStore for MemoryOrganizationStore {
         }
 
         let events = org.drain_events();
-        if !events.is_empty() {
-            for event in events {
-                let serialized = orchy_events::SerializedEvent::from_event(&event)?;
-                self.state.events.write().await.push(serialized);
-            }
-        }
+        self.state.append_events(events).await?;
 
         Ok(())
     }
