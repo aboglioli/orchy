@@ -55,4 +55,26 @@ impl Writer for KafkaWriter {
             .map_err(|(e, _)| Error::Store(e.to_string()))?;
         Ok(())
     }
+
+    async fn write_all(&self, events: &[Event]) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let payloads: Vec<(String, String)> = events
+            .iter()
+            .map(|e| Ok::<_, Error>((Self::body(e)?, e.key().as_str().to_string())))
+            .collect::<Result<_>>()?;
+
+        let futs = payloads.iter().map(|(body, key)| {
+            let record: FutureRecord<String, String> =
+                FutureRecord::to(&self.topic).payload(body).key(key);
+            self.producer
+                .send(record, std::time::Duration::from_secs(5))
+        });
+
+        for fut in futs {
+            fut.await.map_err(|(e, _)| Error::Store(e.to_string()))?;
+        }
+        Ok(())
+    }
 }

@@ -92,6 +92,42 @@ impl Writer for PgEventWriter {
     async fn write(&self, event: &Event) -> EventResult<()> {
         append_to_pool(&self.pool, event).await
     }
+
+    async fn write_all(&self, events: &[Event]) -> EventResult<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let rows: Vec<(Uuid, SerializedEvent, serde_json::Value)> = events
+            .iter()
+            .map(|e| {
+                let (id, ser) = serialize_event(e)?;
+                let metadata = serialize_metadata(&ser.metadata)?;
+                Ok((id, ser, metadata))
+            })
+            .collect::<EventResult<_>>()?;
+
+        let mut builder = sqlx::QueryBuilder::new(
+            "INSERT INTO events (id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version) ",
+        );
+        builder.push_values(rows.iter(), |mut b, (id, ser, metadata)| {
+            b.push_bind(id)
+                .push_bind(&ser.organization)
+                .push_bind(&ser.namespace)
+                .push_bind(&ser.topic)
+                .push_bind(&ser.key)
+                .push_bind(&ser.payload)
+                .push_bind(&ser.content_type)
+                .push_bind(metadata)
+                .push_bind(ser.timestamp)
+                .push_bind(ser.version as i64);
+        });
+        builder
+            .build()
+            .execute(&self.pool)
+            .await
+            .map_err(|e| EventError::Store(e.to_string()))?;
+        Ok(())
+    }
 }
 
 #[async_trait]

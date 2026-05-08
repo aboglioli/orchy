@@ -61,4 +61,22 @@ impl Writer for SqliteEventWriter {
             .map_err(|e| EventsError::Store(e.to_string()))?;
         append_event(&conn, event)
     }
+
+    async fn write_all(&self, events: &[Event]) -> EventsResult<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| EventsError::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| EventsError::Store(e.to_string()))?;
+        for event in events {
+            append_event(&tx, event)?;
+        }
+        tx.commit().map_err(|e| EventsError::Store(e.to_string()))?;
+        Ok(())
+    }
 }

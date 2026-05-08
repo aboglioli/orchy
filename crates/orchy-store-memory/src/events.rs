@@ -22,9 +22,29 @@ impl Writer for MemoryEventWriter {
     async fn write(&self, event: &Event) -> orchy_events::Result<()> {
         let serialized = SerializedEvent::from_event(event)
             .map_err(|e| orchy_events::Error::Store(e.to_string()))?;
-        let mut store = self.state.events.write().await;
-        store.push(serialized);
-        drop(store);
+        {
+            let mut store = self.state.events.write().await;
+            store.push(serialized);
+        }
+        self.state.events_notify.notify_waiters();
+        Ok(())
+    }
+
+    async fn write_all(&self, events: &[Event]) -> orchy_events::Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let mut serialized = Vec::with_capacity(events.len());
+        for event in events {
+            serialized.push(
+                SerializedEvent::from_event(event)
+                    .map_err(|e| orchy_events::Error::Store(e.to_string()))?,
+            );
+        }
+        {
+            let mut store = self.state.events.write().await;
+            store.extend(serialized);
+        }
         self.state.events_notify.notify_waiters();
         Ok(())
     }
