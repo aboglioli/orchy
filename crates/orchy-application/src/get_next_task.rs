@@ -225,9 +225,9 @@ mod tests {
         let original_agent = AgentId::new();
         let new_agent = AgentId::new();
 
-        let mut stale_task = make_stale_claimed_task(&org_id, &project, original_agent);
+        let stale_task = make_stale_claimed_task(&org_id, &project, original_agent);
         let task_id = stale_task.id();
-        task_store.save(&mut stale_task).await.unwrap();
+        state.insert_task(stale_task).await;
 
         let use_case = GetNextTask::new(task_store.clone(), edge_store);
         let result = use_case

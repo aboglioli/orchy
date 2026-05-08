@@ -115,6 +115,10 @@ impl MemoryState {
     pub async fn snapshot_events(&self) -> Vec<SerializedEvent> {
         self.events.read().await.clone()
     }
+
+    pub async fn insert_task(&self, task: Task) {
+        self.tasks.write().await.insert(task.id(), task);
+    }
 }
 
 pub(crate) fn apply_cursor_pagination<T, F>(items: Vec<T>, page: &PageParams, id_fn: F) -> Page<T>

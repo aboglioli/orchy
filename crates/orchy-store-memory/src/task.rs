@@ -31,9 +31,9 @@ impl TaskStore for MemoryTaskStore {
                     return Err(Error::version_mismatch(pv, stored.version()));
                 }
             }
+            task.mark_persisted();
             tasks.insert(task.id(), task.clone());
         }
-        task.mark_persisted();
 
         let events = task.drain_events();
         if !events.is_empty() {
