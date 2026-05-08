@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rusqlite::OptionalExtension;
 
-use crate::{SqliteConn, bytes_to_embedding, embedding_to_bytes, events};
+use crate::{SqliteConn, blocking, blocking_tx, bytes_to_embedding, embedding_to_bytes, events};
 use orchy_core::error::{Error, Resource, Result};
 use orchy_core::knowledge::{
     Knowledge, KnowledgeFilter, KnowledgeId, KnowledgeKind, KnowledgePath, KnowledgeStore,
@@ -32,113 +32,96 @@ impl SqliteKnowledgeStore {
 #[async_trait]
 impl KnowledgeStore for SqliteKnowledgeStore {
     async fn save(&self, entry: &mut Knowledge) -> Result<()> {
-        let mut conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let tx = conn.transaction().map_err(crate::error::store_err)?;
-
-        let embedding_bytes = entry.embedding().map(embedding_to_bytes);
+        let id = entry.id().to_string();
+        let org_id = entry.org_id().to_string();
+        let project = entry.project().map(|p| p.to_string());
+        let namespace = entry.namespace().to_string();
+        let path = entry.path().as_str().to_string();
+        let kind = entry.kind().to_string();
+        let title = entry.title().to_string();
+        let content = entry.content().to_string();
         let tags_json = serde_json::to_string(entry.tags())?;
+        let version = entry.version().as_u64() as i64;
         let metadata_json = serde_json::to_string(entry.metadata())?;
+        let embedding_bytes = entry.embedding().map(embedding_to_bytes);
+        let embedding_model = entry.embedding_model().map(|s| s.to_string());
+        let embedding_dimensions = entry.embedding_dimensions().map(|d| d as i64);
+        let valid_from = entry.valid_from().map(|d| d.to_rfc3339());
+        let valid_until = entry.valid_until().map(|d| d.to_rfc3339());
+        let archived_at = entry.archived_at().map(|d| d.to_rfc3339());
+        let created_at = entry.created_at().to_rfc3339();
+        let updated_at = entry.updated_at().to_rfc3339();
+        let persisted_version = entry.persisted_version().map(|v| v.as_u64() as i64);
+        let drained = entry.drain_events();
 
-        let params = rusqlite::params![
-            entry.id().to_string(),
-            entry.org_id().to_string(),
-            entry.project().map(|p| p.to_string()),
-            entry.namespace().to_string(),
-            entry.path().as_str(),
-            entry.kind().to_string(),
-            entry.title(),
-            entry.content(),
-            tags_json,
-            entry.version().as_u64() as i64,
-            metadata_json,
-            embedding_bytes,
-            entry.embedding_model(),
-            entry.embedding_dimensions().map(|d| d as i64),
-            entry.valid_from().map(|d| d.to_rfc3339()),
-            entry.valid_until().map(|d| d.to_rfc3339()),
-            entry.archived_at().map(|d| d.to_rfc3339()),
-            entry.created_at().to_rfc3339(),
-            entry.updated_at().to_rfc3339(),
-        ];
-
-        if let Some(pv) = entry.persisted_version() {
-            let rows = tx.execute(
-                "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, metadata = ?11, embedding = ?12, embedding_model = ?13, embedding_dimensions = ?14, valid_from = ?15, valid_until = ?16, archived_at = ?17, created_at = ?18, updated_at = ?19
-                 WHERE id = ?1 AND version = ?20",
-                rusqlite::params![
-                    entry.id().to_string(),
-                    entry.org_id().to_string(),
-                    entry.project().map(|p| p.to_string()),
-                    entry.namespace().to_string(),
-                    entry.path().as_str(),
-                    entry.kind().to_string(),
-                    entry.title(),
-                    entry.content(),
-                    tags_json,
-                    entry.version().as_u64() as i64,
-                    metadata_json,
-                    embedding_bytes,
-                    entry.embedding_model(),
-                    entry.embedding_dimensions().map(|d| d as i64),
-                    entry.valid_from().map(|d| d.to_rfc3339()),
-                    entry.valid_until().map(|d| d.to_rfc3339()),
-                    entry.archived_at().map(|d| d.to_rfc3339()),
-                    entry.created_at().to_rfc3339(),
-                    entry.updated_at().to_rfc3339(),
-                    pv.as_u64() as i64,
-                ],
-            )
-            .map_err(crate::error::store_err)?;
-
-            if rows == 0 {
-                let stored_version: Option<i64> = tx
-                    .query_row(
-                        "SELECT version FROM knowledge_entries WHERE id = ?1",
-                        rusqlite::params![entry.id().to_string()],
-                        |row| row.get(0),
+        blocking_tx(&self.conn, move |tx| {
+            if let Some(pv) = persisted_version {
+                let rows = tx
+                    .execute(
+                        "UPDATE knowledge_entries SET organization_id = ?2, project = ?3, namespace = ?4, path = ?5, kind = ?6, title = ?7, content = ?8, tags = ?9, version = ?10, metadata = ?11, embedding = ?12, embedding_model = ?13, embedding_dimensions = ?14, valid_from = ?15, valid_until = ?16, archived_at = ?17, created_at = ?18, updated_at = ?19
+                         WHERE id = ?1 AND version = ?20",
+                        rusqlite::params![
+                            id, org_id, project, namespace, path, kind, title, content, tags_json,
+                            version, metadata_json, embedding_bytes, embedding_model,
+                            embedding_dimensions, valid_from, valid_until, archived_at,
+                            created_at, updated_at, pv,
+                        ],
                     )
-                    .optional()
                     .map_err(crate::error::store_err)?;
 
-                return Err(match stored_version {
-                    Some(v) => Error::version_mismatch(pv.as_u64(), v as u64),
-                    None => Error::not_found(Resource::Knowledge, entry.id().to_string()),
-                });
+                if rows == 0 {
+                    let stored_version: Option<i64> = tx
+                        .query_row(
+                            "SELECT version FROM knowledge_entries WHERE id = ?1",
+                            rusqlite::params![id],
+                            |row| row.get(0),
+                        )
+                        .optional()
+                        .map_err(crate::error::store_err)?;
+
+                    return Err(match stored_version {
+                        Some(v) => Error::version_mismatch(pv as u64, v as u64),
+                        None => Error::not_found(Resource::Knowledge, id),
+                    });
+                }
+            } else {
+                tx.execute(
+                    "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                    rusqlite::params![
+                        id, org_id, project, namespace, path, kind, title, content, tags_json,
+                        version, metadata_json, embedding_bytes, embedding_model,
+                        embedding_dimensions, valid_from, valid_until, archived_at, created_at,
+                        updated_at,
+                    ],
+                )
+                .map_err(crate::error::store_err)?;
             }
-        } else {
-            tx.execute(
-                "INSERT INTO knowledge_entries (id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
-                params,
-            )
-            .map_err(crate::error::store_err)?;
-        }
 
-        let events = entry.drain_events();
-        events::write_events_in_tx(&tx, &events)?;
-
-        tx.commit().map_err(crate::error::store_err)?;
+            events::write_events_in_tx(tx, &drained)?;
+            Ok(())
+        })
+        .await?;
 
         entry.mark_persisted();
-
         Ok(())
     }
 
     async fn find_by_id(&self, id: &KnowledgeId) -> Result<Option<Knowledge>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
-                 FROM knowledge_entries WHERE id = ?1",
-            )
-            .map_err(crate::error::store_err)?;
+        let id = id.to_string();
+        blocking(&self.conn, move |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
+                     FROM knowledge_entries WHERE id = ?1",
+                )
+                .map_err(crate::error::store_err)?;
 
-        let result = stmt
-            .query_row(rusqlite::params![id.to_string()], row_to_entry)
-            .optional()
-            .map_err(crate::error::store_err)?;
-
-        Ok(result)
+            stmt.query_row(rusqlite::params![id], row_to_entry)
+                .optional()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn find_by_path(
@@ -148,147 +131,143 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         namespace: &Namespace,
         path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let org = org.to_string();
+        let project = project.map(|p| p.to_string());
+        let namespace = namespace.to_string();
+        let path = path.as_str().to_string();
+        blocking(&self.conn, move |conn| {
+            if let Some(proj) = project {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
+                         FROM knowledge_entries WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND path = ?4",
+                    )
+                    .map_err(crate::error::store_err)?;
 
-        let result = if let Some(proj) = project {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
-                     FROM knowledge_entries WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND path = ?4",
+                stmt.query_row(
+                    rusqlite::params![org, proj, namespace, path],
+                    row_to_entry,
                 )
-                .map_err(crate::error::store_err)?;
+                .optional()
+                .map_err(crate::error::store_err)
+            } else {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
+                         FROM knowledge_entries WHERE organization_id = ?1 AND project IS NULL AND namespace = ?2 AND path = ?3",
+                    )
+                    .map_err(crate::error::store_err)?;
 
-            stmt.query_row(
-                rusqlite::params![
-                    org.to_string(),
-                    proj.to_string(),
-                    namespace.to_string(),
-                    path.as_str()
-                ],
-                row_to_entry,
-            )
-            .optional()
-            .map_err(crate::error::store_err)?
-        } else {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at
-                     FROM knowledge_entries WHERE organization_id = ?1 AND project IS NULL AND namespace = ?2 AND path = ?3",
-                )
-                .map_err(crate::error::store_err)?;
-
-            stmt.query_row(
-                rusqlite::params![org.to_string(), namespace.to_string(), path.as_str()],
-                row_to_entry,
-            )
-            .optional()
-            .map_err(crate::error::store_err)?
-        };
-
-        Ok(result)
+                stmt.query_row(rusqlite::params![org, namespace, path], row_to_entry)
+                    .optional()
+                    .map_err(crate::error::store_err)
+            }
+        })
+        .await
     }
 
     async fn list(&self, filter: KnowledgeFilter, page: PageParams) -> Result<Page<Knowledge>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        blocking(&self.conn, move |conn| {
+            let mut sql = String::from(
+                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at FROM knowledge_entries WHERE 1=1",
+            );
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            let mut idx = 1;
 
-        let mut sql = String::from(
-            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at FROM knowledge_entries WHERE 1=1",
-        );
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut idx = 1;
-
-        if let Some(ref org_id) = filter.org_id {
-            sql.push_str(&format!(" AND organization_id = ?{idx}"));
-            params.push(Box::new(org_id.to_string()));
-            idx += 1;
-        }
-        if let Some(ref project) = filter.project {
-            if filter.include_org_level {
-                sql.push_str(&format!(" AND (project = ?{idx} OR project IS NULL)"));
-            } else {
-                sql.push_str(&format!(" AND project = ?{idx}"));
-            }
-            params.push(Box::new(project.to_string()));
-            idx += 1;
-        }
-        if let Some(ref ns) = filter.namespace {
-            if !ns.is_root() {
-                sql.push_str(&format!(
-                    " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
-                ));
-                params.push(Box::new(ns.to_string()));
+            if let Some(ref org_id) = filter.org_id {
+                sql.push_str(&format!(" AND organization_id = ?{idx}"));
+                params.push(Box::new(org_id.to_string()));
                 idx += 1;
             }
-        }
-        if let Some(ref kind) = filter.kind {
-            sql.push_str(&format!(" AND kind = ?{idx}"));
-            params.push(Box::new(kind.to_string()));
-            idx += 1;
-        }
-        if let Some(ref tag) = filter.tag {
-            sql.push_str(&format!(" AND tags LIKE ?{idx}"));
-            params.push(Box::new(format!("%\"{tag}\"%")));
-            idx += 1;
-        }
-        if let Some(ref prefix) = filter.path_prefix {
-            sql.push_str(&format!(" AND path LIKE ?{idx}"));
-            params.push(Box::new(format!("{prefix}%")));
-            idx += 1;
-        }
-        if !filter.include_expired.unwrap_or(false) {
-            sql.push_str(" AND (valid_until IS NULL OR valid_until > datetime('now'))");
-        }
-        if !filter.include_archived.unwrap_or(false) {
-            sql.push_str(" AND archived_at IS NULL");
-        }
-        if let Some(orphaned) = filter.orphaned {
-            let exists_sql = "EXISTS (
-                SELECT 1 FROM edges e
-                WHERE e.org_id = knowledge_entries.organization_id
-                  AND e.to_kind = 'knowledge'
-                  AND e.to_id = CAST(knowledge_entries.id AS TEXT)
-                  AND e.rel_type IN ('produces', 'owned_by')
-                  AND e.valid_until IS NULL
-            )";
-            if orphaned {
-                sql.push_str(&format!(" AND NOT {exists_sql}"));
-            } else {
-                sql.push_str(&format!(" AND {exists_sql}"));
-            }
-        }
-        if let Some(ref cursor) = page.after {
-            if let Some(decoded) = decode_cursor(cursor) {
-                sql.push_str(&format!(" AND id < ?{idx}"));
-                params.push(Box::new(decoded));
+            if let Some(ref project) = filter.project {
+                if filter.include_org_level {
+                    sql.push_str(&format!(" AND (project = ?{idx} OR project IS NULL)"));
+                } else {
+                    sql.push_str(&format!(" AND project = ?{idx}"));
+                }
+                params.push(Box::new(project.to_string()));
                 idx += 1;
             }
-        }
+            if let Some(ref ns) = filter.namespace {
+                if !ns.is_root() {
+                    sql.push_str(&format!(
+                        " AND (namespace = ?{idx} OR namespace LIKE ?{idx} || '/%')"
+                    ));
+                    params.push(Box::new(ns.to_string()));
+                    idx += 1;
+                }
+            }
+            if let Some(ref kind) = filter.kind {
+                sql.push_str(&format!(" AND kind = ?{idx}"));
+                params.push(Box::new(kind.to_string()));
+                idx += 1;
+            }
+            if let Some(ref tag) = filter.tag {
+                sql.push_str(&format!(" AND tags LIKE ?{idx}"));
+                params.push(Box::new(format!("%\"{tag}\"%")));
+                idx += 1;
+            }
+            if let Some(ref prefix) = filter.path_prefix {
+                sql.push_str(&format!(" AND path LIKE ?{idx}"));
+                params.push(Box::new(format!("{prefix}%")));
+                idx += 1;
+            }
+            if !filter.include_expired.unwrap_or(false) {
+                sql.push_str(" AND (valid_until IS NULL OR valid_until > datetime('now'))");
+            }
+            if !filter.include_archived.unwrap_or(false) {
+                sql.push_str(" AND archived_at IS NULL");
+            }
+            if let Some(orphaned) = filter.orphaned {
+                let exists_sql = "EXISTS (
+                    SELECT 1 FROM edges e
+                    WHERE e.org_id = knowledge_entries.organization_id
+                      AND e.to_kind = 'knowledge'
+                      AND e.to_id = CAST(knowledge_entries.id AS TEXT)
+                      AND e.rel_type IN ('produces', 'owned_by')
+                      AND e.valid_until IS NULL
+                )";
+                if orphaned {
+                    sql.push_str(&format!(" AND NOT {exists_sql}"));
+                } else {
+                    sql.push_str(&format!(" AND {exists_sql}"));
+                }
+            }
+            if let Some(ref cursor) = page.after {
+                if let Some(decoded) = decode_cursor(cursor) {
+                    sql.push_str(&format!(" AND id < ?{idx}"));
+                    params.push(Box::new(decoded));
+                    idx += 1;
+                }
+            }
 
-        let _ = idx;
-        sql.push_str(" ORDER BY id DESC");
-        let fetch_limit = (page.limit as u64).saturating_add(1);
-        sql.push_str(&format!(" LIMIT {fetch_limit}"));
+            let _ = idx;
+            sql.push_str(" ORDER BY id DESC");
+            let fetch_limit = (page.limit as u64).saturating_add(1);
+            sql.push_str(&format!(" LIMIT {fetch_limit}"));
 
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params.iter().map(|p| p.as_ref()).collect();
-        let mut entries: Vec<Knowledge> = stmt
-            .query_map(param_refs.as_slice(), row_to_entry)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+            let mut entries: Vec<Knowledge> = stmt
+                .query_map(param_refs.as_slice(), row_to_entry)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)?;
 
-        let has_more = entries.len() > page.limit as usize;
-        if has_more {
-            entries.truncate(page.limit as usize);
-        }
-        let next_cursor = if has_more {
-            entries.last().map(|e| encode_cursor(&e.id().to_string()))
-        } else {
-            None
-        };
+            let has_more = entries.len() > page.limit as usize;
+            if has_more {
+                entries.truncate(page.limit as usize);
+            }
+            let next_cursor = if has_more {
+                entries.last().map(|e| encode_cursor(&e.id().to_string()))
+            } else {
+                None
+            };
 
-        Ok(Page::new(entries, next_cursor))
+            Ok(Page::new(entries, next_cursor))
+        })
+        .await
     }
 
     async fn search(
@@ -299,12 +278,35 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         namespace: Option<&Namespace>,
         limit: usize,
     ) -> Result<Vec<(Knowledge, Option<f32>)>> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
+        let org = org.clone();
+        let query = query.to_string();
+        let embedding = embedding.map(|e| e.to_vec());
+        let namespace = namespace.cloned();
+        blocking(&self.conn, move |conn| {
+            if let Some(emb) = embedding.as_ref() {
+                let vec_ready = conn
+                    .query_row(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_vec' LIMIT 1",
+                        [],
+                        |_| Ok(()),
+                    )
+                    .optional()
+                    .map_err(crate::error::store_err)?
+                    .is_some();
 
-        if let Some(emb) = embedding {
-            let vec_ready = conn
+                if vec_ready {
+                    return search_knowledge_vec(conn, &org, emb, namespace.as_ref(), limit)
+                        .map(|v| v.into_iter().map(|k| (k, None)).collect());
+                }
+            }
+
+            if query.trim().is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let fts_ready = conn
                 .query_row(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_vec' LIMIT 1",
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_entries_fts' LIMIT 1",
                     [],
                     |_| Ok(()),
                 )
@@ -312,69 +314,54 @@ impl KnowledgeStore for SqliteKnowledgeStore {
                 .map_err(crate::error::store_err)?
                 .is_some();
 
-            if vec_ready {
-                return search_knowledge_vec(&conn, org, emb, namespace, limit)
-                    .map(|v| v.into_iter().map(|k| (k, None)).collect());
+            if fts_ready {
+                search_knowledge_fts(conn, &org, &query, namespace.as_ref(), limit)
+                    .map(|v| v.into_iter().map(|k| (k, None)).collect())
+            } else {
+                search_knowledge_like(conn, &org, &query, namespace.as_ref(), limit)
+                    .map(|v| v.into_iter().map(|k| (k, None)).collect())
             }
-        }
-
-        if query.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let fts_ready = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_entries_fts' LIMIT 1",
-                [],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(crate::error::store_err)?
-            .is_some();
-
-        if fts_ready {
-            search_knowledge_fts(&conn, org, query, namespace, limit)
-                .map(|v| v.into_iter().map(|k| (k, None)).collect())
-        } else {
-            search_knowledge_like(&conn, org, query, namespace, limit)
-                .map(|v| v.into_iter().map(|k| (k, None)).collect())
-        }
+        })
+        .await
     }
 
     async fn find_by_ids(&self, ids: &[KnowledgeId]) -> Result<Vec<Knowledge>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
-        let placeholders: String = repeat_n("?", ids.len()).collect::<Vec<_>>().join(", ");
-        let sql = format!(
-            "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at \
-             FROM knowledge_entries WHERE id IN ({placeholders})"
-        );
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-        let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
         let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
-        let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
-            .iter()
-            .map(|s| s as &dyn rusqlite::ToSql)
-            .collect();
-        let entries = stmt
-            .query_map(param_refs.as_slice(), row_to_entry)
-            .map_err(crate::error::store_err)?
-            .collect::<StdResult<Vec<_>, _>>()
-            .map_err(crate::error::store_err)?;
-        Ok(entries)
+        blocking(&self.conn, move |conn| {
+            let placeholders: String = repeat_n("?", id_strings.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT id, organization_id, project, namespace, path, kind, title, content, tags, version, metadata, embedding, embedding_model, embedding_dimensions, valid_from, valid_until, archived_at, created_at, updated_at \
+                 FROM knowledge_entries WHERE id IN ({placeholders})"
+            );
+            let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
+            let param_refs: Vec<&dyn rusqlite::ToSql> = id_strings
+                .iter()
+                .map(|s| s as &dyn rusqlite::ToSql)
+                .collect();
+            stmt.query_map(param_refs.as_slice(), row_to_entry)
+                .map_err(crate::error::store_err)?
+                .collect::<StdResult<Vec<_>, _>>()
+                .map_err(crate::error::store_err)
+        })
+        .await
     }
 
     async fn delete(&self, id: &KnowledgeId) -> Result<()> {
-        let conn = self.conn.lock().map_err(crate::error::lock_err)?;
-
-        conn.execute(
-            "DELETE FROM knowledge_entries WHERE id = ?1",
-            rusqlite::params![id.to_string()],
-        )
-        .map_err(crate::error::store_err)?;
-
-        Ok(())
+        let id = id.to_string();
+        blocking(&self.conn, move |conn| {
+            conn.execute(
+                "DELETE FROM knowledge_entries WHERE id = ?1",
+                rusqlite::params![id],
+            )
+            .map_err(crate::error::store_err)?;
+            Ok(())
+        })
+        .await
     }
 }
 
