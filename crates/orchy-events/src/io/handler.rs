@@ -189,4 +189,81 @@ mod tests {
         );
         assert_eq!(h.id(), "inner-id");
     }
+
+    #[tokio::test]
+    async fn handler_into_boxed_yields_dyn_handler() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let handler: BoxHandler = CountingHandler {
+            id: "h".into(),
+            count: count.clone(),
+        }
+        .into_boxed();
+        assert_eq!(handler.id(), "h");
+        handler.handle(ev()).await.unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn handler_into_arced_yields_shared_handler() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let handler: ArcHandler = CountingHandler {
+            id: "h".into(),
+            count: count.clone(),
+        }
+        .into_arced();
+        let clone = handler.clone();
+        handler.handle(ev()).await.unwrap();
+        clone.handle(ev()).await.unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn handler_box_blanket_passes_as_generic_handler() {
+        async fn take<H: Handler>(h: H, e: Event) {
+            h.handle(e).await.unwrap();
+        }
+        let count = Arc::new(AtomicUsize::new(0));
+        let boxed: BoxHandler = CountingHandler {
+            id: "h".into(),
+            count: count.clone(),
+        }
+        .into_boxed();
+        take(boxed, ev()).await;
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn filter_into_boxed_yields_dyn_filter() {
+        let f: BoxFilter = AllowAll.into_boxed();
+        assert!(f.matches(&ev()));
+        let f: BoxFilter = AllowNothing.into_boxed();
+        assert!(!f.matches(&ev()));
+    }
+
+    #[test]
+    fn filter_into_arced_yields_shared_filter() {
+        let f: ArcFilter = AllowAll.into_arced();
+        let clone = f.clone();
+        assert!(f.matches(&ev()));
+        assert!(clone.matches(&ev()));
+    }
+
+    #[test]
+    fn filter_box_blanket_passes_as_generic_filter() {
+        fn take<F: Filter>(f: F, e: &Event) -> bool {
+            f.matches(e)
+        }
+        let boxed: BoxFilter = AllowAll.into_boxed();
+        assert!(take(boxed, &ev()));
+    }
+
+    fn _assert_handler_dyn_safe() {
+        fn _take(_: BoxHandler) {}
+        fn _take_arc(_: ArcHandler) {}
+    }
+
+    fn _assert_filter_dyn_safe() {
+        fn _take(_: BoxFilter) {}
+        fn _take_arc(_: ArcFilter) {}
+    }
 }
