@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use orchy_events::io::ackers::AckBufferConfig;
+use orchy_events::io::acker::AckBufferConfig;
 use orchy_events::{Error, OrganizationId, Result, StartFrom};
 
 #[derive(Clone)]

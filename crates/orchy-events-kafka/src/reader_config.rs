@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
-use orchy_events::io::ackers::AckBufferConfig;
+use orchy_events::io::acker::AckBufferConfig;
 use orchy_events::{ConsumerGroupId, Namespace, OrganizationId, StartFrom, Topic};
 
 #[derive(Clone)]

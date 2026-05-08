@@ -10,7 +10,7 @@ use sqlx::{PgPool, Row};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
-use orchy_events::io::ackers::{Either, NoopAcker, OnceAcker};
+use orchy_events::io::acker::{Either, NoopAcker, OnceAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
     ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,

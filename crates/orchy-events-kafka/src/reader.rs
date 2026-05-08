@@ -10,7 +10,7 @@ use rdkafka::TopicPartitionList;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use tokio::sync::{mpsc, watch};
 
-use orchy_events::io::ackers::{AckBuffer, BatchedAcker};
+use orchy_events::io::acker::{AckBuffer, BatchedAcker};
 use orchy_events::io::filters::{NamespacePrefixFilter, TopicFilter};
 use orchy_events::io::{Acker, Filter, Message, Reader};
 use orchy_events::{Error, Event, Result, SerializedEvent, StartFrom};

@@ -5,7 +5,7 @@ use aws_sdk_sqs::types::{
     ChangeMessageVisibilityBatchRequestEntry, DeleteMessageBatchRequestEntry,
 };
 
-use orchy_events::io::ackers::BatchFlusher;
+use orchy_events::io::acker::BatchFlusher;
 use orchy_events::{Error, Result};
 
 pub struct SqsFlusher {

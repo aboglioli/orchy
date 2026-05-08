@@ -148,7 +148,7 @@ mod tests {
 
     use crate::event::Event;
     use crate::io::Message;
-    use crate::io::ackers::NoopAcker;
+    use crate::io::acker::NoopAcker;
     use crate::payload::Payload;
 
     struct VecReader {

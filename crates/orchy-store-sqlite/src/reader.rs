@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use futures::Stream;
 use tokio::sync::{mpsc, watch};
 
-use orchy_events::io::ackers::{Either, NoopAcker, OnceAcker};
+use orchy_events::io::acker::{Either, NoopAcker, OnceAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
     ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,

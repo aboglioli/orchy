@@ -7,7 +7,7 @@ use aws_sdk_sqs::Client;
 use futures::Stream;
 use tokio::sync::{mpsc, watch};
 
-use orchy_events::io::ackers::{AckBuffer, BatchedAcker};
+use orchy_events::io::acker::{AckBuffer, BatchedAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{Error, Result, SerializedEvent};
 

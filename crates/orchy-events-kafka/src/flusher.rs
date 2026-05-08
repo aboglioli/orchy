@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use rdkafka::TopicPartitionList;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 
-use orchy_events::io::ackers::BatchFlusher;
+use orchy_events::io::acker::BatchFlusher;
 use orchy_events::{Error, Result};
 
 #[derive(Clone, Debug)]

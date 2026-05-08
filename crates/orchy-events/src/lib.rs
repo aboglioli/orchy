@@ -25,6 +25,12 @@ pub use serialization::SerializedEvent;
 pub use start_from::StartFrom;
 pub use topic::Topic;
 
-pub use io::{Acker, Filter, FilteredHandler, Handler, Message, Reader, Writer};
+pub use io::{
+    Acker, AckerExt, Filter, FilterExt, FilteredHandler, Handler, HandlerExt, Message, Reader,
+    ReaderExt, Writer, WriterExt,
+};
+pub use io::{
+    ArcAcker, ArcFilter, ArcHandler, ArcReader, ArcWriter, BoxAcker, BoxFilter, BoxHandler,
+    BoxReader, BoxStream, BoxWriter,
+};
 pub use io::{BackgroundConsumer, ConsumerHandle};
-pub use io::{BoxAcker, BoxReader, BoxStream, ReaderExt};

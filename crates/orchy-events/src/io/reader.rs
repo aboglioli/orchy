@@ -5,12 +5,12 @@ use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 
 use crate::error::Result;
-use crate::io::Acker;
 use crate::io::message::Message;
+use crate::io::{Acker, BoxAcker};
 
-pub type BoxAcker = Box<dyn Acker + Send + Sync>;
 pub type BoxStream<A = BoxAcker> = Pin<Box<dyn Stream<Item = Result<Message<A>>> + Send>>;
 pub type BoxReader<A = BoxAcker> = Box<dyn Reader<Acker = A, Stream = BoxStream<A>> + Send + Sync>;
+pub type ArcReader<A = BoxAcker> = Arc<dyn Reader<Acker = A, Stream = BoxStream<A>> + Send + Sync>;
 
 #[async_trait]
 pub trait Reader: Send + Sync {
@@ -30,6 +30,16 @@ impl<T: Reader + ?Sized> Reader for Arc<T> {
     }
 }
 
+#[async_trait]
+impl<T: Reader + ?Sized> Reader for Box<T> {
+    type Acker = T::Acker;
+    type Stream = T::Stream;
+
+    async fn read(&self) -> Result<Self::Stream> {
+        (**self).read().await
+    }
+}
+
 pub trait ReaderExt: Reader + Send + Sync + Sized + 'static
 where
     Self::Acker: 'static,
@@ -37,6 +47,10 @@ where
 {
     fn into_boxed(self) -> BoxReader<BoxAcker> {
         Box::new(DynReader(self))
+    }
+
+    fn into_arced(self) -> ArcReader<BoxAcker> {
+        Arc::new(DynReader(self))
     }
 }
 
@@ -77,7 +91,7 @@ mod tests {
 
     use crate::event::Event;
     use crate::io::Message;
-    use crate::io::ackers::NoopAcker;
+    use crate::io::acker::NoopAcker;
     use crate::payload::Payload;
 
     struct UnitReader;
@@ -110,6 +124,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn into_arced_yields_shared_reader() {
+        let reader: ArcReader = UnitReader.into_arced();
+        let clone = reader.clone();
+        let mut stream = clone.read().await.unwrap();
+        let msg = stream.next().await.unwrap().unwrap();
+        msg.ack().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn vec_of_boxed_readers_dispatches_each() {
         let readers: Vec<BoxReader> = vec![UnitReader.into_boxed(), UnitReader.into_boxed()];
         for r in &readers {
@@ -117,6 +140,12 @@ mod tests {
             let msg = stream.next().await.unwrap().unwrap();
             msg.ack().await.unwrap();
         }
+    }
+
+    fn _assert_box_passes_as_generic_reader() {
+        fn _take<R: Reader>(_: R) {}
+        let r: BoxReader = UnitReader.into_boxed();
+        _take(r);
     }
 
     fn _assert_reader_dyn_safe() {

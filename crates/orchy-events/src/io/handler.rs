@@ -5,6 +5,11 @@ use async_trait::async_trait;
 use crate::error::Result;
 use crate::event::Event;
 
+pub type BoxHandler = Box<dyn Handler + Send + Sync>;
+pub type ArcHandler = Arc<dyn Handler + Send + Sync>;
+pub type BoxFilter = Box<dyn Filter + Send + Sync>;
+pub type ArcFilter = Arc<dyn Filter + Send + Sync>;
+
 #[async_trait]
 pub trait Handler: Send + Sync {
     fn id(&self) -> &str;
@@ -21,6 +26,28 @@ impl<T: Handler + ?Sized> Handler for Arc<T> {
     }
 }
 
+#[async_trait]
+impl<T: Handler + ?Sized> Handler for Box<T> {
+    fn id(&self) -> &str {
+        (**self).id()
+    }
+    async fn handle(&self, event: Event) -> Result<()> {
+        (**self).handle(event).await
+    }
+}
+
+pub trait HandlerExt: Handler + Sized + 'static {
+    fn into_boxed(self) -> BoxHandler {
+        Box::new(self)
+    }
+
+    fn into_arced(self) -> ArcHandler {
+        Arc::new(self)
+    }
+}
+
+impl<T: Handler + 'static> HandlerExt for T {}
+
 pub trait Filter: Send + Sync {
     fn matches(&self, event: &Event) -> bool;
 }
@@ -30,6 +57,24 @@ impl<T: Filter + ?Sized> Filter for Arc<T> {
         (**self).matches(event)
     }
 }
+
+impl<T: Filter + ?Sized> Filter for Box<T> {
+    fn matches(&self, event: &Event) -> bool {
+        (**self).matches(event)
+    }
+}
+
+pub trait FilterExt: Filter + Sized + 'static {
+    fn into_boxed(self) -> BoxFilter {
+        Box::new(self)
+    }
+
+    fn into_arced(self) -> ArcFilter {
+        Arc::new(self)
+    }
+}
+
+impl<T: Filter + 'static> FilterExt for T {}
 
 pub struct FilteredHandler<H, F> {
     handler: H,
