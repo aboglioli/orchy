@@ -8,7 +8,8 @@ use rdkafka::ClientConfig;
 use rdkafka::Message as KafkaMessage;
 use rdkafka::TopicPartitionList;
 use rdkafka::consumer::{Consumer, StreamConsumer};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use orchy_events::io::acker::{AckBuffer, BatchedAcker};
 use orchy_events::io::filters::{NamespacePrefixFilter, TopicFilter};
@@ -115,14 +116,14 @@ fn apply_timestamp_seek(
 
 pub struct KafkaStream {
     rx: mpsc::Receiver<Result<Message<BatchedAcker<KafkaOffsetToken>>>>,
-    shutdown_tx: watch::Sender<bool>,
+    cancel: CancellationToken,
     handle: Option<tokio::task::JoinHandle<()>>,
     ack_buffer: Arc<AckBuffer<KafkaFlusher>>,
 }
 
 impl Drop for KafkaStream {
     fn drop(&mut self) {
-        let _ = self.shutdown_tx.send(true);
+        self.cancel.cancel();
         if let Some(h) = self.handle.take() {
             h.abort();
         }
@@ -153,7 +154,8 @@ impl Reader for KafkaReader {
         let tx_ack = ack_buffer.sender();
 
         let (tx, rx) = mpsc::channel(config.max_poll_records);
-        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let cancel = CancellationToken::new();
+        let cancel_for_task = cancel.clone();
 
         let handle = tokio::spawn(async move {
             let topic_filter = config.orchy_topics.clone().map(TopicFilter::new);
@@ -165,12 +167,12 @@ impl Reader for KafkaReader {
             let mut stream = consumer.stream();
 
             loop {
-                if *shutdown_rx.borrow() {
+                if cancel_for_task.is_cancelled() {
                     break;
                 }
                 let next = tokio::select! {
                     n = stream.next() => n,
-                    _ = shutdown_rx.changed() => return,
+                    _ = cancel_for_task.cancelled() => return,
                 };
                 let msg = match next {
                     None => return,
@@ -247,7 +249,7 @@ impl Reader for KafkaReader {
 
         Ok(KafkaStream {
             rx,
-            shutdown_tx,
+            cancel,
             handle: Some(handle),
             ack_buffer,
         })

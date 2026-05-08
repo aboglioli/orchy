@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tokio::time::{Duration, sleep};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 use crate::container::Container;
@@ -8,7 +9,7 @@ use crate::container::Container;
 const MAX_BACKOFF_SECS: u64 = 60;
 const HARD_FAIL_THRESHOLD: u32 = 30;
 
-pub async fn run_heartbeat_monitor(container: Arc<Container>) {
+pub async fn run_heartbeat_monitor(container: Arc<Container>, cancel: CancellationToken) {
     let timeout = container.config.server.heartbeat_timeout_secs;
     let base_interval = Duration::from_secs(timeout.max(10) / 2);
 
@@ -16,7 +17,10 @@ pub async fn run_heartbeat_monitor(container: Arc<Container>) {
 
     loop {
         let interval = compute_interval(base_interval, consecutive_failures);
-        sleep(interval).await;
+        tokio::select! {
+            _ = cancel.cancelled() => return,
+            _ = sleep(interval) => {}
+        }
 
         match container.app.check_timed_out_agents.execute(timeout).await {
             Ok(result) => {

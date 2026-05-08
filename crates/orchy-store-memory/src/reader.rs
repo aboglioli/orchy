@@ -6,7 +6,8 @@ use std::task::{Context, Poll};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
-use tokio::sync::{RwLock, mpsc, watch};
+use tokio::sync::{RwLock, mpsc};
+use tokio_util::sync::CancellationToken;
 
 use orchy_events::io::acker::{Either, NoopAcker};
 use orchy_events::io::{Acker, Message, Reader};
@@ -54,13 +55,13 @@ pub type MemoryAckerVariant = Either<MemoryAcker, NoopAcker>;
 
 pub struct MemoryStream {
     rx: mpsc::Receiver<Result<Message<MemoryAckerVariant>>>,
-    shutdown_tx: watch::Sender<bool>,
+    cancel: CancellationToken,
     handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Drop for MemoryStream {
     fn drop(&mut self) {
-        let _ = self.shutdown_tx.send(true);
+        self.cancel.cancel();
         if let Some(h) = self.handle.take() {
             h.abort();
         }
@@ -143,7 +144,8 @@ impl Reader for MemoryReader {
         let offsets = Arc::clone(&self.offsets);
         let config = self.config.clone();
         let (tx, rx) = mpsc::channel(64);
-        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let cancel = CancellationToken::new();
+        let cancel_for_task = cancel.clone();
 
         let initial_len = state.events.read().await.len();
 
@@ -171,7 +173,7 @@ impl Reader for MemoryReader {
             let mut idx = starting_index;
             let mut delivered = 0usize;
             loop {
-                if *shutdown_rx.borrow() {
+                if cancel_for_task.is_cancelled() {
                     break;
                 }
                 let notified = state.events_notify.notified();
@@ -218,14 +220,14 @@ impl Reader for MemoryReader {
                 }
                 tokio::select! {
                     _ = notified => {}
-                    _ = shutdown_rx.changed() => return,
+                    _ = cancel_for_task.cancelled() => return,
                 }
             }
         });
 
         Ok(MemoryStream {
             rx,
-            shutdown_tx,
+            cancel,
             handle: Some(handle),
         })
     }

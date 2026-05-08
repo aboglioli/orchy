@@ -6,7 +6,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use orchy_events::io::acker::{Either, NoopAcker, OnceAcker};
 use orchy_events::io::{Acker, Message, Reader};
@@ -75,13 +76,13 @@ pub type SqliteAckerVariant = Either<OnceAcker<SqliteAcker>, NoopAcker>;
 
 pub struct SqliteStream {
     rx: mpsc::Receiver<Result<Message<SqliteAckerVariant>>>,
-    shutdown_tx: watch::Sender<bool>,
+    cancel: CancellationToken,
     handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Drop for SqliteStream {
     fn drop(&mut self) {
-        let _ = self.shutdown_tx.send(true);
+        self.cancel.cancel();
         if let Some(h) = self.handle.take() {
             h.abort();
         }
@@ -116,7 +117,8 @@ impl Reader for SqliteReader {
         let conn = Arc::clone(&self.conn);
         let config = self.config.clone();
         let (tx, rx) = mpsc::channel(64);
-        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let cancel = CancellationToken::new();
+        let cancel_for_task = cancel.clone();
 
         let handle = tokio::spawn(async move {
             let bounded = config.end_at.is_some() || config.limit.is_some();
@@ -130,7 +132,7 @@ impl Reader for SqliteReader {
             let mut delivered = 0usize;
 
             loop {
-                if *shutdown_rx.borrow() {
+                if cancel_for_task.is_cancelled() {
                     break;
                 }
                 let take = config
@@ -151,7 +153,7 @@ impl Reader for SqliteReader {
                     }
                     tokio::select! {
                         _ = tokio::time::sleep(config.poll_interval) => continue,
-                        _ = shutdown_rx.changed() => return,
+                        _ = cancel_for_task.cancelled() => return,
                     }
                 }
                 for (serialized, next_seq) in batch {
@@ -188,7 +190,7 @@ impl Reader for SqliteReader {
 
         Ok(SqliteStream {
             rx,
-            shutdown_tx,
+            cancel,
             handle: Some(handle),
         })
     }

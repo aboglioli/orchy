@@ -7,6 +7,7 @@ version.workspace = true
 orchy-events.workspace = true
 async-trait = "0.1"
 tokio.workspace = true
+tokio-util.workspace = true
 futures = "0.3"
 serde.workspace = true
 serde_json.workspace = true

@@ -27,6 +27,8 @@ use orchy_server::error::{BootError, BootResult};
 use orchy_server::heartbeat::run_heartbeat_monitor;
 use orchy_server::mcp::OrchyHandler;
 use orchy_server::skill_loader;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tower_cookies::CookieManagerLayer;
 
 #[tokio::main]
@@ -77,14 +79,19 @@ async fn run() -> BootResult<()> {
             .map_err(|e| BootError::Other(format!("failed to load skills from disk: {e}")))?;
     }
 
+    let cancel = CancellationToken::new();
+    let tracker = TaskTracker::new();
+
     let heartbeat_container = Arc::clone(&container);
-    tokio::spawn(async move {
-        run_heartbeat_monitor(heartbeat_container).await;
+    let heartbeat_cancel = cancel.clone();
+    tracker.spawn(async move {
+        run_heartbeat_monitor(heartbeat_container, heartbeat_cancel).await;
     });
 
     let session_pruner_container = Arc::clone(&container);
-    tokio::spawn(async move {
-        run_session_pruner(session_pruner_container).await;
+    let session_pruner_cancel = cancel.clone();
+    tracker.spawn(async move {
+        run_session_pruner(session_pruner_container, session_pruner_cancel).await;
     });
 
     let bootstrap_container = Arc::clone(&container);
@@ -121,6 +128,10 @@ async fn run() -> BootResult<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| BootError::Other(format!("server error: {e}")))?;
+
+    cancel.cancel();
+    tracker.close();
+    tracker.wait().await;
 
     info!("orchy server shut down cleanly");
     Ok(())
@@ -261,14 +272,17 @@ async fn bootstrap_handler(
     }
 }
 
-async fn run_session_pruner(container: Arc<Container>) {
+async fn run_session_pruner(container: Arc<Container>, cancel: CancellationToken) {
     use std::collections::HashSet;
     use tokio::time::{Duration, sleep};
 
     let interval = Duration::from_secs(300);
 
     loop {
-        sleep(interval).await;
+        tokio::select! {
+            _ = cancel.cancelled() => return,
+            _ = sleep(interval) => {}
+        }
 
         let snapshot: Vec<(String, AgentId)> = {
             let sessions = container.session_agents.read().await;

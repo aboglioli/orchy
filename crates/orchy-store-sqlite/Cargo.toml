@@ -11,6 +11,7 @@ async-trait = "0.1"
 rusqlite.workspace = true
 sqlite-vec.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 serde.workspace = true

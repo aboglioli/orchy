@@ -2470,6 +2470,7 @@ dependencies = [
  "serde_json",
  "testcontainers",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -2487,6 +2488,7 @@ dependencies = [
  "serde_json",
  "testcontainers",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -2536,6 +2538,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror",
  "tokio",
+ "tokio-util",
  "toml",
  "tower",
  "tower-cookies",
@@ -2574,6 +2577,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
@@ -2597,6 +2601,7 @@ dependencies = [
  "testcontainers",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
@@ -2617,6 +2622,7 @@ dependencies = [
  "sqlite-vec",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
