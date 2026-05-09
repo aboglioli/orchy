@@ -327,7 +327,13 @@ impl Task {
     }
 
     pub fn claim(&mut self, agent: AgentId) -> DomainResult<()> {
-        self.status = self.status.transition_to(TaskStatus::Claimed)?;
+        if !self.can_be_claimed() {
+            return Err(DomainError::validation(format!(
+                "task {} cannot be claimed in status {}",
+                self.id, self.status
+            )));
+        }
+        self.status = TaskStatus::Claimed;
         self.assigned_to = Some(agent.clone());
         self.assigned_at = Some(Utc::now());
         self.updated_at = Utc::now();
@@ -903,7 +909,7 @@ mod tests {
 
     fn make_task(status: TaskStatus, assigned_to: Option<AgentId>) -> Task {
         use orchy_events::OrganizationId;
-        Task::restore(RestoreTask {
+        let mut t = Task::restore(RestoreTask {
             id: TaskId::new(),
             org_id: OrganizationId::new("test").unwrap(),
             project: ProjectId::try_from("test").unwrap(),
@@ -925,7 +931,38 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
             version: 1,
-        })
+        });
+        t.mark_persisted();
+        t
+    }
+
+    fn make_stale_task(status: TaskStatus, assigned_to: Option<AgentId>) -> Task {
+        use orchy_events::OrganizationId;
+        let mut t = Task::restore(RestoreTask {
+            id: TaskId::new(),
+            org_id: OrganizationId::new("test").unwrap(),
+            project: ProjectId::try_from("test").unwrap(),
+            namespace: Namespace::root(),
+            title: "Stale Task".to_owned(),
+            description: "Stale".to_owned(),
+            acceptance_criteria: None,
+            status,
+            priority: Priority::default(),
+            assigned_roles: vec!["tester".to_owned()],
+            assigned_to,
+            assigned_at: None,
+            stale_after_secs: Some(1),
+            last_activity_at: Utc::now() - chrono::Duration::seconds(10),
+            tags: vec![],
+            result_summary: None,
+            archived_at: None,
+            created_by: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            version: 1,
+        });
+        t.mark_persisted();
+        t
     }
 
     fn make_completed_task() -> Task {
@@ -993,6 +1030,42 @@ mod tests {
         let agent = AgentId::new();
         let mut task = make_task(TaskStatus::Claimed, Some(agent.clone()));
         assert!(task.claim(agent).is_err());
+    }
+
+    #[test]
+    fn claim_stale_claimed_by_another_agent_succeeds() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_stale_task(TaskStatus::Claimed, Some(agent1));
+        assert!(task.claim(agent2.clone()).is_ok());
+        assert_eq!(task.status(), TaskStatus::Claimed);
+        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
+    }
+
+    #[test]
+    fn claim_stale_in_progress_by_another_agent_succeeds() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_stale_task(TaskStatus::InProgress, Some(agent1));
+        assert!(task.claim(agent2.clone()).is_ok());
+        assert_eq!(task.status(), TaskStatus::Claimed);
+        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
+    }
+
+    #[test]
+    fn claim_fresh_claimed_by_another_agent_fails() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_task(TaskStatus::Claimed, Some(agent1));
+        assert!(task.claim(agent2).is_err());
+    }
+
+    #[test]
+    fn claim_fresh_in_progress_by_another_agent_fails() {
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
+        let mut task = make_task(TaskStatus::InProgress, Some(agent1));
+        assert!(task.claim(agent2).is_err());
     }
 
     #[test]
