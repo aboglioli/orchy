@@ -53,6 +53,9 @@ impl RelationOptions {
                     RelationType::Produces,
                     RelationType::Supersedes,
                     RelationType::MergedFrom,
+                    RelationType::DerivedFrom,
+                    RelationType::Invalidates,
+                    RelationType::ContradictedBy,
                 ],
                 ResourceKind::Knowledge => &[
                     RelationType::Produces,

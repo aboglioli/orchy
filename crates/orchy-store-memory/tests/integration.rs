@@ -1215,7 +1215,7 @@ async fn get_task_with_context_can_include_dependencies_and_linked_knowledge() {
     let knowledge: Arc<dyn KnowledgeStore> = Arc::new(MemoryKnowledgeStore::new(s));
 
     let post_task = PostTask::new(Arc::clone(&tasks), Arc::clone(&edges));
-    let add_edge = AddEdge::new(Arc::clone(&edges));
+    let add_edge = AddEdge::new(Arc::clone(&edges), Arc::clone(&knowledge));
     let write_knowledge = WriteKnowledge::new(Arc::clone(&knowledge), Arc::clone(&edges), None);
     let get_task = GetTaskWithContext::new(tasks, edges, knowledge);
 

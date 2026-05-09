@@ -257,7 +257,10 @@ async fn lock_resource_resolves_alias() {
 #[tokio::test]
 async fn edge_add_idempotent_returns_real_id() {
     let s = state();
-    let add = AddEdge::new(edges(&s) as Arc<dyn EdgeStore>);
+    let add = AddEdge::new(
+        edges(&s) as Arc<dyn EdgeStore>,
+        knowledge(&s) as Arc<dyn KnowledgeStore>,
+    );
 
     let r1 = add
         .execute(AddEdgeCommand {
@@ -2360,7 +2363,10 @@ async fn list_edges_returns_created_edges() {
     let s = state();
     let e = edges(&s);
 
-    let add = AddEdge::new(Arc::clone(&e) as Arc<dyn EdgeStore>);
+    let add = AddEdge::new(
+        Arc::clone(&e) as Arc<dyn EdgeStore>,
+        knowledge(&s) as Arc<dyn KnowledgeStore>,
+    );
     add.execute(AddEdgeCommand {
         org_id: "default".into(),
         from_kind: "knowledge".into(),

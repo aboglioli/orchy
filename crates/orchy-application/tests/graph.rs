@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use orchy_application::{
-    AddEdgeCommand, Application, ApplicationDeps, ApplicationError, ListEdgesCommand,
-    MaterializeNeighborhoodCommand, PostTaskCommand, RemoveEdgeCommand, WriteKnowledgeCommand,
+    AddEdgeCommand, Application, ApplicationDeps, ApplicationError, AssembleContextCommand,
+    ListEdgesCommand, MaterializeNeighborhoodCommand, PostTaskCommand, RemoveEdgeCommand,
+    WriteKnowledgeCommand,
 };
 use orchy_core::agent::AgentStore;
 use orchy_core::api_key::{
@@ -411,5 +412,237 @@ async fn materialize_neighborhood_returns_peer_summaries() {
             .iter()
             .any(|r| matches!(r.rel_type, RelationType::Produces)),
         "neighborhood should include produces edge"
+    );
+}
+
+// ─── assemble context returns structured context ────────────────────────────
+
+#[tokio::test]
+async fn assemble_context_returns_core_facts() {
+    let s = mem();
+    let app = build_app(&s);
+    let org_id = "default";
+
+    let task = app
+        .post_task
+        .execute(PostTaskCommand {
+            org_id: org_id.into(),
+            project: "proj".into(),
+            namespace: None,
+            title: "context task".into(),
+            description: "task for context".into(),
+            acceptance_criteria: Some("must work".into()),
+            priority: Some("high".into()),
+            assigned_roles: None,
+            created_by: None,
+            parent_id: None,
+            depends_on: None,
+        })
+        .await
+        .unwrap();
+
+    let _knowledge = app
+        .write_knowledge
+        .execute(WriteKnowledgeCommand {
+            org_id: org_id.into(),
+            project: "proj".into(),
+            namespace: None,
+            path: "context/decision".into(),
+            kind: "decision".into(),
+            title: "Context Decision".into(),
+            content: "context decision body".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: Some(task.id.clone()),
+        })
+        .await
+        .unwrap();
+
+    let ctx = app
+        .assemble_context
+        .execute(AssembleContextCommand {
+            org_id: org_id.into(),
+            kind: "task".into(),
+            id: task.id.clone(),
+            max_tokens: Some(4000),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(ctx.root_kind, "task");
+    assert_eq!(ctx.root_id, task.id);
+    assert!(
+        !ctx.core_facts.is_empty(),
+        "should include linked knowledge as core facts"
+    );
+    assert!(
+        ctx.core_facts.iter().any(|f| f.path == "context/decision"),
+        "should include the linked decision"
+    );
+}
+
+// ─── edge resolve knowledge path to UUID ────────────────────────────────────
+
+#[tokio::test]
+async fn edge_resolves_knowledge_path_to_uuid() {
+    let s = mem();
+    let app = build_app(&s);
+    let org_id = "default";
+
+    let k = app
+        .write_knowledge
+        .execute(WriteKnowledgeCommand {
+            org_id: org_id.into(),
+            project: "proj".into(),
+            namespace: None,
+            path: "resolvable".into(),
+            kind: "note".into(),
+            title: "Resolvable".into(),
+            content: "data".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let task = app
+        .post_task
+        .execute(PostTaskCommand {
+            org_id: org_id.into(),
+            project: "proj".into(),
+            namespace: None,
+            title: "resolve task".into(),
+            description: "".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+            parent_id: None,
+            depends_on: None,
+        })
+        .await
+        .unwrap();
+
+    let edge = app
+        .add_edge
+        .execute(AddEdgeCommand {
+            org_id: org_id.into(),
+            from_kind: "knowledge".into(),
+            from_id: "resolvable".into(),
+            to_kind: "task".into(),
+            to_id: task.id.clone(),
+            rel_type: "derived_from".into(),
+            created_by: None,
+            if_not_exists: false,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        edge.from_id, k.id,
+        "edge should store knowledge UUID, not path"
+    );
+}
+
+// ─── edge query shows incoming derived_from for task ────────────────────────
+
+#[tokio::test]
+async fn query_relations_shows_incoming_derived_from_for_task() {
+    let s = mem();
+    let app = build_app(&s);
+    let org_id = "default";
+
+    let k = app
+        .write_knowledge
+        .execute(WriteKnowledgeCommand {
+            org_id: org_id.into(),
+            project: "proj".into(),
+            namespace: None,
+            path: "derived-source".into(),
+            kind: "note".into(),
+            title: "Source".into(),
+            content: "source".into(),
+            tags: None,
+            version: None,
+            agent_id: None,
+            metadata: None,
+            metadata_remove: None,
+            valid_from: None,
+            valid_until: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+
+    let task = app
+        .post_task
+        .execute(PostTaskCommand {
+            org_id: org_id.into(),
+            project: "proj".into(),
+            namespace: None,
+            title: "derived task".into(),
+            description: "".into(),
+            acceptance_criteria: None,
+            priority: None,
+            assigned_roles: None,
+            created_by: None,
+            parent_id: None,
+            depends_on: None,
+        })
+        .await
+        .unwrap();
+
+    app.add_edge
+        .execute(AddEdgeCommand {
+            org_id: org_id.into(),
+            from_kind: "knowledge".into(),
+            from_id: k.id.clone(),
+            to_kind: "task".into(),
+            to_id: task.id.clone(),
+            rel_type: "derived_from".into(),
+            created_by: None,
+            if_not_exists: false,
+        })
+        .await
+        .unwrap();
+
+    let neighborhood = app
+        .materialize_neighborhood
+        .execute(MaterializeNeighborhoodCommand {
+            org_id: org_id.into(),
+            anchor_kind: "task".into(),
+            anchor_id: task.id.clone(),
+            options: RelationOptions {
+                rel_types: None,
+                target_kinds: vec![],
+                direction: orchy_core::graph::TraversalDirection::Incoming,
+                max_depth: 1,
+                limit: 50,
+            },
+            as_of: None,
+            project: None,
+            namespace: None,
+            semantic_query: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        neighborhood
+            .relations
+            .iter()
+            .any(|r| matches!(r.rel_type, RelationType::DerivedFrom)),
+        "should include incoming derived_from edge"
     );
 }

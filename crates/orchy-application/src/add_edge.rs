@@ -6,6 +6,8 @@ use orchy_core::agent::AgentId;
 use orchy_core::error::{Error, Result};
 use orchy_core::graph::check_no_cycle;
 use orchy_core::graph::{Edge, EdgeStore, RelationDirection, RelationType, TraversalDirection};
+use orchy_core::knowledge::{KnowledgePath, KnowledgeStore};
+use orchy_core::namespace::Namespace;
 use orchy_core::organization::OrganizationId;
 use orchy_core::resource_ref::ResourceKind;
 use orchy_core::task::TaskId;
@@ -25,11 +27,12 @@ pub struct AddEdgeCommand {
 
 pub struct AddEdge {
     store: Arc<dyn EdgeStore>,
+    knowledge: Arc<dyn KnowledgeStore>,
 }
 
 impl AddEdge {
-    pub fn new(store: Arc<dyn EdgeStore>) -> Self {
-        Self { store }
+    pub fn new(store: Arc<dyn EdgeStore>, knowledge: Arc<dyn KnowledgeStore>) -> Self {
+        Self { store, knowledge }
     }
 
     pub async fn execute(&self, cmd: AddEdgeCommand) -> ApplicationResult<EdgeDto> {
@@ -39,16 +42,13 @@ impl AddEdge {
         let rel_type = parse_rel_type_with_aliases(&cmd.rel_type)?;
         let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
 
+        let from_id =
+            resolve_knowledge(&from_kind, &cmd.from_id, &org_id, &*self.knowledge).await?;
+        let to_id = resolve_knowledge(&to_kind, &cmd.to_id, &org_id, &*self.knowledge).await?;
+
         if let Some(existing) = self
             .store
-            .find_by_pair(
-                &org_id,
-                &from_kind,
-                &cmd.from_id,
-                &to_kind,
-                &cmd.to_id,
-                &rel_type,
-            )
+            .find_by_pair(&org_id, &from_kind, &from_id, &to_kind, &to_id, &rel_type)
             .await?
         {
             if cmd.if_not_exists {
@@ -97,17 +97,33 @@ impl AddEdge {
         }
 
         let mut edge = Edge::new(
-            org_id,
-            from_kind,
-            cmd.from_id,
-            to_kind,
-            cmd.to_id,
-            rel_type,
-            created_by,
+            org_id, from_kind, from_id, to_kind, to_id, rel_type, created_by,
         )?;
         self.store.save(&mut edge).await?;
         Ok(EdgeDto::from(&edge))
     }
+}
+
+async fn resolve_knowledge(
+    kind: &ResourceKind,
+    id: &str,
+    org_id: &OrganizationId,
+    knowledge: &dyn KnowledgeStore,
+) -> Result<String> {
+    if *kind != ResourceKind::Knowledge {
+        return Ok(id.to_owned());
+    }
+    if id.parse::<uuid::Uuid>().is_ok() {
+        return Ok(id.to_owned());
+    }
+    if let Ok(path) = id.parse::<KnowledgePath>()
+        && let Ok(Some(entry)) = knowledge
+            .find_by_path(org_id, None, &Namespace::root(), &path)
+            .await
+        {
+            return Ok(entry.id().to_string());
+        }
+    Ok(id.to_owned())
 }
 
 fn parse_rel_type_with_aliases(s: &str) -> Result<RelationType> {

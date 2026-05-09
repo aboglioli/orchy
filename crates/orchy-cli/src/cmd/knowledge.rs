@@ -261,13 +261,14 @@ pub async fn run(
             valid_from,
             valid_until,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({
                 "kind": kind,
                 "title": title,
                 "content": content,
             });
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             if let Some(t) = tags {
                 body["tags"] = serde_json::Value::Array(
@@ -303,8 +304,9 @@ pub async fn run(
             namespace,
             rel_types,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut qs = vec![];
-            if let Some(ns) = namespace {
+            if let Some(ns) = ns {
                 qs.push(format!("namespace={ns}"));
             }
             if let Some(rt) = rel_types {
@@ -326,8 +328,9 @@ pub async fn run(
         }
 
         KnowledgeSubcommand::Delete { path, namespace } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut qs = vec![];
-            if let Some(ns) = namespace {
+            if let Some(ns) = ns {
                 qs.push(format!("namespace={ns}"));
             }
             let query = if qs.is_empty() {
@@ -350,8 +353,9 @@ pub async fn run(
             namespace,
             reason,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut qs = vec![];
-            if let Some(ns) = namespace {
+            if let Some(ns) = ns {
                 qs.push(format!("namespace={ns}"));
             }
             if let Some(r) = reason {
@@ -376,8 +380,9 @@ pub async fn run(
         }
 
         KnowledgeSubcommand::Unarchive { path, namespace } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut qs = vec![];
-            if let Some(ns) = namespace {
+            if let Some(ns) = ns {
                 qs.push(format!("namespace={ns}"));
             }
             let query = if qs.is_empty() {
@@ -437,9 +442,10 @@ pub async fn run(
             content,
             namespace,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({ "kind": kind, "value": content });
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             let v = client
                 .post_project_json(&format!("/knowledge/{path}/append"), Some(&body))
@@ -456,9 +462,10 @@ pub async fn run(
             new_path,
             namespace,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({ "new_path": new_path });
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             let v = client
                 .post_project_json(&format!("/knowledge/{path}/rename"), Some(&body))
@@ -476,15 +483,16 @@ pub async fn run(
             new_project,
             namespace,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({});
-            if let Some(ns) = new_namespace {
-                body["new_namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = new_namespace.as_deref() {
+                body["new_namespace"] = serde_json::Value::String(ns.to_owned());
             }
             if let Some(np) = new_project {
                 body["new_project"] = serde_json::Value::String(np.clone());
             }
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             let v = client
                 .post_project_json(&format!("/knowledge/{path}/move"), Some(&body))
@@ -526,9 +534,10 @@ pub async fn run(
             kind,
             namespace,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({ "kind": kind });
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             let v = client
                 .patch_project_json(&format!("/knowledge/{path}/kind"), Some(&body))
@@ -565,6 +574,7 @@ pub async fn run(
             remove,
             namespace,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({});
             if !set.is_empty() {
                 let map: HashMap<String, String> = set
@@ -581,8 +591,8 @@ pub async fn run(
                         .collect(),
                 );
             }
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             let v = client
                 .patch_project_json(&format!("/knowledge/{path}/metadata"), Some(&body))
@@ -601,6 +611,7 @@ pub async fn run(
             instruction,
             namespace,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({ "source_path": source_path });
             if let Some(tp) = target_path {
                 body["target_path"] = serde_json::Value::String(tp.clone());
@@ -611,8 +622,8 @@ pub async fn run(
             if let Some(i) = instruction {
                 body["instruction"] = serde_json::Value::String(i.clone());
             }
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             let v = client
                 .post_project_json("/knowledge/promote", Some(&body))
@@ -631,6 +642,7 @@ pub async fn run(
             target_kind,
             namespace,
         } => {
+            let ns = namespace.as_deref().or(client.namespace.as_deref());
             let mut body = serde_json::json!({
                 "source_paths": source_paths,
                 "target_path": target_path,
@@ -639,8 +651,8 @@ pub async fn run(
             if let Some(tk) = target_kind {
                 body["target_kind"] = serde_json::Value::String(tk.clone());
             }
-            if let Some(ns) = namespace {
-                body["namespace"] = serde_json::Value::String(ns.clone());
+            if let Some(ns) = ns {
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             let v = client
                 .post_project_json("/knowledge/consolidate", Some(&body))

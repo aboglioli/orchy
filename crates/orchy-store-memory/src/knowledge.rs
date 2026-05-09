@@ -62,8 +62,9 @@ impl KnowledgeStore for MemoryKnowledgeStore {
     ) -> Result<Option<Knowledge>> {
         Ok(self.state.knowledge_entries.iter().find_map(|entry| {
             let e = entry.value();
+            let project_match = project.is_none_or(|p| e.project() == Some(p));
             if e.org_id() == org
-                && e.project() == project
+                && project_match
                 && e.namespace() == namespace
                 && e.path().as_str() == path.as_str()
             {

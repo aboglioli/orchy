@@ -209,16 +209,22 @@ impl KnowledgeStore for PgKnowledgeStore {
         namespace: &Namespace,
         path: &KnowledgePath,
     ) -> Result<Option<Knowledge>> {
-        let row = sqlx::query(&format!(
-            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE organization_id = $1 AND project IS NOT DISTINCT FROM $2 AND namespace = $3 AND path = $4"
-        ))
-        .bind(org.to_string())
-        .bind(project.map(|p| p.to_string()))
-        .bind(namespace.to_string())
-        .bind(path.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(crate::error::store_err)?;
+        let project_filter = if project.is_some() {
+            "AND project IS NOT DISTINCT FROM $2"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT {SELECT_COLUMNS} FROM knowledge_entries WHERE organization_id = $1 AND namespace = $3 AND path = $4 {project_filter}"
+        );
+        let row = sqlx::query(&sql)
+            .bind(org.to_string())
+            .bind(project.map(|p| p.to_string()))
+            .bind(namespace.to_string())
+            .bind(path.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(crate::error::store_err)?;
 
         row.map(|r| row_to_entry(&r)).transpose()
     }

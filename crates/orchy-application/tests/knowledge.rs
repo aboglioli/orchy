@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use orchy_application::{
     Application, ApplicationDeps, ApplicationError, ArchiveKnowledgeCommand,
-    DeleteKnowledgeCommand, ListKnowledgeCommand, ReadKnowledgeCommand, UnarchiveKnowledgeCommand,
-    WriteKnowledgeCommand,
+    DeleteKnowledgeCommand, ListKnowledgeCommand, PatchKnowledgeMetadataCommand,
+    ReadKnowledgeCommand, SearchKnowledgeCommand, UnarchiveKnowledgeCommand, WriteKnowledgeCommand,
 };
 use orchy_core::agent::AgentStore;
 use orchy_core::api_key::{
@@ -335,4 +335,205 @@ async fn temporal_validity_excludes_expired() {
         !paths.contains(&"expired-entry"),
         "expired entry should be excluded: {paths:?}"
     );
+}
+
+// ─── search finds matching entries ─────────────────────────────────────────
+
+#[tokio::test]
+async fn search_finds_matching_entries() {
+    let s = mem();
+    let app = build_app(&s);
+
+    app.write_knowledge
+        .execute(write_cmd(
+            "search-one",
+            "note",
+            "Alpha",
+            "unique zebra content",
+        ))
+        .await
+        .unwrap();
+    app.write_knowledge
+        .execute(write_cmd(
+            "search-two",
+            "decision",
+            "Beta",
+            "unrelated text",
+        ))
+        .await
+        .unwrap();
+    app.write_knowledge
+        .execute(write_cmd(
+            "search-three",
+            "note",
+            "Gamma",
+            "also zebra here",
+        ))
+        .await
+        .unwrap();
+
+    let results = app
+        .search_knowledge
+        .execute(SearchKnowledgeCommand {
+            org_id: "default".into(),
+            project: Some("test".into()),
+            query: "zebra".into(),
+            kind: Some("note".into()),
+            limit: Some(10),
+            namespace: None,
+            min_score: None,
+            anchor_kind: None,
+            anchor_id: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 2, "expected 2 note entries matching zebra");
+    let paths: Vec<&str> = results.iter().map(|k| k.path.as_str()).collect();
+    assert!(paths.contains(&"search-one"));
+    assert!(paths.contains(&"search-three"));
+}
+
+// ─── search returns empty for no matches ────────────────────────────────────
+
+#[tokio::test]
+async fn search_returns_empty_for_no_matches() {
+    let s = mem();
+    let app = build_app(&s);
+
+    app.write_knowledge
+        .execute(write_cmd("only-entry", "note", "Only", "content"))
+        .await
+        .unwrap();
+
+    let results = app
+        .search_knowledge
+        .execute(SearchKnowledgeCommand {
+            org_id: "default".into(),
+            project: Some("test".into()),
+            query: "nonexistent-phrase-xyz".into(),
+            kind: None,
+            limit: Some(10),
+            namespace: None,
+            min_score: None,
+            anchor_kind: None,
+            anchor_id: None,
+            task_id: None,
+        })
+        .await
+        .unwrap();
+    assert!(results.is_empty(), "no results for unmatched query");
+}
+
+// ─── patch meta merges and removes metadata ─────────────────────────────────
+
+#[tokio::test]
+async fn patch_meta_merges_and_removes_keys() {
+    let s = mem();
+    let app = build_app(&s);
+
+    app.write_knowledge
+        .execute(WriteKnowledgeCommand {
+            metadata: Some(
+                [("a".into(), "1".into()), ("b".into(), "2".into())]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..write_cmd("patchable", "note", "Patchable", "data")
+        })
+        .await
+        .unwrap();
+
+    let updated = app
+        .patch_knowledge_metadata
+        .execute(PatchKnowledgeMetadataCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "patchable".into(),
+            set: [("c".into(), "3".into())].into_iter().collect(),
+            remove: vec!["b".into()],
+            version: None,
+            valid_from: None,
+            valid_until: None,
+        })
+        .await
+        .unwrap();
+
+    let meta = &updated.metadata;
+    assert_eq!(meta.get("a").map(|s| s.as_str()), Some("1"));
+    assert!(meta.get("b").is_none(), "key b should be removed");
+    assert_eq!(meta.get("c").map(|s| s.as_str()), Some("3"));
+}
+
+// ─── patch meta preserves unrelated metadata ────────────────────────────────
+
+#[tokio::test]
+async fn patch_meta_preserves_unrelated_metadata() {
+    let s = mem();
+    let app = build_app(&s);
+
+    app.write_knowledge
+        .execute(WriteKnowledgeCommand {
+            metadata: Some([("keep".into(), "me".into())].into_iter().collect()),
+            ..write_cmd("keepable", "note", "Keepable", "data")
+        })
+        .await
+        .unwrap();
+
+    let updated = app
+        .patch_knowledge_metadata
+        .execute(PatchKnowledgeMetadataCommand {
+            org_id: "default".into(),
+            project: "test".into(),
+            namespace: None,
+            path: "keepable".into(),
+            set: [("add".into(), "new".into())].into_iter().collect(),
+            remove: vec![],
+            version: None,
+            valid_from: None,
+            valid_until: None,
+        })
+        .await
+        .unwrap();
+
+    let meta = &updated.metadata;
+    assert_eq!(meta.get("keep").map(|s| s.as_str()), Some("me"));
+    assert_eq!(meta.get("add").map(|s| s.as_str()), Some("new"));
+}
+
+// ─── poll updates returns events after writes ───────────────────────────────
+
+#[tokio::test]
+async fn poll_updates_returns_events_after_write() {
+    let s = mem();
+    let app = build_app(&s);
+
+    let before = chrono::Utc::now().to_rfc3339();
+
+    app.write_knowledge
+        .execute(write_cmd("pollable", "note", "Pollable", "eventful"))
+        .await
+        .unwrap();
+
+    let events = app
+        .poll_updates
+        .execute(orchy_application::PollUpdatesCommand {
+            organization: "default".into(),
+            since: before,
+            limit: Some(20),
+            topics: None,
+            namespace_prefix: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        !events.is_empty(),
+        "should return at least one event after writing knowledge"
+    );
+    let has_knowledge_event = events
+        .iter()
+        .any(|e| e.topic().to_string().contains("knowledge"));
+    assert!(has_knowledge_event, "should include knowledge event");
 }

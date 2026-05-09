@@ -473,7 +473,7 @@ impl Application {
             add_dependency: AddDependency::new(Arc::clone(&tasks), Arc::clone(&edges)),
             remove_dependency: RemoveDependency::new(Arc::clone(&tasks), Arc::clone(&edges)),
 
-            add_edge: AddEdge::new(Arc::clone(&edges)),
+            add_edge: AddEdge::new(Arc::clone(&edges), Arc::clone(&knowledge)),
             assemble_context: AssembleContext::new(
                 Arc::clone(&edges),
                 Arc::clone(&tasks),
