@@ -120,9 +120,9 @@ async fn resolve_knowledge(
         && let Ok(Some(entry)) = knowledge
             .find_by_path(org_id, None, &Namespace::root(), &path)
             .await
-        {
-            return Ok(entry.id().to_string());
-        }
+    {
+        return Ok(entry.id().to_string());
+    }
     Ok(id.to_owned())
 }
 
