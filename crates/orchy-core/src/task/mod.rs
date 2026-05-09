@@ -99,7 +99,6 @@ impl TaskStatus {
                 | (Pending, Blocked)
                 | (Pending, Cancelled)
                 | (Blocked, Pending)
-                | (Blocked, Completed)
                 | (Blocked, Cancelled)
                 | (Claimed, InProgress)
                 | (Claimed, Completed)
@@ -107,7 +106,6 @@ impl TaskStatus {
                 | (Claimed, Pending)
                 | (Claimed, Failed)
                 | (Claimed, Cancelled)
-                | (InProgress, Claimed)
                 | (InProgress, Blocked)
                 | (InProgress, Completed)
                 | (InProgress, Failed)
@@ -410,7 +408,13 @@ impl Task {
     }
 
     pub fn auto_complete(&mut self, summary: String) -> DomainResult<()> {
-        self.status = self.status.transition_to(TaskStatus::Completed)?;
+        if self.status != TaskStatus::Blocked && self.status != TaskStatus::Claimed {
+            return Err(DomainError::invalid_transition(
+                self.status.to_string(),
+                TaskStatus::Completed.to_string(),
+            ));
+        }
+        self.status = TaskStatus::Completed;
         self.result_summary = Some(summary.clone());
         self.updated_at = Utc::now();
         self.version += 1;
@@ -939,7 +943,6 @@ mod tests {
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::InProgress));
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Completed));
         assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Failed));
-        assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Claimed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Completed));
         assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Failed));
     }
@@ -971,6 +974,8 @@ mod tests {
         assert!(!TaskStatus::Completed.can_transition_to(&TaskStatus::Pending));
         assert!(!TaskStatus::Failed.can_transition_to(&TaskStatus::Pending));
         assert!(!TaskStatus::Blocked.can_transition_to(&TaskStatus::Claimed));
+        assert!(!TaskStatus::Blocked.can_transition_to(&TaskStatus::Completed));
+        assert!(!TaskStatus::InProgress.can_transition_to(&TaskStatus::Claimed));
     }
 
     #[test]
