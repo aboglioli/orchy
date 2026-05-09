@@ -262,6 +262,11 @@ add_edge(from_kind="knowledge", from_id="evidence-001",
          rel_type="supported_by")
 ```
 
+**Knowledge edge resolution:** when `add_edge` references a knowledge entry by
+path (e.g. `from_id="auth/decision"`), the server resolves it to the entry's
+UUID before storing. This guarantees edges survive renames and moves.
+If the entry doesn't exist yet, the path is stored as-is as a fallback.
+
 ---
 
 ### Traversal and Context Tools
@@ -357,9 +362,19 @@ Pending → Claimed → InProgress → Completed
 
 **Assignment** is exclusive: only one agent holds a task at a time via the
 `assigned_to` field. Claiming reserves it; starting moves it to in-progress;
-completing, failing, or cancelling terminates it. Tasks become stale after
-inactivity (`stale_after_secs`), making them claimable by other agents.
-Use `touch_task` to keep long-running work alive.
+completing, failing, or cancelling terminates it.
+
+**Stale task reclaim:** when an agent disconnects, claimed or in-progress
+tasks become stale after `stale_after_secs` of inactivity (no `touch_task`
+calls). Other agents can then reclaim them via `get_next_task` or
+`claim_task` — the new claimant takes ownership and the task resets to
+`claimed`. Use `touch_task` to keep long-running work alive.
+
+**State machine guards:**
+- `Blocked` can only transition to `Pending` (unblock) or `Cancelled`
+- `Pending` cannot complete directly — must be claimed and started first
+  (exception: `auto_complete` for split-task parents)
+- `Completed`, `Failed`, `Cancelled` are terminal (archive only)
 
 **Ownership** (via `owned_by` edge) is semantic — who is responsible for the
 resource. This survives task reassignment and persists after completion.
@@ -424,8 +439,11 @@ centeric tools (`send_message`, `check_mailbox`, `list_conversation`) instead.
 
 1. `register_agent(alias, project, description)` — roles auto-assigned from task demand. Org derived from API key.
 2. `get_agent_context` — everything in one call: agent info, project, inbox, pending tasks, skills, handoff context
-3. `get_next_task` — claim or peek the next available task matching your roles
-4. `heartbeat` every ~30s; on timeout: tasks become stale, locks freed
+3. `get_next_task` — claim (`claim: true`, default) or peek (`claim: false`) the next available task matching your roles
+4. `heartbeat` every ~30s; on timeout: agent becomes stale, tasks become reclaimable, locks freed
+5. **Disconnect recovery:** when an agent disconnects, its claimed/in-progress
+   tasks go stale after `stale_after_secs`. Other agents reclaim them via
+   `get_next_task`. `touch_task` prevents staleness for long-running work.
 
 ### Resource locking
 
@@ -482,6 +500,12 @@ orchy message send --to broadcast --body "..."
 orchy edge add --from-kind task --from-id <id> --to-kind knowledge --to-id <id> --rel-type produces
 orchy edge query --anchor-kind task --anchor-id <id> --json
 orchy lock acquire myfile.rs --ttl 120
+
+# Namespace-aware operations (global flag, place before subcommand)
+orchy --namespace /backend task create --title "Backend task" --description "..."
+orchy --namespace /backend knowledge write config/db --kind config --title "DB" --content "..."
+orchy agent switch <alias> --namespace /backend/auth     # jump between namespaces
+orchy message send --to ns:/backend --body "..."       # send to namespace
 ```
 
 Full command reference: `orchy --help` / `orchy <domain> --help`.
@@ -655,7 +679,7 @@ Creates `merged_from` edges from new task to each source.
 
 | Tool | Session | Description |
 |------|---------|-------------|
-| `get_next_task` | yes | Claim or peek the next available task matching your roles. |
+| `get_next_task` | yes | Claim or peek the next available task. `claim: true` (default) claims; `claim: false` peeks. Includes stale tasks from disconnected agents. |
 | `get_task` | yes | Get a task by ID with full context (ancestors + children + optional materialization). |
 | `list_tasks` | yes | List tasks filtered by namespace, status, and/or parent. |
 | `claim_task` | yes | Claim a specific task for the session agent. |
@@ -667,7 +691,7 @@ Creates `merged_from` edges from new task to each source.
 | `release_task` | yes | Release a claimed or in-progress task back to pending. |
 | `assign_task` | yes | Reassign a claimed/in-progress task to another agent. |
 | `unblock_task` | yes | Manually unblock a blocked task. |
-| `touch_task` | yes | Update last_activity_at to prevent staleness. Call periodically for long-running work. |
+| `touch_task` | yes | Reset last_activity_at to prevent staleness. Call every ~60s for long-running work. Stale tasks become reclaimable by other agents. |
 | `archive_task` | yes | Archive a completed/failed/cancelled task. Hidden from listings. |
 | `unarchive_task` | yes | Restore an archived task. |
 
@@ -1058,7 +1082,7 @@ with inlined peer data (no separate fetches needed).
 |-----------|----------|-------------|
 | `anchor_kind` | yes | `task`, `knowledge`, `agent`, `message` |
 | `anchor_id` | yes | UUID for task/agent/message; path for knowledge |
-| `rel_types` | no | Filter relation types. Empty or omit = all. Aliases accepted. |
+| `rel_types` | no | Filter relation types. Omit for sensible defaults per anchor kind: tasks get work edges (depends_on, spawns, produces, derived_from, etc.), knowledge gets info edges (produces, derived_from, supported_by, etc.). Aliases accepted. |
 | `direction` | no | `outgoing`, `incoming`, `both` (default) |
 | `max_depth` | no | Hop limit (default 1, max recommended 5) |
 | `as_of` | no | ISO8601 timestamp — see graph state at a past point in time |

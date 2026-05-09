@@ -265,8 +265,21 @@ Blocked   Failed     Failed
 Cancelled Cancelled  Cancelled
 ```
 
-Also: `Claimed -> Blocked`, `InProgress -> Blocked` (for split_task).
-`Blocked -> Pending` (unblock). Parent tasks auto-complete when all children finish.
+Additional transitions:
+- `Claimed -> Blocked`, `InProgress -> Blocked` (split_task)
+- `Blocked -> Pending` (unblock, manual or auto on dependency complete)
+- `Claimed -> Completed` (auto_complete when all children finish)
+
+**Stale task reclaim:** When an agent disconnects, claimed or in-progress
+  tasks become stale after `stale_after_secs` of inactivity. Other agents can
+  then claim them via `get_next_task` or `claim_task`. The new assignee takes
+  over and the task moves to `claimed` state. `touch_task` keeps long-running
+  work alive by resetting the staleness timer.
+
+**Invalid transitions enforced:**
+  - `Blocked` can only go to `Pending` (unblock) or `Cancelled`
+  - `Completed`/`Failed`/`Cancelled` are terminal (except archive)
+  - `InProgress` cannot be directly reclaimed (must go stale first)
 
 ### Other Patterns
 
@@ -307,11 +320,13 @@ pending tasks in one call.
 
 When an agent stops heartbeating or times out:
 1. Agent status becomes `stale` (derived from `last_seen`)
-2. Stale tasks become claimable by other agents (first-writer-wins)
-3. Resource locks are released
+2. Claimed or in-progress tasks become stale after `stale_after_secs` of no
+   activity. Other agents can reclaim them — the new claimant takes ownership.
+3. Resource locks held by the agent are released
 
-No automatic task release on disconnect. Tasks must be explicitly released
-or become stale through inactivity.
+No automatic task release on disconnect. Tasks stay assigned until they
+become stale and another agent claims them, or until explicitly released.
+Use `touch_task` to prevent staleness for long-running work.
 
 ## Agent Lifecycle
 
@@ -357,7 +372,8 @@ orchy agent register --alias coder-1 --description "Backend dev"
 
 **Working:**
 ```bash
-orchy task next --json                          # peek or claim next task
+orchy task next --json                          # claim next task (default)
+orchy task next --claim false --json            # peek only, don't claim
 orchy task claim <id>
 orchy task start <id>
 orchy task touch <id>                           # keep-alive for long-running work
@@ -471,6 +487,16 @@ A "janitor" agent can compact and reorganize:
   and lock_resource. Alias uniqueness enforced per `(org, project, alias)`.
 - **Namespace mark-read via receipts** — namespace-targeted messages create receipts
   on read, enabling consistent mark_read behavior with other logical targets.
+- **Knowledge paths in edges resolved to UUIDs** — `add_edge` resolves knowledge
+  paths to UUIDs at creation time so edges don't break when entries are renamed
+  or moved. If the entry can't be found (e.g. doesn't exist yet), the path is
+  stored as-is as a fallback.
+- **Default relation types per anchor kind** — `query_relations` (and inlined
+  neighborhood queries) filter edges to relevant types by default:
+  - Task anchors: depends_on, spawns, implements, produces, supersedes, merged_from, derived_from, invalidates, contradicted_by
+  - Knowledge anchors: produces, supported_by, derived_from, invalidates
+  - Agent anchors: owned_by, reviewed_by
+  Pass explicit `rel_types` to override.
 
 ## Configuration
 
