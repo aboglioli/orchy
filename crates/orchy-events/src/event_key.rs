@@ -12,7 +12,7 @@ impl EventKey {
     pub fn new(s: impl Into<String>) -> Result<Self> {
         let s = s.into();
         if s.len() > 1024 {
-            return Err(Error::InvalidPayload(
+            return Err(Error::InvalidEventKey(
                 "event key must not exceed 1024 characters".into(),
             ));
         }

@@ -17,6 +17,9 @@ pub enum Error {
     #[error("invalid payload: {0}")]
     InvalidPayload(String),
 
+    #[error("invalid event key: {0}")]
+    InvalidEventKey(String),
+
     #[error("invalid consumer group id: {0}")]
     InvalidConsumerGroupId(String),
 
