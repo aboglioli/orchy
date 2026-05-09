@@ -3,9 +3,9 @@ mod either;
 mod noop;
 mod once;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
-
-use async_trait::async_trait;
 
 use crate::error::Result;
 
@@ -14,34 +14,54 @@ pub use batched::{AckBuffer, AckBufferConfig, BatchFlusher, BatchedAcker};
 pub use noop::NoopAcker;
 pub use once::OnceAcker;
 
-#[async_trait]
 pub trait Acker: Send + Sync {
-    async fn ack(&self) -> Result<()>;
-    async fn nack(&self) -> Result<()>;
+    fn ack(&self) -> impl Future<Output = Result<()>> + Send;
+    fn nack(&self) -> impl Future<Output = Result<()>> + Send;
 }
 
-#[async_trait]
 impl<T: Acker + ?Sized> Acker for Arc<T> {
-    async fn ack(&self) -> Result<()> {
-        (**self).ack().await
+    fn ack(&self) -> impl Future<Output = Result<()>> + Send {
+        (**self).ack()
     }
-    async fn nack(&self) -> Result<()> {
-        (**self).nack().await
+    fn nack(&self) -> impl Future<Output = Result<()>> + Send {
+        (**self).nack()
     }
 }
 
-#[async_trait]
 impl<T: Acker + ?Sized> Acker for Box<T> {
-    async fn ack(&self) -> Result<()> {
-        (**self).ack().await
+    fn ack(&self) -> impl Future<Output = Result<()>> + Send {
+        (**self).ack()
     }
-    async fn nack(&self) -> Result<()> {
-        (**self).nack().await
+    fn nack(&self) -> impl Future<Output = Result<()>> + Send {
+        (**self).nack()
     }
 }
 
-pub type BoxAcker = Box<dyn Acker + Send + Sync>;
-pub type ArcAcker = Arc<dyn Acker + Send + Sync>;
+pub trait DynAcker: Send + Sync {
+    fn ack_dyn<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+    fn nack_dyn<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+}
+
+impl<T: Acker + ?Sized> DynAcker for T {
+    fn ack_dyn<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(<Self as Acker>::ack(self))
+    }
+    fn nack_dyn<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(<Self as Acker>::nack(self))
+    }
+}
+
+pub type BoxAcker = Box<dyn DynAcker>;
+pub type ArcAcker = Arc<dyn DynAcker>;
+
+impl Acker for dyn DynAcker + '_ {
+    fn ack(&self) -> impl Future<Output = Result<()>> + Send {
+        DynAcker::ack_dyn(self)
+    }
+    fn nack(&self) -> impl Future<Output = Result<()>> + Send {
+        DynAcker::nack_dyn(self)
+    }
+}
 
 pub trait AckerExt: Acker + Sized + 'static {
     fn into_boxed(self) -> BoxAcker {
@@ -66,7 +86,6 @@ mod tests {
         nacks: Arc<AtomicUsize>,
     }
 
-    #[async_trait]
     impl Acker for CountingAcker {
         async fn ack(&self) -> Result<()> {
             self.acks.fetch_add(1, Ordering::SeqCst);

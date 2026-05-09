@@ -58,7 +58,6 @@ impl SqsWriter {
     }
 }
 
-#[async_trait]
 impl Writer for SqsWriter {
     async fn write(&self, event: &Event) -> Result<()> {
         let body = Self::serialize_body(event)?;

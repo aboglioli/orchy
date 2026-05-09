@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use rdkafka::TopicPartitionList;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 
@@ -37,7 +35,6 @@ impl KafkaFlusher {
     }
 }
 
-#[async_trait]
 impl BatchFlusher for KafkaFlusher {
     type Token = KafkaOffsetToken;
 

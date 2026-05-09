@@ -143,7 +143,6 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use async_trait::async_trait;
     use futures::Stream;
 
     use crate::event::Event;
@@ -163,7 +162,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Reader for VecReader {
         type Acker = NoopAcker;
         type Stream = Pin<Box<dyn Stream<Item = Result<Message<NoopAcker>>> + Send>>;
@@ -186,7 +184,6 @@ mod tests {
         count: Arc<AtomicUsize>,
     }
 
-    #[async_trait]
     impl Handler for CountingHandler {
         fn id(&self) -> &str {
             &self.id
@@ -202,7 +199,6 @@ mod tests {
         count: Arc<AtomicUsize>,
     }
 
-    #[async_trait]
     impl Handler for FailingHandler {
         fn id(&self) -> &str {
             &self.id
@@ -294,7 +290,6 @@ mod tests {
     #[tokio::test]
     async fn handler_timeout_yields_nack() {
         struct SlowHandler;
-        #[async_trait]
         impl Handler for SlowHandler {
             fn id(&self) -> &str {
                 "slow"

@@ -62,14 +62,11 @@ impl<A: Acker> Message<A> {
 mod tests {
     use super::*;
 
-    use async_trait::async_trait;
-
     use crate::io::acker::NoopAcker;
     use crate::payload::Payload;
 
     struct OtherAcker;
 
-    #[async_trait]
     impl Acker for OtherAcker {
         async fn ack(&self) -> Result<()> {
             Ok(())

@@ -53,7 +53,6 @@ impl Stream for SqsStream {
     }
 }
 
-#[async_trait]
 impl Reader for SqsReader {
     type Acker = BatchedAcker<String>;
     type Stream = SqsStream;

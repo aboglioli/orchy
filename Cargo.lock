@@ -2458,7 +2458,6 @@ dependencies = [
 name = "orchy-events"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "chrono",
  "either",
  "futures",

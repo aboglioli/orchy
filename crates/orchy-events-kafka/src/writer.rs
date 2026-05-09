@@ -42,7 +42,6 @@ impl KafkaWriter {
     }
 }
 
-#[async_trait]
 impl Writer for KafkaWriter {
     async fn write(&self, event: &Event) -> Result<()> {
         let body = Self::body(event)?;

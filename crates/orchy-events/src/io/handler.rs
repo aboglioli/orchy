@@ -1,38 +1,62 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
-
-use async_trait::async_trait;
 
 use crate::error::Result;
 use crate::event::Event;
 
-pub type BoxHandler = Box<dyn Handler + Send + Sync>;
-pub type ArcHandler = Arc<dyn Handler + Send + Sync>;
-pub type BoxFilter = Box<dyn Filter + Send + Sync>;
-pub type ArcFilter = Arc<dyn Filter + Send + Sync>;
-
-#[async_trait]
 pub trait Handler: Send + Sync {
     fn id(&self) -> &str;
-    async fn handle(&self, event: Event) -> Result<()>;
+    fn handle(&self, event: Event) -> impl Future<Output = Result<()>> + Send;
 }
 
-#[async_trait]
 impl<T: Handler + ?Sized> Handler for Arc<T> {
     fn id(&self) -> &str {
         (**self).id()
     }
-    async fn handle(&self, event: Event) -> Result<()> {
-        (**self).handle(event).await
+    fn handle(&self, event: Event) -> impl Future<Output = Result<()>> + Send {
+        (**self).handle(event)
     }
 }
 
-#[async_trait]
 impl<T: Handler + ?Sized> Handler for Box<T> {
     fn id(&self) -> &str {
         (**self).id()
     }
-    async fn handle(&self, event: Event) -> Result<()> {
-        (**self).handle(event).await
+    fn handle(&self, event: Event) -> impl Future<Output = Result<()>> + Send {
+        (**self).handle(event)
+    }
+}
+
+pub trait DynHandler: Send + Sync {
+    fn id_dyn(&self) -> &str;
+    fn handle_dyn<'a>(
+        &'a self,
+        event: Event,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+}
+
+impl<T: Handler + ?Sized> DynHandler for T {
+    fn id_dyn(&self) -> &str {
+        <Self as Handler>::id(self)
+    }
+    fn handle_dyn<'a>(
+        &'a self,
+        event: Event,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(<Self as Handler>::handle(self, event))
+    }
+}
+
+pub type BoxHandler = Box<dyn DynHandler>;
+pub type ArcHandler = Arc<dyn DynHandler>;
+
+impl Handler for dyn DynHandler + '_ {
+    fn id(&self) -> &str {
+        DynHandler::id_dyn(self)
+    }
+    fn handle(&self, event: Event) -> impl Future<Output = Result<()>> + Send {
+        DynHandler::handle_dyn(self, event)
     }
 }
 
@@ -64,6 +88,9 @@ impl<T: Filter + ?Sized> Filter for Box<T> {
     }
 }
 
+pub type BoxFilter = Box<dyn Filter>;
+pub type ArcFilter = Arc<dyn Filter>;
+
 pub trait FilterExt: Filter + Sized + 'static {
     fn into_boxed(self) -> BoxFilter {
         Box::new(self)
@@ -87,7 +114,6 @@ impl<H: Handler, F: Filter> FilteredHandler<H, F> {
     }
 }
 
-#[async_trait]
 impl<H: Handler, F: Filter> Handler for FilteredHandler<H, F> {
     fn id(&self) -> &str {
         self.handler.id()
@@ -114,7 +140,6 @@ mod tests {
         count: Arc<AtomicUsize>,
     }
 
-    #[async_trait]
     impl Handler for CountingHandler {
         fn id(&self) -> &str {
             &self.id

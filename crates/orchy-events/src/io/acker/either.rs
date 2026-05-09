@@ -1,10 +1,8 @@
-use async_trait::async_trait;
 use either::Either;
 
 use crate::error::Result;
 use crate::io::Acker;
 
-#[async_trait]
 impl<L: Acker, R: Acker> Acker for Either<L, R> {
     async fn ack(&self) -> Result<()> {
         match self {
@@ -33,7 +31,6 @@ mod tests {
         nack: Arc<AtomicUsize>,
     }
 
-    #[async_trait]
     impl Acker for Counting {
         async fn ack(&self) -> Result<()> {
             self.ack.fetch_add(1, Ordering::SeqCst);

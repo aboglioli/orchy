@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use aws_sdk_sqs::Client;
 use aws_sdk_sqs::types::{
     ChangeMessageVisibilityBatchRequestEntry, DeleteMessageBatchRequestEntry,
@@ -22,7 +20,6 @@ impl SqsFlusher {
     }
 }
 
-#[async_trait]
 impl BatchFlusher for SqsFlusher {
     type Token = String;
 

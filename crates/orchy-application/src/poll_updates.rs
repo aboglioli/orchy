@@ -7,7 +7,7 @@ use futures::StreamExt;
 
 use crate::error::ApplicationResult;
 use orchy_core::error::{Error, Result};
-use orchy_events::io::BoxReader;
+use orchy_events::io::{BoxReader, Reader};
 use orchy_events::{Event, Namespace, OrganizationId, Topic};
 
 pub struct PollUpdatesCommand {

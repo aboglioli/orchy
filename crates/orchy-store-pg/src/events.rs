@@ -87,7 +87,6 @@ async fn append_to_tx(conn: &mut PgConnection, event: &Event) -> EventResult<()>
     Ok(())
 }
 
-#[async_trait]
 impl Writer for PgEventWriter {
     async fn write(&self, event: &Event) -> EventResult<()> {
         append_to_pool(&self.pool, event).await
@@ -130,7 +129,6 @@ impl Writer for PgEventWriter {
     }
 }
 
-#[async_trait]
 impl<'tx> Writer for PgTxEventWriter<'tx> {
     async fn write(&self, event: &Event) -> EventResult<()> {
         let mut tx = self.tx.lock().await;

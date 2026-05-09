@@ -17,7 +17,6 @@ impl MemoryEventWriter {
     }
 }
 
-#[async_trait]
 impl Writer for MemoryEventWriter {
     async fn write(&self, event: &Event) -> orchy_events::Result<()> {
         let serialized = SerializedEvent::from_event(event)

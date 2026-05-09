@@ -53,7 +53,6 @@ pub struct PgAcker {
     seq: i64,
 }
 
-#[async_trait]
 impl Acker for PgAcker {
     async fn ack(&self) -> Result<()> {
         sqlx::query(
@@ -111,7 +110,6 @@ impl PgReader {
     }
 }
 
-#[async_trait]
 impl Reader for PgReader {
     type Acker = PgAckerVariant;
     type Stream = PgStream;

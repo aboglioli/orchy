@@ -54,7 +54,6 @@ pub(crate) fn write_events_in_tx(tx: &rusqlite::Transaction<'_>, events: &[Event
     Ok(())
 }
 
-#[async_trait]
 impl Writer for SqliteEventWriter {
     async fn write(&self, event: &Event) -> EventsResult<()> {
         let conn = Arc::clone(&self.conn);

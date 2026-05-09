@@ -51,7 +51,6 @@ pub struct SqliteAcker {
     seq: i64,
 }
 
-#[async_trait]
 impl Acker for SqliteAcker {
     async fn ack(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
@@ -108,7 +107,6 @@ impl SqliteReader {
     }
 }
 
-#[async_trait]
 impl Reader for SqliteReader {
     type Acker = SqliteAckerVariant;
     type Stream = SqliteStream;

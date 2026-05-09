@@ -35,7 +35,6 @@ pub struct MemoryAcker {
     next_offset: usize,
 }
 
-#[async_trait]
 impl Acker for MemoryAcker {
     async fn ack(&self) -> Result<()> {
         let mut g = self.offsets.write().await;
@@ -134,7 +133,6 @@ fn matches_start_position(
     }
 }
 
-#[async_trait]
 impl Reader for MemoryReader {
     type Acker = MemoryAckerVariant;
     type Stream = MemoryStream;

@@ -1,7 +1,7 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
@@ -9,12 +9,11 @@ use tokio::time::interval;
 use crate::error::{Error, Result};
 use crate::io::Acker;
 
-#[async_trait]
 pub trait BatchFlusher: Send + Sync {
     type Token: Send + Sync + Clone + 'static;
 
-    async fn flush(&self, acks: Vec<Self::Token>) -> Result<()>;
-    async fn flush_nack(&self, nacks: Vec<Self::Token>) -> Result<()>;
+    fn flush(&self, acks: Vec<Self::Token>) -> impl Future<Output = Result<()>> + Send;
+    fn flush_nack(&self, nacks: Vec<Self::Token>) -> impl Future<Output = Result<()>> + Send;
 }
 
 #[derive(Debug, Clone)]
@@ -161,7 +160,6 @@ impl<T: Send + Sync + Clone + 'static> BatchedAcker<T> {
     }
 }
 
-#[async_trait]
 impl<T: Send + Sync + Clone + 'static> Acker for BatchedAcker<T> {
     async fn ack(&self) -> Result<()> {
         self.tx
@@ -191,7 +189,6 @@ mod tests {
         nack_total: Arc<AtomicUsize>,
     }
 
-    #[async_trait]
     impl BatchFlusher for CountingFlusher {
         type Token = u64;
 

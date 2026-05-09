@@ -1,44 +1,90 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
-
-use async_trait::async_trait;
 
 use crate::error::Result;
 use crate::event::Event;
 
-pub type BoxWriter = Box<dyn Writer + Send + Sync>;
-pub type ArcWriter = Arc<dyn Writer + Send + Sync>;
-
-#[async_trait]
 pub trait Writer: Send + Sync {
-    async fn write(&self, event: &Event) -> Result<()>;
+    fn write<'a>(&'a self, event: &'a Event) -> impl Future<Output = Result<()>> + Send + 'a;
 
-    async fn write_all(&self, events: &[Event]) -> Result<()> {
-        for event in events {
-            self.write(event).await?;
+    fn write_all<'a>(
+        &'a self,
+        events: &'a [Event],
+    ) -> impl Future<Output = Result<()>> + Send + 'a {
+        async move {
+            for event in events {
+                self.write(event).await?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 }
 
-#[async_trait]
 impl<T: Writer + ?Sized> Writer for Arc<T> {
-    async fn write(&self, event: &Event) -> Result<()> {
-        (**self).write(event).await
+    fn write<'a>(&'a self, event: &'a Event) -> impl Future<Output = Result<()>> + Send + 'a {
+        (**self).write(event)
     }
 
-    async fn write_all(&self, events: &[Event]) -> Result<()> {
-        (**self).write_all(events).await
+    fn write_all<'a>(
+        &'a self,
+        events: &'a [Event],
+    ) -> impl Future<Output = Result<()>> + Send + 'a {
+        (**self).write_all(events)
     }
 }
 
-#[async_trait]
 impl<T: Writer + ?Sized> Writer for Box<T> {
-    async fn write(&self, event: &Event) -> Result<()> {
-        (**self).write(event).await
+    fn write<'a>(&'a self, event: &'a Event) -> impl Future<Output = Result<()>> + Send + 'a {
+        (**self).write(event)
     }
 
-    async fn write_all(&self, events: &[Event]) -> Result<()> {
-        (**self).write_all(events).await
+    fn write_all<'a>(
+        &'a self,
+        events: &'a [Event],
+    ) -> impl Future<Output = Result<()>> + Send + 'a {
+        (**self).write_all(events)
+    }
+}
+
+pub trait DynWriter: Send + Sync {
+    fn write_dyn<'a>(
+        &'a self,
+        event: &'a Event,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+    fn write_all_dyn<'a>(
+        &'a self,
+        events: &'a [Event],
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+}
+
+impl<T: Writer + ?Sized> DynWriter for T {
+    fn write_dyn<'a>(
+        &'a self,
+        event: &'a Event,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(<Self as Writer>::write(self, event))
+    }
+    fn write_all_dyn<'a>(
+        &'a self,
+        events: &'a [Event],
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(<Self as Writer>::write_all(self, events))
+    }
+}
+
+pub type BoxWriter = Box<dyn DynWriter>;
+pub type ArcWriter = Arc<dyn DynWriter>;
+
+impl Writer for dyn DynWriter + '_ {
+    fn write<'a>(&'a self, event: &'a Event) -> impl Future<Output = Result<()>> + Send + 'a {
+        DynWriter::write_dyn(self, event)
+    }
+    fn write_all<'a>(
+        &'a self,
+        events: &'a [Event],
+    ) -> impl Future<Output = Result<()>> + Send + 'a {
+        DynWriter::write_all_dyn(self, events)
     }
 }
 
@@ -66,7 +112,6 @@ mod tests {
         writes: Arc<AtomicUsize>,
     }
 
-    #[async_trait]
     impl Writer for CountingWriter {
         async fn write(&self, _: &Event) -> Result<()> {
             self.writes.fetch_add(1, Ordering::SeqCst);

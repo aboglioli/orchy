@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 use crate::error::Result;
@@ -21,7 +20,6 @@ impl<A: Acker> OnceAcker<A> {
     }
 }
 
-#[async_trait]
 impl<A: Acker> Acker for OnceAcker<A> {
     async fn ack(&self) -> Result<()> {
         let mut done = self.done.lock().await;

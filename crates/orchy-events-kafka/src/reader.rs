@@ -141,7 +141,6 @@ impl Stream for KafkaStream {
     }
 }
 
-#[async_trait]
 impl Reader for KafkaReader {
     type Acker = BatchedAcker<KafkaOffsetToken>;
     type Stream = KafkaStream;
