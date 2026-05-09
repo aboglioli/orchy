@@ -484,9 +484,8 @@ pub async fn run(cmd: &TaskSubcommand, client: &OrchyClient, config: &Config) ->
 
         TaskSubcommand::Next { claim, role } => {
             let mut qs = vec![];
-            if let Some(c) = claim {
-                qs.push(format!("claim={c}"));
-            }
+            let claim_val = claim.unwrap_or(true);
+            qs.push(format!("claim={claim_val}"));
             if let Some(aid) = &client.alias {
                 qs.push(format!("agent_id={aid}"));
             }
