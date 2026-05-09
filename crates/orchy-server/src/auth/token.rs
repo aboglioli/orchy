@@ -35,7 +35,7 @@ impl TokenEncoder for JwtTokenEncoder {
         let now = Utc::now();
         let claims = TokenClaims {
             sub: user_id.to_string(),
-            email: email.as_str().to_string(),
+            email: email.as_str().to_owned(),
             iat: now.timestamp(),
             exp: (now + self.duration).timestamp(),
         };

@@ -3,7 +3,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use tokio::sync::{RwLock, mpsc};

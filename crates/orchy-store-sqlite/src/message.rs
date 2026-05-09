@@ -44,16 +44,16 @@ impl MessageStore for SqliteMessageStore {
         let namespace = message.namespace().to_string();
         let from = message.from().to_string();
         let to = message.to().to_string();
-        let body = message.body().to_string();
+        let body = message.body().to_owned();
         let reply_to = message.reply_to().map(|id| id.to_string());
         let status = match message.status() {
             MessageStatus::Pending => "pending",
             MessageStatus::Delivered => "delivered",
             MessageStatus::Read => "read",
         }
-        .to_string();
+        .to_owned();
         let created_at = message.created_at().to_rfc3339();
-        let refs = serde_json::to_string(message.refs()).unwrap_or_else(|_| "[]".to_string());
+        let refs = serde_json::to_string(message.refs()).unwrap_or_else(|_| "[]".to_owned());
         let claimed_by = message.claimed_by().map(|id| id.to_string());
         let claimed_at = message.claimed_at().map(|dt| dt.to_rfc3339());
         let drained = message.drain_events();

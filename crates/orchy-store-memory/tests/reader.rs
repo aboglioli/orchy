@@ -47,7 +47,7 @@ async fn streaming_reads_events_in_order() {
     while let Some(msg) = stream.next().await {
         let msg = msg.unwrap();
         msg.ack().await.unwrap();
-        keys.push(msg.event().key().as_str().to_string());
+        keys.push(msg.event().key().as_str().to_owned());
     }
     assert_eq!(keys, vec!["k0", "k1", "k2"]);
 }
@@ -175,7 +175,7 @@ async fn topic_and_namespace_filters() {
     let mut stream = reader.read().await.unwrap();
     let mut keys = Vec::new();
     while let Some(msg) = stream.next().await {
-        keys.push(msg.unwrap().event().key().as_str().to_string());
+        keys.push(msg.unwrap().event().key().as_str().to_owned());
     }
     assert_eq!(keys, vec!["k0"]);
 }

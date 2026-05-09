@@ -47,7 +47,7 @@ impl EmbeddingsProvider for OpenAiEmbeddingsProvider {
     async fn embed(&self, text: &str) -> ApplicationResult<Vec<f32>> {
         let request = EmbeddingsRequest {
             model: &self.model,
-            input: Value::String(text.to_string()),
+            input: Value::String(text.to_owned()),
         };
 
         let response = self

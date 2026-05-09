@@ -62,7 +62,7 @@ impl PromoteKnowledge {
         let content = if let Some(inst) = cmd.instruction {
             format!("{}\n\n## Source\n\n{}", inst, source.content())
         } else {
-            source.content().to_string()
+            source.content().to_owned()
         };
 
         let target_path: KnowledgePath = cmd.target_path.parse::<KnowledgePath>()?;

@@ -50,10 +50,10 @@ impl From<&Agent> for AgentDto {
             project: a.project().to_string(),
             namespace: a.namespace().to_string(),
             roles: a.roles().to_vec(),
-            description: a.description().to_string(),
+            description: a.description().to_owned(),
             status: a
                 .derived_status(AGENT_IDLE_SECS, AGENT_STALE_SECS)
-                .to_string(),
+                .to_owned(),
             last_seen: a.last_seen().to_rfc3339(),
             connected_at: a.connected_at().to_rfc3339(),
             metadata: a.metadata().clone(),
@@ -98,16 +98,16 @@ impl From<&Task> for TaskDto {
             org_id: t.org_id().to_string(),
             project: t.project().to_string(),
             namespace: t.namespace().to_string(),
-            title: t.title().to_string(),
-            description: t.description().to_string(),
-            acceptance_criteria: t.acceptance_criteria().map(|s| s.to_string()),
+            title: t.title().to_owned(),
+            description: t.description().to_owned(),
+            acceptance_criteria: t.acceptance_criteria().map(|s| s.to_owned()),
             status: t.status().to_string(),
             priority: t.priority().to_string(),
             assigned_roles: t.assigned_roles().to_vec(),
             assigned_to: t.assigned_to().map(|id| id.to_string()),
             assigned_at: t.assigned_at().map(|dt| dt.to_rfc3339()),
             tags: t.tags().to_vec(),
-            result_summary: t.result_summary().map(|s| s.to_string()),
+            result_summary: t.result_summary().map(|s| s.to_owned()),
             created_by: t.created_by().map(|id| id.to_string()),
             archived: t.is_archived(),
             archived_at: t.archived_at(),
@@ -192,8 +192,8 @@ impl From<&Knowledge> for KnowledgeDto {
             namespace: k.namespace().to_string(),
             path: k.path().to_string(),
             kind: k.kind().to_string(),
-            title: k.title().to_string(),
-            content: k.content().to_string(),
+            title: k.title().to_owned(),
+            content: k.content().to_owned(),
             tags: k.tags().to_vec(),
             version: k.version().as_u64(),
             metadata: k.metadata().clone(),
@@ -238,14 +238,14 @@ impl From<&Message> for MessageDto {
             namespace: m.namespace().to_string(),
             from: m.from().to_string(),
             to: m.to().to_string(),
-            body: m.body().to_string(),
+            body: m.body().to_owned(),
             reply_to: m.reply_to().map(|id| id.to_string()),
             status: match m.status() {
                 MessageStatus::Pending => "pending",
                 MessageStatus::Delivered => "delivered",
                 MessageStatus::Read => "read",
             }
-            .to_string(),
+            .to_owned(),
             created_at: m.created_at().to_rfc3339(),
             refs: m
                 .refs()
@@ -277,7 +277,7 @@ impl From<&Project> for ProjectDto {
         Self {
             org_id: p.org_id().to_string(),
             id: p.id().to_string(),
-            description: p.description().to_string(),
+            description: p.description().to_owned(),
             metadata: p.metadata().clone(),
             created_at: p.created_at().to_rfc3339(),
             updated_at: p.updated_at().to_rfc3339(),
@@ -308,7 +308,7 @@ impl From<&ResourceLock> for ResourceLockDto {
             org_id: l.org_id().to_string(),
             project: l.project().to_string(),
             namespace: l.namespace().to_string(),
-            name: l.name().to_string(),
+            name: l.name().to_owned(),
             holder: l.holder().to_string(),
             acquired_at: l.acquired_at().to_rfc3339(),
             expires_at: l.expires_at().to_rfc3339(),
@@ -373,7 +373,7 @@ impl From<&Organization> for OrganizationDto {
     fn from(o: &Organization) -> Self {
         Self {
             id: o.id().to_string(),
-            name: o.name().to_string(),
+            name: o.name().to_owned(),
             created_at: o.created_at().to_rfc3339(),
             updated_at: o.updated_at().to_rfc3339(),
         }
@@ -394,7 +394,7 @@ impl From<&ApiKey> for ApiKeyDto {
     fn from(k: &ApiKey) -> Self {
         Self {
             id: k.id().to_string(),
-            name: k.name().to_string(),
+            name: k.name().to_owned(),
             key_prefix: k.key_prefix().to_string(),
             key_suffix: k.key_suffix().to_string(),
             is_active: k.is_active(),
@@ -441,14 +441,14 @@ impl From<&Edge> for EdgeDto {
         Self {
             id: e.id().to_string(),
             from_kind: e.from_kind().to_string(),
-            from_id: e.from_id().to_string(),
+            from_id: e.from_id().to_owned(),
             to_kind: e.to_kind().to_string(),
-            to_id: e.to_id().to_string(),
+            to_id: e.to_id().to_owned(),
             rel_type: e.rel_type().to_string(),
             created_at: e.created_at().to_rfc3339(),
             created_by: e.created_by().map(|a| a.to_string()),
             source_kind: e.source_kind().map(|k| k.to_string()),
-            source_id: e.source_id().map(|s| s.to_string()),
+            source_id: e.source_id().map(|s| s.to_owned()),
             valid_until: e.valid_until().map(|dt| dt.to_rfc3339()),
         }
     }
@@ -478,7 +478,7 @@ impl From<&User> for UserDto {
     fn from(u: &User) -> Self {
         Self {
             id: u.id().to_string(),
-            email: u.email().as_str().to_string(),
+            email: u.email().as_str().to_owned(),
             is_active: u.is_active(),
             is_platform_admin: u.is_platform_admin(),
             created_at: u.created_at().to_rfc3339(),

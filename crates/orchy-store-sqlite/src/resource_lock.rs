@@ -46,7 +46,7 @@ impl LockStore for SqliteLockStore {
         let org_owned = org.clone();
         let project_owned = project.clone();
         let namespace_owned = namespace.clone();
-        let name_owned = name.to_string();
+        let name_owned = name.to_owned();
         let holder_owned = holder.clone();
 
         let lock_opt = blocking_tx(&self.conn, move |tx| {
@@ -93,7 +93,7 @@ impl LockStore for SqliteLockStore {
         let org_id = lock.org_id().to_string();
         let project = lock.project().to_string();
         let namespace = lock.namespace().to_string();
-        let name = lock.name().to_string();
+        let name = lock.name().to_owned();
         let holder = lock.holder().to_string();
         let acquired_at = lock.acquired_at().to_rfc3339();
         let expires_at = lock.expires_at().to_rfc3339();
@@ -121,7 +121,7 @@ impl LockStore for SqliteLockStore {
         let org = org.to_string();
         let project = project.to_string();
         let namespace = namespace.to_string();
-        let name = name.to_string();
+        let name = name.to_owned();
         blocking(&self.conn, move |conn| {
             conn.query_row(
                 "SELECT organization_id, project, namespace, name, holder, acquired_at, expires_at
@@ -145,7 +145,7 @@ impl LockStore for SqliteLockStore {
         let org = org.to_string();
         let project = project.to_string();
         let namespace = namespace.to_string();
-        let name = name.to_string();
+        let name = name.to_owned();
         blocking(&self.conn, move |conn| {
             conn.execute(
                 "DELETE FROM resource_locks WHERE organization_id = ?1 AND project = ?2 AND namespace = ?3 AND name = ?4",

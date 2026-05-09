@@ -152,8 +152,8 @@ async fn change_roles_replaces_role_set() {
         })
         .await
         .unwrap();
-    assert!(agent.roles.contains(&"lead".to_string()));
-    assert!(agent.roles.contains(&"dev".to_string()));
+    assert!(agent.roles.contains(&"lead".to_owned()));
+    assert!(agent.roles.contains(&"dev".to_owned()));
     assert_eq!(agent.roles.len(), 2);
 }
 

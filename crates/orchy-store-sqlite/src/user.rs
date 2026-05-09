@@ -14,15 +14,15 @@ fn build_user(row: UserRow) -> Result<User> {
     let (id, email, password_hash, is_active, is_platform_admin, created_at, updated_at) = row;
     let id = UserId::from_str(&id).map_err(|e| {
         Error::Store(StoreError::Decode {
-            table: "users".to_string(),
-            column: "user_id".to_string(),
+            table: "users".to_owned(),
+            column: "user_id".to_owned(),
             cause: e.to_string(),
         })
     })?;
     let email = Email::new(&email).map_err(|e| {
         Error::Store(StoreError::Decode {
-            table: "users".to_string(),
-            column: "email".to_string(),
+            table: "users".to_owned(),
+            column: "email".to_owned(),
             cause: e.to_string(),
         })
     })?;
@@ -33,15 +33,15 @@ fn build_user(row: UserRow) -> Result<User> {
     })?;
     let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
         Error::Store(StoreError::Decode {
-            table: "users".to_string(),
-            column: "created_at".to_string(),
+            table: "users".to_owned(),
+            column: "created_at".to_owned(),
             cause: e.to_string(),
         })
     })?;
     let updated_at = updated_at.parse().map_err(|e: chrono::ParseError| {
         Error::Store(StoreError::Decode {
-            table: "users".to_string(),
-            column: "updated_at".to_string(),
+            table: "users".to_owned(),
+            column: "updated_at".to_owned(),
             cause: e.to_string(),
         })
     })?;
@@ -70,8 +70,8 @@ impl SqliteUserStore {
 impl UserStore for SqliteUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
         let id = user.id().to_string();
-        let email = user.email().as_str().to_string();
-        let password_hash = user.password_hash().as_str().to_string();
+        let email = user.email().as_str().to_owned();
+        let password_hash = user.password_hash().as_str().to_owned();
         let is_active = user.is_active() as i32;
         let is_platform_admin = user.is_platform_admin() as i32;
         let created_at = user.created_at().to_rfc3339();
@@ -126,7 +126,7 @@ impl UserStore for SqliteUserStore {
     }
 
     async fn find_by_email(&self, email: &Email) -> Result<Option<User>> {
-        let email = email.as_str().to_string();
+        let email = email.as_str().to_owned();
         let row = blocking(&self.conn, move |conn| {
             conn.query_row(
                 "SELECT id, email, password_hash, is_active, is_platform_admin, created_at, updated_at
@@ -225,7 +225,7 @@ mod tests {
         let hasher = NoopHasher;
 
         let org_id = OrganizationId::new("default").unwrap();
-        let mut org = Organization::new(org_id.clone(), "Default".to_string()).unwrap();
+        let mut org = Organization::new(org_id.clone(), "Default".to_owned()).unwrap();
         orgs.save(&mut org).await.unwrap();
 
         let password = PlainPassword::new("12345678").unwrap();

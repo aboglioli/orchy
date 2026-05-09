@@ -2,7 +2,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use rdkafka::ClientConfig;
 use rdkafka::Message as KafkaMessage;
@@ -217,7 +216,7 @@ impl Reader for KafkaReader {
                     }
                 };
                 let token = KafkaOffsetToken {
-                    topic: msg.topic().to_string(),
+                    topic: msg.topic().to_owned(),
                     partition: msg.partition(),
                     offset: msg.offset(),
                 };
@@ -262,27 +261,27 @@ fn deserialize_event_value(v: serde_json::Value) -> Result<SerializedEvent> {
         .get("id")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("id".into()))?
-        .to_string();
+        .to_owned();
     let organization = v
         .get("organization")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("organization".into()))?
-        .to_string();
+        .to_owned();
     let namespace = v
         .get("namespace")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("namespace".into()))?
-        .to_string();
+        .to_owned();
     let topic = v
         .get("topic")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("topic".into()))?
-        .to_string();
+        .to_owned();
     let key = v
         .get("key")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("key".into()))?
-        .to_string();
+        .to_owned();
     let payload = v
         .get("payload")
         .cloned()
@@ -291,7 +290,7 @@ fn deserialize_event_value(v: serde_json::Value) -> Result<SerializedEvent> {
         .get("content_type")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("content_type".into()))?
-        .to_string();
+        .to_owned();
     let metadata = v
         .get("metadata")
         .and_then(|x| serde_json::from_value(x.clone()).ok())

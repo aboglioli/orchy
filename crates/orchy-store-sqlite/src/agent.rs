@@ -33,13 +33,13 @@ impl SqliteAgentStore {
 impl AgentStore for SqliteAgentStore {
     async fn save(&self, agent: &mut Agent) -> Result<()> {
         let id = agent.id().to_string();
-        let alias = agent.alias().as_str().to_string();
+        let alias = agent.alias().as_str().to_owned();
         let org_id = agent.org_id().to_string();
         let project = agent.project().to_string();
         let namespace = agent.namespace().to_string();
         let roles_json = serde_json::to_string(agent.roles())
             .map_err(|e| Error::Store(StoreError::Serialization(format!("roles: {e}"))))?;
-        let description = agent.description().to_string();
+        let description = agent.description().to_owned();
         let last_seen = agent.last_seen().to_rfc3339();
         let connected_at = agent.connected_at().to_rfc3339();
         let metadata_json = serde_json::to_string(agent.metadata())
@@ -92,7 +92,7 @@ impl AgentStore for SqliteAgentStore {
     ) -> Result<Option<Agent>> {
         let org = org.to_string();
         let project = project.to_string();
-        let alias = alias.as_str().to_string();
+        let alias = alias.as_str().to_owned();
         blocking(&self.conn, move |conn| {
             let sql = format!(
                 "SELECT {SELECT_COLS} FROM agents WHERE organization_id = ?1 AND project = ?2 AND alias = ?3"

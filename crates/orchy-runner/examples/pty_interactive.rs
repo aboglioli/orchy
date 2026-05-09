@@ -36,23 +36,23 @@ async fn main() -> Result<()> {
     let (command, cmd_args) = if args.len() > 1 {
         (args[1].clone(), args[2..].to_vec())
     } else {
-        ("bash".to_string(), vec![])
+        ("bash".to_owned(), vec![])
     };
 
     let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into());
     let mut env = HashMap::new();
-    env.insert("TERM".to_string(), term);
+    env.insert("TERM".to_owned(), term);
 
     let (rows, cols) = crossterm::terminal::size()
         .map(|(c, r)| (r, c))
         .unwrap_or((24, 80));
 
     let config = RunnerConfig {
-        alias: "interactive".to_string(),
-        agent_type: "unknown".to_string(),
-        description: "interactive agent".to_string(),
-        url: "http://127.0.0.1:4310/mcp".to_string(),
-        project: "default".to_string(),
+        alias: "interactive".to_owned(),
+        agent_type: "unknown".to_owned(),
+        description: "interactive agent".to_owned(),
+        url: "http://127.0.0.1:4310/mcp".to_owned(),
+        project: "default".to_owned(),
         namespace: None,
         command: command.clone(),
         args: cmd_args,

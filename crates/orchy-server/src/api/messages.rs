@@ -147,7 +147,7 @@ async fn resolve_agent_id_for_messages(
         ApiError(
             StatusCode::BAD_REQUEST,
             "INVALID_PARAM",
-            "project query param is required when addressing agent by alias".to_string(),
+            "project query param is required when addressing agent by alias".to_owned(),
         )
     })?;
     let agent = container
@@ -155,8 +155,8 @@ async fn resolve_agent_id_for_messages(
         .resolve_agent
         .execute(ResolveAgentCommand {
             org_id: org.to_string(),
-            project: project.to_string(),
-            id_or_alias: id.to_string(),
+            project: project.to_owned(),
+            id_or_alias: id.to_owned(),
         })
         .await
         .map_err(ApiError::from)?;

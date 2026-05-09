@@ -63,7 +63,7 @@ impl PlainPassword {
             ));
         }
 
-        Ok(Self(s.to_string()))
+        Ok(Self(s.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -81,7 +81,7 @@ impl HashedPassword {
             return Err(DomainError::validation("password hash cannot be empty"));
         }
 
-        Ok(Self(s.to_string()))
+        Ok(Self(s.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {

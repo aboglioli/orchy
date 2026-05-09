@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
     let mut stdout = child
         .stdout
         .take()
-        .ok_or_else(|| orchy_runner::error::Error::Io("child stdout not available".to_string()))?;
+        .ok_or_else(|| orchy_runner::error::Error::Io("child stdout not available".to_owned()))?;
 
     println!("--- process spawned, reading output ---");
     println!();

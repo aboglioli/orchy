@@ -45,7 +45,7 @@ impl SwitchContext {
     pub async fn execute(&self, cmd: SwitchContextCommand) -> ApplicationResult<AgentDto> {
         if cmd.project.is_none() && cmd.namespace.is_none() {
             return Err(Error::invalid_input(
-                "at least one of project or namespace is required".to_string(),
+                "at least one of project or namespace is required".to_owned(),
             )
             .into());
         }

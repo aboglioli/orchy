@@ -92,7 +92,7 @@ impl OrchyHandler {
         match guard.as_ref() {
             Some(s) => Ok((s.agent_id.clone(), s.project.clone(), s.namespace.clone())),
             None => {
-                Err("no agent registered for this session; call register_agent first".to_string())
+                Err("no agent registered for this session; call register_agent first".to_owned())
             }
         }
     }
@@ -258,7 +258,7 @@ impl OrchyHandler {
 }
 
 pub(crate) fn parse_project(s: &str) -> Result<ProjectId, String> {
-    ProjectId::try_from(s.to_string()).map_err(|e| e.to_string())
+    ProjectId::try_from(s.to_owned()).map_err(|e| e.to_string())
 }
 
 pub(crate) fn parse_agent_id(s: &str) -> Result<AgentId, String> {

@@ -122,7 +122,7 @@ mod tests {
         consumer_group: Option<String>,
     ) -> SqsReaderParams {
         SqsReaderParams {
-            queue_url: "q".to_string(),
+            queue_url: "q".to_owned(),
             organization: org(),
             max_in_flight,
             visibility_timeout,
@@ -270,7 +270,7 @@ mod tests {
             StartFrom::Latest,
             None,
             None,
-            Some("g".to_string()),
+            Some("g".to_owned()),
         ));
         assert!(r.is_err());
     }

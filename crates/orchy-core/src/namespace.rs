@@ -33,12 +33,12 @@ impl TryFrom<String> for ProjectId {
     fn try_from(s: String) -> Result<Self, Self::Error> {
         if s.is_empty() {
             return Err(error::DomainError::validation(
-                "project must not be empty".to_string(),
+                "project must not be empty".to_owned(),
             ));
         }
         if s.contains('/') {
             return Err(error::DomainError::validation(
-                "project must be a single segment without slashes".to_string(),
+                "project must be a single segment without slashes".to_owned(),
             ));
         }
         for ch in s.chars() {
@@ -56,7 +56,7 @@ impl TryFrom<&str> for ProjectId {
     type Error = error::DomainError;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        Self::try_from(s.to_string())
+        Self::try_from(s.to_owned())
     }
 }
 
@@ -82,7 +82,7 @@ impl FromStr for ProjectId {
     type Err = error::DomainError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::try_from(s.to_string())
+        Self::try_from(s.to_owned())
     }
 }
 

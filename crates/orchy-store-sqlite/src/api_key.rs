@@ -29,10 +29,10 @@ impl ApiKeyStore for SqliteApiKeyStore {
     async fn save(&self, api_key: &mut ApiKey) -> Result<()> {
         let id = api_key.id().to_string();
         let org_id = api_key.org_id().to_string();
-        let name = api_key.name().to_string();
-        let key_hash = api_key.hashed_key().as_str().to_string();
-        let key_prefix = api_key.key_prefix().as_str().to_string();
-        let key_suffix = api_key.key_suffix().as_str().to_string();
+        let name = api_key.name().to_owned();
+        let key_hash = api_key.hashed_key().as_str().to_owned();
+        let key_prefix = api_key.key_prefix().as_str().to_owned();
+        let key_suffix = api_key.key_suffix().as_str().to_owned();
         let is_active = api_key.is_active() as i32;
         let created_at = api_key.created_at().to_rfc3339();
         let user_id = api_key.user_id().map(|u| u.to_string());
@@ -70,7 +70,7 @@ impl ApiKeyStore for SqliteApiKeyStore {
     }
 
     async fn find_by_hash(&self, hash: &HashedApiKey) -> Result<Option<ApiKey>> {
-        let hash = hash.as_str().to_string();
+        let hash = hash.as_str().to_owned();
         blocking(&self.conn, move |conn| {
             conn.query_row(
                 "SELECT id, organization_id, name, key_hash, key_prefix, key_suffix, is_active, created_at, user_id
@@ -152,8 +152,8 @@ fn build_api_key(row: ApiKeyRow) -> Result<ApiKey> {
             .map(ApiKeyId::from_uuid)
             .map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "api_keys".to_string(),
-                    column: "id".to_string(),
+                    table: "api_keys".to_owned(),
+                    column: "id".to_owned(),
                     cause: e.to_string(),
                 })
             })?,
@@ -167,8 +167,8 @@ fn build_api_key(row: ApiKeyRow) -> Result<ApiKey> {
             .transpose()
             .map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "api_keys".to_string(),
-                    column: "user_id".to_string(),
+                    table: "api_keys".to_owned(),
+                    column: "user_id".to_owned(),
                     cause: e.to_string(),
                 })
             })?,

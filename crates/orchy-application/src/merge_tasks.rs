@@ -184,7 +184,7 @@ impl MergeTasks {
                 )
                 .await?;
             for child_edge in child_edges {
-                let child_id = child_edge.to_id().to_string();
+                let child_id = child_edge.to_id().to_owned();
                 let mut new_edge = Edge::new(
                     org_id.clone(),
                     ResourceKind::Task,

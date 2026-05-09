@@ -76,7 +76,7 @@ pub async fn login(
         ApiError(
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL_ERROR",
-            "authentication not configured".to_string(),
+            "authentication not configured".to_owned(),
         )
     })?;
 
@@ -122,7 +122,7 @@ pub async fn me(
             ApiError(
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",
-                "invalid or missing token".to_string(),
+                "invalid or missing token".to_owned(),
             )
         })?;
 
@@ -156,7 +156,7 @@ pub async fn change_password(
             ApiError(
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",
-                "invalid or missing token".to_string(),
+                "invalid or missing token".to_owned(),
             )
         })?;
 
@@ -200,7 +200,7 @@ pub async fn invite_user(
             ApiError(
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",
-                "invalid or missing token".to_string(),
+                "invalid or missing token".to_owned(),
             )
         })?;
 
@@ -214,7 +214,7 @@ pub async fn invite_user(
             ApiError(
                 StatusCode::FORBIDDEN,
                 "FORBIDDEN",
-                "you don't have permission to invite users".to_string(),
+                "you don't have permission to invite users".to_owned(),
             )
         })?;
 

@@ -65,7 +65,7 @@ async fn register(h: &OrchyHandler, alias: &str, project: &str) -> String {
     .await
     .expect("register_agent should succeed");
     let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
-    parsed["agent"]["id"].as_str().unwrap().to_string()
+    parsed["agent"]["id"].as_str().unwrap().to_owned()
 }
 
 #[tokio::test]
@@ -116,7 +116,7 @@ async fn mcp_register_agent_idempotent_same_alias_resumes() {
     .await
     .unwrap();
     let parsed1: serde_json::Value = serde_json::from_str(&result1).unwrap();
-    let id1 = parsed1["agent"]["id"].as_str().unwrap().to_string();
+    let id1 = parsed1["agent"]["id"].as_str().unwrap().to_owned();
 
     let result2 = super::agent::register_agent(
         &handler,
@@ -133,7 +133,7 @@ async fn mcp_register_agent_idempotent_same_alias_resumes() {
     .await
     .unwrap();
     let parsed2: serde_json::Value = serde_json::from_str(&result2).unwrap();
-    let id2 = parsed2["agent"]["id"].as_str().unwrap().to_string();
+    let id2 = parsed2["agent"]["id"].as_str().unwrap().to_owned();
 
     assert_eq!(id1, id2, "same alias must resume same agent UUID");
 }
@@ -160,7 +160,7 @@ async fn mcp_claim_task_uses_session_agent() {
     .await
     .unwrap();
     let task: serde_json::Value = serde_json::from_str(&post_result).unwrap();
-    let task_id = task["id"].as_str().unwrap().to_string();
+    let task_id = task["id"].as_str().unwrap().to_owned();
 
     let claim_result = super::task::claim_task(
         &handler,
@@ -197,7 +197,7 @@ async fn mcp_query_relations_returns_neighborhood_with_linked_peers() {
     .await
     .unwrap();
     let task: serde_json::Value = serde_json::from_str(&post_result).unwrap();
-    let task_id = task["id"].as_str().unwrap().to_string();
+    let task_id = task["id"].as_str().unwrap().to_owned();
 
     super::knowledge::write_knowledge(
         &handler,
@@ -273,7 +273,7 @@ async fn mcp_complete_task_with_summary() {
     .await
     .unwrap();
     let task: serde_json::Value = serde_json::from_str(&post_result).unwrap();
-    let task_id = task["id"].as_str().unwrap().to_string();
+    let task_id = task["id"].as_str().unwrap().to_owned();
 
     super::task::claim_task(
         &handler,

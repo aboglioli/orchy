@@ -91,7 +91,7 @@ async fn resolve_agent_id(
         ApiError(
             StatusCode::BAD_REQUEST,
             "INVALID_PARAM",
-            "project query param is required when addressing agent by alias".to_string(),
+            "project query param is required when addressing agent by alias".to_owned(),
         )
     })?;
     let agent = container
@@ -99,8 +99,8 @@ async fn resolve_agent_id(
         .resolve_agent
         .execute(ResolveAgentCommand {
             org_id: org.to_string(),
-            project: project.to_string(),
-            id_or_alias: id_or_alias.to_string(),
+            project: project.to_owned(),
+            id_or_alias: id_or_alias.to_owned(),
         })
         .await
         .map_err(ApiError::from)?;
@@ -133,7 +133,7 @@ pub async fn list(
     let project_filter = query
         .project
         .as_deref()
-        .map(|p| ProjectId::try_from(p.to_string()))
+        .map(|p| ProjectId::try_from(p.to_owned()))
         .transpose()
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, "INVALID_PARAM", e.to_string()))?;
 
@@ -239,7 +239,7 @@ pub async fn get_context(
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
-            "agent not found".to_string(),
+            "agent not found".to_owned(),
         ));
     }
 
@@ -270,7 +270,7 @@ pub async fn get_context(
         org_id: org,
         project: Some(agent.project.clone()),
         namespace: Some(agent.namespace.clone()),
-        status: Some("pending".to_string()),
+        status: Some("pending".to_owned()),
         assigned_to: None,
         tag: None,
         after: None,

@@ -23,7 +23,7 @@ impl ChangeRoles {
 
     pub async fn execute(&self, cmd: ChangeRolesCommand) -> ApplicationResult<AgentDto> {
         if cmd.roles.is_empty() {
-            return Err(Error::invalid_input("roles must not be empty".to_string()).into());
+            return Err(Error::invalid_input("roles must not be empty".to_owned()).into());
         }
         let id = AgentId::from_str(&cmd.agent_id)?;
         let mut agent = self

@@ -85,7 +85,7 @@ async fn write_then_read_single_partition() {
         start_from: StartFrom::Earliest,
         ..KafkaReaderConfig::streaming(
             vec![brokers.clone()],
-            vec!["topic-a".to_string()],
+            vec!["topic-a".to_owned()],
             ConsumerGroupId::new("g1").unwrap(),
             OrganizationId::new("orgk").unwrap(),
         )
@@ -118,7 +118,7 @@ async fn three_partitions_all_received() {
         start_from: StartFrom::Earliest,
         ..KafkaReaderConfig::streaming(
             vec![brokers.clone()],
-            vec!["topic-3".to_string()],
+            vec!["topic-3".to_owned()],
             ConsumerGroupId::new("g3").unwrap(),
             OrganizationId::new("orgk").unwrap(),
         )
@@ -156,7 +156,7 @@ async fn specific_partition_assignment() {
         partition_assignment: PartitionAssignment::Specific(vec![0]),
         ..KafkaReaderConfig::streaming(
             vec![brokers.clone()],
-            vec!["topic-pa".to_string()],
+            vec!["topic-pa".to_owned()],
             ConsumerGroupId::new("g-pa").unwrap(),
             OrganizationId::new("orgk").unwrap(),
         )
@@ -195,7 +195,7 @@ async fn limit_terminates_stream() {
         limit: Some(3),
         ..KafkaReaderConfig::streaming(
             vec![brokers.clone()],
-            vec!["topic-lim".to_string()],
+            vec!["topic-lim".to_owned()],
             ConsumerGroupId::new("g-lim").unwrap(),
             OrganizationId::new("orgk").unwrap(),
         )

@@ -74,8 +74,8 @@ impl RunnerConfig {
 
         let mut env = HashMap::new();
         env.insert(
-            "TERM".to_string(),
-            std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
+            "TERM".to_owned(),
+            std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_owned()),
         );
 
         let mut command_parts = cli.command.into_iter();
@@ -108,20 +108,20 @@ impl RunnerConfig {
 
 pub fn skip_permissions_flags(agent_type: &str) -> Vec<String> {
     match agent_type {
-        "claude" => vec!["--dangerously-skip-permissions".to_string()],
-        "gemini" | "cursor" => vec!["--yolo".to_string()],
+        "claude" => vec!["--dangerously-skip-permissions".to_owned()],
+        "gemini" | "cursor" => vec!["--yolo".to_owned()],
         _ => vec![],
     }
 }
 
 pub fn default_idle_patterns_for(agent_type: &str) -> Vec<String> {
     match agent_type {
-        "claude" => vec!["❯ ".to_string()],
-        "cursor" => vec!["❯ ".to_string()],
-        "opencode" => vec!["> ".to_string()],
-        "gemini" => vec!["> ".to_string()],
-        "aider" => vec!["> ".to_string()],
-        _ => vec!["❯ ".to_string(), "$ ".to_string(), "> ".to_string()],
+        "claude" => vec!["❯ ".to_owned()],
+        "cursor" => vec!["❯ ".to_owned()],
+        "opencode" => vec!["> ".to_owned()],
+        "gemini" => vec!["> ".to_owned()],
+        "aider" => vec!["> ".to_owned()],
+        _ => vec!["❯ ".to_owned(), "$ ".to_owned(), "> ".to_owned()],
     }
 }
 
@@ -129,5 +129,5 @@ fn current_dir_name() -> String {
     std::env::current_dir()
         .ok()
         .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "default".to_string())
+        .unwrap_or_else(|| "default".to_owned())
 }

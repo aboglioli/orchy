@@ -36,8 +36,8 @@ impl ApiKeyGenerator for RandomApiKeyGenerator {
         let plain = PlainApiKey::new(raw)?;
 
         let hashed = self.hash(&plain);
-        let prefix = ApiKeyPrefix::new(plain.prefix().to_string())?;
-        let suffix = ApiKeySuffix::new(plain.suffix().to_string())?;
+        let prefix = ApiKeyPrefix::new(plain.prefix().to_owned())?;
+        let suffix = ApiKeySuffix::new(plain.suffix().to_owned())?;
 
         let api_key = ApiKey::new(org_id.clone(), name, hashed, prefix, suffix, user_id);
         Ok((plain, api_key))
@@ -73,7 +73,7 @@ mod tests {
     fn hash_is_consistent() {
         let generator = RandomApiKeyGenerator::new();
         let plain = PlainApiKey::new(
-            "sk_abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            "sk_abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_owned(),
         )
         .unwrap();
         let h1 = generator.hash(&plain);

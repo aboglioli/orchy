@@ -218,7 +218,7 @@ impl EdgeStore for PgEdgeStore {
                 " AND created_at <= '{ts_str}' AND (valid_until IS NULL OR valid_until > '{ts_str}')"
             )
         } else if only_active {
-            " AND valid_until IS NULL".to_string()
+            " AND valid_until IS NULL".to_owned()
         } else {
             String::new()
         };
@@ -386,7 +386,7 @@ fn build_time_clause(as_of: Option<&DateTime<Utc>>) -> String {
             " AND created_at <= '{ts_str}' AND (valid_until IS NULL OR valid_until > '{ts_str}')"
         )
     } else {
-        " AND valid_until IS NULL".to_string()
+        " AND valid_until IS NULL".to_owned()
     }
 }
 
@@ -415,7 +415,7 @@ fn build_find_neighbors_sql(
         let s = ts.to_rfc3339();
         format!(" AND created_at <= '{s}' AND (valid_until IS NULL OR valid_until > '{s}')")
     } else {
-        " AND valid_until IS NULL".to_string()
+        " AND valid_until IS NULL".to_owned()
     };
 
     let target_filter = if target_kinds.is_empty() {
@@ -433,39 +433,39 @@ fn build_find_neighbors_sql(
         let s = ts.to_rfc3339();
         format!(" AND e.created_at <= '{s}' AND (e.valid_until IS NULL OR e.valid_until > '{s}')")
     } else {
-        " AND e.valid_until IS NULL".to_string()
+        " AND e.valid_until IS NULL".to_owned()
     };
 
     let (anchor_match, base_direction, base_peer_kind, base_peer_id, recursive_join, rec_direction, rec_peer_kind, rec_peer_id) = match direction {
         TraversalDirection::Outgoing => (
             format!("(from_kind = $2 AND from_id = $3){rel_clause}{time_clause}"),
-            "'outgoing'".to_string(),
-            "e.to_kind".to_string(),
-            "e.to_id".to_string(),
-            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.from_kind = t.peer_kind AND e.from_id = t.peer_id".to_string(),
-            "t.direction".to_string(),
-            "e.to_kind".to_string(),
-            "e.to_id".to_string(),
+            "'outgoing'".to_owned(),
+            "e.to_kind".to_owned(),
+            "e.to_id".to_owned(),
+            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.from_kind = t.peer_kind AND e.from_id = t.peer_id".to_owned(),
+            "t.direction".to_owned(),
+            "e.to_kind".to_owned(),
+            "e.to_id".to_owned(),
         ),
         TraversalDirection::Incoming => (
             format!("(to_kind = $2 AND to_id = $3){rel_clause}{time_clause}"),
-            "'incoming'".to_string(),
-            "e.from_kind".to_string(),
-            "e.from_id".to_string(),
-            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.to_kind = t.peer_kind AND e.to_id = t.peer_id".to_string(),
-            "t.direction".to_string(),
-            "e.from_kind".to_string(),
-            "e.from_id".to_string(),
+            "'incoming'".to_owned(),
+            "e.from_kind".to_owned(),
+            "e.from_id".to_owned(),
+            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.to_kind = t.peer_kind AND e.to_id = t.peer_id".to_owned(),
+            "t.direction".to_owned(),
+            "e.from_kind".to_owned(),
+            "e.from_id".to_owned(),
         ),
         TraversalDirection::Both => (
             format!("((from_kind = $2 AND from_id = $3) OR (to_kind = $2 AND to_id = $3)){rel_clause}{time_clause}"),
-            "CASE WHEN e.from_kind = $2 AND e.from_id = $3 THEN 'outgoing' ELSE 'incoming' END".to_string(),
-            "CASE WHEN e.from_kind = $2 AND e.from_id = $3 THEN e.to_kind ELSE e.from_kind END".to_string(),
-            "CASE WHEN e.from_kind = $2 AND e.from_id = $3 THEN e.to_id ELSE e.from_id END".to_string(),
-            "INNER JOIN traversal t ON e.org_id = t.org_id AND ((e.from_kind = t.peer_kind AND e.from_id = t.peer_id) OR (e.to_kind = t.peer_kind AND e.to_id = t.peer_id))".to_string(),
-            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN 'outgoing' ELSE 'incoming' END".to_string(),
-            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_kind ELSE e.from_kind END".to_string(),
-            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_id ELSE e.from_id END".to_string(),
+            "CASE WHEN e.from_kind = $2 AND e.from_id = $3 THEN 'outgoing' ELSE 'incoming' END".to_owned(),
+            "CASE WHEN e.from_kind = $2 AND e.from_id = $3 THEN e.to_kind ELSE e.from_kind END".to_owned(),
+            "CASE WHEN e.from_kind = $2 AND e.from_id = $3 THEN e.to_id ELSE e.from_id END".to_owned(),
+            "INNER JOIN traversal t ON e.org_id = t.org_id AND ((e.from_kind = t.peer_kind AND e.from_id = t.peer_id) OR (e.to_kind = t.peer_kind AND e.to_id = t.peer_id))".to_owned(),
+            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN 'outgoing' ELSE 'incoming' END".to_owned(),
+            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_kind ELSE e.from_kind END".to_owned(),
+            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_id ELSE e.from_id END".to_owned(),
         ),
     };
 

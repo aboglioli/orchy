@@ -48,7 +48,7 @@ async fn streaming_yields_then_blocks_for_more() {
     while let Some(msg) = stream.next().await {
         let msg = msg.unwrap();
         msg.ack().await.unwrap();
-        keys.push(msg.event().key().as_str().to_string());
+        keys.push(msg.event().key().as_str().to_owned());
     }
     assert_eq!(keys, vec!["k0", "k1", "k2"]);
 }

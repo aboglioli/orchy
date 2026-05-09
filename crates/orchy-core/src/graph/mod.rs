@@ -500,9 +500,9 @@ mod tests {
         let edge = Edge::new(
             org,
             ResourceKind::Task,
-            "task-id-1".to_string(),
+            "task-id-1".to_owned(),
             ResourceKind::Knowledge,
-            "know-id-1".to_string(),
+            "know-id-1".to_owned(),
             RelationType::Produces,
             None,
         )
@@ -524,9 +524,9 @@ mod tests {
         let mut edge = Edge::new(
             org,
             ResourceKind::Task,
-            "t1".to_string(),
+            "t1".to_owned(),
             ResourceKind::Knowledge,
-            "k1".to_string(),
+            "k1".to_owned(),
             RelationType::Produces,
             None,
         )
@@ -550,9 +550,9 @@ mod tests {
         let mut edge = Edge::new(
             org,
             ResourceKind::Task,
-            "t1".to_string(),
+            "t1".to_owned(),
             ResourceKind::Knowledge,
-            "k1".to_string(),
+            "k1".to_owned(),
             RelationType::Produces,
             None,
         )
@@ -570,9 +570,9 @@ mod tests {
         let result = Edge::new(
             org,
             ResourceKind::Task,
-            "".to_string(),
+            "".to_owned(),
             ResourceKind::Knowledge,
-            "k1".to_string(),
+            "k1".to_owned(),
             RelationType::Produces,
             None,
         );
@@ -585,9 +585,9 @@ mod tests {
         let result = Edge::new(
             org,
             ResourceKind::Task,
-            "t1".to_string(),
+            "t1".to_owned(),
             ResourceKind::Knowledge,
-            "   ".to_string(),
+            "   ".to_owned(),
             RelationType::Produces,
             None,
         );

@@ -222,7 +222,7 @@ pub async fn run(
                 qs.push(format!("orphaned={o}"));
             }
             if *archived {
-                qs.push("archived=true".to_string());
+                qs.push("archived=true".to_owned());
             }
             if let Some(a) = after {
                 qs.push(format!("after={a}"));
@@ -272,7 +272,7 @@ pub async fn run(
             if let Some(t) = tags {
                 body["tags"] = serde_json::Value::Array(
                     t.split(',')
-                        .map(|s| serde_json::Value::String(s.trim().to_string()))
+                        .map(|s| serde_json::Value::String(s.trim().to_owned()))
                         .collect(),
                 );
             }
@@ -569,10 +569,7 @@ pub async fn run(
             if !set.is_empty() {
                 let map: HashMap<String, String> = set
                     .iter()
-                    .filter_map(|s| {
-                        s.split_once('=')
-                            .map(|(k, v)| (k.to_string(), v.to_string()))
-                    })
+                    .filter_map(|s| s.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
                     .collect();
                 body["set"] = serde_json::to_value(&map)?;
             }

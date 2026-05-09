@@ -126,7 +126,7 @@ impl Config {
             env_namespace.as_deref(),
             flag_namespace,
         ])
-        .unwrap_or_else(|| "/".to_string());
+        .unwrap_or_else(|| "/".to_owned());
 
         let alias = pick_opt(&[
             global.as_ref().and_then(|c| c.alias.as_deref()),
@@ -242,15 +242,15 @@ fn pick(
     opts.iter()
         .rev()
         .find_map(|o| *o)
-        .map(|s| s.to_string())
+        .map(|s| s.to_owned())
         .ok_or_else(|| ConfigError::MissingField {
-            field: name.to_string(),
-            set_in: source_hint.to_string(),
+            field: name.to_owned(),
+            set_in: source_hint.to_owned(),
         })
 }
 
 fn pick_opt(opts: &[Option<&str>]) -> Option<String> {
-    opts.iter().rev().find_map(|o| *o).map(|s| s.to_string())
+    opts.iter().rev().find_map(|o| *o).map(|s| s.to_owned())
 }
 
 fn read_global_config() -> Option<FileConfig> {
@@ -296,7 +296,7 @@ pub fn save_alias(alias: &str) {
                 if line.trim_start().starts_with("alias") {
                     format!("alias  = \"{alias}\"")
                 } else {
-                    line.to_string()
+                    line.to_owned()
                 }
             })
             .collect::<Vec<_>>()
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn secret_string_round_trip() {
-        let secret = SecretString::new("test123".to_string().into_boxed_str());
+        let secret = SecretString::new("test123".to_owned().into_boxed_str());
         assert_eq!(secret.expose_secret(), "test123");
     }
 }

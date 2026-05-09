@@ -237,7 +237,7 @@ pub(super) async fn delete_knowledge(
     };
 
     match h.container.app.delete_knowledge.execute(cmd).await {
-        Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
+        Ok(()) => Ok(r#"{"ok":true}"#.to_owned()),
         Err(e) => Err(mcp_app_error(e)),
     }
 }

@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn plain_api_key_valid() {
         let key = PlainApiKey::new(
-            "sk_abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            "sk_abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_owned(),
         )
         .unwrap();
         assert_eq!(key.prefix(), "sk_abcde");
@@ -339,14 +339,14 @@ mod tests {
 
     #[test]
     fn plain_api_key_rejects_short() {
-        assert!(PlainApiKey::new("sk_short".to_string()).is_err());
+        assert!(PlainApiKey::new("sk_short".to_owned()).is_err());
     }
 
     #[test]
     fn plain_api_key_rejects_bad_prefix() {
         assert!(
             PlainApiKey::new(
-                "pk_abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string()
+                "pk_abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_owned()
             )
             .is_err()
         );
@@ -354,24 +354,24 @@ mod tests {
 
     #[test]
     fn hashed_api_key_rejects_empty() {
-        assert!(HashedApiKey::new("".to_string()).is_err());
+        assert!(HashedApiKey::new("".to_owned()).is_err());
     }
 
     #[test]
     fn api_key_prefix_rejects_wrong_length() {
-        assert!(ApiKeyPrefix::new("short".to_string()).is_err());
+        assert!(ApiKeyPrefix::new("short".to_owned()).is_err());
     }
 
     #[test]
     fn api_key_suffix_rejects_wrong_length() {
-        assert!(ApiKeySuffix::new("ab".to_string()).is_err());
+        assert!(ApiKeySuffix::new("ab".to_owned()).is_err());
     }
 
     fn make_key() -> ApiKey {
         let org_id = OrganizationId::new("test-org").unwrap();
-        let hash = HashedApiKey::new("somehash".to_string()).unwrap();
-        let prefix = ApiKeyPrefix::new("sk_abcde".to_string()).unwrap();
-        let suffix = ApiKeySuffix::new("7890".to_string()).unwrap();
+        let hash = HashedApiKey::new("somehash".to_owned()).unwrap();
+        let prefix = ApiKeyPrefix::new("sk_abcde".to_owned()).unwrap();
+        let suffix = ApiKeySuffix::new("7890".to_owned()).unwrap();
         ApiKey::new(org_id, "Production".into(), hash, prefix, suffix, None)
     }
 

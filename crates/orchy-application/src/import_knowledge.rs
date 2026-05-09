@@ -60,7 +60,7 @@ impl ImportKnowledge {
         let target_namespace = parse_namespace(cmd.target_namespace.as_deref())?;
         let target_path_str = cmd
             .target_path
-            .unwrap_or_else(|| source.path().as_str().to_string());
+            .unwrap_or_else(|| source.path().as_str().to_owned());
         let target_path: KnowledgePath = target_path_str.parse::<KnowledgePath>()?;
 
         let mut entry = Knowledge::new(
@@ -69,8 +69,8 @@ impl ImportKnowledge {
             target_namespace,
             target_path,
             source.kind(),
-            source.title().to_string(),
-            source.content().to_string(),
+            source.title().to_owned(),
+            source.content().to_owned(),
             source.tags().to_vec(),
             source.metadata().clone(),
         )?;
@@ -78,7 +78,7 @@ impl ImportKnowledge {
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());
             let vector = emb.embed(&text).await?;
-            let embedding = Embedding::new(vector, emb.model().to_string(), emb.dimensions())?;
+            let embedding = Embedding::new(vector, emb.model().to_owned(), emb.dimensions())?;
             entry.set_embedding(embedding)?;
         }
 

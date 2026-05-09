@@ -116,7 +116,7 @@ pub async fn run(cmd: &AgentSubcommand, client: &OrchyClient, config: &Config) -
             }
         }
         AgentSubcommand::List { project } => {
-            let mut path = "/agents".to_string();
+            let mut path = "/agents".to_owned();
             if let Some(p) = project {
                 path = format!("/agents?project={p}");
             }

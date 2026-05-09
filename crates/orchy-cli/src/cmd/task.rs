@@ -200,15 +200,15 @@ pub async fn run(cmd: &TaskSubcommand, client: &OrchyClient, config: &Config) ->
             if let Some(r) = roles {
                 body["assigned_roles"] = serde_json::Value::Array(
                     r.split(',')
-                        .map(|s| serde_json::Value::String(s.trim().to_string()))
+                        .map(|s| serde_json::Value::String(s.trim().to_owned()))
                         .collect(),
                 );
             }
             if let Some(ns) = client.namespace.as_deref() {
-                body["namespace"] = serde_json::Value::String(ns.to_string());
+                body["namespace"] = serde_json::Value::String(ns.to_owned());
             }
             if let Some(alias) = client.alias.as_deref() {
-                body["agent"] = serde_json::Value::String(alias.to_string());
+                body["agent"] = serde_json::Value::String(alias.to_owned());
             }
             let v = client.post_project_json("/tasks", Some(&body)).await?;
             if config.json {
@@ -234,7 +234,7 @@ pub async fn run(cmd: &TaskSubcommand, client: &OrchyClient, config: &Config) ->
                 qs.push(format!("namespace={ns}"));
             }
             if *archived {
-                qs.push("archived=true".to_string());
+                qs.push("archived=true".to_owned());
             }
             if let Some(a) = after {
                 qs.push(format!("after={a}"));
@@ -583,7 +583,7 @@ pub async fn run(cmd: &TaskSubcommand, client: &OrchyClient, config: &Config) ->
             if let Some(r) = roles {
                 body["assigned_roles"] = serde_json::Value::Array(
                     r.split(',')
-                        .map(|s| serde_json::Value::String(s.trim().to_string()))
+                        .map(|s| serde_json::Value::String(s.trim().to_owned()))
                         .collect(),
                 );
             }

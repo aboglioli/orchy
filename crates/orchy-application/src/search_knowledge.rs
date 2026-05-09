@@ -152,13 +152,13 @@ impl SearchKnowledge {
         let from = self.edges.find_from(org, &kind, id, &[], None).await?;
         for e in from {
             if e.to_kind() == &ResourceKind::Knowledge {
-                ids.insert(e.to_id().to_string());
+                ids.insert(e.to_id().to_owned());
             }
         }
         let to = self.edges.find_to(org, &kind, id, &[], None).await?;
         for e in to {
             if e.from_kind() == &ResourceKind::Knowledge {
-                ids.insert(e.from_id().to_string());
+                ids.insert(e.from_id().to_owned());
             }
         }
         Ok(ids)
@@ -189,15 +189,15 @@ impl SearchKnowledge {
             .flat_map(|hop| {
                 let mut v = Vec::new();
                 if hop.edge.from_kind() == &ResourceKind::Task {
-                    v.push(hop.edge.from_id().to_string());
+                    v.push(hop.edge.from_id().to_owned());
                 }
                 if hop.edge.to_kind() == &ResourceKind::Task {
-                    v.push(hop.edge.to_id().to_string());
+                    v.push(hop.edge.to_id().to_owned());
                 }
                 v
             })
             .collect();
-        task_ids.insert(task_id.to_string());
+        task_ids.insert(task_id.to_owned());
 
         let mut knowledge_ids = HashSet::new();
         for tid in &task_ids {

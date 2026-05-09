@@ -27,8 +27,8 @@ fn build_task(title: &str, tags: Vec<String>) -> Task {
         org(),
         project(),
         Namespace::root(),
-        title.to_string(),
-        "description".to_string(),
+        title.to_owned(),
+        "description".to_owned(),
         None,
         Priority::Normal,
         vec![],
@@ -49,8 +49,8 @@ fn build_knowledge(path: &str, title: &str) -> Knowledge {
         Namespace::root(),
         KnowledgePath::new(path).unwrap(),
         KnowledgeKind::Decision,
-        title.to_string(),
-        "content".to_string(),
+        title.to_owned(),
+        "content".to_owned(),
         vec![],
         HashMap::new(),
     )
@@ -68,17 +68,17 @@ pub async fn task_save_then_find_returns_same(bundle: &Bundle) {
 }
 
 pub async fn task_filter_tag_does_not_match_substring(bundle: &Bundle) {
-    let mut t1 = build_task("auth-task", vec!["auth".to_string()]);
+    let mut t1 = build_task("auth-task", vec!["auth".to_owned()]);
     bundle.tasks.save(&mut t1).await.unwrap();
 
-    let mut t2 = build_task("authorization-task", vec!["authorization".to_string()]);
+    let mut t2 = build_task("authorization-task", vec!["authorization".to_owned()]);
     bundle.tasks.save(&mut t2).await.unwrap();
 
     let page = bundle
         .tasks
         .list(
             TaskFilter {
-                tag: Some("auth".to_string()),
+                tag: Some("auth".to_owned()),
                 org_id: Some(org()),
                 project: Some(project()),
                 ..Default::default()
@@ -104,12 +104,12 @@ pub async fn knowledge_optimistic_concurrency(bundle: &Bundle) {
     let mut stale_copy = entry.clone();
 
     entry
-        .update("Database choice".to_string(), "v2 content".to_string())
+        .update("Database choice".to_owned(), "v2 content".to_owned())
         .unwrap();
     bundle.knowledge.save(&mut entry).await.unwrap();
 
     stale_copy
-        .update("Database choice".to_string(), "stale content".to_string())
+        .update("Database choice".to_owned(), "stale content".to_owned())
         .unwrap();
     let result = bundle.knowledge.save(&mut stale_copy).await;
 
@@ -168,7 +168,7 @@ pub async fn message_claim_visibility(bundle: &Bundle) {
         Namespace::root(),
         sender.id().clone(),
         MessageTarget::Broadcast,
-        "hello everyone".to_string(),
+        "hello everyone".to_owned(),
         None,
         vec![],
     )
@@ -227,9 +227,9 @@ pub async fn edge_alias_blocks_normalizes_to_depends_on(bundle: &Bundle) {
     let mut edge = Edge::new(
         org(),
         ResourceKind::Task,
-        "task-a".to_string(),
+        "task-a".to_owned(),
         ResourceKind::Task,
-        "task-b".to_string(),
+        "task-b".to_owned(),
         rel,
         None,
     )
@@ -250,7 +250,7 @@ pub async fn agent_save_then_find_returns_same(bundle: &Bundle) {
         project(),
         Namespace::root(),
         Alias::new("conformance-agent").unwrap(),
-        vec!["tester".to_string()],
+        vec!["tester".to_owned()],
         "conformance agent".into(),
         None,
         HashMap::new(),
@@ -308,7 +308,7 @@ pub async fn lock_acquire_and_release(bundle: &Bundle) {
         org(),
         project(),
         Namespace::root(),
-        "test-resource".to_string(),
+        "test-resource".to_owned(),
         agent.id().clone(),
         3600,
     )

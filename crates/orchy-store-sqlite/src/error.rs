@@ -50,32 +50,32 @@ fn categorize_rusqlite(e: rusqlite::Error) -> StoreError {
         QueryReturnedNoRows => StoreError::Other("sqlite returned no rows".into()),
         SqliteFailure(ffi, msg) => match ffi.code {
             ErrorCode::ConstraintViolation => {
-                StoreError::Constraint(msg.unwrap_or_else(|| "constraint violation".to_string()))
+                StoreError::Constraint(msg.unwrap_or_else(|| "constraint violation".to_owned()))
             }
             ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked => {
-                StoreError::Timeout(msg.unwrap_or_else(|| "database busy".to_string()))
+                StoreError::Timeout(msg.unwrap_or_else(|| "database busy".to_owned()))
             }
             ErrorCode::CannotOpen
             | ErrorCode::OperationInterrupted
             | ErrorCode::SystemIoFailure => {
-                StoreError::Connection(msg.unwrap_or_else(|| "i/o failure".to_string()))
+                StoreError::Connection(msg.unwrap_or_else(|| "i/o failure".to_owned()))
             }
             _ => StoreError::Other(format!("{ffi}: {}", msg.unwrap_or_default())),
         },
         SqlInputError { msg, .. } => StoreError::Other(format!("sql input: {msg}")),
         FromSqlConversionFailure(_, _, e) => StoreError::Decode {
-            table: "<unknown>".to_string(),
-            column: "<unknown>".to_string(),
+            table: "<unknown>".to_owned(),
+            column: "<unknown>".to_owned(),
             cause: format!("from_sql: {e}"),
         },
         ToSqlConversionFailure(e) => StoreError::Serialization(format!("to_sql: {e}")),
         InvalidColumnName(c) => StoreError::Decode {
-            table: "<unknown>".to_string(),
+            table: "<unknown>".to_owned(),
             column: c,
-            cause: "invalid column".to_string(),
+            cause: "invalid column".to_owned(),
         },
         InvalidColumnType(_, name, ty) => StoreError::Decode {
-            table: "<unknown>".to_string(),
+            table: "<unknown>".to_owned(),
             column: name,
             cause: format!("invalid type: {ty}"),
         },

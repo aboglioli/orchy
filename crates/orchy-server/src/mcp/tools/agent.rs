@@ -29,8 +29,7 @@ pub(super) async fn register_agent(
 ) -> Result<String, String> {
     if params.alias.is_empty() {
         return Err(
-            "alias is required: call register_agent with alias='<name>' (lowercase alphanumeric with hyphens, e.g. 'coder-1')"
-                .to_string(),
+            "alias is required: call register_agent with alias='<name>' (lowercase alphanumeric with hyphens, e.g. 'coder-1')".to_owned(),
         );
     }
     let project = parse_project(&params.project)?;
@@ -163,7 +162,7 @@ pub(super) async fn heartbeat(h: &OrchyHandler) -> Result<String, String> {
         agent_id: agent_id.to_string(),
     };
     match h.container.app.heartbeat.execute(cmd).await {
-        Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
+        Ok(()) => Ok(r#"{"ok":true}"#.to_owned()),
         Err(e) => Err(mcp_app_error(e)),
     }
 }
@@ -189,7 +188,7 @@ pub(super) async fn switch_context(
     let (agent_id, current_project, _) = h.require_session().await?;
     let org = h.org();
     if params.project.is_none() && params.namespace.is_none() {
-        return Err("at least one of project or namespace is required".to_string());
+        return Err("at least one of project or namespace is required".to_owned());
     }
 
     if let Some(ref ns) = params.namespace {
@@ -275,7 +274,7 @@ pub(super) async fn poll_updates(
         .unwrap_or_else(|| session_project.to_string());
 
     let since = match params.since.as_deref() {
-        Some(s) => s.to_string(),
+        Some(s) => s.to_owned(),
         None => (Utc::now() - Duration::minutes(5)).to_rfc3339(),
     };
 
@@ -386,7 +385,7 @@ pub(super) async fn mark_read(h: &OrchyHandler, params: MarkReadParams) -> Resul
     };
 
     match h.container.app.mark_read.execute(cmd).await {
-        Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
+        Ok(()) => Ok(r#"{"ok":true}"#.to_owned()),
         Err(e) => Err(mcp_app_error(e)),
     }
 }

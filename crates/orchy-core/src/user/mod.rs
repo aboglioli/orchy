@@ -106,7 +106,7 @@ impl User {
 
         let payload = Payload::from_json(&events::UserCreatedPayload {
             user_id: user.id.as_str(),
-            email: user.email.as_str().to_string(),
+            email: user.email.as_str().to_owned(),
             is_platform_admin: user.is_platform_admin,
         })?;
 
@@ -148,7 +148,7 @@ impl User {
             Ok(()) => {
                 let payload = Payload::from_json(&events::UserLoginSucceededPayload {
                     user_id: self.id.as_str(),
-                    email: self.email.as_str().to_string(),
+                    email: self.email.as_str().to_owned(),
                 })?;
 
                 let event = Event::create(
@@ -165,8 +165,8 @@ impl User {
             }
             Err(_) => {
                 let payload = Payload::from_json(&events::UserLoginFailedPayload {
-                    email: self.email.as_str().to_string(),
-                    reason: "invalid password".to_string(),
+                    email: self.email.as_str().to_owned(),
+                    reason: "invalid password".to_owned(),
                 })?;
 
                 let event = Event::create(
@@ -289,10 +289,10 @@ impl User {
         role: &str,
     ) -> DomainResult<()> {
         let payload = Payload::from_json(&events::UserMembershipAddedPayload {
-            membership_id: membership_id.to_string(),
+            membership_id: membership_id.to_owned(),
             user_id: self.id.as_str(),
-            org_id: org_id.to_string(),
-            role: role.to_string(),
+            org_id: org_id.to_owned(),
+            role: role.to_owned(),
         })?;
 
         let event = Event::create(

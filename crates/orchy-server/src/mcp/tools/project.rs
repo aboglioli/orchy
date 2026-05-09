@@ -45,7 +45,7 @@ pub(super) async fn get_project(
         after: None,
         limit: None,
     };
-    let project_agents: Vec<_> = h
+    let agents_online = h
         .container
         .app
         .list_agents
@@ -53,9 +53,7 @@ pub(super) async fn get_project(
         .await
         .map_err(mcp_app_error)?
         .items
-        .into_iter()
-        // Status is derived (active/idle/stale); all agents are included
-        .collect();
+        .len();
 
     let tasks_cmd = ListTasksCommand {
         org_id: org.to_string(),
@@ -122,7 +120,7 @@ pub(super) async fn get_project(
     let my_task_count: usize = my_workload_by_status.values().map(|v| v.len()).sum();
 
     let summary = json!({
-        "agents_online": project_agents.len(),
+        "agents_online": agents_online,
         "tasks_by_status": by_status,
         "total_tasks": all_tasks.len(),
         "recent_completions": recent_items,
@@ -275,7 +273,7 @@ pub(super) async fn unlock_resource(
     };
 
     match h.container.app.unlock_resource.execute(cmd).await {
-        Ok(()) => Ok(r#"{"ok":true}"#.to_string()),
+        Ok(()) => Ok(r#"{"ok":true}"#.to_owned()),
         Err(e) => Err(mcp_app_error(e)),
     }
 }

@@ -25,11 +25,11 @@ impl MemoryEdgeStore {
 }
 
 fn unindex_edge(state: &MemoryState, edge: &Edge) {
-    let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
+    let from_key = (edge.from_kind().clone(), edge.from_id().to_owned());
     if let Some(mut ids) = state.edges_by_from.get_mut(&from_key) {
         ids.retain(|eid| eid != &edge.id());
     }
-    let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
+    let to_key = (edge.to_kind().clone(), edge.to_id().to_owned());
     if let Some(mut ids) = state.edges_by_to.get_mut(&to_key) {
         ids.retain(|eid| eid != &edge.id());
     }
@@ -42,14 +42,14 @@ impl EdgeStore for MemoryEdgeStore {
             unindex_edge(&self.state, &old);
         }
 
-        let from_key = (edge.from_kind().clone(), edge.from_id().to_string());
+        let from_key = (edge.from_kind().clone(), edge.from_id().to_owned());
         self.state
             .edges_by_from
             .entry(from_key)
             .or_default()
             .push(edge.id());
 
-        let to_key = (edge.to_kind().clone(), edge.to_id().to_string());
+        let to_key = (edge.to_kind().clone(), edge.to_id().to_owned());
         self.state
             .edges_by_to
             .entry(to_key)
@@ -228,7 +228,7 @@ impl EdgeStore for MemoryEdgeStore {
         let mut result: Vec<TraversalHop> = vec![];
         let mut visited_edges: HashSet<EdgeId> = HashSet::new();
         let mut queue: VecDeque<(ResourceKind, String, u32, Option<ResourceRef>)> = VecDeque::new();
-        queue.push_back((kind.clone(), id.to_string(), 0, None));
+        queue.push_back((kind.clone(), id.to_owned(), 0, None));
 
         'outer: while let Some((cur_kind, cur_id, depth, via)) = queue.pop_front() {
             if depth >= max_depth {
@@ -299,25 +299,25 @@ impl EdgeStore for MemoryEdgeStore {
                     TraversalDirection::Outgoing => Some((
                         RelationDirection::Outgoing,
                         edge.to_kind().clone(),
-                        edge.to_id().to_string(),
+                        edge.to_id().to_owned(),
                     )),
                     TraversalDirection::Incoming => Some((
                         RelationDirection::Incoming,
                         edge.from_kind().clone(),
-                        edge.from_id().to_string(),
+                        edge.from_id().to_owned(),
                     )),
                     TraversalDirection::Both => {
                         if edge.from_kind() == &cur_kind && edge.from_id() == cur_id {
                             Some((
                                 RelationDirection::Outgoing,
                                 edge.to_kind().clone(),
-                                edge.to_id().to_string(),
+                                edge.to_id().to_owned(),
                             ))
                         } else {
                             Some((
                                 RelationDirection::Incoming,
                                 edge.from_kind().clone(),
-                                edge.from_id().to_string(),
+                                edge.from_id().to_owned(),
                             ))
                         }
                     }

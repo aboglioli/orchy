@@ -26,7 +26,7 @@ impl OrganizationId {
     }
 
     pub fn platform() -> Self {
-        Self(Self::PLATFORM.to_string())
+        Self(Self::PLATFORM.to_owned())
     }
 
     pub fn as_str(&self) -> &str {

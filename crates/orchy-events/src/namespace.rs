@@ -13,7 +13,7 @@ impl Namespace {
     pub fn new(s: impl Into<String>) -> Result<Self> {
         let s = s.into();
         let normalized = if s.is_empty() || s == "/" {
-            "/".to_string()
+            "/".to_owned()
         } else if s.starts_with('/') {
             s
         } else {
@@ -24,7 +24,7 @@ impl Namespace {
     }
 
     pub fn root() -> Self {
-        Self("/".to_string())
+        Self("/".to_owned())
     }
 
     pub fn is_root(&self) -> bool {

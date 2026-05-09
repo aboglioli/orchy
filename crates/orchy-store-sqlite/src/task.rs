@@ -51,7 +51,7 @@ impl TaskStore for SqliteTaskStore {
                             snapshot.namespace().to_string(),
                             snapshot.title(),
                             snapshot.description(),
-                            snapshot.acceptance_criteria().map(|s| s.to_string()),
+                            snapshot.acceptance_criteria().map(|s| s.to_owned()),
                             snapshot.status().to_string(),
                             snapshot.priority().to_string(),
                             serde_json::to_string(snapshot.assigned_roles()).map_err(|e| {
@@ -66,7 +66,7 @@ impl TaskStore for SqliteTaskStore {
                             serde_json::to_string(snapshot.tags()).map_err(|e| {
                                 Error::Store(StoreError::Serialization(format!("tags: {e}")))
                             })?,
-                            snapshot.result_summary().map(|s| s.to_string()),
+                            snapshot.result_summary().map(|s| s.to_owned()),
                             snapshot.archived_at().map(|dt| dt.to_rfc3339()),
                             snapshot.created_by().map(|a| a.to_string()),
                             snapshot.created_at().to_rfc3339(),
@@ -91,7 +91,7 @@ impl TaskStore for SqliteTaskStore {
                         snapshot.namespace().to_string(),
                         snapshot.title(),
                         snapshot.description(),
-                        snapshot.acceptance_criteria().map(|s| s.to_string()),
+                        snapshot.acceptance_criteria().map(|s| s.to_owned()),
                         snapshot.status().to_string(),
                         snapshot.priority().to_string(),
                         serde_json::to_string(snapshot.assigned_roles()).map_err(|e| {
@@ -104,7 +104,7 @@ impl TaskStore for SqliteTaskStore {
                         serde_json::to_string(snapshot.tags()).map_err(|e| {
                             Error::Store(StoreError::Serialization(format!("tags: {e}")))
                         })?,
-                        snapshot.result_summary().map(|s| s.to_string()),
+                        snapshot.result_summary().map(|s| s.to_owned()),
                         snapshot.archived_at().map(|dt| dt.to_rfc3339()),
                         snapshot.created_by().map(|a| a.to_string()),
                         snapshot.created_at().to_rfc3339(),

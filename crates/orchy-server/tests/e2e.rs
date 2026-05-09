@@ -113,7 +113,7 @@ async fn full_agent_loop() {
         reg_b.text().await.unwrap_or_default()
     );
     let reg_b_body: serde_json::Value = reg_b.json().await.unwrap();
-    let agent_b_id = reg_b_body["agent"]["id"].as_str().unwrap().to_string();
+    let agent_b_id = reg_b_body["agent"]["id"].as_str().unwrap().to_owned();
 
     let post_task_resp = client_a
         .post(format!("{base}/api/projects/smoke/tasks"))
@@ -132,7 +132,7 @@ async fn full_agent_loop() {
         post_task_resp.text().await.unwrap_or_default()
     );
     let post_task_body: serde_json::Value = post_task_resp.json().await.unwrap();
-    let task_id = post_task_body["id"].as_str().unwrap().to_string();
+    let task_id = post_task_body["id"].as_str().unwrap().to_owned();
     assert_eq!(post_task_body["status"].as_str().unwrap(), "pending");
 
     let next_resp = client_b
@@ -351,7 +351,7 @@ async fn sqlite_auth_invite_new_user() {
         .split(';')
         .next()
         .unwrap()
-        .to_string();
+        .to_owned();
     let login_body: serde_json::Value = login_resp.json().await.unwrap();
     assert!(
         login_body["memberships"]
@@ -419,7 +419,7 @@ async fn boot_authenticated(name: &str) -> TestContext {
         .split(";")
         .next()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let key_resp = client
         .post(format!("{base}/api/api-keys"))
@@ -432,7 +432,7 @@ async fn boot_authenticated(name: &str) -> TestContext {
     let api_key = key_resp.json::<serde_json::Value>().await.unwrap()["api_key"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     TestContext {
         base,
@@ -515,7 +515,7 @@ async fn sqlite_api_key_revoke_invalidates_key() {
         .find(|k| k["name"].as_str().unwrap_or("").contains("key-revoke"))
         .map(|k| k["id"].as_str().unwrap())
         .unwrap()
-        .to_string();
+        .to_owned();
 
     // Verify key works (use a GET endpoint that exists)
     let verify_resp = ctx
@@ -593,7 +593,7 @@ async fn sqlite_agent_task_lifecycle() {
     let body_text = reg.text().await.unwrap();
     assert_eq!(status, 200, "register failed: {body_text}");
     let reg_body: serde_json::Value = serde_json::from_str(&body_text).unwrap();
-    let agent_id = reg_body["agent"]["id"].as_str().unwrap().to_string();
+    let agent_id = reg_body["agent"]["id"].as_str().unwrap().to_owned();
     assert_eq!(reg_body["agent"]["alias"].as_str().unwrap(), "worker");
 
     let task = ctx
@@ -610,7 +610,7 @@ async fn sqlite_agent_task_lifecycle() {
         .unwrap();
     assert_eq!(task.status(), 200);
     let task_body: serde_json::Value = task.json().await.unwrap();
-    let task_id = task_body["id"].as_str().unwrap().to_string();
+    let task_id = task_body["id"].as_str().unwrap().to_owned();
     assert_eq!(task_body["status"].as_str().unwrap(), "pending");
     assert!(
         task_body.get("created_by").is_some(),
@@ -683,7 +683,7 @@ async fn sqlite_dependent_task_cascade_unblock() {
     let agent_id = reg.json::<serde_json::Value>().await.unwrap()["agent"]["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let base_task = ctx
         .client
@@ -696,7 +696,7 @@ async fn sqlite_dependent_task_cascade_unblock() {
     let base_id = base_task.json::<serde_json::Value>().await.unwrap()["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let dep = ctx
         .client
@@ -713,7 +713,7 @@ async fn sqlite_dependent_task_cascade_unblock() {
     assert_eq!(dep.status(), 200);
     let dep_body: serde_json::Value = dep.json().await.unwrap();
     assert_eq!(dep_body["status"].as_str().unwrap(), "blocked");
-    let dep_id = dep_body["id"].as_str().unwrap().to_string();
+    let dep_id = dep_body["id"].as_str().unwrap().to_owned();
 
     ctx.client
         .post(format!("{base}/api/projects/cas/tasks/{base_id}/claim"))
@@ -760,7 +760,7 @@ async fn sqlite_split_subtasks_auto_complete_parent() {
     let agent_id = reg.json::<serde_json::Value>().await.unwrap()["agent"]["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let parent = ctx
         .client
@@ -773,7 +773,7 @@ async fn sqlite_split_subtasks_auto_complete_parent() {
     let parent_id = parent.json::<serde_json::Value>().await.unwrap()["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     ctx.client
         .post(format!("{base}/api/projects/split/tasks/{parent_id}/claim"))
@@ -848,7 +848,7 @@ async fn sqlite_knowledge_write_read_delete() {
     let agent_id = reg.json::<serde_json::Value>().await.unwrap()["agent"]["id"]
         .as_str()
         .unwrap()
-        .to_string();
+        .to_owned();
 
     let write = ctx
         .client
@@ -923,7 +923,7 @@ async fn sqlite_message_send_inbox_sent_mark_read() {
         .json::<serde_json::Value>()
         .await
         .unwrap();
-    let a1_id = a1["agent"]["id"].as_str().unwrap().to_string();
+    let a1_id = a1["agent"]["id"].as_str().unwrap().to_owned();
 
     let a2 = ctx
         .client
@@ -936,7 +936,7 @@ async fn sqlite_message_send_inbox_sent_mark_read() {
         .json::<serde_json::Value>()
         .await
         .unwrap();
-    let a2_id = a2["agent"]["id"].as_str().unwrap().to_string();
+    let a2_id = a2["agent"]["id"].as_str().unwrap().to_owned();
     let empty = vec![];
 
     let msg = ctx
@@ -953,7 +953,7 @@ async fn sqlite_message_send_inbox_sent_mark_read() {
         .unwrap();
     assert_eq!(msg.status(), 200);
     let msg_body: serde_json::Value = msg.json().await.unwrap();
-    let msg_id = msg_body["id"].as_str().unwrap().to_string();
+    let msg_id = msg_body["id"].as_str().unwrap().to_owned();
 
     let sent = ctx
         .client

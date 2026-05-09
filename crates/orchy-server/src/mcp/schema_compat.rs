@@ -42,7 +42,7 @@ fn flatten_nullable_type_array(map: &mut Map<String, Value>) {
         .cloned()
         .collect();
     if has_null && non_null.len() == 1 {
-        map.insert("type".to_string(), non_null[0].clone());
+        map.insert("type".to_owned(), non_null[0].clone());
     }
 }
 

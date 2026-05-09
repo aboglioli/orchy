@@ -49,7 +49,7 @@ impl GenerateApiKey {
         self.api_keys.save(&mut api_key).await?;
 
         Ok(GenerateApiKeyResponse {
-            api_key: plain.as_str().to_string(),
+            api_key: plain.as_str().to_owned(),
         })
     }
 }

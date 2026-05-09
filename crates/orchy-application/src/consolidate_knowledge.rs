@@ -37,7 +37,7 @@ impl ConsolidateKnowledge {
     ) -> ApplicationResult<KnowledgeDto> {
         if cmd.source_paths.len() < 2 {
             return Err(Error::invalid_input(
-                "consolidate requires at least 2 source paths".to_string(),
+                "consolidate requires at least 2 source paths".to_owned(),
             )
             .into());
         }

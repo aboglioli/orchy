@@ -31,7 +31,7 @@ fn build_time_clause(as_of: Option<&DateTime<Utc>>) -> String {
             " AND created_at <= '{ts_str}' AND (valid_until IS NULL OR valid_until > '{ts_str}')"
         )
     } else {
-        " AND valid_until IS NULL".to_string()
+        " AND valid_until IS NULL".to_owned()
     }
 }
 
@@ -63,14 +63,14 @@ impl EdgeStore for SqliteEdgeStore {
         let id = edge.id().to_string();
         let org_id = edge.org_id().to_string();
         let from_kind = edge.from_kind().to_string();
-        let from_id = edge.from_id().to_string();
+        let from_id = edge.from_id().to_owned();
         let to_kind = edge.to_kind().to_string();
-        let to_id = edge.to_id().to_string();
+        let to_id = edge.to_id().to_owned();
         let rel_type = edge.rel_type().to_string();
         let created_at = edge.created_at().to_rfc3339();
         let created_by = edge.created_by().map(|a| a.to_string());
         let source_kind = edge.source_kind().map(|k| k.to_string());
-        let source_id = edge.source_id().map(|s| s.to_string());
+        let source_id = edge.source_id().map(|s| s.to_owned());
         let valid_until = edge.valid_until().map(|dt| dt.to_rfc3339());
         let drained = edge.drain_events();
         blocking_tx(&self.conn, move |tx| {
@@ -129,7 +129,7 @@ impl EdgeStore for SqliteEdgeStore {
         let rel_clause = build_rel_clause(rel_types, "");
         let org = org.to_string();
         let kind = kind.to_string();
-        let id = id.to_string();
+        let id = id.to_owned();
         blocking(&self.conn, move |conn| {
             let sql = format!(
                 "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
@@ -158,7 +158,7 @@ impl EdgeStore for SqliteEdgeStore {
         let rel_clause = build_rel_clause(rel_types, "");
         let org = org.to_string();
         let kind = kind.to_string();
-        let id = id.to_string();
+        let id = id.to_owned();
         blocking(&self.conn, move |conn| {
             let sql = format!(
                 "SELECT id, org_id, from_kind, from_id, to_kind, to_id, rel_type, \
@@ -186,9 +186,9 @@ impl EdgeStore for SqliteEdgeStore {
     ) -> Result<bool> {
         let org = org.to_string();
         let from_kind = from_kind.to_string();
-        let from_id = from_id.to_string();
+        let from_id = from_id.to_owned();
         let to_kind = to_kind.to_string();
-        let to_id = to_id.to_string();
+        let to_id = to_id.to_owned();
         let rel_type = rel_type.to_string();
         blocking(&self.conn, move |conn| {
             let count: i64 = conn
@@ -217,9 +217,9 @@ impl EdgeStore for SqliteEdgeStore {
     ) -> Result<Option<Edge>> {
         let org = org.to_string();
         let from_kind = from_kind.to_string();
-        let from_id = from_id.to_string();
+        let from_id = from_id.to_owned();
         let to_kind = to_kind.to_string();
-        let to_id = to_id.to_string();
+        let to_id = to_id.to_owned();
         let rel_type = rel_type.to_string();
         blocking(&self.conn, move |conn| {
             let mut stmt = conn
@@ -255,7 +255,7 @@ impl EdgeStore for SqliteEdgeStore {
                 " AND created_at <= '{ts_str}' AND (valid_until IS NULL OR valid_until > '{ts_str}')"
             )
         } else if only_active {
-            " AND valid_until IS NULL".to_string()
+            " AND valid_until IS NULL".to_owned()
         } else {
             String::new()
         };
@@ -353,7 +353,7 @@ impl EdgeStore for SqliteEdgeStore {
         let sql = build_find_neighbors_sql(rel_types, target_kinds, direction, &as_of);
         let org = org.to_string();
         let kind = kind.to_string();
-        let id = id.to_string();
+        let id = id.to_owned();
         blocking(&self.conn, move |conn| {
             let mut stmt = conn.prepare(&sql).map_err(crate::error::store_err)?;
             stmt.query_map(
@@ -375,7 +375,7 @@ impl EdgeStore for SqliteEdgeStore {
     ) -> Result<()> {
         let org = org.to_string();
         let kind = kind.to_string();
-        let id = id.to_string();
+        let id = id.to_owned();
         blocking(&self.conn, move |conn| {
             conn.execute(
                 "DELETE FROM edges WHERE org_id = ?1 AND ((from_kind = ?2 AND from_id = ?3) OR (to_kind = ?2 AND to_id = ?3))",
@@ -398,9 +398,9 @@ impl EdgeStore for SqliteEdgeStore {
     ) -> Result<()> {
         let org = org.to_string();
         let from_kind = from_kind.to_string();
-        let from_id = from_id.to_string();
+        let from_id = from_id.to_owned();
         let to_kind = to_kind.to_string();
-        let to_id = to_id.to_string();
+        let to_id = to_id.to_owned();
         let rel_type = rel_type.to_string();
         blocking(&self.conn, move |conn| {
             conn.execute(
@@ -428,7 +428,7 @@ fn build_find_neighbors_sql(
         let s = ts.to_rfc3339();
         format!(" AND created_at <= '{s}' AND (valid_until IS NULL OR valid_until > '{s}')")
     } else {
-        " AND valid_until IS NULL".to_string()
+        " AND valid_until IS NULL".to_owned()
     };
 
     let target_filter = if target_kinds.is_empty() {
@@ -446,39 +446,39 @@ fn build_find_neighbors_sql(
         let s = ts.to_rfc3339();
         format!(" AND e.created_at <= '{s}' AND (e.valid_until IS NULL OR e.valid_until > '{s}')")
     } else {
-        " AND e.valid_until IS NULL".to_string()
+        " AND e.valid_until IS NULL".to_owned()
     };
 
     let (anchor_match, base_direction, base_peer_kind, base_peer_id, recursive_join, rec_direction, rec_peer_kind, rec_peer_id) = match direction {
         TraversalDirection::Outgoing => (
             format!("(from_kind = ?2 AND from_id = ?3){rel_clause}{time_clause}"),
-            "'outgoing'".to_string(),
-            "e.to_kind".to_string(),
-            "e.to_id".to_string(),
-            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.from_kind = t.peer_kind AND e.from_id = t.peer_id".to_string(),
-            "t.direction".to_string(),
-            "e.to_kind".to_string(),
-            "e.to_id".to_string(),
+            "'outgoing'".to_owned(),
+            "e.to_kind".to_owned(),
+            "e.to_id".to_owned(),
+            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.from_kind = t.peer_kind AND e.from_id = t.peer_id".to_owned(),
+            "t.direction".to_owned(),
+            "e.to_kind".to_owned(),
+            "e.to_id".to_owned(),
         ),
         TraversalDirection::Incoming => (
             format!("(to_kind = ?2 AND to_id = ?3){rel_clause}{time_clause}"),
-            "'incoming'".to_string(),
-            "e.from_kind".to_string(),
-            "e.from_id".to_string(),
-            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.to_kind = t.peer_kind AND e.to_id = t.peer_id".to_string(),
-            "t.direction".to_string(),
-            "e.from_kind".to_string(),
-            "e.from_id".to_string(),
+            "'incoming'".to_owned(),
+            "e.from_kind".to_owned(),
+            "e.from_id".to_owned(),
+            "INNER JOIN traversal t ON e.org_id = t.org_id AND e.to_kind = t.peer_kind AND e.to_id = t.peer_id".to_owned(),
+            "t.direction".to_owned(),
+            "e.from_kind".to_owned(),
+            "e.from_id".to_owned(),
         ),
         TraversalDirection::Both => (
             format!("((from_kind = ?2 AND from_id = ?3) OR (to_kind = ?2 AND to_id = ?3)){rel_clause}{time_clause}"),
-            "CASE WHEN e.from_kind = ?2 AND e.from_id = ?3 THEN 'outgoing' ELSE 'incoming' END".to_string(),
-            "CASE WHEN e.from_kind = ?2 AND e.from_id = ?3 THEN e.to_kind ELSE e.from_kind END".to_string(),
-            "CASE WHEN e.from_kind = ?2 AND e.from_id = ?3 THEN e.to_id ELSE e.from_id END".to_string(),
-            "INNER JOIN traversal t ON e.org_id = t.org_id AND ((e.from_kind = t.peer_kind AND e.from_id = t.peer_id) OR (e.to_kind = t.peer_kind AND e.to_id = t.peer_id))".to_string(),
-            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN 'outgoing' ELSE 'incoming' END".to_string(),
-            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_kind ELSE e.from_kind END".to_string(),
-            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_id ELSE e.from_id END".to_string(),
+            "CASE WHEN e.from_kind = ?2 AND e.from_id = ?3 THEN 'outgoing' ELSE 'incoming' END".to_owned(),
+            "CASE WHEN e.from_kind = ?2 AND e.from_id = ?3 THEN e.to_kind ELSE e.from_kind END".to_owned(),
+            "CASE WHEN e.from_kind = ?2 AND e.from_id = ?3 THEN e.to_id ELSE e.from_id END".to_owned(),
+            "INNER JOIN traversal t ON e.org_id = t.org_id AND ((e.from_kind = t.peer_kind AND e.from_id = t.peer_id) OR (e.to_kind = t.peer_kind AND e.to_id = t.peer_id))".to_owned(),
+            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN 'outgoing' ELSE 'incoming' END".to_owned(),
+            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_kind ELSE e.from_kind END".to_owned(),
+            "CASE WHEN e.from_kind = t.peer_kind AND e.from_id = t.peer_id THEN e.to_id ELSE e.from_id END".to_owned(),
         ),
     };
 

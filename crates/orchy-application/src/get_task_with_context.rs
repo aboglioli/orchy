@@ -82,7 +82,7 @@ impl GetTaskWithContext {
             let Some(parent_edge) = parent_edges.first() else {
                 break;
             };
-            let parent_id_str = parent_edge.from_id().to_string();
+            let parent_id_str = parent_edge.from_id().to_owned();
             let parent_task_id: TaskId = match parent_id_str.parse() {
                 Ok(tid) => tid,
                 Err(_) => break,
@@ -129,7 +129,7 @@ impl GetTaskWithContext {
                     None,
                 )
                 .await?;
-            let dep_ids: Vec<String> = dep_edges.iter().map(|e| e.to_id().to_string()).collect();
+            let dep_ids: Vec<String> = dep_edges.iter().map(|e| e.to_id().to_owned()).collect();
             response.dependencies = self.load_dependencies(&dep_ids).await?;
         }
 

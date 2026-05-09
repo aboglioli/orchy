@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn boot_error_from_core_error_preserves_variant() {
-        let core_err = CoreError::Store(StoreError::Other("oops".to_string()));
+        let core_err = CoreError::Store(StoreError::Other("oops".to_owned()));
         let boot_err = BootError::from(core_err);
         assert!(matches!(
             boot_err,
@@ -50,16 +50,16 @@ mod tests {
 
     #[test]
     fn boot_error_displays_with_prefix() {
-        let err = BootError::Config("missing field".to_string());
+        let err = BootError::Config("missing field".to_owned());
         assert_eq!(err.to_string(), "config error: missing field");
 
-        let err = BootError::Migration("schema drift".to_string());
+        let err = BootError::Migration("schema drift".to_owned());
         assert_eq!(err.to_string(), "migration error: schema drift");
 
-        let err = BootError::Auth("no keys".to_string());
+        let err = BootError::Auth("no keys".to_owned());
         assert_eq!(err.to_string(), "auth bootstrap error: no keys");
 
-        let err = BootError::EmbeddingsProvider("bad provider".to_string());
+        let err = BootError::EmbeddingsProvider("bad provider".to_owned());
         assert_eq!(err.to_string(), "embeddings setup error: bad provider");
     }
 }

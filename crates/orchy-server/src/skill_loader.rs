@@ -59,7 +59,7 @@ fn load_recursive<'a>(
             }
 
             let (project_str, scope_str) = match namespace_str.split_once('/') {
-                Some((p, s)) => (p.to_string(), Some(s.to_string())),
+                Some((p, s)) => (p.to_owned(), Some(s.to_owned())),
                 None => (namespace_str.clone(), None),
             };
 
@@ -83,17 +83,17 @@ fn load_recursive<'a>(
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
-                .to_string();
+                .to_owned();
 
             let raw = fs::read_to_string(&path)?;
             let (description, content) = parse_frontmatter(&raw, &name);
 
             let cmd = WriteKnowledgeCommand {
-                org_id: "default".to_string(),
+                org_id: "default".to_owned(),
                 project: project_str,
                 namespace: Some(namespace.to_string()),
                 path: format!("skills/{name}"),
-                kind: "skill".to_string(),
+                kind: "skill".to_owned(),
                 title: description,
                 content,
                 tags: None,
@@ -122,23 +122,23 @@ fn parse_frontmatter(raw: &str, default_name: &str) -> (String, String) {
     let trimmed = raw.trim_start();
 
     if !trimmed.starts_with("---") {
-        return (default_name.to_string(), raw.to_string());
+        return (default_name.to_owned(), raw.to_owned());
     }
 
     let after_first = &trimmed[3..];
     let Some(end) = after_first.find("---") else {
-        return (default_name.to_string(), raw.to_string());
+        return (default_name.to_owned(), raw.to_owned());
     };
 
     let frontmatter = &after_first[..end];
-    let content = after_first[end + 3..].trim_start().to_string();
+    let content = after_first[end + 3..].trim_start().to_owned();
 
-    let mut description = default_name.to_string();
+    let mut description = default_name.to_owned();
 
     for line in frontmatter.lines() {
         let line = line.trim();
         if let Some(val) = line.strip_prefix("description:") {
-            description = val.trim().to_string();
+            description = val.trim().to_owned();
         }
     }
 

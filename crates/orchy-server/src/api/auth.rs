@@ -47,7 +47,7 @@ impl FromRequestParts<Arc<Container>> for OrgAuth {
         Err(ApiError(
             StatusCode::UNAUTHORIZED,
             "UNAUTHORIZED",
-            "missing or invalid Authorization header or auth cookie".to_string(),
+            "missing or invalid Authorization header or auth cookie".to_owned(),
         ))
     }
 }
@@ -78,7 +78,7 @@ async fn try_resolve_api_key(state: &Arc<Container>, token: &str) -> Option<ApiK
         .app
         .resolve_api_key
         .execute(ResolveApiKeyCommand {
-            raw_key: token.to_string(),
+            raw_key: token.to_owned(),
         })
         .await
         .ok()
@@ -89,7 +89,7 @@ async fn try_resolve_jwt(state: &Arc<Container>, token: &str, _parts: &Parts) ->
     let resolve_token = state.app.resolve_token.as_ref()?;
     let principal = resolve_token
         .execute(ResolveTokenCommand {
-            token: token.to_string(),
+            token: token.to_owned(),
         })
         .await
         .ok()

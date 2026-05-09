@@ -25,10 +25,10 @@ impl From<DomainError> for ApplicationError {
     fn from(e: DomainError) -> Self {
         match e {
             DomainError::PasswordMismatch => {
-                ApplicationError::AuthenticationFailed("invalid credentials".to_string())
+                ApplicationError::AuthenticationFailed("invalid credentials".to_owned())
             }
             DomainError::Deactivated => {
-                ApplicationError::AuthenticationFailed("user is deactivated".to_string())
+                ApplicationError::AuthenticationFailed("user is deactivated".to_owned())
             }
             other => ApplicationError::Core(CoreError::Domain(other)),
         }

@@ -67,7 +67,7 @@ async fn agent_save_and_find() {
     agents.save(&mut agent).await.unwrap();
 
     assert_eq!(agent.derived_status(30, 300), "active");
-    assert_eq!(agent.roles(), &["coder".to_string()]);
+    assert_eq!(agent.roles(), &["coder".to_owned()]);
 
     let fetched = agents.find_by_id(agent.id()).await.unwrap().unwrap();
     assert_eq!(fetched.id(), agent.id());
@@ -599,7 +599,7 @@ async fn pg_reader_streaming_yields_events_in_order() {
     while let Some(msg) = stream.next().await {
         let msg = msg.unwrap();
         msg.ack().await.unwrap();
-        keys.push(msg.event().key().as_str().to_string());
+        keys.push(msg.event().key().as_str().to_owned());
     }
     assert_eq!(keys, vec!["k0", "k1", "k2"]);
 }

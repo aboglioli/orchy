@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn map_acker_swaps_acker_keeps_event() {
         let msg = Message::new(ev(), NoopAcker);
-        let topic_before = msg.event().topic().as_str().to_string();
+        let topic_before = msg.event().topic().as_str().to_owned();
         let mapped: Message<OtherAcker> = msg.map_acker(|_| OtherAcker);
         assert_eq!(mapped.event().topic().as_str(), topic_before);
     }

@@ -24,7 +24,7 @@ impl SqliteOrganizationStore {
 impl OrganizationStore for SqliteOrganizationStore {
     async fn save(&self, org: &mut Organization) -> Result<()> {
         let id = org.id().to_string();
-        let name = org.name().to_string();
+        let name = org.name().to_owned();
         let created_at = org.created_at().to_rfc3339();
         let updated_at = org.updated_at().to_rfc3339();
         let drained = org.drain_events();
@@ -103,8 +103,8 @@ fn build_org(
 ) -> Result<Organization> {
     let id = OrganizationId::new(&id_str).map_err(|e| {
         Error::Store(StoreError::Decode {
-            table: "organizations".to_string(),
-            column: "id".to_string(),
+            table: "organizations".to_owned(),
+            column: "id".to_owned(),
             cause: e.to_string(),
         })
     })?;

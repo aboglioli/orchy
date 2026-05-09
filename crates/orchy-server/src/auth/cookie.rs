@@ -20,7 +20,7 @@ impl Default for CookieConfig {
 }
 
 pub fn set_auth_cookie(cookies: &Cookies, token: &str, config: &CookieConfig) {
-    let cookie = tower_cookies::Cookie::build((AUTH_COOKIE_NAME, token.to_string()))
+    let cookie = tower_cookies::Cookie::build((AUTH_COOKIE_NAME, token.to_owned()))
         .http_only(true)
         .secure(config.secure)
         .same_site(config.same_site)
@@ -44,5 +44,5 @@ pub fn clear_auth_cookie(cookies: &Cookies) {
 }
 
 pub fn get_auth_token(cookies: &Cookies) -> Option<String> {
-    cookies.get(AUTH_COOKIE_NAME).map(|c| c.value().to_string())
+    cookies.get(AUTH_COOKIE_NAME).map(|c| c.value().to_owned())
 }

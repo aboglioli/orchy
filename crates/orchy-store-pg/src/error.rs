@@ -48,7 +48,7 @@ fn categorize_sqlx(e: sqlx::Error) -> StoreError {
         Migrate(m) => StoreError::Migration(m.to_string()),
         Decode(d) => StoreError::Serialization(d.to_string()),
         ColumnDecode { index, source } => StoreError::Decode {
-            table: "<unknown>".to_string(),
+            table: "<unknown>".to_owned(),
             column: index,
             cause: source.to_string(),
         },

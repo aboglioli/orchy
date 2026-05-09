@@ -108,13 +108,13 @@ impl MessageTarget {
         if let Some(role) = s.strip_prefix("role:") {
             if role.is_empty() {
                 return Err(DomainError::validation(
-                    "role name must not be empty".to_string(),
+                    "role name must not be empty".to_owned(),
                 ));
             }
-            return Ok(MessageTarget::Role(role.to_string()));
+            return Ok(MessageTarget::Role(role.to_owned()));
         }
         if let Some(ns) = s.strip_prefix("ns:") {
-            let ns = Namespace::try_from(ns.to_string())?;
+            let ns = Namespace::try_from(ns.to_owned())?;
             return Ok(MessageTarget::Namespace(ns));
         }
         if let Some(user_id) = s.strip_prefix("user:") {
@@ -297,7 +297,7 @@ impl Message {
                 message_id: self.id.to_string(),
                 from: self.from.to_string(),
                 to: self.to.to_string(),
-                status: "delivered".to_string(),
+                status: "delivered".to_owned(),
             })?;
             let event = Event::create(
                 self.org_id.as_str(),
@@ -322,7 +322,7 @@ impl Message {
             message_id: self.id.to_string(),
             from: self.from.to_string(),
             to: self.to.to_string(),
-            status: "read".to_string(),
+            status: "read".to_owned(),
         })?;
         let event = Event::create(
             self.org_id.as_str(),
@@ -371,7 +371,7 @@ impl Message {
     pub fn claim(&mut self, agent_id: AgentId) -> DomainResult<()> {
         if !self.is_logical_target() {
             return Err(DomainError::validation(
-                "only logical targets can be claimed".to_string(),
+                "only logical targets can be claimed".to_owned(),
             ));
         }
         if let Some(existing) = &self.claimed_by {
@@ -405,7 +405,7 @@ impl Message {
     pub fn unclaim(&mut self, agent_id: &AgentId) -> DomainResult<()> {
         if self.claimed_by.as_ref() != Some(agent_id) {
             return Err(DomainError::validation(
-                "only the claimant can unclaim".to_string(),
+                "only the claimant can unclaim".to_owned(),
             ));
         }
         self.claimed_by = None;
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn parse_role() {
         let t = MessageTarget::parse("role:reviewer").unwrap();
-        assert_eq!(t, MessageTarget::Role("reviewer".to_string()));
+        assert_eq!(t, MessageTarget::Role("reviewer".to_owned()));
     }
 
     #[test]
@@ -618,7 +618,7 @@ mod tests {
             namespace,
             from,
             MessageTarget::Broadcast,
-            "check this out".to_string(),
+            "check this out".to_owned(),
             None,
             refs.clone(),
         )

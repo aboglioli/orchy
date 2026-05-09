@@ -21,7 +21,7 @@ impl MemoryUserStore {
 impl UserStore for MemoryUserStore {
     async fn save(&self, user: &mut User) -> Result<()> {
         let id = *user.id();
-        let email = user.email().as_str().to_string();
+        let email = user.email().as_str().to_owned();
 
         self.state.users.insert(id, user.clone());
         self.state.user_by_email.insert(email, id);

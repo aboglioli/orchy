@@ -50,7 +50,7 @@ async fn agent_save_and_find() {
     store.save(&mut agent).await.unwrap();
 
     assert_eq!(agent.derived_status(30, 300), "active");
-    assert_eq!(agent.roles(), &["coder".to_string()]);
+    assert_eq!(agent.roles(), &["coder".to_owned()]);
 
     let fetched = store.find_by_id(agent.id()).await.unwrap().unwrap();
     assert_eq!(fetched.id(), agent.id());
@@ -159,7 +159,7 @@ async fn task_save_and_get() {
     assert_eq!(fetched.title(), "Do thing");
     assert_eq!(fetched.description(), "Details");
     assert_eq!(fetched.priority(), Priority::High);
-    assert_eq!(fetched.assigned_roles(), &["dev".to_string()]);
+    assert_eq!(fetched.assigned_roles(), &["dev".to_owned()]);
 }
 
 #[tokio::test]
@@ -536,11 +536,11 @@ async fn task_archive_and_unarchive() {
         org(),
         proj("test-project"),
         Namespace::root(),
-        "Archive test task".to_string(),
-        "Description".to_string(),
+        "Archive test task".to_owned(),
+        "Description".to_owned(),
         None,
         Priority::Normal,
-        vec!["coder".to_string()],
+        vec!["coder".to_owned()],
         None,
         false,
     )
@@ -624,8 +624,8 @@ async fn knowledge_archive_and_unarchive() {
         Namespace::root(),
         "test-arch".parse::<KnowledgePath>().unwrap(),
         KnowledgeKind::Note,
-        "archive test".to_string(),
-        "content".to_string(),
+        "archive test".to_owned(),
+        "content".to_owned(),
         vec![],
         Default::default(),
     )
@@ -675,8 +675,8 @@ async fn knowledge_find_by_path_returns_archived() {
         Namespace::root(),
         "test-arch-path".parse::<KnowledgePath>().unwrap(),
         KnowledgeKind::Note,
-        "find_by_path archive test".to_string(),
-        "content".to_string(),
+        "find_by_path archive test".to_owned(),
+        "content".to_owned(),
         vec![],
         Default::default(),
     )
@@ -789,9 +789,9 @@ async fn edge_exists_by_pair_detects_duplicate() {
     let mut edge = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "task-1".to_string(),
+        "task-1".to_owned(),
         ResourceKind::Knowledge,
-        "know-1".to_string(),
+        "know-1".to_owned(),
         RelationType::Produces,
         None,
     )
@@ -862,9 +862,9 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
     let mut e1 = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "t1".to_string(),
+        "t1".to_owned(),
         ResourceKind::Knowledge,
-        "k1".to_string(),
+        "k1".to_owned(),
         RelationType::Produces,
         None,
     )
@@ -872,9 +872,9 @@ async fn edge_list_by_org_returns_all_and_filters_by_rel_type() {
     let mut e2 = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "t2".to_string(),
+        "t2".to_owned(),
         ResourceKind::Task,
-        "t3".to_string(),
+        "t3".to_owned(),
         RelationType::Spawns,
         None,
     )
@@ -915,8 +915,8 @@ async fn delete_knowledge_cleans_up_associated_edges() {
         ns("/"),
         KnowledgePath::new("test-decision").unwrap(),
         KnowledgeKind::Decision,
-        "Test".to_string(),
-        "content".to_string(),
+        "Test".to_owned(),
+        "content".to_owned(),
         vec![],
         HashMap::new(),
     )
@@ -927,7 +927,7 @@ async fn delete_knowledge_cleans_up_associated_edges() {
     let mut edge = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "task-1".to_string(),
+        "task-1".to_owned(),
         ResourceKind::Knowledge,
         kid.clone(),
         RelationType::Produces,
@@ -970,8 +970,8 @@ async fn split_task_creates_spawns_edges() {
         o.clone(),
         proj("myapp"),
         ns("/"),
-        "Parent task".to_string(),
-        "desc".to_string(),
+        "Parent task".to_owned(),
+        "desc".to_owned(),
         None,
         Priority::Normal,
         vec![],
@@ -986,16 +986,16 @@ async fn split_task_creates_spawns_edges() {
         task_id: parent_id.clone(),
         subtasks: vec![
             SubtaskInput {
-                title: "Sub A".to_string(),
-                description: "desc".to_string(),
+                title: "Sub A".to_owned(),
+                description: "desc".to_owned(),
                 acceptance_criteria: None,
                 priority: None,
                 assigned_roles: None,
                 depends_on: None,
             },
             SubtaskInput {
-                title: "Sub B".to_string(),
-                description: "desc".to_string(),
+                title: "Sub B".to_owned(),
+                description: "desc".to_owned(),
                 acceptance_criteria: None,
                 priority: None,
                 assigned_roles: None,
@@ -1327,8 +1327,8 @@ async fn search_knowledge_task_proximity_boost() {
         Namespace::root(),
         KnowledgePath::new("auth-decision").unwrap(),
         KnowledgeKind::Decision,
-        "Authentication Decision".to_string(),
-        "We chose JWT tokens for authentication".to_string(),
+        "Authentication Decision".to_owned(),
+        "We chose JWT tokens for authentication".to_owned(),
         vec![],
         HashMap::new(),
     )
@@ -1338,7 +1338,7 @@ async fn search_knowledge_task_proximity_boost() {
     let mut edge = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "task-123".to_string(),
+        "task-123".to_owned(),
         ResourceKind::Knowledge,
         k.id().to_string(),
         RelationType::Produces,
@@ -1349,7 +1349,7 @@ async fn search_knowledge_task_proximity_boost() {
 
     let cmd_no_boost = SearchKnowledgeCommand {
         org_id: o.to_string(),
-        query: "authentication".to_string(),
+        query: "authentication".to_owned(),
         namespace: None,
         kind: None,
         limit: Some(10),
@@ -1370,7 +1370,7 @@ async fn search_knowledge_task_proximity_boost() {
 
     let cmd_with_boost = SearchKnowledgeCommand {
         org_id: o.to_string(),
-        query: "authentication".to_string(),
+        query: "authentication".to_owned(),
         namespace: None,
         kind: None,
         limit: Some(10),
@@ -1378,7 +1378,7 @@ async fn search_knowledge_task_proximity_boost() {
         min_score: None,
         anchor_kind: None,
         anchor_id: None,
-        task_id: Some("task-123".to_string()),
+        task_id: Some("task-123".to_owned()),
     };
     let results_with_boost = SearchKnowledge::new(
         Arc::clone(&knowledge_store) as Arc<dyn KnowledgeStore>,
@@ -1410,9 +1410,9 @@ async fn edge_invalidate_hides_from_only_active_queries() {
     let mut edge = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "t1".to_string(),
+        "t1".to_owned(),
         ResourceKind::Knowledge,
-        "k1".to_string(),
+        "k1".to_owned(),
         RelationType::Produces,
         None,
     )
@@ -1453,8 +1453,8 @@ async fn assemble_context_returns_linked_knowledge() {
         Namespace::root(),
         KnowledgePath::new("auth-decision").unwrap(),
         KnowledgeKind::Decision,
-        "Auth Decision".to_string(),
-        "We chose JWT for auth".to_string(),
+        "Auth Decision".to_owned(),
+        "We chose JWT for auth".to_owned(),
         vec![],
         HashMap::new(),
     )
@@ -1467,8 +1467,8 @@ async fn assemble_context_returns_linked_knowledge() {
         Namespace::root(),
         KnowledgePath::new("recent-note").unwrap(),
         KnowledgeKind::Note,
-        "Recent Note".to_string(),
-        "Found a bug in login flow".to_string(),
+        "Recent Note".to_owned(),
+        "Found a bug in login flow".to_owned(),
         vec![],
         HashMap::new(),
     )
@@ -1478,7 +1478,7 @@ async fn assemble_context_returns_linked_knowledge() {
     let mut edge1 = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "task-abc".to_string(),
+        "task-abc".to_owned(),
         ResourceKind::Knowledge,
         decision.id().to_string(),
         RelationType::Produces,
@@ -1490,7 +1490,7 @@ async fn assemble_context_returns_linked_knowledge() {
     let mut edge2 = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "task-abc".to_string(),
+        "task-abc".to_owned(),
         ResourceKind::Knowledge,
         note.id().to_string(),
         RelationType::RelatedTo,
@@ -1503,8 +1503,8 @@ async fn assemble_context_returns_linked_knowledge() {
     let resp = svc
         .execute(AssembleContextCommand {
             org_id: o.to_string(),
-            kind: "task".to_string(),
-            id: "task-abc".to_string(),
+            kind: "task".to_owned(),
+            id: "task-abc".to_owned(),
             max_tokens: None,
         })
         .await
@@ -1513,14 +1513,11 @@ async fn assemble_context_returns_linked_knowledge() {
     assert!(!resp.core_facts.is_empty(), "expected core_facts");
     assert!(resp.core_facts.iter().any(|k| k.path == "auth-decision"));
 
-    let all_paths: Vec<_> = resp
-        .recent_changes
-        .iter()
-        .chain(resp.relevant_decisions.iter())
-        .map(|k| k.path.clone())
-        .collect();
     assert!(
-        all_paths.contains(&"recent-note".to_string()),
+        resp.recent_changes
+            .iter()
+            .chain(resp.relevant_decisions.iter())
+            .any(|k| k.path == "recent-note"),
         "expected recent-note in output"
     );
 }
@@ -1533,9 +1530,9 @@ async fn edge_as_of_returns_snapshot_at_past_timestamp() {
     let mut edge = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "t1".to_string(),
+        "t1".to_owned(),
         ResourceKind::Knowledge,
-        "k1".to_string(),
+        "k1".to_owned(),
         RelationType::Produces,
         None,
     )
@@ -1598,8 +1595,8 @@ async fn assemble_context_surfaces_decision_above_log() {
         Namespace::root(),
         KnowledgePath::new("important-decision").unwrap(),
         KnowledgeKind::Decision,
-        "Important Decision".to_string(),
-        "We chose Rust for performance".to_string(),
+        "Important Decision".to_owned(),
+        "We chose Rust for performance".to_owned(),
         vec![],
         HashMap::new(),
     )
@@ -1612,8 +1609,8 @@ async fn assemble_context_surfaces_decision_above_log() {
         Namespace::root(),
         KnowledgePath::new("activity-log").unwrap(),
         KnowledgeKind::Log,
-        "Activity Log".to_string(),
-        "Ran some tests".to_string(),
+        "Activity Log".to_owned(),
+        "Ran some tests".to_owned(),
         vec![],
         HashMap::new(),
     )
@@ -1623,7 +1620,7 @@ async fn assemble_context_surfaces_decision_above_log() {
     let mut edge_d = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "task-x".to_string(),
+        "task-x".to_owned(),
         ResourceKind::Knowledge,
         decision.id().to_string(),
         RelationType::RelatedTo,
@@ -1635,7 +1632,7 @@ async fn assemble_context_surfaces_decision_above_log() {
     let mut edge_l = Edge::new(
         o.clone(),
         ResourceKind::Task,
-        "task-x".to_string(),
+        "task-x".to_owned(),
         ResourceKind::Knowledge,
         log.id().to_string(),
         RelationType::RelatedTo,
@@ -1648,8 +1645,8 @@ async fn assemble_context_surfaces_decision_above_log() {
     let resp = svc
         .execute(AssembleContextCommand {
             org_id: o.to_string(),
-            kind: "task".to_string(),
-            id: "task-x".to_string(),
+            kind: "task".to_owned(),
+            id: "task-x".to_owned(),
             max_tokens: None,
         })
         .await

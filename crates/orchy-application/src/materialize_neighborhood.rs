@@ -101,7 +101,7 @@ impl MaterializeNeighborhood {
                     if let Ok(id) = peer_id.parse::<KnowledgeId>() {
                         knowledge_ids.push(id);
                     } else {
-                        knowledge_paths.push(peer_id.to_string());
+                        knowledge_paths.push(peer_id.to_owned());
                     }
                 }
                 ResourceKind::Agent => {
@@ -140,7 +140,7 @@ impl MaterializeNeighborhood {
             let project = cmd
                 .project
                 .as_deref()
-                .map(|p| ProjectId::try_from(p.to_string()))
+                .map(|p| ProjectId::try_from(p.to_owned()))
                 .transpose()?;
             let namespace = Namespace::root();
             for path_str in &knowledge_paths {
@@ -175,10 +175,10 @@ impl MaterializeNeighborhood {
             .filter_map(|hop| {
                 let (peer_kind, peer_id) = match hop.direction {
                     RelationDirection::Outgoing => {
-                        (hop.edge.to_kind().clone(), hop.edge.to_id().to_string())
+                        (hop.edge.to_kind().clone(), hop.edge.to_id().to_owned())
                     }
                     RelationDirection::Incoming => {
-                        (hop.edge.from_kind().clone(), hop.edge.from_id().to_string())
+                        (hop.edge.from_kind().clone(), hop.edge.from_id().to_owned())
                     }
                 };
 
@@ -186,7 +186,7 @@ impl MaterializeNeighborhood {
                     ResourceKind::Task => task_map.get(&peer_id).map(|t| {
                         PeerEntity::Task(TaskSummary {
                             id: t.id().to_string(),
-                            title: t.title().to_string(),
+                            title: t.title().to_owned(),
                             status: t.status().to_string(),
                             priority: t.priority().to_string(),
                             assigned_to: t.assigned_to().map(|id| id.to_string()),
@@ -197,7 +197,7 @@ impl MaterializeNeighborhood {
                     ResourceKind::Knowledge => knowledge_map.get(&peer_id).map(|k| {
                         PeerEntity::Knowledge(KnowledgeSummary {
                             id: k.id().to_string(),
-                            title: k.title().to_string(),
+                            title: k.title().to_owned(),
                             entry_kind: k.kind().to_string(),
                             path: k.path().to_string(),
                             tags: k.tags().to_vec(),
@@ -208,19 +208,19 @@ impl MaterializeNeighborhood {
                     ResourceKind::Agent => agent_map.get(&peer_id).map(|a| {
                         PeerEntity::Agent(AgentSummary {
                             id: a.id().to_string(),
-                            description: a.description().to_string(),
-                            status: a.derived_status(30, 300).to_string(),
+                            description: a.description().to_owned(),
+                            status: a.derived_status(30, 300).to_owned(),
                             roles: a.roles().to_vec(),
                         })
                     })?,
                     ResourceKind::Message => message_map.get(&peer_id).map(|m| {
                         PeerEntity::Message(MessageSummary {
                             id: m.id().to_string(),
-                            body: m.body().to_string(),
+                            body: m.body().to_owned(),
                             status: match m.status() {
-                                MessageStatus::Pending => "pending".to_string(),
-                                MessageStatus::Delivered => "delivered".to_string(),
-                                MessageStatus::Read => "read".to_string(),
+                                MessageStatus::Pending => "pending".to_owned(),
+                                MessageStatus::Delivered => "delivered".to_owned(),
+                                MessageStatus::Read => "read".to_owned(),
                             },
                             from: m.from().to_string(),
                         })

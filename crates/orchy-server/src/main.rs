@@ -52,7 +52,7 @@ async fn run() -> BootResult<()> {
 
     let config_path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "config.toml".to_string());
+        .unwrap_or_else(|| "config.toml".to_owned());
 
     let config_content = std::fs::read_to_string(&config_path)
         .map_err(|e| BootError::Config(format!("failed to read config file {config_path}: {e}")))?;
@@ -204,7 +204,7 @@ async fn resolve_mcp_auth(
     let principal = app
         .resolve_api_key
         .execute(ResolveApiKeyCommand {
-            raw_key: key.to_string(),
+            raw_key: key.to_owned(),
         })
         .await
         .map_err(|e| format!("API key resolution failed: {e}"))?
@@ -242,7 +242,7 @@ async fn bootstrap_handler(
     Path(namespace): Path<String>,
 ) -> impl IntoResponse {
     let (project_str, scope) = match namespace.split_once('/') {
-        Some((p, s)) => (p.to_string(), Some(s.to_string())),
+        Some((p, s)) => (p.to_owned(), Some(s.to_owned())),
         None => (namespace.clone(), None),
     };
 

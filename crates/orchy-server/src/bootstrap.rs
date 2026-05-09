@@ -11,7 +11,7 @@ pub async fn generate_bootstrap_prompt(
     port: u16,
     app: &Application,
 ) -> Result<String, String> {
-    let default_org = "default".to_string();
+    let default_org = "default".to_owned();
 
     let skills = app
         .list_skills
@@ -247,7 +247,7 @@ Use edges to record meaningful relationships between tasks, knowledge entries, a
                 task.assigned_to
                     .as_deref()
                     .map(|a| format!("`{a}`"))
-                    .unwrap_or_else(|| "-".to_string()),
+                    .unwrap_or_else(|| "-".to_owned()),
             ));
         }
         out.push('\n');

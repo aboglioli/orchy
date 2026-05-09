@@ -153,15 +153,15 @@ mod tests {
     fn test_project() -> Project {
         use orchy_events::OrganizationId;
         let org_id = OrganizationId::new("test").unwrap();
-        let id = ProjectId::try_from("test-project".to_string()).unwrap();
-        Project::new(org_id, id, "a test project".to_string()).unwrap()
+        let id = ProjectId::try_from("test-project".to_owned()).unwrap();
+        Project::new(org_id, id, "a test project".to_owned()).unwrap()
     }
 
     #[test]
     fn update_description_changes() {
         let mut project = test_project();
         project
-            .update_description("new description".to_string())
+            .update_description("new description".to_owned())
             .unwrap();
         assert_eq!(project.description(), "new description");
     }
@@ -170,8 +170,8 @@ mod tests {
     fn set_metadata_inserts() {
         let mut project = test_project();
         project
-            .set_metadata("env".to_string(), "prod".to_string())
+            .set_metadata("env".to_owned(), "prod".to_owned())
             .unwrap();
-        assert_eq!(project.metadata().get("env"), Some(&"prod".to_string()));
+        assert_eq!(project.metadata().get("env"), Some(&"prod".to_owned()));
     }
 }

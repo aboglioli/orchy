@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use aws_sdk_sqs::Client;
 use aws_sdk_sqs::types::SendMessageBatchRequestEntry;
 

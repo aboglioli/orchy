@@ -144,7 +144,7 @@ pub async fn run(cmd: &MessageSubcommand, client: &OrchyClient, config: &Config)
             }
         }
         MessageSubcommand::MarkRead { ids } => {
-            let id_vec: Vec<String> = ids.split(',').map(|s| s.trim().to_string()).collect();
+            let id_vec: Vec<String> = ids.split(',').map(|s| s.trim().to_owned()).collect();
             let body = serde_json::json!({ "message_ids": id_vec });
             let alias = client.alias.clone().ok_or(CliError::MissingAgentId)?;
             let v = client

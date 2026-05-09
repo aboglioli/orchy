@@ -24,7 +24,7 @@ pub fn format_task(v: &serde_json::Value) -> String {
 /// Format a list of tasks as a readable table.
 pub fn format_task_list(items: &[serde_json::Value]) -> String {
     if items.is_empty() {
-        return "No tasks found.\n".to_string();
+        return "No tasks found.\n".to_owned();
     }
     let mut out = String::new();
     for t in items {
@@ -67,7 +67,7 @@ pub fn format_knowledge_full(v: &serde_json::Value) -> String {
 /// Format a list of knowledge entries.
 pub fn format_knowledge_list(items: &[serde_json::Value]) -> String {
     if items.is_empty() {
-        return "No knowledge entries found.\n".to_string();
+        return "No knowledge entries found.\n".to_owned();
     }
     let mut out = String::new();
     for k in items {
@@ -90,7 +90,7 @@ pub fn format_message(v: &serde_json::Value) -> String {
 /// Format a list of messages.
 pub fn format_message_list(items: &[serde_json::Value]) -> String {
     if items.is_empty() {
-        return "No messages.\n".to_string();
+        return "No messages.\n".to_owned();
     }
     let mut out = String::new();
     for m in items {

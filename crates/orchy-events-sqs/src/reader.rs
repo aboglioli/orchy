@@ -2,7 +2,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use aws_sdk_sqs::Client;
 use futures::Stream;
 use tokio::sync::mpsc;
@@ -156,27 +155,27 @@ fn deserialize_event_value(v: serde_json::Value) -> Result<SerializedEvent> {
         .get("id")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("missing id".into()))?
-        .to_string();
+        .to_owned();
     let organization = v
         .get("organization")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("missing organization".into()))?
-        .to_string();
+        .to_owned();
     let namespace = v
         .get("namespace")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("missing namespace".into()))?
-        .to_string();
+        .to_owned();
     let topic = v
         .get("topic")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("missing topic".into()))?
-        .to_string();
+        .to_owned();
     let key = v
         .get("key")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("missing key".into()))?
-        .to_string();
+        .to_owned();
     let payload = v
         .get("payload")
         .cloned()
@@ -185,7 +184,7 @@ fn deserialize_event_value(v: serde_json::Value) -> Result<SerializedEvent> {
         .get("content_type")
         .and_then(|x| x.as_str())
         .ok_or_else(|| Error::Serialization("missing content_type".into()))?
-        .to_string();
+        .to_owned();
     let metadata = v
         .get("metadata")
         .and_then(|x| serde_json::from_value(x.clone()).ok())

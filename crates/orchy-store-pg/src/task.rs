@@ -219,7 +219,7 @@ impl TaskStore for PgTaskStore {
             param_idx += 1;
         }
         if !filter.include_archived.unwrap_or(false) {
-            conditions.push("archived_at IS NULL".to_string());
+            conditions.push("archived_at IS NULL".to_owned());
         }
 
         if let Some(ref cursor) = page.after

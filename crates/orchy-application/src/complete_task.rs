@@ -175,7 +175,7 @@ pub(crate) async fn try_auto_complete_parent(
     let parent_id: TaskId = parent_edge
         .from_id()
         .parse()
-        .map_err(|_| Error::invalid_input("invalid parent task id".to_string()))?;
+        .map_err(|_| Error::invalid_input("invalid parent task id".to_owned()))?;
 
     let Some(mut parent) = tasks.find_by_id(&parent_id).await? else {
         return Ok(());
@@ -200,7 +200,7 @@ pub(crate) async fn try_auto_complete_parent(
     let siblings = tasks.find_by_ids(&sibling_ids).await?;
 
     if Task::all_children_completed(&siblings) {
-        parent.auto_complete("all subtasks completed".to_string())?;
+        parent.auto_complete("all subtasks completed".to_owned())?;
         if let Err(e) = tasks.save(&mut parent).await {
             tracing::warn!("failed to auto-complete parent {parent_id}: {e}");
         }

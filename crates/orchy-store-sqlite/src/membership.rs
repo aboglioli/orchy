@@ -190,29 +190,29 @@ fn row_to_membership(
             })?;
             let user_id = UserId::from_str(&user_id).map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "membership".to_string(),
-                    column: "user_id".to_string(),
+                    table: "membership".to_owned(),
+                    column: "user_id".to_owned(),
                     cause: e.to_string(),
                 })
             })?;
             let org_id = OrganizationId::new(&org_id).map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "membership".to_string(),
-                    column: "org_id".to_string(),
+                    table: "membership".to_owned(),
+                    column: "org_id".to_owned(),
                     cause: e.to_string(),
                 })
             })?;
             let role = role.parse::<OrgRole>().map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "membership".to_string(),
-                    column: "role".to_string(),
+                    table: "membership".to_owned(),
+                    column: "role".to_owned(),
                     cause: e.to_string(),
                 })
             })?;
             let created_at = created_at.parse().map_err(|e: chrono::ParseError| {
                 Error::Store(StoreError::Decode {
-                    table: "membership".to_string(),
-                    column: "created_at".to_string(),
+                    table: "membership".to_owned(),
+                    column: "created_at".to_owned(),
                     cause: e.to_string(),
                 })
             })?;

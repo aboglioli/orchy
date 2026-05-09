@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use orchy_core::error::Result;
 use orchy_events::io::Writer;
 use orchy_events::{Error as EventsError, Event, Result as EventsResult, SerializedEvent};

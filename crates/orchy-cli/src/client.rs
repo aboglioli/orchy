@@ -14,7 +14,7 @@ pub struct OrchyClient {
 
 impl OrchyClient {
     pub fn new(config: &Config) -> Self {
-        let base_url = config.url.trim_end_matches('/').to_string();
+        let base_url = config.url.trim_end_matches('/').to_owned();
         Self {
             client: Client::new(),
             base_url,

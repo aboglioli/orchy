@@ -60,8 +60,8 @@ mod tests {
     #[test]
     fn streaming_defaults() {
         let c = KafkaReaderConfig::streaming(
-            vec!["broker:9092".to_string()],
-            vec!["t".to_string()],
+            vec!["broker:9092".to_owned()],
+            vec!["t".to_owned()],
             ConsumerGroupId::new("g").unwrap(),
             OrganizationId::new("o").unwrap(),
         );

@@ -68,7 +68,7 @@ impl AddEdge {
             let from_task_id: TaskId = cmd
                 .from_id
                 .parse()
-                .map_err(|_| Error::invalid_input("invalid task id in from_id".to_string()))?;
+                .map_err(|_| Error::invalid_input("invalid task id in from_id".to_owned()))?;
             let reachable = self
                 .store
                 .find_neighbors(

@@ -46,7 +46,7 @@ impl BootstrapAdmin {
 
         let org_id = OrganizationId::new("default")?;
         if self.orgs.find_by_id(&org_id).await?.is_none() {
-            let mut org = Organization::new(org_id.clone(), "Default Organization".to_string())?;
+            let mut org = Organization::new(org_id.clone(), "Default Organization".to_owned())?;
             self.orgs.save(&mut org).await?;
         }
 

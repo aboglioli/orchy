@@ -49,8 +49,8 @@ async fn resolve_agent_id(
         .resolve_agent
         .execute(ResolveAgentCommand {
             org_id: org.to_string(),
-            project: project.to_string(),
-            id_or_alias: id_or_alias.to_string(),
+            project: project.to_owned(),
+            id_or_alias: id_or_alias.to_owned(),
         })
         .await
         .map_err(ApiError::from)?;
@@ -981,7 +981,7 @@ pub async fn next_task(
                     .app
                     .get_agent
                     .execute(GetAgentCommand {
-                        agent_id: agent_id.to_string(),
+                        agent_id: agent_id.to_owned(),
                         org_id: Some(org.clone()),
                         relations: None,
                     })
@@ -1000,7 +1000,7 @@ pub async fn next_task(
             return Err(ApiError(
                 StatusCode::BAD_REQUEST,
                 "INVALID_PARAM",
-                "claim requires agent_id query param".to_string(),
+                "claim requires agent_id query param".to_owned(),
             ));
         }
         (false, _) => None,

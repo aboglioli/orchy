@@ -419,7 +419,7 @@ impl Knowledge {
 
             let payload = Payload::from_json(&knowledge_events::KnowledgeTagRemovedPayload {
                 entry_id: self.id.to_string(),
-                tag: tag.to_string(),
+                tag: tag.to_owned(),
             })?;
             let event = Event::create(
                 self.org_id.as_str(),
@@ -455,7 +455,7 @@ impl Knowledge {
     }
 
     pub fn rename(&mut self, path: KnowledgePath) -> DomainResult<()> {
-        let old_path = self.path.as_str().to_string();
+        let old_path = self.path.as_str().to_owned();
         self.path = path;
         self.updated_at = Utc::now();
 
@@ -504,7 +504,7 @@ impl Knowledge {
 
         let payload = Payload::from_json(&knowledge_events::KnowledgeMetadataRemovedPayload {
             entry_id: self.id.to_string(),
-            key: key.to_string(),
+            key: key.to_owned(),
         })?;
         let event = Event::create(
             self.org_id.as_str(),
@@ -579,7 +579,7 @@ impl Knowledge {
     }
 
     pub fn set_embedding(&mut self, embedding: Embedding) -> DomainResult<()> {
-        let model = embedding.model().to_string();
+        let model = embedding.model().to_owned();
         let dimensions = embedding.dimensions();
         let values = embedding.into_values();
 

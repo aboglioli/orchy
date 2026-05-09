@@ -202,7 +202,7 @@ async fn send_message_resolves_alias_for_from() {
             project: "test".into(),
             namespace: None,
             from_agent_id: sender_id.to_string(),
-            to: "@receiver".to_string(),
+            to: "@receiver".to_owned(),
             body: "hello2".into(),
             reply_to: None,
             refs: vec![],
@@ -324,7 +324,7 @@ async fn reconnect_with_same_alias_preserves_uuid_and_mailbox() {
     assert_eq!(id1, id2, "same alias must resume same agent UUID");
 
     let bodies = inbox_for(&s, &id1, &[]).await;
-    assert!(bodies.contains(&"direct-before-reconnect".to_string()));
+    assert!(bodies.contains(&"direct-before-reconnect".to_owned()));
 }
 
 // ─── alias rename preserves direct messages ───────────────────────────────
@@ -364,7 +364,7 @@ async fn alias_rename_preserves_direct_messages() {
         .unwrap();
 
     let bodies = inbox_for(&s, &agent_id, &[]).await;
-    assert!(bodies.contains(&"to-original".to_string()));
+    assert!(bodies.contains(&"to-original".to_owned()));
 }
 
 // ─── namespace mark-read ──────────────────────────────────────────────────
@@ -379,7 +379,7 @@ async fn namespace_targeted_message_can_be_marked_read() {
         let a = agents(&s);
         let mut agent = a.find_by_id(&recipient_id).await.unwrap().unwrap();
         agent
-            .switch_context(None, Namespace::try_from("/backend".to_string()).unwrap())
+            .switch_context(None, Namespace::try_from("/backend".to_owned()).unwrap())
             .unwrap();
         a.save(&mut agent).await.unwrap();
     }
@@ -417,7 +417,7 @@ async fn namespace_targeted_message_can_be_marked_read() {
         .expect("mark_read should succeed for namespace-targeted message");
 
     let bodies = inbox_for(&s, &recipient_id, &[]).await;
-    assert!(!bodies.contains(&"ns-message".to_string()));
+    assert!(!bodies.contains(&"ns-message".to_owned()));
 }
 
 // ─── future logical audience visibility ─────────────────────────────────────
@@ -450,12 +450,12 @@ async fn future_agent_sees_old_role_message() {
     {
         let a = agents(&s);
         let mut agent = a.find_by_id(&recipient_id).await.unwrap().unwrap();
-        agent.change_roles(vec!["reviewer".to_string()]).unwrap();
+        agent.change_roles(vec!["reviewer".to_owned()]).unwrap();
         a.save(&mut agent).await.unwrap();
     }
 
-    let bodies = inbox_for(&s, &recipient_id, &["reviewer".to_string()]).await;
-    assert!(bodies.contains(&"role-message".to_string()));
+    let bodies = inbox_for(&s, &recipient_id, &["reviewer".to_owned()]).await;
+    assert!(bodies.contains(&"role-message".to_owned()));
 }
 
 #[tokio::test]
@@ -485,7 +485,7 @@ async fn future_agent_sees_old_broadcast_message() {
     let recipient_id = register_with_app(&s, "future-listener").await;
 
     let bodies = inbox_for(&s, &recipient_id, &[]).await;
-    assert!(bodies.contains(&"broadcast-message".to_string()));
+    assert!(bodies.contains(&"broadcast-message".to_owned()));
 }
 
 #[tokio::test]
@@ -517,13 +517,13 @@ async fn future_agent_sees_old_namespace_message() {
         let a = agents(&s);
         let mut agent = a.find_by_id(&recipient_id).await.unwrap().unwrap();
         agent
-            .switch_context(None, Namespace::try_from("/backend".to_string()).unwrap())
+            .switch_context(None, Namespace::try_from("/backend".to_owned()).unwrap())
             .unwrap();
         a.save(&mut agent).await.unwrap();
     }
 
     let bodies = inbox_for(&s, &recipient_id, &[]).await;
-    assert!(bodies.contains(&"ns-old-message".to_string()));
+    assert!(bodies.contains(&"ns-old-message".to_owned()));
 }
 
 // ─── alias uniqueness per org/project ───────────────────────────────────────
@@ -555,7 +555,7 @@ async fn direct_mark_read_hides_message_from_inbox() {
         .unwrap();
 
     let bodies = inbox_for(&s, &recipient_id, &[]).await;
-    assert!(bodies.contains(&"direct-read".to_string()));
+    assert!(bodies.contains(&"direct-read".to_owned()));
 
     let mark_read = MarkRead::new(
         messages(&s) as Arc<dyn MessageStore>,
@@ -570,7 +570,7 @@ async fn direct_mark_read_hides_message_from_inbox() {
         .unwrap();
 
     let bodies = inbox_for(&s, &recipient_id, &[]).await;
-    assert!(!bodies.contains(&"direct-read".to_string()));
+    assert!(!bodies.contains(&"direct-read".to_owned()));
 }
 
 #[tokio::test]
@@ -709,7 +709,7 @@ async fn user_target_messages_reach_future_user_owned_agents() {
     let user_agent_id = register_with_auth_user(&s, "user-target-recipient", Some(&user_id)).await;
     let bodies = inbox_for(&s, &user_agent_id, &[]).await;
 
-    assert!(bodies.contains(&"hello future agent".to_string()));
+    assert!(bodies.contains(&"hello future agent".to_owned()));
     assert_eq!(msg.to, format!("user:{user_id}"));
 }
 
@@ -748,7 +748,7 @@ async fn unclaim_succeeds_for_claimed_user_target_message() {
         .unwrap();
 
     let sibling_bodies = inbox_for(&s, &sibling_id, &[]).await;
-    assert!(!sibling_bodies.contains(&"claim me".to_string()));
+    assert!(!sibling_bodies.contains(&"claim me".to_owned()));
 
     let unclaim = UnclaimMessage::new(messages(&s) as Arc<dyn MessageStore>);
     unclaim
@@ -757,7 +757,7 @@ async fn unclaim_succeeds_for_claimed_user_target_message() {
         .unwrap();
 
     let sibling_bodies = inbox_for(&s, &sibling_id, &[]).await;
-    assert!(sibling_bodies.contains(&"claim me".to_string()));
+    assert!(sibling_bodies.contains(&"claim me".to_owned()));
 }
 
 #[tokio::test]
@@ -1087,8 +1087,8 @@ async fn knowledge_tag_and_untag() {
         .await
         .unwrap();
     let entry = resp.knowledge.unwrap();
-    assert!(entry.tags.contains(&"rust".to_string()));
-    assert!(!entry.tags.contains(&"backend".to_string()));
+    assert!(entry.tags.contains(&"rust".to_owned()));
+    assert!(!entry.tags.contains(&"backend".to_owned()));
 }
 
 #[tokio::test]
@@ -1354,7 +1354,7 @@ async fn agent_change_roles_updates_roles() {
     change_roles
         .execute(ChangeRolesCommand {
             agent_id: agent_id.to_string(),
-            roles: vec!["coder".to_string()],
+            roles: vec!["coder".to_owned()],
         })
         .await
         .unwrap();
@@ -1365,7 +1365,7 @@ async fn agent_change_roles_updates_roles() {
     change_roles
         .execute(ChangeRolesCommand {
             agent_id: agent_id.to_string(),
-            roles: vec!["coder".to_string(), "reviewer".to_string()],
+            roles: vec!["coder".to_owned(), "reviewer".to_owned()],
         })
         .await
         .unwrap();
@@ -1890,8 +1890,8 @@ async fn task_tag_and_untag() {
         .await
         .unwrap();
 
-    assert!(result.tags.contains(&"rust".to_string()));
-    assert!(!result.tags.contains(&"backend".to_string()));
+    assert!(result.tags.contains(&"rust".to_owned()));
+    assert!(!result.tags.contains(&"backend".to_owned()));
 }
 
 #[tokio::test]

@@ -50,7 +50,7 @@ impl LockStore for MemoryLockStore {
             org.clone(),
             project.clone(),
             namespace.clone(),
-            name.to_string(),
+            name.to_owned(),
             holder.clone(),
             ttl_secs,
         )?;

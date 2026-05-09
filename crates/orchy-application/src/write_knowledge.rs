@@ -154,7 +154,7 @@ impl WriteKnowledge {
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());
             let vector = emb.embed(&text).await?;
-            let embedding = Embedding::new(vector, emb.model().to_string(), emb.dimensions())?;
+            let embedding = Embedding::new(vector, emb.model().to_owned(), emb.dimensions())?;
             entry.set_embedding(embedding)?;
         }
 

@@ -350,7 +350,7 @@ fn default_bcrypt_cost() -> u32 {
 }
 
 fn default_keys_dir() -> String {
-    "keys".to_string()
+    "keys".to_owned()
 }
 
 /// Configuration validation errors with detailed context.

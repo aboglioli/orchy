@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 
@@ -45,7 +43,7 @@ impl KafkaWriter {
 impl Writer for KafkaWriter {
     async fn write(&self, event: &Event) -> Result<()> {
         let body = Self::body(event)?;
-        let key = event.key().as_str().to_string();
+        let key = event.key().as_str().to_owned();
         let record: FutureRecord<String, String> =
             FutureRecord::to(&self.topic).payload(&body).key(&key);
         self.producer
@@ -61,7 +59,7 @@ impl Writer for KafkaWriter {
         }
         let payloads: Vec<(String, String)> = events
             .iter()
-            .map(|e| Ok::<_, Error>((Self::body(e)?, e.key().as_str().to_string())))
+            .map(|e| Ok::<_, Error>((Self::body(e)?, e.key().as_str().to_owned())))
             .collect::<Result<_>>()?;
 
         let futs = payloads.iter().map(|(body, key)| {

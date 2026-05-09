@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use tokio::sync::Mutex;

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use tokio::sync::mpsc;
@@ -248,7 +247,7 @@ fn fetch_batch(
     );
     let mut bindings: Vec<rusqlite::types::Value> = vec![
         after_seq.into(),
-        config.organization.as_str().to_string().into(),
+        config.organization.as_str().to_owned().into(),
     ];
 
     if let Some(topics) = config.topics.as_ref() {
@@ -257,7 +256,7 @@ fn fetch_batch(
             .collect();
         sql.push_str(&format!(" AND topic IN ({})", placeholders.join(", ")));
         for t in topics {
-            bindings.push(t.as_str().to_string().into());
+            bindings.push(t.as_str().to_owned().into());
         }
     }
     if let Some(prefix) = config.namespace_prefix.as_ref()
@@ -266,7 +265,7 @@ fn fetch_batch(
         let i1 = bindings.len() + 1;
         let i2 = bindings.len() + 2;
         sql.push_str(&format!(" AND (namespace = ?{i1} OR namespace LIKE ?{i2})"));
-        bindings.push(prefix.as_str().to_string().into());
+        bindings.push(prefix.as_str().to_owned().into());
         bindings.push(format!("{}/%", prefix.as_str()).into());
     }
     if let Some(ts) = lower_bound_ts {

@@ -41,7 +41,7 @@ pub async fn poll(
                     format!("invalid timestamp: {e}"),
                 )
             })?;
-            s.to_string()
+            s.to_owned()
         }
         None => (Utc::now() - Duration::minutes(5)).to_rfc3339(),
     };

@@ -79,8 +79,8 @@ impl UserStore for PgUserStore {
                 let id = UserId::from_uuid(id);
                 let email = Email::new(&email).map_err(|e| {
                     Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "email".to_string(),
+                        table: "users".to_owned(),
+                        column: "email".to_owned(),
                         cause: e.to_string(),
                     })
                 })?;
@@ -126,8 +126,8 @@ impl UserStore for PgUserStore {
                 let id = UserId::from_uuid(id);
                 let email = Email::new(&email).map_err(|e| {
                     Error::Store(StoreError::Decode {
-                        table: "users".to_string(),
-                        column: "email".to_string(),
+                        table: "users".to_owned(),
+                        column: "email".to_owned(),
                         cause: e.to_string(),
                     })
                 })?;
@@ -165,8 +165,8 @@ impl UserStore for PgUserStore {
             let id = UserId::from_uuid(id);
             let email = Email::new(&email).map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "users".to_string(),
-                    column: "email".to_string(),
+                    table: "users".to_owned(),
+                    column: "email".to_owned(),
                     cause: e.to_string(),
                 })
             })?;
@@ -311,15 +311,15 @@ fn row_to_membership(
             let user_id = UserId::from_uuid(user_id);
             let org_id = OrganizationId::new(&org_id).map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "users".to_string(),
-                    column: "org_id".to_string(),
+                    table: "users".to_owned(),
+                    column: "org_id".to_owned(),
                     cause: e.to_string(),
                 })
             })?;
             let role = role.parse::<OrgRole>().map_err(|e| {
                 Error::Store(StoreError::Decode {
-                    table: "users".to_string(),
-                    column: "role".to_string(),
+                    table: "users".to_owned(),
+                    column: "role".to_owned(),
                     cause: e.to_string(),
                 })
             })?;

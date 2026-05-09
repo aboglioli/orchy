@@ -28,7 +28,7 @@ impl ProjectStore for SqliteProjectStore {
     async fn save(&self, project: &mut Project) -> Result<()> {
         let org_id = project.org_id().to_string();
         let id = project.id().to_string();
-        let description = project.description().to_string();
+        let description = project.description().to_owned();
         let metadata = serde_json::to_string(project.metadata())
             .map_err(|e| Error::Store(StoreError::Serialization(format!("metadata: {e}"))))?;
         let created_at = project.created_at().to_rfc3339();

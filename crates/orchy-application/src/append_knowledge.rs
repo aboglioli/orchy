@@ -51,7 +51,7 @@ impl AppendKnowledge {
 
         let mut entry = if let Some(mut existing) = existing {
             let new_content = format!("{}{}{}", existing.content(), separator, cmd.value);
-            existing.update(existing.title().to_string(), new_content)?;
+            existing.update(existing.title().to_owned(), new_content)?;
             existing
         } else {
             let title = cmd.path.clone();
@@ -82,7 +82,7 @@ impl AppendKnowledge {
         if let Some(emb) = &self.embeddings {
             let text = format!("{} {}", entry.title(), entry.content());
             let vector = emb.embed(&text).await?;
-            let embedding = Embedding::new(vector, emb.model().to_string(), emb.dimensions())?;
+            let embedding = Embedding::new(vector, emb.model().to_owned(), emb.dimensions())?;
             entry.set_embedding(embedding)?;
         }
 

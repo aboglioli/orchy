@@ -96,7 +96,7 @@ impl SendMessage {
                 .await?
                 .ok_or_else(|| Error::NotFound {
                     resource: Resource::Agent,
-                    id: alias_str.to_string(),
+                    id: alias_str.to_owned(),
                 })?;
             MessageTarget::Agent(target_agent.id().clone())
         } else {

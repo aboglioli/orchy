@@ -22,17 +22,17 @@ async fn main() -> Result<()> {
     let (command, cmd_args) = if args.len() > 1 {
         (args[1].clone(), args[2..].to_vec())
     } else {
-        ("bash".to_string(), vec![])
+        ("bash".to_owned(), vec![])
     };
 
     let is_json = cmd_args.iter().any(|a| a == "json" || a.contains("json"));
 
     let config = RunnerConfig {
-        alias: "test-agent".to_string(),
-        agent_type: "unknown".to_string(),
-        description: "test agent".to_string(),
-        url: "http://127.0.0.1:4310/mcp".to_string(),
-        project: "default".to_string(),
+        alias: "test-agent".to_owned(),
+        agent_type: "unknown".to_owned(),
+        description: "test agent".to_owned(),
+        url: "http://127.0.0.1:4310/mcp".to_owned(),
+        project: "default".to_owned(),
         namespace: None,
         command: command.clone(),
         args: cmd_args,

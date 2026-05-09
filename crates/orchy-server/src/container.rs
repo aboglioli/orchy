@@ -169,7 +169,7 @@ impl Container {
             "sqlite" => {
                 let store_config = config.store.sqlite.as_ref().ok_or_else(|| {
                     BootError::Config(
-                        "store.sqlite config required when backend = \"sqlite\"".to_string(),
+                        "store.sqlite config required when backend = \"sqlite\"".to_owned(),
                     )
                 })?;
                 let backend = SqliteDatabase::new(&store_config.path, embedding_dims)?;
@@ -181,7 +181,7 @@ impl Container {
             "postgres" => {
                 let store_config = config.store.postgres.as_ref().ok_or_else(|| {
                     BootError::Config(
-                        "store.postgres config required when backend = \"postgres\"".to_string(),
+                        "store.postgres config required when backend = \"postgres\"".to_owned(),
                     )
                 })?;
                 let backend = PgDatabase::new(&store_config.url, embedding_dims).await?;
@@ -263,7 +263,7 @@ impl Container {
             "openai" => {
                 let openai = config.openai.as_ref().ok_or_else(|| {
                     BootError::EmbeddingsProvider(
-                        "embeddings.openai config required when provider = \"openai\"".to_string(),
+                        "embeddings.openai config required when provider = \"openai\"".to_owned(),
                     )
                 })?;
                 Ok(EmbeddingsBackend::OpenAi(OpenAiEmbeddingsProvider::new(

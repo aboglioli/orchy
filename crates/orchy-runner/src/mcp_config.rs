@@ -50,7 +50,7 @@ pub fn inject(dir: &Path, orchy_url: &str) -> std::io::Result<bool> {
     }
 
     servers_map.insert(
-        "orchy".to_string(),
+        "orchy".to_owned(),
         serde_json::json!({ "type": "http", "url": orchy_url }),
     );
 

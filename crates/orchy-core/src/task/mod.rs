@@ -776,7 +776,7 @@ impl Task {
             self.id.to_string(),
             Payload::from_json(&task_events::TaskTagRemovedPayload {
                 task_id: self.id.to_string(),
-                tag: tag.to_string(),
+                tag: tag.to_owned(),
             })?,
         )?);
 
@@ -904,12 +904,12 @@ mod tests {
             org_id: OrganizationId::new("test").unwrap(),
             project: ProjectId::try_from("test").unwrap(),
             namespace: Namespace::root(),
-            title: "Test Task".to_string(),
-            description: "Test".to_string(),
+            title: "Test Task".to_owned(),
+            description: "Test".to_owned(),
             acceptance_criteria: None,
             status,
             priority: Priority::default(),
-            assigned_roles: vec!["tester".to_string()],
+            assigned_roles: vec!["tester".to_owned()],
             assigned_to,
             assigned_at: None,
             stale_after_secs: None,
@@ -927,7 +927,7 @@ mod tests {
     fn make_completed_task() -> Task {
         let agent = AgentId::new();
         let mut task = make_task(TaskStatus::InProgress, Some(agent));
-        task.complete(Some("done".to_string())).unwrap();
+        task.complete(Some("done".to_owned())).unwrap();
         task
     }
 
@@ -948,7 +948,7 @@ mod tests {
     fn auto_complete_from_claimed() {
         let agent = AgentId::new();
         let mut task = make_task(TaskStatus::Claimed, Some(agent));
-        assert!(task.auto_complete("all children done".to_string()).is_ok());
+        assert!(task.auto_complete("all children done".to_owned()).is_ok());
         assert_eq!(task.status(), TaskStatus::Completed);
         assert_eq!(task.result_summary(), Some("all children done"));
     }
@@ -1010,7 +1010,7 @@ mod tests {
     fn complete_succeeds_from_in_progress() {
         let agent = AgentId::new();
         let mut task = make_task(TaskStatus::InProgress, Some(agent));
-        assert!(task.complete(Some("done".to_string())).is_ok());
+        assert!(task.complete(Some("done".to_owned())).is_ok());
         assert_eq!(task.status(), TaskStatus::Completed);
         assert_eq!(task.result_summary(), Some("done"));
     }
@@ -1021,11 +1021,11 @@ mod tests {
             OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
-            "Task with criteria".to_string(),
-            "Implement feature".to_string(),
-            Some("all tests pass and docs updated".to_string()),
+            "Task with criteria".to_owned(),
+            "Implement feature".to_owned(),
+            Some("all tests pass and docs updated".to_owned()),
             Priority::default(),
-            vec!["engineer".to_string()],
+            vec!["engineer".to_owned()],
             None,
             false,
         )
@@ -1039,7 +1039,7 @@ mod tests {
         task.update_details(
             None,
             None,
-            Some("tests pass and integration verified".to_string()),
+            Some("tests pass and integration verified".to_owned()),
             None,
         )
         .unwrap();
@@ -1101,7 +1101,7 @@ mod tests {
     fn fail_succeeds_from_in_progress() {
         let agent = AgentId::new();
         let mut task = make_task(TaskStatus::InProgress, Some(agent));
-        assert!(task.fail(Some("error".to_string())).is_ok());
+        assert!(task.fail(Some("error".to_owned())).is_ok());
         assert_eq!(task.status(), TaskStatus::Failed);
     }
 
@@ -1185,8 +1185,8 @@ mod tests {
             OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
-            "title".to_string(),
-            "desc".to_string(),
+            "title".to_owned(),
+            "desc".to_owned(),
             None,
             Priority::High,
             vec![],
@@ -1203,8 +1203,8 @@ mod tests {
             OrganizationId::new("test").unwrap(),
             ProjectId::try_from("test").unwrap(),
             Namespace::root(),
-            "title".to_string(),
-            "desc".to_string(),
+            "title".to_owned(),
+            "desc".to_owned(),
             None,
             Priority::Normal,
             vec![],

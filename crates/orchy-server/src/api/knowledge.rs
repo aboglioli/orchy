@@ -195,7 +195,7 @@ pub async fn list_types(
         .iter()
         .map(|k| KnowledgeTypeDto {
             r#type: k.to_string(),
-            description: k.description().to_string(),
+            description: k.description().to_owned(),
         })
         .collect();
 
@@ -381,8 +381,8 @@ pub async fn delete(
         let cmd = UntagKnowledgeCommand {
             org_id: org,
             project,
-            path: path.to_string(),
-            tag: tag_name.to_string(),
+            path: path.to_owned(),
+            tag: tag_name.to_owned(),
             namespace: query.namespace,
         };
         let entry = container
@@ -738,7 +738,7 @@ pub async fn knowledge_action(
         return append(
             State(container),
             auth,
-            Path((project, path.to_string())),
+            Path((project, path.to_owned())),
             Json(json),
         )
         .await;
@@ -749,7 +749,7 @@ pub async fn knowledge_action(
         return move_entry(
             State(container),
             auth,
-            Path((project, path.to_string())),
+            Path((project, path.to_owned())),
             Json(json),
         )
         .await;
@@ -760,7 +760,7 @@ pub async fn knowledge_action(
         return rename(
             State(container),
             auth,
-            Path((project, path.to_string())),
+            Path((project, path.to_owned())),
             Json(json),
         )
         .await;
@@ -771,7 +771,7 @@ pub async fn knowledge_action(
         return archive(
             State(container),
             auth,
-            Path((project, path.to_string())),
+            Path((project, path.to_owned())),
             Query(NamespaceQuery { namespace: None }),
             Json(json),
         )
@@ -783,7 +783,7 @@ pub async fn knowledge_action(
         return unarchive(
             State(container),
             auth,
-            Path((project, path.to_string())),
+            Path((project, path.to_owned())),
             Query(NamespaceQuery { namespace: None }),
             Json(json),
         )
@@ -797,13 +797,13 @@ pub async fn knowledge_action(
             .and_then(|v| {
                 v.get("namespace")
                     .and_then(|n| n.as_str())
-                    .map(|s| s.to_string())
+                    .map(|s| s.to_owned())
             });
         let cmd = TagKnowledgeCommand {
             org_id: org,
             project,
-            path: path.to_string(),
-            tag: tag_name.to_string(),
+            path: path.to_owned(),
+            tag: tag_name.to_owned(),
             namespace,
         };
         let entry = container
@@ -823,7 +823,7 @@ pub async fn knowledge_action(
     Err(ApiError(
         StatusCode::NOT_FOUND,
         "NOT_FOUND",
-        "unknown knowledge action".to_string(),
+        "unknown knowledge action".to_owned(),
     ))
 }
 
@@ -841,7 +841,7 @@ pub async fn knowledge_patch(
         return change_kind(
             State(container),
             auth,
-            Path((project, path.to_string())),
+            Path((project, path.to_owned())),
             Json(json),
         )
         .await;
@@ -852,7 +852,7 @@ pub async fn knowledge_patch(
         return patch_metadata(
             State(container),
             auth,
-            Path((project, path.to_string())),
+            Path((project, path.to_owned())),
             Json(json),
         )
         .await;
@@ -860,7 +860,7 @@ pub async fn knowledge_patch(
     Err(ApiError(
         StatusCode::NOT_FOUND,
         "NOT_FOUND",
-        "unknown knowledge patch action".to_string(),
+        "unknown knowledge patch action".to_owned(),
     ))
 }
 

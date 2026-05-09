@@ -841,7 +841,7 @@ impl ServerHandler for OrchyHandler {
                 .enable_prompts()
                 .build(),
         )
-        .with_instructions(INSTRUCTIONS.to_string())
+        .with_instructions(INSTRUCTIONS.to_owned())
     }
 
     async fn initialize(

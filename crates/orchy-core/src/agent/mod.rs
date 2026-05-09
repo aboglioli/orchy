@@ -397,8 +397,8 @@ mod tests {
             test_project(),
             test_namespace(),
             Alias::new("test-coder").unwrap(),
-            vec!["coder".to_string()],
-            "test agent".to_string(),
+            vec!["coder".to_owned()],
+            "test agent".to_owned(),
             None,
             HashMap::new(),
             None,
@@ -441,7 +441,7 @@ mod tests {
     fn switch_context_changes_project_and_namespace() {
         let mut agent = make_agent();
         let new_project = ProjectId::try_from("other").unwrap();
-        let new_ns = Namespace::try_from("/frontend".to_string()).unwrap();
+        let new_ns = Namespace::try_from("/frontend".to_owned()).unwrap();
         agent.switch_context(Some(new_project), new_ns).unwrap();
         assert_eq!(agent.project().as_ref(), "other");
         assert_eq!(agent.namespace().to_string(), "/frontend");
@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn switch_context_namespace_only() {
         let mut agent = make_agent();
-        let new_ns = Namespace::try_from("/backend".to_string()).unwrap();
+        let new_ns = Namespace::try_from("/backend".to_owned()).unwrap();
         agent.switch_context(None, new_ns).unwrap();
         assert_eq!(agent.project().as_ref(), "test");
         assert_eq!(agent.namespace().to_string(), "/backend");
@@ -483,8 +483,8 @@ mod tests {
         agent
             .resume(
                 Namespace::root(),
-                vec!["reviewer".to_string()],
-                "updated".to_string(),
+                vec!["reviewer".to_owned()],
+                "updated".to_owned(),
             )
             .unwrap();
         assert_eq!(agent.roles(), &["reviewer"]);

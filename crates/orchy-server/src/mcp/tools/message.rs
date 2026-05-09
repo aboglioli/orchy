@@ -42,7 +42,7 @@ pub(super) async fn send_message(
             .execute(orchy_application::ResolveAgentCommand {
                 org_id: org.to_string(),
                 project: project.to_string(),
-                id_or_alias: alias_str.to_string(),
+                id_or_alias: alias_str.to_owned(),
             })
             .await
             .map_err(|e| e.to_string())?;

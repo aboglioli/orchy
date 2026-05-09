@@ -78,8 +78,8 @@ fn build_org(row: &PgRow) -> Result<Organization> {
 
     let id = OrganizationId::new(&id_str).map_err(|e| {
         Error::Store(StoreError::Decode {
-            table: "organizations".to_string(),
-            column: "id".to_string(),
+            table: "organizations".to_owned(),
+            column: "id".to_owned(),
             cause: e.to_string(),
         })
     })?;

@@ -36,15 +36,15 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         let org_id = entry.org_id().to_string();
         let project = entry.project().map(|p| p.to_string());
         let namespace = entry.namespace().to_string();
-        let path = entry.path().as_str().to_string();
+        let path = entry.path().as_str().to_owned();
         let kind = entry.kind().to_string();
-        let title = entry.title().to_string();
-        let content = entry.content().to_string();
+        let title = entry.title().to_owned();
+        let content = entry.content().to_owned();
         let tags_json = serde_json::to_string(entry.tags())?;
         let version = entry.version().as_u64() as i64;
         let metadata_json = serde_json::to_string(entry.metadata())?;
         let embedding_bytes = entry.embedding().map(embedding_to_bytes);
-        let embedding_model = entry.embedding_model().map(|s| s.to_string());
+        let embedding_model = entry.embedding_model().map(|s| s.to_owned());
         let embedding_dimensions = entry.embedding_dimensions().map(|d| d as i64);
         let valid_from = entry.valid_from().map(|d| d.to_rfc3339());
         let valid_until = entry.valid_until().map(|d| d.to_rfc3339());
@@ -134,7 +134,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         let org = org.to_string();
         let project = project.map(|p| p.to_string());
         let namespace = namespace.to_string();
-        let path = path.as_str().to_string();
+        let path = path.as_str().to_owned();
         blocking(&self.conn, move |conn| {
             if let Some(proj) = project {
                 let mut stmt = conn
@@ -279,7 +279,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         limit: usize,
     ) -> Result<Vec<(Knowledge, Option<f32>)>> {
         let org = org.clone();
-        let query = query.to_string();
+        let query = query.to_owned();
         let embedding = embedding.map(|e| e.to_vec());
         let namespace = namespace.cloned();
         blocking(&self.conn, move |conn| {

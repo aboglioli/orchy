@@ -2,7 +2,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use sqlx::postgres::PgListener;
@@ -313,13 +312,13 @@ async fn fetch_batch(
         .bind(after_seq)
         .bind(config.organization.as_str());
     if let Some(topics) = config.topics.as_ref() {
-        let topics: Vec<String> = topics.iter().map(|t| t.as_str().to_string()).collect();
+        let topics: Vec<String> = topics.iter().map(|t| t.as_str().to_owned()).collect();
         q = q.bind(topics);
     }
     if let Some(prefix) = config.namespace_prefix.as_ref()
         && !prefix.is_root()
     {
-        q = q.bind(prefix.as_str().to_string());
+        q = q.bind(prefix.as_str().to_owned());
     }
     if let Some(ts) = lower_bound_ts {
         q = q.bind(ts);

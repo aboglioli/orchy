@@ -44,7 +44,7 @@ pub(super) async fn remove_edge(
     };
 
     match h.container.app.remove_edge.execute(cmd).await {
-        Ok(()) => Ok(r#"{"deleted":true}"#.to_string()),
+        Ok(()) => Ok(r#"{"deleted":true}"#.to_owned()),
         Err(e) => Err(mcp_app_error(e)),
     }
 }

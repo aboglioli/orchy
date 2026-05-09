@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use orchy_events::io::Writer;
 use orchy_events::{Event, SerializedEvent};
 

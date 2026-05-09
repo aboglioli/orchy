@@ -71,7 +71,7 @@ async fn agent_save_and_find() {
     s.agent.save(&mut agent).await.unwrap();
 
     assert_eq!(agent.derived_status(30, 300), "active");
-    assert_eq!(agent.roles(), &["coder".to_string()]);
+    assert_eq!(agent.roles(), &["coder".to_owned()]);
 
     let fetched = s.agent.find_by_id(agent.id()).await.unwrap().unwrap();
     assert_eq!(fetched.id(), agent.id());
@@ -177,7 +177,7 @@ async fn task_save_and_get() {
     assert_eq!(fetched.title(), "Do thing");
     assert_eq!(fetched.description(), "Details");
     assert_eq!(fetched.priority(), Priority::High);
-    assert_eq!(fetched.assigned_roles(), &["dev".to_string()]);
+    assert_eq!(fetched.assigned_roles(), &["dev".to_owned()]);
 }
 
 #[tokio::test]
@@ -589,11 +589,11 @@ async fn task_archive_and_unarchive() {
         org("default"),
         proj("test-project"),
         Namespace::root(),
-        "Archive test task".to_string(),
-        "Description".to_string(),
+        "Archive test task".to_owned(),
+        "Description".to_owned(),
         None,
         Priority::Normal,
-        vec!["coder".to_string()],
+        vec!["coder".to_owned()],
         None,
         false,
     )
@@ -678,8 +678,8 @@ async fn knowledge_archive_and_unarchive() {
         Namespace::root(),
         "test-arch".parse::<KnowledgePath>().unwrap(),
         KnowledgeKind::Note,
-        "archive test".to_string(),
-        "content".to_string(),
+        "archive test".to_owned(),
+        "content".to_owned(),
         vec![],
         Default::default(),
     )
@@ -736,8 +736,8 @@ async fn knowledge_find_by_path_returns_archived() {
         Namespace::root(),
         "test-arch-path".parse::<KnowledgePath>().unwrap(),
         KnowledgeKind::Note,
-        "find_by_path archive test".to_string(),
-        "content".to_string(),
+        "find_by_path archive test".to_owned(),
+        "content".to_owned(),
         vec![],
         Default::default(),
     )
@@ -931,9 +931,9 @@ async fn edge_valid_until_persisted_and_filtered() {
     let mut edge = Edge::new(
         org.clone(),
         ResourceKind::Task,
-        "t1".to_string(),
+        "t1".to_owned(),
         ResourceKind::Knowledge,
-        "k1".to_string(),
+        "k1".to_owned(),
         RelationType::Produces,
         None,
     )
@@ -1019,9 +1019,9 @@ async fn edge_as_of_returns_historical_snapshot() {
     let mut edge = Edge::new(
         org.clone(),
         ResourceKind::Task,
-        "t1".to_string(),
+        "t1".to_owned(),
         ResourceKind::Knowledge,
-        "k1".to_string(),
+        "k1".to_owned(),
         RelationType::Produces,
         None,
     )

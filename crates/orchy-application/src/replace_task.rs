@@ -49,7 +49,7 @@ impl ReplaceTask {
 
         let cancel_reason = cmd
             .reason
-            .unwrap_or_else(|| "replaced by new tasks".to_string());
+            .unwrap_or_else(|| "replaced by new tasks".to_owned());
         original.cancel(Some(cancel_reason))?;
         original.archive(Some(format!(
             "replaced by {} new task(s)",

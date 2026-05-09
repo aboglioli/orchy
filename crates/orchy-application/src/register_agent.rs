@@ -88,7 +88,7 @@ impl RegisterAgent {
             )?;
             if let Some(agent_type) = &cmd.agent_type {
                 let mut meta = existing.metadata().clone();
-                meta.insert("agent_type".to_string(), agent_type.clone());
+                meta.insert("agent_type".to_owned(), agent_type.clone());
                 existing.set_metadata(meta)?;
             }
             if !cmd.metadata.is_empty() {
@@ -101,7 +101,7 @@ impl RegisterAgent {
         } else {
             let mut metadata = cmd.metadata;
             if let Some(agent_type) = &cmd.agent_type {
-                metadata.insert("agent_type".to_string(), agent_type.clone());
+                metadata.insert("agent_type".to_owned(), agent_type.clone());
             }
             let mut agent = Agent::register(
                 org_id.clone(),
@@ -169,14 +169,14 @@ impl RegisterAgent {
             )
             .await?;
 
-        let stale_tasks: Vec<_> = my_tasks.items.iter().filter(|t| t.is_stale()).collect();
+        let stale_tasks_count = my_tasks.items.iter().filter(|t| t.is_stale()).count();
 
         Ok(RegisterAgentDto {
             agent: AgentDto::from(&agent),
             inbox_count: inbox.items.len(),
             pending_tasks_count: pending_tasks.items.len(),
             my_tasks_count: my_tasks.items.len(),
-            stale_tasks_count: stale_tasks.len(),
+            stale_tasks_count,
         })
     }
 }

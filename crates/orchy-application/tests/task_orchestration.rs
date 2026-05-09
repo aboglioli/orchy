@@ -391,14 +391,13 @@ async fn split_task_blocks_parent_and_spawns_children() {
         .await
         .unwrap();
 
-    let spawns_from_parent: Vec<_> = edges
+    let spawns_from_parent_count = edges
         .items
         .iter()
         .filter(|e| e.from_id == parent.id)
-        .collect();
+        .count();
     assert_eq!(
-        spawns_from_parent.len(),
-        2,
+        spawns_from_parent_count, 2,
         "parent should have 2 spawns edges"
     );
 }
