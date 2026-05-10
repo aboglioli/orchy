@@ -49,4 +49,5 @@ macro_rules! declare_test {
     };
 }
 
+pub mod events;
 pub mod scenarios;

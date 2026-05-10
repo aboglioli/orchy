@@ -14,7 +14,7 @@ use orchy_core::organization::OrganizationId as CoreOrganizationId;
 use orchy_core::pagination::PageParams;
 use orchy_core::task::{Priority, Task, TaskFilter, TaskStatus, TaskStore};
 use orchy_events::io::{Reader, Writer};
-use orchy_events::{ConsumerGroupId, Event, OrganizationId, StartFrom};
+use orchy_events::{ConsumerGroupId, ConsumerStream, Event, OrganizationId, StartFrom};
 use orchy_store_pg::{PgDatabase, PgEventWriter, PgReader, PgReaderConfig, *};
 
 async fn start_postgres() -> (ContainerAsync<GenericImage>, sqlx::PgPool) {
@@ -203,6 +203,7 @@ async fn task_save_persists_event_log() {
         PgReaderConfig {
             organization: OrganizationId::new(organization.as_str()).unwrap(),
             consumer_group_id: None,
+            stream: ConsumerStream::default(),
             start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,
@@ -585,6 +586,7 @@ async fn pg_reader_streaming_yields_events_in_order() {
         PgReaderConfig {
             organization: org_events,
             consumer_group_id: Some(ConsumerGroupId::new("test-group").unwrap()),
+            stream: ConsumerStream::default(),
             start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,
@@ -626,6 +628,7 @@ async fn pg_reader_bounded_terminates_after_limit() {
         PgReaderConfig {
             organization: org_events,
             consumer_group_id: None,
+            stream: ConsumerStream::default(),
             start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,
@@ -668,6 +671,7 @@ async fn pg_reader_resumes_from_offset() {
             PgReaderConfig {
                 organization: org_events.clone(),
                 consumer_group_id: Some(group.clone()),
+                stream: ConsumerStream::default(),
                 start_from: StartFrom::Earliest,
                 topics: None,
                 namespace_prefix: None,
@@ -689,6 +693,7 @@ async fn pg_reader_resumes_from_offset() {
         PgReaderConfig {
             organization: org_events,
             consumer_group_id: Some(group),
+            stream: ConsumerStream::default(),
             start_from: StartFrom::Earliest,
             topics: None,
             namespace_prefix: None,

@@ -164,8 +164,10 @@ mod tests {
     fn create_with_metadata() {
         let payload = Payload::from_string("test");
         let metadata = Metadata::new()
-            .with("agent_id", "abc-123")
-            .with("project", "my-project");
+            .try_with("agent_id", "abc-123")
+            .unwrap()
+            .try_with("project", "my-project")
+            .unwrap();
         let event = Event::create("org", "/agent", "agent.registered", "agent-1", payload)
             .unwrap()
             .with_metadata(metadata);

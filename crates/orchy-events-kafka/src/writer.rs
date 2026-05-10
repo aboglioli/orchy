@@ -23,20 +23,7 @@ impl KafkaWriter {
     }
 
     fn body(event: &Event) -> Result<String> {
-        let s = SerializedEvent::from_event(event)?;
-        serde_json::to_string(&serde_json::json!({
-            "id": s.id,
-            "organization": s.organization,
-            "namespace": s.namespace,
-            "topic": s.topic,
-            "key": s.key,
-            "payload": s.payload,
-            "content_type": s.content_type,
-            "metadata": s.metadata,
-            "timestamp": s.timestamp,
-            "version": s.version,
-        }))
-        .map_err(|e| Error::Serialization(e.to_string()))
+        SerializedEvent::from_event(event)?.to_json_string()
     }
 }
 

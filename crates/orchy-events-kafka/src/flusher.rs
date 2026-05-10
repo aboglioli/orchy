@@ -14,6 +14,12 @@ pub struct KafkaOffsetToken {
     pub offset: i64,
 }
 
+/// Batches ack/nack tokens (Kafka offset positions) for the Kafka backend.
+///
+/// Drives ack/nack semantics for `BatchedAcker<KafkaOffsetToken>` returned by
+/// the Kafka reader: `ack` commits the offset to the consumer group (highest
+/// per partition wins); `nack` does not commit, so redelivery depends on
+/// rebalance, restart, or seek behavior.
 pub struct KafkaFlusher {
     consumer: Arc<StreamConsumer>,
 }

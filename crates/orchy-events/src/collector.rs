@@ -116,8 +116,7 @@ mod tests {
         c.collect(ev());
         c.collect(ev());
 
-        let items: Vec<_> = c.iter().collect();
-        assert_eq!(items.len(), 2);
+        assert_eq!(c.iter().count(), 2);
     }
 
     #[test]

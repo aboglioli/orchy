@@ -186,20 +186,13 @@ impl Reader for KafkaReader {
                     Some(p) => p,
                     None => continue,
                 };
-                let serialized: SerializedEvent =
-                    match serde_json::from_slice::<serde_json::Value>(body) {
-                        Ok(v) => match deserialize_event_value(v) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                tracing::warn!("kafka body parse error: {e}");
-                                continue;
-                            }
-                        },
-                        Err(e) => {
-                            tracing::warn!("kafka invalid json: {e}");
-                            continue;
-                        }
-                    };
+                let serialized: SerializedEvent = match SerializedEvent::from_json_slice(body) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("kafka body parse error: {e}");
+                        continue;
+                    }
+                };
                 if serialized.organization != config.organization.as_str() {
                     continue;
                 }
@@ -254,64 +247,4 @@ impl Reader for KafkaReader {
             ack_buffer,
         })
     }
-}
-
-fn deserialize_event_value(v: serde_json::Value) -> Result<SerializedEvent> {
-    let id = v
-        .get("id")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("id".into()))?
-        .to_owned();
-    let organization = v
-        .get("organization")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("organization".into()))?
-        .to_owned();
-    let namespace = v
-        .get("namespace")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("namespace".into()))?
-        .to_owned();
-    let topic = v
-        .get("topic")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("topic".into()))?
-        .to_owned();
-    let key = v
-        .get("key")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("key".into()))?
-        .to_owned();
-    let payload = v
-        .get("payload")
-        .cloned()
-        .ok_or_else(|| Error::Serialization("payload".into()))?;
-    let content_type = v
-        .get("content_type")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("content_type".into()))?
-        .to_owned();
-    let metadata = v
-        .get("metadata")
-        .and_then(|x| serde_json::from_value(x.clone()).ok())
-        .unwrap_or_default();
-    let timestamp = v
-        .get("timestamp")
-        .and_then(|x| x.as_str())
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .ok_or_else(|| Error::Serialization("timestamp".into()))?;
-    let version = v.get("version").and_then(|x| x.as_u64()).unwrap_or(1);
-    Ok(SerializedEvent {
-        id,
-        organization,
-        namespace,
-        topic,
-        key,
-        payload,
-        content_type,
-        metadata,
-        timestamp,
-        version,
-    })
 }

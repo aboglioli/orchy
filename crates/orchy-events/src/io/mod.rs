@@ -9,7 +9,10 @@ mod reader;
 mod writer;
 
 pub use acker::{Acker, AckerExt, ArcAcker, BoxAcker};
-pub use consumers::{BackgroundConsumer, ConsumerHandle};
+pub use consumers::{
+    BackgroundConsumer, ConsumerHandle, DeadLetterWriter, DefaultRetryPolicy, RetryAction,
+    RetryConfig, RetryHandler, RetryPolicy, backoff_delay,
+};
 pub use handler::{
     ArcFilter, ArcHandler, BoxFilter, BoxHandler, Filter, FilterExt, FilteredHandler, Handler,
     HandlerExt,

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,21 +7,21 @@ use tokio::sync::RwLock;
 use orchy_application::ReaderFactory;
 use orchy_core::error::Result;
 use orchy_events::io::{BoxReader, ReaderExt};
-use orchy_events::{ConsumerGroupId, Namespace, OrganizationId, StartFrom, Topic};
+use orchy_events::{ConsumerStream, Namespace, OrganizationId, StartFrom, Topic};
 
 use crate::MemoryState;
-use crate::reader::{MemoryReader, MemoryReaderConfig};
+use crate::reader::{MemoryReader, MemoryReaderConfig, OffsetMap};
 
 pub struct MemoryReaderFactory {
     state: Arc<MemoryState>,
-    offsets: Arc<RwLock<HashMap<ConsumerGroupId, usize>>>,
+    offsets: Arc<RwLock<OffsetMap>>,
 }
 
 impl MemoryReaderFactory {
     pub fn new(state: Arc<MemoryState>) -> Self {
         Self {
             state,
-            offsets: Arc::new(RwLock::new(HashMap::new())),
+            offsets: Arc::new(RwLock::new(OffsetMap::new())),
         }
     }
 }
@@ -44,6 +43,7 @@ impl ReaderFactory for MemoryReaderFactory {
             MemoryReaderConfig {
                 organization,
                 consumer_group_id: None,
+                stream: ConsumerStream::default(),
                 start_from: StartFrom::Timestamp(since),
                 topics,
                 namespace_prefix,

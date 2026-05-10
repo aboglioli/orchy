@@ -22,6 +22,8 @@ fn serialize_event(event: &Event) -> EventsResult<SerializedEvent> {
 
 fn append_event(conn: &rusqlite::Connection, event: &Event) -> EventsResult<()> {
     let serialized = serialize_event(event)?;
+    // seq is auto-assigned via MAX(seq)+1; safe because Arc<Mutex<Connection>>
+    // serializes all writes within the process. SQLite is single-writer per file.
     conn.execute(
         "INSERT INTO events (id, organization, namespace, topic, key, payload, content_type, metadata, timestamp, version, seq)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, (SELECT COALESCE(MAX(seq), 0) + 1 FROM events))",

@@ -47,7 +47,10 @@ pub use message::MemoryMessageStore;
 pub use namespace::MemoryNamespaceStore;
 pub use organization::MemoryOrganizationStore;
 pub use project::MemoryProjectStore;
-pub use reader::{MemoryAcker, MemoryAckerVariant, MemoryReader, MemoryReaderConfig, MemoryStream};
+pub use reader::{
+    MemoryAcker, MemoryAckerVariant, MemoryReader, MemoryReaderConfig, MemoryStream, OffsetKey,
+    OffsetMap,
+};
 pub use reader_factory::MemoryReaderFactory;
 pub use resource_lock::MemoryLockStore;
 pub use task::MemoryTaskStore;

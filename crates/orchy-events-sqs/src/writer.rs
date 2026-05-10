@@ -21,20 +21,7 @@ impl SqsWriter {
     }
 
     fn serialize_body(event: &Event) -> Result<String> {
-        let s = SerializedEvent::from_event(event)?;
-        let body = serde_json::to_string(&serde_json::json!({
-            "id": s.id,
-            "organization": s.organization,
-            "namespace": s.namespace,
-            "topic": s.topic,
-            "key": s.key,
-            "payload": s.payload,
-            "content_type": s.content_type,
-            "metadata": s.metadata,
-            "timestamp": s.timestamp,
-            "version": s.version,
-        }))
-        .map_err(|e| Error::Serialization(e.to_string()))?;
+        let body = SerializedEvent::from_event(event)?.to_json_string()?;
         if body.len() > SQS_PAYLOAD_MAX {
             return Err(Error::InvalidPayload(format!(
                 "event body {} bytes exceeds 256 KB",
@@ -45,13 +32,26 @@ impl SqsWriter {
     }
 
     async fn send_batch(&self, entries: Vec<SendMessageBatchRequestEntry>) -> Result<()> {
-        self.client
+        let response = self
+            .client
             .send_message_batch()
             .queue_url(&self.queue_url)
             .set_entries(Some(entries))
             .send()
             .await
             .map_err(|e| Error::Store(e.to_string()))?;
+
+        let failed = response.failed();
+        if !failed.is_empty() {
+            let ids: Vec<String> = failed
+                .iter()
+                .map(|f| format!("{}: {}", f.id(), f.message().unwrap_or("?")))
+                .collect();
+            return Err(Error::Store(format!(
+                "SQS batch send partially failed: {}",
+                ids.join(", ")
+            )));
+        }
         Ok(())
     }
 }

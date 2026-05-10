@@ -11,15 +11,26 @@ use tokio_util::sync::CancellationToken;
 use orchy_events::io::acker::{Either, NoopAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
-    ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,
+    ConsumerGroupId, ConsumerStream, Error, Namespace, OrganizationId, Result, SerializedEvent,
+    StartFrom, Topic,
 };
 
 use crate::MemoryState;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OffsetKey {
+    pub organization: OrganizationId,
+    pub group_id: ConsumerGroupId,
+    pub stream: ConsumerStream,
+}
+
+pub type OffsetMap = HashMap<OffsetKey, usize>;
 
 #[derive(Clone)]
 pub struct MemoryReaderConfig {
     pub organization: OrganizationId,
     pub consumer_group_id: Option<ConsumerGroupId>,
+    pub stream: ConsumerStream,
     pub start_from: StartFrom,
     pub topics: Option<Vec<Topic>>,
     pub namespace_prefix: Option<Namespace>,
@@ -27,17 +38,21 @@ pub struct MemoryReaderConfig {
     pub limit: Option<usize>,
 }
 
+/// In-memory [`Acker`] for the memory backend.
+///
+/// `ack` advances the in-memory offset for this consumer key (monotonic:
+/// older acks are dropped) and is lost on process restart. `nack` is a no-op.
 #[derive(Clone)]
 pub struct MemoryAcker {
-    offsets: Arc<RwLock<HashMap<ConsumerGroupId, usize>>>,
-    group_id: ConsumerGroupId,
+    offsets: Arc<RwLock<OffsetMap>>,
+    key: OffsetKey,
     next_offset: usize,
 }
 
 impl Acker for MemoryAcker {
     async fn ack(&self) -> Result<()> {
         let mut g = self.offsets.write().await;
-        let entry = g.entry(self.group_id.clone()).or_insert(0);
+        let entry = g.entry(self.key.clone()).or_insert(0);
         if self.next_offset > *entry {
             *entry = self.next_offset;
         }
@@ -75,14 +90,14 @@ impl Stream for MemoryStream {
 
 pub struct MemoryReader {
     state: Arc<MemoryState>,
-    offsets: Arc<RwLock<HashMap<ConsumerGroupId, usize>>>,
+    offsets: Arc<RwLock<OffsetMap>>,
     config: MemoryReaderConfig,
 }
 
 impl MemoryReader {
     pub fn new(
         state: Arc<MemoryState>,
-        offsets: Arc<RwLock<HashMap<ConsumerGroupId, usize>>>,
+        offsets: Arc<RwLock<OffsetMap>>,
         config: MemoryReaderConfig,
     ) -> Self {
         Self {
@@ -149,9 +164,15 @@ impl Reader for MemoryReader {
 
         let initial_len = state.events.read().await.len();
 
-        let starting_index = if let Some(group) = config.consumer_group_id.as_ref() {
+        let offset_key = config.consumer_group_id.as_ref().map(|group| OffsetKey {
+            organization: config.organization.clone(),
+            group_id: group.clone(),
+            stream: config.stream.clone(),
+        });
+
+        let starting_index = if let Some(key) = offset_key.as_ref() {
             let map = offsets.read().await;
-            if let Some(o) = map.get(group) {
+            if let Some(o) = map.get(key) {
                 *o
             } else {
                 match config.start_from {
@@ -194,10 +215,10 @@ impl Reader for MemoryReader {
                             }
                         };
                         let next_offset = idx + 1;
-                        let acker = if let Some(group) = config.consumer_group_id.as_ref() {
+                        let acker = if let Some(key) = offset_key.as_ref() {
                             Either::Left(MemoryAcker {
                                 offsets: Arc::clone(&offsets),
-                                group_id: group.clone(),
+                                key: key.clone(),
                                 next_offset,
                             })
                         } else {

@@ -29,36 +29,30 @@ pub struct SqsReaderParams {
 impl SqsReaderConfig {
     pub fn new(params: SqsReaderParams) -> Result<Self> {
         if !(1..=10).contains(&params.max_in_flight) {
-            return Err(Error::InvalidStartFrom(
-                "max_in_flight must be 1..=10".into(),
-            ));
+            return Err(Error::Config("max_in_flight must be 1..=10".into()));
         }
         if params.wait_time > Duration::from_secs(20) {
-            return Err(Error::InvalidStartFrom("wait_time max 20s".into()));
+            return Err(Error::Config("wait_time max 20s".into()));
         }
         if params.visibility_timeout > Duration::from_secs(43200) {
-            return Err(Error::InvalidStartFrom("visibility_timeout max 12h".into()));
+            return Err(Error::Config("visibility_timeout max 12h".into()));
         }
         if params.ack_buffer.max_pending == 0 || params.ack_buffer.max_pending > 10 {
-            return Err(Error::InvalidStartFrom(
+            return Err(Error::Config(
                 "ack_buffer.max_pending must be 1..=10 for SQS".into(),
             ));
         }
         if !matches!(params.start_from, StartFrom::Latest) {
-            return Err(Error::InvalidStartFrom(
-                "SQS only supports StartFrom::Latest".into(),
-            ));
+            return Err(Error::Config("SQS only supports StartFrom::Latest".into()));
         }
         if params.end_at.is_some() {
-            return Err(Error::InvalidStartFrom(
-                "SQS does not support end_at".into(),
-            ));
+            return Err(Error::Config("SQS does not support end_at".into()));
         }
         if params.limit.is_some() {
-            return Err(Error::InvalidStartFrom("SQS does not support limit".into()));
+            return Err(Error::Config("SQS does not support limit".into()));
         }
         if params.consumer_group_id.is_some() {
-            return Err(Error::InvalidStartFrom(
+            return Err(Error::Config(
                 "SQS uses queue URL as consumer identity; consumer_group_id is not supported"
                     .into(),
             ));

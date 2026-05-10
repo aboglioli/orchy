@@ -14,8 +14,20 @@ pub use batched::{AckBuffer, AckBufferConfig, BatchFlusher, BatchedAcker};
 pub use noop::NoopAcker;
 pub use once::OnceAcker;
 
+/// Acknowledges or rejects a delivered event message.
+///
+/// Backends define exact durability semantics. In general, [`Acker::ack`] marks
+/// the message as successfully processed; [`Acker::nack`] requests redelivery
+/// when the backend supports it, or leaves the checkpoint unchanged otherwise.
+///
+/// See per-backend `Acker` implementations for the concrete behavior.
 pub trait Acker: Send + Sync {
+    /// Marks the message as successfully processed. Concrete durability
+    /// (offset commit, row update, queue delete) depends on the backend.
     fn ack(&self) -> impl Future<Output = Result<()>> + Send;
+    /// Signals processing failure. Some backends redeliver immediately
+    /// (e.g. SQS resets visibility); others leave the checkpoint unchanged
+    /// and rely on rebalance/restart for redelivery.
     fn nack(&self) -> impl Future<Output = Result<()>> + Send;
 }
 

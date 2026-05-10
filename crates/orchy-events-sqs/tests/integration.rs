@@ -14,7 +14,7 @@ use orchy_events::{Event, OrganizationId, Payload};
 use orchy_events_sqs::{SqsReader, SqsReaderConfig, SqsWriter};
 
 async fn start_localstack() -> (ContainerAsync<GenericImage>, Client) {
-    let container = GenericImage::new("localstack/localstack", "3")
+    let container = GenericImage::new("localstack/localstack", "3.8.1")
         .with_exposed_port(4566.tcp())
         .with_wait_for(WaitFor::message_on_stdout("Ready."))
         .with_env_var("SERVICES", "sqs")

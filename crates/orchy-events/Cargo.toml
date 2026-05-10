@@ -14,6 +14,7 @@ tracing.workspace = true
 futures = "0.3"
 either.workspace = true
 tokio-util.workspace = true
+base64 = "0.22"
 
 [lints]
 workspace = true

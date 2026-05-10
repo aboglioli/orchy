@@ -11,7 +11,8 @@ use tokio_util::sync::CancellationToken;
 use orchy_events::io::acker::{Either, NoopAcker, OnceAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
-    ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,
+    ConsumerGroupId, ConsumerStream, Error, Namespace, OrganizationId, Result, SerializedEvent,
+    StartFrom, Topic,
 };
 
 use crate::SqliteConn;
@@ -20,6 +21,7 @@ use crate::SqliteConn;
 pub struct SqliteReaderConfig {
     pub organization: OrganizationId,
     pub consumer_group_id: Option<ConsumerGroupId>,
+    pub stream: ConsumerStream,
     pub start_from: StartFrom,
     pub topics: Option<Vec<Topic>>,
     pub namespace_prefix: Option<Namespace>,
@@ -33,6 +35,7 @@ impl SqliteReaderConfig {
         Self {
             organization,
             consumer_group_id: None,
+            stream: ConsumerStream::default(),
             start_from: StartFrom::Latest,
             topics: None,
             namespace_prefix: None,
@@ -43,26 +46,49 @@ impl SqliteReaderConfig {
     }
 }
 
+/// SQLite-backed [`Acker`] persisting consumer offsets in `consumer_offsets`.
+///
+/// `ack` advances `consumer_offsets.last_seq` when the new sequence is higher;
+/// older acks are silently dropped (monotonic checkpoint). `nack` leaves the
+/// checkpoint unchanged.
 #[derive(Clone)]
 pub struct SqliteAcker {
     conn: SqliteConn,
+    organization: OrganizationId,
     group_id: ConsumerGroupId,
+    stream: ConsumerStream,
     seq: i64,
 }
 
 impl Acker for SqliteAcker {
     async fn ack(&self) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT INTO consumer_offsets (group_id, last_seq, updated_at) \
-             VALUES (?1, ?2, ?3) \
-             ON CONFLICT(group_id) DO UPDATE \
-             SET last_seq = excluded.last_seq, updated_at = excluded.updated_at \
-             WHERE excluded.last_seq > consumer_offsets.last_seq",
-            rusqlite::params![self.group_id.as_str(), self.seq, Utc::now().to_rfc3339()],
-        )
-        .map_err(|e| Error::Store(e.to_string()))?;
-        Ok(())
+        let conn = Arc::clone(&self.conn);
+        let organization = self.organization.clone();
+        let group_id = self.group_id.clone();
+        let stream = self.stream.clone();
+        let seq = self.seq;
+        let now = Utc::now().to_rfc3339();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let conn = conn.lock().map_err(|e| Error::Store(e.to_string()))?;
+            conn.execute(
+                "INSERT INTO consumer_offsets (organization, group_id, stream, last_seq, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
+                 ON CONFLICT(organization, group_id, stream) DO UPDATE \
+                 SET last_seq = excluded.last_seq, updated_at = excluded.updated_at \
+                 WHERE excluded.last_seq > consumer_offsets.last_seq",
+                rusqlite::params![
+                    organization.as_str(),
+                    group_id.as_str(),
+                    stream.as_str(),
+                    seq,
+                    now
+                ],
+            )
+            .map_err(|e| Error::Store(e.to_string()))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| Error::Store(format!("ack task panicked: {e}")))?
     }
 
     async fn nack(&self) -> Result<()> {
@@ -167,7 +193,9 @@ impl Reader for SqliteReader {
                     let acker = if let Some(group) = config.consumer_group_id.as_ref() {
                         Either::Left(OnceAcker::new(SqliteAcker {
                             conn: Arc::clone(&conn),
+                            organization: config.organization.clone(),
                             group_id: group.clone(),
+                            stream: config.stream.clone(),
                             seq: next_seq,
                         }))
                     } else {
@@ -203,8 +231,13 @@ fn resolve_initial_position(
     if let Some(group) = config.consumer_group_id.as_ref() {
         let row: Option<i64> = conn
             .query_row(
-                "SELECT last_seq FROM consumer_offsets WHERE group_id = ?1",
-                rusqlite::params![group.as_str()],
+                "SELECT last_seq FROM consumer_offsets \
+                 WHERE organization = ?1 AND group_id = ?2 AND stream = ?3",
+                rusqlite::params![
+                    config.organization.as_str(),
+                    group.as_str(),
+                    config.stream.as_str()
+                ],
                 |r| r.get(0),
             )
             .ok();
@@ -302,9 +335,15 @@ fn fetch_batch(
                 payload: crate::decode_json(&payload_str, "payload")?,
                 content_type: row.get(7)?,
                 metadata: crate::decode_json(&metadata_str, "metadata")?,
-                timestamp: chrono::DateTime::parse_from_rfc3339(&timestamp_str)
+                timestamp: DateTime::parse_from_rfc3339(&timestamp_str)
                     .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            9,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?,
                 version: row.get::<_, i64>(10)? as u64,
             };
             Ok((serialized, seq))

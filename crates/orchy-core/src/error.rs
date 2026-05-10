@@ -131,7 +131,8 @@ impl From<orchy_events::Error> for DomainError {
             | Ev::InvalidPayload(s)
             | Ev::InvalidEventKey(s)
             | Ev::InvalidConsumerGroupId(s)
-            | Ev::InvalidStartFrom(s) => DomainError::Validation(s),
+            | Ev::InvalidStartFrom(s)
+            | Ev::Config(s) => DomainError::Validation(s),
             Ev::Serialization(s) | Ev::Store(s) | Ev::Timeout(s) => DomainError::Internal(s),
         }
     }
@@ -225,6 +226,7 @@ mod tests {
             orchy_events::Error::InvalidEventKey("k".into()),
             orchy_events::Error::InvalidConsumerGroupId("c".into()),
             orchy_events::Error::InvalidStartFrom("s".into()),
+            orchy_events::Error::Config("c".into()),
         ];
         for ev in cases {
             let de: DomainError = ev.into();

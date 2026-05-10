@@ -13,13 +13,17 @@ use uuid::Uuid;
 use orchy_events::io::acker::{Either, NoopAcker, OnceAcker};
 use orchy_events::io::{Acker, Message, Reader};
 use orchy_events::{
-    ConsumerGroupId, Error, Namespace, OrganizationId, Result, SerializedEvent, StartFrom, Topic,
+    ConsumerGroupId, ConsumerStream, Error, Namespace, OrganizationId, Result, SerializedEvent,
+    StartFrom, Topic,
 };
+
+const PG_NOTIFY_CHANNEL: &str = "orchy_events";
 
 #[derive(Clone)]
 pub struct PgReaderConfig {
     pub organization: OrganizationId,
     pub consumer_group_id: Option<ConsumerGroupId>,
+    pub stream: ConsumerStream,
     pub start_from: StartFrom,
     pub topics: Option<Vec<Topic>>,
     pub namespace_prefix: Option<Namespace>,
@@ -34,6 +38,7 @@ impl PgReaderConfig {
         Self {
             organization,
             consumer_group_id: None,
+            stream: ConsumerStream::default(),
             start_from: StartFrom::Latest,
             topics: None,
             namespace_prefix: None,
@@ -45,22 +50,32 @@ impl PgReaderConfig {
     }
 }
 
+/// Postgres-backed [`Acker`] persisting consumer offsets in `consumer_offsets`.
+///
+/// `ack` advances `consumer_offsets.last_seq` when the new sequence is higher;
+/// older acks are silently dropped (monotonic checkpoint). `nack` leaves the
+/// checkpoint unchanged. Mirrors SQLite semantics.
 #[derive(Clone)]
 pub struct PgAcker {
     pool: PgPool,
+    organization: OrganizationId,
     group_id: ConsumerGroupId,
+    stream: ConsumerStream,
     seq: i64,
 }
 
 impl Acker for PgAcker {
     async fn ack(&self) -> Result<()> {
         sqlx::query(
-            "INSERT INTO consumer_offsets (group_id, last_seq, updated_at) \
-             VALUES ($1, $2, NOW()) \
-             ON CONFLICT (group_id) DO UPDATE \
-             SET last_seq = EXCLUDED.last_seq, updated_at = NOW()",
+            "INSERT INTO consumer_offsets (organization, group_id, stream, last_seq, updated_at) \
+             VALUES ($1, $2, $3, $4, NOW()) \
+             ON CONFLICT (organization, group_id, stream) DO UPDATE \
+             SET last_seq = EXCLUDED.last_seq, updated_at = NOW() \
+             WHERE consumer_offsets.last_seq < EXCLUDED.last_seq",
         )
+        .bind(self.organization.as_str())
         .bind(self.group_id.as_str())
+        .bind(self.stream.as_str())
         .bind(self.seq)
         .execute(&self.pool)
         .await
@@ -138,7 +153,7 @@ impl Reader for PgReader {
             let mut listener = if !bounded {
                 match PgListener::connect_with(&pool).await {
                     Ok(mut l) => {
-                        if let Err(e) = l.listen("orchy_events").await {
+                        if let Err(e) = l.listen(PG_NOTIFY_CHANNEL).await {
                             let _ = tx.send(Err(Error::Store(e.to_string()))).await;
                             return;
                         }
@@ -209,7 +224,9 @@ impl Reader for PgReader {
                     let acker = if let Some(group) = config.consumer_group_id.as_ref() {
                         Either::Left(OnceAcker::new(PgAcker {
                             pool: pool.clone(),
+                            organization: config.organization.clone(),
                             group_id: group.clone(),
+                            stream: config.stream.clone(),
                             seq: next_seq,
                         }))
                     } else {
@@ -242,11 +259,16 @@ async fn resolve_initial_position(
     config: &PgReaderConfig,
 ) -> Result<(i64, Option<DateTime<Utc>>)> {
     if let Some(group) = config.consumer_group_id.as_ref() {
-        let row = sqlx::query("SELECT last_seq FROM consumer_offsets WHERE group_id = $1")
-            .bind(group.as_str())
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| Error::Store(e.to_string()))?;
+        let row = sqlx::query(
+            "SELECT last_seq FROM consumer_offsets \
+             WHERE organization = $1 AND group_id = $2 AND stream = $3",
+        )
+        .bind(config.organization.as_str())
+        .bind(group.as_str())
+        .bind(config.stream.as_str())
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| Error::Store(e.to_string()))?;
         if let Some(r) = row {
             return Ok((r.get::<i64, _>("last_seq"), None));
         }

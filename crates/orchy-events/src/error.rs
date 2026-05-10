@@ -26,6 +26,9 @@ pub enum Error {
     #[error("invalid start position: {0}")]
     InvalidStartFrom(String),
 
+    #[error("config error: {0}")]
+    Config(String),
+
     #[error("serialization error: {0}")]
     Serialization(String),
 

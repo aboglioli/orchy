@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use orchy_events::io::acker::{AckBuffer, BatchedAcker};
 use orchy_events::io::{Acker, Message, Reader};
-use orchy_events::{Error, Result, SerializedEvent};
+use orchy_events::{Result, SerializedEvent};
 
 use crate::flusher::SqsFlusher;
 use crate::reader_config::SqsReaderConfig;
@@ -102,20 +102,13 @@ impl Reader for SqsReader {
                         Some(r) => r,
                         None => continue,
                     };
-                    let serialized: SerializedEvent =
-                        match serde_json::from_str::<serde_json::Value>(body) {
-                            Ok(v) => match deserialize_event_value(v) {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    tracing::warn!("malformed sqs body: {e}");
-                                    continue;
-                                }
-                            },
-                            Err(e) => {
-                                tracing::warn!("invalid sqs body json: {e}");
-                                continue;
-                            }
-                        };
+                    let serialized: SerializedEvent = match SerializedEvent::from_json_str(body) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!("malformed sqs body: {e}");
+                            continue;
+                        }
+                    };
                     if serialized.organization != config.organization.as_str() {
                         tracing::warn!(
                             "sqs org mismatch: got `{}` expected `{}`; acking and skipping",
@@ -148,64 +141,4 @@ impl Reader for SqsReader {
             ack_buffer,
         })
     }
-}
-
-fn deserialize_event_value(v: serde_json::Value) -> Result<SerializedEvent> {
-    let id = v
-        .get("id")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("missing id".into()))?
-        .to_owned();
-    let organization = v
-        .get("organization")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("missing organization".into()))?
-        .to_owned();
-    let namespace = v
-        .get("namespace")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("missing namespace".into()))?
-        .to_owned();
-    let topic = v
-        .get("topic")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("missing topic".into()))?
-        .to_owned();
-    let key = v
-        .get("key")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("missing key".into()))?
-        .to_owned();
-    let payload = v
-        .get("payload")
-        .cloned()
-        .ok_or_else(|| Error::Serialization("missing payload".into()))?;
-    let content_type = v
-        .get("content_type")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| Error::Serialization("missing content_type".into()))?
-        .to_owned();
-    let metadata = v
-        .get("metadata")
-        .and_then(|x| serde_json::from_value(x.clone()).ok())
-        .unwrap_or_default();
-    let timestamp = v
-        .get("timestamp")
-        .and_then(|x| x.as_str())
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .ok_or_else(|| Error::Serialization("missing/invalid timestamp".into()))?;
-    let version = v.get("version").and_then(|x| x.as_u64()).unwrap_or(1);
-    Ok(SerializedEvent {
-        id,
-        organization,
-        namespace,
-        topic,
-        key,
-        payload,
-        content_type,
-        metadata,
-        timestamp,
-        version,
-    })
 }
