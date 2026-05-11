@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 
 COPY --from=builder /app/target/release/orchy-server /usr/local/bin/orchy-server
 COPY --from=builder /app/target/release/orchy /usr/local/bin/orchy
+COPY --from=builder /app/migrations /app/migrations
+COPY config.default.toml /app/config.toml
 
 WORKDIR /app
 

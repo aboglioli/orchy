@@ -170,7 +170,12 @@ impl SqliteDatabase {
     }
 
     pub fn migrations_dir() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations/sqlite")
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("migrations/sqlite")
     }
 }
 

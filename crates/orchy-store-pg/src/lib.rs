@@ -200,7 +200,12 @@ impl PgDatabase {
     }
 
     pub fn migrations_dir() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations/postgres")
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("migrations/postgres")
     }
 
     pub async fn truncate_all(&self) -> Result<()> {
