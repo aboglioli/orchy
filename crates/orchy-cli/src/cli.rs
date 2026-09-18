@@ -141,6 +141,10 @@ pub(crate) enum Command {
         #[arg(long)]
         by: String,
     },
+    /// Retire a document from active use
+    Archive { target: String },
+    /// Bring an archived document back
+    Unarchive { target: String },
     /// Promote a candidate into canon
     Promote {
         target: String,
@@ -241,8 +245,22 @@ pub(crate) enum TaskCommand {
     Block { target: String, reason: String },
     /// Return a blocked task to the pool
     Unblock { target: String },
-    /// Break a goal into subtasks
+    /// Break a goal into subtasks it waits for
+    ///
+    /// The goal survives as the umbrella: it completes once every subtask reaches a terminal
+    /// status, and fails if any of them failed. Use `replace` when the original should step
+    /// aside instead of waiting.
     Split { target: String, titles: Vec<String> },
+    /// Retire a task, replacing it with independent ones
+    ///
+    /// The original becomes `superseded` and the new tasks stand alone, inheriting whatever
+    /// goal the original sat under. Use `split` when the original should stay open and wait.
+    Replace {
+        target: String,
+        titles: Vec<String>,
+        #[arg(long)]
+        reason: Option<String>,
+    },
     /// Add or remove dependencies
     Dep {
         target: String,

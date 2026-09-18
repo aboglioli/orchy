@@ -11,6 +11,7 @@ use orchy_application::list_tasks::ListTasksCommand;
 use orchy_application::manage_dependencies::ManageDependenciesCommand;
 use orchy_application::next_task::NextTaskCommand;
 use orchy_application::release_task::ReleaseTaskCommand;
+use orchy_application::replace_task::ReplaceTaskCommand;
 use orchy_application::split_task::SplitTaskCommand;
 use orchy_application::start_task::StartTaskCommand;
 use orchy_application::unblock_task::UnblockTaskCommand;
@@ -223,6 +224,31 @@ pub(crate) async fn run(
                 .await?;
             for skipped in &response.skipped {
                 out.note(format!("already a subtask, left alone: {skipped}"));
+            }
+            out.emit(&response, |r| render_list(&r.created, out))
+        }
+
+        TaskCommand::Replace {
+            target,
+            titles,
+            reason,
+        } => {
+            let task_id = resolve::task(app, &target).await?;
+            let response = app
+                .replace_task
+                .execute(ReplaceTaskCommand {
+                    task_id,
+                    titles,
+                    reason,
+                })
+                .await?;
+            out.note(format!(
+                "{} superseded by {}",
+                short(&response.replaced.id),
+                response.created.len()
+            ));
+            for parent in &response.ancestors {
+                out.note(format!("↑ {} → {}", short(&parent.id), parent.status));
             }
             out.emit(&response, |r| render_list(&r.created, out))
         }

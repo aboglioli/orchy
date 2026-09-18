@@ -185,6 +185,8 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Command::Unlink { from, to, rel } => cmd::doc::link(&app, from, to, rel, true, out).await,
         Command::Graph { from, depth } => cmd::doc::graph(&app, from, depth, out).await,
         Command::Supersede { old, by } => cmd::doc::supersede(&app, old, by, out).await,
+        Command::Archive { target } => cmd::doc::set_status(&app, target, "archived", out).await,
+        Command::Unarchive { target } => cmd::doc::set_status(&app, target, "active", out).await,
         Command::Promote { target, namespace } => {
             cmd::doc::promote(&app, target, namespace, out).await
         }

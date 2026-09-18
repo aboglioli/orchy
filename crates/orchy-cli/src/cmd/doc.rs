@@ -9,6 +9,7 @@ use orchy_application::recall::RecallCommand;
 use orchy_application::set_document_field::SetDocumentFieldCommand;
 use orchy_application::supersede_document::SupersedeDocumentCommand;
 use orchy_application::traverse_graph::TraverseGraphCommand;
+use orchy_application::update_document::UpdateDocumentCommand;
 
 use crate::error::{CliError, CliResult};
 use crate::output::{Output, short};
@@ -214,6 +215,26 @@ pub(crate) async fn supersede(
         .execute(SupersedeDocumentCommand { old_id, new_id })
         .await?;
     out.emit(&document, |d| format!("{}  superseded", short(&d.id)))
+}
+
+pub(crate) async fn set_status(
+    app: &Application,
+    target: String,
+    status: &str,
+    out: &Output,
+) -> CliResult<()> {
+    let document_id = resolve::document(app, &target).await?;
+    let document = app
+        .update_document
+        .execute(UpdateDocumentCommand {
+            document_id,
+            status: Some(status.to_owned()),
+            ..Default::default()
+        })
+        .await?;
+    out.emit(&document, |d| {
+        format!("{}  {}", short(&d.id), d.status.as_deref().unwrap_or(""))
+    })
 }
 
 pub(crate) async fn promote(

@@ -27,6 +27,7 @@ pub mod read_message;
 pub mod read_thread;
 pub mod recall;
 pub mod release_task;
+pub mod replace_task;
 pub mod resolve_thread;
 pub mod rollup_ancestors;
 pub mod send_message;
@@ -75,6 +76,7 @@ use read_message::ReadMessage;
 use read_thread::ReadThread;
 use recall::Recall;
 use release_task::ReleaseTask;
+use replace_task::ReplaceTask;
 use resolve_thread::ResolveThread;
 use rollup_ancestors::RollupAncestors;
 use send_message::SendMessage;
@@ -131,6 +133,7 @@ pub struct Application {
     pub block_task: BlockTask,
     pub unblock_task: UnblockTask,
     pub split_task: SplitTask,
+    pub replace_task: ReplaceTask,
     pub manage_dependencies: ManageDependencies,
     pub rollup_ancestors: Arc<RollupAncestors>,
 
@@ -238,6 +241,13 @@ impl Application {
             block_task: BlockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
             unblock_task: UnblockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
             split_task: SplitTask::new(Arc::clone(&tasks), Arc::clone(&ids), Arc::clone(&clock)),
+            replace_task: ReplaceTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&edges),
+                Arc::clone(&rollup),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
             manage_dependencies: ManageDependencies::new(Arc::clone(&tasks), Arc::clone(&clock)),
             rollup_ancestors: Arc::clone(&rollup),
 

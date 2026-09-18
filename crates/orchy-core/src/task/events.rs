@@ -88,6 +88,16 @@ pub struct TaskRolledUp {
 task_event!(TaskRolledUp, "task.rolled_up");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskSuperseded {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub by: Vec<Id>,
+    pub reason: Option<String>,
+    pub at: DateTime<Utc>,
+}
+task_event!(TaskSuperseded, "task.superseded");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskBlocked {
     pub id: Id,
     pub namespace: Namespace,

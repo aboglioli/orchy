@@ -15,10 +15,11 @@ pub enum TaskStatus {
     Completed,
     Failed,
     Cancelled,
+    Superseded,
 }
 
 impl TaskStatus {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Pending,
         Self::Blocked,
         Self::Claimed,
@@ -26,10 +27,20 @@ impl TaskStatus {
         Self::Completed,
         Self::Failed,
         Self::Cancelled,
+        Self::Superseded,
     ];
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+        matches!(
+            self,
+            Self::Completed | Self::Failed | Self::Cancelled | Self::Superseded
+        )
+    }
+
+    /// Neither success nor failure: the work was abandoned or moved elsewhere, so it carries
+    /// no verdict up to a parent.
+    pub fn is_neutral(&self) -> bool {
+        matches!(self, Self::Cancelled | Self::Superseded)
     }
 
     pub fn is_claimable(&self) -> bool {
@@ -43,19 +54,23 @@ impl TaskStatus {
             (Pending, Blocked)
                 | (Pending, Claimed)
                 | (Pending, Cancelled)
+                | (Pending, Superseded)
                 | (Blocked, Pending)
                 | (Blocked, Cancelled)
+                | (Blocked, Superseded)
                 | (Claimed, Pending)
                 | (Claimed, Blocked)
                 | (Claimed, InProgress)
                 | (Claimed, Completed)
                 | (Claimed, Failed)
                 | (Claimed, Cancelled)
+                | (Claimed, Superseded)
                 | (InProgress, Pending)
                 | (InProgress, Blocked)
                 | (InProgress, Completed)
                 | (InProgress, Failed)
                 | (InProgress, Cancelled)
+                | (InProgress, Superseded)
         )
     }
 
@@ -75,6 +90,7 @@ impl TaskStatus {
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
+            Self::Superseded => "superseded",
         }
     }
 }
@@ -102,8 +118,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_three_terminal_statuses_are_absorbing() {
-        for terminal in [Completed, Failed, Cancelled] {
+    fn every_terminal_status_is_absorbing() {
+        for terminal in [Completed, Failed, Cancelled, Superseded] {
             assert!(terminal.is_terminal());
             for target in TaskStatus::ALL {
                 assert!(
@@ -135,9 +151,37 @@ mod tests {
     #[test]
     fn work_can_finish_from_claimed_or_in_progress() {
         for from in [Claimed, InProgress] {
-            for target in [Completed, Failed, Cancelled] {
+            for target in [Completed, Failed, Cancelled, Superseded] {
                 assert!(from.can_transition_to(target), "{from} -> {target}");
             }
+        }
+    }
+
+    #[test]
+    fn a_task_can_be_superseded_before_anyone_starts_it() {
+        for from in [Pending, Blocked, Claimed, InProgress] {
+            assert!(
+                from.can_transition_to(Superseded),
+                "{from} -> superseded: replacing work does not require doing it first"
+            );
+        }
+    }
+
+    #[test]
+    fn only_abandonment_and_replacement_are_neutral() {
+        assert!(Cancelled.is_neutral());
+        assert!(Superseded.is_neutral());
+        assert!(!Completed.is_neutral(), "completion is a verdict");
+        assert!(!Failed.is_neutral(), "failure is a verdict");
+        for open in [Pending, Blocked, Claimed, InProgress] {
+            assert!(!open.is_neutral(), "{open} is not terminal at all");
+        }
+    }
+
+    #[test]
+    fn superseded_cannot_be_reached_from_a_finished_task() {
+        for terminal in [Completed, Failed, Cancelled, Superseded] {
+            assert!(!terminal.can_transition_to(Superseded));
         }
     }
 

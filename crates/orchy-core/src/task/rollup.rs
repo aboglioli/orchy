@@ -6,13 +6,16 @@ pub fn resolve(children: &[TaskStatus]) -> Option<TaskStatus> {
     if children.is_empty() || children.iter().any(|s| !s.is_terminal()) {
         return None;
     }
-    if children.iter().all(|s| *s == TaskStatus::Cancelled) {
-        return Some(TaskStatus::Cancelled);
-    }
     if children.contains(&TaskStatus::Failed) {
         return Some(TaskStatus::Failed);
     }
-    Some(TaskStatus::Completed)
+    if children.contains(&TaskStatus::Completed) {
+        return Some(TaskStatus::Completed);
+    }
+    if children.iter().all(|s| *s == TaskStatus::Superseded) {
+        return Some(TaskStatus::Superseded);
+    }
+    Some(TaskStatus::Cancelled)
 }
 
 #[cfg(test)]
@@ -68,8 +71,30 @@ mod tests {
     }
 
     #[test]
+    fn a_superseded_child_carries_no_verdict_of_its_own() {
+        assert_eq!(
+            resolve(&[Completed, Superseded]),
+            Some(Completed),
+            "work that moved elsewhere does not spoil a real completion"
+        );
+        assert_eq!(resolve(&[Failed, Superseded]), Some(Failed));
+        assert_eq!(resolve(&[Cancelled, Superseded]), Some(Cancelled));
+    }
+
+    #[test]
+    fn a_parent_whose_children_were_all_replaced_is_itself_superseded() {
+        assert_eq!(resolve(&[Superseded]), Some(Superseded));
+        assert_eq!(resolve(&[Superseded, Superseded]), Some(Superseded));
+    }
+
+    #[test]
+    fn a_superseded_child_still_blocks_nothing_while_siblings_are_open() {
+        assert_eq!(resolve(&[Superseded, Pending]), None);
+    }
+
+    #[test]
     fn rollup_does_not_depend_on_the_order_children_finished() {
-        let mut children = vec![Completed, Cancelled, Failed];
+        let mut children = vec![Completed, Cancelled, Failed, Superseded];
         let expected = resolve(&children);
         children.reverse();
         assert_eq!(resolve(&children), expected);

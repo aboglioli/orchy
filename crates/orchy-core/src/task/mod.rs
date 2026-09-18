@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub use events::{
     TaskBlocked, TaskClaimed, TaskCreated, TaskFinished, TaskReleased, TaskReparented,
-    TaskRolledUp, TaskStarted, TaskUnblocked, TaskUpdated,
+    TaskRolledUp, TaskStarted, TaskSuperseded, TaskUnblocked, TaskUpdated,
 };
 pub use status::TaskStatus;
 
@@ -296,6 +296,35 @@ impl Task {
         self.finish(TaskStatus::Cancelled, Some(reason), clock)
     }
 
+    /// Retire this task because its work moved into others. Distinct from cancelling, which
+    /// says the work is not wanted, and from completing, which says it was done here.
+    pub fn supersede(
+        &mut self,
+        by: Vec<Id>,
+        reason: Option<String>,
+        clock: &dyn Clock,
+    ) -> Result<()> {
+        if by.is_empty() {
+            return Err(DomainError::validation(
+                "a superseded task must name what replaces it",
+            ));
+        }
+        if by.contains(&self.id) {
+            return Err(DomainError::validation("a task cannot supersede itself"));
+        }
+        self.status = self.status.transition_to(TaskStatus::Superseded)?;
+        self.note = reason.clone();
+        self.touch(clock);
+        self.collector.collect(TaskSuperseded {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            by,
+            reason,
+            at: self.updated_at,
+        });
+        Ok(())
+    }
+
     fn finish(
         &mut self,
         status: TaskStatus,
@@ -496,11 +525,11 @@ impl Task {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use ulid::Ulid;
 
-    struct FixedClock(DateTime<Utc>);
+    pub(super) struct FixedClock(DateTime<Utc>);
 
     impl Clock for FixedClock {
         fn now(&self) -> DateTime<Utc> {
@@ -508,7 +537,7 @@ mod tests {
         }
     }
 
-    struct SeqIds(std::sync::atomic::AtomicU64);
+    pub(super) struct SeqIds(std::sync::atomic::AtomicU64);
 
     impl IdGenerator for SeqIds {
         fn generate(&self) -> Ulid {
@@ -517,19 +546,19 @@ mod tests {
         }
     }
 
-    fn clock() -> FixedClock {
+    pub(super) fn clock() -> FixedClock {
         FixedClock(DateTime::from_timestamp(1_700_000_000, 0).unwrap())
     }
 
-    fn ids() -> SeqIds {
+    pub(super) fn ids() -> SeqIds {
         SeqIds(std::sync::atomic::AtomicU64::new(1))
     }
 
-    fn actor(alias: &str) -> ActorId {
+    pub(super) fn actor(alias: &str) -> ActorId {
         ActorId::new(alias, "01ARZ3NDEKTSV4RRFFQ69G5FAV").unwrap()
     }
 
-    fn task() -> Task {
+    pub(super) fn task() -> Task {
         Task::create(
             Title::new("ship it").unwrap(),
             Namespace::root(),
@@ -538,7 +567,7 @@ mod tests {
         )
     }
 
-    fn claimed() -> Task {
+    pub(super) fn claimed() -> Task {
         let mut task = task();
         task.claim(actor("claude"), &clock()).unwrap();
         task
@@ -786,5 +815,77 @@ mod tests {
     #[test]
     fn an_empty_query_matches_everything() {
         assert!(TaskQuery::default().matches(&task()));
+    }
+}
+
+#[cfg(test)]
+mod supersede_tests {
+    use super::tests::*;
+    use super::*;
+
+    #[test]
+    fn superseding_retires_the_task_and_names_its_replacements() {
+        let mut task = task();
+        task.drain_events();
+        let replacements = vec![
+            Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(),
+            Id::new("01CX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(),
+        ];
+        task.supersede(replacements, Some("split out".to_owned()), &clock())
+            .unwrap();
+
+        assert_eq!(task.status(), TaskStatus::Superseded);
+        assert!(task.status().is_terminal());
+        assert!(task.status().is_neutral());
+        assert_eq!(task.note(), Some("split out"));
+
+        let events = task.drain_events();
+        assert_eq!(events[0].topic().as_str(), "task.superseded");
+    }
+
+    #[test]
+    fn superseding_needs_at_least_one_replacement() {
+        let mut task = task();
+        assert!(task.supersede(vec![], None, &clock()).is_err());
+        assert_eq!(
+            task.status(),
+            TaskStatus::Pending,
+            "the refusal changes nothing"
+        );
+    }
+
+    #[test]
+    fn a_task_cannot_supersede_itself() {
+        let mut task = task();
+        let own = task.id().clone();
+        assert!(task.supersede(vec![own], None, &clock()).is_err());
+    }
+
+    #[test]
+    fn a_finished_task_cannot_be_superseded() {
+        let mut task = claimed();
+        task.complete(None, &clock()).unwrap();
+        assert!(
+            task.supersede(
+                vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
+                None,
+                &clock()
+            )
+            .is_err(),
+            "work already done was not replaced"
+        );
+    }
+
+    #[test]
+    fn unstarted_work_can_be_replaced_without_being_claimed() {
+        let mut task = task();
+        assert!(
+            task.supersede(
+                vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
+                None,
+                &clock()
+            )
+            .is_ok()
+        );
     }
 }
