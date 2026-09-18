@@ -1,523 +1,249 @@
-use std::collections::HashMap;
-
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Task};
+use serde::{Deserialize, Serialize};
 
-use orchy_core::agent::Agent;
-use orchy_core::api_key::ApiKey;
-use orchy_core::graph::Edge;
-use orchy_core::knowledge::Knowledge;
-use orchy_core::message::{Message, MessageStatus};
-use orchy_core::organization::Organization;
-use orchy_core::pagination::Page;
-use orchy_core::project::Project;
-use orchy_core::resource_lock::ResourceLock;
-use orchy_core::task::{Task, TaskWithContext};
-use orchy_core::user::{OrgMembership, User};
-
-const AGENT_IDLE_SECS: u64 = 30;
-const AGENT_STALE_SECS: u64 = 300;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AgentDto {
-    pub id: String,
-    pub alias: String,
-    pub org_id: String,
-    pub project: String,
-    pub namespace: String,
-    pub roles: Vec<String>,
-    pub description: String,
-    pub status: String,
-    pub last_seen: String,
-    pub connected_at: String,
-    pub metadata: HashMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_id: Option<String>,
-}
-
-impl From<Agent> for AgentDto {
-    fn from(a: Agent) -> Self {
-        Self::from(&a)
-    }
-}
-
-impl From<&Agent> for AgentDto {
-    fn from(a: &Agent) -> Self {
-        Self {
-            id: a.id().to_string(),
-            alias: a.alias().to_string(),
-            org_id: a.org_id().to_string(),
-            project: a.project().to_string(),
-            namespace: a.namespace().to_string(),
-            roles: a.roles().to_vec(),
-            description: a.description().to_owned(),
-            status: a
-                .derived_status(AGENT_IDLE_SECS, AGENT_STALE_SECS)
-                .to_owned(),
-            last_seen: a.last_seen().to_rfc3339(),
-            connected_at: a.connected_at().to_rfc3339(),
-            metadata: a.metadata().clone(),
-            user_id: a.user_id().map(|u| u.to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskDto {
     pub id: String,
-    pub org_id: String,
-    pub project: String,
-    pub namespace: String,
     pub title: String,
     pub description: String,
     pub acceptance_criteria: Option<String>,
     pub status: String,
     pub priority: String,
+    pub namespace: String,
+    pub parent: Option<String>,
+    pub depends_on: Vec<String>,
     pub assigned_roles: Vec<String>,
-    pub assigned_to: Option<String>,
-    pub assigned_at: Option<String>,
+    pub claimed_by: Option<String>,
     pub tags: Vec<String>,
-    pub result_summary: Option<String>,
-    pub created_by: Option<String>,
-    pub archived: bool,
-    pub archived_at: Option<DateTime<Utc>>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl From<Task> for TaskDto {
-    fn from(t: Task) -> Self {
-        Self::from(&t)
-    }
+    pub note: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<&Task> for TaskDto {
-    fn from(t: &Task) -> Self {
+    fn from(task: &Task) -> Self {
         Self {
-            id: t.id().to_string(),
-            org_id: t.org_id().to_string(),
-            project: t.project().to_string(),
-            namespace: t.namespace().to_string(),
-            title: t.title().to_owned(),
-            description: t.description().to_owned(),
-            acceptance_criteria: t.acceptance_criteria().map(|s| s.to_owned()),
-            status: t.status().to_string(),
-            priority: t.priority().to_string(),
-            assigned_roles: t.assigned_roles().to_vec(),
-            assigned_to: t.assigned_to().map(|id| id.to_string()),
-            assigned_at: t.assigned_at().map(|dt| dt.to_rfc3339()),
-            tags: t.tags().to_vec(),
-            result_summary: t.result_summary().map(|s| s.to_owned()),
-            created_by: t.created_by().map(|id| id.to_string()),
-            archived: t.is_archived(),
-            archived_at: t.archived_at(),
-            created_at: t.created_at().to_rfc3339(),
-            updated_at: t.updated_at().to_rfc3339(),
+            id: task.id().to_string(),
+            title: task.title().to_string(),
+            description: task.description().to_owned(),
+            acceptance_criteria: task.acceptance_criteria().map(str::to_owned),
+            status: task.status().to_string(),
+            priority: task.priority().to_string(),
+            namespace: task.namespace().to_string(),
+            parent: task.parent().map(ToString::to_string),
+            depends_on: task.depends_on().iter().map(ToString::to_string).collect(),
+            assigned_roles: task
+                .assigned_roles()
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+            claimed_by: task.claimed_by().map(ToString::to_string),
+            tags: task.tags().iter().map(ToString::to_string).collect(),
+            note: task.note().map(str::to_owned),
+            created_at: task.created_at(),
+            updated_at: task.updated_at(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TaskWithContextResponse {
-    #[serde(flatten)]
-    pub task: TaskDto,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ancestors: Vec<TaskDto>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<TaskDto>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<TaskDto>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub knowledge: Vec<KnowledgeDto>,
-}
-
-impl From<TaskWithContext> for TaskWithContextResponse {
-    fn from(ctx: TaskWithContext) -> Self {
-        Self {
-            task: TaskDto::from(&ctx.task),
-            ancestors: ctx.ancestors.iter().map(TaskDto::from).collect(),
-            children: ctx.children.iter().map(TaskDto::from).collect(),
-            dependencies: Vec::new(),
-            knowledge: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct KnowledgeDto {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentDto {
     pub id: String,
-    pub org_id: String,
-    pub project: Option<String>,
-    pub namespace: String,
-    pub path: String,
     pub kind: String,
     pub title: String,
-    pub content: String,
+    pub namespace: String,
+    pub status: Option<String>,
     pub tags: Vec<String>,
-    pub version: u64,
-    pub metadata: HashMap<String, String>,
-    pub archived: bool,
-    pub archived_at: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub valid_from: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub valid_until: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub score: Option<f32>,
+    pub frontmatter: serde_json::Value,
+    pub body: String,
+    pub content_hash: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
-impl KnowledgeDto {
-    pub fn with_score(k: &Knowledge, score: Option<f32>) -> Self {
+impl From<&Document> for DocumentDto {
+    fn from(document: &Document) -> Self {
+        let frontmatter = serde_json::Value::Object(
+            document
+                .frontmatter()
+                .iter()
+                .map(|(k, v)| (k.to_owned(), v.clone()))
+                .collect(),
+        );
         Self {
-            score,
-            ..Self::from(k)
+            id: document.id().to_string(),
+            kind: document.kind().to_string(),
+            title: document.title().to_string(),
+            namespace: document.namespace().to_string(),
+            status: document.status().map(ToString::to_string),
+            tags: document.tags().iter().map(ToString::to_string).collect(),
+            frontmatter,
+            body: document.body().to_string(),
+            content_hash: document.content_hash().to_owned(),
+            created_at: document.created_at(),
+            updated_at: document.updated_at(),
         }
     }
 }
 
-impl From<Knowledge> for KnowledgeDto {
-    fn from(k: Knowledge) -> Self {
-        Self::from(&k)
-    }
-}
-
-impl From<&Knowledge> for KnowledgeDto {
-    fn from(k: &Knowledge) -> Self {
-        Self {
-            id: k.id().to_string(),
-            org_id: k.org_id().to_string(),
-            project: k.project().map(|p| p.to_string()),
-            namespace: k.namespace().to_string(),
-            path: k.path().to_string(),
-            kind: k.kind().to_string(),
-            title: k.title().to_owned(),
-            content: k.content().to_owned(),
-            tags: k.tags().to_vec(),
-            version: k.version().as_u64(),
-            metadata: k.metadata().clone(),
-            archived: k.is_archived(),
-            archived_at: k.archived_at(),
-            valid_from: k.valid_from().map(|dt| dt.to_rfc3339()),
-            valid_until: k.valid_until().map(|dt| dt.to_rfc3339()),
-            created_at: k.created_at().to_rfc3339(),
-            updated_at: k.updated_at().to_rfc3339(),
-            score: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageDto {
     pub id: String,
-    pub org_id: String,
-    pub project: String,
-    pub namespace: String,
+    pub thread: String,
+    pub in_reply_to: Option<String>,
     pub from: String,
-    pub to: String,
+    pub to: Vec<String>,
+    pub subject: Option<String>,
     pub body: String,
-    pub reply_to: Option<String>,
+    pub priority: String,
     pub status: String,
-    pub created_at: String,
-    pub refs: Vec<serde_json::Value>,
-}
-
-impl From<Message> for MessageDto {
-    fn from(m: Message) -> Self {
-        Self::from(&m)
-    }
+    pub namespace: String,
+    pub created_at: DateTime<Utc>,
 }
 
 impl From<&Message> for MessageDto {
-    fn from(m: &Message) -> Self {
+    fn from(message: &Message) -> Self {
         Self {
-            id: m.id().to_string(),
-            org_id: m.org_id().to_string(),
-            project: m.project().to_string(),
-            namespace: m.namespace().to_string(),
-            from: m.from().to_string(),
-            to: m.to().to_string(),
-            body: m.body().to_owned(),
-            reply_to: m.reply_to().map(|id| id.to_string()),
-            status: match m.status() {
-                MessageStatus::Pending => "pending",
-                MessageStatus::Delivered => "delivered",
-                MessageStatus::Read => "read",
-            }
-            .to_owned(),
-            created_at: m.created_at().to_rfc3339(),
-            refs: m
-                .refs()
-                .iter()
-                .map(|r| serde_json::to_value(r).unwrap_or_default())
-                .collect(),
+            id: message.id().to_string(),
+            thread: message.thread().to_string(),
+            in_reply_to: message.in_reply_to().map(ToString::to_string),
+            from: message.from().to_string(),
+            to: message.to().iter().map(ToString::to_string).collect(),
+            subject: message.subject().map(ToString::to_string),
+            body: message.body().to_string(),
+            priority: message.priority().to_string(),
+            status: message.status().to_string(),
+            namespace: message.namespace().to_string(),
+            created_at: message.created_at(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ProjectDto {
-    pub org_id: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActorDto {
     pub id: String,
-    pub description: String,
-    pub metadata: HashMap<String, String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl From<Project> for ProjectDto {
-    fn from(p: Project) -> Self {
-        Self::from(&p)
-    }
-}
-
-impl From<&Project> for ProjectDto {
-    fn from(p: &Project) -> Self {
-        Self {
-            org_id: p.org_id().to_string(),
-            id: p.id().to_string(),
-            description: p.description().to_owned(),
-            metadata: p.metadata().clone(),
-            created_at: p.created_at().to_rfc3339(),
-            updated_at: p.updated_at().to_rfc3339(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ResourceLockDto {
-    pub org_id: String,
-    pub project: String,
+    pub alias: String,
+    pub machine: String,
+    pub display_name: Option<String>,
+    pub roles: Vec<String>,
     pub namespace: String,
-    pub name: String,
-    pub holder: String,
-    pub acquired_at: String,
-    pub expires_at: String,
+    pub announced_at: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
 }
 
-impl From<ResourceLock> for ResourceLockDto {
-    fn from(l: ResourceLock) -> Self {
-        Self::from(&l)
-    }
-}
-
-impl From<&ResourceLock> for ResourceLockDto {
-    fn from(l: &ResourceLock) -> Self {
+impl From<&Actor> for ActorDto {
+    fn from(actor: &Actor) -> Self {
         Self {
-            org_id: l.org_id().to_string(),
-            project: l.project().to_string(),
-            namespace: l.namespace().to_string(),
-            name: l.name().to_owned(),
-            holder: l.holder().to_string(),
-            acquired_at: l.acquired_at().to_rfc3339(),
-            expires_at: l.expires_at().to_rfc3339(),
+            id: actor.id().to_string(),
+            alias: actor.id().alias().to_string(),
+            machine: actor.id().machine().to_string(),
+            display_name: actor.display_name().map(str::to_owned),
+            roles: actor.roles().iter().map(ToString::to_string).collect(),
+            namespace: actor.namespace().to_string(),
+            announced_at: actor.announced_at(),
+            last_seen: actor.last_seen(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct PageResponse<T: Serialize> {
-    pub items: Vec<T>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-impl<T: Serialize, R: Serialize> From<Page<T>> for PageResponse<R>
-where
-    R: From<T>,
-{
-    fn from(page: Page<T>) -> Self {
-        Self {
-            items: page.items.into_iter().map(R::from).collect(),
-            next_cursor: page.next_cursor,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SummaryCounts {
-    pub connected_agents: usize,
-    pub inbox_messages: usize,
-    pub pending_tasks: usize,
-    pub skills: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AgentSummaryResponse {
-    pub agent: AgentDto,
-    pub project: Option<ProjectDto>,
-    pub counts: SummaryCounts,
-    pub connected_agents: Vec<AgentDto>,
-    pub inbox: Vec<MessageDto>,
-    pub pending_tasks: Vec<TaskDto>,
-    pub skills: Vec<KnowledgeDto>,
-    pub handoff_context: Vec<KnowledgeDto>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct OrganizationDto {
-    pub id: String,
-    pub name: String,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-impl From<Organization> for OrganizationDto {
-    fn from(o: Organization) -> Self {
-        Self::from(&o)
-    }
-}
-
-impl From<&Organization> for OrganizationDto {
-    fn from(o: &Organization) -> Self {
-        Self {
-            id: o.id().to_string(),
-            name: o.name().to_owned(),
-            created_at: o.created_at().to_rfc3339(),
-            updated_at: o.updated_at().to_rfc3339(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ApiKeyDto {
-    pub id: String,
-    pub name: String,
-    pub key_prefix: String,
-    pub key_suffix: String,
-    pub is_active: bool,
-    pub created_at: String,
-}
-
-impl From<&ApiKey> for ApiKeyDto {
-    fn from(k: &ApiKey) -> Self {
-        Self {
-            id: k.id().to_string(),
-            name: k.name().to_owned(),
-            key_prefix: k.key_prefix().to_string(),
-            key_suffix: k.key_suffix().to_string(),
-            is_active: k.is_active(),
-            created_at: k.created_at().to_rfc3339(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ProjectOverviewResponse {
-    pub project: Option<ProjectDto>,
-    pub agents: Vec<AgentDto>,
-    pub tasks: Vec<TaskDto>,
-    pub skills: Vec<KnowledgeDto>,
-    pub overviews: Vec<KnowledgeDto>,
-}
-
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EdgeDto {
-    pub id: String,
-    pub from_kind: String,
-    pub from_id: String,
-    pub to_kind: String,
-    pub to_id: String,
-    pub rel_type: String,
-    pub created_at: String,
-    pub created_by: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_kind: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub valid_until: Option<String>,
-}
-
-impl From<Edge> for EdgeDto {
-    fn from(e: Edge) -> Self {
-        Self::from(&e)
-    }
+    pub from: String,
+    pub to: String,
+    pub relation: String,
 }
 
 impl From<&Edge> for EdgeDto {
-    fn from(e: &Edge) -> Self {
+    fn from(edge: &Edge) -> Self {
         Self {
-            id: e.id().to_string(),
-            from_kind: e.from_kind().to_string(),
-            from_id: e.from_id().to_owned(),
-            to_kind: e.to_kind().to_string(),
-            to_id: e.to_id().to_owned(),
-            rel_type: e.rel_type().to_string(),
-            created_at: e.created_at().to_rfc3339(),
-            created_by: e.created_by().map(|a| a.to_string()),
-            source_kind: e.source_kind().map(|k| k.to_string()),
-            source_id: e.source_id().map(|s| s.to_owned()),
-            valid_until: e.valid_until().map(|dt| dt.to_rfc3339()),
+            from: edge.from().to_string(),
+            to: edge.to().to_string(),
+            relation: edge.relation().to_string(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct AssembleContextResponse {
-    pub root_kind: String,
-    pub root_id: String,
-    pub core_facts: Vec<KnowledgeDto>,
-    pub open_dependencies: Vec<TaskDto>,
-    pub relevant_decisions: Vec<KnowledgeDto>,
-    pub recent_changes: Vec<KnowledgeDto>,
-    pub risk_flags: Vec<String>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaseDto {
+    pub resource: String,
+    pub holder: String,
+    pub acquired_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct UserDto {
-    pub id: String,
-    pub email: String,
-    pub is_active: bool,
-    pub is_platform_admin: bool,
-    pub created_at: String,
-}
-
-impl From<&User> for UserDto {
-    fn from(u: &User) -> Self {
+impl From<&Lease> for LeaseDto {
+    fn from(lease: &Lease) -> Self {
         Self {
-            id: u.id().to_string(),
-            email: u.email().as_str().to_owned(),
-            is_active: u.is_active(),
-            is_platform_admin: u.is_platform_admin(),
-            created_at: u.created_at().to_rfc3339(),
+            resource: lease.resource().to_string(),
+            holder: lease.holder().to_string(),
+            acquired_at: lease.acquired_at(),
+            expires_at: lease.expires_at(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct OrgMembershipDto {
-    pub id: String,
-    pub user_id: String,
-    pub org_id: String,
-    pub role: String,
-    pub joined_at: String,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HitDto {
+    pub document: String,
+    pub heading: Option<String>,
+    pub excerpt: String,
+    pub namespace: String,
+    pub updated_at: DateTime<Utc>,
+    pub matches: usize,
 }
 
-impl From<&OrgMembership> for OrgMembershipDto {
-    fn from(m: &OrgMembership) -> Self {
+impl From<&Hit> for HitDto {
+    fn from(hit: &Hit) -> Self {
         Self {
-            id: m.id().to_string(),
-            user_id: m.user_id().to_string(),
-            org_id: m.org_id().to_string(),
-            role: m.role().to_string(),
-            joined_at: m.created_at().to_rfc3339(),
+            document: hit.document.to_string(),
+            heading: hit.heading.clone(),
+            excerpt: hit.excerpt.clone(),
+            namespace: hit.namespace.to_string(),
+            updated_at: hit.updated_at,
+            matches: hit.matches,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct AuthResponse {
-    pub user: UserDto,
-    pub memberships: Vec<OrgMembershipDto>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventDto {
+    pub topic: String,
+    pub key: String,
+    pub namespace: String,
+    pub actor: Option<String>,
+    pub payload: serde_json::Value,
+    pub recorded_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct RegisterAgentDto {
-    pub agent: AgentDto,
-    pub inbox_count: usize,
-    pub pending_tasks_count: usize,
-    pub my_tasks_count: usize,
-    pub stale_tasks_count: usize,
+impl From<&RecordedEvent> for EventDto {
+    fn from(event: &RecordedEvent) -> Self {
+        Self {
+            topic: event.topic.clone(),
+            key: event.key.clone(),
+            namespace: event.namespace.clone(),
+            actor: event.actor.clone(),
+            payload: event.payload.clone(),
+            recorded_at: event.recorded_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageDto<T> {
+    pub items: Vec<T>,
+    pub total: usize,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+impl<T> PageDto<T> {
+    pub fn new(items: Vec<T>, total: usize, offset: usize, limit: usize) -> Self {
+        Self {
+            items,
+            total,
+            offset,
+            limit,
+        }
+    }
 }

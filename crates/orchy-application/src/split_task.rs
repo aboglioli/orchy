@@ -1,174 +1,71 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::error::ApplicationResult;
-use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Resource};
-use orchy_core::graph::{Edge, EdgeStore, RelationType};
-use orchy_core::resource_ref::ResourceKind;
-use orchy_core::task::{Priority, Task, TaskId, TaskStatus, TaskStore};
+use orchy_core::{Clock, Id, IdGenerator, Task, TaskStore, Title};
+use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
+use crate::error::ApplicationResult;
 
-pub struct SubtaskInput {
-    pub title: String,
-    pub description: String,
-    pub acceptance_criteria: Option<String>,
-    pub priority: Option<String>,
-    pub assigned_roles: Option<Vec<String>>,
-    pub depends_on: Option<Vec<String>>,
-}
-
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SplitTaskCommand {
     pub task_id: String,
-    pub subtasks: Vec<SubtaskInput>,
-    pub created_by: Option<String>,
+    pub titles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SplitTaskResponse {
+    pub parent: TaskDto,
+    pub created: Vec<TaskDto>,
+    pub skipped: Vec<String>,
 }
 
 pub struct SplitTask {
     tasks: Arc<dyn TaskStore>,
-    edges: Arc<dyn EdgeStore>,
+    ids: Arc<dyn IdGenerator>,
+    clock: Arc<dyn Clock>,
 }
 
 impl SplitTask {
-    pub fn new(tasks: Arc<dyn TaskStore>, edges: Arc<dyn EdgeStore>) -> Self {
-        Self { tasks, edges }
+    pub fn new(
+        tasks: Arc<dyn TaskStore>,
+        ids: Arc<dyn IdGenerator>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self { tasks, ids, clock }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: SplitTaskCommand,
-    ) -> ApplicationResult<(TaskDto, Vec<TaskDto>)> {
-        let parent_id = cmd.task_id.parse::<TaskId>()?;
+    pub async fn execute(&self, cmd: SplitTaskCommand) -> ApplicationResult<SplitTaskResponse> {
+        let parent_id = Id::new(&cmd.task_id)?;
+        let parent = self.tasks.require(&parent_id).await?;
 
-        let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
+        let existing: Vec<String> = self
+            .tasks
+            .children_of(&parent_id)
+            .await?
+            .iter()
+            .map(|t| t.title().as_str().to_lowercase())
+            .collect();
 
-        let mut parent =
-            self.tasks
-                .find_by_id(&parent_id)
-                .await?
-                .ok_or_else(|| Error::NotFound {
-                    resource: Resource::Task,
-                    id: parent_id.to_string(),
-                })?;
+        let mut created = Vec::new();
+        let mut skipped = Vec::new();
 
-        if matches!(
-            parent.status(),
-            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
-        ) {
-            return Err(Error::invalid_input(format!(
-                "cannot split task {} with status {}",
-                parent_id,
-                parent.status()
-            ))
-            .into());
-        }
-
-        struct SubtaskSpec {
-            title: String,
-            description: String,
-            acceptance_criteria: Option<String>,
-            priority: Priority,
-            assigned_roles: Vec<String>,
-            depends_on_ids: Vec<TaskId>,
-        }
-
-        let mut specs = Vec::with_capacity(cmd.subtasks.len());
-        for input in cmd.subtasks {
-            let priority = input
-                .priority
-                .map(|p| p.parse::<Priority>())
-                .transpose()?
-                .unwrap_or_default();
-
-            let depends_on_ids = input
-                .depends_on
-                .unwrap_or_default()
-                .into_iter()
-                .map(|s| s.parse::<TaskId>())
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-
-            if depends_on_ids.contains(&parent_id) {
-                return Err(Error::conflict(format!(
-                    "subtask depends on parent {parent_id}, which would create a cycle"
-                ))
-                .into());
+        for raw in &cmd.titles {
+            let title = Title::new(raw)?;
+            if existing.contains(&title.as_str().to_lowercase()) {
+                skipped.push(title.to_string());
+                continue;
             }
-
-            specs.push(SubtaskSpec {
-                title: input.title,
-                description: input.description,
-                acceptance_criteria: input.acceptance_criteria,
-                priority,
-                assigned_roles: input.assigned_roles.unwrap_or_default(),
-                depends_on_ids,
-            });
+            let mut child =
+                Task::create(title, parent.namespace().clone(), &*self.ids, &*self.clock);
+            child.attach_to(parent_id.clone(), &*self.clock)?;
+            self.tasks.save(&mut child).await?;
+            created.push(TaskDto::from(&child));
         }
 
-        let mut children = Vec::with_capacity(specs.len());
-        for spec in specs {
-            let is_blocked = !spec.depends_on_ids.is_empty();
-            let mut task = Task::new(
-                parent.org_id().clone(),
-                parent.project().clone(),
-                parent.namespace().clone(),
-                spec.title,
-                spec.description,
-                spec.acceptance_criteria,
-                spec.priority,
-                spec.assigned_roles,
-                created_by.clone(),
-                is_blocked,
-            )?;
-            self.tasks.save(&mut task).await?;
-
-            let mut spawns_edge = Edge::new(
-                parent.org_id().clone(),
-                ResourceKind::Task,
-                parent_id.to_string(),
-                ResourceKind::Task,
-                task.id().to_string(),
-                RelationType::Spawns,
-                created_by.clone(),
-            )?
-            .with_source(ResourceKind::Task, parent_id.to_string());
-            self.edges.save(&mut spawns_edge).await?;
-
-            for dep_id in &spec.depends_on_ids {
-                let already_exists = self
-                    .edges
-                    .exists_by_pair(
-                        parent.org_id(),
-                        &ResourceKind::Task,
-                        &task.id().to_string(),
-                        &ResourceKind::Task,
-                        &dep_id.to_string(),
-                        &RelationType::DependsOn,
-                    )
-                    .await?;
-                if !already_exists {
-                    let mut dep_edge = Edge::new(
-                        parent.org_id().clone(),
-                        ResourceKind::Task,
-                        task.id().to_string(),
-                        ResourceKind::Task,
-                        dep_id.to_string(),
-                        RelationType::DependsOn,
-                        created_by.clone(),
-                    )?;
-                    self.edges.save(&mut dep_edge).await?;
-                }
-            }
-
-            children.push(task);
-        }
-
-        parent.block()?;
-        self.tasks.save(&mut parent).await?;
-
-        Ok((
-            TaskDto::from(&parent),
-            children.iter().map(TaskDto::from).collect(),
-        ))
+        Ok(SplitTaskResponse {
+            parent: TaskDto::from(&parent),
+            created,
+            skipped,
+        })
     }
 }

@@ -1,26 +1,22 @@
 [package]
 name = "orchy-application"
+description = "orchy application services: use cases callable from any handler"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
-orchy-core = { workspace = true }
-orchy-events = { workspace = true }
-async-trait = { workspace = true }
-chrono = { workspace = true }
-futures = "0.3"
-uuid = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
+async-trait.workspace = true
+chrono.workspace = true
+orchy-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-orchy-store-memory = { workspace = true }
+orchy-store-memory.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
-chrono = { workspace = true }
 
 [lints]
 workspace = true
