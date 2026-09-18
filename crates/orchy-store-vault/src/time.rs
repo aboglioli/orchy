@@ -12,12 +12,9 @@ impl Clock for SystemClock {
     }
 }
 
-/// Monotonic ULIDs.
-///
-/// `Ulid::new()` fills the low bits randomly, so two ids minted in the same millisecond can
-/// compare in either direction. orchy relies on id ordering in two places that would silently
-/// break: the inbox watermark ("unread" is `id > mark`) and filename sort order. The crate's
-/// `Generator` increments the random component instead when the timestamp has not advanced.
+/// `Ulid::new()` randomises the low bits, so two ids minted in the same millisecond can
+/// compare either way. The inbox watermark (`id > mark`) and filename order both depend on
+/// that comparison, so generation has to be monotonic.
 pub struct UlidGenerator(Mutex<Generator>);
 
 impl UlidGenerator {
@@ -35,9 +32,7 @@ impl Default for UlidGenerator {
 impl IdGenerator for UlidGenerator {
     fn generate(&self) -> Ulid {
         let mut generator = self.0.lock().expect("ulid generator mutex");
-        // The generator only fails if the random component overflows within one millisecond,
-        // which takes 2^80 ids; falling back to a fresh random ulid keeps that unreachable
-        // case from panicking.
+        // only fails after 2^80 ids inside one millisecond
         generator.generate().unwrap_or_else(|_| Ulid::new())
     }
 }

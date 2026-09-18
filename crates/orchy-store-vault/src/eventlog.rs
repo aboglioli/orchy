@@ -11,8 +11,8 @@ use orchy_core::{
     ActorId, DomainError, DomainEvent, EventLog, EventQuery, MachineId, RecordedEvent, Result,
 };
 
-/// orchy writes one log root per machine (D33): `flock` is machine-local and cannot order
-/// offsets across a git remote, so two hosts must never share a partition.
+/// One log root per machine: `flock` cannot order offsets across a git remote, so two hosts
+/// sharing a partition would corrupt silently.
 pub struct EventuaryLog {
     writer: Arc<FsWriter>,
     root: PathBuf,
@@ -100,8 +100,8 @@ impl EventLog for EventuaryLog {
             }
         }
 
-        // Every host replays the same total order, which is what makes the projection
-        // deterministic without needing the writes to have been commutative.
+        // a shared total order is what makes projections deterministic without the writes
+        // having had to be commutative
         all.sort_by(|a, b| {
             a.recorded_at
                 .cmp(&b.recorded_at)
@@ -136,9 +136,8 @@ async fn drain(reader: &FsReader) -> Result<Vec<Event>> {
     use futures::StreamExt;
     use tokio::time::timeout;
 
-    // `StopAt::CurrentEnd` stops the reader delivering *new* events, but it does not close
-    // the stream — a subscription is a tail by design. Replay is a bounded read, so it ends
-    // on an idle gap instead. eventuary's own tests drain the same way.
+    // CurrentEnd stops delivery but does not close the stream: a subscription is a tail by
+    // design, so a bounded replay has to end on an idle gap
     const IDLE: Duration = Duration::from_millis(250);
 
     let subscription = FsSubscription {
@@ -156,7 +155,6 @@ async fn drain(reader: &FsReader) -> Result<Vec<Event>> {
     while let Ok(Some(message)) = timeout(IDLE, stream.next()).await {
         let message =
             message.map_err(|e| DomainError::validation(format!("reading event log: {e}")))?;
-        // acking keeps the reader's bounded channel draining on a long log
         let _ = message.ack().await;
         events.push(message.into_event());
     }

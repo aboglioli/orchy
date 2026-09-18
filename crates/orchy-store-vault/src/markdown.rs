@@ -5,7 +5,6 @@ use serde_json::Value;
 
 const FENCE: &str = "---";
 
-/// A markdown file as orchy reads and writes it: a YAML frontmatter block, then the body.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MarkdownFile {
     pub frontmatter: Frontmatter,
@@ -85,8 +84,8 @@ fn parse_frontmatter(yaml: &str) -> Result<Frontmatter> {
     Ok(frontmatter)
 }
 
-/// serde deserialises into an unordered map, but a document a human wrote has an order worth
-/// preserving, so the raw text is scanned for top-level keys to restore it.
+/// serde deserialises into an unordered map, so the raw text is rescanned to recover the
+/// order the author wrote.
 fn key_order(yaml: &str) -> Vec<String> {
     yaml.lines()
         .filter(|line| !line.starts_with([' ', '\t', '-', '#']))
@@ -104,9 +103,8 @@ fn render_frontmatter(frontmatter: &Frontmatter) -> Result<String> {
         })?;
         let rendered = rendered.trim_end();
 
-        // Whether a value needs its own block is decided by its type, never by whether the
-        // emitter happened to produce a newline: a one-element list renders as `- a`, which
-        // reads as a scalar and would be written back as `tags: - a`, which is not YAML.
+        // decided by type, not by whether the emitter produced a newline: a one-element list
+        // renders as `- a` and would be written back as `tags: - a`, which is not YAML
         let is_block = matches!(value, Value::Array(_) | Value::Object(_));
         if is_block {
             if matches!(value, Value::Array(items) if items.is_empty()) {

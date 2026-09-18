@@ -6,12 +6,8 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use orchy_core::{DomainError, Result};
 
-/// The byte-level seam under every file-backed store.
-///
-/// Everything above this trait — parsing frontmatter, projecting inverses, building the
-/// snapshot, enforcing one-writer-per-file — is backend-agnostic. Swapping where the bytes
-/// live (a directory, memory, an object bucket) means implementing these five methods and
-/// nothing else.
+/// The seam that makes the byte source replaceable: everything above it — parsing, the
+/// snapshot, one-writer-per-file — is backend-agnostic.
 #[async_trait]
 pub trait BlobStore: Send + Sync {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>>;
@@ -27,8 +23,8 @@ fn io(context: &str, e: std::io::Error) -> DomainError {
     DomainError::validation(format!("{context}: {e}"))
 }
 
-/// Bytes in a directory. Writes are atomic: a temp file in the same directory, fsynced, then
-/// renamed over the target, so a crash mid-write never leaves a half-parsed document.
+/// Writes are atomic: temp file, fsync, rename, so a crash never leaves a half-parsed
+/// document behind.
 pub struct FsBlobStore {
     root: PathBuf,
 }
@@ -136,7 +132,6 @@ impl BlobStore for FsBlobStore {
     }
 }
 
-/// Bytes in a map. Used by tests and by `backend = "memory"`; identical semantics, no disk.
 #[derive(Default)]
 pub struct MemoryBlobStore(Mutex<BTreeMap<String, Vec<u8>>>);
 
