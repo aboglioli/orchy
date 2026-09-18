@@ -1,178 +1,75 @@
-pub mod events;
+mod recipient;
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::result::Result as StdResult;
 use std::str::FromStr;
-use uuid::Uuid;
 
-use orchy_events::{Event, EventCollector, Payload};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use eventuary_core::{Payload, Topic};
+use serde::{Deserialize, Serialize};
 
-use self::events as message_events;
-use crate::agent::AgentId;
-use crate::error::{DomainError, DomainResult, Result};
-use crate::namespace::{Namespace, ProjectId};
-use crate::organization::OrganizationId;
-use crate::pagination::{Page, PageParams};
-use crate::resource_ref::ResourceRef;
-use crate::user::UserId;
+pub use recipient::Recipient;
 
-#[async_trait::async_trait]
-#[allow(clippy::too_many_arguments)]
+use crate::actor::ActorId;
+use crate::body::Body;
+use crate::clock::Clock;
+use crate::entity_ref::EntityRef;
+use crate::error::{DomainError, Result};
+use crate::event::{DomainEvent, EventCollector, payload_of, topic};
+use crate::id::{Id, IdGenerator};
+use crate::namespace::Namespace;
+use crate::priority::Priority;
+use crate::title::Title;
+
+#[async_trait]
 pub trait MessageStore: Send + Sync {
+    async fn get(&self, id: &Id) -> Result<Option<Message>>;
+    async fn thread(&self, thread: &Id) -> Result<Vec<Message>>;
+    async fn inbox(&self, for_actor: &ActorId, after: Option<&Id>) -> Result<Vec<Message>>;
+    async fn sent_by(&self, actor: &ActorId) -> Result<Vec<Message>>;
     async fn save(&self, message: &mut Message) -> Result<()>;
-    async fn find_by_id(&self, id: &MessageId) -> Result<Option<Message>>;
-    async fn find_by_ids(&self, ids: &[MessageId]) -> Result<Vec<Message>>;
-    async fn mark_read(&self, agent: &AgentId, message_ids: &[MessageId]) -> Result<()>;
-    async fn find_unread(
-        &self,
-        agent: &AgentId,
-        agent_roles: &[String],
-        agent_namespace: &Namespace,
-        agent_user_id: Option<&UserId>,
-        org: &OrganizationId,
-        project: &ProjectId,
-        page: PageParams,
-    ) -> Result<Page<Message>>;
-    async fn find_sent(
-        &self,
-        sender: &AgentId,
-        org: &OrganizationId,
-        project: &ProjectId,
-        namespace: &Namespace,
-        page: PageParams,
-    ) -> Result<Page<Message>>;
-    async fn find_thread(
-        &self,
-        message_id: &MessageId,
-        limit: Option<usize>,
-    ) -> Result<Vec<Message>>;
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct MessageId(Uuid);
-
-impl MessageId {
-    pub fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
+    async fn require(&self, id: &Id) -> Result<Message> {
+        self.get(id)
+            .await?
+            .ok_or_else(|| DomainError::not_found("message", id))
     }
 }
 
-impl Default for MessageId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for MessageId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FromStr for MessageId {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
-        Uuid::parse_str(s)
-            .map(Self)
-            .map_err(|_| DomainError::validation(format!("invalid message id: {s}")))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub enum MessageTarget {
-    Agent(AgentId),
-    Role(String),
-    Namespace(Namespace),
-    Broadcast,
-    User(UserId),
-}
-
-impl MessageTarget {
-    pub fn parse(s: &str) -> DomainResult<Self> {
-        if s == "broadcast" {
-            return Ok(MessageTarget::Broadcast);
-        }
-        if let Some(role) = s.strip_prefix("role:") {
-            if role.is_empty() {
-                return Err(DomainError::validation(
-                    "role name must not be empty".to_owned(),
-                ));
-            }
-            return Ok(MessageTarget::Role(role.to_owned()));
-        }
-        if let Some(ns) = s.strip_prefix("ns:") {
-            let ns = Namespace::try_from(ns.to_owned())?;
-            return Ok(MessageTarget::Namespace(ns));
-        }
-        if let Some(user_id) = s.strip_prefix("user:") {
-            return UserId::from_str(user_id)
-                .map(MessageTarget::User)
-                .map_err(|_| DomainError::validation(format!("invalid user target: '{s}'")));
-        }
-        match AgentId::from_str(s) {
-            Ok(id) => Ok(MessageTarget::Agent(id)),
-            Err(_) => Err(DomainError::validation(format!(
-                "cannot parse message target: '{s}'"
-            ))),
-        }
-    }
-}
-
-impl TryFrom<String> for MessageTarget {
-    type Error = DomainError;
-
-    fn try_from(s: String) -> DomainResult<Self> {
-        Self::parse(&s)
-    }
-}
-
-impl From<MessageTarget> for String {
-    fn from(t: MessageTarget) -> Self {
-        t.to_string()
-    }
-}
-
-impl fmt::Display for MessageTarget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MessageTarget::Broadcast => write!(f, "broadcast"),
-            MessageTarget::Role(r) => write!(f, "role:{r}"),
-            MessageTarget::Namespace(ns) => write!(f, "ns:{ns}"),
-            MessageTarget::Agent(id) => write!(f, "{id}"),
-            MessageTarget::User(id) => write!(f, "user:{id}"),
-        }
-    }
+pub trait ReadWatermarks: Send + Sync {
+    fn watermark(&self, actor: &ActorId) -> Result<Option<Id>>;
+    fn advance(&self, actor: &ActorId, to: &Id) -> Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum MessageStatus {
-    Pending,
-    Delivered,
-    Read,
+    Open,
+    Resolved,
+}
+
+impl MessageStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Resolved => "resolved",
+        }
+    }
+}
+
+impl fmt::Display for MessageStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl FromStr for MessageStatus {
     type Err = DomainError;
 
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         match s {
-            "pending" => Ok(MessageStatus::Pending),
-            "delivered" => Ok(MessageStatus::Delivered),
-            "read" => Ok(MessageStatus::Read),
+            "open" => Ok(Self::Open),
+            "resolved" => Ok(Self::Resolved),
             other => Err(DomainError::validation(format!(
                 "unknown message status: {other}"
             ))),
@@ -181,550 +78,453 @@ impl FromStr for MessageStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageSent {
+    pub id: Id,
+    pub thread: Id,
+    pub namespace: Namespace,
+    pub from: ActorId,
+    pub to: Vec<Recipient>,
+    pub at: DateTime<Utc>,
+}
+
+impl DomainEvent for MessageSent {
+    fn topic(&self) -> Topic {
+        topic("message.sent")
+    }
+    fn key(&self) -> Id {
+        self.id.clone()
+    }
+    fn namespace(&self) -> Namespace {
+        self.namespace.clone()
+    }
+    fn payload(&self) -> Result<Payload> {
+        payload_of(self)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadResolved {
+    pub id: Id,
+    pub thread: Id,
+    pub namespace: Namespace,
+    pub by: ActorId,
+    pub at: DateTime<Utc>,
+}
+
+impl DomainEvent for ThreadResolved {
+    fn topic(&self) -> Topic {
+        topic("message.resolved")
+    }
+    fn key(&self) -> Id {
+        self.id.clone()
+    }
+    fn namespace(&self) -> Namespace {
+        self.namespace.clone()
+    }
+    fn payload(&self) -> Result<Payload> {
+        payload_of(self)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
-    id: MessageId,
-    org_id: OrganizationId,
-    project: ProjectId,
-    namespace: Namespace,
-    from: AgentId,
-    to: MessageTarget,
-    body: String,
-    reply_to: Option<MessageId>,
+    id: Id,
+    thread: Id,
+    in_reply_to: Option<Id>,
+    from: ActorId,
+    to: Vec<Recipient>,
+    subject: Option<Title>,
+    body: Body,
+    priority: Priority,
     status: MessageStatus,
+    namespace: Namespace,
+    refs: Vec<EntityRef>,
     created_at: DateTime<Utc>,
-    claimed_by: Option<AgentId>,
-    claimed_at: Option<DateTime<Utc>>,
-    refs: Vec<ResourceRef>,
     #[serde(skip)]
     collector: EventCollector,
 }
 
+#[derive(Debug, Clone)]
+pub struct RestoreMessage {
+    pub id: Id,
+    pub thread: Id,
+    pub in_reply_to: Option<Id>,
+    pub from: ActorId,
+    pub to: Vec<Recipient>,
+    pub subject: Option<Title>,
+    pub body: Body,
+    pub priority: Priority,
+    pub status: MessageStatus,
+    pub namespace: Namespace,
+    pub refs: Vec<EntityRef>,
+    pub created_at: DateTime<Utc>,
+}
+
 impl Message {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        org_id: OrganizationId,
-        project: ProjectId,
+    pub fn new(restore: RestoreMessage) -> Self {
+        Self {
+            id: restore.id,
+            thread: restore.thread,
+            in_reply_to: restore.in_reply_to,
+            from: restore.from,
+            to: restore.to,
+            subject: restore.subject,
+            body: restore.body,
+            priority: restore.priority,
+            status: restore.status,
+            namespace: restore.namespace,
+            refs: restore.refs,
+            created_at: restore.created_at,
+            collector: EventCollector::new(),
+        }
+    }
+
+    pub fn send(
+        from: ActorId,
+        to: Vec<Recipient>,
+        subject: Option<Title>,
+        body: Body,
         namespace: Namespace,
-        from: AgentId,
-        to: MessageTarget,
-        body: String,
-        reply_to: Option<MessageId>,
-        refs: Vec<ResourceRef>,
-    ) -> DomainResult<Self> {
-        let mut msg = Self {
-            id: MessageId::new(),
-            org_id,
-            project,
+        ids: &dyn IdGenerator,
+        clock: &dyn Clock,
+    ) -> Result<Self> {
+        if to.is_empty() {
+            return Err(DomainError::validation("a message needs a recipient"));
+        }
+        if body.is_empty() {
+            return Err(DomainError::validation("a message needs a body"));
+        }
+        let now = clock.now();
+        let id = Id::generate(ids);
+        let mut message = Self::new(RestoreMessage {
+            id: id.clone(),
+            thread: id.clone(),
+            in_reply_to: None,
+            from: from.clone(),
+            to: to.clone(),
+            subject,
+            body,
+            priority: Priority::default(),
+            status: MessageStatus::Open,
+            namespace: namespace.clone(),
+            refs: Vec::new(),
+            created_at: now,
+        });
+        message.collector.collect(MessageSent {
+            id: id.clone(),
+            thread: id,
             namespace,
             from,
             to,
-            body,
-            reply_to,
-            status: MessageStatus::Pending,
-            created_at: Utc::now(),
-            claimed_by: None,
-            claimed_at: None,
-            refs,
-            collector: EventCollector::new(),
-        };
-
-        let payload = Payload::from_json(&message_events::MessageSentPayload {
-            org_id: msg.org_id.to_string(),
-            message_id: msg.id.to_string(),
-            project: msg.project.to_string(),
-            namespace: msg.namespace.to_string(),
-            from: msg.from.to_string(),
-            to: msg.to.to_string(),
-            body: msg.body.clone(),
-            reply_to: msg.reply_to.map(|id| id.to_string()),
-            refs: msg
-                .refs
-                .iter()
-                .map(serde_json::to_value)
-                .collect::<StdResult<Vec<_>, _>>()
-                .map_err(|e| DomainError::validation(format!("invalid resource ref: {e}")))?,
-        })?;
-        let event = Event::create(
-            msg.org_id.as_str(),
-            message_events::NAMESPACE,
-            message_events::TOPIC_SENT,
-            msg.id.to_string(),
-            payload,
-        )?;
-        msg.collector.collect(event);
-
-        Ok(msg)
+            at: now,
+        });
+        Ok(message)
     }
 
-    pub fn restore(r: RestoreMessage) -> Self {
-        Self {
-            id: r.id,
-            org_id: r.org_id,
-            project: r.project,
-            namespace: r.namespace,
-            from: r.from,
-            to: r.to,
-            body: r.body,
-            reply_to: r.reply_to,
-            status: r.status,
-            created_at: r.created_at,
-            claimed_by: r.claimed_by,
-            claimed_at: r.claimed_at,
-            refs: r.refs,
-            collector: EventCollector::new(),
+    pub fn reply(
+        &self,
+        from: ActorId,
+        body: Body,
+        ids: &dyn IdGenerator,
+        clock: &dyn Clock,
+    ) -> Result<Self> {
+        if body.is_empty() {
+            return Err(DomainError::validation("a reply needs a body"));
         }
-    }
-
-    pub fn reply(&self, from: AgentId, body: String) -> DomainResult<Self> {
-        Self::new(
-            self.org_id.clone(),
-            self.project.clone(),
-            self.namespace.clone(),
+        let now = clock.now();
+        let id = Id::generate(ids);
+        let to = vec![Recipient::Instance(self.from.clone())];
+        let mut reply = Self::new(RestoreMessage {
+            id: id.clone(),
+            thread: self.thread.clone(),
+            in_reply_to: Some(self.id.clone()),
+            from: from.clone(),
+            to: to.clone(),
+            subject: self.subject.clone(),
+            body,
+            priority: self.priority,
+            status: MessageStatus::Open,
+            namespace: self.namespace.clone(),
+            refs: Vec::new(),
+            created_at: now,
+        });
+        reply.collector.collect(MessageSent {
+            id,
+            thread: self.thread.clone(),
+            namespace: self.namespace.clone(),
             from,
-            MessageTarget::Agent(self.from.clone()),
-            body,
-            Some(self.id),
-            vec![], // Replies don't inherit refs
-        )
+            to,
+            at: now,
+        });
+        Ok(reply)
     }
 
-    pub fn deliver(&mut self) -> DomainResult<()> {
-        if self.status == MessageStatus::Pending {
-            self.status = MessageStatus::Delivered;
-
-            let payload = Payload::from_json(&message_events::MessageDeliveredPayload {
-                org_id: self.org_id.to_string(),
-                message_id: self.id.to_string(),
-                from: self.from.to_string(),
-                to: self.to.to_string(),
-                status: "delivered".to_owned(),
-            })?;
-            let event = Event::create(
-                self.org_id.as_str(),
-                message_events::NAMESPACE,
-                message_events::TOPIC_DELIVERED,
-                self.id.to_string(),
-                payload,
-            )?;
-            self.collector.collect(event);
-        }
-        Ok(())
+    pub fn is_thread_root(&self) -> bool {
+        self.id == self.thread
     }
 
-    pub fn mark_read(&mut self) -> DomainResult<()> {
-        if self.status == MessageStatus::Read {
-            return Ok(());
-        }
-        self.status = MessageStatus::Read;
-
-        let payload = Payload::from_json(&message_events::MessageReadPayload {
-            org_id: self.org_id.to_string(),
-            message_id: self.id.to_string(),
-            from: self.from.to_string(),
-            to: self.to.to_string(),
-            status: "read".to_owned(),
-        })?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            message_events::NAMESPACE,
-            message_events::TOPIC_READ,
-            self.id.to_string(),
-            payload,
-        )?;
-        self.collector.collect(event);
-        Ok(())
-    }
-
-    pub fn is_directed_to(&self, agent: &AgentId) -> bool {
-        match &self.to {
-            MessageTarget::Agent(id) => id == agent,
-            _ => false,
-        }
-    }
-
-    pub fn is_broadcast(&self) -> bool {
-        matches!(self.to, MessageTarget::Broadcast)
-    }
-
-    pub fn is_role_targeted(&self) -> bool {
-        matches!(self.to, MessageTarget::Role(_))
-    }
-
-    pub fn is_namespace_targeted(&self) -> bool {
-        matches!(self.to, MessageTarget::Namespace(_))
-    }
-
-    pub fn is_user_targeted(&self) -> bool {
-        matches!(self.to, MessageTarget::User(_))
-    }
-
-    pub fn is_logical_target(&self) -> bool {
-        matches!(
-            self.to,
-            MessageTarget::Broadcast
-                | MessageTarget::Role(_)
-                | MessageTarget::Namespace(_)
-                | MessageTarget::User(_)
-        )
-    }
-
-    pub fn claim(&mut self, agent_id: AgentId) -> DomainResult<()> {
-        if !self.is_logical_target() {
-            return Err(DomainError::validation(
-                "only logical targets can be claimed".to_owned(),
+    pub fn resolve(&mut self, by: ActorId, clock: &dyn Clock) -> Result<()> {
+        if !self.is_thread_root() {
+            return Err(DomainError::conflict(
+                "resolution is recorded on the thread root, not on a reply",
             ));
         }
-        if let Some(existing) = &self.claimed_by {
-            if *existing != agent_id {
-                return Err(DomainError::rule_violation(
-                    "message already claimed by another agent",
-                ));
-            }
-            return Ok(());
+        if self.status == MessageStatus::Resolved {
+            return Err(DomainError::conflict("thread is already resolved"));
         }
-        self.claimed_by = Some(agent_id.clone());
-        self.claimed_at = Some(Utc::now());
-
-        let payload = Payload::from_json(&message_events::MessageClaimedPayload {
-            org_id: self.org_id.to_string(),
-            message_id: self.id.to_string(),
-            agent_id: agent_id.to_string(),
-        })?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            message_events::NAMESPACE,
-            message_events::TOPIC_CLAIMED,
-            self.id.to_string(),
-            payload,
-        )?;
-        self.collector.collect(event);
-
+        self.status = MessageStatus::Resolved;
+        self.collector.collect(ThreadResolved {
+            id: self.id.clone(),
+            thread: self.thread.clone(),
+            namespace: self.namespace.clone(),
+            by,
+            at: clock.now(),
+        });
         Ok(())
     }
 
-    pub fn unclaim(&mut self, agent_id: &AgentId) -> DomainResult<()> {
-        if self.claimed_by.as_ref() != Some(agent_id) {
-            return Err(DomainError::validation(
-                "only the claimant can unclaim".to_owned(),
-            ));
+    pub fn set_priority(&mut self, priority: Priority) {
+        self.priority = priority;
+    }
+
+    pub fn reference(&mut self, entity: EntityRef) {
+        if !self.refs.contains(&entity) {
+            self.refs.push(entity);
         }
-        self.claimed_by = None;
-        self.claimed_at = None;
-
-        let payload = Payload::from_json(&message_events::MessageUnclaimedPayload {
-            org_id: self.org_id.to_string(),
-            message_id: self.id.to_string(),
-            agent_id: agent_id.to_string(),
-        })?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            message_events::NAMESPACE,
-            message_events::TOPIC_UNCLAIMED,
-            self.id.to_string(),
-            payload,
-        )?;
-        self.collector.collect(event);
-
-        Ok(())
     }
 
-    pub fn claimed_by(&self) -> Option<&AgentId> {
-        self.claimed_by.as_ref()
+    pub fn is_unread_for(&self, watermark: Option<&Id>) -> bool {
+        match watermark {
+            Some(mark) => &self.id > mark,
+            None => true,
+        }
     }
 
-    pub fn claimed_at(&self) -> Option<DateTime<Utc>> {
-        self.claimed_at
-    }
-
-    pub fn drain_events(&mut self) -> Vec<Event> {
+    pub fn drain_events(&mut self) -> Vec<Box<dyn DomainEvent>> {
         self.collector.drain()
     }
 
-    pub fn id(&self) -> MessageId {
-        self.id
+    pub fn id(&self) -> &Id {
+        &self.id
     }
-    pub fn org_id(&self) -> &OrganizationId {
-        &self.org_id
+    pub fn thread(&self) -> &Id {
+        &self.thread
     }
-    pub fn project(&self) -> &ProjectId {
-        &self.project
+    pub fn in_reply_to(&self) -> Option<&Id> {
+        self.in_reply_to.as_ref()
     }
-    pub fn namespace(&self) -> &Namespace {
-        &self.namespace
-    }
-    pub fn from(&self) -> &AgentId {
+    pub fn from(&self) -> &ActorId {
         &self.from
     }
-    pub fn to(&self) -> &MessageTarget {
+    pub fn to(&self) -> &[Recipient] {
         &self.to
     }
-    pub fn body(&self) -> &str {
+    pub fn subject(&self) -> Option<&Title> {
+        self.subject.as_ref()
+    }
+    pub fn body(&self) -> &Body {
         &self.body
     }
-    pub fn reply_to(&self) -> Option<MessageId> {
-        self.reply_to
+    pub fn priority(&self) -> Priority {
+        self.priority
     }
     pub fn status(&self) -> MessageStatus {
         self.status
     }
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn refs(&self) -> &[EntityRef] {
+        &self.refs
+    }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
-    pub fn refs(&self) -> &[ResourceRef] {
-        &self.refs
-    }
-}
-
-pub struct RestoreMessage {
-    pub id: MessageId,
-    pub org_id: OrganizationId,
-    pub project: ProjectId,
-    pub namespace: Namespace,
-    pub from: AgentId,
-    pub to: MessageTarget,
-    pub body: String,
-    pub reply_to: Option<MessageId>,
-    pub status: MessageStatus,
-    pub created_at: DateTime<Utc>,
-    pub refs: Vec<ResourceRef>,
-    pub claimed_by: Option<AgentId>,
-    pub claimed_at: Option<DateTime<Utc>>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orchy_events::OrganizationId;
+    use ulid::Ulid;
 
-    fn test_org() -> OrganizationId {
-        OrganizationId::new("test").unwrap()
+    struct FixedClock(DateTime<Utc>);
+
+    impl Clock for FixedClock {
+        fn now(&self) -> DateTime<Utc> {
+            self.0
+        }
     }
 
-    fn test_project() -> ProjectId {
-        ProjectId::try_from("test").unwrap()
+    struct SeqIds(std::sync::atomic::AtomicU64);
+
+    impl IdGenerator for SeqIds {
+        fn generate(&self) -> Ulid {
+            let n = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ulid::from_parts(n, n as u128)
+        }
     }
 
-    #[test]
-    fn parse_broadcast() {
-        let t = MessageTarget::parse("broadcast").unwrap();
-        assert_eq!(t, MessageTarget::Broadcast);
+    fn clock() -> FixedClock {
+        FixedClock(DateTime::from_timestamp(1_700_000_000, 0).unwrap())
     }
 
-    #[test]
-    fn parse_role() {
-        let t = MessageTarget::parse("role:reviewer").unwrap();
-        assert_eq!(t, MessageTarget::Role("reviewer".to_owned()));
+    fn actor(alias: &str) -> ActorId {
+        ActorId::new(alias, "01ARZ3NDEKTSV4RRFFQ69G5FAV").unwrap()
     }
 
-    #[test]
-    fn parse_agent_id() {
-        let id = AgentId::new();
-        let s = id.to_string();
-        let t = MessageTarget::parse(&s).unwrap();
-        assert_eq!(t, MessageTarget::Agent(id));
-    }
-
-    #[test]
-    fn empty_role_fails() {
-        let result = MessageTarget::parse("role:");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn new_message_is_pending() {
-        let msg = Message::new(
-            test_org(),
-            test_project(),
+    fn send(ids: &SeqIds) -> Message {
+        Message::send(
+            actor("claude"),
+            vec![Recipient::Broadcast],
+            Some(Title::new("heads up").unwrap()),
+            Body::new("the build is red"),
             Namespace::root(),
-            AgentId::new(),
-            MessageTarget::Broadcast,
-            "hi".into(),
-            None,
-            vec![],
+            ids,
+            &clock(),
         )
-        .unwrap();
-        assert_eq!(msg.status(), MessageStatus::Pending);
+        .unwrap()
+    }
+
+    fn ids() -> SeqIds {
+        SeqIds(std::sync::atomic::AtomicU64::new(1))
     }
 
     #[test]
-    fn deliver_transitions_to_delivered() {
-        let mut msg = Message::new(
-            test_org(),
-            test_project(),
-            Namespace::root(),
-            AgentId::new(),
-            MessageTarget::Broadcast,
-            "hi".into(),
-            None,
-            vec![],
-        )
-        .unwrap();
-        msg.deliver().unwrap();
-        assert_eq!(msg.status(), MessageStatus::Delivered);
+    fn a_new_message_opens_its_own_thread() {
+        let message = send(&ids());
+        assert!(message.is_thread_root());
+        assert_eq!(message.id(), message.thread());
+        assert_eq!(message.status(), MessageStatus::Open);
+        assert_eq!(message.in_reply_to(), None);
     }
 
     #[test]
-    fn mark_read_transitions() {
-        let mut msg = Message::new(
-            test_org(),
-            test_project(),
-            Namespace::root(),
-            AgentId::new(),
-            MessageTarget::Broadcast,
-            "hi".into(),
-            None,
-            vec![],
-        )
-        .unwrap();
-        msg.mark_read().unwrap();
-        assert_eq!(msg.status(), MessageStatus::Read);
+    fn sending_requires_a_recipient_and_a_body() {
+        let ids = ids();
+        assert!(
+            Message::send(
+                actor("claude"),
+                vec![],
+                None,
+                Body::new("hi"),
+                Namespace::root(),
+                &ids,
+                &clock()
+            )
+            .is_err(),
+            "no recipient"
+        );
+        assert!(
+            Message::send(
+                actor("claude"),
+                vec![Recipient::Broadcast],
+                None,
+                Body::new("  "),
+                Namespace::root(),
+                &ids,
+                &clock()
+            )
+            .is_err(),
+            "empty body"
+        );
     }
 
     #[test]
-    fn reply_creates_threaded_message() {
-        let sender = AgentId::new();
-        let receiver = AgentId::new();
-        let original = Message::new(
-            test_org(),
-            test_project(),
-            Namespace::root(),
-            sender.clone(),
-            MessageTarget::Agent(receiver.clone()),
-            "hello".into(),
-            None,
-            vec![],
-        )
-        .unwrap();
-        let reply = original.reply(receiver.clone(), "hey back".into()).unwrap();
-        assert_eq!(reply.reply_to(), Some(original.id()));
-        assert_eq!(reply.from(), &receiver);
-        assert_eq!(reply.to(), &MessageTarget::Agent(sender.clone()));
-    }
-
-    #[test]
-    fn message_preserves_refs() {
-        use crate::resource_ref::ResourceRef;
-        let org = OrganizationId::new("org").unwrap();
-        let project = ProjectId::try_from("proj").unwrap();
-        let namespace = Namespace::root();
-        let from = AgentId::new();
-        let refs = vec![
-            ResourceRef::task("task-1"),
-            ResourceRef::knowledge("auth/decision").with_display("JWT decision"),
-        ];
-        let msg = Message::new(
-            org,
-            project,
-            namespace,
-            from,
-            MessageTarget::Broadcast,
-            "check this out".to_owned(),
-            None,
-            refs.clone(),
-        )
-        .unwrap();
-        assert_eq!(msg.refs(), &refs);
-    }
-
-    #[test]
-    fn is_user_targeted_returns_true_for_user_target() {
-        let user_id = UserId::new();
-        let msg = Message::new(
-            test_org(),
-            test_project(),
-            Namespace::root(),
-            AgentId::new(),
-            MessageTarget::User(user_id),
-            "hi".into(),
-            None,
-            vec![],
-        )
-        .unwrap();
-        assert!(msg.is_user_targeted());
-    }
-
-    #[test]
-    fn is_user_targeted_returns_false_for_other_targets() {
-        let msg = Message::new(
-            test_org(),
-            test_project(),
-            Namespace::root(),
-            AgentId::new(),
-            MessageTarget::Agent(AgentId::new()),
-            "hi".into(),
-            None,
-            vec![],
-        )
-        .unwrap();
-        assert!(!msg.is_user_targeted());
-    }
-
-    fn logical_message() -> Message {
-        let mut msg = Message::new(
-            test_org(),
-            test_project(),
-            Namespace::root(),
-            AgentId::new(),
-            MessageTarget::Broadcast,
-            "hi".into(),
-            None,
-            vec![],
-        )
-        .unwrap();
-        msg.drain_events();
-        msg
-    }
-
-    #[test]
-    fn claim_emits_one_event() {
-        let mut msg = logical_message();
-        let agent = AgentId::new();
-        msg.claim(agent).unwrap();
-        let events = msg.drain_events();
+    fn sending_emits_exactly_one_event() {
+        let mut message = send(&ids());
+        let events = message.drain_events();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].topic().as_str(), message_events::TOPIC_CLAIMED);
+        assert_eq!(events[0].topic().as_str(), "message.sent");
     }
 
     #[test]
-    fn claim_idempotent_when_same_agent() {
-        let mut msg = logical_message();
-        let agent = AgentId::new();
-        msg.claim(agent.clone()).unwrap();
-        msg.drain_events();
-        msg.claim(agent).unwrap();
-        let events = msg.drain_events();
-        assert!(events.is_empty());
+    fn a_reply_joins_the_thread_and_addresses_the_sender_directly() {
+        let ids = ids();
+        let root = send(&ids);
+        let reply = root
+            .reply(actor("codex"), Body::new("on it"), &ids, &clock())
+            .unwrap();
+
+        assert_eq!(reply.thread(), root.thread());
+        assert_ne!(reply.id(), root.id(), "a reply is a new file");
+        assert_eq!(reply.in_reply_to(), Some(root.id()));
+        assert!(!reply.is_thread_root());
+        assert_eq!(reply.to(), &[Recipient::Instance(actor("claude"))]);
     }
 
     #[test]
-    fn unclaim_emits_one_event() {
-        let mut msg = logical_message();
-        let agent = AgentId::new();
-        msg.claim(agent.clone()).unwrap();
-        msg.drain_events();
-        msg.unclaim(&agent).unwrap();
-        let events = msg.drain_events();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].topic().as_str(), message_events::TOPIC_UNCLAIMED);
+    fn a_reply_inherits_the_subject_so_threads_stay_readable() {
+        let ids = ids();
+        let root = send(&ids);
+        let reply = root
+            .reply(actor("codex"), Body::new("on it"), &ids, &clock())
+            .unwrap();
+        assert_eq!(reply.subject(), root.subject());
     }
 
     #[test]
-    fn mark_read_idempotent_when_already_read() {
-        let mut msg = Message::new(
-            test_org(),
-            test_project(),
-            Namespace::root(),
-            AgentId::new(),
-            MessageTarget::Broadcast,
-            "hi".into(),
-            None,
-            vec![],
-        )
-        .unwrap();
-        msg.mark_read().unwrap();
-        msg.drain_events();
-        msg.mark_read().unwrap();
-        let events = msg.drain_events();
-        assert!(events.is_empty());
+    fn resolution_is_recorded_on_the_thread_root_only() {
+        let ids = ids();
+        let root = send(&ids);
+        let mut reply = root
+            .reply(actor("codex"), Body::new("on it"), &ids, &clock())
+            .unwrap();
+
+        let err = reply.resolve(actor("codex"), &clock()).unwrap_err();
+        assert!(matches!(err, DomainError::Conflict(_)), "{err:?}");
+    }
+
+    #[test]
+    fn resolving_twice_is_a_conflict() {
+        let mut root = send(&ids());
+        root.resolve(actor("codex"), &clock()).unwrap();
+        assert_eq!(root.status(), MessageStatus::Resolved);
+        assert!(root.resolve(actor("codex"), &clock()).is_err());
+    }
+
+    #[test]
+    fn resolving_emits_its_own_topic() {
+        let mut root = send(&ids());
+        root.drain_events();
+        root.resolve(actor("codex"), &clock()).unwrap();
+        let events = root.drain_events();
+        assert_eq!(events[0].topic().as_str(), "message.resolved");
+    }
+
+    #[test]
+    fn unread_is_a_single_comparison_against_the_local_watermark() {
+        let ids = ids();
+        let first = send(&ids);
+        let second = send(&ids);
+        assert!(second.id() > first.id(), "ulids are time-ordered");
+
+        assert!(
+            first.is_unread_for(None),
+            "no watermark means everything is unread"
+        );
+        assert!(
+            !first.is_unread_for(Some(first.id())),
+            "the watermark itself is read"
+        );
+        assert!(second.is_unread_for(Some(first.id())));
+        assert!(!first.is_unread_for(Some(second.id())));
+    }
+
+    #[test]
+    fn status_round_trips_through_its_wire_name() {
+        for status in [MessageStatus::Open, MessageStatus::Resolved] {
+            assert_eq!(status.as_str().parse::<MessageStatus>().unwrap(), status);
+        }
+        assert!("read".parse::<MessageStatus>().is_err());
+        assert!("delivered".parse::<MessageStatus>().is_err());
+    }
+
+    #[test]
+    fn references_are_deduplicated() {
+        let mut message = send(&ids());
+        let task = EntityRef::task(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap());
+        message.reference(task.clone());
+        message.reference(task);
+        assert_eq!(message.refs().len(), 1);
     }
 }

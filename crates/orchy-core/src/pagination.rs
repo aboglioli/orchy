@@ -1,69 +1,73 @@
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-const DEFAULT_LIMIT: u32 = 50;
-const MAX_LIMIT: u32 = 200;
+const DEFAULT_LIMIT: usize = 20;
+const MAX_LIMIT: usize = 1000;
 
-#[derive(Debug, Clone)]
-pub struct PageParams {
-    pub after: Option<String>,
-    pub limit: u32,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageRequest {
+    offset: usize,
+    limit: usize,
 }
 
-impl PageParams {
-    pub fn new(after: Option<String>, limit: Option<u32>) -> Self {
+impl PageRequest {
+    pub fn new(offset: usize, limit: usize) -> Self {
         Self {
-            after,
-            limit: limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT),
+            offset,
+            limit: limit.clamp(1, MAX_LIMIT),
         }
     }
 
-    pub fn unbounded() -> Self {
-        Self {
-            after: None,
-            limit: u32::MAX,
-        }
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn limit(&self) -> usize {
+        self.limit
     }
 }
 
-impl Default for PageParams {
+impl Default for PageRequest {
     fn default() -> Self {
-        Self {
-            after: None,
-            limit: DEFAULT_LIMIT,
-        }
+        Self::new(0, DEFAULT_LIMIT)
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Page<T: Serialize> {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Page<T> {
     pub items: Vec<T>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
+    pub total: usize,
+    pub offset: usize,
+    pub limit: usize,
 }
 
-impl<T: Serialize> Page<T> {
-    pub fn new(items: Vec<T>, next_cursor: Option<String>) -> Self {
-        Self { items, next_cursor }
-    }
-
-    pub fn empty() -> Self {
+impl<T> Page<T> {
+    pub fn new(items: Vec<T>, total: usize, request: PageRequest) -> Self {
         Self {
-            items: vec![],
-            next_cursor: None,
+            items,
+            total,
+            offset: request.offset(),
+            limit: request.limit(),
         }
     }
-}
 
-pub fn encode_cursor(id: &str) -> String {
-    BASE64.encode(id.as_bytes())
-}
+    pub fn slice(all: Vec<T>, request: PageRequest) -> Self {
+        let total = all.len();
+        let items = all
+            .into_iter()
+            .skip(request.offset())
+            .take(request.limit())
+            .collect();
+        Self::new(items, total, request)
+    }
 
-pub fn decode_cursor(cursor: &str) -> Option<String> {
-    BASE64
-        .decode(cursor)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> Page<U> {
+        Page {
+            items: self.items.into_iter().map(f).collect(),
+            total: self.total,
+            offset: self.offset,
+            limit: self.limit,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -71,34 +75,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cursor_roundtrip() {
-        let id = "0192f3e4-4a3b-7c8d-9e0f-1a2b3c4d5e6f";
-        let encoded = encode_cursor(id);
-        let decoded = decode_cursor(&encoded).unwrap();
-        assert_eq!(id, decoded);
+    fn limit_is_clamped_into_a_sane_range() {
+        assert_eq!(PageRequest::new(0, 0).limit(), 1);
+        assert_eq!(PageRequest::new(0, 10_000).limit(), MAX_LIMIT);
+        assert_eq!(PageRequest::default().limit(), DEFAULT_LIMIT);
     }
 
     #[test]
-    fn invalid_cursor_returns_none() {
-        assert!(decode_cursor("!!!invalid!!!").is_none());
+    fn slice_reports_the_total_before_slicing() {
+        let page = Page::slice((1..=10).collect(), PageRequest::new(2, 3));
+        assert_eq!(page.items, vec![3, 4, 5]);
+        assert_eq!(page.total, 10, "total counts everything, not the page");
     }
 
     #[test]
-    fn page_params_clamps_limit() {
-        let params = PageParams::new(None, Some(999));
-        assert_eq!(params.limit, MAX_LIMIT);
+    fn slice_past_the_end_yields_an_empty_page_not_an_error() {
+        let page = Page::slice((1..=3).collect(), PageRequest::new(99, 5));
+        assert!(page.items.is_empty());
+        assert_eq!(page.total, 3);
     }
 
     #[test]
-    fn page_params_default_limit() {
-        let params = PageParams::new(None, None);
-        assert_eq!(params.limit, DEFAULT_LIMIT);
-    }
-
-    #[test]
-    fn page_params_unbounded() {
-        let params = PageParams::unbounded();
-        assert_eq!(params.limit, u32::MAX);
-        assert!(params.after.is_none());
+    fn map_preserves_pagination_metadata() {
+        let page = Page::slice((1..=10).collect(), PageRequest::new(0, 2)).map(|n| n * 2);
+        assert_eq!(page.items, vec![2, 4]);
+        assert_eq!(page.total, 10);
+        assert_eq!(page.limit, 2);
     }
 }

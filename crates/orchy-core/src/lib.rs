@@ -1,44 +1,43 @@
-pub mod agent;
-pub mod api_key;
-pub mod embeddings;
+pub mod actor;
+pub mod body;
+pub mod clock;
+pub mod document;
+pub mod entity_ref;
 pub mod error;
+pub mod event;
 pub mod graph;
-pub mod knowledge;
+pub mod id;
 pub mod message;
 pub mod namespace;
-pub mod organization;
 pub mod pagination;
-pub mod project;
-pub mod resource_lock;
-pub mod resource_ref;
+pub mod priority;
+pub mod tag;
 pub mod task;
-pub mod user;
+pub mod title;
 
-pub use graph::{
-    Edge, EdgeId, EdgeStore, EntityNeighborhood, LinkParam, PeerEntity, Relation,
-    RelationDirection, RelationOptions, RelationQuery, RelationType, RestoreEdge,
-    TraversalDirection, TraversalHop,
+pub use actor::{
+    Actor, ActorAlias, ActorId, ActorStore, Lease, LeaseStore, MachineId, ResourceKey, Role,
 };
-
-#[cfg(test)]
-mod graph_tests {
-    use super::*;
-
-    #[test]
-    fn graph_module_exports_edge() {
-        use std::any::type_name;
-        let _ = type_name::<Edge>();
-    }
-
-    #[test]
-    fn graph_module_exports_store_trait() {
-        fn _check_edge_store(_: &dyn EdgeStore) {}
-    }
-
-    #[test]
-    fn graph_module_exports_relation_types() {
-        let _ = RelationType::DependsOn;
-        let _ = RelationType::Spawns;
-        let _ = RelationType::Produces;
-    }
-}
+pub use body::{Body, Section};
+pub use clock::Clock;
+pub use document::{
+    Document, DocumentQuery, DocumentStore, FieldOwner, Frontmatter, Hit, Kind, KindDefinition,
+    RestoreDocument, Search, SearchQuery, StaticTypeRegistry, Status, TypeRegistry,
+};
+pub use entity_ref::{EntityKind, EntityRef};
+pub use error::{DomainError, ErrorCode, Result};
+pub use event::{DomainEvent, EventCollector, EventLog, EventQuery, RecordedEvent};
+pub use graph::{
+    Direction, Edge, EdgeStore, RelationRegistry, RelationType, StaticRelationRegistry,
+    TraversalHop,
+};
+pub use id::{Id, IdGenerator};
+pub use message::{
+    Message, MessageStatus, MessageStore, ReadWatermarks, Recipient, RestoreMessage,
+};
+pub use namespace::Namespace;
+pub use pagination::{Page, PageRequest};
+pub use priority::Priority;
+pub use tag::Tag;
+pub use task::{RestoreTask, Task, TaskQuery, TaskStatus, TaskStore, rollup};
+pub use title::Title;
