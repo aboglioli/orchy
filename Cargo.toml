@@ -5,6 +5,7 @@ members = [
     "crates/orchy-application",
     "crates/orchy-store-memory",
     "crates/orchy-store-vault",
+    "crates/orchy-cli",
 ]
 
 [workspace.package]
@@ -36,6 +37,7 @@ tokio = { version = "1", features = ["fs", "macros", "rt", "sync", "time"] }
 fs4 = "0.13"
 grep-matcher = "0.1"
 grep-regex = "0.1"
+regex-syntax = "0.8"
 grep-searcher = "0.1"
 ignore = "0.4"
 serde-saphyr = "1.3"

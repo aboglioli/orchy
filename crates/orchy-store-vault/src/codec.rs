@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use orchy_core::{
-    Actor, ActorId, Body, DomainError, Document, Frontmatter, Id, Kind, Message, MessageStatus,
+    Actor, ActorId, Body, Document, DomainError, Frontmatter, Id, Kind, Message, MessageStatus,
     Namespace, Priority, Recipient, RestoreDocument, RestoreMessage, RestoreTask, Result, Role,
     Status, Tag, Task, TaskStatus, Title,
 };
@@ -91,10 +91,16 @@ pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
         frontmatter.set("parent", json!(parent.to_string()));
     }
     if !task.depends_on().is_empty() {
-        frontmatter.set("depends_on", list(task.depends_on().iter().map(ToString::to_string)));
+        frontmatter.set(
+            "depends_on",
+            list(task.depends_on().iter().map(ToString::to_string)),
+        );
     }
     if !task.assigned_roles().is_empty() {
-        frontmatter.set("roles", list(task.assigned_roles().iter().map(ToString::to_string)));
+        frontmatter.set(
+            "roles",
+            list(task.assigned_roles().iter().map(ToString::to_string)),
+        );
     }
     if let Some(holder) = task.claimed_by() {
         frontmatter.set("claimed_by", json!(holder.to_string()));
@@ -204,7 +210,10 @@ pub fn document_to_markdown(document: &Document) -> MarkdownFile {
         frontmatter.set("status", json!(status.to_string()));
     }
     if !document.tags().is_empty() {
-        frontmatter.set("tags", list(document.tags().iter().map(ToString::to_string)));
+        frontmatter.set(
+            "tags",
+            list(document.tags().iter().map(ToString::to_string)),
+        );
     }
     frontmatter.set("created", stamp(document.created_at()));
 

@@ -301,3 +301,54 @@ mod tests {
         assert_eq!(replayed.len(), 2, "the log is append-only across processes");
     }
 }
+
+#[cfg(test)]
+mod process_shaped_tests {
+    use super::tests_support::*;
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_second_process_replays_what_the_first_one_wrote() {
+        let temp = tempfile::tempdir().unwrap();
+        let events = temp.path().join("events");
+        std::fs::create_dir_all(&events).unwrap();
+
+        {
+            let first = open(&events);
+            first.append(&[created("from process one")]).await.unwrap();
+        }
+
+        let second = open(&events);
+        let replayed = second.replay(&EventQuery::default()).await.unwrap();
+        assert_eq!(replayed.len(), 1, "a fresh process must see the log");
+    }
+}
+
+#[cfg(test)]
+mod tests_support {
+    use super::*;
+    use orchy_core::task::TaskCreated;
+    use orchy_core::{Id, Namespace};
+
+    pub(super) const MACHINE: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+    pub(super) fn open(root: &Path) -> EventuaryLog {
+        EventuaryLog::open(
+            root,
+            "orchy",
+            ActorId::new("claude", MACHINE).unwrap(),
+            MachineId::new(MACHINE).unwrap(),
+        )
+        .unwrap()
+    }
+
+    pub(super) fn created(title: &str) -> Box<dyn DomainEvent> {
+        Box::new(TaskCreated {
+            id: Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(),
+            namespace: Namespace::new("/backend").unwrap(),
+            title: title.to_owned(),
+            parent: None,
+            at: Utc::now(),
+        })
+    }
+}

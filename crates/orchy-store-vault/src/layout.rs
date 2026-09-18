@@ -15,13 +15,7 @@ pub const CANDIDATES: &str = "_candidates";
 
 /// Everything else in the tree belongs to the user.
 pub const RESERVED: [&str; 7] = [
-    TASKS,
-    MESSAGES,
-    AGENTS,
-    EVENTS,
-    RUNTIME,
-    CANDIDATES,
-    "skills",
+    TASKS, MESSAGES, AGENTS, EVENTS, RUNTIME, CANDIDATES, "skills",
 ];
 
 impl Layout {
@@ -102,7 +96,11 @@ mod tests {
             format!("tasks/open/{A}.md"),
             "only a terminal status moves a task to done"
         );
-        for terminal in [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled] {
+        for terminal in [
+            TaskStatus::Completed,
+            TaskStatus::Failed,
+            TaskStatus::Cancelled,
+        ] {
             assert_eq!(
                 layout.task_key(&id(A), terminal),
                 format!("tasks/done/{A}.md")
@@ -148,7 +146,10 @@ mod tests {
         assert!(layout.is_reserved("tasks/open/x.md"));
         assert!(layout.is_reserved("messages/a/b.md"));
         assert!(layout.is_reserved(".orchy/read/x.json"));
-        assert!(!layout.is_reserved("tasksy/x.md"), "prefix must be a whole segment");
+        assert!(
+            !layout.is_reserved("tasksy/x.md"),
+            "prefix must be a whole segment"
+        );
         assert!(!layout.is_reserved("my-notes/tasks/x.md"));
     }
 

@@ -15,6 +15,7 @@ fs4.workspace = true
 futures.workspace = true
 grep-matcher.workspace = true
 grep-regex.workspace = true
+regex-syntax.workspace = true
 grep-searcher.workspace = true
 ignore.workspace = true
 orchy-core.workspace = true
@@ -25,6 +26,8 @@ tokio.workspace = true
 ulid.workspace = true
 
 [dev-dependencies]
+orchy-application.workspace = true
+orchy-store-memory.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 
