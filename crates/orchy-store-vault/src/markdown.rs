@@ -43,6 +43,9 @@ impl MarkdownFile {
             return Ok(format!("{}\n", self.body.as_str()));
         }
         let yaml = render_frontmatter(&self.frontmatter)?;
+        if self.body.is_empty() {
+            return Ok(format!("{FENCE}\n{yaml}{FENCE}\n"));
+        }
         Ok(format!(
             "{FENCE}\n{yaml}{FENCE}\n\n{}\n",
             self.body.as_str()
@@ -209,6 +212,24 @@ mod tests {
         let again = MarkdownFile::parse(&file.render().unwrap()).unwrap();
         assert_eq!(again.frontmatter.string("my_own_field"), Some("hello"));
         assert!(again.frontmatter.contains("nested"));
+    }
+
+    #[test]
+    fn a_document_with_no_body_ends_at_the_fence() {
+        let mut frontmatter = Frontmatter::new();
+        frontmatter.set("type", json!("task"));
+        let rendered = MarkdownFile {
+            frontmatter,
+            body: Body::new(""),
+        }
+        .render()
+        .unwrap();
+        assert_eq!(rendered, "---\ntype: task\n---\n");
+        assert!(
+            !rendered.ends_with("\n\n"),
+            "a bodyless file must not trail blank lines"
+        );
+        assert!(MarkdownFile::parse(&rendered).unwrap().body.is_empty());
     }
 
     #[test]
