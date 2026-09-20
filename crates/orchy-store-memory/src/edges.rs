@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use orchy_core::{Edge, EdgeStore, EntityRef, RelationType, Result, TraversalHop};
+use orchy_core::{Edge, EdgeStore, EntityRef, Relation, Result, TraversalHop};
 
 #[derive(Default)]
 pub struct MemoryEdgeStore(Mutex<Vec<Edge>>);
@@ -32,7 +32,7 @@ impl EdgeStore for MemoryEdgeStore {
         Ok(())
     }
 
-    async fn out(&self, from: &EntityRef, relation: Option<&RelationType>) -> Result<Vec<Edge>> {
+    async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
         Ok(self
             .all()
             .into_iter()
@@ -41,7 +41,7 @@ impl EdgeStore for MemoryEdgeStore {
             .collect())
     }
 
-    async fn incoming(&self, to: &EntityRef, relation: Option<&RelationType>) -> Result<Vec<Edge>> {
+    async fn incoming(&self, to: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
         Ok(self
             .all()
             .into_iter()

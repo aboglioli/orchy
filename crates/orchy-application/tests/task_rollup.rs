@@ -23,8 +23,6 @@ fn app() -> (Application, MemoryBackend) {
         watermarks: Arc::clone(&backend.watermarks) as _,
         search: Arc::clone(&backend.search) as _,
         log: Arc::clone(&backend.log) as _,
-        types: Arc::clone(&backend.types) as _,
-        relations: Arc::clone(&backend.relations) as _,
         clock: Arc::clone(&backend.clock) as _,
         ids: Arc::clone(&backend.ids) as _,
     };

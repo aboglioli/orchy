@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{DocumentQuery, DocumentStore, Kind, Namespace, PageRequest, Status, Tag};
+use orchy_core::{DocumentQuery, DocumentStatus, DocumentStore, Kind, Namespace, PageRequest, Tag};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::{DocumentDto, PageDto};
@@ -37,7 +37,7 @@ impl FindDocuments {
                 Some(
                     cmd.kind
                         .iter()
-                        .map(Kind::new)
+                        .map(|k| k.parse::<Kind>())
                         .collect::<orchy_core::Result<Vec<_>>>()?,
                 )
             },
@@ -47,7 +47,7 @@ impl FindDocuments {
                 Some(
                     cmd.status
                         .iter()
-                        .map(Status::new)
+                        .map(|s| s.parse::<DocumentStatus>())
                         .collect::<orchy_core::Result<Vec<_>>>()?,
                 )
             },

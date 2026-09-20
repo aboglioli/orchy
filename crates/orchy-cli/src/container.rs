@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use orchy_application::{Application, ApplicationDeps};
-use orchy_core::{
-    ActorStore, Clock, EventLog, IdGenerator, ReadWatermarks, Search, StaticRelationRegistry,
-    StaticTypeRegistry,
-};
+use orchy_core::{ActorStore, Clock, EventLog, IdGenerator, ReadWatermarks, Search};
 use orchy_store_vault::blob::{BlobStore, FsBlobStore};
 use orchy_store_vault::documents::VaultDocumentStore;
 use orchy_store_vault::edges::VaultEdgeStore;
@@ -39,7 +36,6 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
         Arc::clone(&vault),
         Arc::clone(&log),
     ));
-    let relations = Arc::new(StaticRelationRegistry::builtin());
 
     Ok(Application::new(ApplicationDeps {
         search: Arc::new(VaultSearch::new(Arc::clone(&documents))) as Arc<dyn Search>,
@@ -50,10 +46,7 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
             Arc::clone(&actors),
             Arc::clone(&log),
         )),
-        edges: Arc::new(VaultEdgeStore::new(
-            Arc::clone(&vault),
-            Arc::clone(&relations) as _,
-        )),
+        edges: Arc::new(VaultEdgeStore::new(Arc::clone(&vault))),
         actors,
         leases: Arc::new(FileLeaseStore::new(
             config.runtime_root().join("locks"),
@@ -62,8 +55,6 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
         watermarks: Arc::new(FileWatermarks::new(config.runtime_root().join("read")))
             as Arc<dyn ReadWatermarks>,
         log,
-        types: Arc::new(StaticTypeRegistry::builtin()),
-        relations,
         clock,
         ids,
     }))

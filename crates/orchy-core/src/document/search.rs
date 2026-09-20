@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use super::kind::{Kind, Status};
+use super::kind::{DocumentStatus, Kind};
 use crate::error::Result;
 use crate::id::Id;
 use crate::namespace::Namespace;
@@ -16,7 +16,7 @@ pub trait Search: Send + Sync {
 pub struct SearchQuery {
     pub text: String,
     pub kind: Option<Vec<Kind>>,
-    pub status: Option<Vec<Status>>,
+    pub status: Option<Vec<DocumentStatus>>,
     pub namespace: Option<Namespace>,
     pub tags: Vec<Tag>,
     pub since: Option<DateTime<Utc>>,

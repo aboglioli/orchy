@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use eventuary_core::{Payload, Topic};
 use serde::{Deserialize, Serialize};
 
-use super::kind::{Kind, Status};
+use super::kind::{DocumentStatus, Kind};
 use crate::error::Result;
 use crate::event::{DomainEvent, payload_of, topic};
 use crate::id::Id;
@@ -104,7 +104,7 @@ document_event!(DocumentSuperseded, "document.superseded");
 pub struct DocumentStatusChanged {
     pub id: Id,
     pub namespace: Namespace,
-    pub status: Status,
+    pub status: DocumentStatus,
     pub at: DateTime<Utc>,
 }
 document_event!(DocumentStatusChanged, "document.status_changed");
@@ -130,12 +130,12 @@ mod tests {
     fn every_document_topic_is_prefixed_and_serializes() {
         let at = Utc::now();
         let ns = Namespace::root();
-        let kind = Kind::new("decision").unwrap();
+        let kind = Kind::Decision;
         let events: Vec<Box<dyn DomainEvent>> = vec![
             Box::new(DocumentCreated {
                 id: id(),
                 namespace: ns.clone(),
-                kind: kind.clone(),
+                kind,
                 title: "t".to_owned(),
                 content_hash: "h".to_owned(),
                 at,
@@ -171,8 +171,8 @@ mod tests {
             Box::new(DocumentRetyped {
                 id: id(),
                 namespace: ns.clone(),
-                from: kind.clone(),
-                to: kind.clone(),
+                from: kind,
+                to: kind,
                 at,
             }),
             Box::new(DocumentSuperseded {
@@ -184,7 +184,7 @@ mod tests {
             Box::new(DocumentStatusChanged {
                 id: id(),
                 namespace: ns.clone(),
-                status: Status::new("archived").unwrap(),
+                status: DocumentStatus::Archived,
                 at,
             }),
             Box::new(DocumentPromoted {

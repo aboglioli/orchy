@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, DocumentStore, Id, Namespace};
+use orchy_core::{Clock, DocumentStore, Id, Kind, Namespace};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::DocumentDto;
@@ -9,6 +9,7 @@ use crate::error::ApplicationResult;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromoteDocumentCommand {
     pub document_id: String,
+    pub into: String,
     pub namespace: Option<String>,
 }
 
@@ -28,7 +29,7 @@ impl PromoteDocument {
             Some(ns) => Namespace::new(ns)?,
             None => Namespace::root(),
         };
-        document.promote(into, &*self.clock)?;
+        document.promote(cmd.into.parse::<Kind>()?, into, &*self.clock)?;
         self.documents.save(&mut document).await?;
         Ok(DocumentDto::from(&document))
     }

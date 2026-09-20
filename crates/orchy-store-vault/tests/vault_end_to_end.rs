@@ -9,7 +9,6 @@ use orchy_application::send_message::SendMessageCommand;
 use orchy_application::split_task::SplitTaskCommand;
 use orchy_application::{Application, ApplicationDeps};
 use orchy_core::{ActorStore, Clock, EventLog, IdGenerator, ReadWatermarks, Search};
-use orchy_core::{StaticRelationRegistry, StaticTypeRegistry};
 use orchy_store_vault::blob::{BlobStore, FsBlobStore};
 use orchy_store_vault::documents::VaultDocumentStore;
 use orchy_store_vault::edges::VaultEdgeStore;
@@ -53,7 +52,6 @@ impl Fixture {
             Arc::clone(&vault),
             Arc::clone(&log),
         ));
-        let relations = Arc::new(StaticRelationRegistry::builtin());
 
         let deps = ApplicationDeps {
             search: Arc::new(VaultSearch::new(Arc::clone(&documents))) as Arc<dyn Search>,
@@ -64,10 +62,7 @@ impl Fixture {
                 Arc::clone(&actors),
                 Arc::clone(&log),
             )),
-            edges: Arc::new(VaultEdgeStore::new(
-                Arc::clone(&vault),
-                Arc::clone(&relations) as _,
-            )),
+            edges: Arc::new(VaultEdgeStore::new(Arc::clone(&vault))),
             actors,
             leases: Arc::new(FileLeaseStore::new(
                 root.path().join(".orchy/locks"),
@@ -76,8 +71,6 @@ impl Fixture {
             watermarks: Arc::new(FileWatermarks::new(root.path().join(".orchy/read")))
                 as Arc<dyn ReadWatermarks>,
             log,
-            types: Arc::new(StaticTypeRegistry::builtin()),
-            relations,
             clock,
             ids,
         };

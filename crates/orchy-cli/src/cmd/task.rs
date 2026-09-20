@@ -198,11 +198,19 @@ pub(crate) async fn run(
             emit_finished(&response, out)
         }
 
-        TaskCommand::Block { target, reason } => {
+        TaskCommand::Block { target, on, reason } => {
             let task_id = resolve::task(app, &target).await?;
+            let mut blockers = Vec::new();
+            for blocker in &on {
+                blockers.push(resolve::task(app, blocker).await?);
+            }
             let task = app
                 .block_task
-                .execute(BlockTaskCommand { task_id, reason })
+                .execute(BlockTaskCommand {
+                    task_id,
+                    reason,
+                    on: blockers,
+                })
                 .await?;
             out.emit(&task, |t| detail(t, out))
         }
@@ -280,6 +288,8 @@ pub(crate) async fn run(
 
         TaskCommand::Update {
             target,
+            parent,
+            detach,
             title,
             description,
             priority,
@@ -288,10 +298,16 @@ pub(crate) async fn run(
             untag,
         } => {
             let task_id = resolve::task(app, &target).await?;
+            let parent = match parent {
+                Some(p) => Some(resolve::task(app, &p).await?),
+                None => None,
+            };
             let task = app
                 .update_task
                 .execute(UpdateTaskCommand {
                     task_id,
+                    parent,
+                    detach,
                     title,
                     description,
                     acceptance_criteria: None,

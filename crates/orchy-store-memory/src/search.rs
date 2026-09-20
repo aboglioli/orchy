@@ -29,7 +29,7 @@ impl Search for MemorySearch {
             }
             if let Some(statuses) = &query.status {
                 match document.status() {
-                    Some(status) if statuses.contains(status) => {}
+                    Some(status) if statuses.contains(&status) => {}
                     _ => continue,
                 }
             }

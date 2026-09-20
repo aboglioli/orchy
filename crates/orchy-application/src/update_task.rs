@@ -9,6 +9,8 @@ use crate::error::ApplicationResult;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateTaskCommand {
     pub task_id: String,
+    pub parent: Option<String>,
+    pub detach: bool,
     pub title: Option<String>,
     pub description: Option<String>,
     pub acceptance_criteria: Option<String>,
@@ -30,8 +32,23 @@ impl UpdateTask {
     }
 
     pub async fn execute(&self, cmd: UpdateTaskCommand) -> ApplicationResult<TaskDto> {
-        let mut task = self.tasks.require(&Id::new(&cmd.task_id)?).await?;
+        let id = Id::new(&cmd.task_id)?;
+        let mut task = self.tasks.require(&id).await?;
 
+        if cmd.detach {
+            task.detach(&*self.clock);
+        }
+        if let Some(parent) = &cmd.parent {
+            let parent_id = Id::new(parent)?;
+            self.tasks.require(&parent_id).await?;
+            if self.would_cycle(&id, &parent_id).await? {
+                return Err(orchy_core::DomainError::validation(format!(
+                    "`{parent}` is already beneath this task; re-parenting there would make a cycle"
+                ))
+                .into());
+            }
+            task.attach_to(parent_id, &*self.clock)?;
+        }
         if let Some(title) = &cmd.title {
             task.retitle(Title::new(title)?, &*self.clock);
         }
@@ -70,5 +87,21 @@ impl UpdateTask {
 
         self.tasks.save(&mut task).await?;
         Ok(TaskDto::from(&task))
+    }
+
+    async fn would_cycle(&self, task: &Id, candidate_parent: &Id) -> ApplicationResult<bool> {
+        let mut cursor = Some(candidate_parent.clone());
+        let mut seen = 0;
+        while let Some(id) = cursor {
+            if &id == task {
+                return Ok(true);
+            }
+            seen += 1;
+            if seen > orchy_core::task::rollup::MAX_DEPTH {
+                return Ok(true);
+            }
+            cursor = self.tasks.get(&id).await?.and_then(|t| t.parent().cloned());
+        }
+        Ok(false)
     }
 }

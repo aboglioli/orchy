@@ -145,9 +145,12 @@ pub(crate) enum Command {
     Archive { target: String },
     /// Bring an archived document back
     Unarchive { target: String },
-    /// Promote a candidate into canon
+    /// Graduate a candidate into canon as a concrete type
     Promote {
         target: String,
+        /// What it becomes: decision, pattern, skill, …
+        #[arg(long = "as")]
+        into: String,
         #[arg(long)]
         namespace: Option<String>,
     },
@@ -242,7 +245,15 @@ pub(crate) enum TaskCommand {
     /// Abandon a task; rolls up to the parent
     Cancel { target: String, reason: String },
     /// Park a task until something else happens
-    Block { target: String, reason: String },
+    /// `--on` records a real dependency so the blocker stays queryable; `--reason` covers
+    /// everything that is not another task.
+    Block {
+        target: String,
+        #[arg(long)]
+        on: Vec<String>,
+        #[arg(long)]
+        reason: Option<String>,
+    },
     /// Return a blocked task to the pool
     Unblock { target: String },
     /// Break a goal into subtasks it waits for
@@ -272,6 +283,12 @@ pub(crate) enum TaskCommand {
     /// Change a task's fields
     Update {
         target: String,
+        /// Move this task under another goal
+        #[arg(long)]
+        parent: Option<String>,
+        /// Detach from its current goal
+        #[arg(long, conflicts_with = "parent")]
+        detach: bool,
         #[arg(long)]
         title: Option<String>,
         #[arg(long)]

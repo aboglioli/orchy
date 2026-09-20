@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orchy_core::{
-    Actor, ActorId, Body, Document, DomainError, Frontmatter, Id, Kind, Message, MessageStatus,
-    Namespace, Priority, Recipient, RestoreDocument, RestoreMessage, RestoreTask, Result, Role,
-    Status, Tag, Task, TaskStatus, Title,
+    Actor, ActorId, Body, Document, DocumentStatus, DomainError, Frontmatter, Id, Kind, Message,
+    MessageStatus, Namespace, Priority, Recipient, RestoreDocument, RestoreMessage, RestoreTask,
+    Result, Role, Tag, Task, TaskStatus, Title,
 };
 use serde_json::{Value, json};
 
@@ -232,7 +232,10 @@ pub fn document_to_markdown(document: &Document) -> MarkdownFile {
 pub fn document_from_markdown(file: &MarkdownFile, key: &str) -> Result<Document> {
     let fm = &file.frontmatter;
     let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
-    let kind = Kind::new(fm.string("type").ok_or_else(|| missing("type", key))?)?;
+    let kind = fm
+        .string("type")
+        .ok_or_else(|| missing("type", key))?
+        .parse::<Kind>()?;
     let title = Title::new(
         fm.string("title")
             .map(str::to_owned)
@@ -255,7 +258,10 @@ pub fn document_from_markdown(file: &MarkdownFile, key: &str) -> Result<Document
             .map(Namespace::new)
             .transpose()?
             .unwrap_or_default(),
-        status: fm.string("status").map(Status::new).transpose()?,
+        status: fm
+            .string("status")
+            .map(str::parse::<DocumentStatus>)
+            .transpose()?,
         tags: fm
             .strings("tags")
             .iter()

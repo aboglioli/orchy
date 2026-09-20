@@ -44,7 +44,7 @@ use std::sync::Arc;
 
 use orchy_core::{
     ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, LeaseStore, MessageStore,
-    ReadWatermarks, RelationRegistry, Search, TaskStore, TypeRegistry,
+    ReadWatermarks, Search, TaskStore,
 };
 
 pub use error::{ApplicationError, ApplicationResult};
@@ -99,8 +99,6 @@ pub struct ApplicationDeps {
     pub watermarks: Arc<dyn ReadWatermarks>,
     pub search: Arc<dyn Search>,
     pub log: Arc<dyn EventLog>,
-    pub types: Arc<dyn TypeRegistry>,
-    pub relations: Arc<dyn RelationRegistry>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGenerator>,
 }
@@ -163,8 +161,6 @@ impl Application {
             watermarks,
             search,
             log,
-            types,
-            relations,
             clock,
             ids,
         } = deps;
@@ -183,28 +179,18 @@ impl Application {
 
             create_document: CreateDocument::new(
                 Arc::clone(&documents),
-                Arc::clone(&types),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
             read_document: ReadDocument::new(Arc::clone(&documents), Arc::clone(&edges)),
             edit_document: EditDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
-            set_document_field: SetDocumentField::new(
-                Arc::clone(&documents),
-                Arc::clone(&types),
-                Arc::clone(&clock),
-            ),
-            update_document: UpdateDocument::new(
-                Arc::clone(&documents),
-                Arc::clone(&types),
-                Arc::clone(&clock),
-            ),
+            set_document_field: SetDocumentField::new(Arc::clone(&documents), Arc::clone(&clock)),
+            update_document: UpdateDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             find_documents: FindDocuments::new(Arc::clone(&documents)),
             promote_document: PromoteDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             supersede_document: SupersedeDocument::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),
-                Arc::clone(&types),
                 Arc::clone(&clock),
             ),
 
@@ -269,7 +255,7 @@ impl Application {
                 Arc::clone(&clock),
             ),
 
-            link_entities: LinkEntities::new(Arc::clone(&edges), Arc::clone(&relations)),
+            link_entities: LinkEntities::new(Arc::clone(&edges)),
             traverse_graph: TraverseGraph::new(Arc::clone(&edges)),
             recall: Recall::new(Arc::clone(&search), Arc::clone(&clock)),
             read_events: ReadEvents::new(Arc::clone(&log)),

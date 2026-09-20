@@ -240,6 +240,7 @@ pub(crate) async fn set_status(
 pub(crate) async fn promote(
     app: &Application,
     target: String,
+    into: String,
     namespace: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
@@ -248,6 +249,7 @@ pub(crate) async fn promote(
         .promote_document
         .execute(PromoteDocumentCommand {
             document_id,
+            into,
             namespace,
         })
         .await?;

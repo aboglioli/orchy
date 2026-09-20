@@ -18,8 +18,6 @@ pub use time::{FixedClock, SeqIdGenerator};
 
 use std::sync::Arc;
 
-use orchy_core::{StaticRelationRegistry, StaticTypeRegistry};
-
 #[derive(Clone)]
 pub struct MemoryBackend {
     pub documents: Arc<MemoryDocumentStore>,
@@ -31,8 +29,6 @@ pub struct MemoryBackend {
     pub watermarks: Arc<MemoryWatermarks>,
     pub search: Arc<MemorySearch>,
     pub log: Arc<MemoryEventLog>,
-    pub types: Arc<StaticTypeRegistry>,
-    pub relations: Arc<StaticRelationRegistry>,
     pub clock: Arc<FixedClock>,
     pub ids: Arc<SeqIdGenerator>,
 }
@@ -52,8 +48,6 @@ impl MemoryBackend {
             leases: Arc::new(MemoryLeaseStore::new(Arc::clone(&clock))),
             watermarks: Arc::new(MemoryWatermarks::new()),
             log,
-            types: Arc::new(StaticTypeRegistry::builtin()),
-            relations: Arc::new(StaticRelationRegistry::builtin()),
             clock,
             ids: Arc::new(SeqIdGenerator::new()),
         }

@@ -84,7 +84,9 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let actor = config.actor.to_string();
 
     match cli.command {
-        Command::Init { .. } | Command::Status | Command::Completions { .. } => unreachable!(),
+        Command::Init { .. } | Command::Status | Command::Completions { .. } => {
+            unreachable!()
+        }
 
         Command::Announce {
             roles,
@@ -187,9 +189,11 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Command::Supersede { old, by } => cmd::doc::supersede(&app, old, by, out).await,
         Command::Archive { target } => cmd::doc::set_status(&app, target, "archived", out).await,
         Command::Unarchive { target } => cmd::doc::set_status(&app, target, "active", out).await,
-        Command::Promote { target, namespace } => {
-            cmd::doc::promote(&app, target, namespace, out).await
-        }
+        Command::Promote {
+            target,
+            into,
+            namespace,
+        } => cmd::doc::promote(&app, target, into, namespace, out).await,
 
         Command::Lock(command) => {
             let (resource, ttl, action) = match command {
@@ -254,20 +258,31 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
 }
 
 fn kind_names() -> Vec<String> {
-    use orchy_core::TypeRegistry;
-    orchy_core::StaticTypeRegistry::builtin()
-        .kinds()
+    orchy_core::Kind::ALL
         .iter()
-        .map(ToString::to_string)
+        .map(|k| {
+            format!(
+                "{k} ({})",
+                k.statuses()
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            )
+        })
         .collect()
 }
 
 fn relation_names() -> Vec<String> {
-    use orchy_core::RelationRegistry;
-    orchy_core::StaticRelationRegistry::builtin()
-        .all()
+    orchy_core::Relation::ALL
         .iter()
-        .map(|(name, def)| format!("{name} (inverse: {})", def.inverse))
+        .map(|r| {
+            let managed = match r.managed_by() {
+                Some(command) => format!("  — set via {command}"),
+                None => String::new(),
+            };
+            format!("{r} → {}{managed}", r.inverse())
+        })
         .collect()
 }
 

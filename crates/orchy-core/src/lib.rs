@@ -21,16 +21,13 @@ pub use actor::{
 pub use body::{Body, Section};
 pub use clock::Clock;
 pub use document::{
-    Document, DocumentQuery, DocumentStore, FieldOwner, Frontmatter, Hit, Kind, KindDefinition,
-    RestoreDocument, Search, SearchQuery, StaticTypeRegistry, Status, TypeRegistry,
+    Document, DocumentQuery, DocumentStatus, DocumentStore, Frontmatter, Hit, Kind,
+    RestoreDocument, Search, SearchQuery,
 };
 pub use entity_ref::{EntityKind, EntityRef};
 pub use error::{DomainError, ErrorCode, Result};
 pub use event::{DomainEvent, EventCollector, EventLog, EventQuery, RecordedEvent};
-pub use graph::{
-    Direction, Edge, EdgeStore, RelationRegistry, RelationType, StaticRelationRegistry,
-    TraversalHop,
-};
+pub use graph::{Arity, Direction, Edge, EdgeStore, Relation, TraversalHop};
 pub use id::{Id, IdGenerator};
 pub use message::{
     Message, MessageStatus, MessageStore, ReadWatermarks, Recipient, RestoreMessage,

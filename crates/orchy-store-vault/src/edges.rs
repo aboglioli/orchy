@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use orchy_core::{
-    DomainError, Edge, EdgeStore, EntityKind, EntityRef, Id, RelationRegistry, RelationType,
-    Result, TraversalHop,
+    DomainError, Edge, EdgeStore, EntityKind, EntityRef, Id, Relation, Result, TraversalHop,
 };
 use serde_json::Value;
 
@@ -13,12 +12,11 @@ use crate::vault::Vault;
 /// link writes exactly one file. Inverses are derived at read time.
 pub struct VaultEdgeStore {
     vault: Arc<Vault>,
-    relations: Arc<dyn RelationRegistry>,
 }
 
 impl VaultEdgeStore {
-    pub fn new(vault: Arc<Vault>, relations: Arc<dyn RelationRegistry>) -> Self {
-        Self { vault, relations }
+    pub fn new(vault: Arc<Vault>) -> Self {
+        Self { vault }
     }
 
     async fn edges_from(&self, entity: &EntityRef) -> Result<Vec<Edge>> {
@@ -27,12 +25,9 @@ impl VaultEdgeStore {
         };
         let mut edges = Vec::new();
         for (field, value) in file.frontmatter.iter() {
-            let Ok(relation) = RelationType::new(field) else {
+            let Ok(relation) = field.parse::<Relation>() else {
                 continue;
             };
-            if self.relations.get(&relation).is_none() {
-                continue;
-            }
             for target in ids_in(value) {
                 let Ok(id) = Id::new(&target) else {
                     continue;
@@ -44,7 +39,7 @@ impl VaultEdgeStore {
                 edges.push(Edge::new(
                     entity.clone(),
                     EntityRef::new(kind, id),
-                    relation.clone(),
+                    relation,
                 ));
             }
         }
@@ -129,7 +124,7 @@ impl EdgeStore for VaultEdgeStore {
         self.vault.write(&key, &file, id, edge.from().kind()).await
     }
 
-    async fn out(&self, from: &EntityRef, relation: Option<&RelationType>) -> Result<Vec<Edge>> {
+    async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
         Ok(self
             .edges_from(from)
             .await?
@@ -138,7 +133,7 @@ impl EdgeStore for VaultEdgeStore {
             .collect())
     }
 
-    async fn incoming(&self, to: &EntityRef, relation: Option<&RelationType>) -> Result<Vec<Edge>> {
+    async fn incoming(&self, to: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
         Ok(self
             .all_edges()
             .await?

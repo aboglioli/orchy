@@ -23,8 +23,6 @@ fn app() -> Application {
         watermarks: Arc::clone(&backend.watermarks) as _,
         search: Arc::clone(&backend.search) as _,
         log: Arc::clone(&backend.log) as _,
-        types: Arc::clone(&backend.types) as _,
-        relations: Arc::clone(&backend.relations) as _,
         clock: Arc::clone(&backend.clock) as _,
         ids: Arc::clone(&backend.ids) as _,
     })
@@ -284,4 +282,176 @@ async fn replacing_a_finished_task_is_refused() {
         })
         .await;
     assert!(refused.is_err(), "work already done was not replaced");
+}
+
+#[tokio::test]
+async fn blocking_on_a_task_records_a_real_dependency() {
+    let app = app();
+    let blocker = create(&app, "upstream").await;
+    let blocked = create(&app, "downstream").await;
+
+    let task = app
+        .block_task
+        .execute(orchy_application::block_task::BlockTaskCommand {
+            task_id: blocked.clone(),
+            reason: None,
+            on: vec![blocker.clone()],
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(task.status, "blocked");
+    assert_eq!(
+        task.depends_on,
+        vec![blocker],
+        "the blocker must stay queryable, not live in prose"
+    );
+}
+
+#[tokio::test]
+async fn blocking_needs_a_reason_or_a_blocker() {
+    let app = app();
+    let id = create(&app, "parked").await;
+    let refused = app
+        .block_task
+        .execute(orchy_application::block_task::BlockTaskCommand {
+            task_id: id,
+            reason: None,
+            on: vec![],
+        })
+        .await;
+    assert!(
+        refused.is_err(),
+        "blocked-for-no-stated-reason is not a state"
+    );
+}
+
+#[tokio::test]
+async fn re_parenting_into_a_task_own_subtree_is_refused() {
+    let app = app();
+    let goal = create(&app, "goal").await;
+    let child = app
+        .split_task
+        .execute(SplitTaskCommand {
+            task_id: goal.clone(),
+            titles: vec!["child".to_owned()],
+        })
+        .await
+        .unwrap()
+        .created[0]
+        .id
+        .clone();
+
+    let refused = app
+        .update_task
+        .execute(orchy_application::update_task::UpdateTaskCommand {
+            task_id: goal,
+            parent: Some(child),
+            ..Default::default()
+        })
+        .await;
+    assert!(refused.is_err(), "a goal cannot become its own descendant");
+}
+
+#[tokio::test]
+async fn detaching_frees_a_subtask_from_its_goal() {
+    let app = app();
+    let goal = create(&app, "goal").await;
+    let child = app
+        .split_task
+        .execute(SplitTaskCommand {
+            task_id: goal.clone(),
+            titles: vec!["child".to_owned()],
+        })
+        .await
+        .unwrap()
+        .created[0]
+        .id
+        .clone();
+
+    let detached = app
+        .update_task
+        .execute(orchy_application::update_task::UpdateTaskCommand {
+            task_id: child,
+            detach: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(detached.parent, None);
+}
+
+#[tokio::test]
+async fn link_refuses_the_relations_that_carry_consequences() {
+    let app = app();
+    let a = create(&app, "a").await;
+    let b = create(&app, "b").await;
+
+    for relation in ["parent", "depends_on", "supersedes", "spawned_by"] {
+        let refused = app
+            .link_entities
+            .execute(orchy_application::link_entities::LinkEntitiesCommand {
+                from: format!("task:{a}"),
+                to: format!("task:{b}"),
+                relation: relation.to_owned(),
+                remove: false,
+            })
+            .await;
+        assert!(
+            refused.is_err(),
+            "`{relation}` must go through its own command, not a raw link"
+        );
+    }
+}
+
+#[tokio::test]
+async fn link_accepts_an_inert_relation_and_rejects_a_bad_endpoint() {
+    let app = app();
+    let a = create(&app, "a").await;
+    let b = create(&app, "b").await;
+
+    assert!(
+        app.link_entities
+            .execute(orchy_application::link_entities::LinkEntitiesCommand {
+                from: format!("task:{a}"),
+                to: format!("task:{b}"),
+                relation: "related_to".to_owned(),
+                remove: false,
+            })
+            .await
+            .is_ok()
+    );
+
+    let refused = app
+        .link_entities
+        .execute(orchy_application::link_entities::LinkEntitiesCommand {
+            from: format!("task:{a}"),
+            to: format!("message:{b}"),
+            relation: "produces".to_owned(),
+            remove: false,
+        })
+        .await;
+    assert!(
+        refused.is_err(),
+        "produces points at a document, not a message"
+    );
+}
+
+#[tokio::test]
+async fn asking_to_link_a_projected_name_says_which_side_to_store() {
+    let app = app();
+    let a = create(&app, "a").await;
+    let b = create(&app, "b").await;
+
+    let err = app
+        .link_entities
+        .execute(orchy_application::link_entities::LinkEntitiesCommand {
+            from: format!("task:{a}"),
+            to: format!("task:{b}"),
+            relation: "subtasks".to_owned(),
+            remove: false,
+        })
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("parent"), "{err}");
 }

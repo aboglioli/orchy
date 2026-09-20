@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, Kind, Namespace, Search, SearchQuery, Status, Tag, document::rank};
+use orchy_core::{
+    Clock, DocumentStatus, Kind, Namespace, Search, SearchQuery, Tag, document::rank,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::HitDto;
@@ -39,7 +41,7 @@ impl Recall {
                 Some(
                     cmd.kind
                         .iter()
-                        .map(Kind::new)
+                        .map(|k| k.parse::<Kind>())
                         .collect::<orchy_core::Result<Vec<_>>>()?,
                 )
             },
@@ -49,7 +51,7 @@ impl Recall {
                 Some(
                     cmd.status
                         .iter()
-                        .map(Status::new)
+                        .map(|s| s.parse::<DocumentStatus>())
                         .collect::<orchy_core::Result<Vec<_>>>()?,
                 )
             },

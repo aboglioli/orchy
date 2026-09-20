@@ -13,7 +13,7 @@ pub use events::{
     DocumentSectionReplaced, DocumentStatusChanged, DocumentSuperseded, DocumentWritten,
 };
 pub use frontmatter::Frontmatter;
-pub use kind::{FieldOwner, Kind, KindDefinition, StaticTypeRegistry, Status, TypeRegistry};
+pub use kind::{DocumentStatus, Kind};
 pub use search::{Hit, Search, SearchQuery, rank};
 
 use crate::body::Body;
@@ -25,8 +25,6 @@ use crate::namespace::Namespace;
 use crate::pagination::{Page, PageRequest};
 use crate::tag::{self, Tag};
 use crate::title::Title;
-
-pub const CANDIDATE_NAMESPACE: &str = "/_candidates";
 
 #[async_trait]
 pub trait DocumentStore: Send + Sync {
@@ -45,7 +43,7 @@ pub trait DocumentStore: Send + Sync {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DocumentQuery {
     pub kind: Option<Vec<Kind>>,
-    pub status: Option<Vec<Status>>,
+    pub status: Option<Vec<DocumentStatus>>,
     pub namespace: Option<Namespace>,
     pub tags: Vec<Tag>,
     pub text: Option<String>,
@@ -96,7 +94,7 @@ pub struct Document {
     kind: Kind,
     title: Title,
     namespace: Namespace,
-    status: Option<Status>,
+    status: Option<DocumentStatus>,
     tags: Vec<Tag>,
     frontmatter: Frontmatter,
     body: Body,
@@ -113,7 +111,7 @@ pub struct RestoreDocument {
     pub kind: Kind,
     pub title: Title,
     pub namespace: Namespace,
-    pub status: Option<Status>,
+    pub status: Option<DocumentStatus>,
     pub tags: Vec<Tag>,
     pub frontmatter: Frontmatter,
     pub body: Body,
@@ -152,7 +150,7 @@ impl Document {
         let id = Id::generate(ids);
         let mut document = Self::new(RestoreDocument {
             id: id.clone(),
-            kind: kind.clone(),
+            kind,
             title: title.clone(),
             namespace: namespace.clone(),
             status: None,
@@ -229,14 +227,8 @@ impl Document {
         Ok(())
     }
 
-    pub fn set_field(
-        &mut self,
-        field: &str,
-        value: Value,
-        registry: &dyn TypeRegistry,
-        clock: &dyn Clock,
-    ) -> Result<()> {
-        if registry.field_owner(&self.kind, field).is_projected() {
+    pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
+        if Kind::is_projected_field(field) {
             return Err(DomainError::forbidden(format!(
                 "`{field}` is maintained by orchy and cannot be set by hand"
             )));
@@ -258,14 +250,9 @@ impl Document {
         Ok(())
     }
 
-    pub fn set_status(
-        &mut self,
-        status: Status,
-        registry: &dyn TypeRegistry,
-        clock: &dyn Clock,
-    ) -> Result<()> {
-        registry.validate_status(&self.kind, &status)?;
-        self.status = Some(status.clone());
+    pub fn set_status(&mut self, status: DocumentStatus, clock: &dyn Clock) -> Result<()> {
+        self.kind.validate_status(status)?;
+        self.status = Some(status);
         self.rehash(clock);
         self.collector.collect(DocumentStatusChanged {
             id: self.id.clone(),
@@ -281,19 +268,13 @@ impl Document {
         self.rehash(clock);
     }
 
-    pub fn retype(
-        &mut self,
-        kind: Kind,
-        registry: &dyn TypeRegistry,
-        clock: &dyn Clock,
-    ) -> Result<()> {
-        registry.require(&kind)?;
-        if let Some(status) = &self.status
-            && registry.validate_status(&kind, status).is_err()
+    pub fn retype(&mut self, kind: Kind, clock: &dyn Clock) -> Result<()> {
+        if let Some(status) = self.status
+            && !kind.allows(status)
         {
             self.status = None;
         }
-        let from = std::mem::replace(&mut self.kind, kind.clone());
+        let from = std::mem::replace(&mut self.kind, kind);
         self.rehash(clock);
         self.collector.collect(DocumentRetyped {
             id: self.id.clone(),
@@ -317,16 +298,25 @@ impl Document {
     }
 
     pub fn is_candidate(&self) -> bool {
-        self.namespace.as_str().starts_with(CANDIDATE_NAMESPACE)
+        self.kind.is_candidate()
     }
 
-    pub fn promote(&mut self, into: Namespace, clock: &dyn Clock) -> Result<()> {
+    /// A proposal becomes canon by declaring what it actually is, so candidacy is the kind
+    /// rather than a directory and nothing here reads a path.
+    pub fn promote(&mut self, into: Kind, namespace: Namespace, clock: &dyn Clock) -> Result<()> {
         if !self.is_candidate() {
             return Err(DomainError::conflict(
                 "only a candidate can be promoted; this document is already canon",
             ));
         }
-        let from = std::mem::replace(&mut self.namespace, into);
+        if into.is_candidate() {
+            return Err(DomainError::validation(
+                "promoting means becoming something: name the type it graduates into",
+            ));
+        }
+        self.kind = into;
+        self.status = Some(DocumentStatus::Active);
+        let from = std::mem::replace(&mut self.namespace, namespace);
         self.rehash(clock);
         self.collector.collect(DocumentPromoted {
             id: self.id.clone(),
@@ -337,20 +327,14 @@ impl Document {
         Ok(())
     }
 
-    pub fn supersede(
-        &mut self,
-        by: Id,
-        registry: &dyn TypeRegistry,
-        clock: &dyn Clock,
-    ) -> Result<()> {
+    pub fn supersede(&mut self, by: Id, clock: &dyn Clock) -> Result<()> {
         if by == self.id {
             return Err(DomainError::validation(
                 "a document cannot supersede itself",
             ));
         }
-        let superseded = Status::new("superseded")?;
-        registry.validate_status(&self.kind, &superseded)?;
-        self.status = Some(superseded);
+        self.kind.validate_status(DocumentStatus::Superseded)?;
+        self.status = Some(DocumentStatus::Superseded);
         self.rehash(clock);
         self.collector.collect(DocumentSuperseded {
             id: self.id.clone(),
@@ -387,8 +371,8 @@ impl Document {
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
     }
-    pub fn status(&self) -> Option<&Status> {
-        self.status.as_ref()
+    pub fn status(&self) -> Option<DocumentStatus> {
+        self.status
     }
     pub fn tags(&self) -> &[Tag] {
         &self.tags
@@ -470,13 +454,9 @@ mod tests {
         SeqIds(std::sync::atomic::AtomicU64::new(1))
     }
 
-    fn registry() -> StaticTypeRegistry {
-        StaticTypeRegistry::builtin()
-    }
-
     fn document() -> Document {
         Document::create(
-            Kind::new("decision").unwrap(),
+            Kind::Decision,
             Title::new("Rotate signing keys").unwrap(),
             Namespace::new("/backend").unwrap(),
             Body::new("# Context\nWe use HS256.\n\n# Decision\nMove to RS256.\n"),
@@ -487,9 +467,9 @@ mod tests {
 
     fn candidate() -> Document {
         Document::create(
-            Kind::new("candidate").unwrap(),
+            Kind::Candidate,
             Title::new("Maybe").unwrap(),
-            Namespace::new(CANDIDATE_NAMESPACE).unwrap(),
+            Namespace::new("/inbox").unwrap(),
             Body::new("unsure"),
             &ids(),
             &clock(),
@@ -540,8 +520,7 @@ mod tests {
         assert_ne!(a.content_hash(), document().content_hash());
 
         let mut b = document();
-        b.set_field("owner", json!("alan"), &registry(), &clock())
-            .unwrap();
+        b.set_field("owner", json!("alan"), &clock()).unwrap();
         assert_ne!(b.content_hash(), document().content_hash());
     }
 
@@ -549,7 +528,7 @@ mod tests {
     fn set_field_refuses_a_field_orchy_maintains() {
         let mut document = document();
         let err = document
-            .set_field("superseded_by", json!(["x"]), &registry(), &clock())
+            .set_field("superseded_by", json!(["x"]), &clock())
             .unwrap_err();
         assert!(matches!(err, DomainError::Forbidden(_)), "{err:?}");
     }
@@ -558,15 +537,13 @@ mod tests {
     fn set_field_redirects_a_semantic_transition_to_its_command() {
         let mut document = document();
         let err = document
-            .set_field("status", json!("superseded"), &registry(), &clock())
+            .set_field("status", json!("superseded"), &clock())
             .unwrap_err();
         assert!(err.to_string().contains("orchy supersede"), "{err}");
 
         for field in ["type", "namespace", "id", "tags", "title"] {
             assert!(
-                document
-                    .set_field(field, json!("x"), &registry(), &clock())
-                    .is_err(),
+                document.set_field(field, json!("x"), &clock()).is_err(),
                 "`{field}` must be refused by set"
             );
         }
@@ -576,7 +553,7 @@ mod tests {
     fn set_field_accepts_an_authors_own_key() {
         let mut document = document();
         document
-            .set_field("reviewer", json!("codex"), &registry(), &clock())
+            .set_field("reviewer", json!("codex"), &clock())
             .unwrap();
         assert_eq!(document.frontmatter().string("reviewer"), Some("codex"));
     }
@@ -586,12 +563,12 @@ mod tests {
         let mut document = document();
         assert!(
             document
-                .set_status(Status::new("active").unwrap(), &registry(), &clock())
+                .set_status(DocumentStatus::Active, &clock())
                 .is_ok()
         );
         assert!(
             document
-                .set_status(Status::new("promoted").unwrap(), &registry(), &clock())
+                .set_status(DocumentStatus::Promoted, &clock())
                 .is_err()
         );
     }
@@ -601,7 +578,7 @@ mod tests {
         let mut document = document();
         document.drain_events();
         let by = Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap();
-        document.supersede(by, &registry(), &clock()).unwrap();
+        document.supersede(by, &clock()).unwrap();
 
         assert_eq!(document.status().unwrap().as_str(), "superseded");
         let events = document.drain_events();
@@ -612,7 +589,7 @@ mod tests {
     fn a_document_cannot_supersede_itself() {
         let mut document = document();
         let own = document.id().clone();
-        assert!(document.supersede(own, &registry(), &clock()).is_err());
+        assert!(document.supersede(own, &clock()).is_err());
     }
 
     #[test]
@@ -630,7 +607,11 @@ mod tests {
         assert!(!canon.is_candidate());
         assert!(
             canon
-                .promote(Namespace::new("/backend").unwrap(), &clock())
+                .promote(
+                    Kind::Decision,
+                    Namespace::new("/backend").unwrap(),
+                    &clock()
+                )
                 .is_err(),
             "promoting canon is a conflict, not a no-op"
         );
@@ -638,20 +619,35 @@ mod tests {
         let mut candidate = candidate();
         assert!(candidate.is_candidate());
         candidate
-            .promote(Namespace::new("/backend").unwrap(), &clock())
+            .promote(
+                Kind::Decision,
+                Namespace::new("/backend").unwrap(),
+                &clock(),
+            )
             .unwrap();
         assert!(!candidate.is_candidate());
+        assert_eq!(candidate.kind(), &Kind::Decision);
+        assert_eq!(candidate.status(), Some(DocumentStatus::Active));
+        assert_eq!(candidate.namespace().as_str(), "/backend");
+    }
+
+    #[test]
+    fn a_candidate_cannot_graduate_into_another_candidate() {
+        let mut candidate = candidate();
+        assert!(
+            candidate
+                .promote(Kind::Candidate, Namespace::root(), &clock())
+                .is_err()
+        );
     }
 
     #[test]
     fn retyping_drops_a_status_the_new_type_does_not_recognise() {
         let mut document = document();
         document
-            .set_status(Status::new("active").unwrap(), &registry(), &clock())
+            .set_status(DocumentStatus::Active, &clock())
             .unwrap();
-        document
-            .retype(Kind::new("candidate").unwrap(), &registry(), &clock())
-            .unwrap();
+        document.retype(Kind::Candidate, &clock()).unwrap();
         assert_eq!(
             document.status(),
             None,
@@ -660,12 +656,10 @@ mod tests {
     }
 
     #[test]
-    fn retyping_to_an_unregistered_type_is_refused() {
-        let mut document = document();
+    fn an_invented_type_cannot_be_constructed_at_all() {
         assert!(
-            document
-                .retype(Kind::new("invented").unwrap(), &registry(), &clock())
-                .is_err()
+            "invented".parse::<Kind>().is_err(),
+            "the enum is the registry: an unknown type never reaches an aggregate"
         );
     }
 
@@ -690,7 +684,7 @@ mod tests {
     #[test]
     fn replace_once_refuses_an_ambiguous_target() {
         let mut document = Document::create(
-            Kind::new("note").unwrap(),
+            Kind::Note,
             Title::new("t").unwrap(),
             Namespace::root(),
             Body::new("x\nx\n"),
@@ -704,14 +698,14 @@ mod tests {
     fn query_matches_on_every_axis() {
         let mut document = document();
         document
-            .set_status(Status::new("active").unwrap(), &registry(), &clock())
+            .set_status(DocumentStatus::Active, &clock())
             .unwrap();
         document.retag(vec![Tag::new("auth").unwrap()], &[], &clock());
 
         assert!(DocumentQuery::default().matches(&document));
         assert!(
             DocumentQuery {
-                kind: Some(vec![Kind::new("decision").unwrap()]),
+                kind: Some(vec![Kind::Decision]),
                 ..Default::default()
             }
             .matches(&document)
@@ -740,7 +734,7 @@ mod tests {
 
         assert!(
             !DocumentQuery {
-                kind: Some(vec![Kind::new("note").unwrap()]),
+                kind: Some(vec![Kind::Note]),
                 ..Default::default()
             }
             .matches(&document)
@@ -766,7 +760,7 @@ mod tests {
         let document = document();
         assert_eq!(document.status(), None);
         let query = DocumentQuery {
-            status: Some(vec![Status::new("active").unwrap()]),
+            status: Some(vec![DocumentStatus::Active]),
             ..Default::default()
         };
         assert!(!query.matches(&document));

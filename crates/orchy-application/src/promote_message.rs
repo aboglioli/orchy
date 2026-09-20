@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, MessageStore, RelationType, Role,
+    ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, MessageStore, Relation, Role,
     Task, TaskStore, Title,
 };
 use serde::{Deserialize, Serialize};
@@ -78,7 +78,7 @@ impl PromoteMessage {
             .add(&Edge::new(
                 EntityRef::task(task.id().clone()),
                 EntityRef::message(message_id),
-                RelationType::new("spawned_by")?,
+                Relation::SpawnedBy,
             ))
             .await?;
 

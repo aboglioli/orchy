@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, RelationType, Task, TaskStore, Title,
+    Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, Relation, Task, TaskStore, Title,
 };
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +75,7 @@ impl ReplaceTask {
                 .add(&Edge::new(
                     EntityRef::task(replacement.id().clone()),
                     EntityRef::task(original_id.clone()),
-                    RelationType::new("supersedes")?,
+                    Relation::Supersedes,
                 ))
                 .await?;
 

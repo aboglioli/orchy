@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, DocumentStore, Id, Kind, Namespace, Status, Tag, Title, TypeRegistry};
+use orchy_core::{Clock, DocumentStatus, DocumentStore, Id, Kind, Namespace, Tag, Title};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::DocumentDto;
@@ -19,21 +19,12 @@ pub struct UpdateDocumentCommand {
 
 pub struct UpdateDocument {
     documents: Arc<dyn DocumentStore>,
-    types: Arc<dyn TypeRegistry>,
     clock: Arc<dyn Clock>,
 }
 
 impl UpdateDocument {
-    pub fn new(
-        documents: Arc<dyn DocumentStore>,
-        types: Arc<dyn TypeRegistry>,
-        clock: Arc<dyn Clock>,
-    ) -> Self {
-        Self {
-            documents,
-            types,
-            clock,
-        }
+    pub fn new(documents: Arc<dyn DocumentStore>, clock: Arc<dyn Clock>) -> Self {
+        Self { documents, clock }
     }
 
     pub async fn execute(&self, cmd: UpdateDocumentCommand) -> ApplicationResult<DocumentDto> {
@@ -43,13 +34,13 @@ impl UpdateDocument {
             document.retitle(Title::new(title)?, &*self.clock);
         }
         if let Some(kind) = &cmd.kind {
-            document.retype(Kind::new(kind)?, &*self.types, &*self.clock)?;
+            document.retype(kind.parse::<Kind>()?, &*self.clock)?;
         }
         if let Some(namespace) = &cmd.namespace {
             document.move_to(Namespace::new(namespace)?, &*self.clock);
         }
         if let Some(status) = &cmd.status {
-            document.set_status(Status::new(status)?, &*self.types, &*self.clock)?;
+            document.set_status(status.parse::<DocumentStatus>()?, &*self.clock)?;
         }
         if !cmd.add_tags.is_empty() || !cmd.remove_tags.is_empty() {
             let add = cmd

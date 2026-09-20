@@ -6,122 +6,291 @@ use serde::{Deserialize, Serialize};
 use crate::entity_ref::EntityKind;
 use crate::error::{DomainError, Result};
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct RelationType(String);
-
-impl RelationType {
-    pub fn new(value: impl AsRef<str>) -> Result<Self> {
-        let value = value.as_ref().trim().to_lowercase();
-        if value.is_empty() {
-            return Err(DomainError::validation("relation must not be empty"));
-        }
-        if !value
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-        {
-            return Err(DomainError::validation(format!(
-                "relation `{value}` may only contain lowercase letters, digits and `_`"
-            )));
-        }
-        Ok(Self(value))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
+/// Every relation orchy understands, and every rule about it, decided at compile time.
+///
+/// `accepts` and `inverse` are exhaustive matches rather than table lookups, so adding a
+/// variant without deciding its endpoints does not compile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Relation {
+    Supersedes,
+    DerivedFrom,
+    Summarizes,
+    Invalidates,
+    Confirms,
+    SupportedBy,
+    ContradictedBy,
+    MergedFrom,
+    RelatedTo,
+    DependsOn,
+    Parent,
+    SpawnedBy,
+    Produces,
+    Implements,
+    OwnedBy,
+    ReviewedBy,
 }
 
-impl fmt::Display for RelationType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl FromStr for RelationType {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> Result<Self> {
-        Self::new(s)
-    }
-}
-
-impl TryFrom<String> for RelationType {
-    type Error = DomainError;
-
-    fn try_from(value: String) -> Result<Self> {
-        Self::new(value)
-    }
-}
-
-impl From<RelationType> for String {
-    fn from(rel: RelationType) -> Self {
-        rel.0
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Arity {
     One,
-    #[default]
     Many,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RelationDefinition {
-    pub inverse: RelationType,
-    pub from: Vec<EntityKind>,
-    pub to: Vec<EntityKind>,
-    pub symmetric: bool,
-    pub arity: Arity,
+impl Relation {
+    pub const ALL: [Self; 16] = [
+        Self::Supersedes,
+        Self::DerivedFrom,
+        Self::Summarizes,
+        Self::Invalidates,
+        Self::Confirms,
+        Self::SupportedBy,
+        Self::ContradictedBy,
+        Self::MergedFrom,
+        Self::RelatedTo,
+        Self::DependsOn,
+        Self::Parent,
+        Self::SpawnedBy,
+        Self::Produces,
+        Self::Implements,
+        Self::OwnedBy,
+        Self::ReviewedBy,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Supersedes => "supersedes",
+            Self::DerivedFrom => "derived_from",
+            Self::Summarizes => "summarizes",
+            Self::Invalidates => "invalidates",
+            Self::Confirms => "confirms",
+            Self::SupportedBy => "supported_by",
+            Self::ContradictedBy => "contradicted_by",
+            Self::MergedFrom => "merged_from",
+            Self::RelatedTo => "related_to",
+            Self::DependsOn => "depends_on",
+            Self::Parent => "parent",
+            Self::SpawnedBy => "spawned_by",
+            Self::Produces => "produces",
+            Self::Implements => "implements",
+            Self::OwnedBy => "owned_by",
+            Self::ReviewedBy => "reviewed_by",
+        }
+    }
+
+    /// The name this relation projects under on the far side. Projections are rendered into
+    /// frontmatter and never stored, so they are a name rather than a `Relation`.
+    pub fn inverse(&self) -> &'static str {
+        match self {
+            Self::Supersedes => "superseded_by",
+            Self::DerivedFrom => "derives",
+            Self::Summarizes => "summarized_by",
+            Self::Invalidates => "invalidated_by",
+            Self::Confirms => "confirmed_by",
+            Self::SupportedBy => "supports",
+            Self::ContradictedBy => "contradicts",
+            Self::MergedFrom => "merged_into",
+            Self::RelatedTo => "related_to",
+            Self::DependsOn => "blocks",
+            Self::Parent => "subtasks",
+            Self::SpawnedBy => "spawns",
+            Self::Produces => "produced_by",
+            Self::Implements => "implemented_by",
+            Self::OwnedBy => "owns",
+            Self::ReviewedBy => "reviewed",
+        }
+    }
+
+    pub fn is_symmetric(&self) -> bool {
+        matches!(self, Self::RelatedTo)
+    }
+
+    pub fn arity(&self) -> Arity {
+        match self {
+            Self::Parent | Self::SpawnedBy => Arity::One,
+            _ => Arity::Many,
+        }
+    }
+
+    pub fn accepts(&self, from: EntityKind, to: EntityKind) -> bool {
+        use EntityKind::*;
+        match self {
+            Self::DependsOn | Self::Parent => from == Task && to == Task,
+            Self::SpawnedBy => from == Task && to == Message,
+            Self::Produces | Self::Implements => from == Task && to == Document,
+            Self::OwnedBy | Self::ReviewedBy => to == Actor,
+            Self::Supersedes
+            | Self::DerivedFrom
+            | Self::Summarizes
+            | Self::Invalidates
+            | Self::Confirms
+            | Self::SupportedBy
+            | Self::ContradictedBy
+            | Self::MergedFrom
+            | Self::RelatedTo => {
+                from == to || matches!((from, to), (Document, Task) | (Task, Document))
+            }
+        }
+    }
+
+    /// Relations whose creation carries consequences beyond the edge itself, and so must go
+    /// through the command that applies them rather than through `orchy link`.
+    pub fn managed_by(&self) -> Option<&'static str> {
+        match self {
+            Self::Parent => Some("orchy task update --parent"),
+            Self::DependsOn => Some("orchy task dep --add"),
+            Self::Supersedes => Some("orchy supersede / orchy task replace"),
+            Self::SpawnedBy => Some("orchy msg promote"),
+            _ => None,
+        }
+    }
+
+    pub fn validate(&self, from: EntityKind, to: EntityKind) -> Result<()> {
+        if self.accepts(from, to) {
+            return Ok(());
+        }
+        Err(DomainError::validation(format!(
+            "`{self}` does not connect {from} to {to}"
+        )))
+    }
 }
 
-impl RelationDefinition {
-    pub fn accepts(&self, from: EntityKind, to: EntityKind) -> bool {
-        (self.from.is_empty() || self.from.contains(&from))
-            && (self.to.is_empty() || self.to.contains(&to))
+impl fmt::Display for Relation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for Relation {
+    type Err = DomainError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let name = s.trim().to_lowercase();
+        if let Some(relation) = Self::ALL.into_iter().find(|r| r.as_str() == name) {
+            return Ok(relation);
+        }
+        if let Some(stored) = Self::ALL
+            .into_iter()
+            .find(|r| !r.is_symmetric() && r.inverse() == name)
+        {
+            return Err(DomainError::validation(format!(
+                "`{name}` is the projected side of `{stored}`; store `{stored}` on the other entity instead"
+            )));
+        }
+        Err(DomainError::UnknownRelation(name))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use EntityKind::*;
 
     #[test]
-    fn normalises_case_and_rejects_punctuation() {
-        assert_eq!(
-            RelationType::new("Depends_On").unwrap().as_str(),
-            "depends_on"
+    fn every_relation_round_trips_through_its_wire_name() {
+        for relation in Relation::ALL {
+            assert_eq!(relation.as_str().parse::<Relation>().unwrap(), relation);
+        }
+    }
+
+    #[test]
+    fn names_and_inverses_are_all_distinct() {
+        let mut seen: Vec<&str> = Vec::new();
+        for relation in Relation::ALL {
+            assert!(!seen.contains(&relation.as_str()), "duplicate {relation}");
+            seen.push(relation.as_str());
+        }
+        for relation in Relation::ALL.into_iter().filter(|r| !r.is_symmetric()) {
+            assert!(
+                !Relation::ALL
+                    .iter()
+                    .any(|r| r.as_str() == relation.inverse()),
+                "{relation}'s inverse `{}` collides with a stored relation",
+                relation.inverse()
+            );
+        }
+    }
+
+    #[test]
+    fn only_related_to_is_its_own_inverse() {
+        for relation in Relation::ALL {
+            let self_inverse = relation.inverse() == relation.as_str();
+            assert_eq!(self_inverse, relation.is_symmetric(), "{relation}");
+        }
+    }
+
+    #[test]
+    fn asking_for_a_projected_name_says_which_side_to_store() {
+        let err = "subtasks".parse::<Relation>().unwrap_err();
+        assert!(err.to_string().contains("store `parent`"), "{err}");
+
+        let err = "blocks".parse::<Relation>().unwrap_err();
+        assert!(err.to_string().contains("store `depends_on`"), "{err}");
+    }
+
+    #[test]
+    fn an_invented_relation_is_unknown_not_a_projection() {
+        assert!(matches!(
+            "invented".parse::<Relation>().unwrap_err(),
+            DomainError::UnknownRelation(_)
+        ));
+    }
+
+    #[test]
+    fn the_task_hierarchy_is_single_valued_and_task_to_task() {
+        assert_eq!(Relation::Parent.arity(), Arity::One);
+        assert!(Relation::Parent.accepts(Task, Task));
+        assert!(!Relation::Parent.accepts(Document, Task));
+        assert!(!Relation::Parent.accepts(Task, Document));
+    }
+
+    #[test]
+    fn ownership_points_at_an_actor_from_anywhere() {
+        assert!(Relation::OwnedBy.accepts(Document, Actor));
+        assert!(Relation::OwnedBy.accepts(Task, Actor));
+        assert!(!Relation::OwnedBy.accepts(Document, Document));
+    }
+
+    #[test]
+    fn a_message_is_only_ever_the_target_of_spawned_by() {
+        assert!(Relation::SpawnedBy.accepts(Task, Message));
+        assert!(!Relation::SpawnedBy.accepts(Message, Task));
+    }
+
+    #[test]
+    fn provenance_relations_join_like_kinds_and_bridge_documents_and_tasks() {
+        assert!(Relation::Supersedes.accepts(Document, Document));
+        assert!(Relation::Supersedes.accepts(Task, Task));
+        assert!(Relation::RelatedTo.accepts(Document, Task));
+        assert!(
+            !Relation::Supersedes.accepts(Document, Actor),
+            "an actor is not superseded by a document"
         );
-        assert!(RelationType::new("depends-on").is_err());
-        assert!(RelationType::new("").is_err());
     }
 
     #[test]
-    fn an_empty_endpoint_list_means_any_kind() {
-        let def = RelationDefinition {
-            inverse: RelationType::new("related_to").unwrap(),
-            from: vec![],
-            to: vec![],
-            symmetric: true,
-            arity: Arity::Many,
-        };
-        assert!(def.accepts(EntityKind::Document, EntityKind::Task));
-        assert!(def.accepts(EntityKind::Actor, EntityKind::Message));
+    fn exactly_the_four_derived_relations_are_command_managed() {
+        let managed: Vec<Relation> = Relation::ALL
+            .into_iter()
+            .filter(|r| r.managed_by().is_some())
+            .collect();
+        assert_eq!(
+            managed,
+            vec![
+                Relation::Supersedes,
+                Relation::DependsOn,
+                Relation::Parent,
+                Relation::SpawnedBy
+            ],
+            "only relations with consequences beyond the edge are managed"
+        );
     }
 
     #[test]
-    fn endpoints_are_enforced_when_declared() {
-        let def = RelationDefinition {
-            inverse: RelationType::new("subtasks").unwrap(),
-            from: vec![EntityKind::Task],
-            to: vec![EntityKind::Task],
-            symmetric: false,
-            arity: Arity::One,
-        };
-        assert!(def.accepts(EntityKind::Task, EntityKind::Task));
-        assert!(!def.accepts(EntityKind::Document, EntityKind::Task));
-        assert!(!def.accepts(EntityKind::Task, EntityKind::Document));
+    fn validate_names_both_ends_when_it_refuses() {
+        let err = Relation::Parent.validate(Document, Task).unwrap_err();
+        assert!(err.to_string().contains("document"), "{err}");
+        assert!(err.to_string().contains("task"), "{err}");
     }
 }

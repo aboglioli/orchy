@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{
-    Body, Clock, Document, DocumentStore, IdGenerator, Kind, Namespace, Tag, Title, TypeRegistry,
-};
+use orchy_core::{Body, Clock, Document, DocumentStore, IdGenerator, Kind, Namespace, Tag, Title};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::DocumentDto;
@@ -19,7 +17,6 @@ pub struct CreateDocumentCommand {
 
 pub struct CreateDocument {
     documents: Arc<dyn DocumentStore>,
-    types: Arc<dyn TypeRegistry>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
 }
@@ -27,21 +24,18 @@ pub struct CreateDocument {
 impl CreateDocument {
     pub fn new(
         documents: Arc<dyn DocumentStore>,
-        types: Arc<dyn TypeRegistry>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             documents,
-            types,
             ids,
             clock,
         }
     }
 
     pub async fn execute(&self, cmd: CreateDocumentCommand) -> ApplicationResult<DocumentDto> {
-        let kind = Kind::new(&cmd.kind)?;
-        self.types.require(&kind)?;
+        let kind = cmd.kind.parse::<Kind>()?;
 
         let namespace = match &cmd.namespace {
             Some(ns) => Namespace::new(ns)?,

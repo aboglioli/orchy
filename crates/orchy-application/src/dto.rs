@@ -76,7 +76,7 @@ impl From<&Document> for DocumentDto {
             kind: document.kind().to_string(),
             title: document.title().to_string(),
             namespace: document.namespace().to_string(),
-            status: document.status().map(ToString::to_string),
+            status: document.status().map(|s| s.to_string()),
             tags: document.tags().iter().map(ToString::to_string).collect(),
             frontmatter,
             body: document.body().to_string(),

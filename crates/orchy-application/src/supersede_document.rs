@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{
-    Clock, DocumentStore, Edge, EdgeStore, EntityRef, Id, RelationType, TypeRegistry,
-};
+use orchy_core::{Clock, DocumentStore, Edge, EdgeStore, EntityRef, Id, Relation};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::DocumentDto;
@@ -17,7 +15,6 @@ pub struct SupersedeDocumentCommand {
 pub struct SupersedeDocument {
     documents: Arc<dyn DocumentStore>,
     edges: Arc<dyn EdgeStore>,
-    types: Arc<dyn TypeRegistry>,
     clock: Arc<dyn Clock>,
 }
 
@@ -25,13 +22,11 @@ impl SupersedeDocument {
     pub fn new(
         documents: Arc<dyn DocumentStore>,
         edges: Arc<dyn EdgeStore>,
-        types: Arc<dyn TypeRegistry>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             documents,
             edges,
-            types,
             clock,
         }
     }
@@ -42,14 +37,14 @@ impl SupersedeDocument {
         self.documents.require(&new_id).await?;
 
         let mut old = self.documents.require(&old_id).await?;
-        old.supersede(new_id.clone(), &*self.types, &*self.clock)?;
+        old.supersede(new_id.clone(), &*self.clock)?;
         self.documents.save(&mut old).await?;
 
         self.edges
             .add(&Edge::new(
                 EntityRef::document(old_id),
                 EntityRef::document(new_id),
-                RelationType::new("supersedes")?,
+                Relation::Supersedes,
             ))
             .await?;
 
