@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use orchy_core::{
@@ -6,7 +7,17 @@ use orchy_core::{
 };
 use serde_json::Value;
 
-use crate::vault::Vault;
+use tokio::time::sleep;
+
+use crate::vault::{Precondition, Vault};
+
+const AMEND_ATTEMPTS: u32 = 16;
+
+/// Spread the retries out: identical backoff would just line the losers up to collide again.
+fn backoff(attempt: u32) -> Duration {
+    let jitter = u64::from(std::process::id() % 5);
+    Duration::from_millis(u64::from(attempt) * 2 + jitter + 1)
+}
 
 /// Only the forward direction is stored, in the source entity's own frontmatter, so adding a
 /// link writes exactly one file. Inverses are derived at read time.
@@ -17,6 +28,53 @@ pub struct VaultEdgeStore {
 impl VaultEdgeStore {
     pub fn new(vault: Arc<Vault>) -> Self {
         Self { vault }
+    }
+
+    /// Adding or dropping one target is a set edit, and set edits commute: losing a race
+    /// means someone else's target joined the field, not that this one is unwanted. Re-reading
+    /// and reapplying is the only sensible answer, so it happens here rather than surfacing as
+    /// a conflict the agent could answer no other way.
+    async fn amend(
+        &self,
+        entity: &EntityRef,
+        relation: Relation,
+        edit: impl Fn(&mut Vec<String>),
+    ) -> Result<bool> {
+        let field = relation.as_str();
+        for attempt in 0..AMEND_ATTEMPTS {
+            let Some((key, mut file)) = self.vault.read_by_id(entity.id()).await? else {
+                return Ok(false);
+            };
+            let mut targets = refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null));
+            edit(&mut targets);
+            if targets.is_empty() {
+                file.frontmatter.remove(field);
+            } else {
+                targets.sort();
+                file.frontmatter.set(
+                    field,
+                    Value::Array(targets.into_iter().map(Value::String).collect()),
+                );
+            }
+
+            match self
+                .vault
+                .write_if(
+                    &key,
+                    &file,
+                    entity.id(),
+                    entity.kind(),
+                    Precondition::Unchanged,
+                )
+                .await
+            {
+                Err(DomainError::Conflict(_)) if attempt + 1 < AMEND_ATTEMPTS => {
+                    sleep(backoff(attempt)).await;
+                }
+                other => return other.map(|()| true),
+            }
+        }
+        unreachable!("the loop returns on its last attempt")
     }
 
     async fn edges_from(&self, entity: &EntityRef) -> Result<Vec<Edge>> {
@@ -93,43 +151,30 @@ fn kind_name(kind: EntityKind) -> &'static str {
 #[async_trait]
 impl EdgeStore for VaultEdgeStore {
     async fn add(&self, edge: &Edge) -> Result<()> {
-        let id = edge.from().id();
-        let Some((key, mut file)) = self.vault.read_by_id(id).await? else {
-            return Err(DomainError::not_found(kind_name(edge.from().kind()), id));
-        };
-        let field = edge.relation().as_str().to_owned();
-        let mut targets = refs_in(file.frontmatter.get(&field).unwrap_or(&Value::Null));
         let target = reference(edge);
-        if !targets.iter().any(|t| same_entity(t, &target)) {
-            targets.push(target);
-            targets.sort();
+        let added = self
+            .amend(edge.from(), *edge.relation(), |targets| {
+                if !targets.iter().any(|t| same_entity(t, &target)) {
+                    targets.push(target.clone());
+                }
+            })
+            .await?;
+        if added {
+            return Ok(());
         }
-        file.frontmatter.set(
-            field,
-            Value::Array(targets.into_iter().map(Value::String).collect()),
-        );
-        self.vault.write(&key, &file, id, edge.from().kind()).await
+        Err(DomainError::not_found(
+            kind_name(edge.from().kind()),
+            edge.from().id(),
+        ))
     }
 
     async fn remove(&self, edge: &Edge) -> Result<()> {
-        let id = edge.from().id();
-        let Some((key, mut file)) = self.vault.read_by_id(id).await? else {
-            return Ok(());
-        };
-        let field = edge.relation().as_str().to_owned();
         let target = reference(edge);
-        let mut targets = refs_in(file.frontmatter.get(&field).unwrap_or(&Value::Null));
-        targets.retain(|t| !same_entity(t, &target));
-
-        if targets.is_empty() {
-            file.frontmatter.remove(&field);
-        } else {
-            file.frontmatter.set(
-                field,
-                Value::Array(targets.into_iter().map(Value::String).collect()),
-            );
-        }
-        self.vault.write(&key, &file, id, edge.from().kind()).await
+        self.amend(edge.from(), *edge.relation(), |targets| {
+            targets.retain(|t| !same_entity(t, &target));
+        })
+        .await
+        .map(|_| ())
     }
 
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
