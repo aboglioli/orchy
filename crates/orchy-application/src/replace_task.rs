@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, Relation, Task, TaskStore, Title,
+    ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, Relation, Task, TaskStore, Title,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +14,7 @@ pub struct ReplaceTaskCommand {
     pub task_id: String,
     pub titles: Vec<String>,
     pub reason: Option<String>,
+    pub actor: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +53,7 @@ impl ReplaceTask {
 
     pub async fn execute(&self, cmd: ReplaceTaskCommand) -> ApplicationResult<ReplaceTaskResponse> {
         let original_id = Id::new(&cmd.task_id)?;
+        let actor: ActorId = cmd.actor.parse()?;
         let mut original = self.tasks.require(&original_id).await?;
 
         let mut created = Vec::new();
@@ -86,7 +88,7 @@ impl ReplaceTask {
         original.supersede(replacements, cmd.reason, &*self.clock)?;
         self.tasks.save(&mut original).await?;
 
-        let ancestors = self.rollup.execute(&original_id).await?;
+        let ancestors = self.rollup.execute(&original_id, &actor).await?;
 
         Ok(ReplaceTaskResponse {
             replaced: TaskDto::from(&original),

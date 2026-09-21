@@ -248,6 +248,7 @@ pub(crate) async fn run(
                     task_id,
                     titles,
                     reason,
+                    actor: actor.to_owned(),
                 })
                 .await?;
             out.note(format!(

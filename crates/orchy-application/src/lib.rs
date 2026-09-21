@@ -165,7 +165,11 @@ impl Application {
             ids,
         } = deps;
 
-        let rollup = Arc::new(RollupAncestors::new(Arc::clone(&tasks), Arc::clone(&clock)));
+        let rollup = Arc::new(RollupAncestors::new(
+            Arc::clone(&tasks),
+            Arc::clone(&leases),
+            Arc::clone(&clock),
+        ));
         let claim = Arc::new(ClaimTask::new(
             Arc::clone(&tasks),
             Arc::clone(&leases),

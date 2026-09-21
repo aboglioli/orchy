@@ -42,11 +42,11 @@ impl FailTask {
         let actor: ActorId = cmd.actor.parse()?;
 
         let mut task = self.tasks.require(&id).await?;
-        task.fail(cmd.reason, &*self.clock)?;
+        task.fail(&actor, cmd.reason, &*self.clock)?;
         self.tasks.save(&mut task).await?;
 
         let _ = self.leases.release(&ResourceKey::task(&id), &actor).await;
-        let ancestors = self.rollup.execute(&id).await?;
+        let ancestors = self.rollup.execute(&id, &actor).await?;
 
         Ok(CompleteTaskResponse {
             task: TaskDto::from(&task),

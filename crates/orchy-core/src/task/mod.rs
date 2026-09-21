@@ -284,16 +284,35 @@ impl Task {
         Ok(())
     }
 
-    pub fn complete(&mut self, note: Option<String>, clock: &dyn Clock) -> Result<()> {
+    pub fn complete(
+        &mut self,
+        by: &ActorId,
+        note: Option<String>,
+        clock: &dyn Clock,
+    ) -> Result<()> {
+        self.held_by(by)?;
         self.finish(TaskStatus::Completed, note, clock)
     }
 
-    pub fn fail(&mut self, reason: String, clock: &dyn Clock) -> Result<()> {
+    pub fn fail(&mut self, by: &ActorId, reason: String, clock: &dyn Clock) -> Result<()> {
+        self.held_by(by)?;
         self.finish(TaskStatus::Failed, Some(reason), clock)
     }
 
-    pub fn cancel(&mut self, reason: String, clock: &dyn Clock) -> Result<()> {
+    pub fn cancel(&mut self, by: &ActorId, reason: String, clock: &dyn Clock) -> Result<()> {
+        self.held_by(by)?;
         self.finish(TaskStatus::Cancelled, Some(reason), clock)
+    }
+
+    /// Finishing work is a claim about what *you* did, so only the holder may report it. An
+    /// unclaimed task needs no check: the transition table already refuses to finish one.
+    fn held_by(&self, by: &ActorId) -> Result<()> {
+        match &self.claimed_by {
+            Some(holder) if holder != by => Err(DomainError::forbidden(format!(
+                "task is held by {holder}, not {by}"
+            ))),
+            _ => Ok(()),
+        }
     }
 
     /// Retired because the work moved elsewhere — unlike cancelling, which says it is not
@@ -645,7 +664,7 @@ pub(super) mod tests {
     fn a_pending_task_cannot_be_completed_without_being_claimed() {
         let mut task = task();
         assert!(matches!(
-            task.complete(None, &clock()).unwrap_err(),
+            task.complete(&actor("claude"), None, &clock()).unwrap_err(),
             DomainError::InvalidTransition { .. }
         ));
     }
@@ -654,7 +673,8 @@ pub(super) mod tests {
     fn completing_stores_the_note_and_emits_a_finished_event() {
         let mut task = claimed();
         task.drain_events();
-        task.complete(Some("done".to_owned()), &clock()).unwrap();
+        task.complete(&actor("claude"), Some("done".to_owned()), &clock())
+            .unwrap();
         assert_eq!(task.status(), TaskStatus::Completed);
         assert_eq!(task.note(), Some("done"));
         let events = task.drain_events();
@@ -665,10 +685,16 @@ pub(super) mod tests {
     #[test]
     fn a_completed_task_is_absorbing() {
         let mut task = claimed();
-        task.complete(None, &clock()).unwrap();
-        assert!(task.fail("nope".to_owned(), &clock()).is_err());
+        task.complete(&actor("claude"), None, &clock()).unwrap();
+        assert!(
+            task.fail(&actor("claude"), "nope".to_owned(), &clock())
+                .is_err()
+        );
         assert!(task.start(&clock()).is_err());
-        assert!(task.cancel("nope".to_owned(), &clock()).is_err());
+        assert!(
+            task.cancel(&actor("claude"), "nope".to_owned(), &clock())
+                .is_err()
+        );
         assert_eq!(task.status(), TaskStatus::Completed);
     }
 
@@ -685,7 +711,8 @@ pub(super) mod tests {
     #[test]
     fn roll_up_never_moves_a_terminal_parent() {
         let mut task = claimed();
-        task.complete(Some("by hand".to_owned()), &clock()).unwrap();
+        task.complete(&actor("claude"), Some("by hand".to_owned()), &clock())
+            .unwrap();
         task.drain_events();
 
         assert!(
@@ -862,7 +889,7 @@ mod supersede_tests {
     #[test]
     fn a_finished_task_cannot_be_superseded() {
         let mut task = claimed();
-        task.complete(None, &clock()).unwrap();
+        task.complete(&actor("claude"), None, &clock()).unwrap();
         assert!(
             task.supersede(
                 vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],

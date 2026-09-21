@@ -108,6 +108,7 @@ async fn replace_retires_the_original_and_leaves_the_new_tasks_free() {
             task_id: original.clone(),
             titles: vec!["rotate keys".to_owned(), "drop hs256".to_owned()],
             reason: Some("too coarse".to_owned()),
+            actor: ACTOR.to_owned(),
         })
         .await
         .unwrap();
@@ -134,6 +135,7 @@ async fn a_replacement_records_what_it_superseded() {
             task_id: original.clone(),
             titles: vec!["rotate keys".to_owned()],
             reason: None,
+            actor: ACTOR.to_owned(),
         })
         .await
         .unwrap();
@@ -177,6 +179,7 @@ async fn replacing_a_subtask_keeps_its_work_under_the_same_goal() {
             task_id: subtask,
             titles: vec!["step one".to_owned(), "step two".to_owned()],
             reason: None,
+            actor: ACTOR.to_owned(),
         })
         .await
         .unwrap();
@@ -215,6 +218,7 @@ async fn a_superseded_subtask_does_not_spoil_its_parents_completion() {
             task_id: children[1].id.clone(),
             titles: vec!["reworked".to_owned()],
             reason: None,
+            actor: ACTOR.to_owned(),
         })
         .await
         .unwrap()
@@ -255,6 +259,7 @@ async fn replacing_every_subtask_keeps_the_goal_open_for_the_replacements() {
                 task_id: child.id.clone(),
                 titles: vec![format!("{} redone", child.title)],
                 reason: None,
+                actor: ACTOR.to_owned(),
             })
             .await
             .unwrap();
@@ -279,6 +284,7 @@ async fn replacing_a_finished_task_is_refused() {
             task_id: done,
             titles: vec!["too late".to_owned()],
             reason: None,
+            actor: ACTOR.to_owned(),
         })
         .await;
     assert!(refused.is_err(), "work already done was not replaced");

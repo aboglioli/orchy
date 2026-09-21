@@ -50,11 +50,11 @@ impl CompleteTask {
         let actor: ActorId = cmd.actor.parse()?;
 
         let mut task = self.tasks.require(&id).await?;
-        task.complete(cmd.note, &*self.clock)?;
+        task.complete(&actor, cmd.note, &*self.clock)?;
         self.tasks.save(&mut task).await?;
 
         let _ = self.leases.release(&ResourceKey::task(&id), &actor).await;
-        let ancestors = self.rollup.execute(&id).await?;
+        let ancestors = self.rollup.execute(&id, &actor).await?;
 
         Ok(CompleteTaskResponse {
             task: TaskDto::from(&task),
