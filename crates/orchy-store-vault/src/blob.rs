@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use orchy_core::{DomainError, Result};
@@ -17,6 +18,8 @@ pub trait BlobStore: Send + Sync {
         Ok(self.get(key).await?.is_some())
     }
 }
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn io(context: &str, e: std::io::Error) -> DomainError {
     DomainError::validation(format!("{context}: {e}"))
@@ -69,9 +72,14 @@ impl BlobStore for FsBlobStore {
                 .map_err(|e| io(&format!("creating {}", parent.display()), e))?;
         }
 
+        // Unique per writer. A temp name derived from the target alone means two processes
+        // writing the same key share one scratch file: each truncates the other's, and the
+        // loser either renames nothing or renames the winner's half-written bytes into place.
         let temp = path.with_extension(format!(
-            "{}.tmp",
-            path.extension().and_then(|e| e.to_str()).unwrap_or("")
+            "{}.{}.{}.tmp",
+            path.extension().and_then(|e| e.to_str()).unwrap_or(""),
+            std::process::id(),
+            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         let contents = bytes.to_vec();
         let temp_for_write = temp.clone();
@@ -229,5 +237,51 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
             .collect();
         assert!(stray.is_empty(), "atomic rename must clean up: {stray:?}");
+    }
+}
+
+#[cfg(test)]
+mod concurrent_write_tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn writers_to_one_key_do_not_share_a_scratch_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(FsBlobStore::new(temp.path()));
+
+        let writes = (0..16).map(|n| {
+            let store = Arc::clone(&store);
+            tokio::spawn(async move {
+                store
+                    .put("docs/contended.md", format!("written by {n}").as_bytes())
+                    .await
+            })
+        });
+
+        for write in writes {
+            write
+                .await
+                .unwrap()
+                .expect("a concurrent write must not fail on a scratch file it does not own");
+        }
+
+        let landed = store.get("docs/contended.md").await.unwrap().unwrap();
+        let text = String::from_utf8(landed).unwrap();
+        assert!(
+            text.starts_with("written by "),
+            "one writer wins whole; nobody sees a torn file: {text:?}"
+        );
+
+        let strays: Vec<_> = std::fs::read_dir(temp.path().join("docs"))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(
+            strays.is_empty(),
+            "every scratch file is renamed away: {strays:?}"
+        );
     }
 }
