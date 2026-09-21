@@ -79,7 +79,7 @@ impl PromoteMessage {
                 EntityRef::task(task.id().clone()),
                 EntityRef::message(message_id),
                 Relation::SpawnedBy,
-            ))
+            )?)
             .await?;
 
         let mut root = self.messages.require(message.thread()).await?;

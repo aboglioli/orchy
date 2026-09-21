@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub use relation::{Arity, Relation};
 
 use crate::entity_ref::EntityRef;
-use crate::error::Result;
+use crate::error::{DomainError, Result};
 
 #[async_trait]
 pub trait EdgeStore: Send + Sync {
@@ -25,16 +25,16 @@ pub struct Edge {
 }
 
 impl Edge {
-    pub fn new(from: EntityRef, to: EntityRef, relation: Relation) -> Self {
-        Self { from, to, relation }
-    }
-
-    pub fn inverted(&self, inverse: Relation) -> Self {
-        Self {
-            from: self.to.clone(),
-            to: self.from.clone(),
-            relation: inverse,
+    /// Holding an `Edge` is proof the link is legal: nothing above has to re-check it, and
+    /// nothing above can forget to.
+    pub fn new(from: EntityRef, to: EntityRef, relation: Relation) -> Result<Self> {
+        if from == to {
+            return Err(DomainError::validation(format!(
+                "`{relation}` cannot point {from} at itself"
+            )));
         }
+        relation.validate(from.kind(), to.kind())?;
+        Ok(Self { from, to, relation })
     }
 
     pub fn from(&self) -> &EntityRef {
@@ -68,37 +68,60 @@ pub enum Direction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity_ref::EntityKind;
     use crate::id::Id;
+
+    const A: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const B: &str = "01BX5ZZKBKACTAV9WEVGEMMVRZ";
 
     fn doc(id: &str) -> EntityRef {
         EntityRef::document(Id::new(id).unwrap())
     }
 
-    const A: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    const B: &str = "01BX5ZZKBKACTAV9WEVGEMMVRZ";
+    fn task(id: &str) -> EntityRef {
+        EntityRef::task(Id::new(id).unwrap())
+    }
 
-    #[test]
-    fn inverting_swaps_the_endpoints_and_the_name() {
-        let edge = Edge::new(doc(A), doc(B), Relation::Supersedes);
-        let back = edge.inverted(Relation::Supersedes);
-        assert_eq!(back.from(), edge.to());
-        assert_eq!(back.to(), edge.from());
-        assert_eq!(back.relation(), &Relation::Supersedes);
+    fn message(id: &str) -> EntityRef {
+        EntityRef::message(Id::new(id).unwrap())
     }
 
     #[test]
-    fn inverting_twice_returns_the_original() {
-        let edge = Edge::new(doc(A), doc(B), Relation::Supersedes);
-        let round_trip = edge
-            .inverted(Relation::Supersedes)
-            .inverted(Relation::Supersedes);
-        assert_eq!(round_trip, edge);
+    fn an_edge_the_relation_forbids_cannot_be_built() {
+        assert!(
+            Edge::new(doc(A), task(B), Relation::Parent).is_err(),
+            "a document is not a subtask, so no Edge should exist saying it is"
+        );
+    }
+
+    #[test]
+    fn a_permitted_edge_is_built() {
+        assert!(Edge::new(task(A), task(B), Relation::Parent).is_ok());
+        assert!(Edge::new(doc(A), message(B), Relation::DerivedFrom).is_ok());
+    }
+
+    #[test]
+    fn nothing_links_to_itself() {
+        let err = Edge::new(doc(A), doc(A), Relation::RelatedTo).unwrap_err();
+        assert!(err.to_string().contains("itself"), "{err}");
+        assert!(
+            Edge::new(task(A), task(A), Relation::Parent).is_err(),
+            "not even the relations that join like with like"
+        );
     }
 
     #[test]
     fn an_edge_is_identified_by_all_three_parts() {
-        let a = Edge::new(doc(A), doc(B), Relation::Supersedes);
-        let b = Edge::new(doc(A), doc(B), Relation::RelatedTo);
+        let a = Edge::new(doc(A), doc(B), Relation::Supersedes).unwrap();
+        let b = Edge::new(doc(A), doc(B), Relation::RelatedTo).unwrap();
         assert_ne!(a, b, "the same endpoints under a different relation differ");
+    }
+
+    #[test]
+    fn the_endpoints_survive_construction_unchanged() {
+        let edge = Edge::new(task(A), message(B), Relation::SpawnedBy).unwrap();
+        assert_eq!(edge.from().kind(), EntityKind::Task);
+        assert_eq!(edge.to().kind(), EntityKind::Message);
+        assert_eq!(edge.relation(), &Relation::SpawnedBy);
     }
 }

@@ -50,8 +50,7 @@ const CANDIDATE: [DocumentStatus; 3] = [
     DocumentStatus::Rejected,
 ];
 
-/// Fields orchy maintains from events. Authoring one by hand is refused and the value is
-/// restored on the next write.
+/// Maintained from events: authoring one by hand is refused.
 const PROJECTED: [&str; 4] = ["superseded_by", "derives", "produced_by", "subtasks"];
 
 impl Kind {

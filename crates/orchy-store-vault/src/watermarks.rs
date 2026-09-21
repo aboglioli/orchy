@@ -2,9 +2,8 @@ use std::path::PathBuf;
 
 use orchy_core::{ActorId, DomainError, Id, ReadWatermarks, Result};
 
-/// Read state is per actor and per machine, and deliberately never tracked: a broadcast to
-/// six agents would otherwise produce six writers on one file, and the history would record
-/// that agents looked at things.
+/// Per actor, per machine, never tracked: a broadcast to six agents would otherwise put six
+/// writers on one file and record that agents looked at things.
 pub struct FileWatermarks {
     root: PathBuf,
 }

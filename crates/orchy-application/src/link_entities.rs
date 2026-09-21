@@ -34,15 +34,7 @@ impl LinkEntities {
             ))
             .into());
         }
-        if from == to && !relation.is_symmetric() {
-            return Err(DomainError::validation(format!(
-                "`{relation}` cannot point an entity at itself"
-            ))
-            .into());
-        }
-        relation.validate(from.kind(), to.kind())?;
-
-        let edge = Edge::new(from, to, relation);
+        let edge = Edge::new(from, to, relation)?;
         if cmd.remove {
             self.edges.remove(&edge).await?;
         } else {

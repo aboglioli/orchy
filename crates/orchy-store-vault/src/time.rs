@@ -32,7 +32,6 @@ impl Default for UlidGenerator {
 impl IdGenerator for UlidGenerator {
     fn generate(&self) -> Ulid {
         let mut generator = self.0.lock().expect("ulid generator mutex");
-        // only fails after 2^80 ids inside one millisecond
         generator.generate().unwrap_or_else(|_| Ulid::new())
     }
 }

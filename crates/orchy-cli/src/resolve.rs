@@ -5,8 +5,8 @@ use orchy_core::{DomainError, Id};
 
 use crate::error::{CliError, CliResult};
 
-/// Humans type a prefix, a suffix or a title fragment; ports take an `Id`. Turning one into
-/// the other is the CLI's job, and an ambiguous match is an error rather than a guess.
+/// People type a prefix, suffix or title fragment; ports take an `Id`. An ambiguous match is
+/// an error, never a guess.
 pub(crate) async fn task(app: &Application, input: &str) -> CliResult<String> {
     if let Ok(id) = Id::new(input) {
         return Ok(id.to_string());

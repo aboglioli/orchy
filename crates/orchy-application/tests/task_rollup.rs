@@ -94,7 +94,6 @@ async fn completing_the_last_subtask_completes_the_parent() {
             actor: ACTOR.to_owned(),
         })
         .await;
-    // the second child must be claimed first
     assert!(response.is_err());
 
     finish(&app, &split.created[1].id).await;

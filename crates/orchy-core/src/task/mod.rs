@@ -296,8 +296,8 @@ impl Task {
         self.finish(TaskStatus::Cancelled, Some(reason), clock)
     }
 
-    /// Retire this task because its work moved into others. Distinct from cancelling, which
-    /// says the work is not wanted, and from completing, which says it was done here.
+    /// Retired because the work moved elsewhere — unlike cancelling, which says it is not
+    /// wanted, or completing, which says it was done here.
     pub fn supersede(
         &mut self,
         by: Vec<Id>,
@@ -344,13 +344,11 @@ impl Task {
         Ok(())
     }
 
-    /// Rollup is a *derivation*, not an agent action, so it deliberately bypasses
-    /// `can_transition_to`: a parent normally sits in `Pending` while its children do the
-    /// work, and `Pending -> Completed` is forbidden for an agent precisely because work must
-    /// be claimed before it can be finished. That rule protects against an agent skipping
-    /// steps; it has nothing to say about a status computed from the children. The one guard
-    /// that does apply is D44's: never move a parent that already reached a terminal status,
-    /// so a human's explicit decision outranks a later derivation.
+    /// Deliberately bypasses `can_transition_to`. A parent sits in `Pending` while its
+    /// children work, and `Pending -> Completed` is forbidden for an *agent* because work must
+    /// be claimed before it is finished — a rule about skipping steps, not about a status
+    /// derived from children. Only the terminal guard applies, so a human's explicit
+    /// completion outranks a later derivation.
     pub fn roll_up(&mut self, status: TaskStatus, because: String, clock: &dyn Clock) -> bool {
         if self.status.is_terminal() || self.status == status {
             return false;

@@ -112,9 +112,8 @@ impl ActorStore for VaultActorStore {
     }
 }
 
-/// Mutual exclusion on this machine: an advisory `flock` for the duration of the acquire, and
-/// a TTL record so a holder that dies does not block the resource forever. Both are needed —
-/// the lock orders concurrent acquires, the record survives the process.
+/// The `flock` orders concurrent acquires; the TTL record outlives the process that took it,
+/// so a holder that dies does not block the resource forever.
 pub struct FileLeaseStore {
     root: PathBuf,
     clock: Arc<dyn Clock>,

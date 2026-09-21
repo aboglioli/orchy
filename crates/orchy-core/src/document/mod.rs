@@ -301,8 +301,8 @@ impl Document {
         self.kind.is_candidate()
     }
 
-    /// A proposal becomes canon by declaring what it actually is, so candidacy is the kind
-    /// rather than a directory and nothing here reads a path.
+    /// Candidacy is the kind, not a directory, so promotion declares what the proposal
+    /// becomes rather than moving a file.
     pub fn promote(&mut self, into: Kind, namespace: Namespace, clock: &dyn Clock) -> Result<()> {
         if !self.is_candidate() {
             return Err(DomainError::conflict(

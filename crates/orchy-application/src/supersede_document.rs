@@ -45,7 +45,7 @@ impl SupersedeDocument {
                 EntityRef::document(old_id),
                 EntityRef::document(new_id),
                 Relation::Supersedes,
-            ))
+            )?)
             .await?;
 
         Ok(DocumentDto::from(&old))

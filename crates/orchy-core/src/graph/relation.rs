@@ -6,10 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::entity_ref::EntityKind;
 use crate::error::{DomainError, Result};
 
-/// Every relation orchy understands, and every rule about it, decided at compile time.
-///
-/// `accepts` and `inverse` are exhaustive matches rather than table lookups, so adding a
-/// variant without deciding its endpoints does not compile.
+/// Every rule is an exhaustive match, so adding a variant without deciding its endpoints,
+/// inverse and arity does not compile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Relation {
@@ -136,10 +134,8 @@ impl Relation {
         }
     }
 
-    /// The only kind this relation can point at, when it has one.
-    ///
-    /// Lets a bare id in hand-written frontmatter be typed without consulting an index, and
-    /// without the guess that made a missing target look like a document.
+    /// The only kind this relation can point at, when it has one. Lets a hand-written bare id
+    /// be typed without an index lookup.
     pub fn sole_target_kind(&self) -> Option<EntityKind> {
         let accepted: Vec<EntityKind> = [
             EntityKind::Document,

@@ -14,9 +14,7 @@ use orchy_core::{
 
 pub const DEFAULT_PARTITIONS: u32 = 10;
 
-/// How long to keep retrying a partition whose lock another process holds. A write takes
-/// microseconds, so a collision resolves well inside this; failing outright would make two
-/// agents on one machine mutually exclusive.
+/// A write holds the lock for microseconds, so a collision resolves well inside this.
 const LOCK_WAIT: Duration = Duration::from_millis(2_000);
 const LOCK_RETRY: Duration = Duration::from_millis(20);
 
@@ -69,9 +67,8 @@ impl EventuaryLog {
         }
     }
 
-    /// The writer is opened per append and dropped immediately, because opening it takes an
-    /// exclusive lock on every partition. Holding that for a whole process would make a second
-    /// agent on the same machine fail rather than wait.
+    /// Opened per append and dropped straight after: opening locks every partition, and
+    /// holding that for a process would make a second agent on this machine fail.
     async fn open_writer(&self) -> Result<FsWriter> {
         let deadline = std::time::Instant::now() + LOCK_WAIT;
         loop {
@@ -422,7 +419,6 @@ mod concurrency_tests {
         let events = temp.path().join("events");
         std::fs::create_dir_all(&events).unwrap();
 
-        // two processes, same machine root, writing at once
         let first = open(&events);
         let second = open(&events);
 

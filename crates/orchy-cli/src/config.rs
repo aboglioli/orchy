@@ -48,7 +48,6 @@ pub(crate) struct Config {
 }
 
 impl Config {
-    /// Precedence: flag, then environment, then the settings file, then the XDG default.
     pub(crate) fn resolve(
         vault_flag: Option<PathBuf>,
         actor_flag: Option<String>,
@@ -145,8 +144,7 @@ fn write_settings(settings: &Settings) -> CliResult<()> {
     std::fs::write(&path, text).map_err(CliError::io)
 }
 
-/// Generated once and kept: it is what separates this machine's event-log partition from
-/// every other machine's, so it must not change between runs.
+/// Separates this machine's event-log root from every other's, so it must not change.
 fn machine_id(settings: &Settings) -> CliResult<MachineId> {
     if let Some(existing) = &settings.machine {
         return Ok(MachineId::new(existing)?);

@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use orchy_core::{
-    Actor, ActorId, Body, Document, DocumentStatus, DomainError, Frontmatter, Id, Kind, Message,
-    MessageStatus, Namespace, Priority, Recipient, RestoreDocument, RestoreMessage, RestoreTask,
-    Result, Role, Tag, Task, TaskStatus, Title,
+    Actor, ActorId, Body, Document, DocumentStatus, DomainError, EntityKind, EntityRef,
+    Frontmatter, Id, Kind, Message, MessageStatus, Namespace, Priority, Recipient, RestoreDocument,
+    RestoreMessage, RestoreTask, Result, Role, Tag, Task, TaskStatus, Title,
 };
 use serde_json::{Value, json};
 
@@ -74,6 +74,15 @@ fn stamp(at: DateTime<Utc>) -> Value {
     json!(at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
+fn task_ref(id: &Id) -> String {
+    EntityRef::task(id.clone()).to_string()
+}
+
+fn task_id(reference: impl AsRef<str>) -> Result<Id> {
+    EntityRef::parse_or_assume(reference.as_ref(), Some(EntityKind::Task))
+        .map(|entity| entity.id().clone())
+}
+
 fn list(values: impl IntoIterator<Item = String>) -> Value {
     Value::Array(values.into_iter().map(Value::String).collect())
 }
@@ -88,13 +97,10 @@ pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
     frontmatter.set("namespace", json!(task.namespace().to_string()));
 
     if let Some(parent) = task.parent() {
-        frontmatter.set("parent", json!(parent.to_string()));
+        frontmatter.set("parent", json!(task_ref(parent)));
     }
     if !task.depends_on().is_empty() {
-        frontmatter.set(
-            "depends_on",
-            list(task.depends_on().iter().map(ToString::to_string)),
-        );
+        frontmatter.set("depends_on", list(task.depends_on().iter().map(task_ref)));
     }
     if !task.assigned_roles().is_empty() {
         frontmatter.set(
@@ -158,11 +164,11 @@ pub fn task_from_markdown(file: &MarkdownFile, key: &str) -> Result<Task> {
             .map(Namespace::new)
             .transpose()?
             .unwrap_or_default(),
-        parent: fm.string("parent").map(Id::new).transpose()?,
+        parent: fm.string("parent").map(task_id).transpose()?,
         depends_on: fm
             .strings("depends_on")
             .iter()
-            .map(Id::new)
+            .map(task_id)
             .collect::<Result<Vec<_>>>()?,
         assigned_roles: fm
             .strings("roles")

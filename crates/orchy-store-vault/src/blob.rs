@@ -6,8 +6,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use orchy_core::{DomainError, Result};
 
-/// The seam that makes the byte source replaceable: everything above it — parsing, the
-/// snapshot, one-writer-per-file — is backend-agnostic.
+/// The seam that makes the byte source replaceable; everything above it is backend-agnostic.
 #[async_trait]
 pub trait BlobStore: Send + Sync {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>>;

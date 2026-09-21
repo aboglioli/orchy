@@ -29,13 +29,15 @@ impl VaultEdgeStore {
                 continue;
             };
             for target in refs_in(value) {
-                // the text says the kind; the relation supplies it when the text does not.
-                // Neither guesses, so a target that has been deleted keeps its type.
                 let assumed = relation.sole_target_kind();
                 let Ok(to) = EntityRef::parse_or_assume(&target, assumed) else {
                     continue;
                 };
-                edges.push(Edge::new(entity.clone(), to, relation));
+                // a pairing the relation forbids is not a link, however it reached the file
+                let Ok(edge) = Edge::new(entity.clone(), to, relation) else {
+                    continue;
+                };
+                edges.push(edge);
             }
         }
         Ok(edges)
@@ -57,17 +59,12 @@ impl VaultEdgeStore {
     }
 }
 
-/// How a reference is written: `kind:id` unless the relation leaves no doubt, in which case
-/// the bare id reads better and means the same thing.
+/// Every reference is written `kind:id`. A foreign key that omits the table it points into
+/// is only usable next to an index that can still resolve it.
 fn reference(edge: &Edge) -> String {
-    match edge.relation().sole_target_kind() {
-        Some(_) => edge.to().id().to_string(),
-        None => edge.to().to_string(),
-    }
+    edge.to().to_string()
 }
 
-/// Two references name the same entity when their ids match, whether or not both spell out
-/// the kind.
 fn same_entity(a: &str, b: &str) -> bool {
     let id_of = |s: &str| s.rsplit(':').next().unwrap_or(s).to_owned();
     id_of(a) == id_of(b)
@@ -232,11 +229,14 @@ mod tests {
         let store = VaultEdgeStore::new(Arc::clone(&vault));
 
         store
-            .add(&Edge::new(
-                EntityRef::task(Id::new(TASK).unwrap()),
-                EntityRef::document(Id::new(DOC).unwrap()),
-                Relation::RelatedTo,
-            ))
+            .add(
+                &Edge::new(
+                    EntityRef::task(Id::new(TASK).unwrap()),
+                    EntityRef::document(Id::new(DOC).unwrap()),
+                    Relation::RelatedTo,
+                )
+                .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unambiguous_relation_stays_terse() {
+    async fn an_unambiguous_relation_still_names_its_target_kind() {
         let vault = vault_with(&[
             ("tasks/open/a.md", TASK, "task"),
             ("messages/m/b.md", MESSAGE, "message"),
@@ -262,11 +262,14 @@ mod tests {
         let store = VaultEdgeStore::new(Arc::clone(&vault));
 
         store
-            .add(&Edge::new(
-                EntityRef::task(Id::new(TASK).unwrap()),
-                EntityRef::message(Id::new(MESSAGE).unwrap()),
-                Relation::SpawnedBy,
-            ))
+            .add(
+                &Edge::new(
+                    EntityRef::task(Id::new(TASK).unwrap()),
+                    EntityRef::message(Id::new(MESSAGE).unwrap()),
+                    Relation::SpawnedBy,
+                )
+                .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -277,8 +280,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             file.frontmatter.strings("spawned_by"),
-            vec![MESSAGE.to_owned()],
-            "spawned_by can only mean a message, so the prefix would be noise"
+            vec![format!("message:{MESSAGE}")],
+            "every reference names the kind it points at, unambiguous relation or not"
         );
     }
 
@@ -293,15 +296,17 @@ mod tests {
         let from = EntityRef::task(Id::new(TASK).unwrap());
 
         store
-            .add(&Edge::new(
-                from.clone(),
-                EntityRef::document(Id::new(DOC).unwrap()),
-                Relation::RelatedTo,
-            ))
+            .add(
+                &Edge::new(
+                    from.clone(),
+                    EntityRef::document(Id::new(DOC).unwrap()),
+                    Relation::RelatedTo,
+                )
+                .unwrap(),
+            )
             .await
             .unwrap();
 
-        // the target leaves the vault, as it would in a partial clone
         vault.remove(&Id::new(DOC).unwrap()).await.unwrap();
 
         let edges = store.out(&from, None).await.unwrap();
@@ -320,11 +325,14 @@ mod tests {
         let from = EntityRef::task(Id::new(TASK).unwrap());
 
         store
-            .add(&Edge::new(
-                from.clone(),
-                EntityRef::message(Id::new(MESSAGE).unwrap()),
-                Relation::SpawnedBy,
-            ))
+            .add(
+                &Edge::new(
+                    from.clone(),
+                    EntityRef::message(Id::new(MESSAGE).unwrap()),
+                    Relation::SpawnedBy,
+                )
+                .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -373,7 +381,8 @@ mod tests {
             EntityRef::task(Id::new(TASK).unwrap()),
             EntityRef::document(Id::new(DOC).unwrap()),
             Relation::RelatedTo,
-        );
+        )
+        .unwrap();
 
         store.add(&edge).await.unwrap();
         store.remove(&edge).await.unwrap();

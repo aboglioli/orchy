@@ -14,8 +14,8 @@ pub struct Located {
     pub kind: EntityKind,
 }
 
-/// Identity comes from frontmatter, never from a path, so finding an entity means knowing
-/// which file currently carries its id. The index is that map, built once per process.
+/// Identity lives in frontmatter, not in paths, so finding an entity means knowing which file
+/// carries its id. Built once per process.
 pub struct Vault {
     blobs: Arc<dyn BlobStore>,
     layout: Layout,

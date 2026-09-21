@@ -16,8 +16,7 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
-    /// Whether this kind carries content someone can reason about, as opposed to naming a
-    /// participant. Provenance relations join content; only ownership points at an actor.
+    /// An actor is a participant, not something a provenance relation can be about.
     pub fn is_content(&self) -> bool {
         matches!(self, Self::Document | Self::Task | Self::Message)
     }
@@ -93,12 +92,9 @@ impl fmt::Display for EntityRef {
 }
 
 impl EntityRef {
-    /// Parse a frontmatter reference, which is `kind:id` as orchy writes it, or a bare id as a
-    /// person may have typed it.
-    ///
-    /// A bare id carries no type, and guessing one is how an edge ends up claiming to connect
-    /// entities its relation forbids. `assumed` is the kind the relation itself declares, used
-    /// only when the text does not say.
+    /// `kind:id` as orchy writes it, or a bare id as a person may have typed one. Guessing a
+    /// missing kind is how an edge ends up claiming a pairing its relation forbids, so
+    /// `assumed` comes from the relation and nothing else is invented.
     pub fn parse_or_assume(text: &str, assumed: Option<EntityKind>) -> Result<Self> {
         if let Some((kind, id)) = text.split_once(':') {
             return Ok(Self::new(kind.parse()?, Id::new(id)?));

@@ -23,8 +23,8 @@ pub struct ReplaceTaskResponse {
     pub ancestors: Vec<TaskDto>,
 }
 
-/// Succession, not composition: the original is retired and the new tasks stand on their own.
-/// Contrast `SplitTask`, which keeps the original as the umbrella its subtasks roll up into.
+/// Succession, not composition: the original is retired. Contrast `SplitTask`, which keeps it
+/// as the umbrella its subtasks roll up into.
 pub struct ReplaceTask {
     tasks: Arc<dyn TaskStore>,
     edges: Arc<dyn EdgeStore>,
@@ -76,7 +76,7 @@ impl ReplaceTask {
                     EntityRef::task(replacement.id().clone()),
                     EntityRef::task(original_id.clone()),
                     Relation::Supersedes,
-                ))
+                )?)
                 .await?;
 
             replacements.push(replacement.id().clone());
