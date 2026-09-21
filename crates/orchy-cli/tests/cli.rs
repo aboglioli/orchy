@@ -168,7 +168,7 @@ fn a_document_is_written_as_readable_markdown_and_keeps_author_fields() {
         ],
     );
     let id = document["id"].as_str().unwrap();
-    let path = temp.path().join(format!("backend/{id}.md"));
+    let path = temp.path().join(format!("docs/backend/{id}.md"));
 
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.starts_with("---\n"));

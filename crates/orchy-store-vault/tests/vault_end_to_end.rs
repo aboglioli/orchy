@@ -205,8 +205,8 @@ async fn the_parent_file_is_rewritten_when_its_last_subtask_finishes() {
     assert!(
         fixture
             .read(&format!("tasks/open/{}.md", children[0].id))
-            .contains(&format!("parent: {}", parent.id)),
-        "the hierarchy is stored on the child"
+            .contains(&format!("parent: task:{}", parent.id)),
+        "the hierarchy is stored on the child, and names the kind it points at"
     );
     assert!(
         !fixture.read(&parent_open).contains("subtasks"),
@@ -261,7 +261,7 @@ async fn a_documents_own_frontmatter_survives_an_edit_by_orchy() {
         .await
         .unwrap();
 
-    let path = format!("backend/{}.md", document.id);
+    let path = format!("docs/backend/{}.md", document.id);
     let original = fixture.read(&path);
     assert!(original.contains("type: decision"));
     assert!(original.contains("- auth"));

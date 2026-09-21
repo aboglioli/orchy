@@ -33,7 +33,10 @@ const AGENTS_MD: &str = "\
 # Working in this vault
 
 This directory is an orchy vault: markdown documents with typed frontmatter, a task board,
-and a message board between agents. Run `orchy context` to see what applies to you now.
+and a message board between agents.
+
+The root is fixed — `docs/`, `tasks/`, `messages/`, `agents/`, `events/` — and your own
+documents live under `docs/`, where their namespace shapes the tree however you like.
 
 Frontmatter is the only source of truth. A file's directory is a projection of its
 frontmatter, never the other way round, so never infer state from a path.
@@ -67,7 +70,14 @@ pub(crate) fn scaffold(root: &Path) -> CliResult<Vec<String>> {
         written.push(name.to_owned());
     }
 
-    for dir in ["tasks/open", "tasks/done", "messages", "agents", "events"] {
+    for dir in [
+        "docs",
+        "tasks/open",
+        "tasks/done",
+        "messages",
+        "agents",
+        "events",
+    ] {
         std::fs::create_dir_all(root.join(dir))?;
     }
 
@@ -94,7 +104,14 @@ mod tests {
         for expected in [".gitignore", ".gitattributes", "AGENTS.md", "index.md"] {
             assert!(temp.path().join(expected).exists(), "{expected} missing");
         }
-        for dir in ["tasks/open", "tasks/done", "messages", "agents", "events"] {
+        for dir in [
+            "docs",
+            "tasks/open",
+            "tasks/done",
+            "messages",
+            "agents",
+            "events",
+        ] {
             assert!(temp.path().join(dir).is_dir(), "{dir} missing");
         }
     }

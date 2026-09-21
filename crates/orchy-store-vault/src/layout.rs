@@ -6,17 +6,16 @@ use orchy_core::{ActorId, EntityKind, Id, Namespace, TaskStatus};
 #[derive(Debug, Clone, Default)]
 pub struct Layout;
 
+pub const DOCS: &str = "docs";
 pub const TASKS: &str = "tasks";
 pub const MESSAGES: &str = "messages";
 pub const AGENTS: &str = "agents";
 pub const EVENTS: &str = "events";
 pub const RUNTIME: &str = ".orchy";
-pub const CANDIDATES: &str = "_candidates";
 
-/// Everything else in the tree belongs to the user.
-pub const RESERVED: [&str; 7] = [
-    TASKS, MESSAGES, AGENTS, EVENTS, RUNTIME, CANDIDATES, "skills",
-];
+/// The root is fixed. Documents live under `docs/`, where their namespace shapes the tree
+/// however you like; everything else at the root is orchy's own.
+pub const ROOTS: [&str; 6] = [DOCS, TASKS, MESSAGES, AGENTS, EVENTS, RUNTIME];
 
 impl Layout {
     pub fn task_key(&self, id: &Id, status: TaskStatus) -> String {
@@ -35,9 +34,9 @@ impl Layout {
     pub fn document_key(&self, namespace: &Namespace, id: &Id) -> String {
         let folder = namespace.as_str().trim_start_matches('/');
         if folder.is_empty() {
-            format!("{id}.md")
+            format!("{DOCS}/{id}.md")
         } else {
-            format!("{folder}/{id}.md")
+            format!("{DOCS}/{folder}/{id}.md")
         }
     }
 
@@ -50,8 +49,8 @@ impl Layout {
         }
     }
 
-    pub fn is_reserved(&self, key: &str) -> bool {
-        RESERVED
+    pub fn is_root(&self, key: &str) -> bool {
+        ROOTS
             .iter()
             .any(|dir| key == *dir || key.starts_with(&format!("{dir}/")))
     }
@@ -128,29 +127,29 @@ mod tests {
     }
 
     #[test]
-    fn documents_follow_their_namespace_and_the_root_has_no_leading_slash() {
+    fn documents_live_under_docs_with_their_namespace_beneath() {
         let layout = Layout;
         assert_eq!(
             layout.document_key(&Namespace::new("/backend/auth").unwrap(), &id(A)),
-            format!("backend/auth/{A}.md")
+            format!("docs/backend/auth/{A}.md")
         );
         assert_eq!(
             layout.document_key(&Namespace::root(), &id(A)),
-            format!("{A}.md")
+            format!("docs/{A}.md")
         );
     }
 
     #[test]
-    fn reserved_directories_are_recognised_without_catching_lookalikes() {
+    fn the_fixed_roots_are_recognised_without_catching_lookalikes() {
         let layout = Layout;
-        assert!(layout.is_reserved("tasks/open/x.md"));
-        assert!(layout.is_reserved("messages/a/b.md"));
-        assert!(layout.is_reserved(".orchy/read/x.json"));
+        assert!(layout.is_root("tasks/open/x.md"));
+        assert!(layout.is_root("messages/a/b.md"));
+        assert!(layout.is_root(".orchy/read/x.json"));
         assert!(
-            !layout.is_reserved("tasksy/x.md"),
+            !layout.is_root("tasksy/x.md"),
             "prefix must be a whole segment"
         );
-        assert!(!layout.is_reserved("my-notes/tasks/x.md"));
+        assert!(!layout.is_root("my-notes/tasks/x.md"));
     }
 
     #[test]
