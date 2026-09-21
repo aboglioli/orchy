@@ -16,6 +16,12 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
+    /// Whether this kind carries content someone can reason about, as opposed to naming a
+    /// participant. Provenance relations join content; only ownership points at an actor.
+    pub fn is_content(&self) -> bool {
+        matches!(self, Self::Document | Self::Task | Self::Message)
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Document => "document",
@@ -86,6 +92,26 @@ impl fmt::Display for EntityRef {
     }
 }
 
+impl EntityRef {
+    /// Parse a frontmatter reference, which is `kind:id` as orchy writes it, or a bare id as a
+    /// person may have typed it.
+    ///
+    /// A bare id carries no type, and guessing one is how an edge ends up claiming to connect
+    /// entities its relation forbids. `assumed` is the kind the relation itself declares, used
+    /// only when the text does not say.
+    pub fn parse_or_assume(text: &str, assumed: Option<EntityKind>) -> Result<Self> {
+        if let Some((kind, id)) = text.split_once(':') {
+            return Ok(Self::new(kind.parse()?, Id::new(id)?));
+        }
+        let kind = assumed.ok_or_else(|| {
+            DomainError::validation(format!(
+                "`{text}` has no entity kind and the relation allows more than one, so it cannot be typed"
+            ))
+        })?;
+        Ok(Self::new(kind, Id::new(text)?))
+    }
+}
+
 impl FromStr for EntityRef {
     type Err = DomainError;
 
@@ -118,5 +144,45 @@ mod tests {
     #[test]
     fn rejects_an_unknown_kind() {
         assert!(format!("widget:{ULID}").parse::<EntityRef>().is_err());
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+
+    const ULID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+    #[test]
+    fn an_explicit_prefix_wins_over_the_assumption() {
+        let parsed =
+            EntityRef::parse_or_assume(&format!("message:{ULID}"), Some(EntityKind::Task)).unwrap();
+        assert_eq!(parsed.kind(), EntityKind::Message);
+    }
+
+    #[test]
+    fn a_bare_id_takes_the_kind_the_relation_declares() {
+        let parsed = EntityRef::parse_or_assume(ULID, Some(EntityKind::Task)).unwrap();
+        assert_eq!(parsed.kind(), EntityKind::Task);
+        assert_eq!(parsed.id().to_string(), ULID);
+    }
+
+    #[test]
+    fn a_bare_id_with_nothing_to_assume_is_refused_rather_than_guessed() {
+        let err = EntityRef::parse_or_assume(ULID, None).unwrap_err();
+        assert!(err.to_string().contains("no entity kind"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_prefix_is_an_error_not_a_fallback() {
+        assert!(
+            EntityRef::parse_or_assume(&format!("widget:{ULID}"), Some(EntityKind::Task)).is_err()
+        );
+    }
+
+    #[test]
+    fn a_malformed_id_is_refused_either_way() {
+        assert!(EntityRef::parse_or_assume("task:nope", None).is_err());
+        assert!(EntityRef::parse_or_assume("nope", Some(EntityKind::Task)).is_err());
     }
 }

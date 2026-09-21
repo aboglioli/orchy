@@ -120,17 +120,49 @@ impl Relation {
             Self::SpawnedBy => from == Task && to == Message,
             Self::Produces | Self::Implements => from == Task && to == Document,
             Self::OwnedBy | Self::ReviewedBy => to == Actor,
-            Self::Supersedes
-            | Self::DerivedFrom
+            // replacing means replacing like with like: a task does not supersede a document
+            Self::Supersedes | Self::MergedFrom => from == to && from.is_content(),
+
+            // claims about content, which a message carries as much as a document does
+            Self::DerivedFrom
             | Self::Summarizes
             | Self::Invalidates
             | Self::Confirms
             | Self::SupportedBy
-            | Self::ContradictedBy
-            | Self::MergedFrom
-            | Self::RelatedTo => {
-                from == to || matches!((from, to), (Document, Task) | (Task, Document))
-            }
+            | Self::ContradictedBy => from.is_content() && to.is_content(),
+
+            // the escape hatch: anything may simply be related to anything
+            Self::RelatedTo => true,
+        }
+    }
+
+    /// The only kind this relation can point at, when it has one.
+    ///
+    /// Lets a bare id in hand-written frontmatter be typed without consulting an index, and
+    /// without the guess that made a missing target look like a document.
+    pub fn sole_target_kind(&self) -> Option<EntityKind> {
+        let accepted: Vec<EntityKind> = [
+            EntityKind::Document,
+            EntityKind::Task,
+            EntityKind::Message,
+            EntityKind::Actor,
+        ]
+        .into_iter()
+        .filter(|to| {
+            [
+                EntityKind::Document,
+                EntityKind::Task,
+                EntityKind::Message,
+                EntityKind::Actor,
+            ]
+            .iter()
+            .any(|from| self.accepts(*from, *to))
+        })
+        .collect();
+
+        match accepted.as_slice() {
+            [only] => Some(*only),
+            _ => None,
         }
     }
 
@@ -259,14 +291,52 @@ mod tests {
     }
 
     #[test]
-    fn provenance_relations_join_like_kinds_and_bridge_documents_and_tasks() {
+    fn replacing_joins_like_with_like() {
         assert!(Relation::Supersedes.accepts(Document, Document));
         assert!(Relation::Supersedes.accepts(Task, Task));
-        assert!(Relation::RelatedTo.accepts(Document, Task));
+        assert!(Relation::Supersedes.accepts(Message, Message));
         assert!(
-            !Relation::Supersedes.accepts(Document, Actor),
-            "an actor is not superseded by a document"
+            !Relation::Supersedes.accepts(Task, Document),
+            "a task does not replace a document"
         );
+        assert!(
+            !Relation::Supersedes.accepts(Actor, Actor),
+            "an actor is not content and is never replaced by one"
+        );
+    }
+
+    #[test]
+    fn a_claim_about_content_may_cross_between_documents_tasks_and_messages() {
+        for relation in [
+            Relation::DerivedFrom,
+            Relation::Summarizes,
+            Relation::Invalidates,
+            Relation::Confirms,
+            Relation::SupportedBy,
+            Relation::ContradictedBy,
+        ] {
+            assert!(
+                relation.accepts(Document, Message),
+                "{relation}: a document must be able to cite a thread"
+            );
+            assert!(
+                relation.accepts(Message, Document),
+                "{relation}: and a thread to answer a document"
+            );
+            assert!(
+                !relation.accepts(Document, Actor),
+                "{relation}: an actor is a participant, not evidence"
+            );
+        }
+    }
+
+    #[test]
+    fn related_to_joins_anything_because_that_is_what_it_is_for() {
+        for from in [Document, Task, Message, Actor] {
+            for to in [Document, Task, Message, Actor] {
+                assert!(Relation::RelatedTo.accepts(from, to), "{from} -> {to}");
+            }
+        }
     }
 
     #[test]
@@ -292,5 +362,66 @@ mod tests {
         let err = Relation::Parent.validate(Document, Task).unwrap_err();
         assert!(err.to_string().contains("document"), "{err}");
         assert!(err.to_string().contains("task"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod target_kind_tests {
+    use super::*;
+
+    #[test]
+    fn relations_with_one_possible_target_report_it() {
+        assert_eq!(Relation::Parent.sole_target_kind(), Some(EntityKind::Task));
+        assert_eq!(
+            Relation::DependsOn.sole_target_kind(),
+            Some(EntityKind::Task)
+        );
+        assert_eq!(
+            Relation::SpawnedBy.sole_target_kind(),
+            Some(EntityKind::Message)
+        );
+        assert_eq!(
+            Relation::Produces.sole_target_kind(),
+            Some(EntityKind::Document)
+        );
+        assert_eq!(
+            Relation::OwnedBy.sole_target_kind(),
+            Some(EntityKind::Actor)
+        );
+    }
+
+    #[test]
+    fn relations_that_span_kinds_report_nothing_rather_than_a_favourite() {
+        for relation in [
+            Relation::Supersedes,
+            Relation::RelatedTo,
+            Relation::DerivedFrom,
+            Relation::MergedFrom,
+        ] {
+            assert_eq!(
+                relation.sole_target_kind(),
+                None,
+                "{relation} can point at more than one kind, so it must not claim one"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sole_target_is_always_one_the_relation_actually_accepts() {
+        for relation in Relation::ALL {
+            if let Some(target) = relation.sole_target_kind() {
+                assert!(
+                    [
+                        EntityKind::Document,
+                        EntityKind::Task,
+                        EntityKind::Message,
+                        EntityKind::Actor
+                    ]
+                    .iter()
+                    .any(|from| relation.accepts(*from, target)),
+                    "{relation} claims {target} but accepts nothing into it"
+                );
+            }
+        }
     }
 }
