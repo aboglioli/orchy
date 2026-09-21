@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use orchy_core::{EntityKind, EventLog, Id, Page, PageRequest, Result, Task, TaskQuery, TaskStore};
 
 use crate::codec;
-use crate::vault::Vault;
+use crate::vault::{Precondition, Vault};
 
 pub struct VaultTaskStore {
     vault: Arc<Vault>,
@@ -67,7 +67,13 @@ impl TaskStore for VaultTaskStore {
         let key = self.vault.layout().task_key(task.id(), task.status());
         let file = codec::task_to_markdown(task, carried);
         self.vault
-            .write(&key, &file, task.id(), EntityKind::Task)
+            .write_if(
+                &key,
+                &file,
+                task.id(),
+                EntityKind::Task,
+                Precondition::Unchanged,
+            )
             .await?;
         self.log.append(&events).await
     }

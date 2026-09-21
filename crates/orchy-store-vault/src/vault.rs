@@ -3,15 +3,31 @@ use std::sync::{Arc, RwLock};
 
 use orchy_core::{DomainError, EntityKind, Id, Result};
 
-use crate::blob::BlobStore;
+use crate::blob::{BlobStore, digest};
 use crate::codec;
 use crate::layout::Layout;
 use crate::markdown::MarkdownFile;
+
+/// What must still be true of a file for a write to be allowed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Precondition {
+    /// Overwrite whatever is there. For a file this process alone is responsible for.
+    Any,
+    /// The bytes must still be the ones this process last read.
+    ///
+    /// Reading and writing are separate calls, so two agents can both load an entity, both
+    /// change it, and the later write silently discard the earlier one. This turns that into
+    /// a refusal the caller can see. An entity this process never read has nothing to lose,
+    /// and passes.
+    Unchanged,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Located {
     pub key: String,
     pub kind: EntityKind,
+    /// Digest of the bytes this process last saw for the entity.
+    pub seen: u64,
 }
 
 /// Identity lives in frontmatter, not in paths, so finding an entity means knowing which file
@@ -47,7 +63,11 @@ impl Vault {
             if !self.layout.is_markdown(&key) || self.layout.is_runtime(&key) {
                 continue;
             }
-            let Some(file) = self.read(&key).await? else {
+            let Some(bytes) = self.blobs.get(&key).await? else {
+                continue;
+            };
+            let seen = digest(&bytes);
+            let Some(file) = parse(&bytes, &key)? else {
                 continue;
             };
             let Some(raw) = codec::id_of(&file) else {
@@ -61,6 +81,7 @@ impl Vault {
                 Located {
                     kind: kind_from(codec::kind_of(&file)),
                     key,
+                    seen,
                 },
             );
         }
@@ -95,10 +116,19 @@ impl Vault {
         let Some(located) = self.locate(id) else {
             return Ok(None);
         };
-        Ok(self
-            .read(&located.key)
-            .await?
-            .map(|file| (located.key, file)))
+        let Some(bytes) = self.blobs.get(&located.key).await? else {
+            return Ok(None);
+        };
+        // remember the bytes handed out, so a later save can tell whether anyone else moved
+        // the file underneath this caller
+        self.index.write().expect("index lock").insert(
+            id.clone(),
+            Located {
+                seen: digest(&bytes),
+                ..located.clone()
+            },
+        );
+        Ok(parse(&bytes, &located.key)?.map(|file| (located.key, file)))
     }
 
     pub async fn write(
@@ -108,19 +138,76 @@ impl Vault {
         id: &Id,
         kind: EntityKind,
     ) -> Result<()> {
-        if let Some(previous) = self.locate(id)
-            && previous.key != key
-        {
-            self.blobs.delete(&previous.key).await?;
+        self.write_if(key, file, id, kind, Precondition::Any).await
+    }
+
+    /// Write only when the file still holds what the caller last read.
+    ///
+    /// Reading and writing are separate calls, so two agents can both load a document, both
+    /// change it, and the later write silently discard the earlier one. The precondition is
+    /// what turns that into a refusal the caller can see.
+    pub async fn write_if(
+        &self,
+        key: &str,
+        file: &MarkdownFile,
+        id: &Id,
+        kind: EntityKind,
+        precondition: Precondition,
+    ) -> Result<()> {
+        let rendered = file.render()?;
+        let previous = self.locate(id);
+
+        match (precondition, &previous) {
+            (Precondition::Unchanged, Some(located)) => {
+                self.take(located, key, &rendered, id).await?;
+            }
+            _ => {
+                if let Some(located) = &previous
+                    && located.key != key
+                {
+                    self.blobs.delete(&located.key).await?;
+                }
+                self.blobs.put(key, rendered.as_bytes()).await?;
+            }
         }
-        self.blobs.put(key, file.render()?.as_bytes()).await?;
+
         self.index.write().expect("index lock").insert(
             id.clone(),
             Located {
                 key: key.to_owned(),
                 kind,
+                seen: digest(rendered.as_bytes()),
             },
         );
+        Ok(())
+    }
+
+    /// The compare and the write are one step. Split in two, a second writer fits between
+    /// them: it passes its own check, and the write that follows still discards the change
+    /// this one just made.
+    ///
+    /// The contention is on where the entity sits *now*, not where it is going — placement
+    /// follows frontmatter, so an ordinary status change moves the file, and a destination
+    /// path is supposed to be empty. Winning the compare on the old key is what proves
+    /// nobody else touched the entity, so a move writes there first and unlinks it after.
+    async fn take(&self, located: &Located, key: &str, rendered: &str, id: &Id) -> Result<()> {
+        let taken = self
+            .blobs
+            .compare_and_put(&located.key, Some(located.seen), rendered.as_bytes())
+            .await?;
+        if !taken {
+            return Err(if self.blobs.exists(&located.key).await? {
+                DomainError::conflict(format!(
+                    "`{id}` changed since it was read; reload it and reapply the change"
+                ))
+            } else {
+                DomainError::conflict(format!("`{id}` was deleted since it was read"))
+            });
+        }
+        if located.key != key {
+            self.blobs.put(key, rendered.as_bytes()).await?;
+            self.blobs.delete(&located.key).await?;
+        }
         Ok(())
     }
 
@@ -143,6 +230,15 @@ impl Vault {
         loaded.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(loaded)
     }
+}
+
+fn parse(bytes: &[u8], key: &str) -> Result<Option<MarkdownFile>> {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return Err(DomainError::validation(format!(
+            "`{key}` is not valid UTF-8"
+        )));
+    };
+    MarkdownFile::parse(text).map(Some)
 }
 
 fn kind_from(declared: Option<&str>) -> EntityKind {

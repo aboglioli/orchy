@@ -7,11 +7,31 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use async_trait::async_trait;
 use orchy_core::{DomainError, Result};
 
+/// Digest used for write preconditions. Process-local: it is compared only against another
+/// digest taken by the same build, never stored.
+pub fn digest(bytes: &[u8]) -> u64 {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// The seam that makes the byte source replaceable; everything above it is backend-agnostic.
 #[async_trait]
 pub trait BlobStore: Send + Sync {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>>;
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<()>;
+
+    /// Replace `key` only if what is there now digests to `expected`, atomically with respect
+    /// to every other writer. `None` means the key must be absent.
+    ///
+    /// Comparing and writing as two calls is not enough: another process fits entirely between
+    /// them, and the write that follows a passing check still discards someone else's change.
+    /// Returns `false` when the precondition did not hold and nothing was written.
+    async fn compare_and_put(&self, key: &str, expected: Option<u64>, bytes: &[u8])
+    -> Result<bool>;
+
     async fn delete(&self, key: &str) -> Result<()>;
     async fn list(&self, prefix: &str) -> Result<Vec<String>>;
     async fn exists(&self, key: &str) -> Result<bool> {
@@ -23,6 +43,41 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn io(context: &str, e: std::io::Error) -> DomainError {
     DomainError::validation(format!("{context}: {e}"))
+}
+
+async fn ensure_parent(path: &Path) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    tokio::fs::create_dir_all(parent)
+        .await
+        .map_err(|e| io(&format!("creating {}", parent.display()), e))
+}
+
+fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    // The scratch name is unique per writer. Derived from the target alone, two processes
+    // writing the same key would share one file: each truncates the other's, and the loser
+    // renames either nothing or the winner's half-written bytes into place.
+    let temp = path.with_extension(format!(
+        "{}.{}.{}.tmp",
+        path.extension().and_then(|e| e.to_str()).unwrap_or(""),
+        std::process::id(),
+        TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    let write = || -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&temp)?;
+        file.write_all(bytes)?;
+        file.sync_all()
+    };
+    write().map_err(|e| io(&format!("writing {}", temp.display()), e))?;
+
+    std::fs::rename(&temp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        io(&format!("renaming into {}", path.display()), e)
+    })
 }
 
 /// Writes are atomic: temp file, fsync, rename, so a crash never leaves a half-parsed
@@ -38,6 +93,19 @@ impl FsBlobStore {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Kept beside the vault's runtime state rather than next to the file, so a guard never
+    /// shows up as a document and never reaches git.
+    fn guard_path(&self, key: &str) -> Result<PathBuf> {
+        let safe: String = key
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        Ok(self
+            .root
+            .join(".orchy/write-guards")
+            .join(format!("{safe}.lock")))
     }
 
     fn path_of(&self, key: &str) -> Result<PathBuf> {
@@ -66,36 +134,49 @@ impl BlobStore for FsBlobStore {
 
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<()> {
         let path = self.path_of(key)?;
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| io(&format!("creating {}", parent.display()), e))?;
-        }
-
-        // Unique per writer. A temp name derived from the target alone means two processes
-        // writing the same key share one scratch file: each truncates the other's, and the
-        // loser either renames nothing or renames the winner's half-written bytes into place.
-        let temp = path.with_extension(format!(
-            "{}.{}.{}.tmp",
-            path.extension().and_then(|e| e.to_str()).unwrap_or(""),
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
+        ensure_parent(&path).await?;
         let contents = bytes.to_vec();
-        let temp_for_write = temp.clone();
-        tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-            use std::io::Write;
-            let mut file = std::fs::File::create(&temp_for_write)?;
-            file.write_all(&contents)?;
-            file.sync_all()
+        tokio::task::spawn_blocking(move || write_atomically(&path, &contents))
+            .await
+            .map_err(|e| DomainError::validation(format!("write task failed: {e}")))?
+    }
+
+    async fn compare_and_put(
+        &self,
+        key: &str,
+        expected: Option<u64>,
+        bytes: &[u8],
+    ) -> Result<bool> {
+        let path = self.path_of(key)?;
+        let guard = self.guard_path(key)?;
+        ensure_parent(&path).await?;
+        ensure_parent(&guard).await?;
+
+        let contents = bytes.to_vec();
+        tokio::task::spawn_blocking(move || -> Result<bool> {
+            use fs4::fs_std::FileExt;
+
+            let lock = std::fs::OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(true)
+                .truncate(false)
+                .open(&guard)
+                .map_err(|e| io("opening write guard", e))?;
+            FileExt::lock_exclusive(&lock).map_err(|e| io("locking write guard", e))?;
+
+            let current = std::fs::read(&path).ok().map(|b| digest(&b));
+            if current != expected {
+                let _ = FileExt::unlock(&lock);
+                return Ok(false);
+            }
+
+            let result = write_atomically(&path, &contents);
+            let _ = FileExt::unlock(&lock);
+            result.map(|()| true)
         })
         .await
         .map_err(|e| DomainError::validation(format!("write task failed: {e}")))?
-        .map_err(|e| io(&format!("writing {}", temp.display()), e))?;
-
-        tokio::fs::rename(&temp, &path)
-            .await
-            .map_err(|e| io(&format!("renaming into {}", path.display()), e))
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
@@ -160,6 +241,20 @@ impl BlobStore for MemoryBlobStore {
             .expect("blob mutex")
             .insert(key.to_owned(), bytes.to_vec());
         Ok(())
+    }
+
+    async fn compare_and_put(
+        &self,
+        key: &str,
+        expected: Option<u64>,
+        bytes: &[u8],
+    ) -> Result<bool> {
+        let mut blobs = self.0.lock().expect("blob mutex");
+        if blobs.get(key).map(|b| digest(b)) != expected {
+            return Ok(false);
+        }
+        blobs.insert(key.to_owned(), bytes.to_vec());
+        Ok(true)
     }
 
     async fn delete(&self, key: &str) -> Result<()> {

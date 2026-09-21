@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use orchy_core::{ActorId, ActorStore, EntityKind, EventLog, Id, Message, MessageStore, Result};
 
 use crate::codec;
-use crate::vault::Vault;
+use crate::vault::{Precondition, Vault};
 
 pub struct VaultMessageStore {
     vault: Arc<Vault>,
@@ -79,7 +79,13 @@ impl MessageStore for VaultMessageStore {
             .message_key(message.thread(), message.id());
         let file = codec::message_to_markdown(message);
         self.vault
-            .write(&key, &file, message.id(), EntityKind::Message)
+            .write_if(
+                &key,
+                &file,
+                message.id(),
+                EntityKind::Message,
+                Precondition::Unchanged,
+            )
             .await?;
         self.log.append(&events).await
     }

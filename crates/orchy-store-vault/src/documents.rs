@@ -6,7 +6,7 @@ use orchy_core::{
 };
 
 use crate::codec;
-use crate::vault::Vault;
+use crate::vault::{Precondition, Vault};
 
 pub struct VaultDocumentStore {
     vault: Arc<Vault>,
@@ -75,7 +75,13 @@ impl DocumentStore for VaultDocumentStore {
 
         let file = codec::document_to_markdown(document);
         self.vault
-            .write(&key, &file, document.id(), EntityKind::Document)
+            .write_if(
+                &key,
+                &file,
+                document.id(),
+                EntityKind::Document,
+                Precondition::Unchanged,
+            )
             .await?;
         self.log.append(&events).await
     }
