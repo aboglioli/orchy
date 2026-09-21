@@ -140,6 +140,32 @@ impl FileLeaseStore {
         let bytes = std::fs::read(self.lock_path(key)).ok()?;
         serde_json::from_slice(&bytes).ok()
     }
+
+    /// The lock file is never unlinked, only rewritten. `flock` orders holders of one inode;
+    /// removing the file lets the next two acquirers lock two different inodes for the same
+    /// key, find no record on either, and both walk away believing they hold it.
+    fn open_lock(&self, key: &ResourceKey) -> Result<std::fs::File> {
+        std::fs::create_dir_all(&self.root)
+            .map_err(|e| DomainError::validation(format!("creating lock directory: {e}")))?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(self.lock_path(key))
+            .map_err(|e| DomainError::validation(format!("opening lock: {e}")))?;
+        FileExt::lock_exclusive(&file)
+            .map_err(|e| DomainError::validation(format!("locking: {e}")))?;
+        Ok(file)
+    }
+
+    fn write_record(&self, key: &ResourceKey, record: &LeaseRecord) -> Result<()> {
+        std::fs::write(
+            self.lock_path(key),
+            serde_json::to_vec(record).unwrap_or_default(),
+        )
+        .map_err(|e| DomainError::validation(format!("writing lock: {e}")))
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -153,20 +179,8 @@ struct LeaseRecord {
 #[async_trait]
 impl LeaseStore for FileLeaseStore {
     async fn acquire(&self, key: &ResourceKey, by: &ActorId, ttl: Duration) -> Result<Lease> {
-        std::fs::create_dir_all(&self.root)
-            .map_err(|e| DomainError::validation(format!("creating lock directory: {e}")))?;
-        let path = self.lock_path(key);
         let now = self.clock.now();
-
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(&path)
-            .map_err(|e| DomainError::validation(format!("opening lock: {e}")))?;
-        FileExt::lock_exclusive(&file)
-            .map_err(|e| DomainError::validation(format!("locking: {e}")))?;
+        let file = self.open_lock(key)?;
 
         let held = self.read_record(key);
         if let Some(record) = &held
@@ -187,9 +201,9 @@ impl LeaseStore for FileLeaseStore {
             expires_at: now + ttl,
             generation,
         };
-        std::fs::write(&path, serde_json::to_vec(&record).unwrap_or_default())
-            .map_err(|e| DomainError::validation(format!("writing lock: {e}")))?;
+        let written = self.write_record(key, &record);
         let _ = FileExt::unlock(&file);
+        written?;
 
         Ok(Lease::new(
             key.clone(),
@@ -201,17 +215,30 @@ impl LeaseStore for FileLeaseStore {
     }
 
     async fn release(&self, key: &ResourceKey, by: &ActorId) -> Result<()> {
-        let Some(record) = self.read_record(key) else {
+        if !self.lock_path(key).exists() {
             return Ok(());
-        };
-        if record.holder != by.to_string() && record.expires_at > self.clock.now() {
-            return Err(DomainError::forbidden(format!(
-                "`{key}` is held by {}, not {by}",
-                record.holder
-            )));
         }
-        let _ = std::fs::remove_file(self.lock_path(key));
-        Ok(())
+        let file = self.open_lock(key)?;
+        let now = self.clock.now();
+
+        let released = match self.read_record(key) {
+            None => Ok(()),
+            Some(record) if record.holder != by.to_string() && record.expires_at > now => Err(
+                DomainError::forbidden(format!("`{key}` is held by {}, not {by}", record.holder)),
+            ),
+            // expiring the record in place, rather than unlinking it, keeps one inode per key
+            // and carries the generation forward
+            Some(record) => self.write_record(
+                key,
+                &LeaseRecord {
+                    expires_at: now,
+                    ..record
+                },
+            ),
+        };
+
+        let _ = FileExt::unlock(&file);
+        released
     }
 
     async fn check(&self, key: &ResourceKey) -> Result<Option<Lease>> {
