@@ -14,12 +14,37 @@ pub(crate) struct Settings {
     pub actor: Option<String>,
 }
 
+/// Vault-level configuration, read from `<vault>/orchy.toml`. Distinct from `Settings`,
+/// which is per machine and lives in the user's config directory.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct VaultConfig {
+    pub events: EventsConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub(crate) struct EventsConfig {
+    /// Fixed when a machine's log is first created; eventuary refuses to reopen a log with a
+    /// different count, so changing it later is an error rather than a silent migration.
+    pub partitions: u32,
+}
+
+impl Default for EventsConfig {
+    fn default() -> Self {
+        Self {
+            partitions: orchy_store_vault::eventlog::DEFAULT_PARTITIONS,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
     pub vault: PathBuf,
     pub actor: ActorId,
     pub machine: MachineId,
     pub organization: String,
+    pub vault_config: VaultConfig,
 }
 
 impl Config {
@@ -47,11 +72,14 @@ impl Config {
             ActorId::new(&alias, machine.to_string())?
         };
 
+        let vault_config = read_vault_config(&vault)?;
+
         Ok(Self {
             vault,
             actor,
             machine,
             organization: APP.to_owned(),
+            vault_config,
         })
     }
 
@@ -89,6 +117,14 @@ fn home() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn read_vault_config(vault: &std::path::Path) -> CliResult<VaultConfig> {
+    let path = vault.join("orchy.toml");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(VaultConfig::default());
+    };
+    toml::from_str(&text).map_err(|e| CliError::config(format!("{}: {e}", path.display())))
 }
 
 fn read_settings() -> CliResult<Settings> {

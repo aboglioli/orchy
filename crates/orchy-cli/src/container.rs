@@ -29,6 +29,7 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
         &config.organization,
         config.actor.clone(),
         config.machine.clone(),
+        config.vault_config.events.partitions,
     )?);
 
     let actors: Arc<dyn ActorStore> = Arc::new(VaultActorStore::new(Arc::clone(&vault)));

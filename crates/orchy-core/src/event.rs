@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use eventuary_core::{Payload, Topic};
+use eventuary::{Payload, Topic};
 use serde::Serialize;
 
 use crate::error::{DomainError, Result};

@@ -17,11 +17,12 @@ repository = "https://github.com/aboglioli/orchy"
 [workspace.dependencies]
 # Event toolkit. Pinned by tag until eventuary reaches crates.io; a path dependency
 # resolved outside the repository, which cannot be checked out by CI.
-eventuary = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.2", features = [
+# The facade is the only entry point: backends come from it by feature, never as
+# separate crates, so every import in the workspace reads `use eventuary::`.
+eventuary = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.3", features = [
     "fs",
     "memory",
 ] }
-eventuary-core = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.2" }
 
 # Domain
 chrono = { version = "0.4", features = ["serde"] }

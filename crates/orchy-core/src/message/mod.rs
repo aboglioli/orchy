@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use eventuary_core::{Payload, Topic};
+use eventuary::{Payload, Topic};
 use serde::{Deserialize, Serialize};
 
 pub use recipient::Recipient;

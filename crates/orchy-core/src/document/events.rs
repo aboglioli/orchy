@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use eventuary_core::{Payload, Topic};
+use eventuary::{Payload, Topic};
 use serde::{Deserialize, Serialize};
 
 use super::kind::{DocumentStatus, Kind};

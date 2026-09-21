@@ -43,6 +43,7 @@ impl Fixture {
                 "orchy",
                 ACTOR.parse().unwrap(),
                 orchy_core::MachineId::new(MACHINE).unwrap(),
+                orchy_store_vault::eventlog::DEFAULT_PARTITIONS,
             )
             .unwrap(),
         );

@@ -18,6 +18,10 @@ const ORCHY_TOML: &str = "\
 [vault]
 name = \"vault\"
 
+[events]
+# Fixed when this machine's log is first created; changing it afterwards is refused.
+partitions = 10
+
 [recall]
 default_limit = 20
 

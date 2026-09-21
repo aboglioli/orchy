@@ -363,8 +363,8 @@ dependencies = [
 
 [[package]]
 name = "eventuary"
-version = "0.3.0-rc.1"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
+version = "0.3.0-rc.3"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.3#0cad8dfad722a3ad88a7a63e09a141658f121efa"
 dependencies = [
  "eventuary-core",
  "eventuary-fs",
@@ -373,8 +373,8 @@ dependencies = [
 
 [[package]]
 name = "eventuary-core"
-version = "0.3.0-rc.1"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
+version = "0.3.0-rc.3"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.3#0cad8dfad722a3ad88a7a63e09a141658f121efa"
 dependencies = [
  "base64",
  "bytes",
@@ -393,8 +393,8 @@ dependencies = [
 
 [[package]]
 name = "eventuary-fs"
-version = "0.3.0-rc.1"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
+version = "0.3.0-rc.3"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.3#0cad8dfad722a3ad88a7a63e09a141658f121efa"
 dependencies = [
  "chrono",
  "eventuary-core",
@@ -408,8 +408,8 @@ dependencies = [
 
 [[package]]
 name = "eventuary-memory"
-version = "0.3.0-rc.1"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
+version = "0.3.0-rc.3"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.3#0cad8dfad722a3ad88a7a63e09a141658f121efa"
 dependencies = [
  "chrono",
  "eventuary-core",
@@ -887,7 +887,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
- "eventuary-core",
+ "eventuary",
  "hex",
  "serde",
  "serde_json",
@@ -915,7 +915,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "eventuary",
- "eventuary-core",
  "fs4",
  "futures",
  "grep-matcher",

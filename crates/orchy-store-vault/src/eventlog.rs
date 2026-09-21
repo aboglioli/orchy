@@ -1,21 +1,30 @@
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use eventuary::fs::reader::{FsReader, FsReaderConfig};
-use eventuary::fs::writer::{FsWriter, FsWriterConfig};
+use eventuary::fs::writer::{FsPartitioningConfig, FsWriter, FsWriterConfig};
 use eventuary::io::Writer;
 use eventuary::{Event, Metadata, Namespace as EvNamespace, OrganizationId, StopAt};
 use orchy_core::{
     ActorId, DomainError, DomainEvent, EventLog, EventQuery, MachineId, RecordedEvent, Result,
 };
 
+pub const DEFAULT_PARTITIONS: u32 = 10;
+
+/// How long to keep retrying a partition whose lock another process holds. A write takes
+/// microseconds, so a collision resolves well inside this; failing outright would make two
+/// agents on one machine mutually exclusive.
+const LOCK_WAIT: Duration = Duration::from_millis(2_000);
+const LOCK_RETRY: Duration = Duration::from_millis(20);
+
 /// One log root per machine: `flock` cannot order offsets across a git remote, so two hosts
 /// sharing a partition would corrupt silently.
 pub struct EventuaryLog {
-    writer: Arc<FsWriter>,
     root: PathBuf,
+    partitions: NonZeroU32,
     organization: OrganizationId,
     actor: ActorId,
     machine: MachineId,
@@ -27,17 +36,15 @@ impl EventuaryLog {
         organization: &str,
         actor: ActorId,
         machine: MachineId,
+        partitions: u32,
     ) -> Result<Self> {
         let root = events_root.as_ref().join(machine.to_string());
         std::fs::create_dir_all(&root)
             .map_err(|e| DomainError::validation(format!("creating event log root: {e}")))?;
 
-        let writer = FsWriter::open(&root, FsWriterConfig::default())
-            .map_err(|e| DomainError::validation(format!("opening event log: {e}")))?;
-
         Ok(Self {
-            writer: Arc::new(writer),
             root,
+            partitions: NonZeroU32::new(partitions.max(1)).expect("clamped to at least one"),
             organization: OrganizationId::new(organization)
                 .map_err(|e| DomainError::validation(format!("invalid organization: {e}")))?,
             actor,
@@ -47,6 +54,47 @@ impl EventuaryLog {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn partitions(&self) -> u32 {
+        self.partitions.get()
+    }
+
+    fn writer_config(&self) -> FsWriterConfig {
+        FsWriterConfig {
+            // routing on the event key keeps one aggregate's events inside one partition, so
+            // their order survives replay
+            partitioning: FsPartitioningConfig::by_event_key(self.partitions),
+            ..FsWriterConfig::default()
+        }
+    }
+
+    /// The writer is opened per append and dropped immediately, because opening it takes an
+    /// exclusive lock on every partition. Holding that for a whole process would make a second
+    /// agent on the same machine fail rather than wait.
+    async fn open_writer(&self) -> Result<FsWriter> {
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        loop {
+            match FsWriter::open(&self.root, self.writer_config()) {
+                Ok(writer) => return Ok(writer),
+                // a misconfigured log never becomes openable by waiting
+                Err(eventuary::Error::Config(message)) => {
+                    return Err(DomainError::validation(format!(
+                        "event log at {}: {message}",
+                        self.root.display()
+                    )));
+                }
+                Err(e) => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(DomainError::conflict(format!(
+                            "event log at {} stayed locked by another process: {e}",
+                            self.root.display()
+                        )));
+                    }
+                    tokio::time::sleep(LOCK_RETRY).await;
+                }
+            }
+        }
     }
 
     fn to_eventuary(&self, event: &dyn DomainEvent) -> Result<Event> {
@@ -75,13 +123,22 @@ impl EventuaryLog {
 #[async_trait]
 impl EventLog for EventuaryLog {
     async fn append(&self, events: &[Box<dyn DomainEvent>]) -> Result<()> {
-        for event in events {
-            let wire = self.to_eventuary(event.as_ref())?;
-            self.writer
-                .write(&wire)
+        if events.is_empty() {
+            return Ok(());
+        }
+        let wire: Vec<Event> = events
+            .iter()
+            .map(|e| self.to_eventuary(e.as_ref()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let writer = self.open_writer().await?;
+        for event in &wire {
+            writer
+                .write(event)
                 .await
                 .map_err(|e| DomainError::validation(format!("appending to event log: {e}")))?;
         }
+        drop(writer);
         Ok(())
     }
 
@@ -129,8 +186,6 @@ fn machine_roots(events_root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 async fn drain(reader: &FsReader) -> Result<Vec<Event>> {
-    use std::time::Duration;
-
     use eventuary::fs::reader::FsSubscription;
     use eventuary::io::Reader;
     use futures::StreamExt;
@@ -191,6 +246,7 @@ mod tests {
             "orchy",
             ActorId::new("claude", MACHINE).unwrap(),
             MachineId::new(MACHINE).unwrap(),
+            DEFAULT_PARTITIONS,
         )
         .unwrap()
     }
@@ -249,6 +305,7 @@ mod tests {
             "orchy",
             ActorId::new("codex", other_machine).unwrap(),
             MachineId::new(other_machine).unwrap(),
+            DEFAULT_PARTITIONS,
         )
         .unwrap();
         theirs.append(&[created("theirs")]).await.unwrap();
@@ -338,6 +395,7 @@ mod tests_support {
             "orchy",
             ActorId::new("claude", MACHINE).unwrap(),
             MachineId::new(MACHINE).unwrap(),
+            DEFAULT_PARTITIONS,
         )
         .unwrap()
     }
@@ -350,5 +408,133 @@ mod tests_support {
             parent: None,
             at: Utc::now(),
         })
+    }
+}
+
+#[cfg(test)]
+mod concurrency_tests {
+    use super::tests_support::*;
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn two_logs_on_one_machine_take_turns_instead_of_failing() {
+        let temp = tempfile::tempdir().unwrap();
+        let events = temp.path().join("events");
+        std::fs::create_dir_all(&events).unwrap();
+
+        // two processes, same machine root, writing at once
+        let first = open(&events);
+        let second = open(&events);
+
+        let one = [created("from one")];
+        let two = [created("from two")];
+        let (a, b) = tokio::join!(first.append(&one), second.append(&two));
+        assert!(a.is_ok(), "first writer: {a:?}");
+        assert!(
+            b.is_ok(),
+            "second writer must wait for the lock, not fail: {b:?}"
+        );
+
+        let replayed = open(&events).replay(&EventQuery::default()).await.unwrap();
+        assert_eq!(replayed.len(), 2, "neither write may be lost");
+    }
+
+    #[tokio::test]
+    async fn the_partition_count_is_what_was_asked_for() {
+        let temp = tempfile::tempdir().unwrap();
+        let events = temp.path().join("events");
+        std::fs::create_dir_all(&events).unwrap();
+
+        let log = EventuaryLog::open(
+            &events,
+            "orchy",
+            ActorId::new("claude", MACHINE).unwrap(),
+            MachineId::new(MACHINE).unwrap(),
+            DEFAULT_PARTITIONS,
+        )
+        .unwrap();
+        assert_eq!(log.partitions(), 10);
+
+        log.append(&[created("x")]).await.unwrap();
+        let meta: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(log.root().join("meta.json")).unwrap()).unwrap();
+        assert_eq!(meta["partition_count"], 10);
+    }
+
+    #[tokio::test]
+    async fn reopening_with_a_different_count_is_refused_rather_than_migrating() {
+        let temp = tempfile::tempdir().unwrap();
+        let events = temp.path().join("events");
+        std::fs::create_dir_all(&events).unwrap();
+
+        open(&events).append(&[created("x")]).await.unwrap();
+
+        let narrower = EventuaryLog::open(
+            &events,
+            "orchy",
+            ActorId::new("claude", MACHINE).unwrap(),
+            MachineId::new(MACHINE).unwrap(),
+            4,
+        )
+        .unwrap();
+        let refused = narrower.append(&[created("y")]).await.unwrap_err();
+        assert!(
+            refused.to_string().contains("was created with 10"),
+            "a count mismatch must say so plainly, not look like lock contention: {refused}"
+        );
+        assert!(
+            !refused.to_string().contains("locked"),
+            "and must not be retried as if it were transient: {refused}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_zero_partition_count_is_clamped_rather_than_panicking() {
+        let temp = tempfile::tempdir().unwrap();
+        let log = EventuaryLog::open(
+            temp.path(),
+            "orchy",
+            ActorId::new("claude", MACHINE).unwrap(),
+            MachineId::new(MACHINE).unwrap(),
+            0,
+        )
+        .unwrap();
+        assert_eq!(log.partitions(), 1);
+    }
+
+    #[tokio::test]
+    async fn events_for_one_aggregate_stay_in_one_partition() {
+        let temp = tempfile::tempdir().unwrap();
+        let events = temp.path().join("events");
+        std::fs::create_dir_all(&events).unwrap();
+        let log = open(&events);
+
+        for _ in 0..12 {
+            log.append(&[created("same key every time")]).await.unwrap();
+        }
+
+        let written: Vec<_> = std::fs::read_dir(log.root())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .filter(|e| {
+                std::fs::read_dir(e.path())
+                    .map(|mut d| {
+                        d.any(|f| {
+                            f.map(|f| {
+                                f.path().extension().is_some_and(|x| x == "log")
+                                    && f.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                            })
+                            .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(
+            written.len(),
+            1,
+            "routing on the event key must keep one aggregate's history ordered in one partition"
+        );
     }
 }

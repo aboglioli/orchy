@@ -10,7 +10,6 @@ repository.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 eventuary.workspace = true
-eventuary-core.workspace = true
 fs4.workspace = true
 futures.workspace = true
 grep-matcher.workspace = true
