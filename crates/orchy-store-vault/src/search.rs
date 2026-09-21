@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use grep_matcher::Matcher;
-use grep_regex::RegexMatcher;
+use grep_regex::{RegexMatcher, RegexMatcherBuilder};
 use grep_searcher::{Searcher, sinks::UTF8};
 use orchy_core::{DomainError, Hit, Result, Search, SearchQuery};
 
@@ -21,7 +21,10 @@ impl VaultSearch {
 #[async_trait]
 impl Search for VaultSearch {
     async fn sections(&self, query: &SearchQuery) -> Result<Vec<Hit>> {
-        let matcher = RegexMatcher::new_line_matcher(&regex_syntax::escape(&query.text))
+        // people type what they remember, not what was capitalised
+        let matcher = RegexMatcherBuilder::new()
+            .case_insensitive(true)
+            .build(&regex_syntax::escape(&query.text))
             .map_err(|e| DomainError::validation(format!("bad search pattern: {e}")))?;
 
         let mut hits = Vec::new();
@@ -44,6 +47,20 @@ impl Search for VaultSearch {
             }
             if !query.tags.iter().all(|t| document.tags().contains(t)) {
                 continue;
+            }
+
+            // the title is searchable in its own right: a document whose subject only appears
+            // in its name is otherwise unfindable by the command meant to find things
+            let title_matches = count_matches(&matcher, document.title().as_str())?;
+            if title_matches > 0 {
+                hits.push(Hit {
+                    document: document.id().clone(),
+                    heading: Some(document.title().to_string()),
+                    excerpt: document.body().as_str().trim().chars().take(240).collect(),
+                    namespace: document.namespace().clone(),
+                    updated_at: document.updated_at(),
+                    matches: title_matches,
+                });
             }
 
             for section in document.body().sections() {

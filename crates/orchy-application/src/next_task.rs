@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::claim_task::{ClaimTask, ClaimTaskCommand};
 use crate::dto::TaskDto;
-use crate::error::ApplicationResult;
+use crate::error::{ApplicationError, ApplicationResult};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NextTaskCommand {
@@ -46,21 +46,38 @@ impl NextTask {
                 .then_with(|| a.id().cmp(b.id()))
         });
 
-        let Some(next) = candidates.first() else {
+        let Some(first) = candidates.first() else {
             return Ok(None);
         };
         if !cmd.claim {
-            return Ok(Some(TaskDto::from(next)));
+            return Ok(Some(TaskDto::from(first)));
         }
-        let claimed = self
-            .claim
-            .execute(ClaimTaskCommand {
-                task_id: next.id().to_string(),
-                actor: cmd.actor,
-                ttl_seconds: None,
-                start: false,
-            })
-            .await?;
-        Ok(Some(claimed))
+
+        // Another agent may take a task between ranking it and claiming it, which is ordinary
+        // under several workers rather than an error: walk down the ranking until one sticks.
+        for candidate in &candidates {
+            match self
+                .claim
+                .execute(ClaimTaskCommand {
+                    task_id: candidate.id().to_string(),
+                    actor: cmd.actor.clone(),
+                    ttl_seconds: None,
+                    start: false,
+                })
+                .await
+            {
+                Ok(claimed) => return Ok(Some(claimed)),
+                Err(e) if is_contention(&e) => continue,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(None)
     }
+}
+
+fn is_contention(error: &ApplicationError) -> bool {
+    matches!(
+        error,
+        ApplicationError::Domain(orchy_core::DomainError::Conflict(_))
+    )
 }

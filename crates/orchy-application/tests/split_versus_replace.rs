@@ -455,3 +455,66 @@ async fn asking_to_link_a_projected_name_says_which_side_to_store() {
         .unwrap_err();
     assert!(err.to_string().contains("parent"), "{err}");
 }
+
+#[tokio::test]
+async fn next_hands_each_agent_a_different_task_rather_than_failing() {
+    use orchy_application::next_task::NextTaskCommand;
+
+    let app = app();
+    for title in ["one", "two", "three"] {
+        create(&app, title).await;
+    }
+
+    let mut handed = Vec::new();
+    for agent in ["claude", "codex", "gemini"] {
+        let actor = format!("{agent}@01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        let task = app
+            .next_task
+            .execute(NextTaskCommand {
+                actor,
+                claim: true,
+                ..Default::default()
+            })
+            .await
+            .expect("a free task remains, so nobody is turned away")
+            .expect("three tasks, three agents");
+        handed.push(task.id);
+    }
+
+    handed.sort();
+    handed.dedup();
+    assert_eq!(handed.len(), 3, "each agent must get a task of its own");
+}
+
+#[tokio::test]
+async fn next_returns_nothing_once_every_task_is_taken() {
+    use orchy_application::next_task::NextTaskCommand;
+
+    let app = app();
+    create(&app, "only one").await;
+
+    let first = app
+        .next_task
+        .execute(NextTaskCommand {
+            actor: ACTOR.to_owned(),
+            claim: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(first.is_some());
+
+    let second = app
+        .next_task
+        .execute(NextTaskCommand {
+            actor: "codex@01ARZ3NDEKTSV4RRFFQ69G5FAV".to_owned(),
+            claim: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(
+        second.is_none(),
+        "an empty queue is nothing to do, not an error"
+    );
+}

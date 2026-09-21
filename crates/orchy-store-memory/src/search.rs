@@ -42,6 +42,23 @@ impl Search for MemorySearch {
                 continue;
             }
 
+            let title_matches = document
+                .title()
+                .as_str()
+                .to_lowercase()
+                .matches(&needle)
+                .count();
+            if title_matches > 0 {
+                hits.push(Hit {
+                    document: document.id().clone(),
+                    heading: Some(document.title().to_string()),
+                    excerpt: excerpt(document.body().as_str()),
+                    namespace: document.namespace().clone(),
+                    updated_at: document.updated_at(),
+                    matches: title_matches,
+                });
+            }
+
             let sections = document.body().sections();
             if sections.is_empty() {
                 let matches = document

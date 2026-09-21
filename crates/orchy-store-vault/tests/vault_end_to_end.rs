@@ -447,3 +447,67 @@ async fn everything_written_is_reread_correctly_by_a_fresh_process() {
     assert_eq!(found.namespace().as_str(), "/backend");
     assert_eq!(found.tags().len(), 1);
 }
+
+#[tokio::test]
+async fn recall_finds_a_document_by_a_word_only_in_its_title() {
+    let fixture = Fixture::new().await;
+    fixture
+        .app
+        .create_document
+        .execute(CreateDocumentCommand {
+            kind: "candidate".to_owned(),
+            title: "Drop JWT for opaque tokens".to_owned(),
+            body: Some("Would remove signing at the cost of a lookup per request.".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let hits = fixture
+        .app
+        .recall
+        .execute(orchy_application::recall::RecallCommand {
+            text: "opaque".to_owned(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        hits.len(),
+        1,
+        "a document whose subject lives in its name must still be findable"
+    );
+    assert_eq!(
+        hits[0].heading.as_deref(),
+        Some("Drop JWT for opaque tokens")
+    );
+}
+
+#[tokio::test]
+async fn a_body_match_and_a_title_match_are_separate_hits() {
+    let fixture = Fixture::new().await;
+    fixture
+        .app
+        .create_document
+        .execute(CreateDocumentCommand {
+            kind: "note".to_owned(),
+            title: "Rotation policy".to_owned(),
+            body: Some("# Detail\n\nRotation happens quarterly.".to_owned()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let hits = fixture
+        .app
+        .recall
+        .execute(orchy_application::recall::RecallCommand {
+            text: "rotation".to_owned(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(hits.len(), 2, "one for the title, one for the section");
+}
