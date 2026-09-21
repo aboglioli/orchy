@@ -364,6 +364,7 @@ dependencies = [
 [[package]]
 name = "eventuary"
 version = "0.3.0-rc.1"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
 dependencies = [
  "eventuary-core",
  "eventuary-fs",
@@ -373,6 +374,7 @@ dependencies = [
 [[package]]
 name = "eventuary-core"
 version = "0.3.0-rc.1"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
 dependencies = [
  "base64",
  "bytes",
@@ -392,6 +394,7 @@ dependencies = [
 [[package]]
 name = "eventuary-fs"
 version = "0.3.0-rc.1"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
 dependencies = [
  "chrono",
  "eventuary-core",
@@ -406,6 +409,7 @@ dependencies = [
 [[package]]
 name = "eventuary-memory"
 version = "0.3.0-rc.1"
+source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.2#a995646712dab289977c0bd9e0ab6cddd4e86725"
 dependencies = [
  "chrono",
  "eventuary-core",

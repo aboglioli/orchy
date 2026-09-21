@@ -15,9 +15,13 @@ license = "MIT"
 repository = "https://github.com/aboglioli/orchy"
 
 [workspace.dependencies]
-# Event toolkit — path until the eventuary release lands on crates.io
-eventuary = { path = "../../../eventuary/crates/eventuary", features = ["fs", "memory"] }
-eventuary-core = { path = "../../../eventuary/crates/eventuary-core" }
+# Event toolkit. Pinned by tag until eventuary reaches crates.io; a path dependency
+# resolved outside the repository, which cannot be checked out by CI.
+eventuary = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.2", features = [
+    "fs",
+    "memory",
+] }
+eventuary-core = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.2" }
 
 # Domain
 chrono = { version = "0.4", features = ["serde"] }
@@ -56,7 +60,6 @@ orchy-core = { path = "crates/orchy-core" }
 orchy-application = { path = "crates/orchy-application" }
 orchy-store-memory = { path = "crates/orchy-store-memory" }
 orchy-store-vault = { path = "crates/orchy-store-vault" }
-orchy-store-conformance = { path = "crates/orchy-store-conformance" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
