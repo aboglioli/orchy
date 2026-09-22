@@ -310,6 +310,49 @@ mod tests {
         round_trip(&FsBlobStore::new(temp.path())).await;
     }
 
+    async fn compare_and_put_contract(store: &dyn BlobStore) {
+        assert!(
+            !store.compare_and_put("a.md", Some(1), b"x").await.unwrap(),
+            "a key that is not there cannot match a digest"
+        );
+        assert!(
+            store.compare_and_put("a.md", None, b"first").await.unwrap(),
+            "None claims an absent key"
+        );
+        assert!(
+            !store
+                .compare_and_put("a.md", None, b"second")
+                .await
+                .unwrap(),
+            "and refuses once somebody holds it"
+        );
+        assert_eq!(store.get("a.md").await.unwrap(), Some(b"first".to_vec()));
+
+        let held = digest(b"first");
+        assert!(
+            !store
+                .compare_and_put("a.md", Some(held + 1), b"no")
+                .await
+                .unwrap()
+        );
+        assert_eq!(store.get("a.md").await.unwrap(), Some(b"first".to_vec()));
+
+        assert!(
+            store
+                .compare_and_put("a.md", Some(held), b"next")
+                .await
+                .unwrap()
+        );
+        assert_eq!(store.get("a.md").await.unwrap(), Some(b"next".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn both_backends_compare_and_put_the_same_way() {
+        let temp = tempfile::tempdir().unwrap();
+        compare_and_put_contract(&MemoryBlobStore::new()).await;
+        compare_and_put_contract(&FsBlobStore::new(temp.path())).await;
+    }
+
     #[tokio::test]
     async fn fs_rejects_keys_that_would_escape_the_vault() {
         let temp = tempfile::tempdir().unwrap();
@@ -340,6 +383,35 @@ mod concurrent_write_tests {
     use std::sync::Arc;
 
     use super::*;
+
+    #[tokio::test]
+    async fn exactly_one_of_many_compare_and_puts_on_one_key_succeeds() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(FsBlobStore::new(temp.path()));
+        store.put("docs/a.md", b"start").await.unwrap();
+        let expected = digest(b"start");
+
+        let attempts = (0..16).map(|n| {
+            let store = Arc::clone(&store);
+            tokio::spawn(async move {
+                store
+                    .compare_and_put("docs/a.md", Some(expected), format!("by {n}").as_bytes())
+                    .await
+                    .unwrap()
+            })
+        });
+
+        let mut winners = 0;
+        for attempt in attempts {
+            if attempt.await.unwrap() {
+                winners += 1;
+            }
+        }
+        assert_eq!(
+            winners, 1,
+            "the compare and the write are one step, so only one writer can see `start`"
+        );
+    }
 
     #[tokio::test]
     async fn writers_to_one_key_do_not_share_a_scratch_file() {

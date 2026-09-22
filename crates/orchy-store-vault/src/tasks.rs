@@ -59,7 +59,7 @@ impl TaskStore for VaultTaskStore {
 
     async fn save(&self, task: &mut Task) -> Result<()> {
         let events = task.drain_events();
-        let carried = match self.vault.read_by_id(task.id()).await? {
+        let carried = match self.vault.peek_by_id(task.id()).await? {
             Some((_, file)) => codec::carried_frontmatter(&file),
             None => Default::default(),
         };
