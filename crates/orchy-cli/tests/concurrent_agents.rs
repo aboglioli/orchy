@@ -1140,3 +1140,282 @@ fn a_storm_of_mixed_work_leaves_a_vault_that_still_reads_back() {
         );
     }
 }
+
+#[test]
+fn identical_splits_of_one_goal_leave_one_subtask_per_title() {
+    let vault = Vault::new();
+
+    for round in 0..5 {
+        let goal = vault.new_task(&format!("goal {round}"));
+        let results = in_parallel(&["claude", "codex", "gemini"], |agent| {
+            vault.run(agent, &["task", "split", &goal, "design", "build"])
+        });
+        assert!(results.iter().all(|r| r.is_ok()), "{results:?}");
+
+        let subtasks = vault.json("alan", &["task", "get", &goal])["subtasks"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let titles: Vec<&str> = subtasks
+            .iter()
+            .map(|s| s["title"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            titles.len(),
+            2,
+            "round {round} split the same goal three times and kept {titles:?}"
+        );
+    }
+}
+
+#[test]
+fn a_replace_that_loses_the_race_leaves_nothing_behind() {
+    let vault = Vault::new();
+    let original = vault.new_task("the old way");
+
+    let results = in_parallel(&["claude", "codex", "gemini"], |agent| {
+        vault.run(
+            agent,
+            &["task", "replace", &original, "first half", "second half"],
+        )
+    });
+    assert_eq!(successes(&results), 1, "{results:?}");
+
+    let titles: Vec<String> = vault.json("alan", &["task", "list", "--limit", "200"])["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["title"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        titles.iter().filter(|t| t.ends_with(" half")).count(),
+        2,
+        "a refused replace must not leave replacements standing in for a live task: {titles:?}"
+    );
+    assert_eq!(vault.status_of(&original), "superseded");
+}
+
+#[test]
+fn promoting_and_archiving_one_document_at_once_settles_on_one_of_them() {
+    let vault = Vault::new();
+
+    for round in 0..5 {
+        let id = vault.new_document(&format!("candidate {round}"));
+        let outcomes = in_parallel(&["claude", "codex"], |agent| {
+            if agent == "claude" {
+                (
+                    "promote",
+                    vault.raw(agent, &["promote", &id, "--as", "decision"]),
+                )
+            } else {
+                ("archive", vault.raw(agent, &["archive", &id]))
+            }
+        });
+
+        let document = vault.document(&id);
+        for (what, output) in &outcomes {
+            let landed = match *what {
+                "promote" => document["kind"] == "decision",
+                _ => document["status"] == "archived",
+            };
+            if output.status.success() {
+                assert!(
+                    landed,
+                    "`{what}` reported success in round {round} and did nothing"
+                );
+            } else {
+                assert_eq!(output.status.code(), Some(5));
+            }
+        }
+
+        let copies = vault
+            .files()
+            .iter()
+            .filter(|p| {
+                p.extension().is_some_and(|e| e == "md")
+                    && std::fs::read_to_string(p)
+                        .map(|t| t.contains(&id))
+                        .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(
+            copies, 1,
+            "round {round} left the document in {copies} places"
+        );
+    }
+}
+
+#[test]
+fn an_expired_lease_is_handed_to_exactly_one_waiting_agent() {
+    let vault = Vault::new();
+    vault.ok("claude", &["lock", "acquire", "deploy/prod", "--ttl", "1"]);
+    thread::sleep(std::time::Duration::from_millis(1200));
+
+    let results = in_parallel(&["codex", "gemini", "pi"], |agent| {
+        vault.run(agent, &["lock", "acquire", "deploy/prod"])
+    });
+    assert_eq!(
+        successes(&results),
+        1,
+        "an expiry frees the resource for one successor, not all of them: {results:?}"
+    );
+}
+
+#[test]
+fn a_listing_shows_the_work_another_process_created_after_this_one_started() {
+    let vault = Vault::new();
+    let goal = vault.new_task("the goal");
+
+    // `split` is the one command that both writes subtasks and reads them back, so it is where
+    // a listing served from a stale index would show a process only its own work
+    vault.ok("claude", &["task", "split", &goal, "design"]);
+    vault.ok("codex", &["task", "split", &goal, "build"]);
+
+    let titles: Vec<String> = vault.json("alan", &["task", "get", &goal])["subtasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["title"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        titles.len(),
+        2,
+        "both agents' subtasks are there: {titles:?}"
+    );
+}
+
+#[test]
+fn blocking_and_finishing_one_task_at_once_leaves_one_coherent_status() {
+    let vault = Vault::new();
+
+    for round in 0..5 {
+        let id = vault.new_task(&format!("contested {round}"));
+        vault.ok("claude", &["task", "claim", &id]);
+
+        let outcomes = in_parallel(&["claude", "claude"], |_| {
+            vec![
+                vault.raw(
+                    "claude",
+                    &["task", "block", &id, "--reason", "waiting on review"],
+                ),
+                vault.raw("claude", &["task", "done", &id]),
+            ]
+        });
+        let won = outcomes
+            .iter()
+            .flatten()
+            .filter(|o| o.status.success())
+            .count();
+        assert!(won >= 1, "round {round}: {outcomes:?}");
+
+        let status = vault.status_of(&id);
+        assert!(
+            ["blocked", "completed"].contains(&status.as_str()),
+            "round {round} left `{status}`, which neither command asked for"
+        );
+    }
+}
+
+#[test]
+fn reparenting_a_task_from_two_goals_at_once_attaches_it_to_one() {
+    let vault = Vault::new();
+    let first = vault.new_task("first goal");
+    let second = vault.new_task("second goal");
+    let child = vault.new_task("the work");
+
+    let goals = [first.clone(), second.clone()];
+    let results = in_parallel(&["claude", "codex"], |agent| {
+        let index = usize::from(agent == "codex");
+        vault.run(
+            agent,
+            &["task", "update", &child, "--parent", &goals[index]],
+        )
+    });
+    assert!(successes(&results) >= 1, "{results:?}");
+
+    let parent = vault.json("alan", &["task", "get", &child])["task"]["parent"]
+        .as_str()
+        .map(str::to_owned);
+    assert!(
+        parent.as_deref() == Some(first.as_str()) || parent.as_deref() == Some(second.as_str()),
+        "the child hangs under one of the two goals, not neither: {parent:?}"
+    );
+
+    let counted: usize = [&first, &second]
+        .iter()
+        .map(|goal| {
+            vault.json("alan", &["task", "get", goal])["subtasks"]
+                .as_array()
+                .unwrap()
+                .len()
+        })
+        .sum();
+    assert_eq!(counted, 1, "and under only one of them");
+}
+
+#[test]
+fn a_dependency_added_as_its_blocker_finishes_does_not_strand_the_task() {
+    let vault = Vault::new();
+
+    for round in 0..5 {
+        let blocker = vault.new_task(&format!("blocker {round}"));
+        let waiting = vault.new_task(&format!("waiting {round}"));
+        vault.ok("claude", &["task", "claim", &blocker]);
+
+        let outcomes = in_parallel(&["claude", "codex"], |agent| {
+            if agent == "claude" {
+                vault.raw(agent, &["task", "done", &blocker])
+            } else {
+                vault.raw(agent, &["task", "dep", &waiting, "--add", &blocker])
+            }
+        });
+        assert!(outcomes.iter().any(|o| o.status.success()), "round {round}");
+
+        assert_eq!(
+            vault.status_of(&blocker),
+            "completed",
+            "the blocker finished whatever the dependency write did"
+        );
+        let status = vault.status_of(&waiting);
+        assert!(
+            ["pending", "blocked"].contains(&status.as_str()),
+            "round {round} left the waiting task `{status}`"
+        );
+    }
+}
+
+#[test]
+fn a_thread_read_by_everyone_at_once_stays_one_thread() {
+    let vault = Vault::new();
+    let readers = ["claude", "codex", "gemini", "pi"];
+    for agent in readers {
+        vault.ok(agent, &["announce"]);
+    }
+    let root = vault.json("alan", &["msg", "send", "broadcast", "--body", "opening"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let replies = in_parallel(&readers, |agent| {
+        vault.run(
+            agent,
+            &[
+                "msg",
+                "send",
+                "broadcast",
+                "--reply-to",
+                &root,
+                "--body",
+                &format!("from {agent}"),
+            ],
+        )
+    });
+    assert_eq!(successes(&replies), readers.len(), "{replies:?}");
+
+    let thread = vault.json("alan", &["msg", "thread", &root]);
+    assert_eq!(
+        thread.as_array().unwrap().len(),
+        readers.len() + 1,
+        "four replies to one opening, all on the same thread"
+    );
+}
