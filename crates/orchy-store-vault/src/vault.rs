@@ -62,22 +62,28 @@ impl Vault {
         &self.blobs
     }
 
+    pub async fn reindex(&self) -> Result<()> {
+        let scanned = self.scan().await?;
+        self.absorb(&scanned);
+        Ok(())
+    }
+
     /// A walk is not a snapshot. Refiling an entity writes it under its new status and unlinks
     /// it from its old one, and a walk that reads the new directory before the write and the
     /// old one after the unlink goes past the entity without ever seeing it — which is how a
-    /// listing silently loses a task that another agent is finishing at that moment.
+    /// listing silently loses a task another agent is finishing at that moment.
     ///
     /// So the directory is listed again once the reads are done, and anything that appeared in
     /// the meantime is read too. An entity missed that way is necessarily already at its new
     /// path by then: the unlink that hid it can only follow the write that put it there.
-    pub async fn reindex(&self) -> Result<()> {
-        let mut found = HashMap::new();
-        let mut scanned = HashSet::new();
+    async fn scan(&self) -> Result<Vec<(Id, Located, MarkdownFile)>> {
+        let mut found = Vec::new();
+        let mut seen_keys = HashSet::new();
         let mut batch = self.blobs.list("").await?;
 
         for _ in 0..RESCAN_PASSES {
             for key in batch {
-                if !scanned.insert(key.clone()) {
+                if !seen_keys.insert(key.clone()) {
                     continue;
                 }
                 if !self.layout.is_markdown(&key) || self.layout.is_runtime(&key) {
@@ -96,14 +102,8 @@ impl Vault {
                 let Ok(id) = Id::new(raw) else {
                     continue;
                 };
-                found.insert(
-                    id,
-                    Located {
-                        kind: kind_from(codec::kind_of(&file)),
-                        key,
-                        seen,
-                    },
-                );
+                let kind = kind_from(codec::kind_of(&file));
+                found.push((id, Located { kind, key, seen }, file));
             }
 
             batch = self
@@ -111,27 +111,33 @@ impl Vault {
                 .list("")
                 .await?
                 .into_iter()
-                .filter(|key| !scanned.contains(key))
+                .filter(|key| !seen_keys.contains(key))
                 .collect();
             if batch.is_empty() {
                 break;
             }
         }
+        Ok(found)
+    }
+
+    fn absorb(&self, scanned: &[(Id, Located, MarkdownFile)]) {
         let mut index = self.index.write().expect("index lock");
-        for (id, located) in found.iter_mut() {
+        let mut refreshed: HashMap<Id, Located> = HashMap::new();
+        for (id, located, _) in scanned {
+            let mut located = located.clone();
             // a rescan says where a file is, never what the caller last saw of it
             if let Some(previous) = index.get(id) {
                 located.seen = previous.seen;
             }
+            refreshed.insert(id.clone(), located);
         }
-        // a scan that runs while another process refiles an entity can walk past its old
-        // directory after the move and its new one before; forgetting it on that evidence
-        // would turn someone else's move into a deletion
+        // an entity the walk still managed to miss is not evidence of a deletion
         for (id, located) in index.iter() {
-            found.entry(id.clone()).or_insert_with(|| located.clone());
+            refreshed
+                .entry(id.clone())
+                .or_insert_with(|| located.clone());
         }
-        *index = found;
-        Ok(())
+        *index = refreshed;
     }
 
     pub fn locate(&self, id: &Id) -> Option<Located> {
@@ -310,13 +316,18 @@ impl Vault {
         Ok(())
     }
 
+    /// Walked rather than read out of the index: a listing has to show what other processes
+    /// have written since this one opened the vault, and the index only knows what was there
+    /// at the time.
     pub async fn load_all(&self, kind: EntityKind) -> Result<Vec<(String, MarkdownFile)>> {
-        let mut loaded = Vec::new();
-        for id in self.ids_of(kind) {
-            if let Some(pair) = self.peek_by_id(&id).await? {
-                loaded.push(pair);
-            }
-        }
+        let scanned = self.scan().await?;
+        self.absorb(&scanned);
+
+        let mut loaded: Vec<(String, MarkdownFile)> = scanned
+            .into_iter()
+            .filter(|(_, located, _)| located.kind == kind)
+            .map(|(_, located, file)| (located.key, file))
+            .collect();
         loaded.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(loaded)
     }
