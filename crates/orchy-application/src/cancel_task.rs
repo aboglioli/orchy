@@ -46,7 +46,7 @@ impl CancelTask {
         self.tasks.save(&mut task).await?;
 
         let _ = self.leases.release(&ResourceKey::task(&id), &actor).await;
-        let ancestors = self.rollup.execute(&id, &actor).await?;
+        let ancestors = self.rollup.execute(&id).await?;
 
         Ok(CompleteTaskResponse {
             task: TaskDto::from(&task),

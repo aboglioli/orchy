@@ -53,7 +53,7 @@ impl ReplaceTask {
 
     pub async fn execute(&self, cmd: ReplaceTaskCommand) -> ApplicationResult<ReplaceTaskResponse> {
         let original_id = Id::new(&cmd.task_id)?;
-        let actor: ActorId = cmd.actor.parse()?;
+        cmd.actor.parse::<ActorId>()?;
         let mut original = self.tasks.require(&original_id).await?;
 
         let mut created = Vec::new();
@@ -88,7 +88,7 @@ impl ReplaceTask {
         original.supersede(replacements, cmd.reason, &*self.clock)?;
         self.tasks.save(&mut original).await?;
 
-        let ancestors = self.rollup.execute(&original_id, &actor).await?;
+        let ancestors = self.rollup.execute(&original_id).await?;
 
         Ok(ReplaceTaskResponse {
             replaced: TaskDto::from(&original),
