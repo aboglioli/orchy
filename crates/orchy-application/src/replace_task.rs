@@ -56,9 +56,7 @@ impl ReplaceTask {
         cmd.actor.parse::<ActorId>()?;
         let mut original = self.tasks.require(&original_id).await?;
 
-        let mut created = Vec::new();
         let mut replacements = Vec::new();
-
         for raw in &cmd.titles {
             let mut replacement = Task::create(
                 Title::new(raw)?,
@@ -71,8 +69,22 @@ impl ReplaceTask {
                 replacement.attach_to(parent.clone(), &*self.clock)?;
             }
             replacement.set_priority(original.priority(), &*self.clock);
-            self.tasks.save(&mut replacement).await?;
+            replacements.push(replacement);
+        }
 
+        // retiring the original is the write two agents contend for, so it comes first. Losing
+        // it afterwards would leave the replacements standing in for a task that is still open,
+        // pointing at it with a `supersedes` link it never accepted.
+        original.supersede(
+            replacements.iter().map(|r| r.id().clone()).collect(),
+            cmd.reason,
+            &*self.clock,
+        )?;
+        self.tasks.save(&mut original).await?;
+
+        let mut created = Vec::new();
+        for mut replacement in replacements {
+            self.tasks.save(&mut replacement).await?;
             self.edges
                 .add(&Edge::new(
                     EntityRef::task(replacement.id().clone()),
@@ -80,13 +92,8 @@ impl ReplaceTask {
                     Relation::Supersedes,
                 )?)
                 .await?;
-
-            replacements.push(replacement.id().clone());
             created.push(TaskDto::from(&replacement));
         }
-
-        original.supersede(replacements, cmd.reason, &*self.clock)?;
-        self.tasks.save(&mut original).await?;
 
         let ancestors = self.rollup.execute(&original_id).await?;
 

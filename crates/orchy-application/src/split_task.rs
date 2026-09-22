@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
 
+const SETTLE_PASSES: u32 = 4;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SplitTaskCommand {
     pub task_id: String,
@@ -59,13 +61,66 @@ impl SplitTask {
                 Task::create(title, parent.namespace().clone(), &*self.ids, &*self.clock);
             child.attach_to(parent_id.clone(), &*self.clock)?;
             self.tasks.save(&mut child).await?;
-            created.push(TaskDto::from(&child));
+            created.push(child);
         }
+
+        let (kept, dropped) = self.reconcile(&parent_id, created).await?;
+        skipped.extend(dropped);
 
         Ok(SplitTaskResponse {
             parent: TaskDto::from(&parent),
-            created,
+            created: kept,
             skipped,
         })
+    }
+
+    /// The title check above reads the siblings before writing any, so two agents splitting one
+    /// goal the same way both find it empty and the goal ends up with every subtask twice.
+    /// There is no transaction to put them in, so the duplicate is settled after the fact: ids
+    /// are time-ordered, every process agrees on which of two same-titled siblings came first,
+    /// and each withdraws only what it wrote itself, which leaves exactly one of each title
+    /// whatever order they arrived in.
+    ///
+    /// The siblings are read until two readings agree, because a process that looked before
+    /// the others had written would see no duplicate to settle.
+    async fn reconcile(
+        &self,
+        parent_id: &Id,
+        created: Vec<Task>,
+    ) -> ApplicationResult<(Vec<TaskDto>, Vec<String>)> {
+        if created.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
+        let mut siblings = self.tasks.children_of(parent_id).await?;
+        for _ in 1..SETTLE_PASSES {
+            let again = self.tasks.children_of(parent_id).await?;
+            let settled = again.len() == siblings.len()
+                && again.iter().zip(&siblings).all(|(a, b)| a.id() == b.id());
+            siblings = again;
+            if settled {
+                break;
+            }
+        }
+
+        let mut kept = Vec::new();
+        let mut withdrawn = Vec::new();
+        for child in created {
+            let first = siblings
+                .iter()
+                .filter(|s| {
+                    s.title()
+                        .as_str()
+                        .eq_ignore_ascii_case(child.title().as_str())
+                })
+                .all(|s| s.id() >= child.id());
+            if first {
+                kept.push(TaskDto::from(&child));
+                continue;
+            }
+            self.tasks.delete(child.id()).await?;
+            withdrawn.push(child.title().to_string());
+        }
+        Ok((kept, withdrawn))
     }
 }
