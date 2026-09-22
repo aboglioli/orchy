@@ -84,6 +84,51 @@ impl Vault {
             .collect()
     }
 
+    fn new_document(&self, title: &str) -> String {
+        self.json("alan", &["new", "note", title, "--body", "start"])["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    fn document(&self, id: &str) -> serde_json::Value {
+        self.json("alan", &["read", id])["document"].clone()
+    }
+
+    fn body_of(&self, id: &str) -> String {
+        self.document(id)["body"].as_str().unwrap().to_owned()
+    }
+
+    fn edges_from(&self, entity: &str) -> Vec<String> {
+        self.json("alan", &["graph", entity])
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hop| hop["edge"]["to"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// Every file the vault owns, so a test can assert on what is actually on disk rather
+    /// than on what the CLI is willing to tell it.
+    fn files(&self) -> Vec<PathBuf> {
+        fn walk(dir: &Path, into: &mut Vec<PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else {
+                    into.push(path);
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(self.path(), &mut found);
+        found
+    }
+
     fn event_topics(&self) -> Vec<String> {
         self.json("alan", &["events"])
             .as_array()
@@ -529,4 +574,569 @@ fn partitions_are_created_as_configured_and_spread_the_load() {
         used > 1,
         "routing on the event key should spread fifteen aggregates over more than one partition"
     );
+}
+
+/// The invariant behind most of what follows: a command that reports success left its mark,
+/// and a command that could not leave its mark said so. Anything in between is a lost update.
+fn successes(results: &[Result<String, String>]) -> usize {
+    results.iter().filter(|r| r.is_ok()).count()
+}
+
+#[test]
+fn concurrent_appends_to_one_document_are_never_silently_dropped() {
+    let vault = Vault::new();
+    let id = vault.new_document("contended");
+
+    let writers = ["ann", "bob", "cal", "dee", "eve", "fay", "gil", "hal"];
+    let results = in_parallel(&writers, |agent| {
+        vault.run(agent, &["edit", &id, "--content", &format!("line-{agent}")])
+    });
+
+    let landed = vault.body_of(&id).matches("line-").count();
+    assert_eq!(
+        successes(&results),
+        landed,
+        "every reported success must be on disk: {results:?}"
+    );
+    assert!(landed >= 1, "somebody has to win");
+}
+
+#[test]
+fn an_edit_that_loses_a_race_is_refused_rather_than_dropped() {
+    let vault = Vault::new();
+
+    for round in 0..5 {
+        let id = vault.new_document(&format!("round {round}"));
+        let marker = format!("edit-{round}");
+
+        let outcomes = in_parallel(&["claude", "codex"], |agent| {
+            if agent == "claude" {
+                ("archive", vault.raw(agent, &["archive", &id]))
+            } else {
+                (
+                    "edit",
+                    vault.raw(agent, &["edit", &id, "--content", &marker]),
+                )
+            }
+        });
+
+        let document = vault.document(&id);
+        for (what, output) in &outcomes {
+            let landed = match *what {
+                "archive" => document["status"] == "archived",
+                _ => document["body"].as_str().unwrap().contains(&marker),
+            };
+            if output.status.success() {
+                assert!(
+                    landed,
+                    "`{what}` reported success in round {round} but its change is gone"
+                );
+            } else {
+                assert_eq!(
+                    output.status.code(),
+                    Some(5),
+                    "a lost race is a refusal the agent can branch on"
+                );
+                assert!(
+                    !landed,
+                    "`{what}` was refused in round {round} yet changed the document"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_digest_taken_before_someone_elses_edit_no_longer_matches() {
+    let vault = Vault::new();
+    let id = vault.new_document("guarded");
+    let stale = vault.document(&id)["content_hash"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    vault.ok(
+        "claude",
+        &["edit", &id, "--content", "someone got here first"],
+    );
+
+    let refused = vault.raw(
+        "codex",
+        &["edit", &id, "--content", "mine", "--if-match", &stale],
+    );
+    assert_eq!(refused.status.code(), Some(5));
+    assert!(
+        !vault.body_of(&id).contains("mine"),
+        "a refused edit writes nothing"
+    );
+}
+
+#[test]
+fn links_added_to_one_hub_at_once_all_land() {
+    let vault = Vault::new();
+    let hub = vault.new_task("hub");
+    let targets: Vec<String> = (0..5)
+        .map(|n| vault.new_document(&format!("output {n}")))
+        .collect();
+
+    let results = in_parallel(&TEAM, |agent| {
+        let index = TEAM.iter().position(|a| a == &agent).unwrap();
+        vault.run(
+            agent,
+            &[
+                "link",
+                &format!("task:{hub}"),
+                &format!("document:{}", targets[index]),
+                "--rel",
+                "produces",
+            ],
+        )
+    });
+
+    assert_eq!(successes(&results), TEAM.len(), "{results:?}");
+    assert_eq!(
+        vault.edges_from(&format!("task:{hub}")).len(),
+        TEAM.len(),
+        "five writers to one frontmatter field, five edges"
+    );
+}
+
+#[test]
+fn links_removed_from_one_hub_at_once_all_disappear() {
+    let vault = Vault::new();
+    let hub = vault.new_task("hub");
+    let targets: Vec<String> = (0..5)
+        .map(|n| vault.new_document(&format!("output {n}")))
+        .collect();
+    for target in &targets {
+        vault.ok(
+            "alan",
+            &[
+                "link",
+                &format!("task:{hub}"),
+                &format!("document:{target}"),
+                "--rel",
+                "produces",
+            ],
+        );
+    }
+
+    let results = in_parallel(&TEAM, |agent| {
+        let index = TEAM.iter().position(|a| a == &agent).unwrap();
+        vault.run(
+            agent,
+            &[
+                "unlink",
+                &format!("task:{hub}"),
+                &format!("document:{}", targets[index]),
+                "--rel",
+                "produces",
+            ],
+        )
+    });
+
+    assert_eq!(successes(&results), TEAM.len(), "{results:?}");
+    assert!(
+        vault.edges_from(&format!("task:{hub}")).is_empty(),
+        "a removal that reports success has removed something"
+    );
+}
+
+#[test]
+fn fields_set_on_one_document_at_once_do_not_erase_each_other() {
+    let vault = Vault::new();
+    let id = vault.new_document("shared");
+    let fields = ["owner", "severity", "area", "source"];
+
+    let results = in_parallel(&fields, |field| {
+        vault.run(field, &["set", &id, &format!("{field}=set-by-{field}")])
+    });
+
+    let present = vault.document(&id)["frontmatter"]
+        .as_object()
+        .unwrap()
+        .len();
+    assert_eq!(
+        successes(&results),
+        present,
+        "a set that reported success is in the frontmatter: {results:?}"
+    );
+}
+
+#[test]
+fn a_task_can_only_be_started_once() {
+    let vault = Vault::new();
+    let id = vault.new_task("one start");
+    vault.ok("claude", &["task", "claim", &id]);
+
+    let codes = in_parallel(&["claude"; 3], |agent| {
+        vault.raw(agent, &["task", "start", &id]).status.code()
+    });
+
+    assert_eq!(
+        codes.iter().filter(|c| **c == Some(0)).count(),
+        1,
+        "the second start is not a no-op, it is a refusal: {codes:?}"
+    );
+    assert!(codes.iter().all(|c| *c == Some(0) || *c == Some(5)));
+    assert_eq!(vault.status_of(&id), "in_progress");
+}
+
+#[test]
+fn a_task_can_only_be_finished_once() {
+    let vault = Vault::new();
+    let id = vault.new_task("one finish");
+    vault.ok("claude", &["task", "claim", &id]);
+
+    let codes = in_parallel(&["claude"; 4], |agent| {
+        vault.raw(agent, &["task", "done", &id]).status.code()
+    });
+
+    assert_eq!(
+        codes.iter().filter(|c| **c == Some(0)).count(),
+        1,
+        "{codes:?}"
+    );
+    assert_eq!(vault.status_of(&id), "completed");
+    assert_eq!(
+        vault
+            .event_topics()
+            .iter()
+            .filter(|t| *t == "task.finished")
+            .count(),
+        1,
+        "one finish, one event: the log is what an auditor reads"
+    );
+}
+
+#[test]
+fn finishing_and_abandoning_at_once_leaves_exactly_one_terminal_status() {
+    let vault = Vault::new();
+
+    for round in 0..5 {
+        let id = vault.new_task(&format!("contested {round}"));
+        vault.ok("claude", &["task", "claim", &id]);
+
+        let outcomes = in_parallel(&["claude", "claude"], |_| {
+            vec![
+                vault.raw("claude", &["task", "done", &id]),
+                vault.raw("claude", &["task", "cancel", &id, "changed my mind"]),
+            ]
+        });
+        let won = outcomes
+            .iter()
+            .flatten()
+            .filter(|o| o.status.success())
+            .count();
+
+        let status = vault.status_of(&id);
+        assert!(
+            ["completed", "cancelled"].contains(&status.as_str()),
+            "round {round} left `{status}`"
+        );
+        assert!(won >= 1, "somebody has to win round {round}");
+    }
+}
+
+#[test]
+fn a_contested_claim_records_one_holder_and_one_event() {
+    let vault = Vault::new();
+    let id = vault.new_task("one holder");
+
+    let results = in_parallel(&TEAM, |agent| vault.run(agent, &["task", "claim", &id]));
+
+    assert_eq!(successes(&results), 1, "{results:?}");
+    let task = vault.json("alan", &["task", "get", &id])["task"].clone();
+    assert!(task["claimed_by"].is_string(), "the winner is recorded");
+    assert_eq!(
+        vault
+            .event_topics()
+            .iter()
+            .filter(|t| *t == "task.claimed")
+            .count(),
+        1,
+        "a claim that was refused must not have logged itself"
+    );
+}
+
+#[test]
+fn a_wide_fan_of_children_finishing_together_rolls_the_parent_up_once() {
+    let vault = Vault::new();
+    let goal = vault.new_task("the goal");
+    let names: Vec<String> = (0..8).map(|n| format!("part {n}")).collect();
+    let mut split = vec!["task", "split", &goal];
+    split.extend(names.iter().map(String::as_str));
+    let created = vault.json("alan", &split);
+    let children: Vec<String> = created["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect();
+
+    let finished = in_parallel(
+        &children.iter().map(String::as_str).collect::<Vec<_>>(),
+        |child| {
+            vault.run("claude", &["task", "claim", child])?;
+            vault.run("claude", &["task", "done", child])
+        },
+    );
+    assert_eq!(successes(&finished), children.len(), "{finished:?}");
+
+    assert_eq!(vault.status_of(&goal), "completed");
+    assert_eq!(
+        vault
+            .event_topics()
+            .iter()
+            .filter(|t| *t == "task.rolled_up")
+            .count(),
+        1,
+        "eight children reporting at once still move the parent once"
+    );
+}
+
+#[test]
+fn a_parent_is_never_left_in_a_state_none_of_its_children_justify() {
+    let vault = Vault::new();
+    let goal = vault.new_task("mixed outcome");
+    let split = vault.json(
+        "alan",
+        &["task", "split", &goal, "works", "fails", "dropped"],
+    );
+    let children: Vec<String> = split["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect();
+
+    let outcomes = ["done", "fail", "cancel"];
+    let finished = in_parallel(&["claude", "codex", "gemini"], |agent| {
+        let index = ["claude", "codex", "gemini"]
+            .iter()
+            .position(|a| a == &agent)
+            .unwrap();
+        let child = &children[index];
+        vault.run(agent, &["task", "claim", child])?;
+        match outcomes[index] {
+            "cancel" => vault.run(agent, &["task", "cancel", child, "not needed"]),
+            "fail" => vault.run(agent, &["task", "fail", child, "broken"]),
+            _ => vault.run(agent, &["task", "done", child]),
+        }
+    });
+    assert_eq!(successes(&finished), 3, "{finished:?}");
+
+    assert_eq!(
+        vault.status_of(&goal),
+        "failed",
+        "one failed child makes the goal failed, whatever order they reported in"
+    );
+}
+
+#[test]
+fn repeated_acquire_and_release_never_admits_two_holders() {
+    let vault = Vault::new();
+
+    for round in 0..8 {
+        let results = in_parallel(&TEAM, |agent| {
+            vault.run(agent, &["lock", "acquire", "deploy/prod"])
+        });
+        let holders = successes(&results);
+        assert_eq!(
+            holders, 1,
+            "round {round} admitted {holders} holders: {results:?}"
+        );
+
+        let holder = TEAM[results.iter().position(|r| r.is_ok()).unwrap()];
+        vault.ok(holder, &["lock", "release", "deploy/prod"]);
+    }
+}
+
+#[test]
+fn agents_taking_two_locks_in_opposite_orders_all_terminate() {
+    let vault = Vault::new();
+
+    for _ in 0..6 {
+        let outcomes = in_parallel(&["claude", "codex"], |agent| {
+            let order = if agent == "claude" {
+                ["schema", "migrations"]
+            } else {
+                ["migrations", "schema"]
+            };
+            let taken: Vec<bool> = order
+                .iter()
+                .map(|resource| vault.run(agent, &["lock", "acquire", resource]).is_ok())
+                .collect();
+            for (resource, held) in order.iter().zip(&taken) {
+                if *held {
+                    let _ = vault.run(agent, &["lock", "release", resource]);
+                }
+            }
+            taken
+        });
+
+        assert_eq!(
+            outcomes.len(),
+            2,
+            "a lock that queues instead of refusing would hang here"
+        );
+    }
+
+    assert!(
+        vault.run("gemini", &["lock", "acquire", "schema"]).is_ok(),
+        "both resources are free again once everyone has let go"
+    );
+}
+
+#[test]
+fn one_agent_reading_two_messages_at_once_does_not_resurrect_either() {
+    let vault = Vault::new();
+    vault.ok("claude", &["announce"]);
+    let ids: Vec<String> = (0..4)
+        .map(|n| self::message(&vault, &format!("note {n}")))
+        .collect();
+
+    let results = in_parallel(&ids.iter().map(String::as_str).collect::<Vec<_>>(), |id| {
+        vault.run("claude", &["msg", "read", id])
+    });
+    assert_eq!(successes(&results), ids.len(), "{results:?}");
+
+    let unread = vault
+        .json("claude", &["msg", "inbox"])
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(
+        unread, 0,
+        "an older watermark overwriting a newer one brings read messages back"
+    );
+}
+
+fn message(vault: &Vault, body: &str) -> String {
+    vault.json("alan", &["msg", "send", "broadcast", "--body", body])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn concurrent_posts_all_reach_the_board() {
+    let vault = Vault::new();
+    vault.ok("claude", &["announce"]);
+
+    let results = in_parallel(&TEAM, |agent| {
+        vault.run(
+            agent,
+            &[
+                "msg",
+                "send",
+                "broadcast",
+                "--body",
+                &format!("from {agent}"),
+            ],
+        )
+    });
+    assert_eq!(successes(&results), TEAM.len(), "{results:?}");
+
+    let inbox = vault
+        .json("claude", &["msg", "inbox"])
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(inbox, TEAM.len() - 1, "claude does not hear itself");
+}
+
+#[test]
+fn a_storm_of_mixed_work_leaves_a_vault_that_still_reads_back() {
+    let vault = Vault::new();
+    for agent in TEAM {
+        vault.ok(agent, &["announce"]);
+    }
+    let shared = vault.new_document("the shared page");
+    let tasks: Vec<String> = (0..5)
+        .map(|n| vault.new_task(&format!("job {n}")))
+        .collect();
+
+    in_parallel(&TEAM, |agent| {
+        let index = TEAM.iter().position(|a| a == &agent).unwrap();
+        let task = &tasks[index];
+        let _ = vault.run(agent, &["task", "claim", task]);
+        let _ = vault.run(
+            agent,
+            &["edit", &shared, "--content", &format!("from {agent}")],
+        );
+        let _ = vault.run(
+            agent,
+            &[
+                "new",
+                "discovery",
+                &format!("found by {agent}"),
+                "--body",
+                "x",
+            ],
+        );
+        let _ = vault.run(
+            agent,
+            &[
+                "link",
+                &format!("task:{task}"),
+                &format!("document:{shared}"),
+                "--rel",
+                "produces",
+            ],
+        );
+        let _ = vault.run(agent, &["msg", "send", "broadcast", "--body", "status"]);
+        let _ = vault.run(agent, &["task", "done", task]);
+    });
+
+    for task in &tasks {
+        assert_eq!(
+            vault.status_of(task),
+            "completed",
+            "every claimed task finished under its own holder"
+        );
+    }
+    assert!(
+        vault.body_of(&shared).contains("from "),
+        "the contended page survived"
+    );
+
+    let files = vault.files();
+    let strays: Vec<_> = files
+        .iter()
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().ends_with(".tmp"))
+        })
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "no half-written scratch files: {strays:?}"
+    );
+
+    let mut ids = Vec::new();
+    for path in &files {
+        let relative = path.strip_prefix(vault.path()).unwrap();
+        if !relative.starts_with("docs") && !relative.starts_with("tasks") {
+            continue;
+        }
+        let text = std::fs::read_to_string(path).unwrap();
+        if let Some(line) = text.lines().find(|l| l.starts_with("id: ")) {
+            ids.push(line.trim_start_matches("id: ").to_owned());
+        }
+    }
+    let distinct: BTreeSet<&String> = ids.iter().collect();
+    assert_eq!(
+        distinct.len(),
+        ids.len(),
+        "a move that left the old copy behind would put one id in two files"
+    );
+
+    for id in &distinct {
+        assert!(
+            vault.run("alan", &["read", id]).is_ok()
+                || vault.run("alan", &["task", "get", id]).is_ok(),
+            "`{id}` is on disk but the index cannot reach it"
+        );
+    }
 }
