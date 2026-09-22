@@ -20,10 +20,9 @@ impl FileWatermarks {
         self.root.join(format!("{actor}.json"))
     }
 
-    /// One actor still runs several orchy processes at once, so the file is locked rather
-    /// than replaced: a rename would swap the inode out from under a lock nobody could then
-    /// rely on, and a plain truncate-and-write lets a reader see the empty middle and
-    /// conclude nothing has ever been read.
+    /// Locked rather than replaced, because one actor still runs several orchy processes at
+    /// once: a rename would swap the inode out from under the lock, and a bare truncate lets a
+    /// reader see the empty middle and conclude nothing has ever been read.
     fn open(&self, actor: &ActorId) -> Result<File> {
         std::fs::create_dir_all(&self.root)
             .map_err(|e| DomainError::validation(format!("creating watermark directory: {e}")))?;
@@ -61,9 +60,8 @@ impl ReadWatermarks for FileWatermarks {
         Ok(mark)
     }
 
-    /// Ids are time-ordered, so the mark only ever moves forward. Without that, two of one
-    /// agent's processes marking different messages read would let the older one win and
-    /// resurrect everything in between.
+    /// Ids are time-ordered, so the mark only moves forward: otherwise one agent's two
+    /// processes race and the older mark resurrects everything in between.
     fn advance(&self, actor: &ActorId, to: &Id) -> Result<()> {
         let mut file = self.open(actor)?;
         FileExt::lock_exclusive(&file)

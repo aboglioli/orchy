@@ -141,9 +141,8 @@ impl FileLeaseStore {
         serde_json::from_slice(&bytes).ok()
     }
 
-    /// The lock file is never unlinked, only rewritten. `flock` orders holders of one inode;
-    /// removing the file lets the next two acquirers lock two different inodes for the same
-    /// key, find no record on either, and both walk away believing they hold it.
+    /// Never unlinked, only rewritten: `flock` orders the holders of one inode, so removing
+    /// the file would let the next two acquirers lock two inodes and both believe they won.
     fn open_lock(&self, key: &ResourceKey) -> Result<std::fs::File> {
         std::fs::create_dir_all(&self.root)
             .map_err(|e| DomainError::validation(format!("creating lock directory: {e}")))?;
@@ -226,8 +225,6 @@ impl LeaseStore for FileLeaseStore {
             Some(record) if record.holder != by.to_string() && record.expires_at > now => Err(
                 DomainError::forbidden(format!("`{key}` is held by {}, not {by}", record.holder)),
             ),
-            // expiring the record in place, rather than unlinking it, keeps one inode per key
-            // and carries the generation forward
             Some(record) => self.write_record(
                 key,
                 &LeaseRecord {

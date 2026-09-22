@@ -30,10 +30,9 @@ impl VaultEdgeStore {
         Self { vault }
     }
 
-    /// Adding or dropping one target is a set edit, and set edits commute: losing a race
-    /// means someone else's target joined the field, not that this one is unwanted. Re-reading
-    /// and reapplying is the only sensible answer, so it happens here rather than surfacing as
-    /// a conflict the agent could answer no other way.
+    /// A set edit commutes, so losing the race means someone else's target joined the field,
+    /// not that this one is unwanted. Reapplied here rather than surfaced as a conflict the
+    /// agent could only answer the same way.
     async fn amend(
         &self,
         entity: &EntityRef,

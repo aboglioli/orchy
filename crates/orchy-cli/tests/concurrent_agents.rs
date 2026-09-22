@@ -1,8 +1,6 @@
-//! Several agents driving the real binary at once.
-//!
-//! Sequential tests miss the failures that matter for a tool whose premise is a team: a queue
-//! that hands two agents the same task, a lock held for a whole process, a write lost because
-//! two of them landed together. Everything here spawns real processes in parallel.
+//! Several agents driving the real binary at once: every test here spawns real processes in
+//! parallel, because the failures that matter for a tool whose premise is a team only appear
+//! when two of them land together.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -108,8 +106,6 @@ impl Vault {
             .collect()
     }
 
-    /// Every file the vault owns, so a test can assert on what is actually on disk rather
-    /// than on what the CLI is willing to tell it.
     fn files(&self) -> Vec<PathBuf> {
         fn walk(dir: &Path, into: &mut Vec<PathBuf>) {
             let Ok(entries) = std::fs::read_dir(dir) else {
@@ -139,7 +135,6 @@ impl Vault {
     }
 }
 
-/// Run one closure per agent, all at once, and collect what each got back.
 fn in_parallel<T, F>(agents: &[&str], body: F) -> Vec<T>
 where
     T: Send,
@@ -576,8 +571,8 @@ fn partitions_are_created_as_configured_and_spread_the_load() {
     );
 }
 
-/// The invariant behind most of what follows: a command that reports success left its mark,
-/// and a command that could not leave its mark said so. Anything in between is a lost update.
+/// The invariant behind most of what follows: successes must equal what is on disk, because
+/// anything in between is a lost update.
 fn successes(results: &[Result<String, String>]) -> usize {
     results.iter().filter(|r| r.is_ok()).count()
 }
@@ -1266,8 +1261,8 @@ fn a_listing_shows_the_work_another_process_created_after_this_one_started() {
     let vault = Vault::new();
     let goal = vault.new_task("the goal");
 
-    // `split` is the one command that both writes subtasks and reads them back, so it is where
-    // a listing served from a stale index would show a process only its own work
+    // `split` both writes subtasks and reads them back, so a listing served from a stale index
+    // would show each process only its own work
     vault.ok("claude", &["task", "split", &goal, "design"]);
     vault.ok("codex", &["task", "split", &goal, "build"]);
 

@@ -74,15 +74,11 @@ impl SplitTask {
         })
     }
 
-    /// The title check above reads the siblings before writing any, so two agents splitting one
-    /// goal the same way both find it empty and the goal ends up with every subtask twice.
-    /// There is no transaction to put them in, so the duplicate is settled after the fact: ids
-    /// are time-ordered, every process agrees on which of two same-titled siblings came first,
-    /// and each withdraws only what it wrote itself, which leaves exactly one of each title
-    /// whatever order they arrived in.
-    ///
-    /// The siblings are read until two readings agree, because a process that looked before
-    /// the others had written would see no duplicate to settle.
+    /// The title check above reads the siblings before writing any, so two agents splitting a
+    /// goal the same way both find it empty. With no transaction to put the writes in, the
+    /// duplicate is settled afterwards: ids are time-ordered, so every process agrees which
+    /// same-titled sibling came first, and each withdraws only what it wrote itself. Read until
+    /// two readings agree, or a process that looked too early sees no duplicate to settle.
     async fn reconcile(
         &self,
         parent_id: &Id,

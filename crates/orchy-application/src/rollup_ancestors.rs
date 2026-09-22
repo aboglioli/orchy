@@ -39,6 +39,10 @@ impl RollupAncestors {
         Ok(changed)
     }
 
+    /// Every child that finishes derives the parent, so two finishing together both try to move
+    /// it. No lease, because one that is not granted would have to be waited for: the holder
+    /// may have read the children before this one was saved. A rollup is a pure function of the
+    /// children, so a lost write just means deciding again on a parent that is terminal by then.
     async fn derive(&self, parent_id: &Id) -> ApplicationResult<Option<Task>> {
         for _ in 0..DERIVE_ATTEMPTS {
             let Some(mut parent) = self.tasks.get(parent_id).await? else {

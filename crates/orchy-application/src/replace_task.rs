@@ -72,9 +72,8 @@ impl ReplaceTask {
             replacements.push(replacement);
         }
 
-        // retiring the original is the write two agents contend for, so it comes first. Losing
-        // it afterwards would leave the replacements standing in for a task that is still open,
-        // pointing at it with a `supersedes` link it never accepted.
+        // retiring the original is the write two agents contend for, so it comes first: losing
+        // it afterwards leaves replacements standing in for a task that is still open
         original.supersede(
             replacements.iter().map(|r| r.id().clone()).collect(),
             cmd.reason,

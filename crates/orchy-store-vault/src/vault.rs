@@ -19,11 +19,8 @@ pub enum Precondition {
     /// Overwrite whatever is there. For a file this process alone is responsible for.
     Any,
     /// The bytes must still be the ones this process last read, and an entity it has never
-    /// seen must not be there at all.
-    ///
-    /// Reading and writing are separate calls, so two agents can both load an entity, both
-    /// change it, and the later write silently discard the earlier one. This turns that into
-    /// a refusal the caller can see.
+    /// seen must not be there at all. Reading and writing are separate calls, so without this
+    /// two agents both load an entity, both change it, and the later write wins in silence.
     Unchanged,
 }
 
@@ -68,14 +65,10 @@ impl Vault {
         Ok(())
     }
 
-    /// A walk is not a snapshot. Refiling an entity writes it under its new status and unlinks
-    /// it from its old one, and a walk that reads the new directory before the write and the
-    /// old one after the unlink goes past the entity without ever seeing it — which is how a
-    /// listing silently loses a task another agent is finishing at that moment.
-    ///
-    /// So the directory is listed again once the reads are done, and anything that appeared in
-    /// the meantime is read too. An entity missed that way is necessarily already at its new
-    /// path by then: the unlink that hid it can only follow the write that put it there.
+    /// A walk is not a snapshot: refiling writes the entity under its new status and unlinks
+    /// the old, so a walk passing the new directory before the write and the old one after the
+    /// unlink never sees it. Hence the re-list — an entity missed that way is already at its
+    /// new path, because the unlink that hid it can only follow the write that put it there.
     async fn scan(&self) -> Result<Vec<(Id, Located, MarkdownFile)>> {
         let mut found = Vec::new();
         let mut seen_keys = HashSet::new();
@@ -131,7 +124,7 @@ impl Vault {
             }
             refreshed.insert(id.clone(), located);
         }
-        // an entity the walk still managed to miss is not evidence of a deletion
+        // an entity the walk still missed is not evidence of a deletion
         for (id, located) in index.iter() {
             refreshed
                 .entry(id.clone())
@@ -163,8 +156,8 @@ impl Vault {
         MarkdownFile::parse(&text).map(Some)
     }
 
-    /// A read the caller will act on, so the bytes it saw become the precondition for its
-    /// next write.
+    /// A read the caller will act on, so what it saw becomes the precondition for its next
+    /// write. Use `peek_by_id` for a read taken on the way to a write.
     pub async fn read_by_id(&self, id: &Id) -> Result<Option<(String, MarkdownFile)>> {
         let Some((located, bytes)) = self.bytes_of(id).await? else {
             return Ok(None);
@@ -179,10 +172,8 @@ impl Vault {
         Ok(parse(&bytes, &located.key)?.map(|file| (located.key, file)))
     }
 
-    /// A read taken as part of a write — carrying inert frontmatter forward, listing siblings
-    /// to derive a parent — is not something the caller observed and reasoned about. Counting
-    /// it would move the watermark to the instant before the write and make every precondition
-    /// trivially true.
+    /// Counting a read taken on the way to a write would move the precondition to the instant
+    /// before that write and make it trivially true.
     pub async fn peek_by_id(&self, id: &Id) -> Result<Option<(String, MarkdownFile)>> {
         let Some((located, bytes)) = self.bytes_of(id).await? else {
             return Ok(None);
@@ -190,12 +181,9 @@ impl Vault {
         Ok(parse(&bytes, &located.key)?.map(|file| (located.key, file)))
     }
 
-    /// The index says where things were when this process started, and another process refiles
-    /// an entity every time its status changes, so a miss means rescan rather than report it
-    /// gone. Refiling is a write to the new directory and an unlink from the old, and a scan
-    /// that reads the new one before the write and the old one after the unlink walks past the
-    /// entity entirely — so a miss is retried until the move it raced has settled, and only
-    /// then believed.
+    /// The index says where things were when this process opened the vault, so a miss means
+    /// rescan rather than report the entity gone — and is retried, because a scan can itself
+    /// race the refile it is looking for.
     async fn bytes_of(&self, id: &Id) -> Result<Option<(Located, Vec<u8>)>> {
         for attempt in 0..LOOKUP_ATTEMPTS {
             let Some(located) = self.locate(id) else {
@@ -223,11 +211,6 @@ impl Vault {
         self.write_if(key, file, id, kind, Precondition::Any).await
     }
 
-    /// Write only when the file still holds what the caller last read.
-    ///
-    /// Reading and writing are separate calls, so two agents can both load a document, both
-    /// change it, and the later write silently discard the earlier one. The precondition is
-    /// what turns that into a refusal the caller can see.
     pub async fn write_if(
         &self,
         key: &str,
@@ -243,9 +226,8 @@ impl Vault {
             (Precondition::Unchanged, Some(located)) => {
                 self.take(located, key, &rendered, id).await?;
             }
-            // an entity this process has no record of is one it is creating, so the file it
-            // is about to write must not already exist. Claiming the key rather than
-            // overwriting it is what stops a lost index entry from becoming a lost write.
+            // an entity with no index entry is one this process is creating, so claim the key
+            // rather than overwrite it: a lost entry must not become a lost write
             (Precondition::Unchanged, None) => {
                 if !self
                     .blobs
@@ -278,14 +260,10 @@ impl Vault {
         Ok(())
     }
 
-    /// The compare and the write are one step. Split in two, a second writer fits between
-    /// them: it passes its own check, and the write that follows still discards the change
-    /// this one just made.
-    ///
-    /// The contention is on where the entity sits *now*, not where it is going — placement
-    /// follows frontmatter, so an ordinary status change moves the file, and a destination
-    /// path is supposed to be empty. Winning the compare on the old key is what proves
-    /// nobody else touched the entity, so a move writes there first and unlinks it after.
+    /// The contention is on where the entity sits *now*, not where it is going: placement
+    /// follows frontmatter, so a status change moves the file and the destination is supposed
+    /// to be empty. Winning the compare on the old key is the proof, so a move writes there
+    /// first and unlinks it after.
     async fn take(&self, located: &Located, key: &str, rendered: &str, id: &Id) -> Result<()> {
         let taken = self
             .blobs
@@ -316,9 +294,8 @@ impl Vault {
         Ok(())
     }
 
-    /// Walked rather than read out of the index: a listing has to show what other processes
-    /// have written since this one opened the vault, and the index only knows what was there
-    /// at the time.
+    /// Walked rather than served from the index, which only knows what was there when this
+    /// process opened the vault.
     pub async fn load_all(&self, kind: EntityKind) -> Result<Vec<(String, MarkdownFile)>> {
         let scanned = self.scan().await?;
         self.absorb(&scanned);

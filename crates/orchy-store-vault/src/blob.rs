@@ -24,11 +24,9 @@ pub trait BlobStore: Send + Sync {
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<()>;
 
     /// Replace `key` only if what is there now digests to `expected`, atomically with respect
-    /// to every other writer. `None` means the key must be absent.
-    ///
-    /// Comparing and writing as two calls is not enough: another process fits entirely between
-    /// them, and the write that follows a passing check still discards someone else's change.
-    /// Returns `false` when the precondition did not hold and nothing was written.
+    /// to every other writer; `None` means the key must be absent. Returns `false` when the
+    /// precondition did not hold and nothing was written. Comparing and writing as two calls
+    /// is not enough: another process fits entirely between them.
     async fn compare_and_put(&self, key: &str, expected: Option<u64>, bytes: &[u8])
     -> Result<bool>;
 
@@ -57,9 +55,8 @@ async fn ensure_parent(path: &Path) -> Result<()> {
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
 
-    // The scratch name is unique per writer. Derived from the target alone, two processes
-    // writing the same key would share one file: each truncates the other's, and the loser
-    // renames either nothing or the winner's half-written bytes into place.
+    // unique per writer: derived from the target alone, two processes writing one key would
+    // share a scratch file and the loser would rename half-written bytes into place
     let temp = path.with_extension(format!(
         "{}.{}.{}.tmp",
         path.extension().and_then(|e| e.to_str()).unwrap_or(""),
