@@ -170,6 +170,9 @@ pub struct LeaseDto {
     pub holder: String,
     pub acquired_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+    /// Raised every time the resource changes hands, so a holder that was superseded while it
+    /// worked can tell: the number it was given is no longer the one on the lease.
+    pub generation: u64,
 }
 
 impl From<&Lease> for LeaseDto {
@@ -179,6 +182,7 @@ impl From<&Lease> for LeaseDto {
             holder: lease.holder().to_string(),
             acquired_at: lease.acquired_at(),
             expires_at: lease.expires_at(),
+            generation: lease.generation(),
         }
     }
 }

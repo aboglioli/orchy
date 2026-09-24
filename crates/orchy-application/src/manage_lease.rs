@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::Duration;
-use orchy_core::{ActorId, LeaseStore, ResourceKey};
+use orchy_core::{ActorId, DomainError, LeaseStore, ResourceKey};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::LeaseDto;
@@ -22,8 +22,10 @@ pub struct ManageLeaseCommand {
 pub enum LeaseAction {
     #[default]
     Acquire,
+    Renew,
     Release,
     Check,
+    Held,
 }
 
 pub struct ManageLease {
@@ -36,13 +38,30 @@ impl ManageLease {
     }
 
     pub async fn execute(&self, cmd: ManageLeaseCommand) -> ApplicationResult<Option<LeaseDto>> {
+        if cmd.action == LeaseAction::Held {
+            return Ok(None);
+        }
         let key = ResourceKey::new(&cmd.resource)?;
+        let seconds = cmd.ttl_seconds.unwrap_or(DEFAULT_TTL_SECS);
+        if seconds <= 0 {
+            // a lease that has already lapsed is not a lease; refusing says so where the
+            // caller typed it rather than letting it look like a lock nobody can see
+            return Err(DomainError::validation(format!(
+                "ttl must be a positive number of seconds, not {seconds}"
+            ))
+            .into());
+        }
+        let ttl = Duration::seconds(seconds);
 
         match cmd.action {
             LeaseAction::Acquire => {
                 let actor: ActorId = cmd.actor.parse()?;
-                let ttl = Duration::seconds(cmd.ttl_seconds.unwrap_or(DEFAULT_TTL_SECS));
                 let lease = self.leases.acquire(&key, &actor, ttl).await?;
+                Ok(Some(LeaseDto::from(&lease)))
+            }
+            LeaseAction::Renew => {
+                let actor: ActorId = cmd.actor.parse()?;
+                let lease = self.leases.renew(&key, &actor, ttl).await?;
                 Ok(Some(LeaseDto::from(&lease)))
             }
             LeaseAction::Release => {
@@ -51,6 +70,17 @@ impl ManageLease {
                 Ok(None)
             }
             LeaseAction::Check => Ok(self.leases.check(&key).await?.as_ref().map(LeaseDto::from)),
+            LeaseAction::Held => unreachable!("answered before a key is required"),
         }
+    }
+
+    pub async fn held(&self) -> ApplicationResult<Vec<LeaseDto>> {
+        Ok(self
+            .leases
+            .held()
+            .await?
+            .iter()
+            .map(LeaseDto::from)
+            .collect())
     }
 }

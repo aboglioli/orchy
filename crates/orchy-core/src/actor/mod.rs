@@ -27,8 +27,17 @@ pub trait ActorStore: Send + Sync {
 #[async_trait]
 pub trait LeaseStore: Send + Sync {
     async fn acquire(&self, key: &ResourceKey, by: &ActorId, ttl: Duration) -> Result<Lease>;
+
+    /// Extend a lease without taking it again. Re-acquiring bumps the generation, which is
+    /// what a holder uses to tell its own lease from the one that replaced it, so work that
+    /// outlives its ttl renews rather than re-acquires.
+    async fn renew(&self, key: &ResourceKey, by: &ActorId, ttl: Duration) -> Result<Lease>;
+
     async fn release(&self, key: &ResourceKey, by: &ActorId) -> Result<()>;
     async fn check(&self, key: &ResourceKey) -> Result<Option<Lease>>;
+
+    /// Every lease still held, so an agent can see what it would be waiting for.
+    async fn held(&self) -> Result<Vec<Lease>>;
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]

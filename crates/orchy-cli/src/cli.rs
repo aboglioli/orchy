@@ -344,15 +344,32 @@ pub(crate) enum MsgCommand {
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum LockCommand {
+    /// Take a resource, or fail if somebody else holds it
     Acquire {
+        resource: String,
+        /// Seconds before the lease lapses on its own (default 300)
+        #[arg(long)]
+        ttl: Option<i64>,
+    },
+    /// Extend a lease you already hold, for work that outlives its ttl
+    Renew {
         resource: String,
         #[arg(long)]
         ttl: Option<i64>,
     },
-    Release {
+    /// Give a resource back
+    Release { resource: String },
+    /// Who holds a resource, if anyone
+    Check { resource: String },
+    /// Every lease still held, across every agent on this machine
+    List,
+    /// Hold a resource for exactly as long as a command runs, and give it back either way
+    With {
         resource: String,
-    },
-    Check {
-        resource: String,
+        #[arg(long)]
+        ttl: Option<i64>,
+        /// The command to run while holding it
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
     },
 }
