@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Task};
+use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Skill, Task};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,4 +246,45 @@ impl<T> PageDto<T> {
             limit,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillDto {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    pub namespace: String,
+    pub status: String,
+    pub tags: Vec<String>,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<&Skill> for SkillDto {
+    fn from(skill: &Skill) -> Self {
+        Self {
+            id: skill.id().to_string(),
+            name: skill.name().to_string(),
+            summary: skill.summary().to_string(),
+            namespace: skill.namespace().to_string(),
+            status: skill.status().as_str().to_owned(),
+            tags: skill.tags().iter().map(ToString::to_string).collect(),
+            body: skill.body().as_str().to_owned(),
+            created_at: skill.created_at(),
+            updated_at: skill.updated_at(),
+        }
+    }
+}
+
+/// Everything an agent needs before it does anything: who it is, what it is expected to follow,
+/// and what is waiting for it. Assembled in one call so a new agent has no order to get wrong.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BriefingDto {
+    pub actor: ActorDto,
+    pub skills: Vec<SkillDto>,
+    pub unread: usize,
+    pub claimed: Vec<TaskDto>,
+    pub next: Option<TaskDto>,
+    pub handoff: Option<DocumentDto>,
 }
