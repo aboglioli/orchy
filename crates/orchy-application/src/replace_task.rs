@@ -1,136 +1,105 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::error::ApplicationResult;
-use orchy_core::agent::AgentId;
-use orchy_core::error::{Error, Resource};
-use orchy_core::graph::{Edge, EdgeStore, RelationType};
-use orchy_core::resource_ref::ResourceKind;
-use orchy_core::task::{Priority, Task, TaskId, TaskStore};
+use orchy_core::{
+    ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, Relation, Task, TaskStore, Title,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
-use crate::split_task::SubtaskInput;
+use crate::error::ApplicationResult;
+use crate::rollup_ancestors::RollupAncestors;
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReplaceTaskCommand {
     pub task_id: String,
+    pub titles: Vec<String>,
     pub reason: Option<String>,
-    pub replacements: Vec<SubtaskInput>,
-    pub created_by: Option<String>,
+    pub actor: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplaceTaskResponse {
+    pub replaced: TaskDto,
+    pub created: Vec<TaskDto>,
+    pub ancestors: Vec<TaskDto>,
+}
+
+/// Succession, not composition: the original is retired. Contrast `SplitTask`, which keeps it
+/// as the umbrella its subtasks roll up into.
 pub struct ReplaceTask {
     tasks: Arc<dyn TaskStore>,
     edges: Arc<dyn EdgeStore>,
+    rollup: Arc<RollupAncestors>,
+    ids: Arc<dyn IdGenerator>,
+    clock: Arc<dyn Clock>,
 }
 
 impl ReplaceTask {
-    pub fn new(tasks: Arc<dyn TaskStore>, edges: Arc<dyn EdgeStore>) -> Self {
-        Self { tasks, edges }
+    pub fn new(
+        tasks: Arc<dyn TaskStore>,
+        edges: Arc<dyn EdgeStore>,
+        rollup: Arc<RollupAncestors>,
+        ids: Arc<dyn IdGenerator>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            tasks,
+            edges,
+            rollup,
+            ids,
+            clock,
+        }
     }
 
-    pub async fn execute(
-        &self,
-        cmd: ReplaceTaskCommand,
-    ) -> ApplicationResult<(TaskDto, Vec<TaskDto>)> {
-        let task_id = cmd.task_id.parse::<TaskId>()?;
+    pub async fn execute(&self, cmd: ReplaceTaskCommand) -> ApplicationResult<ReplaceTaskResponse> {
+        let original_id = Id::new(&cmd.task_id)?;
+        cmd.actor.parse::<ActorId>()?;
+        let mut original = self.tasks.require(&original_id).await?;
 
-        let created_by = cmd.created_by.map(|s| AgentId::from_str(&s)).transpose()?;
-
-        let mut original =
-            self.tasks
-                .find_by_id(&task_id)
-                .await?
-                .ok_or_else(|| Error::NotFound {
-                    resource: Resource::Task,
-                    id: task_id.to_string(),
-                })?;
-
-        let org_id = original.org_id().clone();
-
-        let cancel_reason = cmd
-            .reason
-            .unwrap_or_else(|| "replaced by new tasks".to_owned());
-        original.cancel(Some(cancel_reason))?;
-        original.archive(Some(format!(
-            "replaced by {} new task(s)",
-            cmd.replacements.len()
-        )))?;
-        self.tasks.save(&mut original).await?;
-
-        let mut new_tasks = Vec::with_capacity(cmd.replacements.len());
-        for input in cmd.replacements {
-            let priority = input
-                .priority
-                .map(|p| p.parse::<Priority>())
-                .transpose()?
-                .unwrap_or_default();
-
-            let depends_on = input
-                .depends_on
-                .unwrap_or_default()
-                .into_iter()
-                .map(|s| s.parse::<TaskId>())
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            let is_blocked = !depends_on.is_empty();
-
-            let mut task = Task::new(
-                org_id.clone(),
-                original.project().clone(),
+        let mut replacements = Vec::new();
+        for raw in &cmd.titles {
+            let mut replacement = Task::create(
+                Title::new(raw)?,
                 original.namespace().clone(),
-                input.title,
-                input.description,
-                input.acceptance_criteria,
-                priority,
-                input.assigned_roles.unwrap_or_default(),
-                created_by.clone(),
-                is_blocked,
-            )?;
-            self.tasks.save(&mut task).await?;
-
-            for dep_id in &depends_on {
-                let already_exists = self
-                    .edges
-                    .exists_by_pair(
-                        &org_id,
-                        &ResourceKind::Task,
-                        &task.id().to_string(),
-                        &ResourceKind::Task,
-                        &dep_id.to_string(),
-                        &RelationType::DependsOn,
-                    )
-                    .await?;
-                if !already_exists {
-                    let mut dep_edge = Edge::new(
-                        org_id.clone(),
-                        ResourceKind::Task,
-                        task.id().to_string(),
-                        ResourceKind::Task,
-                        dep_id.to_string(),
-                        RelationType::DependsOn,
-                        created_by.clone(),
-                    )?;
-                    self.edges.save(&mut dep_edge).await?;
-                }
+                &*self.ids,
+                &*self.clock,
+            );
+            // the work still belongs under whatever goal the original sat beneath
+            if let Some(parent) = original.parent() {
+                replacement.attach_to(parent.clone(), &*self.clock)?;
             }
-
-            let mut edge = Edge::new(
-                org_id.clone(),
-                ResourceKind::Task,
-                task.id().to_string(),
-                ResourceKind::Task,
-                task_id.to_string(),
-                RelationType::Supersedes,
-                created_by.clone(),
-            )?
-            .with_source(ResourceKind::Task, task_id.to_string());
-            self.edges.save(&mut edge).await?;
-
-            new_tasks.push(task);
+            replacement.set_priority(original.priority(), &*self.clock);
+            replacements.push(replacement);
         }
 
-        Ok((
-            TaskDto::from(&original),
-            new_tasks.iter().map(TaskDto::from).collect(),
-        ))
+        // retiring the original is the write two agents contend for, so it comes first: losing
+        // it afterwards leaves replacements standing in for a task that is still open
+        original.supersede(
+            replacements.iter().map(|r| r.id().clone()).collect(),
+            cmd.reason,
+            &*self.clock,
+        )?;
+        self.tasks.save(&mut original).await?;
+
+        let mut created = Vec::new();
+        for mut replacement in replacements {
+            self.tasks.save(&mut replacement).await?;
+            self.edges
+                .add(&Edge::new(
+                    EntityRef::task(replacement.id().clone()),
+                    EntityRef::task(original_id.clone()),
+                    Relation::Supersedes,
+                )?)
+                .await?;
+            created.push(TaskDto::from(&replacement));
+        }
+
+        let ancestors = self.rollup.execute(&original_id).await?;
+
+        Ok(ReplaceTaskResponse {
+            replaced: TaskDto::from(&original),
+            created,
+            ancestors,
+        })
     }
 }

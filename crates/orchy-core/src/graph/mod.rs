@@ -1,596 +1,127 @@
-pub mod events;
-pub mod neighborhood;
-pub mod relation_options;
-pub mod rules;
-
-use std::fmt;
-use std::result::Result as StdResult;
-use std::str::FromStr;
+mod relation;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-use orchy_events::{Event, EventCollector, Payload};
+pub use relation::{Arity, Relation};
 
-use crate::agent::AgentId;
-use crate::error::{DomainError, DomainResult, Result};
-use crate::organization::OrganizationId;
-use crate::pagination::{Page, PageParams};
-use crate::resource_ref::{ResourceKind, ResourceRef};
-
-pub use events::*;
-pub use neighborhood::{
-    AgentSummary, EntityNeighborhood, KnowledgeSummary, LinkParam, MessageSummary, PeerEntity,
-    Relation, TaskSummary,
-};
-pub use relation_options::{RelationOptions, RelationQuery};
-pub use rules::check_no_cycle;
+use crate::entity_ref::EntityRef;
+use crate::error::{DomainError, Result};
 
 #[async_trait]
-#[allow(clippy::too_many_arguments)]
 pub trait EdgeStore: Send + Sync {
-    async fn save(&self, edge: &mut Edge) -> Result<()>;
-    async fn find_by_id(&self, id: &EdgeId) -> Result<Option<Edge>>;
-    async fn delete(&self, id: &EdgeId) -> Result<()>;
-    async fn find_from(
-        &self,
-        org: &OrganizationId,
-        kind: &ResourceKind,
-        id: &str,
-        rel_types: &[RelationType],
-        as_of: Option<DateTime<Utc>>,
-    ) -> Result<Vec<Edge>>;
-    async fn find_to(
-        &self,
-        org: &OrganizationId,
-        kind: &ResourceKind,
-        id: &str,
-        rel_types: &[RelationType],
-        as_of: Option<DateTime<Utc>>,
-    ) -> Result<Vec<Edge>>;
-    async fn exists_by_pair(
-        &self,
-        org: &OrganizationId,
-        from_kind: &ResourceKind,
-        from_id: &str,
-        to_kind: &ResourceKind,
-        to_id: &str,
-        rel_type: &RelationType,
-    ) -> Result<bool>;
-    async fn find_by_pair(
-        &self,
-        org: &OrganizationId,
-        from_kind: &ResourceKind,
-        from_id: &str,
-        to_kind: &ResourceKind,
-        to_id: &str,
-        rel_type: &RelationType,
-    ) -> Result<Option<Edge>>;
-    async fn list_by_org(
-        &self,
-        org: &OrganizationId,
-        rel_type: Option<&RelationType>,
-        page: PageParams,
-        only_active: bool,
-        as_of: Option<DateTime<Utc>>,
-    ) -> Result<Page<Edge>>;
-    async fn find_neighbors(
-        &self,
-        org: &OrganizationId,
-        kind: &ResourceKind,
-        id: &str,
-        rel_types: &[RelationType],
-        target_kinds: &[ResourceKind],
-        direction: TraversalDirection,
-        max_depth: u32,
-        as_of: Option<DateTime<Utc>>,
-        limit: u32,
-    ) -> Result<Vec<TraversalHop>>;
-    async fn delete_all_for(
-        &self,
-        org: &OrganizationId,
-        kind: &ResourceKind,
-        id: &str,
-    ) -> Result<()>;
-    async fn delete_by_pair(
-        &self,
-        org: &OrganizationId,
-        from_kind: &ResourceKind,
-        from_id: &str,
-        to_kind: &ResourceKind,
-        to_id: &str,
-        rel_type: &RelationType,
-    ) -> Result<()>;
+    async fn add(&self, edge: &Edge) -> Result<()>;
+    async fn remove(&self, edge: &Edge) -> Result<()>;
+    async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>>;
+    async fn incoming(&self, to: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>>;
+    async fn neighbourhood(&self, of: &EntityRef, depth: u8) -> Result<Vec<TraversalHop>>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct EdgeId(Uuid);
-
-impl EdgeId {
-    pub fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-}
-
-impl Default for EdgeId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for EdgeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FromStr for EdgeId {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
-        Uuid::parse_str(s)
-            .map(Self)
-            .map_err(|_| DomainError::validation(format!("invalid edge id: {s}")))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RelationType {
-    DerivedFrom,
-    Produces,
-    Supersedes,
-    MergedFrom,
-    Summarizes,
-    Implements,
-    Spawns,
-    RelatedTo,
-    DependsOn,
-    Invalidates,
-    SupportedBy,
-    ContradictedBy,
-    OwnedBy,
-    ReviewedBy,
-    Confirms,
-}
-
-impl RelationType {
-    pub fn all() -> &'static [RelationType] {
-        &[
-            RelationType::DerivedFrom,
-            RelationType::Produces,
-            RelationType::Supersedes,
-            RelationType::MergedFrom,
-            RelationType::Summarizes,
-            RelationType::Implements,
-            RelationType::Spawns,
-            RelationType::RelatedTo,
-            RelationType::DependsOn,
-            RelationType::Invalidates,
-            RelationType::SupportedBy,
-            RelationType::ContradictedBy,
-            RelationType::OwnedBy,
-            RelationType::ReviewedBy,
-            RelationType::Confirms,
-        ]
-    }
-
-    pub fn aliases() -> &'static [(&'static str, RelationType)] {
-        &[
-            ("blocks", RelationType::DependsOn),
-            ("creates", RelationType::Produces),
-            ("fulfills", RelationType::Implements),
-            ("child_of", RelationType::Spawns),
-            ("based_on", RelationType::DerivedFrom),
-        ]
-    }
-}
-
-impl fmt::Display for RelationType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RelationType::DerivedFrom => write!(f, "derived_from"),
-            RelationType::Produces => write!(f, "produces"),
-            RelationType::Supersedes => write!(f, "supersedes"),
-            RelationType::MergedFrom => write!(f, "merged_from"),
-            RelationType::Summarizes => write!(f, "summarizes"),
-            RelationType::Implements => write!(f, "implements"),
-            RelationType::Spawns => write!(f, "spawns"),
-            RelationType::RelatedTo => write!(f, "related_to"),
-            RelationType::DependsOn => write!(f, "depends_on"),
-            RelationType::Invalidates => write!(f, "invalidates"),
-            RelationType::SupportedBy => write!(f, "supported_by"),
-            RelationType::ContradictedBy => write!(f, "contradicted_by"),
-            RelationType::OwnedBy => write!(f, "owned_by"),
-            RelationType::ReviewedBy => write!(f, "reviewed_by"),
-            RelationType::Confirms => write!(f, "confirms"),
-        }
-    }
-}
-
-impl FromStr for RelationType {
-    type Err = crate::error::DomainError;
-
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
-        if let Some(rt) = Self::aliases().iter().find(|(alias, _)| *alias == s) {
-            return Ok(rt.1);
-        }
-        match s {
-            "derived_from" => Ok(RelationType::DerivedFrom),
-            "produces" => Ok(RelationType::Produces),
-            "supersedes" => Ok(RelationType::Supersedes),
-            "merged_from" => Ok(RelationType::MergedFrom),
-            "summarizes" => Ok(RelationType::Summarizes),
-            "implements" => Ok(RelationType::Implements),
-            "spawns" => Ok(RelationType::Spawns),
-            "related_to" => Ok(RelationType::RelatedTo),
-            "depends_on" => Ok(RelationType::DependsOn),
-            "invalidates" => Ok(RelationType::Invalidates),
-            "supported_by" => Ok(RelationType::SupportedBy),
-            "contradicted_by" => Ok(RelationType::ContradictedBy),
-            "owned_by" => Ok(RelationType::OwnedBy),
-            "reviewed_by" => Ok(RelationType::ReviewedBy),
-            "confirms" => Ok(RelationType::Confirms),
-            other => Err(crate::error::DomainError::validation(format!(
-                "unknown relation type: {other}. valid: derived_from, produces, supersedes, merged_from, summarizes, implements, spawns, related_to, depends_on, invalidates, supported_by, contradicted_by, owned_by, reviewed_by, confirms"
-            ))),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TraversalDirection {
-    Outgoing,
-    Incoming,
-    #[default]
-    Both,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RelationDirection {
-    Outgoing,
-    Incoming,
-}
-
-#[derive(Debug, Clone)]
-pub struct TraversalHop {
-    pub edge: Edge,
-    pub depth: u32,
-    pub direction: RelationDirection,
-    pub via: Option<ResourceRef>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Edge {
-    id: EdgeId,
-    org_id: OrganizationId,
-    from_kind: ResourceKind,
-    from_id: String,
-    to_kind: ResourceKind,
-    to_id: String,
-    rel_type: RelationType,
-    created_at: DateTime<Utc>,
-    created_by: Option<AgentId>,
-    source_kind: Option<ResourceKind>,
-    source_id: Option<String>,
-    valid_until: Option<DateTime<Utc>>,
-    #[serde(skip)]
-    collector: EventCollector,
+    from: EntityRef,
+    to: EntityRef,
+    relation: Relation,
 }
 
 impl Edge {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        org_id: OrganizationId,
-        from_kind: ResourceKind,
-        from_id: String,
-        to_kind: ResourceKind,
-        to_id: String,
-        rel_type: RelationType,
-        created_by: Option<AgentId>,
-    ) -> DomainResult<Self> {
-        if from_id.trim().is_empty() {
-            return Err(DomainError::validation("edge from_id must not be empty"));
+    /// Holding an `Edge` is proof the link is legal: nothing above has to re-check it, and
+    /// nothing above can forget to.
+    pub fn new(from: EntityRef, to: EntityRef, relation: Relation) -> Result<Self> {
+        if from == to {
+            return Err(DomainError::validation(format!(
+                "`{relation}` cannot point {from} at itself"
+            )));
         }
-        if to_id.trim().is_empty() {
-            return Err(DomainError::validation("edge to_id must not be empty"));
-        }
-        let id = EdgeId::new();
-        let mut edge = Self {
-            id,
-            org_id,
-            from_kind,
-            from_id,
-            to_kind,
-            to_id,
-            rel_type,
-            created_at: Utc::now(),
-            created_by,
-            source_kind: None,
-            source_id: None,
-            valid_until: None,
-            collector: EventCollector::new(),
-        };
-
-        let payload = Payload::from_json(&events::EdgeCreatedPayload {
-            org_id: edge.org_id.to_string(),
-            edge_id: edge.id.to_string(),
-            from_kind: edge.from_kind.to_string(),
-            from_id: edge.from_id.clone(),
-            to_kind: edge.to_kind.to_string(),
-            to_id: edge.to_id.clone(),
-            rel_type: edge.rel_type.to_string(),
-        })?;
-        let event = Event::create(
-            edge.org_id.as_str(),
-            events::NAMESPACE,
-            events::TOPIC_CREATED,
-            edge.id.to_string(),
-            payload,
-        )?;
-        edge.collector.collect(event);
-
-        Ok(edge)
+        relation.validate(from.kind(), to.kind())?;
+        Ok(Self { from, to, relation })
     }
 
-    pub fn restore(r: RestoreEdge) -> Self {
-        Self {
-            id: r.id,
-            org_id: r.org_id,
-            from_kind: r.from_kind,
-            from_id: r.from_id,
-            to_kind: r.to_kind,
-            to_id: r.to_id,
-            rel_type: r.rel_type,
-            created_at: r.created_at,
-            created_by: r.created_by,
-            source_kind: r.source_kind,
-            source_id: r.source_id,
-            valid_until: r.valid_until,
-            collector: EventCollector::new(),
-        }
+    pub fn from(&self) -> &EntityRef {
+        &self.from
     }
 
-    pub fn with_source(mut self, kind: ResourceKind, id: String) -> Self {
-        self.source_kind = Some(kind);
-        self.source_id = Some(id);
-        self
+    pub fn to(&self) -> &EntityRef {
+        &self.to
     }
 
-    pub fn id(&self) -> EdgeId {
-        self.id
-    }
-
-    pub fn org_id(&self) -> &OrganizationId {
-        &self.org_id
-    }
-
-    pub fn from_kind(&self) -> &ResourceKind {
-        &self.from_kind
-    }
-
-    pub fn from_id(&self) -> &str {
-        &self.from_id
-    }
-
-    pub fn to_kind(&self) -> &ResourceKind {
-        &self.to_kind
-    }
-
-    pub fn to_id(&self) -> &str {
-        &self.to_id
-    }
-
-    pub fn rel_type(&self) -> &RelationType {
-        &self.rel_type
-    }
-
-    pub fn created_at(&self) -> DateTime<Utc> {
-        self.created_at
-    }
-
-    pub fn created_by(&self) -> Option<&AgentId> {
-        self.created_by.as_ref()
-    }
-
-    pub fn source_kind(&self) -> Option<&ResourceKind> {
-        self.source_kind.as_ref()
-    }
-
-    pub fn source_id(&self) -> Option<&str> {
-        self.source_id.as_deref()
-    }
-
-    pub fn invalidate(&mut self) -> DomainResult<()> {
-        self.valid_until = Some(Utc::now());
-
-        let payload = Payload::from_json(&events::EdgeInvalidatedPayload {
-            org_id: self.org_id.to_string(),
-            edge_id: self.id.to_string(),
-        })?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            events::NAMESPACE,
-            events::TOPIC_INVALIDATED,
-            self.id.to_string(),
-            payload,
-        )?;
-        self.collector.collect(event);
-        Ok(())
-    }
-
-    pub fn drain_events(&mut self) -> Vec<Event> {
-        self.collector.drain()
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.valid_until.is_none()
-    }
-
-    pub fn is_active_at(&self, ts: DateTime<Utc>) -> bool {
-        self.created_at <= ts && self.valid_until.is_none_or(|vu| vu > ts)
-    }
-
-    pub fn valid_until(&self) -> Option<DateTime<Utc>> {
-        self.valid_until
+    pub fn relation(&self) -> &Relation {
+        &self.relation
     }
 }
 
-pub struct RestoreEdge {
-    pub id: EdgeId,
-    pub org_id: OrganizationId,
-    pub from_kind: ResourceKind,
-    pub from_id: String,
-    pub to_kind: ResourceKind,
-    pub to_id: String,
-    pub rel_type: RelationType,
-    pub created_at: DateTime<Utc>,
-    pub created_by: Option<AgentId>,
-    pub source_kind: Option<ResourceKind>,
-    pub source_id: Option<String>,
-    pub valid_until: Option<DateTime<Utc>>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TraversalHop {
+    pub edge: Edge,
+    pub depth: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Direction {
+    Out,
+    In,
+    #[default]
+    Both,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::DomainError;
+    use crate::entity_ref::EntityKind;
+    use crate::id::Id;
+
+    const A: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const B: &str = "01BX5ZZKBKACTAV9WEVGEMMVRZ";
+
+    fn doc(id: &str) -> EntityRef {
+        EntityRef::document(Id::new(id).unwrap())
+    }
+
+    fn task(id: &str) -> EntityRef {
+        EntityRef::task(Id::new(id).unwrap())
+    }
+
+    fn message(id: &str) -> EntityRef {
+        EntityRef::message(Id::new(id).unwrap())
+    }
 
     #[test]
-    fn relation_type_aliases() {
-        assert_eq!(
-            "blocks".parse::<RelationType>().unwrap(),
-            RelationType::DependsOn
+    fn an_edge_the_relation_forbids_cannot_be_built() {
+        assert!(
+            Edge::new(doc(A), task(B), Relation::Parent).is_err(),
+            "a document is not a subtask, so no Edge should exist saying it is"
         );
-        assert_eq!(
-            "creates".parse::<RelationType>().unwrap(),
-            RelationType::Produces
+    }
+
+    #[test]
+    fn a_permitted_edge_is_built() {
+        assert!(Edge::new(task(A), task(B), Relation::Parent).is_ok());
+        assert!(Edge::new(doc(A), message(B), Relation::DerivedFrom).is_ok());
+    }
+
+    #[test]
+    fn nothing_links_to_itself() {
+        let err = Edge::new(doc(A), doc(A), Relation::RelatedTo).unwrap_err();
+        assert!(err.to_string().contains("itself"), "{err}");
+        assert!(
+            Edge::new(task(A), task(A), Relation::Parent).is_err(),
+            "not even the relations that join like with like"
         );
-        assert_eq!(
-            "child_of".parse::<RelationType>().unwrap(),
-            RelationType::Spawns
-        );
     }
 
     #[test]
-    fn relation_type_roundtrip() {
-        for rt in RelationType::all() {
-            let s = rt.to_string();
-            let parsed: RelationType = s.parse().unwrap();
-            assert_eq!(*rt, parsed);
-        }
+    fn an_edge_is_identified_by_all_three_parts() {
+        let a = Edge::new(doc(A), doc(B), Relation::Supersedes).unwrap();
+        let b = Edge::new(doc(A), doc(B), Relation::RelatedTo).unwrap();
+        assert_ne!(a, b, "the same endpoints under a different relation differ");
     }
 
     #[test]
-    fn edge_new_sets_fields() {
-        let org = OrganizationId::new("test").unwrap();
-        let edge = Edge::new(
-            org,
-            ResourceKind::Task,
-            "task-id-1".to_owned(),
-            ResourceKind::Knowledge,
-            "know-id-1".to_owned(),
-            RelationType::Produces,
-            None,
-        )
-        .unwrap();
-        assert_eq!(edge.from_kind(), &ResourceKind::Task);
-        assert_eq!(edge.to_kind(), &ResourceKind::Knowledge);
-        assert_eq!(edge.rel_type(), &RelationType::Produces);
-    }
-
-    #[test]
-    fn traversal_direction_default_is_both() {
-        assert_eq!(TraversalDirection::default(), TraversalDirection::Both);
-    }
-
-    #[test]
-    fn edge_is_active_at() {
-        use chrono::Duration;
-        let org = OrganizationId::new("test").unwrap();
-        let mut edge = Edge::new(
-            org,
-            ResourceKind::Task,
-            "t1".to_owned(),
-            ResourceKind::Knowledge,
-            "k1".to_owned(),
-            RelationType::Produces,
-            None,
-        )
-        .unwrap();
-        let before = edge.created_at() - Duration::seconds(1);
-        let after_create = edge.created_at() + Duration::seconds(1);
-
-        assert!(!edge.is_active_at(before));
-        assert!(edge.is_active_at(after_create));
-
-        edge.invalidate().unwrap();
-        let valid_until = edge.valid_until().unwrap();
-        let after_invalidate = valid_until + Duration::seconds(1);
-        assert!(edge.is_active_at(edge.created_at()));
-        assert!(!edge.is_active_at(after_invalidate));
-    }
-
-    #[test]
-    fn edge_invalidate_sets_valid_until() {
-        let org = OrganizationId::new("test").unwrap();
-        let mut edge = Edge::new(
-            org,
-            ResourceKind::Task,
-            "t1".to_owned(),
-            ResourceKind::Knowledge,
-            "k1".to_owned(),
-            RelationType::Produces,
-            None,
-        )
-        .unwrap();
-        assert!(edge.is_active());
-        assert!(edge.valid_until().is_none());
-        edge.invalidate().unwrap();
-        assert!(!edge.is_active());
-        assert!(edge.valid_until().is_some());
-    }
-
-    #[test]
-    fn edge_new_rejects_empty_from_id() {
-        let org = OrganizationId::new("test").unwrap();
-        let result = Edge::new(
-            org,
-            ResourceKind::Task,
-            "".to_owned(),
-            ResourceKind::Knowledge,
-            "k1".to_owned(),
-            RelationType::Produces,
-            None,
-        );
-        assert!(matches!(result, Err(DomainError::Validation(_))));
-    }
-
-    #[test]
-    fn edge_new_rejects_whitespace_only_to_id() {
-        let org = OrganizationId::new("test").unwrap();
-        let result = Edge::new(
-            org,
-            ResourceKind::Task,
-            "t1".to_owned(),
-            ResourceKind::Knowledge,
-            "   ".to_owned(),
-            RelationType::Produces,
-            None,
-        );
-        assert!(matches!(result, Err(DomainError::Validation(_))));
+    fn the_endpoints_survive_construction_unchanged() {
+        let edge = Edge::new(task(A), message(B), Relation::SpawnedBy).unwrap();
+        assert_eq!(edge.from().kind(), EntityKind::Task);
+        assert_eq!(edge.to().kind(), EntityKind::Message);
+        assert_eq!(edge.relation(), &Relation::SpawnedBy);
     }
 }

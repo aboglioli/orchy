@@ -1,124 +1,237 @@
-use serde::Serialize;
+use chrono::{DateTime, Utc};
+use eventuary::{Payload, Topic};
+use serde::{Deserialize, Serialize};
 
-pub const NAMESPACE: &str = "/task";
+use super::status::TaskStatus;
+use crate::actor::ActorId;
+use crate::error::Result;
+use crate::event::{DomainEvent, payload_of, topic};
+use crate::id::Id;
+use crate::namespace::Namespace;
 
-pub const TOPIC_CREATED: &str = "task.created";
-pub const TOPIC_CLAIMED: &str = "task.claimed";
-pub const TOPIC_STARTED: &str = "task.started";
-pub const TOPIC_COMPLETED: &str = "task.completed";
-pub const TOPIC_AUTO_COMPLETED: &str = "task.auto_completed";
-pub const TOPIC_FAILED: &str = "task.failed";
-pub const TOPIC_RELEASED: &str = "task.released";
-pub const TOPIC_ASSIGNED: &str = "task.assigned";
-pub const TOPIC_BLOCKED: &str = "task.blocked";
-pub const TOPIC_UNBLOCKED: &str = "task.unblocked";
-pub const TOPIC_CANCELLED: &str = "task.cancelled";
-pub const TOPIC_TAGGED: &str = "task.tagged";
-pub const TOPIC_TAG_REMOVED: &str = "task.tag_removed";
-pub const TOPIC_MOVED: &str = "task.moved";
-pub const TOPIC_UPDATED: &str = "task.updated";
-pub const TOPIC_ARCHIVED: &str = "task.archived";
-pub const TOPIC_RESTORED: &str = "task.restored";
+macro_rules! task_event {
+    ($name:ident, $topic:literal) => {
+        impl DomainEvent for $name {
+            fn topic(&self) -> Topic {
+                topic($topic)
+            }
 
-#[derive(Serialize)]
-pub struct TaskCreatedPayload {
-    pub org_id: String,
-    pub task_id: String,
-    pub project: String,
-    pub namespace: String,
+            fn key(&self) -> Id {
+                self.id.clone()
+            }
+
+            fn namespace(&self) -> Namespace {
+                self.namespace.clone()
+            }
+
+            fn payload(&self) -> Result<Payload> {
+                payload_of(self)
+            }
+        }
+    };
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskCreated {
+    pub id: Id,
+    pub namespace: Namespace,
     pub title: String,
-    pub description: String,
-    pub acceptance_criteria: Option<String>,
-    pub priority: String,
-    pub assigned_roles: Vec<String>,
+    pub parent: Option<Id>,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskCreated, "task.created");
 
-#[derive(Serialize)]
-pub struct TaskClaimedPayload {
-    pub task_id: String,
-    pub agent_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskClaimed {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub by: ActorId,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskClaimed, "task.claimed");
 
-#[derive(Serialize)]
-pub struct TaskStartedPayload {
-    pub task_id: String,
-    pub agent_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskReleased {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub by: ActorId,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskReleased, "task.released");
 
-#[derive(Serialize)]
-pub struct TaskCompletedPayload {
-    pub task_id: String,
-    pub summary: Option<String>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskStarted {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskStarted, "task.started");
 
-#[derive(Serialize)]
-pub struct TaskFailedPayload {
-    pub task_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskFinished {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub status: TaskStatus,
+    pub note: Option<String>,
+    pub at: DateTime<Utc>,
+}
+task_event!(TaskFinished, "task.finished");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskRolledUp {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub status: TaskStatus,
+    pub because: String,
+    pub at: DateTime<Utc>,
+}
+task_event!(TaskRolledUp, "task.rolled_up");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskSuperseded {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub by: Vec<Id>,
     pub reason: Option<String>,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskSuperseded, "task.superseded");
 
-#[derive(Serialize)]
-pub struct TaskReleasedPayload {
-    pub task_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskBlocked {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub reason: String,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskBlocked, "task.blocked");
 
-#[derive(Serialize)]
-pub struct TaskAssignedPayload {
-    pub task_id: String,
-    pub agent_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskUnblocked {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskUnblocked, "task.unblocked");
 
-#[derive(Serialize)]
-pub struct TaskBlockedPayload {
-    pub task_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskReparented {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub parent: Option<Id>,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskReparented, "task.reparented");
 
-#[derive(Serialize)]
-pub struct TaskUnblockedPayload {
-    pub task_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskUpdated {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub field: String,
+    pub at: DateTime<Utc>,
 }
+task_event!(TaskUpdated, "task.updated");
 
-#[derive(Serialize)]
-pub struct TaskCancelledPayload {
-    pub task_id: String,
-    pub reason: Option<String>,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[derive(Serialize)]
-pub struct TaskTaggedPayload {
-    pub task_id: String,
-    pub tag: String,
-}
+    fn id() -> Id {
+        Id::new("01ARZ3NDEKTSV4RRFFQ69G5FAV").unwrap()
+    }
 
-#[derive(Serialize)]
-pub struct TaskTagRemovedPayload {
-    pub task_id: String,
-    pub tag: String,
-}
+    #[test]
+    fn every_task_topic_is_valid_and_namespaced_under_task() {
+        let at = Utc::now();
+        let events: Vec<Box<dyn DomainEvent>> = vec![
+            Box::new(TaskCreated {
+                id: id(),
+                namespace: Namespace::root(),
+                title: "t".to_owned(),
+                parent: None,
+                at,
+            }),
+            Box::new(TaskClaimed {
+                id: id(),
+                namespace: Namespace::root(),
+                by: ActorId::new("claude", "01ARZ3NDEKTSV4RRFFQ69G5FAV").unwrap(),
+                at,
+            }),
+            Box::new(TaskStarted {
+                id: id(),
+                namespace: Namespace::root(),
+                at,
+            }),
+            Box::new(TaskFinished {
+                id: id(),
+                namespace: Namespace::root(),
+                status: TaskStatus::Completed,
+                note: None,
+                at,
+            }),
+            Box::new(TaskRolledUp {
+                id: id(),
+                namespace: Namespace::root(),
+                status: TaskStatus::Completed,
+                because: "x".to_owned(),
+                at,
+            }),
+            Box::new(TaskBlocked {
+                id: id(),
+                namespace: Namespace::root(),
+                reason: "x".to_owned(),
+                at,
+            }),
+            Box::new(TaskUnblocked {
+                id: id(),
+                namespace: Namespace::root(),
+                at,
+            }),
+            Box::new(TaskReparented {
+                id: id(),
+                namespace: Namespace::root(),
+                parent: None,
+                at,
+            }),
+            Box::new(TaskUpdated {
+                id: id(),
+                namespace: Namespace::root(),
+                field: "title".to_owned(),
+                at,
+            }),
+        ];
+        for event in events {
+            assert!(
+                event.topic().as_str().starts_with("task."),
+                "{:?}",
+                event.topic()
+            );
+            assert!(event.payload().is_ok(), "payload must serialize: {event:?}");
+            assert_eq!(event.key(), id());
+        }
+    }
 
-#[derive(Serialize)]
-pub struct TaskMovedPayload {
-    pub task_id: String,
-    pub from_namespace: String,
-    pub to_namespace: String,
-}
-
-#[derive(Serialize)]
-pub struct TaskUpdatedPayload {
-    pub task_id: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub acceptance_criteria: Option<String>,
-    pub priority: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct TaskArchivedPayload {
-    pub task_id: String,
-    pub reason: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct TaskRestoredPayload {
-    pub task_id: String,
+    #[test]
+    fn rollup_is_a_distinct_topic_from_an_agents_own_completion() {
+        let at = Utc::now();
+        let finished = TaskFinished {
+            id: id(),
+            namespace: Namespace::root(),
+            status: TaskStatus::Completed,
+            note: None,
+            at,
+        };
+        let rolled = TaskRolledUp {
+            id: id(),
+            namespace: Namespace::root(),
+            status: TaskStatus::Completed,
+            because: "x".to_owned(),
+            at,
+        };
+        assert_ne!(
+            finished.topic().as_str(),
+            rolled.topic().as_str(),
+            "replay must be able to tell a human decision from a derivation"
+        );
+    }
 }

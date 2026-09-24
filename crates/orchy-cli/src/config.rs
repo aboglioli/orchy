@@ -1,348 +1,164 @@
 use std::path::PathBuf;
 
-use secrecy::SecretString;
-use serde::Deserialize;
+use orchy_core::{ActorId, MachineId};
+use serde::{Deserialize, Serialize};
+
+use crate::error::{CliError, CliResult};
+
+const APP: &str = "orchy";
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct Settings {
+    pub machine: Option<String>,
+    pub vault: Option<PathBuf>,
+    pub actor: Option<String>,
+}
+
+/// Vault-level configuration, read from `<vault>/orchy.toml`. Distinct from `Settings`,
+/// which is per machine and lives in the user's config directory.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct VaultConfig {
+    pub events: EventsConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub(crate) struct EventsConfig {
+    /// Fixed when a machine's log is first created; eventuary refuses to reopen a log with a
+    /// different count, so changing it later is an error rather than a silent migration.
+    pub partitions: u32,
+}
+
+impl Default for EventsConfig {
+    fn default() -> Self {
+        Self {
+            partitions: orchy_store_vault::eventlog::DEFAULT_PARTITIONS,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
-pub struct Config {
-    pub url: String,
-    pub api_key: SecretString,
-    pub project: String,
-    pub namespace: String,
-    pub alias: Option<String>,
-    pub description: Option<String>,
-    pub roles: Vec<String>,
-    pub json: bool,
-}
-
-/// File-level config schema (shared by ~/.orchy/config.toml and .orchy.toml).
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct FileConfig {
-    pub url: Option<String>,
-    pub api_key: Option<String>,
-    pub project: Option<String>,
-    pub namespace: Option<String>,
-    pub alias: Option<String>,
-    pub description: Option<String>,
-    #[serde(default)]
-    pub roles: Vec<String>,
-}
-
-/// CLI config validation errors.
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum ConfigError {
-    #[error("{field} is required — set it in {set_in}")]
-    MissingField { field: String, set_in: String },
-
-    #[error("invalid {field}: {message}")]
-    InvalidField { field: String, message: String },
+pub(crate) struct Config {
+    pub vault: PathBuf,
+    pub actor: ActorId,
+    pub machine: MachineId,
+    pub organization: String,
+    pub vault_config: VaultConfig,
 }
 
 impl Config {
-    /// Resolve config from all layers:
-    /// 1. Global file (~/.orchy/config.toml)
-    /// 2. Repo-local file (.orchy.toml, walked up from cwd)
-    /// 3. Environment variables
-    /// 4. CLI flags
-    #[allow(clippy::too_many_arguments)]
-    pub fn resolve(
-        flag_url: Option<&str>,
-        flag_api_key: Option<&str>,
-        flag_project: Option<&str>,
-        flag_namespace: Option<&str>,
-        flag_agent: Option<&str>,
-        json: bool,
-        requires_api_key: bool,
-        requires_project: bool,
-    ) -> Result<Self, ConfigError> {
-        let global = read_global_config();
-        let local = read_repo_config();
+    pub(crate) fn resolve(
+        vault_flag: Option<PathBuf>,
+        actor_flag: Option<String>,
+    ) -> CliResult<Self> {
+        let settings = read_settings()?;
+        let machine = machine_id(&settings)?;
 
-        let env_url = env("ORCHY_URL");
-        let env_api_key = env("ORCHY_API_KEY");
-        let env_project = env("ORCHY_PROJECT");
-        let env_namespace = env("ORCHY_NAMESPACE");
-        let env_alias = env("ORCHY_ALIAS");
+        let vault = vault_flag
+            .or_else(|| std::env::var_os("ORCHY_VAULT").map(PathBuf::from))
+            .or_else(|| settings.vault.clone())
+            .unwrap_or_else(default_vault);
 
-        let url = pick(
-            &[
-                global.as_ref().and_then(|c| c.url.as_deref()),
-                local.as_ref().and_then(|c| c.url.as_deref()),
-                env_url.as_deref(),
-                flag_url,
-            ],
-            "url",
-            "ORCHY_URL",
-            "config file, env (ORCHY_URL), or --url",
-        )?;
+        let alias = actor_flag
+            .or_else(|| std::env::var("ORCHY_ACTOR").ok())
+            .or_else(|| settings.actor.clone())
+            .unwrap_or_else(|| "human".to_owned());
 
-        let api_key = if requires_api_key {
-            pick(
-                &[
-                    global.as_ref().and_then(|c| c.api_key.as_deref()),
-                    local.as_ref().and_then(|c| c.api_key.as_deref()),
-                    env_api_key.as_deref(),
-                    flag_api_key,
-                ],
-                "api_key",
-                "ORCHY_API_KEY",
-                "config file, env (ORCHY_API_KEY), or --api-key",
-            )?
+        let actor = if alias.contains('@') {
+            alias.parse::<ActorId>()?
         } else {
-            pick_opt(&[
-                global.as_ref().and_then(|c| c.api_key.as_deref()),
-                local.as_ref().and_then(|c| c.api_key.as_deref()),
-                env_api_key.as_deref(),
-                flag_api_key,
-            ])
-            .unwrap_or_default()
+            ActorId::new(&alias, machine.to_string())?
         };
 
-        let project = if requires_project {
-            pick(
-                &[
-                    global.as_ref().and_then(|c| c.project.as_deref()),
-                    local.as_ref().and_then(|c| c.project.as_deref()),
-                    env_project.as_deref(),
-                    flag_project,
-                ],
-                "project",
-                "ORCHY_PROJECT",
-                "config file, env (ORCHY_PROJECT), or --project",
-            )?
-        } else {
-            pick_opt(&[
-                global.as_ref().and_then(|c| c.project.as_deref()),
-                local.as_ref().and_then(|c| c.project.as_deref()),
-                env_project.as_deref(),
-                flag_project,
-            ])
-            .unwrap_or_default()
-        };
+        let vault_config = read_vault_config(&vault)?;
 
-        let namespace = pick_opt(&[
-            global.as_ref().and_then(|c| c.namespace.as_deref()),
-            local.as_ref().and_then(|c| c.namespace.as_deref()),
-            env_namespace.as_deref(),
-            flag_namespace,
-        ])
-        .unwrap_or_else(|| "/".to_owned());
-
-        let alias = pick_opt(&[
-            global.as_ref().and_then(|c| c.alias.as_deref()),
-            local.as_ref().and_then(|c| c.alias.as_deref()),
-            env_alias.as_deref(),
-            flag_agent,
-        ]);
-
-        let description = pick_opt(&[
-            global.as_ref().and_then(|c| c.description.as_deref()),
-            local.as_ref().and_then(|c| c.description.as_deref()),
-        ]);
-
-        let roles = local
-            .as_ref()
-            .filter(|c| !c.roles.is_empty())
-            .or(global.as_ref().filter(|c| !c.roles.is_empty()))
-            .map(|c| c.roles.clone())
-            .unwrap_or_default();
-
-        let config = Config {
-            url: url.clone(),
-            api_key: SecretString::new(api_key.into_boxed_str()),
-            project: project.clone(),
-            namespace: namespace.clone(),
-            alias,
-            description,
-            roles,
-            json,
-        };
-
-        // Validate resolved values
-        config.validate(requires_api_key, requires_project)?;
-
-        Ok(config)
-    }
-
-    fn validate(&self, requires_api_key: bool, requires_project: bool) -> Result<(), ConfigError> {
-        use secrecy::ExposeSecret;
-
-        if !self.url.starts_with("http://") && !self.url.starts_with("https://") {
-            return Err(ConfigError::InvalidField {
-                field: "url".into(),
-                message: "must start with 'http://' or 'https://'".into(),
-            });
-        }
-
-        if !self.url.contains("://") || self.url.ends_with("://") {
-            return Err(ConfigError::InvalidField {
-                field: "url".into(),
-                message: "must be a valid URL including scheme, host, and port (e.g., http://localhost:PORT)".into(),
-            });
-        }
-
-        if requires_api_key && self.api_key.expose_secret().is_empty() {
-            return Err(ConfigError::InvalidField {
-                field: "api_key".into(),
-                message: "must not be empty".into(),
-            });
-        }
-
-        // Project validation
-        if requires_project && self.project.is_empty() {
-            return Err(ConfigError::InvalidField {
-                field: "project".into(),
-                message: "must not be empty".into(),
-            });
-        }
-
-        if !self.project.is_empty() && self.project.len() > 64 {
-            return Err(ConfigError::InvalidField {
-                field: "project".into(),
-                message: "must be 64 characters or less".into(),
-            });
-        }
-
-        // Namespace validation
-        if !self.namespace.is_empty() && self.namespace != "/" {
-            if !self.namespace.starts_with('/') {
-                return Err(ConfigError::InvalidField {
-                    field: "namespace".into(),
-                    message: "must start with '/' (e.g., '/backend' or '/')".into(),
-                });
-            }
-
-            // Check for valid namespace characters
-            let ns = &self.namespace[1..]; // Skip leading '/'
-            if !ns
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '/')
-            {
-                return Err(ConfigError::InvalidField {
-                    field: "namespace".into(),
-                    message: "contains invalid characters (use alphanumeric, '-', '_', '/')".into(),
-                });
-            }
-        }
-
-        Ok(())
-    }
-}
-
-fn env(key: &str) -> Option<String> {
-    std::env::var(key).ok()
-}
-
-fn pick(
-    opts: &[Option<&str>],
-    name: &str,
-    _env_var: &str,
-    source_hint: &str,
-) -> Result<String, ConfigError> {
-    opts.iter()
-        .rev()
-        .find_map(|o| *o)
-        .map(|s| s.to_owned())
-        .ok_or_else(|| ConfigError::MissingField {
-            field: name.to_owned(),
-            set_in: source_hint.to_owned(),
+        Ok(Self {
+            vault,
+            actor,
+            machine,
+            organization: APP.to_owned(),
+            vault_config,
         })
-}
+    }
 
-fn pick_opt(opts: &[Option<&str>]) -> Option<String> {
-    opts.iter().rev().find_map(|o| *o).map(|s| s.to_owned())
-}
+    pub(crate) fn events_root(&self) -> PathBuf {
+        self.vault.join("events")
+    }
 
-fn read_global_config() -> Option<FileConfig> {
-    let home = dirs::home_dir()?;
-    let path = home.join(".orchy").join("config.toml");
-    read_toml_file(&path)
-}
+    pub(crate) fn runtime_root(&self) -> PathBuf {
+        self.vault.join(".orchy")
+    }
 
-fn read_repo_config() -> Option<FileConfig> {
-    let mut dir = std::env::current_dir().ok()?;
-    loop {
-        let path = dir.join(".orchy.toml");
-        if path.is_file() {
-            return read_toml_file(&path);
-        }
-        if !dir.pop() {
-            return None;
-        }
+    pub(crate) fn is_initialised(&self) -> bool {
+        self.vault.join("orchy.toml").exists()
     }
 }
 
-fn read_toml_file(path: &PathBuf) -> Option<FileConfig> {
-    let content = std::fs::read_to_string(path).ok()?;
-    toml::from_str(&content).ok()
+pub(crate) fn settings_path() -> PathBuf {
+    config_home().join(APP).join("settings.toml")
 }
 
-/// Write or update `alias` in the nearest `.orchy.toml`.
-/// If no `.orchy.toml` exists, creates one in the current directory.
-pub fn save_alias(alias: &str) {
-    let path = find_repo_config_path().unwrap_or_else(|| {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(".orchy.toml")
-    });
+fn config_home() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".config"))
+}
 
-    let content = std::fs::read_to_string(&path).unwrap_or_default();
+fn default_vault() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".local/share"))
+        .join(APP)
+}
 
-    let updated = if content.contains("alias") {
-        // Replace existing alias line
-        content
-            .lines()
-            .map(|line| {
-                if line.trim_start().starts_with("alias") {
-                    format!("alias  = \"{alias}\"")
-                } else {
-                    line.to_owned()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
-    } else {
-        // Append alias
-        format!("{content}alias  = \"{alias}\"\n")
+fn home() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn read_vault_config(vault: &std::path::Path) -> CliResult<VaultConfig> {
+    let path = vault.join("orchy.toml");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(VaultConfig::default());
     };
-
-    if let Err(e) = std::fs::write(&path, updated) {
-        eprintln!("Warning: could not save alias to {}: {e}", path.display());
-    }
+    toml::from_str(&text).map_err(|e| CliError::config(format!("{}: {e}", path.display())))
 }
 
-fn find_repo_config_path() -> Option<PathBuf> {
-    let mut dir = std::env::current_dir().ok()?;
-    loop {
-        let path = dir.join(".orchy.toml");
-        if path.is_file() {
-            return Some(path);
-        }
-        if !dir.pop() {
-            return None;
-        }
-    }
+fn read_settings() -> CliResult<Settings> {
+    let path = settings_path();
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(Settings::default());
+    };
+    toml::from_str(&text).map_err(|e| CliError::config(format!("{}: {e}", path.display())))
 }
 
-#[cfg(test)]
-mod tests {
-    use secrecy::ExposeSecret;
-
-    use super::*;
-
-    #[test]
-    #[allow(unsafe_code)]
-    fn env_returns_owned_string_not_leaked() {
-        unsafe { std::env::set_var("ORCHY_TEST_OWNED", "hello") };
-        let result: Option<String> = env("ORCHY_TEST_OWNED");
-        assert_eq!(result.as_deref(), Some("hello"));
-        unsafe { std::env::remove_var("ORCHY_TEST_OWNED") };
+fn write_settings(settings: &Settings) -> CliResult<()> {
+    let path = settings_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(CliError::io)?;
     }
+    let text = toml::to_string_pretty(settings)
+        .map_err(|e| CliError::config(format!("serialising settings: {e}")))?;
+    std::fs::write(&path, text).map_err(CliError::io)
+}
 
-    #[test]
-    fn secret_string_round_trip() {
-        let secret = SecretString::new("test123".to_owned().into_boxed_str());
-        assert_eq!(secret.expose_secret(), "test123");
+/// Separates this machine's event-log root from every other's, so it must not change.
+fn machine_id(settings: &Settings) -> CliResult<MachineId> {
+    if let Some(existing) = &settings.machine {
+        return Ok(MachineId::new(existing)?);
     }
+    let generated = MachineId::new(ulid_string())?;
+    let mut updated = settings.clone();
+    updated.machine = Some(generated.to_string());
+    write_settings(&updated)?;
+    Ok(generated)
+}
+
+fn ulid_string() -> String {
+    use orchy_core::IdGenerator;
+    orchy_store_vault::time::UlidGenerator::new()
+        .generate()
+        .to_string()
 }

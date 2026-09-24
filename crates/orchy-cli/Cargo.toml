@@ -1,27 +1,31 @@
 [package]
 name = "orchy-cli"
+description = "orchy: a single binary that gives coding agents a shared, file-backed memory"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "orchy"
 path = "src/main.rs"
 
 [dependencies]
-orchy-application = { path = "../orchy-application" }
-orchy-core = { path = "../orchy-core" }
-clap = { version = "4", features = ["derive"] }
-reqwest = { workspace = true }
-tokio = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-toml = { workspace = true }
-dirs = "6"
-chrono = { workspace = true }
-secrecy = { version = "0.10", features = ["serde"] }
-thiserror = { workspace = true }
-urlencoding = "2"
+chrono.workspace = true
+clap = { workspace = true }
+clap_complete.workspace = true
+clap_mangen.workspace = true
+orchy-application.workspace = true
+orchy-core.workspace = true
+orchy-store-memory.workspace = true
+orchy-store-vault.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

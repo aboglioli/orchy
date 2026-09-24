@@ -1,61 +1,29 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::error::ApplicationResult;
-use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Resource};
-use orchy_core::organization::OrganizationId;
-use orchy_core::task::{TaskId, TaskStore};
+use orchy_core::{Clock, Id, TaskStore};
+use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
+use crate::error::ApplicationResult;
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StartTaskCommand {
     pub task_id: String,
-    pub agent_id: String,
-    pub org_id: String,
 }
 
 pub struct StartTask {
-    agents: Arc<dyn AgentStore>,
     tasks: Arc<dyn TaskStore>,
+    clock: Arc<dyn Clock>,
 }
 
 impl StartTask {
-    pub fn new(agents: Arc<dyn AgentStore>, tasks: Arc<dyn TaskStore>) -> Self {
-        Self { agents, tasks }
+    pub fn new(tasks: Arc<dyn TaskStore>, clock: Arc<dyn Clock>) -> Self {
+        Self { tasks, clock }
     }
 
     pub async fn execute(&self, cmd: StartTaskCommand) -> ApplicationResult<TaskDto> {
-        let task_id = cmd.task_id.parse::<TaskId>()?;
-        let agent_id = AgentId::from_str(&cmd.agent_id)?;
-        let org_id = OrganizationId::new(&cmd.org_id)?;
-
-        self.agents
-            .find_by_id(&agent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound {
-                resource: Resource::Agent,
-                id: agent_id.to_string(),
-            })?;
-
-        let mut task = self
-            .tasks
-            .find_by_id(&task_id)
-            .await?
-            .ok_or_else(|| Error::NotFound {
-                resource: Resource::Task,
-                id: task_id.to_string(),
-            })?;
-
-        if task.org_id() != &org_id {
-            return Err(Error::NotFound {
-                resource: Resource::Task,
-                id: task_id.to_string(),
-            }
-            .into());
-        }
-
-        task.start(&agent_id)?;
+        let mut task = self.tasks.require(&Id::new(&cmd.task_id)?).await?;
+        task.start(&*self.clock)?;
         self.tasks.save(&mut task).await?;
         Ok(TaskDto::from(&task))
     }

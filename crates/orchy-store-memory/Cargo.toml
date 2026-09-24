@@ -1,22 +1,20 @@
 [package]
 name = "orchy-store-memory"
+description = "In-memory implementations of every orchy port, for tests and ephemeral vaults"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-orchy-core.workspace = true
-orchy-events.workspace = true
-orchy-application.workspace = true
-async-trait = "0.1"
-futures = "0.3"
-serde.workspace = true
-tokio.workspace = true
-tokio-util.workspace = true
-dashmap.workspace = true
-uuid.workspace = true
+async-trait.workspace = true
 chrono.workspace = true
+orchy-core.workspace = true
 serde_json.workspace = true
-tracing.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

@@ -1,10 +1,3 @@
-pub mod agent;
-pub mod bootstrap;
-pub mod edge;
-pub mod event;
-pub mod knowledge;
-pub mod lock;
-pub mod message;
-pub mod org;
-pub mod project;
-pub mod task;
+pub(crate) mod doc;
+pub(crate) mod msg;
+pub(crate) mod task;

@@ -1,704 +1,497 @@
-pub mod events;
+mod events;
+pub mod rollup;
+mod status;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::result::Result as StdResult;
-use std::str::FromStr;
-use uuid::Uuid;
 
-use orchy_events::{Event, EventCollector, Payload};
+pub use events::{
+    TaskBlocked, TaskClaimed, TaskCreated, TaskFinished, TaskReleased, TaskReparented,
+    TaskRolledUp, TaskStarted, TaskSuperseded, TaskUnblocked, TaskUpdated,
+};
+pub use status::TaskStatus;
 
-use self::events as task_events;
-use crate::agent::AgentId;
-use crate::error::{DomainError, DomainResult, Result};
-use crate::namespace::{Namespace, ProjectId};
-use crate::organization::OrganizationId;
-use crate::pagination::{Page, PageParams};
+use crate::actor::{ActorId, Role};
+use crate::clock::Clock;
+use crate::entity_ref::EntityRef;
+use crate::error::{DomainError, Result};
+use crate::event::EventCollector;
+use crate::id::{Id, IdGenerator};
+use crate::namespace::Namespace;
+use crate::pagination::{Page, PageRequest};
+use crate::priority::Priority;
+use crate::tag::{self, Tag};
+use crate::title::Title;
 
-#[async_trait::async_trait]
+#[async_trait]
 pub trait TaskStore: Send + Sync {
+    async fn get(&self, id: &Id) -> Result<Option<Task>>;
+    async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>>;
+    async fn children_of(&self, parent: &Id) -> Result<Vec<Task>>;
     async fn save(&self, task: &mut Task) -> Result<()>;
-    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
-    async fn find_by_ids(&self, ids: &[TaskId]) -> Result<Vec<Task>>;
-    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>>;
-}
+    async fn delete(&self, id: &Id) -> Result<()>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct TaskId(Uuid);
-
-impl TaskId {
-    pub fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
+    async fn require(&self, id: &Id) -> Result<Task> {
+        self.get(id)
+            .await?
+            .ok_or_else(|| DomainError::not_found("task", id))
     }
 }
 
-impl Default for TaskId {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TaskQuery {
+    pub status: Option<Vec<TaskStatus>>,
+    pub namespace: Option<Namespace>,
+    pub claimed_by: Option<ActorId>,
+    pub role: Option<Role>,
+    pub parent: Option<Id>,
+    pub tags: Vec<Tag>,
+    pub text: Option<String>,
 }
 
-impl fmt::Display for TaskId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FromStr for TaskId {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
-        Uuid::parse_str(s)
-            .map(Self)
-            .map_err(|_| DomainError::validation(format!("invalid task id: {s}")))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TaskStatus {
-    Pending,
-    Blocked,
-    Claimed,
-    InProgress,
-    Completed,
-    Failed,
-    Cancelled,
-}
-
-impl TaskStatus {
-    pub fn is_mergeable(&self) -> bool {
-        matches!(
-            self,
-            TaskStatus::Pending | TaskStatus::Blocked | TaskStatus::Claimed
-        )
-    }
-
-    pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
-        )
-    }
-
-    pub fn can_transition_to(&self, target: &TaskStatus) -> bool {
-        use TaskStatus::*;
-        matches!(
-            (self, target),
-            (Pending, Claimed)
-                | (Pending, Blocked)
-                | (Pending, Cancelled)
-                | (Blocked, Pending)
-                | (Blocked, Cancelled)
-                | (Claimed, InProgress)
-                | (Claimed, Completed)
-                | (Claimed, Blocked)
-                | (Claimed, Pending)
-                | (Claimed, Failed)
-                | (Claimed, Cancelled)
-                | (InProgress, Blocked)
-                | (InProgress, Completed)
-                | (InProgress, Failed)
-                | (InProgress, Pending)
-                | (InProgress, Cancelled)
-        )
-    }
-
-    fn transition_to(self, target: TaskStatus) -> DomainResult<TaskStatus> {
-        if self.can_transition_to(&target) {
-            Ok(target)
-        } else {
-            Err(DomainError::invalid_transition(
-                self.to_string(),
-                target.to_string(),
-            ))
+impl TaskQuery {
+    pub fn matches(&self, task: &Task) -> bool {
+        if let Some(status) = &self.status
+            && !status.contains(&task.status)
+        {
+            return false;
         }
-    }
-}
-
-impl fmt::Display for TaskStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            TaskStatus::Pending => "pending",
-            TaskStatus::Blocked => "blocked",
-            TaskStatus::Claimed => "claimed",
-            TaskStatus::InProgress => "in_progress",
-            TaskStatus::Completed => "completed",
-            TaskStatus::Failed => "failed",
-            TaskStatus::Cancelled => "cancelled",
-        };
-        write!(f, "{s}")
-    }
-}
-
-impl FromStr for TaskStatus {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
-        match s {
-            "pending" => Ok(TaskStatus::Pending),
-            "blocked" => Ok(TaskStatus::Blocked),
-            "claimed" => Ok(TaskStatus::Claimed),
-            "in_progress" => Ok(TaskStatus::InProgress),
-            "completed" => Ok(TaskStatus::Completed),
-            "failed" => Ok(TaskStatus::Failed),
-            "cancelled" => Ok(TaskStatus::Cancelled),
-            other => Err(DomainError::validation(format!(
-                "unknown task status: {other}"
-            ))),
+        if let Some(namespace) = &self.namespace
+            && !namespace.contains(&task.namespace)
+        {
+            return false;
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Priority {
-    Low,
-    #[default]
-    Normal,
-    High,
-    Critical,
-}
-
-impl fmt::Display for Priority {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Priority::Low => "low",
-            Priority::Normal => "normal",
-            Priority::High => "high",
-            Priority::Critical => "critical",
-        };
-        write!(f, "{s}")
-    }
-}
-
-impl FromStr for Priority {
-    type Err = DomainError;
-
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
-        match s {
-            "low" => Ok(Priority::Low),
-            "normal" => Ok(Priority::Normal),
-            "high" => Ok(Priority::High),
-            "critical" => Ok(Priority::Critical),
-            other => Err(DomainError::validation(format!(
-                "unknown priority: {other}"
-            ))),
+        if let Some(actor) = &self.claimed_by
+            && task.claimed_by.as_ref() != Some(actor)
+        {
+            return false;
         }
+        if let Some(role) = &self.role
+            && !task.assigned_roles.contains(role)
+        {
+            return false;
+        }
+        if let Some(parent) = &self.parent
+            && task.parent.as_ref() != Some(parent)
+        {
+            return false;
+        }
+        if !self.tags.iter().all(|t| task.tags.contains(t)) {
+            return false;
+        }
+        if let Some(text) = &self.text {
+            let needle = text.to_lowercase();
+            let haystack = format!(
+                "{} {}",
+                task.title.as_str().to_lowercase(),
+                task.description.to_lowercase()
+            );
+            if !haystack.contains(&needle) {
+                return false;
+            }
+        }
+        true
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
-    id: TaskId,
-    org_id: OrganizationId,
-    project: ProjectId,
-    namespace: Namespace,
-    title: String,
+    id: Id,
+    title: Title,
     description: String,
     acceptance_criteria: Option<String>,
     status: TaskStatus,
     priority: Priority,
-    assigned_roles: Vec<String>,
-    assigned_to: Option<AgentId>,
-    assigned_at: Option<DateTime<Utc>>,
-    stale_after_secs: Option<u64>,
-    last_activity_at: DateTime<Utc>,
-    tags: Vec<String>,
-    result_summary: Option<String>,
-    archived_at: Option<DateTime<Utc>>,
-    created_by: Option<AgentId>,
+    namespace: Namespace,
+    parent: Option<Id>,
+    depends_on: Vec<Id>,
+    assigned_roles: Vec<Role>,
+    claimed_by: Option<ActorId>,
+    claimed_at: Option<DateTime<Utc>>,
+    tags: Vec<Tag>,
+    refs: Vec<EntityRef>,
+    note: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
-    #[serde(skip)]
-    version: u64,
-    #[serde(skip)]
-    persisted_version: Option<u64>,
     #[serde(skip)]
     collector: EventCollector,
 }
 
-impl Task {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        org_id: OrganizationId,
-        project: ProjectId,
-        namespace: Namespace,
-        title: String,
-        description: String,
-        acceptance_criteria: Option<String>,
-        priority: Priority,
-        assigned_roles: Vec<String>,
-        created_by: Option<AgentId>,
-        is_blocked: bool,
-    ) -> DomainResult<Self> {
-        if title.trim().is_empty() {
-            return Err(DomainError::validation("task title must not be empty"));
-        }
+#[derive(Debug, Clone)]
+pub struct RestoreTask {
+    pub id: Id,
+    pub title: Title,
+    pub description: String,
+    pub acceptance_criteria: Option<String>,
+    pub status: TaskStatus,
+    pub priority: Priority,
+    pub namespace: Namespace,
+    pub parent: Option<Id>,
+    pub depends_on: Vec<Id>,
+    pub assigned_roles: Vec<Role>,
+    pub claimed_by: Option<ActorId>,
+    pub claimed_at: Option<DateTime<Utc>>,
+    pub tags: Vec<Tag>,
+    pub refs: Vec<EntityRef>,
+    pub note: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
-        let now = Utc::now();
-        let mut task = Self {
-            id: TaskId::new(),
-            org_id,
-            project,
-            namespace,
-            title,
-            description,
-            acceptance_criteria,
-            status: if is_blocked {
-                TaskStatus::Blocked
-            } else {
-                TaskStatus::Pending
-            },
-            priority,
-            assigned_roles,
-            assigned_to: None,
-            assigned_at: None,
-            stale_after_secs: None,
-            last_activity_at: now,
+impl Task {
+    pub fn new(restore: RestoreTask) -> Self {
+        Self {
+            id: restore.id,
+            title: restore.title,
+            description: restore.description,
+            acceptance_criteria: restore.acceptance_criteria,
+            status: restore.status,
+            priority: restore.priority,
+            namespace: restore.namespace,
+            parent: restore.parent,
+            depends_on: restore.depends_on,
+            assigned_roles: restore.assigned_roles,
+            claimed_by: restore.claimed_by,
+            claimed_at: restore.claimed_at,
+            tags: restore.tags,
+            refs: restore.refs,
+            note: restore.note,
+            created_at: restore.created_at,
+            updated_at: restore.updated_at,
+            collector: EventCollector::new(),
+        }
+    }
+
+    pub fn create(
+        title: Title,
+        namespace: Namespace,
+        ids: &dyn IdGenerator,
+        clock: &dyn Clock,
+    ) -> Self {
+        let now = clock.now();
+        let id = Id::generate(ids);
+        let mut task = Self::new(RestoreTask {
+            id: id.clone(),
+            title: title.clone(),
+            description: String::new(),
+            acceptance_criteria: None,
+            status: TaskStatus::Pending,
+            priority: Priority::default(),
+            namespace: namespace.clone(),
+            parent: None,
+            depends_on: Vec::new(),
+            assigned_roles: Vec::new(),
+            claimed_by: None,
+            claimed_at: None,
             tags: Vec::new(),
-            result_summary: None,
-            archived_at: None,
-            created_by,
+            refs: Vec::new(),
+            note: None,
             created_at: now,
             updated_at: now,
-            version: 1,
-            persisted_version: None,
-            collector: EventCollector::new(),
-        };
-
-        task.collector.collect(Event::create(
-            task.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_CREATED,
-            task.id.to_string(),
-            Payload::from_json(&task_events::TaskCreatedPayload {
-                org_id: task.org_id.to_string(),
-                task_id: task.id.to_string(),
-                project: task.project.to_string(),
-                namespace: task.namespace.to_string(),
-                title: task.title.clone(),
-                description: task.description.clone(),
-                acceptance_criteria: task.acceptance_criteria.clone(),
-                priority: task.priority.to_string(),
-                assigned_roles: task.assigned_roles.clone(),
-            })?,
-        )?);
-
-        Ok(task)
+        });
+        task.collector.collect(TaskCreated {
+            id,
+            namespace,
+            title: title.into(),
+            parent: None,
+            at: now,
+        });
+        task
     }
 
-    pub fn restore(r: RestoreTask) -> Self {
-        Self {
-            id: r.id,
-            org_id: r.org_id,
-            project: r.project,
-            namespace: r.namespace,
-            title: r.title,
-            description: r.description,
-            acceptance_criteria: r.acceptance_criteria,
-            status: r.status,
-            priority: r.priority,
-            assigned_roles: r.assigned_roles,
-            assigned_to: r.assigned_to,
-            assigned_at: r.assigned_at,
-            stale_after_secs: r.stale_after_secs,
-            last_activity_at: r.last_activity_at,
-            tags: r.tags,
-            result_summary: r.result_summary,
-            archived_at: r.archived_at,
-            created_by: r.created_by,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            version: r.version,
-            persisted_version: Some(r.version),
-            collector: EventCollector::new(),
+    pub fn attach_to(&mut self, parent: Id, clock: &dyn Clock) -> Result<()> {
+        if parent == self.id {
+            return Err(DomainError::validation("a task cannot be its own parent"));
         }
-    }
-
-    pub fn claim(&mut self, agent: AgentId) -> DomainResult<()> {
-        if !self.can_be_claimed() {
-            return Err(DomainError::validation(format!(
-                "task {} cannot be claimed in status {}",
-                self.id, self.status
-            )));
-        }
-        self.status = TaskStatus::Claimed;
-        self.assigned_to = Some(agent.clone());
-        self.assigned_at = Some(Utc::now());
-        self.updated_at = Utc::now();
-        self.touch();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_CLAIMED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskClaimedPayload {
-                task_id: self.id.to_string(),
-                agent_id: agent.to_string(),
-            })?,
-        )?);
-
+        self.parent = Some(parent.clone());
+        self.touch(clock);
+        self.collector.collect(TaskReparented {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            parent: Some(parent),
+            at: self.updated_at,
+        });
         Ok(())
     }
 
-    pub fn persisted_version(&self) -> Option<u64> {
-        self.persisted_version
+    pub fn detach(&mut self, clock: &dyn Clock) {
+        self.parent = None;
+        self.touch(clock);
+        self.collector.collect(TaskReparented {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            parent: None,
+            at: self.updated_at,
+        });
     }
 
-    pub fn version(&self) -> u64 {
-        self.version
-    }
-
-    pub fn mark_persisted(&mut self) {
-        self.persisted_version = Some(self.version);
-    }
-
-    pub fn start(&mut self, agent: &AgentId) -> DomainResult<()> {
-        if self.assigned_to.as_ref() != Some(agent) {
-            return Err(DomainError::validation(format!(
-                "task {} is not claimed by agent {}",
-                self.id, agent
-            )));
-        }
-        self.status = self.status.transition_to(TaskStatus::InProgress)?;
-        self.updated_at = Utc::now();
-        self.touch();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_STARTED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskStartedPayload {
-                task_id: self.id.to_string(),
-                agent_id: agent.to_string(),
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn complete(&mut self, summary: Option<String>) -> DomainResult<()> {
-        self.status = self.status.transition_to(TaskStatus::Completed)?;
-        self.result_summary = summary.clone();
-        self.updated_at = Utc::now();
-        self.touch();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_COMPLETED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskCompletedPayload {
-                task_id: self.id.to_string(),
-                summary,
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn auto_complete(&mut self, summary: String) -> DomainResult<()> {
-        if self.status != TaskStatus::Blocked && self.status != TaskStatus::Claimed {
-            return Err(DomainError::invalid_transition(
-                self.status.to_string(),
-                TaskStatus::Completed.to_string(),
-            ));
-        }
-        self.status = TaskStatus::Completed;
-        self.result_summary = Some(summary.clone());
-        self.updated_at = Utc::now();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_AUTO_COMPLETED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskCompletedPayload {
-                task_id: self.id.to_string(),
-                summary: Some(summary),
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn fail(&mut self, reason: Option<String>) -> DomainResult<()> {
-        self.status = self.status.transition_to(TaskStatus::Failed)?;
-        self.result_summary = reason.clone();
-        self.updated_at = Utc::now();
-        self.touch();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_FAILED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskFailedPayload {
-                task_id: self.id.to_string(),
-                reason,
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn release(&mut self) -> DomainResult<()> {
-        if !matches!(self.status, TaskStatus::Claimed | TaskStatus::InProgress) {
-            return Err(DomainError::invalid_transition(
-                self.status.to_string(),
-                TaskStatus::Pending.to_string(),
-            ));
-        }
-        self.status = self.status.transition_to(TaskStatus::Pending)?;
-        self.assigned_to = None;
-        self.assigned_at = None;
-        self.updated_at = Utc::now();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_RELEASED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskReleasedPayload {
-                task_id: self.id.to_string(),
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn assign(&mut self, new_agent: AgentId) -> DomainResult<()> {
-        if !matches!(self.status, TaskStatus::Claimed | TaskStatus::InProgress) {
-            return Err(DomainError::validation(format!(
-                "task {} cannot be reassigned from status {}",
-                self.id, self.status
-            )));
-        }
-        self.assigned_to = Some(new_agent.clone());
-        self.assigned_at = Some(Utc::now());
-        self.updated_at = Utc::now();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_ASSIGNED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskAssignedPayload {
-                task_id: self.id.to_string(),
-                agent_id: new_agent.to_string(),
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn block(&mut self) -> DomainResult<()> {
-        if self.status == TaskStatus::Blocked {
-            return Ok(());
-        }
-        self.status = self.status.transition_to(TaskStatus::Blocked)?;
-        self.updated_at = Utc::now();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_BLOCKED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskBlockedPayload {
-                task_id: self.id.to_string(),
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn unblock(&mut self) -> DomainResult<()> {
-        if self.status != TaskStatus::Blocked {
-            return Ok(());
-        }
-        self.status = self.status.transition_to(TaskStatus::Pending)?;
-        self.updated_at = Utc::now();
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_UNBLOCKED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskUnblockedPayload {
-                task_id: self.id.to_string(),
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn cancel(&mut self, reason: Option<String>) -> DomainResult<()> {
-        self.status = self.status.transition_to(TaskStatus::Cancelled)?;
-        self.result_summary = reason.clone();
-        self.updated_at = Utc::now();
-        self.version += 1;
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_CANCELLED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskCancelledPayload {
-                task_id: self.id.to_string(),
-                reason,
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn archive(&mut self, reason: Option<String>) -> DomainResult<()> {
-        if self.archived_at.is_some() {
-            return Err(DomainError::validation("task is already archived"));
-        }
-        if !self.status().is_terminal() {
-            return Err(DomainError::validation(format!(
-                "can only archive terminal tasks, got {}",
-                self.status()
-            )));
-        }
-        self.archived_at = Some(Utc::now());
-        self.updated_at = Utc::now();
-        let payload = Payload::from_json(&task_events::TaskArchivedPayload {
-            task_id: self.id.to_string(),
-            reason,
-        })?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_ARCHIVED,
-            self.id.to_string(),
-            payload,
-        )?;
-        self.collector.collect(event);
-        Ok(())
-    }
-
-    pub fn unarchive(&mut self) -> DomainResult<()> {
-        if self.archived_at.is_none() {
-            return Err(DomainError::validation("task is not archived"));
-        }
-        self.archived_at = None;
-        self.updated_at = Utc::now();
-        let payload = Payload::from_json(&task_events::TaskRestoredPayload {
-            task_id: self.id.to_string(),
-        })?;
-        let event = Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_RESTORED,
-            self.id.to_string(),
-            payload,
-        )?;
-        self.collector.collect(event);
-        Ok(())
-    }
-
-    pub fn update_details(
-        &mut self,
-        title: Option<String>,
-        description: Option<String>,
-        acceptance_criteria: Option<String>,
-        priority: Option<Priority>,
-    ) -> DomainResult<()> {
-        if title.is_none()
-            && description.is_none()
-            && acceptance_criteria.is_none()
-            && priority.is_none()
+    pub fn claim(&mut self, by: ActorId, clock: &dyn Clock) -> Result<()> {
+        if let Some(holder) = &self.claimed_by
+            && holder != &by
+            && !self.status.is_terminal()
         {
-            return Err(DomainError::validation("no task fields to update"));
-        }
-        if matches!(
-            self.status,
-            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
-        ) {
-            return Err(DomainError::validation(format!(
-                "cannot update task in status {}",
-                self.status
+            return Err(DomainError::conflict(format!(
+                "task is already claimed by {holder}"
             )));
         }
-        self.version += 1;
-        let mut new_title = None;
-        let mut new_description = None;
-        let mut new_acceptance_criteria = None;
-        let mut new_priority = None;
-        if let Some(t) = title {
-            if t.trim().is_empty() {
-                return Err(DomainError::validation("task title must not be empty"));
-            }
-            new_title = Some(t.clone());
-            self.title = t;
-        }
-        if let Some(d) = description {
-            new_description = Some(d.clone());
-            self.description = d;
-        }
-        if let Some(a) = acceptance_criteria {
-            new_acceptance_criteria = Some(a.clone());
-            self.acceptance_criteria = Some(a);
-        }
-        if let Some(p) = priority {
-            new_priority = Some(p.to_string());
-            self.priority = p;
-        }
-        self.updated_at = Utc::now();
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_UPDATED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskUpdatedPayload {
-                task_id: self.id.to_string(),
-                title: new_title,
-                description: new_description,
-                acceptance_criteria: new_acceptance_criteria,
-                priority: new_priority,
-            })?,
-        )?);
-
+        self.status = self.status.transition_to(TaskStatus::Claimed)?;
+        let now = clock.now();
+        self.claimed_by = Some(by.clone());
+        self.claimed_at = Some(now);
+        self.updated_at = now;
+        self.collector.collect(TaskClaimed {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            by,
+            at: now,
+        });
         Ok(())
     }
 
-    pub fn id(&self) -> TaskId {
-        self.id
+    pub fn release(&mut self, by: &ActorId, clock: &dyn Clock) -> Result<()> {
+        match &self.claimed_by {
+            Some(holder) if holder == by => {}
+            Some(holder) => {
+                return Err(DomainError::forbidden(format!(
+                    "task is held by {holder}, not {by}"
+                )));
+            }
+            None => return Err(DomainError::conflict("task is not claimed")),
+        }
+        self.status = self.status.transition_to(TaskStatus::Pending)?;
+        let now = clock.now();
+        self.claimed_by = None;
+        self.claimed_at = None;
+        self.updated_at = now;
+        self.collector.collect(TaskReleased {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            by: by.clone(),
+            at: now,
+        });
+        Ok(())
     }
-    pub fn org_id(&self) -> &OrganizationId {
-        &self.org_id
+
+    pub fn start(&mut self, clock: &dyn Clock) -> Result<()> {
+        self.status = self.status.transition_to(TaskStatus::InProgress)?;
+        self.touch(clock);
+        self.collector.collect(TaskStarted {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            at: self.updated_at,
+        });
+        Ok(())
     }
-    pub fn project(&self) -> &ProjectId {
-        &self.project
+
+    pub fn complete(
+        &mut self,
+        by: &ActorId,
+        note: Option<String>,
+        clock: &dyn Clock,
+    ) -> Result<()> {
+        self.held_by(by)?;
+        self.finish(TaskStatus::Completed, note, clock)
     }
-    pub fn namespace(&self) -> &Namespace {
-        &self.namespace
+
+    pub fn fail(&mut self, by: &ActorId, reason: String, clock: &dyn Clock) -> Result<()> {
+        self.held_by(by)?;
+        self.finish(TaskStatus::Failed, Some(reason), clock)
     }
-    pub fn title(&self) -> &str {
+
+    pub fn cancel(&mut self, by: &ActorId, reason: String, clock: &dyn Clock) -> Result<()> {
+        self.held_by(by)?;
+        self.finish(TaskStatus::Cancelled, Some(reason), clock)
+    }
+
+    /// Finishing work is a claim about what *you* did, so only the holder may report it. An
+    /// unclaimed task needs no check: the transition table already refuses to finish one.
+    fn held_by(&self, by: &ActorId) -> Result<()> {
+        match &self.claimed_by {
+            Some(holder) if holder != by => Err(DomainError::forbidden(format!(
+                "task is held by {holder}, not {by}"
+            ))),
+            _ => Ok(()),
+        }
+    }
+
+    /// Retired because the work moved elsewhere — unlike cancelling, which says it is not
+    /// wanted, or completing, which says it was done here.
+    pub fn supersede(
+        &mut self,
+        by: Vec<Id>,
+        reason: Option<String>,
+        clock: &dyn Clock,
+    ) -> Result<()> {
+        if by.is_empty() {
+            return Err(DomainError::validation(
+                "a superseded task must name what replaces it",
+            ));
+        }
+        if by.contains(&self.id) {
+            return Err(DomainError::validation("a task cannot supersede itself"));
+        }
+        self.status = self.status.transition_to(TaskStatus::Superseded)?;
+        self.note = reason.clone();
+        self.touch(clock);
+        self.collector.collect(TaskSuperseded {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            by,
+            reason,
+            at: self.updated_at,
+        });
+        Ok(())
+    }
+
+    fn finish(
+        &mut self,
+        status: TaskStatus,
+        note: Option<String>,
+        clock: &dyn Clock,
+    ) -> Result<()> {
+        self.status = self.status.transition_to(status)?;
+        self.note = note.clone();
+        self.touch(clock);
+        self.collector.collect(TaskFinished {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            status,
+            note,
+            at: self.updated_at,
+        });
+        Ok(())
+    }
+
+    /// Deliberately bypasses `can_transition_to`. A parent sits in `Pending` while its
+    /// children work, and `Pending -> Completed` is forbidden for an *agent* because work must
+    /// be claimed before it is finished — a rule about skipping steps, not about a status
+    /// derived from children. Only the terminal guard applies, so a human's explicit
+    /// completion outranks a later derivation.
+    pub fn roll_up(&mut self, status: TaskStatus, because: String, clock: &dyn Clock) -> bool {
+        if self.status.is_terminal() || self.status == status {
+            return false;
+        }
+        self.status = status;
+        self.touch(clock);
+        self.collector.collect(TaskRolledUp {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            status,
+            because,
+            at: self.updated_at,
+        });
+        true
+    }
+
+    pub fn block(&mut self, reason: String, clock: &dyn Clock) -> Result<()> {
+        self.status = self.status.transition_to(TaskStatus::Blocked)?;
+        self.touch(clock);
+        self.collector.collect(TaskBlocked {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            reason,
+            at: self.updated_at,
+        });
+        Ok(())
+    }
+
+    pub fn unblock(&mut self, clock: &dyn Clock) -> Result<()> {
+        self.status = self.status.transition_to(TaskStatus::Pending)?;
+        self.touch(clock);
+        self.collector.collect(TaskUnblocked {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            at: self.updated_at,
+        });
+        Ok(())
+    }
+
+    pub fn add_dependency(&mut self, on: Id, clock: &dyn Clock) -> Result<()> {
+        if on == self.id {
+            return Err(DomainError::validation("a task cannot depend on itself"));
+        }
+        if !self.depends_on.contains(&on) {
+            self.depends_on.push(on);
+            self.depends_on.sort();
+            self.updated_field("depends_on", clock);
+        }
+        Ok(())
+    }
+
+    pub fn remove_dependency(&mut self, on: &Id, clock: &dyn Clock) {
+        let before = self.depends_on.len();
+        self.depends_on.retain(|d| d != on);
+        if self.depends_on.len() != before {
+            self.updated_field("depends_on", clock);
+        }
+    }
+
+    pub fn retitle(&mut self, title: Title, clock: &dyn Clock) {
+        self.title = title;
+        self.updated_field("title", clock);
+    }
+
+    pub fn describe(&mut self, description: String, clock: &dyn Clock) {
+        self.description = description;
+        self.updated_field("description", clock);
+    }
+
+    pub fn set_acceptance_criteria(&mut self, criteria: Option<String>, clock: &dyn Clock) {
+        self.acceptance_criteria = criteria.filter(|c| !c.trim().is_empty());
+        self.updated_field("acceptance_criteria", clock);
+    }
+
+    pub fn set_priority(&mut self, priority: Priority, clock: &dyn Clock) {
+        self.priority = priority;
+        self.updated_field("priority", clock);
+    }
+
+    pub fn assign_roles(&mut self, roles: Vec<Role>, clock: &dyn Clock) {
+        self.assigned_roles = roles;
+        self.assigned_roles.sort();
+        self.updated_field("assigned_roles", clock);
+    }
+
+    pub fn move_to(&mut self, namespace: Namespace, clock: &dyn Clock) {
+        self.namespace = namespace;
+        self.updated_field("namespace", clock);
+    }
+
+    pub fn retag(&mut self, add: Vec<Tag>, remove: &[Tag], clock: &dyn Clock) {
+        tag::apply(&mut self.tags, add, remove);
+        self.updated_field("tags", clock);
+    }
+
+    pub fn reference(&mut self, entity: EntityRef, clock: &dyn Clock) {
+        if !self.refs.contains(&entity) {
+            self.refs.push(entity);
+            self.updated_field("refs", clock);
+        }
+    }
+
+    pub fn touch(&mut self, clock: &dyn Clock) {
+        self.updated_at = clock.now();
+    }
+
+    fn updated_field(&mut self, field: &str, clock: &dyn Clock) {
+        self.touch(clock);
+        self.collector.collect(TaskUpdated {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            field: field.to_owned(),
+            at: self.updated_at,
+        });
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Box<dyn crate::event::DomainEvent>> {
+        self.collector.drain()
+    }
+
+    pub fn id(&self) -> &Id {
+        &self.id
+    }
+    pub fn title(&self) -> &Title {
         &self.title
     }
     pub fn description(&self) -> &str {
@@ -713,130 +506,32 @@ impl Task {
     pub fn priority(&self) -> Priority {
         self.priority
     }
-    pub fn assigned_roles(&self) -> &[String] {
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+    pub fn parent(&self) -> Option<&Id> {
+        self.parent.as_ref()
+    }
+    pub fn depends_on(&self) -> &[Id] {
+        &self.depends_on
+    }
+    pub fn assigned_roles(&self) -> &[Role] {
         &self.assigned_roles
     }
-    pub fn assigned_to(&self) -> Option<&AgentId> {
-        self.assigned_to.as_ref()
+    pub fn claimed_by(&self) -> Option<&ActorId> {
+        self.claimed_by.as_ref()
     }
-    pub fn assigned_at(&self) -> Option<DateTime<Utc>> {
-        self.assigned_at
+    pub fn claimed_at(&self) -> Option<DateTime<Utc>> {
+        self.claimed_at
     }
-    pub fn stale_after_secs(&self) -> Option<u64> {
-        self.stale_after_secs
-    }
-    pub fn last_activity_at(&self) -> DateTime<Utc> {
-        self.last_activity_at
-    }
-    pub fn is_stale(&self) -> bool {
-        match self.stale_after_secs {
-            None => false,
-            Some(secs) => {
-                let elapsed = (Utc::now() - self.last_activity_at).num_seconds() as u64;
-                elapsed > secs
-            }
-        }
-    }
-
-    pub fn can_be_claimed(&self) -> bool {
-        match self.status {
-            TaskStatus::Pending => true,
-            TaskStatus::Claimed | TaskStatus::InProgress => self.is_stale(),
-            _ => false,
-        }
-    }
-    pub fn touch(&mut self) {
-        self.last_activity_at = Utc::now();
-        self.updated_at = Utc::now();
-    }
-    pub fn tags(&self) -> &[String] {
+    pub fn tags(&self) -> &[Tag] {
         &self.tags
     }
-    pub fn add_tag(&mut self, tag: String) -> DomainResult<()> {
-        if self.tags.contains(&tag) {
-            return Ok(());
-        }
-        self.tags.push(tag.clone());
-        self.updated_at = Utc::now();
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_TAGGED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskTaggedPayload {
-                task_id: self.id.to_string(),
-                tag,
-            })?,
-        )?);
-
-        Ok(())
+    pub fn refs(&self) -> &[EntityRef] {
+        &self.refs
     }
-    pub fn remove_tag(&mut self, tag: &str) -> DomainResult<()> {
-        let Some(pos) = self.tags.iter().position(|t| t == tag) else {
-            return Ok(());
-        };
-        self.tags.remove(pos);
-        self.updated_at = Utc::now();
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_TAG_REMOVED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskTagRemovedPayload {
-                task_id: self.id.to_string(),
-                tag: tag.to_owned(),
-            })?,
-        )?);
-
-        Ok(())
-    }
-    pub fn result_summary(&self) -> Option<&str> {
-        self.result_summary.as_deref()
-    }
-    pub fn archived_at(&self) -> Option<DateTime<Utc>> {
-        self.archived_at
-    }
-    pub fn is_archived(&self) -> bool {
-        self.archived_at.is_some()
-    }
-    pub fn move_to(&mut self, namespace: Namespace) -> DomainResult<()> {
-        let from_namespace = self.namespace.to_string();
-        self.namespace = namespace;
-        self.updated_at = Utc::now();
-
-        self.collector.collect(Event::create(
-            self.org_id.as_str(),
-            task_events::NAMESPACE,
-            task_events::TOPIC_MOVED,
-            self.id.to_string(),
-            Payload::from_json(&task_events::TaskMovedPayload {
-                task_id: self.id.to_string(),
-                from_namespace,
-                to_namespace: self.namespace.to_string(),
-            })?,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn all_children_completed(children: &[Task]) -> bool {
-        !children.is_empty()
-            && children.iter().all(|c| {
-                matches!(
-                    c.status(),
-                    TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
-                )
-            })
-    }
-
-    pub fn drain_events(&mut self) -> Vec<Event> {
-        self.collector.drain()
-    }
-
-    pub fn created_by(&self) -> Option<&AgentId> {
-        self.created_by.as_ref()
+    pub fn note(&self) -> Option<&str> {
+        self.note.as_deref()
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -846,491 +541,376 @@ impl Task {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TaskWithContext {
-    #[serde(flatten)]
-    pub task: Task,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ancestors: Vec<Task>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<Task>,
-}
-
-pub struct RestoreTask {
-    pub id: TaskId,
-    pub org_id: OrganizationId,
-    pub project: ProjectId,
-    pub namespace: Namespace,
-    pub title: String,
-    pub description: String,
-    pub acceptance_criteria: Option<String>,
-    pub status: TaskStatus,
-    pub priority: Priority,
-    pub assigned_roles: Vec<String>,
-    pub assigned_to: Option<AgentId>,
-    pub assigned_at: Option<DateTime<Utc>>,
-    pub stale_after_secs: Option<u64>,
-    pub last_activity_at: DateTime<Utc>,
-    pub tags: Vec<String>,
-    pub result_summary: Option<String>,
-    pub archived_at: Option<DateTime<Utc>>,
-    pub created_by: Option<AgentId>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub version: u64,
-}
-
-pub struct SubtaskDef {
-    pub title: String,
-    pub description: String,
-    pub acceptance_criteria: Option<String>,
-    pub priority: Priority,
-    pub assigned_roles: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct TaskFilter {
-    pub org_id: Option<OrganizationId>,
-    pub namespace: Option<Namespace>,
-    pub project: Option<ProjectId>,
-    pub status: Option<TaskStatus>,
-    pub assigned_role: Option<String>,
-    pub assigned_to: Option<AgentId>,
-    pub tag: Option<String>,
-    /// When Some(true): include archived tasks.
-    /// When Some(false): only non-archived tasks.
-    /// When None: defaults to false (exclude archived).
-    pub include_archived: Option<bool>,
-}
-
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
+    use ulid::Ulid;
 
-    fn make_task(status: TaskStatus, assigned_to: Option<AgentId>) -> Task {
-        use orchy_events::OrganizationId;
-        let mut t = Task::restore(RestoreTask {
-            id: TaskId::new(),
-            org_id: OrganizationId::new("test").unwrap(),
-            project: ProjectId::try_from("test").unwrap(),
-            namespace: Namespace::root(),
-            title: "Test Task".to_owned(),
-            description: "Test".to_owned(),
-            acceptance_criteria: None,
-            status,
-            priority: Priority::default(),
-            assigned_roles: vec!["tester".to_owned()],
-            assigned_to,
-            assigned_at: None,
-            stale_after_secs: None,
-            last_activity_at: Utc::now(),
-            tags: vec![],
-            result_summary: None,
-            archived_at: None,
-            created_by: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            version: 1,
-        });
-        t.mark_persisted();
-        t
+    pub(super) struct FixedClock(DateTime<Utc>);
+
+    impl Clock for FixedClock {
+        fn now(&self) -> DateTime<Utc> {
+            self.0
+        }
     }
 
-    fn make_stale_task(status: TaskStatus, assigned_to: Option<AgentId>) -> Task {
-        use orchy_events::OrganizationId;
-        let mut t = Task::restore(RestoreTask {
-            id: TaskId::new(),
-            org_id: OrganizationId::new("test").unwrap(),
-            project: ProjectId::try_from("test").unwrap(),
-            namespace: Namespace::root(),
-            title: "Stale Task".to_owned(),
-            description: "Stale".to_owned(),
-            acceptance_criteria: None,
-            status,
-            priority: Priority::default(),
-            assigned_roles: vec!["tester".to_owned()],
-            assigned_to,
-            assigned_at: None,
-            stale_after_secs: Some(1),
-            last_activity_at: Utc::now() - chrono::Duration::seconds(10),
-            tags: vec![],
-            result_summary: None,
-            archived_at: None,
-            created_by: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            version: 1,
-        });
-        t.mark_persisted();
-        t
+    pub(super) struct SeqIds(std::sync::atomic::AtomicU64);
+
+    impl IdGenerator for SeqIds {
+        fn generate(&self) -> Ulid {
+            let n = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ulid::from_parts(n, n as u128)
+        }
     }
 
-    fn make_completed_task() -> Task {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::InProgress, Some(agent));
-        task.complete(Some("done".to_owned())).unwrap();
+    pub(super) fn clock() -> FixedClock {
+        FixedClock(DateTime::from_timestamp(1_700_000_000, 0).unwrap())
+    }
+
+    pub(super) fn ids() -> SeqIds {
+        SeqIds(std::sync::atomic::AtomicU64::new(1))
+    }
+
+    pub(super) fn actor(alias: &str) -> ActorId {
+        ActorId::new(alias, "01ARZ3NDEKTSV4RRFFQ69G5FAV").unwrap()
+    }
+
+    pub(super) fn task() -> Task {
+        Task::create(
+            Title::new("ship it").unwrap(),
+            Namespace::root(),
+            &ids(),
+            &clock(),
+        )
+    }
+
+    pub(super) fn claimed() -> Task {
+        let mut task = task();
+        task.claim(actor("claude"), &clock()).unwrap();
         task
     }
 
     #[test]
-    fn valid_transitions() {
-        assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Claimed));
-        assert!(TaskStatus::Pending.can_transition_to(&TaskStatus::Blocked));
-        assert!(TaskStatus::Blocked.can_transition_to(&TaskStatus::Pending));
-        assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::InProgress));
-        assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Completed));
-        assert!(TaskStatus::Claimed.can_transition_to(&TaskStatus::Failed));
-        assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Completed));
-        assert!(TaskStatus::InProgress.can_transition_to(&TaskStatus::Failed));
+    fn a_new_task_is_pending_unclaimed_and_parentless() {
+        let task = task();
+        assert_eq!(task.status(), TaskStatus::Pending);
+        assert_eq!(task.claimed_by(), None);
+        assert_eq!(task.parent(), None);
+        assert_eq!(task.priority(), Priority::Normal);
     }
 
     #[test]
-    fn auto_complete_from_claimed() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent));
-        assert!(task.auto_complete("all children done".to_owned()).is_ok());
-        assert_eq!(task.status(), TaskStatus::Completed);
-        assert_eq!(task.result_summary(), Some("all children done"));
+    fn creating_collects_exactly_one_event() {
+        let mut task = task();
+        let events = task.drain_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].topic().as_str(), "task.created");
     }
 
     #[test]
-    fn assign_preserves_in_progress_status() {
-        let agent1 = AgentId::new();
-        let agent2 = AgentId::new();
-        let mut task = make_task(TaskStatus::InProgress, Some(agent1));
-        assert!(task.assign(agent2.clone()).is_ok());
-        assert_eq!(task.status(), TaskStatus::InProgress);
-        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
-    }
-
-    #[test]
-    fn invalid_transitions() {
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::InProgress));
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Completed));
-        assert!(!TaskStatus::Pending.can_transition_to(&TaskStatus::Failed));
-        assert!(!TaskStatus::Completed.can_transition_to(&TaskStatus::Pending));
-        assert!(!TaskStatus::Failed.can_transition_to(&TaskStatus::Pending));
-        assert!(!TaskStatus::Blocked.can_transition_to(&TaskStatus::Claimed));
-        assert!(!TaskStatus::Blocked.can_transition_to(&TaskStatus::Completed));
-        assert!(!TaskStatus::InProgress.can_transition_to(&TaskStatus::Claimed));
-    }
-
-    #[test]
-    fn claim_succeeds_from_pending() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Pending, None);
-        assert!(task.claim(agent.clone()).is_ok());
+    fn claiming_records_the_holder_and_the_moment() {
+        let task = claimed();
         assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.assigned_to(), Some(agent).as_ref());
-        assert!(task.assigned_at().is_some());
+        assert_eq!(task.claimed_by(), Some(&actor("claude")));
+        assert!(task.claimed_at().is_some());
     }
 
     #[test]
-    fn claim_fails_from_claimed() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent.clone()));
-        assert!(task.claim(agent).is_err());
-    }
-
-    #[test]
-    fn claim_stale_claimed_by_another_agent_succeeds() {
-        let agent1 = AgentId::new();
-        let agent2 = AgentId::new();
-        let mut task = make_stale_task(TaskStatus::Claimed, Some(agent1));
-        assert!(task.claim(agent2.clone()).is_ok());
-        assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
-    }
-
-    #[test]
-    fn claim_stale_in_progress_by_another_agent_succeeds() {
-        let agent1 = AgentId::new();
-        let agent2 = AgentId::new();
-        let mut task = make_stale_task(TaskStatus::InProgress, Some(agent1));
-        assert!(task.claim(agent2.clone()).is_ok());
-        assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
-    }
-
-    #[test]
-    fn claim_fresh_claimed_by_another_agent_fails() {
-        let agent1 = AgentId::new();
-        let agent2 = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent1));
-        assert!(task.claim(agent2).is_err());
-    }
-
-    #[test]
-    fn claim_fresh_in_progress_by_another_agent_fails() {
-        let agent1 = AgentId::new();
-        let agent2 = AgentId::new();
-        let mut task = make_task(TaskStatus::InProgress, Some(agent1));
-        assert!(task.claim(agent2).is_err());
-    }
-
-    #[test]
-    fn start_succeeds_when_claimed_by_agent() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent.clone()));
-        assert!(task.start(&agent).is_ok());
-        assert_eq!(task.status(), TaskStatus::InProgress);
-    }
-
-    #[test]
-    fn start_fails_when_claimed_by_different_agent() {
-        let agent1 = AgentId::new();
-        let agent2 = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent1.clone()));
-        assert!(task.start(&agent2).is_err());
-    }
-
-    #[test]
-    fn complete_succeeds_from_in_progress() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::InProgress, Some(agent));
-        assert!(task.complete(Some("done".to_owned())).is_ok());
-        assert_eq!(task.status(), TaskStatus::Completed);
-        assert_eq!(task.result_summary(), Some("done"));
-    }
-
-    #[test]
-    fn acceptance_criteria_is_set_and_updatable() {
-        let mut task = Task::new(
-            OrganizationId::new("test").unwrap(),
-            ProjectId::try_from("test").unwrap(),
-            Namespace::root(),
-            "Task with criteria".to_owned(),
-            "Implement feature".to_owned(),
-            Some("all tests pass and docs updated".to_owned()),
-            Priority::default(),
-            vec!["engineer".to_owned()],
-            None,
-            false,
-        )
-        .unwrap();
-
+    fn a_second_agent_cannot_claim_a_held_task() {
+        let mut task = claimed();
+        let err = task.claim(actor("codex"), &clock()).unwrap_err();
+        assert!(matches!(err, DomainError::Conflict(_)), "{err:?}");
         assert_eq!(
-            task.acceptance_criteria(),
-            Some("all tests pass and docs updated")
-        );
-
-        task.update_details(
-            None,
-            None,
-            Some("tests pass and integration verified".to_owned()),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(
-            task.acceptance_criteria(),
-            Some("tests pass and integration verified")
+            task.claimed_by(),
+            Some(&actor("claude")),
+            "the refused claim must not steal the task"
         );
     }
 
     #[test]
-    fn archive_sets_archived_at() {
-        let mut task = make_completed_task();
-        assert!(!task.is_archived());
-        task.archive(Some("done".into())).unwrap();
-        assert!(task.is_archived());
-        assert!(task.archived_at().is_some());
+    fn the_holder_may_re_claim_its_own_task_idempotently() {
+        let mut task = claimed();
+        task.release(&actor("claude"), &clock()).unwrap();
+        assert!(task.claim(actor("claude"), &clock()).is_ok());
     }
 
     #[test]
-    fn archive_is_idempotent() {
-        let mut task = make_completed_task();
-        task.archive(Some("first".into())).unwrap();
-        assert!(task.is_archived());
-        let err = task.archive(Some("second".into())).unwrap_err();
-        assert!(err.to_string().contains("already archived"));
-    }
-
-    #[test]
-    fn archive_fails_for_non_terminal() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        let err = task.archive(None).unwrap_err();
-        assert!(err.to_string().contains("terminal"));
-    }
-
-    #[test]
-    fn unarchive_clears_archived_at() {
-        let mut task = make_completed_task();
-        task.archive(None).unwrap();
-        assert!(task.is_archived());
-        task.unarchive().unwrap();
-        assert!(!task.is_archived());
-    }
-
-    #[test]
-    fn unarchive_fails_when_not_archived() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        let err = task.unarchive().unwrap_err();
-        assert!(err.to_string().contains("not archived"));
-    }
-
-    #[test]
-    fn complete_fails_from_pending() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        assert!(task.complete(None).is_err());
-    }
-
-    #[test]
-    fn fail_succeeds_from_in_progress() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::InProgress, Some(agent));
-        assert!(task.fail(Some("error".to_owned())).is_ok());
-        assert_eq!(task.status(), TaskStatus::Failed);
-    }
-
-    #[test]
-    fn fail_succeeds_from_claimed() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent));
-        assert!(task.fail(None).is_ok());
-        assert_eq!(task.status(), TaskStatus::Failed);
-    }
-
-    #[test]
-    fn fail_fails_from_pending() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        assert!(task.fail(None).is_err());
-    }
-
-    #[test]
-    fn release_succeeds_from_claimed() {
-        let agent = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent));
-        assert!(task.release().is_ok());
-        assert_eq!(task.status(), TaskStatus::Pending);
-        assert!(task.assigned_to().is_none());
-    }
-
-    #[test]
-    fn release_fails_from_pending() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        assert!(task.release().is_err());
-    }
-
-    #[test]
-    fn assign_succeeds_from_claimed() {
-        let agent1 = AgentId::new();
-        let agent2 = AgentId::new();
-        let mut task = make_task(TaskStatus::Claimed, Some(agent1.clone()));
-        assert!(task.assign(agent2.clone()).is_ok());
+    fn only_the_holder_may_release() {
+        let mut task = claimed();
+        let err = task.release(&actor("codex"), &clock()).unwrap_err();
+        assert!(matches!(err, DomainError::Forbidden(_)), "{err:?}");
         assert_eq!(task.status(), TaskStatus::Claimed);
-        assert_eq!(task.assigned_to(), Some(agent2).as_ref());
     }
 
     #[test]
-    fn assign_fails_from_pending() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        assert!(task.assign(AgentId::new()).is_err());
+    fn releasing_an_unclaimed_task_is_a_conflict() {
+        let mut task = task();
+        assert!(matches!(
+            task.release(&actor("claude"), &clock()).unwrap_err(),
+            DomainError::Conflict(_)
+        ));
     }
 
     #[test]
-    fn unblock_from_blocked() {
-        let mut task = make_task(TaskStatus::Blocked, None);
-        task.unblock().unwrap();
+    fn releasing_returns_the_task_to_the_pool() {
+        let mut task = claimed();
+        task.release(&actor("claude"), &clock()).unwrap();
         assert_eq!(task.status(), TaskStatus::Pending);
+        assert_eq!(task.claimed_by(), None);
+        assert_eq!(task.claimed_at(), None);
     }
 
     #[test]
-    fn unblock_noop_from_other_status() {
-        let mut task = make_task(TaskStatus::Pending, None);
-        task.unblock().unwrap();
+    fn a_pending_task_cannot_be_completed_without_being_claimed() {
+        let mut task = task();
+        assert!(matches!(
+            task.complete(&actor("claude"), None, &clock()).unwrap_err(),
+            DomainError::InvalidTransition { .. }
+        ));
+    }
+
+    #[test]
+    fn completing_stores_the_note_and_emits_a_finished_event() {
+        let mut task = claimed();
+        task.drain_events();
+        task.complete(&actor("claude"), Some("done".to_owned()), &clock())
+            .unwrap();
+        assert_eq!(task.status(), TaskStatus::Completed);
+        assert_eq!(task.note(), Some("done"));
+        let events = task.drain_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].topic().as_str(), "task.finished");
+    }
+
+    #[test]
+    fn a_completed_task_is_absorbing() {
+        let mut task = claimed();
+        task.complete(&actor("claude"), None, &clock()).unwrap();
+        assert!(
+            task.fail(&actor("claude"), "nope".to_owned(), &clock())
+                .is_err()
+        );
+        assert!(task.start(&clock()).is_err());
+        assert!(
+            task.cancel(&actor("claude"), "nope".to_owned(), &clock())
+                .is_err()
+        );
+        assert_eq!(task.status(), TaskStatus::Completed);
+    }
+
+    #[test]
+    fn roll_up_moves_an_open_parent_and_emits_its_own_topic() {
+        let mut task = claimed();
+        task.drain_events();
+        assert!(task.roll_up(TaskStatus::Completed, "all done".to_owned(), &clock()));
+        assert_eq!(task.status(), TaskStatus::Completed);
+        let events = task.drain_events();
+        assert_eq!(events[0].topic().as_str(), "task.rolled_up");
+    }
+
+    #[test]
+    fn roll_up_never_moves_a_terminal_parent() {
+        let mut task = claimed();
+        task.complete(&actor("claude"), Some("by hand".to_owned()), &clock())
+            .unwrap();
+        task.drain_events();
+
+        assert!(
+            !task.roll_up(
+                TaskStatus::Failed,
+                "a straggler failed".to_owned(),
+                &clock()
+            ),
+            "a human's explicit completion outranks a later derivation"
+        );
+        assert_eq!(task.status(), TaskStatus::Completed);
+        assert!(task.drain_events().is_empty(), "a refused rollup is silent");
+    }
+
+    #[test]
+    fn roll_up_moves_a_pending_parent_even_though_an_agent_could_not() {
+        let mut task = task();
         assert_eq!(task.status(), TaskStatus::Pending);
+        assert!(
+            !TaskStatus::Pending.can_transition_to(TaskStatus::Completed),
+            "an agent may not finish unclaimed work"
+        );
+        assert!(
+            task.roll_up(
+                TaskStatus::Completed,
+                "all subtasks done".to_owned(),
+                &clock()
+            ),
+            "but a parent is completed by derivation, not by being worked on"
+        );
+        assert_eq!(task.status(), TaskStatus::Completed);
     }
 
     #[test]
-    fn is_mergeable_for_valid_statuses() {
-        assert!(TaskStatus::Pending.is_mergeable());
-        assert!(TaskStatus::Blocked.is_mergeable());
-        assert!(TaskStatus::Claimed.is_mergeable());
+    fn roll_up_to_the_status_already_held_is_a_no_op() {
+        let mut task = task();
+        assert!(!task.roll_up(TaskStatus::Pending, "x".to_owned(), &clock()));
+        assert!(task.drain_events().len() == 1, "only the creation event");
     }
 
     #[test]
-    fn is_not_mergeable_for_terminal_or_active_statuses() {
-        assert!(!TaskStatus::InProgress.is_mergeable());
-        assert!(!TaskStatus::Completed.is_mergeable());
-        assert!(!TaskStatus::Failed.is_mergeable());
-        assert!(!TaskStatus::Cancelled.is_mergeable());
+    fn a_task_cannot_be_its_own_parent_or_dependency() {
+        let mut task = task();
+        let own = task.id().clone();
+        assert!(task.attach_to(own.clone(), &clock()).is_err());
+        assert!(task.add_dependency(own, &clock()).is_err());
     }
 
     #[test]
-    fn new_creates_pending_task() {
-        let task = Task::new(
-            OrganizationId::new("test").unwrap(),
-            ProjectId::try_from("test").unwrap(),
-            Namespace::root(),
-            "title".to_owned(),
-            "desc".to_owned(),
-            None,
-            Priority::High,
-            vec![],
-            None,
-            false,
-        )
-        .unwrap();
-        assert_eq!(task.status(), TaskStatus::Pending);
+    fn attaching_records_the_parent_on_the_child_only() {
+        let mut child = task();
+        let parent = Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap();
+        child.attach_to(parent.clone(), &clock()).unwrap();
+        assert_eq!(child.parent(), Some(&parent));
+        child.detach(&clock());
+        assert_eq!(child.parent(), None);
     }
 
     #[test]
-    fn new_creates_blocked_task() {
-        let task = Task::new(
-            OrganizationId::new("test").unwrap(),
-            ProjectId::try_from("test").unwrap(),
-            Namespace::root(),
-            "title".to_owned(),
-            "desc".to_owned(),
-            None,
-            Priority::Normal,
-            vec![],
-            None,
-            true,
-        )
-        .unwrap();
+    fn dependencies_are_a_sorted_set() {
+        let mut task = task();
+        let a = Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap();
+        let b = Id::new("01ARZ3NDEKTSV4RRFFQ69G5FAV").unwrap();
+        task.add_dependency(a.clone(), &clock()).unwrap();
+        task.add_dependency(b.clone(), &clock()).unwrap();
+        task.add_dependency(a.clone(), &clock()).unwrap();
+        assert_eq!(task.depends_on(), &[b, a.clone()]);
+        task.remove_dependency(&a, &clock());
+        assert_eq!(task.depends_on().len(), 1);
+    }
+
+    #[test]
+    fn blocking_requires_unblocking_before_a_claim() {
+        let mut task = task();
+        task.block("waiting on api".to_owned(), &clock()).unwrap();
         assert_eq!(task.status(), TaskStatus::Blocked);
+        assert!(task.claim(actor("claude"), &clock()).is_err());
+        task.unblock(&clock()).unwrap();
+        assert!(task.claim(actor("claude"), &clock()).is_ok());
     }
 
     #[test]
-    fn all_children_completed_requires_nonempty() {
-        assert!(!Task::all_children_completed(&[]));
+    fn query_filters_compose() {
+        let mut task = task();
+        task.retag(vec![Tag::new("rust").unwrap()], &[], &clock());
+        task.claim(actor("claude"), &clock()).unwrap();
+
+        let query = TaskQuery {
+            status: Some(vec![TaskStatus::Claimed]),
+            claimed_by: Some(actor("claude")),
+            tags: vec![Tag::new("rust").unwrap()],
+            ..Default::default()
+        };
+        assert!(query.matches(&task));
+
+        let missing_tag = TaskQuery {
+            tags: vec![Tag::new("go").unwrap()],
+            ..Default::default()
+        };
+        assert!(!missing_tag.matches(&task));
     }
 
     #[test]
-    fn all_children_completed_when_all_completed() {
-        let children = vec![
-            make_task(TaskStatus::Completed, None),
-            make_task(TaskStatus::Completed, None),
+    fn query_by_namespace_includes_the_subtree() {
+        let mut task = task();
+        task.move_to(Namespace::new("/backend/auth").unwrap(), &clock());
+        let query = TaskQuery {
+            namespace: Some(Namespace::new("/backend").unwrap()),
+            ..Default::default()
+        };
+        assert!(query.matches(&task), "a parent namespace sees its children");
+    }
+
+    #[test]
+    fn query_text_searches_title_and_description() {
+        let mut task = task();
+        task.describe("rotate the signing key".to_owned(), &clock());
+        let hit = TaskQuery {
+            text: Some("SIGNING".to_owned()),
+            ..Default::default()
+        };
+        assert!(hit.matches(&task), "text search is case-insensitive");
+    }
+
+    #[test]
+    fn an_empty_query_matches_everything() {
+        assert!(TaskQuery::default().matches(&task()));
+    }
+}
+
+#[cfg(test)]
+mod supersede_tests {
+    use super::tests::*;
+    use super::*;
+
+    #[test]
+    fn superseding_retires_the_task_and_names_its_replacements() {
+        let mut task = task();
+        task.drain_events();
+        let replacements = vec![
+            Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(),
+            Id::new("01CX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(),
         ];
-        assert!(Task::all_children_completed(&children));
+        task.supersede(replacements, Some("split out".to_owned()), &clock())
+            .unwrap();
+
+        assert_eq!(task.status(), TaskStatus::Superseded);
+        assert!(task.status().is_terminal());
+        assert!(task.status().is_neutral());
+        assert_eq!(task.note(), Some("split out"));
+
+        let events = task.drain_events();
+        assert_eq!(events[0].topic().as_str(), "task.superseded");
     }
 
     #[test]
-    fn all_children_completed_when_all_cancelled() {
-        let children = vec![
-            make_task(TaskStatus::Cancelled, None),
-            make_task(TaskStatus::Cancelled, None),
-        ];
-        assert!(Task::all_children_completed(&children));
+    fn superseding_needs_at_least_one_replacement() {
+        let mut task = task();
+        assert!(task.supersede(vec![], None, &clock()).is_err());
+        assert_eq!(
+            task.status(),
+            TaskStatus::Pending,
+            "the refusal changes nothing"
+        );
     }
 
     #[test]
-    fn all_children_completed_with_mixed_completed_and_cancelled() {
-        let children = vec![
-            make_task(TaskStatus::Completed, None),
-            make_task(TaskStatus::Cancelled, None),
-        ];
-        assert!(Task::all_children_completed(&children));
+    fn a_task_cannot_supersede_itself() {
+        let mut task = task();
+        let own = task.id().clone();
+        assert!(task.supersede(vec![own], None, &clock()).is_err());
     }
 
     #[test]
-    fn all_children_completed_false_when_any_pending() {
-        let children = vec![
-            make_task(TaskStatus::Completed, None),
-            make_task(TaskStatus::Pending, None),
-        ];
-        assert!(!Task::all_children_completed(&children));
+    fn a_finished_task_cannot_be_superseded() {
+        let mut task = claimed();
+        task.complete(&actor("claude"), None, &clock()).unwrap();
+        assert!(
+            task.supersede(
+                vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
+                None,
+                &clock()
+            )
+            .is_err(),
+            "work already done was not replaced"
+        );
+    }
+
+    #[test]
+    fn unstarted_work_can_be_replaced_without_being_claimed() {
+        let mut task = task();
+        assert!(
+            task.supersede(
+                vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
+                None,
+                &clock()
+            )
+            .is_ok()
+        );
     }
 }

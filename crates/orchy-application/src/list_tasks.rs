@@ -1,26 +1,24 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
+use orchy_core::{
+    ActorId, Id, Namespace, PageRequest, Role, Tag, TaskQuery, TaskStatus, TaskStore,
+};
+use serde::{Deserialize, Serialize};
+
+use crate::dto::{PageDto, TaskDto};
 use crate::error::ApplicationResult;
-use orchy_core::agent::AgentId;
-use orchy_core::namespace::Namespace;
-use orchy_core::namespace::ProjectId;
-use orchy_core::organization::OrganizationId;
-use orchy_core::pagination::PageParams;
-use orchy_core::task::{TaskFilter, TaskStatus, TaskStore};
 
-use crate::dto::{PageResponse, TaskDto};
-
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ListTasksCommand {
-    pub org_id: String,
-    pub project: Option<String>,
+    pub status: Vec<String>,
     pub namespace: Option<String>,
-    pub status: Option<String>,
-    pub assigned_to: Option<String>,
-    pub tag: Option<String>,
-    pub after: Option<String>,
-    pub limit: Option<u32>,
-    pub archived: Option<bool>,
+    pub claimed_by: Option<String>,
+    pub role: Option<String>,
+    pub parent: Option<String>,
+    pub tags: Vec<String>,
+    pub text: Option<String>,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 pub struct ListTasks {
@@ -32,30 +30,43 @@ impl ListTasks {
         Self { tasks }
     }
 
-    pub async fn execute(&self, cmd: ListTasksCommand) -> ApplicationResult<PageResponse<TaskDto>> {
-        let org_id = Some(OrganizationId::new(&cmd.org_id)?);
-
-        let project = cmd.project.map(ProjectId::try_from).transpose()?;
-
-        let namespace = cmd.namespace.map(Namespace::new).transpose()?;
-
-        let status = cmd.status.map(|s| s.parse::<TaskStatus>()).transpose()?;
-
-        let assigned_to = cmd.assigned_to.map(|s| AgentId::from_str(&s)).transpose()?;
-
-        let filter = TaskFilter {
-            org_id,
-            project,
-            namespace,
-            status,
-            assigned_to,
-            tag: cmd.tag,
-            include_archived: cmd.archived,
-            ..Default::default()
+    pub async fn execute(&self, cmd: ListTasksCommand) -> ApplicationResult<PageDto<TaskDto>> {
+        let query = TaskQuery {
+            status: if cmd.status.is_empty() {
+                None
+            } else {
+                Some(
+                    cmd.status
+                        .iter()
+                        .map(|s| s.parse::<TaskStatus>())
+                        .collect::<orchy_core::Result<Vec<_>>>()?,
+                )
+            },
+            namespace: cmd.namespace.as_deref().map(Namespace::new).transpose()?,
+            claimed_by: cmd
+                .claimed_by
+                .as_deref()
+                .map(str::parse::<ActorId>)
+                .transpose()?,
+            role: cmd.role.as_deref().map(Role::new).transpose()?,
+            parent: cmd.parent.as_deref().map(Id::new).transpose()?,
+            tags: cmd
+                .tags
+                .iter()
+                .map(Tag::new)
+                .collect::<orchy_core::Result<Vec<_>>>()?,
+            text: cmd.text,
         };
-
-        let page = PageParams::new(cmd.after, cmd.limit);
-        let result = self.tasks.list(filter, page).await?;
-        Ok(PageResponse::from(result))
+        let page = PageRequest::new(
+            cmd.offset.unwrap_or(0),
+            cmd.limit.unwrap_or(PageRequest::default().limit()),
+        );
+        let found = self.tasks.find(&query, page).await?;
+        Ok(PageDto::new(
+            found.items.iter().map(TaskDto::from).collect(),
+            found.total,
+            found.offset,
+            found.limit,
+        ))
     }
 }

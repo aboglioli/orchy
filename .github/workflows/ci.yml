@@ -26,11 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: install rdkafka build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential pkg-config \
-            libsasl2-dev libssl-dev libcurl4-openssl-dev zlib1g-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -42,28 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: install rdkafka build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential pkg-config \
-            libsasl2-dev libssl-dev libcurl4-openssl-dev zlib1g-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --no-fail-fast
-
-  integration:
-    name: integration tests (testcontainers)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: install rdkafka build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential pkg-config \
-            libsasl2-dev libssl-dev libcurl4-openssl-dev zlib1g-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p orchy-store-pg --features integration-tests -- --test-threads=1
-      - run: cargo test -p orchy-store-conformance --features integration-tests -- --test-threads=1
-      - run: cargo test -p orchy-events-sqs --features integration-tests -- --test-threads=1
-      - run: cargo test -p orchy-events-kafka --features integration-tests -- --test-threads=1

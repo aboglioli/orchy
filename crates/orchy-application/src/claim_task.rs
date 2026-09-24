@@ -1,107 +1,61 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::error::ApplicationResult;
-use orchy_core::agent::{AgentId, AgentStore};
-use orchy_core::error::{Error, Resource};
-use orchy_core::graph::{EdgeStore, RelationType};
-use orchy_core::organization::OrganizationId;
-use orchy_core::resource_ref::ResourceKind;
-use orchy_core::task::{TaskId, TaskStatus, TaskStore};
+use chrono::Duration;
+use orchy_core::{ActorId, Clock, Id, LeaseStore, ResourceKey, TaskStore};
+use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
+use crate::error::ApplicationResult;
 
+const DEFAULT_LEASE_SECS: i64 = 900;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClaimTaskCommand {
     pub task_id: String,
-    pub agent_id: String,
-    pub org_id: String,
-    pub start: Option<bool>,
+    pub actor: String,
+    pub ttl_seconds: Option<i64>,
+    pub start: bool,
 }
 
 pub struct ClaimTask {
-    agents: Arc<dyn AgentStore>,
     tasks: Arc<dyn TaskStore>,
-    edges: Arc<dyn EdgeStore>,
+    leases: Arc<dyn LeaseStore>,
+    clock: Arc<dyn Clock>,
 }
 
 impl ClaimTask {
     pub fn new(
-        agents: Arc<dyn AgentStore>,
         tasks: Arc<dyn TaskStore>,
-        edges: Arc<dyn EdgeStore>,
+        leases: Arc<dyn LeaseStore>,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
-            agents,
             tasks,
-            edges,
+            leases,
+            clock,
         }
     }
 
     pub async fn execute(&self, cmd: ClaimTaskCommand) -> ApplicationResult<TaskDto> {
-        let task_id = cmd.task_id.parse::<TaskId>()?;
-        let agent_id = AgentId::from_str(&cmd.agent_id)?;
-        let org_id = OrganizationId::new(&cmd.org_id)?;
+        let id = Id::new(&cmd.task_id)?;
+        let actor: ActorId = cmd.actor.parse()?;
+        let ttl = Duration::seconds(cmd.ttl_seconds.unwrap_or(DEFAULT_LEASE_SECS));
 
-        self.agents
-            .find_by_id(&agent_id)
-            .await?
-            .ok_or_else(|| Error::NotFound {
-                resource: Resource::Agent,
-                id: agent_id.to_string(),
-            })?;
-
-        let mut task = self
-            .tasks
-            .find_by_id(&task_id)
-            .await?
-            .ok_or_else(|| Error::NotFound {
-                resource: Resource::Task,
-                id: task_id.to_string(),
-            })?;
-
-        if task.org_id() != &org_id {
-            return Err(Error::NotFound {
-                resource: Resource::Task,
-                id: task_id.to_string(),
-            }
-            .into());
-        }
-
-        let dep_edges = self
-            .edges
-            .find_from(
-                &org_id,
-                &ResourceKind::Task,
-                &task_id.to_string(),
-                &[RelationType::DependsOn],
-                None,
-            )
+        self.leases
+            .acquire(&ResourceKey::task(&id), &actor, ttl)
             .await?;
 
-        for edge in &dep_edges {
-            let dep_id: TaskId = match edge.to_id().parse() {
-                Ok(id) => id,
-                Err(_) => continue,
-            };
-            let dep = self
-                .tasks
-                .find_by_id(&dep_id)
-                .await?
-                .ok_or_else(|| Error::NotFound {
-                    resource: Resource::Task,
-                    id: dep_id.to_string(),
-                })?;
-            if dep.status() != TaskStatus::Completed {
-                return Err(Error::dependency_not_met(task_id.to_string()).into());
+        let mut task = self.tasks.require(&id).await?;
+        match task.claim(actor.clone(), &*self.clock) {
+            Ok(()) => {}
+            Err(e) => {
+                let _ = self.leases.release(&ResourceKey::task(&id), &actor).await;
+                return Err(e.into());
             }
         }
-
-        task.claim(agent_id.clone())?;
-
-        if cmd.start.unwrap_or(false) {
-            task.start(&agent_id)?;
+        if cmd.start {
+            task.start(&*self.clock)?;
         }
-
         self.tasks.save(&mut task).await?;
         Ok(TaskDto::from(&task))
     }
