@@ -16,8 +16,6 @@ pub struct WriteSkillCommand {
     pub body: Option<String>,
 }
 
-/// Creating and revising a skill are one command, because an agent writing down what it just
-/// learned should not have to know whether the vault already says it.
 pub struct WriteSkill {
     skills: Arc<dyn SkillStore>,
     ids: Arc<dyn IdGenerator>,

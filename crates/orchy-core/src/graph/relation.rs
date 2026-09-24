@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::entity_ref::EntityKind;
 use crate::error::{DomainError, Result};
 
-/// Every rule is an exhaustive match, so adding a variant without deciding its endpoints,
-/// inverse and arity does not compile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Relation {
@@ -77,8 +75,6 @@ impl Relation {
         }
     }
 
-    /// The name this relation projects under on the far side. Projections are rendered into
-    /// frontmatter and never stored, so they are a name rather than a `Relation`.
     pub fn inverse(&self) -> &'static str {
         match self {
             Self::Supersedes => "superseded_by",
@@ -116,13 +112,10 @@ impl Relation {
         match self {
             Self::DependsOn | Self::Parent => from == Task && to == Task,
             Self::SpawnedBy => from == Task && to == Message,
-            // a task can write down a skill as readily as a document
             Self::Produces | Self::Implements => from == Task && (to == Document || to == Skill),
             Self::OwnedBy | Self::ReviewedBy => to == Actor,
-            // replacing means replacing like with like: a task does not supersede a document
             Self::Supersedes | Self::MergedFrom => from == to && from.is_content(),
 
-            // claims about content, which a message carries as much as a document does
             Self::DerivedFrom
             | Self::Summarizes
             | Self::Invalidates
@@ -130,13 +123,10 @@ impl Relation {
             | Self::SupportedBy
             | Self::ContradictedBy => from.is_content() && to.is_content(),
 
-            // the escape hatch: anything may simply be related to anything
             Self::RelatedTo => true,
         }
     }
 
-    /// The only kind this relation can point at, when it has one. Lets a hand-written bare id
-    /// be typed without an index lookup.
     pub fn sole_target_kind(&self) -> Option<EntityKind> {
         const KINDS: [EntityKind; 5] = [
             EntityKind::Document,
@@ -156,8 +146,6 @@ impl Relation {
         }
     }
 
-    /// Relations whose creation carries consequences beyond the edge itself, and so must go
-    /// through the command that applies them rather than through `orchy link`.
     pub fn managed_by(&self) -> Option<&'static str> {
         match self {
             Self::Parent => Some("orchy task update --parent"),
@@ -383,7 +371,6 @@ mod target_kind_tests {
             Relation::RelatedTo,
             Relation::DerivedFrom,
             Relation::MergedFrom,
-            // a task writes documents and skills alike, so a bare id has to say which
             Relation::Produces,
             Relation::Implements,
         ] {

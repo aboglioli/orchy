@@ -27,8 +27,6 @@ EXIT CODES
 #[command(
     name = "orchy",
     version,
-    // An agent that types `orchy` or `orchy help` has to leave knowing one thing: which command
-    // to run. Everything else it can find from there, and the briefing will tell it anyway.
     before_help = "START HERE: run `orchy announce`. It puts you on the roster and returns the \
                    conventions you are expected to follow and the work waiting for you.",
     about = "A shared, file-backed memory for coding agents",

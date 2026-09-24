@@ -9,7 +9,6 @@ use crate::error::ApplicationResult;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RetireSkillCommand {
     pub skill_id: String,
-    /// Put it back in force instead
     pub restore: bool,
 }
 

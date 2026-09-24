@@ -13,14 +13,11 @@ use crate::vault::{Precondition, Vault};
 
 const AMEND_ATTEMPTS: u32 = 16;
 
-/// Spread the retries out: identical backoff would just line the losers up to collide again.
 fn backoff(attempt: u32) -> Duration {
     let jitter = u64::from(std::process::id() % 5);
     Duration::from_millis(u64::from(attempt) * 2 + jitter + 1)
 }
 
-/// Only the forward direction is stored, in the source entity's own frontmatter, so adding a
-/// link writes exactly one file. Inverses are derived at read time.
 pub struct VaultEdgeStore {
     vault: Arc<Vault>,
 }
@@ -30,9 +27,6 @@ impl VaultEdgeStore {
         Self { vault }
     }
 
-    /// A set edit commutes, so losing the race means someone else's target joined the field,
-    /// not that this one is unwanted. Reapplied here rather than surfaced as a conflict the
-    /// agent could only answer the same way.
     async fn amend(
         &self,
         entity: &EntityRef,
@@ -90,7 +84,6 @@ impl VaultEdgeStore {
                 let Ok(to) = EntityRef::parse_or_assume(&target, assumed) else {
                     continue;
                 };
-                // a pairing the relation forbids is not a link, however it reached the file
                 let Ok(edge) = Edge::new(entity.clone(), to, relation) else {
                     continue;
                 };
@@ -116,8 +109,6 @@ impl VaultEdgeStore {
     }
 }
 
-/// Every reference is written `kind:id`. A foreign key that omits the table it points into
-/// is only usable next to an index that can still resolve it.
 fn reference(edge: &Edge) -> String {
     edge.to().to_string()
 }

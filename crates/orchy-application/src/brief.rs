@@ -14,8 +14,6 @@ pub struct BriefCommand {
     pub actor: String,
 }
 
-/// One read of everything a joining agent needs. Split across five commands it would be five
-/// chances to skip one, and the one skipped is always the skills.
 pub struct Brief {
     actors: Arc<dyn ActorStore>,
     skills: Arc<dyn SkillStore>,
@@ -92,7 +90,6 @@ impl Brief {
             .collect())
     }
 
-    /// Peeked, never claimed: a briefing tells an agent what is there, it does not decide for it.
     async fn next_up(&self, namespace: &Namespace) -> ApplicationResult<Option<TaskDto>> {
         let query = TaskQuery {
             status: Some(vec![TaskStatus::Pending]),
@@ -104,8 +101,6 @@ impl Brief {
         Ok(open.first().map(TaskDto::from))
     }
 
-    /// The last thing an agent wrote down before it stopped, which is what makes a handover a
-    /// handover rather than a restart.
     async fn handoff(&self, namespace: &Namespace) -> ApplicationResult<Option<DocumentDto>> {
         let query = DocumentQuery {
             kind: Some(vec![Kind::Context]),

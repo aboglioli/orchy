@@ -17,7 +17,6 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
-    /// An actor is a participant, not something a provenance relation can be about.
     pub fn is_content(&self) -> bool {
         matches!(
             self,
@@ -98,9 +97,6 @@ impl fmt::Display for EntityRef {
 }
 
 impl EntityRef {
-    /// `kind:id` as orchy writes it, or a bare id as a person may have typed one. Guessing a
-    /// missing kind is how an edge ends up claiming a pairing its relation forbids, so
-    /// `assumed` comes from the relation and nothing else is invented.
     pub fn parse_or_assume(text: &str, assumed: Option<EntityKind>) -> Result<Self> {
         if let Some((kind, id)) = text.split_once(':') {
             return Ok(Self::new(kind.parse()?, Id::new(id)?));

@@ -187,7 +187,6 @@ impl From<&Lease> for LeaseDto {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HitDto {
-    /// `document:<id>` or `skill:<id>`, so a caller knows what it found and can read it back.
     pub entity: String,
     pub kind: String,
     pub id: String,
@@ -290,8 +289,6 @@ impl From<&Skill> for SkillDto {
     }
 }
 
-/// Everything an agent needs before it does anything: who it is, what it is expected to follow,
-/// and what is waiting for it. Assembled in one call so a new agent has no order to get wrong.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BriefingDto {
     pub actor: ActorDto,

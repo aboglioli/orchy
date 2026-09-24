@@ -10,9 +10,7 @@ use crate::error::ApplicationResult;
 pub struct ListSkillsCommand {
     pub namespace: Option<String>,
     pub tags: Vec<String>,
-    /// Every skill in the vault, including ones no namespace the agent works in declares
     pub everywhere: bool,
-    /// Retired skills too, which no briefing shows
     pub retired: bool,
 }
 

@@ -7,8 +7,6 @@ use crate::cmd::skill::summarise;
 use crate::error::CliResult;
 use crate::output::{Output, short};
 
-/// What orchy is, in the space an agent will actually read before it starts working. Everything
-/// here is true of every vault; anything specific to this one is a skill.
 const WHAT_ORCHY_IS: &str = "\
 ORCHY IN ONE MINUTE
   A shared memory for agents, kept as markdown files you can read, edit and commit.
@@ -87,8 +85,6 @@ fn render(briefing: &BriefingDto) -> String {
     lines.join("\n")
 }
 
-/// A vault can hold hundreds, so the briefing carries the line that tells an agent whether to
-/// open one, and never the skills themselves.
 fn skills(briefing: &BriefingDto) -> String {
     if briefing.skills.is_empty() {
         return "SKILLS\n  none yet. `orchy skill write <name> --summary ...` records how this \

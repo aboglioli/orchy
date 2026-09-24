@@ -118,8 +118,6 @@ pub(crate) async fn find(
             entities: vec!["skill".to_owned()],
             retired,
             tags: tag,
-            // ranked towards where the agent works, not filtered to it: a skill worth knowing
-            // about may well be declared somewhere else
             anchor: namespace,
             limit,
             ..Default::default()
@@ -179,8 +177,6 @@ pub(crate) async fn retire(
     out.emit(&skill, |s| format!("{} is {}", s.name, s.status))
 }
 
-/// Retiring names a particular skill rather than whichever one a namespace inherits, so the
-/// name is resolved to its id first.
 async fn resolve(app: &Application, target: &str) -> CliResult<String> {
     Ok(app
         .read_skill
@@ -192,8 +188,6 @@ async fn resolve(app: &Application, target: &str) -> CliResult<String> {
         .id)
 }
 
-/// A revision that only changes the summary has no body at all, so unlike `orchy new` this
-/// never reads stdin on its own: `--body -` is how a caller asks for it.
 fn piped(body: Option<String>) -> CliResult<Option<String>> {
     match body.as_deref() {
         Some("-") => stdin::or_read(None).map(Some),

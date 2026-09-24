@@ -13,7 +13,6 @@ const DEFAULT_LIMIT: usize = 20;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RecallCommand {
     pub text: String,
-    /// `document`, `skill`, or empty for both
     pub entities: Vec<String>,
     pub kind: Vec<String>,
     pub retired: bool,

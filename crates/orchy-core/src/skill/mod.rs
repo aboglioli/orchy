@@ -60,8 +60,6 @@ pub struct Skill {
     namespace: Namespace,
     status: SkillStatus,
     tags: Vec<Tag>,
-    /// Whatever else a team writes on a skill — an owner, a source, a review date. orchy keeps
-    /// it and never reads it, which is what makes the format the team's rather than orchy's.
     frontmatter: Frontmatter,
     body: Body,
     created_at: DateTime<Utc>,
@@ -185,9 +183,6 @@ impl Skill {
         });
     }
 
-    /// Retiring leaves the skill readable by id but takes it out of every briefing, which is
-    /// what stops a vault of hundreds from teaching an agent something it should have stopped
-    /// doing.
     pub fn retire(&mut self, clock: &dyn Clock) -> Result<()> {
         if self.status == SkillStatus::Retired {
             return Err(DomainError::invalid_transition("retired", "retired"));
@@ -223,8 +218,6 @@ impl Skill {
         self.touch(clock);
     }
 
-    /// Anything orchy maintains is refused by name, with the command that does change it, so a
-    /// team can add whatever else it needs without being able to corrupt what orchy reads.
     pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
         if let Some(command) = managed_field(field) {
             return Err(DomainError::forbidden(format!(
@@ -300,7 +293,6 @@ impl Skill {
     }
 }
 
-/// The fields orchy projects from the aggregate. A team owns every other key on the file.
 pub fn managed_field(field: &str) -> Option<&'static str> {
     match field {
         "id" => Some("(ids are immutable)"),
@@ -315,11 +307,6 @@ pub fn managed_field(field: &str) -> Option<&'static str> {
     }
 }
 
-/// What an agent working in `namespace` is expected to follow: every active skill declared
-/// there or above it, with the nearest declaration of a name winning.
-///
-/// That is the whole point of putting skills in a namespace — `/` states how the organisation
-/// works, and `/backend` narrows it without having to restate it.
 pub fn in_scope(skills: &[Skill], namespace: &Namespace) -> Vec<Skill> {
     let mut depth_of: BTreeMap<String, usize> = BTreeMap::new();
     depth_of.insert(namespace.as_str().to_owned(), 0);

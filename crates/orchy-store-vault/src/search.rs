@@ -25,7 +25,6 @@ impl VaultSearch {
 #[async_trait]
 impl Search for VaultSearch {
     async fn sections(&self, query: &SearchQuery) -> Result<Vec<Hit>> {
-        // people type what they remember, not what was capitalised
         let matcher = RegexMatcherBuilder::new()
             .case_insensitive(true)
             .build(&regex_syntax::escape(&query.text))
@@ -60,8 +59,6 @@ impl Search for VaultSearch {
                 continue;
             }
 
-            // the title is searchable in its own right: a document whose subject only appears
-            // in its name is otherwise unfindable by the command meant to find things
             let title_matches = count_matches(&matcher, document.title().as_str())?;
             if title_matches > 0 {
                 hits.push(Hit {
@@ -109,9 +106,6 @@ impl Search for VaultSearch {
 }
 
 impl VaultSearch {
-    /// A skill is short and its summary is the distilled statement of it, so both count —
-    /// otherwise the one line an agent is most likely to remember is the one line that cannot
-    /// be searched.
     async fn skills(&self, query: &SearchQuery, matcher: &RegexMatcher) -> Result<Vec<Hit>> {
         let mut hits = Vec::new();
         for skill in self.skills.all().await? {

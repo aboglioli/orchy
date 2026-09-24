@@ -15,11 +15,9 @@ pub trait Search: Send + Sync {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchQuery {
     pub text: String,
-    /// Which kinds of entity to look in; `None` means everything that holds prose.
     pub entities: Option<Vec<EntityKind>>,
     pub kind: Option<Vec<Kind>>,
     pub status: Option<Vec<DocumentStatus>>,
-    /// Retired skills are out of force, so they stay out of results unless asked for.
     pub retired: bool,
     pub namespace: Option<Namespace>,
     pub tags: Vec<Tag>,
@@ -35,8 +33,6 @@ impl SearchQuery {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
-    /// Typed, because a search now spans documents and skills and a bare id could not say
-    /// which of them was found.
     pub entity: EntityRef,
     pub heading: Option<String>,
     pub excerpt: String,

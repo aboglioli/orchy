@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{DomainError, Result};
 
-/// How a skill is addressed. Agents cite skills by name in prose and on the command line, so
-/// the name has to survive being typed, and be unique within the namespace that declares it.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct SkillName(String);
@@ -68,8 +66,6 @@ impl From<SkillName> for String {
     }
 }
 
-/// One line an agent reads to decide whether to open the skill at all. A vault can hold
-/// hundreds, so this is what the briefing lists, and it is required rather than optional.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct Summary(String);

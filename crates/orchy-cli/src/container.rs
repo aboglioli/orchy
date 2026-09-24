@@ -18,7 +18,6 @@ use orchy_store_vault::watermarks::FileWatermarks;
 use crate::config::Config;
 use crate::error::CliResult;
 
-/// The only place in the workspace that names a concrete store.
 pub(crate) async fn build(config: &Config) -> CliResult<Application> {
     let blobs: Arc<dyn BlobStore> = Arc::new(FsBlobStore::new(&config.vault));
     let vault = Arc::new(Vault::open(Arc::clone(&blobs)).await?);
