@@ -44,8 +44,6 @@ impl ManageLease {
         let key = ResourceKey::new(&cmd.resource)?;
         let seconds = cmd.ttl_seconds.unwrap_or(DEFAULT_TTL_SECS);
         if seconds <= 0 {
-            // a lease that has already lapsed is not a lease; refusing says so where the
-            // caller typed it rather than letting it look like a lock nobody can see
             return Err(DomainError::validation(format!(
                 "ttl must be a positive number of seconds, not {seconds}"
             ))

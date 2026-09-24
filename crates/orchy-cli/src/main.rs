@@ -36,7 +36,6 @@ async fn main() -> std::process::ExitCode {
 async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
 
-    // three commands run before there is a vault to open
     match cli.command {
         Command::Init { path } => {
             let root = path.unwrap_or_else(|| config.vault.clone());

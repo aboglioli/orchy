@@ -32,9 +32,6 @@ pub(crate) async fn list(app: &Application, out: &Output) -> CliResult<()> {
     })
 }
 
-/// The lease lasts exactly as long as the command, and is given back whether the command
-/// succeeded, failed or could not be started at all — which is the difference between this and
-/// an agent remembering to release.
 pub(crate) async fn with(
     app: &Application,
     actor: &str,
@@ -53,7 +50,6 @@ pub(crate) async fn with(
     out.emit(&lease, |_| String::new())?;
 
     if !status.success() {
-        // the command's own code, so a caller branches on what it ran rather than on orchy
         std::process::exit(status.code().unwrap_or(1));
     }
     Ok(())

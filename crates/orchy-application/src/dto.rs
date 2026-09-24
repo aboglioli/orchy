@@ -170,8 +170,6 @@ pub struct LeaseDto {
     pub holder: String,
     pub acquired_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
-    /// Raised every time the resource changes hands, so a holder that was superseded while it
-    /// worked can tell: the number it was given is no longer the one on the lease.
     pub generation: u64,
 }
 

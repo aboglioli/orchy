@@ -114,8 +114,6 @@ impl ActorStore for VaultActorStore {
     }
 }
 
-/// The `flock` orders concurrent acquires; the TTL record outlives the process that took it,
-/// so a holder that dies does not block the resource forever.
 pub struct FileLeaseStore {
     root: PathBuf,
     clock: Arc<dyn Clock>,
@@ -129,9 +127,6 @@ impl FileLeaseStore {
         }
     }
 
-    /// Readable, and distinct for distinct keys. Folding every other character to `-` alone
-    /// put `deploy/prod` and `deploy-prod` on one file, so one agent's lock refused a resource
-    /// nobody held; the digest of the whole key is what keeps them apart.
     fn lock_path(&self, key: &ResourceKey) -> PathBuf {
         let readable: String = key
             .as_str()
@@ -148,8 +143,6 @@ impl FileLeaseStore {
         serde_json::from_slice(&bytes).ok()
     }
 
-    /// Never unlinked, only rewritten: `flock` orders the holders of one inode, so removing
-    /// the file would let the next two acquirers lock two inodes and both believe they won.
     fn open_lock(&self, key: &ResourceKey) -> Result<FileLock> {
         FileLock::exclusive(&self.lock_path(key), key.as_str(), DEFAULT_WAIT)
     }
@@ -165,7 +158,6 @@ impl FileLeaseStore {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct LeaseRecord {
-    // the filename is a digest, so the key it stands for has to be written down
     resource: String,
     holder: String,
     acquired_at: DateTime<Utc>,
