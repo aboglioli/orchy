@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub use events::{
     SkillCreated, SkillMoved, SkillRenamed, SkillRestored, SkillRetired, SkillWritten,
@@ -14,6 +15,7 @@ pub use name::{SkillName, Summary};
 
 use crate::body::Body;
 use crate::clock::Clock;
+use crate::document::Frontmatter;
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
 use crate::id::{Id, IdGenerator};
@@ -58,6 +60,9 @@ pub struct Skill {
     namespace: Namespace,
     status: SkillStatus,
     tags: Vec<Tag>,
+    /// Whatever else a team writes on a skill — an owner, a source, a review date. orchy keeps
+    /// it and never reads it, which is what makes the format the team's rather than orchy's.
+    frontmatter: Frontmatter,
     body: Body,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -73,6 +78,7 @@ pub struct RestoreSkill {
     pub namespace: Namespace,
     pub status: SkillStatus,
     pub tags: Vec<Tag>,
+    pub frontmatter: Frontmatter,
     pub body: Body,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -87,6 +93,7 @@ impl Skill {
             namespace: restore.namespace,
             status: restore.status,
             tags: restore.tags,
+            frontmatter: restore.frontmatter,
             body: restore.body,
             created_at: restore.created_at,
             updated_at: restore.updated_at,
@@ -111,6 +118,7 @@ impl Skill {
             namespace: namespace.clone(),
             status: SkillStatus::Active,
             tags: Vec::new(),
+            frontmatter: Frontmatter::new(),
             body,
             created_at: now,
             updated_at: now,
@@ -215,6 +223,30 @@ impl Skill {
         self.touch(clock);
     }
 
+    /// Anything orchy maintains is refused by name, with the command that does change it, so a
+    /// team can add whatever else it needs without being able to corrupt what orchy reads.
+    pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
+        if let Some(command) = managed_field(field) {
+            return Err(DomainError::forbidden(format!(
+                "`{field}` is maintained by orchy; use {command}"
+            )));
+        }
+        self.frontmatter.set(field, value);
+        self.touch(clock);
+        Ok(())
+    }
+
+    pub fn remove_field(&mut self, field: &str, clock: &dyn Clock) -> Result<()> {
+        if let Some(command) = managed_field(field) {
+            return Err(DomainError::forbidden(format!(
+                "`{field}` is maintained by orchy; use {command}"
+            )));
+        }
+        self.frontmatter.remove(field);
+        self.touch(clock);
+        Ok(())
+    }
+
     fn touch(&mut self, clock: &dyn Clock) {
         self.updated_at = clock.now();
     }
@@ -247,6 +279,10 @@ impl Skill {
         &self.tags
     }
 
+    pub fn frontmatter(&self) -> &Frontmatter {
+        &self.frontmatter
+    }
+
     pub fn body(&self) -> &Body {
         &self.body
     }
@@ -261,6 +297,21 @@ impl Skill {
 
     pub fn drain_events(&mut self) -> Vec<Box<dyn DomainEvent>> {
         self.collector.drain()
+    }
+}
+
+/// The fields orchy projects from the aggregate. A team owns every other key on the file.
+pub fn managed_field(field: &str) -> Option<&'static str> {
+    match field {
+        "id" => Some("(ids are immutable)"),
+        "type" => Some("(a skill is always a skill)"),
+        "name" => Some("`orchy skill write` under the new name"),
+        "summary" => Some("`orchy skill write <name> --summary ...`"),
+        "namespace" => Some("`orchy skill write <name> --namespace ...`"),
+        "status" => Some("`orchy skill retire` / `orchy skill restore`"),
+        "tags" => Some("`orchy skill write <name> --tag ...`"),
+        "created" | "updated" => Some("(timestamps are orchy's)"),
+        _ => None,
     }
 }
 

@@ -50,6 +50,17 @@ const DOCUMENT_KEYS: [&str; 7] = [
     "created",
 ];
 
+const SKILL_KEYS: [&str; 8] = [
+    "id",
+    "type",
+    "name",
+    "summary",
+    "namespace",
+    "status",
+    "tags",
+    "created",
+];
+
 const ACTOR_KEYS: [&str; 7] = [
     "id",
     "type",
@@ -424,6 +435,12 @@ pub fn skill_to_markdown(skill: &Skill) -> MarkdownFile {
     frontmatter.set("created", stamp(skill.created_at()));
     frontmatter.set("updated", stamp(skill.updated_at()));
 
+    for (key, value) in skill.frontmatter().iter() {
+        if !SKILL_KEYS.contains(&key) && key != "updated" {
+            frontmatter.set(key, value.clone());
+        }
+    }
+
     MarkdownFile {
         frontmatter,
         body: skill.body().clone(),
@@ -438,6 +455,13 @@ pub fn skill_from_markdown(file: &MarkdownFile, key: &str) -> Result<Skill> {
         fm.string("summary")
             .ok_or_else(|| missing("summary", key))?,
     )?;
+
+    let mut carried = Frontmatter::new();
+    for (key, value) in fm.iter() {
+        if !SKILL_KEYS.contains(&key) && key != "updated" {
+            carried.set(key, value.clone());
+        }
+    }
 
     Ok(Skill::new(RestoreSkill {
         id: id.clone(),
@@ -457,6 +481,7 @@ pub fn skill_from_markdown(file: &MarkdownFile, key: &str) -> Result<Skill> {
             .iter()
             .map(Tag::new)
             .collect::<Result<Vec<_>>>()?,
+        frontmatter: carried,
         body: file.body.clone(),
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
         updated_at: timestamp(fm, "updated").unwrap_or_else(|| id.created_at()),
