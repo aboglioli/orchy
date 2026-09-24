@@ -14,7 +14,7 @@ pub use events::{
 };
 pub use frontmatter::Frontmatter;
 pub use kind::{DocumentStatus, Kind};
-pub use search::{Hit, Search, SearchQuery, rank};
+pub use search::{Hit, Passage, Search, SearchQuery, rank, score, tokenise};
 
 use crate::body::Body;
 use crate::clock::Clock;

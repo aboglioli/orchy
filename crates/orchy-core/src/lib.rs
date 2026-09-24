@@ -21,7 +21,7 @@ pub use actor::{
 pub use body::{Body, Section};
 pub use clock::Clock;
 pub use document::{
-    Document, DocumentQuery, DocumentStatus, DocumentStore, Frontmatter, Hit, Kind,
+    Document, DocumentQuery, DocumentStatus, DocumentStore, Frontmatter, Hit, Kind, Passage,
     RestoreDocument, Search, SearchQuery,
 };
 pub use entity_ref::{EntityKind, EntityRef};
