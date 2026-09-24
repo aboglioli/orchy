@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{Namespace, SkillStore, skill};
+use orchy_core::{Namespace, SkillStore, Tag, skill};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::SkillDto;
@@ -9,6 +9,7 @@ use crate::error::ApplicationResult;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ListSkillsCommand {
     pub namespace: Option<String>,
+    pub tags: Vec<String>,
     /// Every skill in the vault, including ones no namespace the agent works in declares
     pub everywhere: bool,
     /// Retired skills too, which no briefing shows
@@ -25,7 +26,14 @@ impl ListSkills {
     }
 
     pub async fn execute(&self, cmd: ListSkillsCommand) -> ApplicationResult<Vec<SkillDto>> {
-        let all = self.skills.all().await?;
+        let wanted: Vec<Tag> = cmd.tags.iter().map(Tag::new).collect::<Result<_, _>>()?;
+        let all: Vec<_> = self
+            .skills
+            .all()
+            .await?
+            .into_iter()
+            .filter(|s| wanted.iter().all(|t| s.tags().contains(t)))
+            .collect();
 
         if cmd.everywhere || cmd.retired {
             return Ok(all

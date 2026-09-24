@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Skill, Task};
 use serde::{Deserialize, Serialize};
@@ -256,6 +258,7 @@ pub struct SkillDto {
     pub namespace: String,
     pub status: String,
     pub tags: Vec<String>,
+    pub frontmatter: BTreeMap<String, serde_json::Value>,
     pub body: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -270,6 +273,11 @@ impl From<&Skill> for SkillDto {
             namespace: skill.namespace().to_string(),
             status: skill.status().as_str().to_owned(),
             tags: skill.tags().iter().map(ToString::to_string).collect(),
+            frontmatter: skill
+                .frontmatter()
+                .iter()
+                .map(|(k, v)| (k.to_owned(), v.clone()))
+                .collect(),
             body: skill.body().as_str().to_owned(),
             created_at: skill.created_at(),
             updated_at: skill.updated_at(),

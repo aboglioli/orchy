@@ -3,9 +3,11 @@ use orchy_application::dto::SkillDto;
 use orchy_application::list_skills::ListSkillsCommand;
 use orchy_application::read_skill::ReadSkillCommand;
 use orchy_application::retire_skill::RetireSkillCommand;
+use orchy_application::set_skill_field::SetSkillFieldCommand;
 use orchy_application::write_skill::WriteSkillCommand;
 
-use crate::error::CliResult;
+use crate::cli::SkillEdits;
+use crate::error::{CliError, CliResult};
 use crate::output::Output;
 use crate::stdin;
 
@@ -15,23 +17,69 @@ pub(crate) async fn write(
     summary: Option<String>,
     namespace: Option<String>,
     body: Option<String>,
+    tag: Vec<String>,
     out: &Output,
 ) -> CliResult<()> {
     let skill = app
         .write_skill
         .execute(WriteSkillCommand {
-            name,
+            name: name.clone(),
             summary,
-            namespace,
+            namespace: namespace.clone(),
             body: piped(body)?,
         })
         .await?;
-    out.emit(&skill, |s| format!("{}  {}", s.name, s.summary))
+    if tag.is_empty() {
+        return out.emit(&skill, |s| format!("{}  {}", s.name, s.summary));
+    }
+
+    let tagged = app
+        .set_skill_field
+        .execute(SetSkillFieldCommand {
+            target: name,
+            namespace,
+            tag,
+            ..Default::default()
+        })
+        .await?;
+    out.emit(&tagged, |s| format!("{}  {}", s.name, s.summary))
+}
+
+pub(crate) async fn set(
+    app: &Application,
+    target: String,
+    namespace: Option<String>,
+    edits: SkillEdits,
+    out: &Output,
+) -> CliResult<()> {
+    let mut fields = Vec::new();
+    for assignment in &edits.assignments {
+        let (field, value) = assignment
+            .split_once('=')
+            .ok_or_else(|| CliError::config(format!("`{assignment}` is not field=value")))?;
+        let parsed = serde_json::from_str(value)
+            .unwrap_or_else(|_| serde_json::Value::String(value.to_owned()));
+        fields.push((field.to_owned(), parsed));
+    }
+
+    let skill = app
+        .set_skill_field
+        .execute(SetSkillFieldCommand {
+            target,
+            namespace,
+            fields,
+            remove: edits.remove,
+            tag: edits.tag,
+            untag: edits.untag,
+        })
+        .await?;
+    out.emit(&skill, |s| format!("{}  updated", s.name))
 }
 
 pub(crate) async fn list(
     app: &Application,
     namespace: Option<String>,
+    tag: Vec<String>,
     everywhere: bool,
     retired: bool,
     out: &Output,
@@ -40,6 +88,7 @@ pub(crate) async fn list(
         .list_skills
         .execute(ListSkillsCommand {
             namespace,
+            tags: tag,
             everywhere,
             retired,
         })

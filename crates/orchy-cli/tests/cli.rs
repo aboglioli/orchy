@@ -582,3 +582,150 @@ fn the_guide_explains_orchy_without_joining_the_roster() {
         "reading the manual is not announcing yourself"
     );
 }
+
+#[test]
+fn a_team_puts_its_own_frontmatter_on_a_skill_and_orchy_keeps_it() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "never edit one",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "set",
+            "migrations",
+            "owner=platform-team",
+            "review_by=2027-01-01",
+            "risk=3",
+        ],
+    );
+
+    let shown = json(temp.path(), &["skill", "show", "migrations"]);
+    assert_eq!(shown["frontmatter"]["owner"], "platform-team");
+    assert_eq!(shown["frontmatter"]["risk"], 3, "a number stays a number");
+
+    ok(
+        temp.path(),
+        &["skill", "write", "migrations", "--summary", "revised"],
+    );
+    let revised = json(temp.path(), &["skill", "show", "migrations"]);
+    assert_eq!(
+        revised["frontmatter"]["owner"], "platform-team",
+        "revising the skill does not discard what the team wrote on it"
+    );
+
+    ok(
+        temp.path(),
+        &["skill", "set", "migrations", "--remove", "risk"],
+    );
+    assert!(
+        json(temp.path(), &["skill", "show", "migrations"])["frontmatter"]
+            .get("risk")
+            .is_none()
+    );
+}
+
+#[test]
+fn the_fields_orchy_maintains_are_refused_by_name() {
+    let temp = vault();
+    ok(temp.path(), &["skill", "write", "review", "--summary", "x"]);
+
+    for (field, hint) in [
+        ("status=retired", "orchy skill retire"),
+        ("name=other", "under the new name"),
+        ("summary=sneaky", "--summary"),
+        ("id=01ARZ3NDEKTSV4RRFFQ69G5FAV", "immutable"),
+    ] {
+        let refused = orchy(temp.path(), &["skill", "set", "review", field]);
+        assert_eq!(
+            refused.status.code(),
+            Some(5),
+            "`{field}` should be refused"
+        );
+        let message = String::from_utf8_lossy(&refused.stderr);
+        assert!(
+            message.contains(hint),
+            "the refusal names the command that does change it: {message}"
+        );
+    }
+}
+
+#[test]
+fn skills_carry_tags_and_can_be_listed_by_them() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "one",
+            "--tag",
+            "database",
+            "--tag",
+            "safety",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "style",
+            "--summary",
+            "two",
+            "--tag",
+            "formatting",
+        ],
+    );
+
+    let tagged = json(temp.path(), &["skill", "list", "--tag", "database"]);
+    assert_eq!(tagged.as_array().unwrap().len(), 1);
+    assert_eq!(tagged[0]["name"], "migrations");
+
+    ok(
+        temp.path(),
+        &["skill", "set", "migrations", "--untag", "safety"],
+    );
+    let left = json(temp.path(), &["skill", "show", "migrations"]);
+    assert_eq!(left["tags"], serde_json::json!(["database"]));
+}
+
+#[test]
+fn an_agent_that_runs_orchy_with_no_arguments_is_told_where_to_start() {
+    let temp = vault();
+    let bare = orchy(temp.path(), &[]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&bare.stdout),
+        String::from_utf8_lossy(&bare.stderr)
+    );
+
+    assert!(
+        text.contains("orchy announce"),
+        "the one command an agent must run has to be in the first thing it reads: {text}"
+    );
+    assert!(
+        text.contains("EXIT CODES"),
+        "so an agent can branch: {text}"
+    );
+    assert!(text.contains("WHERE THINGS LIVE"), "{text}");
+}
+
+#[test]
+fn orchy_help_says_the_same_thing_as_running_it_bare() {
+    let temp = vault();
+    let helped = String::from_utf8_lossy(&orchy(temp.path(), &["help"]).stdout).into_owned();
+
+    assert!(helped.contains("orchy announce"));
+    assert!(helped.contains("skills"), "the pillars are named: {helped}");
+}

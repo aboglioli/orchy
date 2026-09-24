@@ -36,6 +36,7 @@ pub mod retire_skill;
 pub mod rollup_ancestors;
 pub mod send_message;
 pub mod set_document_field;
+pub mod set_skill_field;
 pub mod split_task;
 pub mod start_task;
 pub mod supersede_document;
@@ -90,6 +91,7 @@ use retire_skill::RetireSkill;
 use rollup_ancestors::RollupAncestors;
 use send_message::SendMessage;
 use set_document_field::SetDocumentField;
+use set_skill_field::SetSkillField;
 use split_task::SplitTask;
 use start_task::StartTask;
 use supersede_document::SupersedeDocument;
@@ -154,6 +156,7 @@ pub struct Application {
     pub read_skill: ReadSkill,
     pub list_skills: ListSkills,
     pub retire_skill: RetireSkill,
+    pub set_skill_field: SetSkillField,
     pub read_message: ReadMessage,
     pub read_thread: ReadThread,
     pub list_sent: ListSent,
@@ -274,6 +277,7 @@ impl Application {
             read_skill: ReadSkill::new(Arc::clone(&skills)),
             list_skills: ListSkills::new(Arc::clone(&skills)),
             retire_skill: RetireSkill::new(Arc::clone(&skills), Arc::clone(&clock)),
+            set_skill_field: SetSkillField::new(Arc::clone(&skills), Arc::clone(&clock)),
             read_message: ReadMessage::new(Arc::clone(&messages), Arc::clone(&watermarks)),
             read_thread: ReadThread::new(Arc::clone(&messages)),
             list_sent: ListSent::new(Arc::clone(&messages)),
