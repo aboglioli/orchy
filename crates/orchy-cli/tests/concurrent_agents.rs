@@ -125,6 +125,16 @@ impl Vault {
         found
     }
 
+    fn events_keyed(&self, key: &str) -> Vec<String> {
+        self.json("alan", &["events"])
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["key"].as_str() == Some(key))
+            .map(|e| e["topic"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
     fn event_topics(&self) -> Vec<String> {
         self.json("alan", &["events"])
             .as_array()
@@ -528,7 +538,7 @@ fn the_event_log_keeps_every_append_from_a_burst() {
 }
 
 #[test]
-fn partitions_are_created_as_configured_and_spread_the_load() {
+fn partitions_are_claimed_as_they_are_used_and_spread_the_load() {
     let vault = Vault::new();
     in_parallel(&TEAM, |agent| {
         for n in 0..3 {
@@ -543,31 +553,31 @@ fn partitions_are_created_as_configured_and_spread_the_load() {
         .find(|p| p.is_dir())
         .expect("a log root for this machine");
 
-    let partitions = std::fs::read_dir(&machine_root)
-        .unwrap()
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .count();
-    assert_eq!(partitions, 10, "the configured default");
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(machine_root.join("meta.json")).unwrap())
+            .unwrap();
+    assert_eq!(meta["partition_count"], 10, "the configured default");
 
-    let used = std::fs::read_dir(&machine_root)
+    // a partition is claimed by the first write routed to it, so the directory count tracks
+    // what the log has actually used rather than what it may one day use
+    let opened: Vec<PathBuf> = std::fs::read_dir(&machine_root)
         .unwrap()
         .flatten()
-        .filter(|e| e.path().is_dir())
-        .filter(|e| {
-            std::fs::read_dir(e.path())
-                .map(|d| {
-                    d.flatten().any(|f| {
-                        f.path().extension().is_some_and(|x| x == "log")
-                            && f.metadata().map(|m| m.len() > 0).unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false)
-        })
-        .count();
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
     assert!(
-        used > 1,
-        "routing on the event key should spread fifteen aggregates over more than one partition"
+        opened.len() > 1 && opened.len() <= 10,
+        "fifteen aggregates should land in several of the ten partitions, not one: {opened:?}"
+    );
+    assert!(
+        opened.iter().all(|p| {
+            std::fs::read_dir(p).unwrap().flatten().any(|f| {
+                f.path().extension().is_some_and(|x| x == "log")
+                    && f.metadata().map(|m| m.len() > 0).unwrap_or(false)
+            })
+        }),
+        "every partition that exists was opened because something was written to it"
     );
 }
 
@@ -1412,5 +1422,64 @@ fn a_thread_read_by_everyone_at_once_stays_one_thread() {
         thread.as_array().unwrap().len(),
         readers.len() + 1,
         "four replies to one opening, all on the same thread"
+    );
+}
+
+#[test]
+fn agents_writing_one_aggregate_at_once_all_reach_the_log() {
+    let vault = Vault::new();
+    let id = vault.new_document("the contended page");
+
+    // events route to a partition by key, so every one of these lands in the same partition:
+    // the case that needs several producer processes to share it
+    let writers = ["ann", "bob", "cal", "dee", "eve", "fay", "gil", "hal"];
+    let results = in_parallel(&writers, |agent| {
+        vault.run(agent, &["edit", &id, "--content", &format!("line-{agent}")])
+    });
+
+    let written = vault
+        .events_keyed(&id)
+        .iter()
+        .filter(|t| *t == "document.written")
+        .count();
+    assert_eq!(
+        successes(&results),
+        written,
+        "one event per command that reported success: {results:?}"
+    );
+    assert!(
+        vault
+            .events_keyed(&id)
+            .contains(&"document.created".to_owned()),
+        "and the creation is still there under the same key"
+    );
+}
+
+#[test]
+fn a_second_agent_never_finds_the_log_locked_against_it() {
+    let vault = Vault::new();
+
+    let results = in_parallel(&TEAM, |agent| {
+        (0..4)
+            .map(|n| vault.run(agent, &["task", "new", &format!("{agent} {n}")]))
+            .collect::<Vec<_>>()
+    });
+
+    let failures: Vec<&String> = results
+        .iter()
+        .flatten()
+        .filter_map(|r| r.as_ref().err())
+        .collect();
+    assert!(
+        failures.is_empty(),
+        "a partition is held for the length of a write, not the length of a process: {failures:?}"
+    );
+    assert_eq!(
+        vault
+            .event_topics()
+            .iter()
+            .filter(|t| *t == "task.created")
+            .count(),
+        TEAM.len() * 4
     );
 }
