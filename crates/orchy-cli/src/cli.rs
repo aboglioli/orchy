@@ -47,6 +47,11 @@ pub(crate) enum Command {
         #[arg(long)]
         name: Option<String>,
     },
+    /// What orchy is and how to drive it, without joining the roster
+    Guide,
+    /// Conventions this vault expects every agent to follow
+    #[command(subcommand)]
+    Skill(SkillCommand),
     /// List the roster
     Agents {
         /// Only actors seen recently on this machine
@@ -340,6 +345,43 @@ pub(crate) enum MsgCommand {
         #[arg(long)]
         role: Vec<String>,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum SkillCommand {
+    /// Write a skill down, or revise the one already there
+    Write {
+        name: String,
+        /// The one line every agent reads before deciding to open it
+        #[arg(long)]
+        summary: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
+        /// The skill itself, or `-` to read it from stdin
+        #[arg(long)]
+        body: Option<String>,
+    },
+    /// The skills in force where you are working
+    List {
+        #[arg(long)]
+        namespace: Option<String>,
+        /// Every skill in the vault, not only the ones your namespace inherits
+        #[arg(long)]
+        everywhere: bool,
+        /// Include retired skills
+        #[arg(long)]
+        retired: bool,
+    },
+    /// Read one, by name or id
+    Show {
+        target: String,
+        #[arg(long)]
+        namespace: Option<String>,
+    },
+    /// Take a skill out of every briefing without deleting it
+    Retire { target: String },
+    /// Put a retired skill back in force
+    Restore { target: String },
 }
 
 #[derive(Subcommand, Debug)]

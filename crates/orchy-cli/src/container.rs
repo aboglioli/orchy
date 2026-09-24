@@ -9,6 +9,7 @@ use orchy_store_vault::eventlog::EventuaryLog;
 use orchy_store_vault::messages::VaultMessageStore;
 use orchy_store_vault::roster::{FileLeaseStore, VaultActorStore};
 use orchy_store_vault::search::VaultSearch;
+use orchy_store_vault::skills::VaultSkillStore;
 use orchy_store_vault::tasks::VaultTaskStore;
 use orchy_store_vault::time::{SystemClock, UlidGenerator};
 use orchy_store_vault::vault::Vault;
@@ -41,6 +42,7 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
     Ok(Application::new(ApplicationDeps {
         search: Arc::new(VaultSearch::new(Arc::clone(&documents))) as Arc<dyn Search>,
         documents: Arc::clone(&documents) as _,
+        skills: Arc::new(VaultSkillStore::new(Arc::clone(&vault), Arc::clone(&log))),
         tasks: Arc::new(VaultTaskStore::new(Arc::clone(&vault), Arc::clone(&log))),
         messages: Arc::new(VaultMessageStore::new(
             Arc::clone(&vault),

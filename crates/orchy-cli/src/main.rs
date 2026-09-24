@@ -9,12 +9,11 @@ mod resolve;
 mod stdin;
 
 use clap::{CommandFactory, Parser};
-use orchy_application::announce_actor::AnnounceActorCommand;
 use orchy_application::list_actors::ListActorsCommand;
 use orchy_application::manage_lease::{LeaseAction, ManageLeaseCommand};
 use orchy_application::read_events::ReadEventsCommand;
 
-use cli::{Cli, Command, LockCommand};
+use cli::{Cli, Command, LockCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
 use output::{Output, short};
@@ -92,18 +91,28 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             roles,
             namespace,
             name,
-        } => {
-            let announced = app
-                .announce_actor
-                .execute(AnnounceActorCommand {
-                    actor: actor.clone(),
-                    roles,
-                    namespace,
-                    display_name: name,
-                })
-                .await?;
-            out.emit(&announced, |a| format!("{}  {}", a.id, a.roles.join(", ")))
-        }
+        } => cmd::brief::announce(&app, &actor, roles, namespace, name, out).await,
+
+        Command::Guide => cmd::brief::guide(out),
+
+        Command::Skill(command) => match command {
+            SkillCommand::Write {
+                name,
+                summary,
+                namespace,
+                body,
+            } => cmd::skill::write(&app, name, summary, namespace, body, out).await,
+            SkillCommand::List {
+                namespace,
+                everywhere,
+                retired,
+            } => cmd::skill::list(&app, namespace, everywhere, retired, out).await,
+            SkillCommand::Show { target, namespace } => {
+                cmd::skill::show(&app, target, namespace, out).await
+            }
+            SkillCommand::Retire { target } => cmd::skill::retire(&app, target, false, out).await,
+            SkillCommand::Restore { target } => cmd::skill::retire(&app, target, true, out).await,
+        },
 
         Command::Agents { live } => {
             let actors = app

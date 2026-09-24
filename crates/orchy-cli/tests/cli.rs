@@ -350,3 +350,235 @@ fn completions_are_generated_without_a_vault() {
     let script = ok(temp.path(), &["completions", "fish"]);
     assert!(script.contains("orchy"), "a fish completion script");
 }
+
+fn as_actor(vault: &Path, actor: &str, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_orchy"))
+        .args(args)
+        .env("ORCHY_VAULT", vault)
+        .env("XDG_CONFIG_HOME", vault.join(".config"))
+        .env("ORCHY_ACTOR", actor)
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("orchy binary runs")
+}
+
+#[test]
+fn a_skill_is_filed_by_name_where_a_human_would_look_for_it() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "never edit an applied migration",
+            "--namespace",
+            "/backend",
+            "--body",
+            "add a new one instead",
+        ],
+    );
+
+    assert!(
+        temp.path().join("skills/backend/migrations.md").is_file(),
+        "a skill is addressed by name, so it is filed under one"
+    );
+    let shown = ok(temp.path(), &["skill", "show", "migrations"]);
+    assert!(shown.contains("add a new one instead"));
+}
+
+#[test]
+fn writing_a_skill_twice_revises_it_rather_than_duplicating_it() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["skill", "write", "review", "--summary", "first attempt"],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "review",
+            "--summary",
+            "what we settled on",
+        ],
+    );
+
+    let listed = json(temp.path(), &["skill", "list"]);
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["summary"], "what we settled on");
+}
+
+#[test]
+fn a_new_skill_without_a_summary_is_refused() {
+    let temp = vault();
+    let refused = orchy(temp.path(), &["skill", "write", "nameless", "--body", "x"]);
+    assert_eq!(refused.status.code(), Some(6));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("summary"),
+        "the refusal says what is missing"
+    );
+}
+
+#[test]
+fn skills_are_inherited_downward_and_the_nearest_one_wins() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["skill", "write", "review", "--summary", "the house rule"],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "review",
+            "--summary",
+            "what backend does instead",
+            "--namespace",
+            "/backend",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "backend only",
+            "--namespace",
+            "/backend",
+        ],
+    );
+
+    let at_root = json(temp.path(), &["skill", "list"]);
+    assert_eq!(
+        at_root.as_array().unwrap().len(),
+        1,
+        "root inherits nothing"
+    );
+    assert_eq!(at_root[0]["summary"], "the house rule");
+
+    let in_backend = json(temp.path(), &["skill", "list", "--namespace", "/backend"]);
+    let summaries: Vec<&str> = in_backend
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["summary"].as_str().unwrap())
+        .collect();
+    assert_eq!(summaries, vec!["backend only", "what backend does instead"]);
+}
+
+#[test]
+fn a_retired_skill_stays_readable_but_teaches_nobody() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["skill", "write", "old-way", "--summary", "how we used to"],
+    );
+    ok(temp.path(), &["skill", "retire", "old-way"]);
+
+    assert!(
+        json(temp.path(), &["skill", "list"])
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "a retired skill is in force nowhere"
+    );
+    assert_eq!(
+        json(temp.path(), &["skill", "list", "--retired"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "but it is still there when asked for"
+    );
+
+    ok(temp.path(), &["skill", "restore", "old-way"]);
+    assert_eq!(
+        json(temp.path(), &["skill", "list"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn announcing_returns_the_briefing_an_agent_needs_to_start() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "code-review",
+            "--summary",
+            "two approvals, always",
+        ],
+    );
+    ok(temp.path(), &["task", "new", "wire up auth"]);
+    ok(temp.path(), &["announce"]);
+    as_actor(temp.path(), "codex", &["announce"]);
+    ok(
+        temp.path(),
+        &["msg", "send", "@codex", "--body", "heads up"],
+    );
+
+    let briefing =
+        String::from_utf8_lossy(&as_actor(temp.path(), "codex", &["announce"]).stdout).into_owned();
+
+    assert!(briefing.contains("ORCHY IN ONE MINUTE"), "{briefing}");
+    assert!(
+        briefing.contains("two approvals, always"),
+        "the skills in force are summarised, not just counted: {briefing}"
+    );
+    assert!(briefing.contains("1 unread"), "{briefing}");
+    assert!(briefing.contains("wire up auth"), "{briefing}");
+}
+
+#[test]
+fn the_briefing_carries_a_summary_per_skill_rather_than_the_skills_themselves() {
+    let temp = vault();
+    for n in 0..30 {
+        ok(
+            temp.path(),
+            &[
+                "skill",
+                "write",
+                &format!("convention-{n}"),
+                "--summary",
+                &format!("the {n}th thing to know"),
+                "--body",
+                "a long body nobody wants inlined thirty times over",
+            ],
+        );
+    }
+    ok(temp.path(), &["announce"]);
+
+    let briefing = ok(temp.path(), &["announce"]);
+    assert!(briefing.contains("SKILLS IN FORCE HERE (30)"));
+    assert!(briefing.contains("the 29th thing to know"));
+    assert!(
+        !briefing.contains("a long body nobody wants inlined"),
+        "hundreds of skills have to stay scannable: the body is behind `skill show`"
+    );
+}
+
+#[test]
+fn the_guide_explains_orchy_without_joining_the_roster() {
+    let temp = vault();
+    let guide = ok(temp.path(), &["guide"]);
+
+    assert!(guide.contains("ORCHY IN ONE MINUTE"));
+    assert!(
+        json(temp.path(), &["agents"])
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "reading the manual is not announcing yourself"
+    );
+}
