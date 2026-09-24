@@ -50,6 +50,7 @@ impl FromStr for EntityKind {
             "document" => Ok(Self::Document),
             "task" => Ok(Self::Task),
             "message" => Ok(Self::Message),
+            "skill" => Ok(Self::Skill),
             "actor" => Ok(Self::Actor),
             other => Err(DomainError::validation(format!(
                 "unknown entity kind: {other}"

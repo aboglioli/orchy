@@ -1,7 +1,6 @@
 mod events;
 mod frontmatter;
 mod kind;
-mod search;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -14,7 +13,6 @@ pub use events::{
 };
 pub use frontmatter::Frontmatter;
 pub use kind::{DocumentStatus, Kind};
-pub use search::{Hit, Search, SearchQuery, rank};
 
 use crate::body::Body;
 use crate::clock::Clock;
