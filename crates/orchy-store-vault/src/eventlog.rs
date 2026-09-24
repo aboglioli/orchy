@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use eventuary::fs::log::{LogConfig, WriterAccess};
 use eventuary::fs::reader::{FsReader, FsReaderConfig};
 use eventuary::fs::writer::{FsPartitioningConfig, FsWriter, FsWriterConfig};
 use eventuary::io::Writer;
@@ -14,14 +15,14 @@ use orchy_core::{
 
 pub const DEFAULT_PARTITIONS: u32 = 10;
 
-/// A write holds the lock for microseconds, so a collision resolves well inside this.
+/// A write holds a partition for microseconds, so a collision resolves well inside this.
 const LOCK_WAIT: Duration = Duration::from_millis(2_000);
-const LOCK_RETRY: Duration = Duration::from_millis(20);
 
 /// One log root per machine: `flock` cannot order offsets across a git remote, so two hosts
 /// sharing a partition would corrupt silently.
 pub struct EventuaryLog {
     root: PathBuf,
+    writer: FsWriter,
     partitions: NonZeroU32,
     organization: OrganizationId,
     actor: ActorId,
@@ -40,9 +41,15 @@ impl EventuaryLog {
         std::fs::create_dir_all(&root)
             .map_err(|e| DomainError::validation(format!("creating event log root: {e}")))?;
 
+        let partitions = NonZeroU32::new(partitions.max(1)).expect("clamped to at least one");
+        let writer = FsWriter::open(&root, writer_config(partitions)).map_err(|e| {
+            DomainError::validation(format!("opening event log at {}: {e}", root.display()))
+        })?;
+
         Ok(Self {
             root,
-            partitions: NonZeroU32::new(partitions.max(1)).expect("clamped to at least one"),
+            writer,
+            partitions,
             organization: OrganizationId::new(organization)
                 .map_err(|e| DomainError::validation(format!("invalid organization: {e}")))?,
             actor,
@@ -56,42 +63,6 @@ impl EventuaryLog {
 
     pub fn partitions(&self) -> u32 {
         self.partitions.get()
-    }
-
-    fn writer_config(&self) -> FsWriterConfig {
-        FsWriterConfig {
-            // routing on the event key keeps one aggregate's events inside one partition, so
-            // their order survives replay
-            partitioning: FsPartitioningConfig::by_event_key(self.partitions),
-            ..FsWriterConfig::default()
-        }
-    }
-
-    /// Opened per append and dropped straight after: opening locks every partition, and
-    /// holding that for a process would make a second agent on this machine fail.
-    async fn open_writer(&self) -> Result<FsWriter> {
-        let deadline = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            match FsWriter::open(&self.root, self.writer_config()) {
-                Ok(writer) => return Ok(writer),
-                // a misconfigured log never becomes openable by waiting
-                Err(eventuary::Error::Config(message)) => {
-                    return Err(DomainError::validation(format!(
-                        "event log at {}: {message}",
-                        self.root.display()
-                    )));
-                }
-                Err(e) => {
-                    if std::time::Instant::now() >= deadline {
-                        return Err(DomainError::conflict(format!(
-                            "event log at {} stayed locked by another process: {e}",
-                            self.root.display()
-                        )));
-                    }
-                    tokio::time::sleep(LOCK_RETRY).await;
-                }
-            }
-        }
     }
 
     fn to_eventuary(&self, event: &dyn DomainEvent) -> Result<Event> {
@@ -128,15 +99,7 @@ impl EventLog for EventuaryLog {
             .map(|e| self.to_eventuary(e.as_ref()))
             .collect::<Result<Vec<_>>>()?;
 
-        let writer = self.open_writer().await?;
-        for event in &wire {
-            writer
-                .write(event)
-                .await
-                .map_err(|e| DomainError::validation(format!("appending to event log: {e}")))?;
-        }
-        drop(writer);
-        Ok(())
+        self.writer.write_all(&wire).await.map_err(append_failed)
     }
 
     async fn replay(&self, query: &EventQuery) -> Result<Vec<RecordedEvent>> {
@@ -166,6 +129,32 @@ impl EventLog for EventuaryLog {
             all.truncate(limit);
         }
         Ok(all)
+    }
+}
+
+/// `WriterAccess::Shared` takes a partition only for the length of a write, so every agent on
+/// this machine keeps its own open writer and they append to the same partitions.
+fn writer_config(partitions: NonZeroU32) -> FsWriterConfig {
+    FsWriterConfig {
+        // routing on the event key keeps one aggregate's events inside one partition, so
+        // their order survives replay
+        partitioning: FsPartitioningConfig::by_event_key(partitions),
+        log: LogConfig {
+            access: WriterAccess::Shared,
+            lock_wait: Some(LOCK_WAIT),
+            ..LogConfig::default()
+        },
+    }
+}
+
+/// Contention is a busy resource, not a broken one, so it exits as a refusal the agent can
+/// retry rather than as bad input.
+fn append_failed(e: eventuary::Error) -> DomainError {
+    match e {
+        eventuary::Error::Contended(message) => {
+            DomainError::conflict(format!("event log is busy: {message}"))
+        }
+        other => DomainError::validation(format!("appending to event log: {other}")),
     }
 }
 
@@ -465,22 +454,20 @@ mod concurrency_tests {
 
         open(&events).append(&[created("x")]).await.unwrap();
 
-        let narrower = EventuaryLog::open(
+        // refused where the count is configured rather than on the first write, because the
+        // writer is opened with the log
+        let refused = EventuaryLog::open(
             &events,
             "orchy",
             ActorId::new("claude", MACHINE).unwrap(),
             MachineId::new(MACHINE).unwrap(),
             4,
         )
-        .unwrap();
-        let refused = narrower.append(&[created("y")]).await.unwrap_err();
+        .err()
+        .expect("a narrower log must be refused");
         assert!(
             refused.to_string().contains("was created with 10"),
-            "a count mismatch must say so plainly, not look like lock contention: {refused}"
-        );
-        assert!(
-            !refused.to_string().contains("locked"),
-            "and must not be retried as if it were transient: {refused}"
+            "a count mismatch must say so plainly, not look like contention: {refused}"
         );
     }
 

@@ -10,6 +10,9 @@ members = [
 
 [workspace.package]
 edition = "2024"
+# eventuary-fs locks partitions with `std::fs::File::lock`, stable since 1.89, and the vault
+# store locks the same way.
+rust-version = "1.89"
 version = "0.1.0"
 license = "MIT"
 repository = "https://github.com/aboglioli/orchy"
@@ -19,7 +22,7 @@ repository = "https://github.com/aboglioli/orchy"
 # resolved outside the repository, which cannot be checked out by CI.
 # The facade is the only entry point: backends come from it by feature, never as
 # separate crates, so every import in the workspace reads `use eventuary::`.
-eventuary = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.3", features = [
+eventuary = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.4", features = [
     "fs",
     "memory",
 ] }
@@ -39,7 +42,6 @@ futures = "0.3"
 tokio = { version = "1", features = ["fs", "macros", "rt", "sync", "time"] }
 
 # Vault storage
-fs4 = "0.13"
 grep-matcher = "0.1"
 grep-regex = "0.1"
 regex-syntax = "0.8"
