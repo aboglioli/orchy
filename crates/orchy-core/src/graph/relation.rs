@@ -116,7 +116,8 @@ impl Relation {
         match self {
             Self::DependsOn | Self::Parent => from == Task && to == Task,
             Self::SpawnedBy => from == Task && to == Message,
-            Self::Produces | Self::Implements => from == Task && to == Document,
+            // a task can write down a skill as readily as a document
+            Self::Produces | Self::Implements => from == Task && (to == Document || to == Skill),
             Self::OwnedBy | Self::ReviewedBy => to == Actor,
             // replacing means replacing like with like: a task does not supersede a document
             Self::Supersedes | Self::MergedFrom => from == to && from.is_content(),
@@ -137,24 +138,17 @@ impl Relation {
     /// The only kind this relation can point at, when it has one. Lets a hand-written bare id
     /// be typed without an index lookup.
     pub fn sole_target_kind(&self) -> Option<EntityKind> {
-        let accepted: Vec<EntityKind> = [
+        const KINDS: [EntityKind; 5] = [
             EntityKind::Document,
             EntityKind::Task,
             EntityKind::Message,
+            EntityKind::Skill,
             EntityKind::Actor,
-        ]
-        .into_iter()
-        .filter(|to| {
-            [
-                EntityKind::Document,
-                EntityKind::Task,
-                EntityKind::Message,
-                EntityKind::Actor,
-            ]
-            .iter()
-            .any(|from| self.accepts(*from, *to))
-        })
-        .collect();
+        ];
+        let accepted: Vec<EntityKind> = KINDS
+            .into_iter()
+            .filter(|to| KINDS.iter().any(|from| self.accepts(*from, *to)))
+            .collect();
 
         match accepted.as_slice() {
             [only] => Some(*only),
@@ -377,10 +371,6 @@ mod target_kind_tests {
             Some(EntityKind::Message)
         );
         assert_eq!(
-            Relation::Produces.sole_target_kind(),
-            Some(EntityKind::Document)
-        );
-        assert_eq!(
             Relation::OwnedBy.sole_target_kind(),
             Some(EntityKind::Actor)
         );
@@ -393,6 +383,9 @@ mod target_kind_tests {
             Relation::RelatedTo,
             Relation::DerivedFrom,
             Relation::MergedFrom,
+            // a task writes documents and skills alike, so a bare id has to say which
+            Relation::Produces,
+            Relation::Implements,
         ] {
             assert_eq!(
                 relation.sole_target_kind(),

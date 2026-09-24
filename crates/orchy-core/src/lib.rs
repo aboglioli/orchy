@@ -11,6 +11,7 @@ pub mod message;
 pub mod namespace;
 pub mod pagination;
 pub mod priority;
+pub mod skill;
 pub mod tag;
 pub mod task;
 pub mod title;
@@ -35,6 +36,7 @@ pub use message::{
 pub use namespace::Namespace;
 pub use pagination::{Page, PageRequest};
 pub use priority::Priority;
+pub use skill::{RestoreSkill, Skill, SkillName, SkillStatus, SkillStore, Summary};
 pub use tag::Tag;
 pub use task::{RestoreTask, Task, TaskQuery, TaskStatus, TaskStore, rollup};
 pub use title::Title;

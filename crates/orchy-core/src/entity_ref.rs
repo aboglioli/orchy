@@ -12,13 +12,17 @@ pub enum EntityKind {
     Document,
     Task,
     Message,
+    Skill,
     Actor,
 }
 
 impl EntityKind {
     /// An actor is a participant, not something a provenance relation can be about.
     pub fn is_content(&self) -> bool {
-        matches!(self, Self::Document | Self::Task | Self::Message)
+        matches!(
+            self,
+            Self::Document | Self::Task | Self::Message | Self::Skill
+        )
     }
 
     pub fn as_str(&self) -> &'static str {
@@ -26,6 +30,7 @@ impl EntityKind {
             Self::Document => "document",
             Self::Task => "task",
             Self::Message => "message",
+            Self::Skill => "skill",
             Self::Actor => "actor",
         }
     }
