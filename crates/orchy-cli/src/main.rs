@@ -33,10 +33,16 @@ async fn main() -> std::process::ExitCode {
 }
 
 async fn run(cli: Cli, out: &Output) -> CliResult<()> {
+    let Some(command) = cli.command else {
+        // an agent that types `orchy` is asking what this is; answer it
+        use clap::CommandFactory;
+        Cli::command().print_long_help()?;
+        return Ok(());
+    };
     let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
 
     // three commands run before there is a vault to open
-    match cli.command {
+    let command = match command {
         Command::Init { path } => {
             let root = path.unwrap_or_else(|| config.vault.clone());
             let written = init::scaffold(&root)?;
@@ -72,8 +78,8 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             clap_complete::generate(shell, &mut Cli::command(), "orchy", &mut std::io::stdout());
             return Ok(());
         }
-        _ => {}
-    }
+        other => other,
+    };
 
     if !config.is_initialised() {
         return Err(CliError::not_a_vault(config.vault.display()));
@@ -82,9 +88,9 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let app = container::build(&config).await?;
     let actor = config.actor.to_string();
 
-    match cli.command {
+    match command {
         Command::Init { .. } | Command::Status | Command::Completions { .. } => {
-            unreachable!()
+            unreachable!("answered before the vault is opened")
         }
 
         Command::Announce {
@@ -101,12 +107,19 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 summary,
                 namespace,
                 body,
-            } => cmd::skill::write(&app, name, summary, namespace, body, out).await,
+                tag,
+            } => cmd::skill::write(&app, name, summary, namespace, body, tag, out).await,
+            SkillCommand::Set {
+                target,
+                namespace,
+                edits,
+            } => cmd::skill::set(&app, target, namespace, edits, out).await,
             SkillCommand::List {
                 namespace,
+                tag,
                 everywhere,
                 retired,
-            } => cmd::skill::list(&app, namespace, everywhere, retired, out).await,
+            } => cmd::skill::list(&app, namespace, tag, everywhere, retired, out).await,
             SkillCommand::Show { target, namespace } => {
                 cmd::skill::show(&app, target, namespace, out).await
             }
