@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use async_trait::async_trait;
 use orchy_core::{DomainError, Result};
 
+use crate::lock::{DEFAULT_WAIT, FileLock};
+
 /// Digest used for write preconditions. Process-local: it is compared only against another
 /// digest taken by the same build, never stored.
 pub fn digest(bytes: &[u8]) -> u64 {
@@ -151,26 +153,13 @@ impl BlobStore for FsBlobStore {
 
         let contents = bytes.to_vec();
         tokio::task::spawn_blocking(move || -> Result<bool> {
-            use fs4::fs_std::FileExt;
-
-            let lock = std::fs::OpenOptions::new()
-                .create(true)
-                .read(true)
-                .write(true)
-                .truncate(false)
-                .open(&guard)
-                .map_err(|e| io("opening write guard", e))?;
-            FileExt::lock_exclusive(&lock).map_err(|e| io("locking write guard", e))?;
+            let _guard = FileLock::exclusive(&guard, "write guard", DEFAULT_WAIT)?;
 
             let current = std::fs::read(&path).ok().map(|b| digest(&b));
             if current != expected {
-                let _ = FileExt::unlock(&lock);
                 return Ok(false);
             }
-
-            let result = write_atomically(&path, &contents);
-            let _ = FileExt::unlock(&lock);
-            result.map(|()| true)
+            write_atomically(&path, &contents).map(|()| true)
         })
         .await
         .map_err(|e| DomainError::validation(format!("write task failed: {e}")))?

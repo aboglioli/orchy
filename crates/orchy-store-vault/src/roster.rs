@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use fs4::fs_std::FileExt;
 use orchy_core::{
     Actor, ActorId, ActorStore, Clock, DomainError, Lease, LeaseStore, ResourceKey, Result,
 };
 
 use crate::codec;
+use crate::lock::{DEFAULT_WAIT, FileLock};
 use crate::vault::Vault;
 
 const PRESENCE_TTL_SECS: i64 = 300;
@@ -143,19 +143,8 @@ impl FileLeaseStore {
 
     /// Never unlinked, only rewritten: `flock` orders the holders of one inode, so removing
     /// the file would let the next two acquirers lock two inodes and both believe they won.
-    fn open_lock(&self, key: &ResourceKey) -> Result<std::fs::File> {
-        std::fs::create_dir_all(&self.root)
-            .map_err(|e| DomainError::validation(format!("creating lock directory: {e}")))?;
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(self.lock_path(key))
-            .map_err(|e| DomainError::validation(format!("opening lock: {e}")))?;
-        FileExt::lock_exclusive(&file)
-            .map_err(|e| DomainError::validation(format!("locking: {e}")))?;
-        Ok(file)
+    fn open_lock(&self, key: &ResourceKey) -> Result<FileLock> {
+        FileLock::exclusive(&self.lock_path(key), key.as_str(), DEFAULT_WAIT)
     }
 
     fn write_record(&self, key: &ResourceKey, record: &LeaseRecord) -> Result<()> {
@@ -179,14 +168,13 @@ struct LeaseRecord {
 impl LeaseStore for FileLeaseStore {
     async fn acquire(&self, key: &ResourceKey, by: &ActorId, ttl: Duration) -> Result<Lease> {
         let now = self.clock.now();
-        let file = self.open_lock(key)?;
+        let _guard = self.open_lock(key)?;
 
         let held = self.read_record(key);
         if let Some(record) = &held
             && record.expires_at > now
             && record.holder != by.to_string()
         {
-            let _ = FileExt::unlock(&file);
             return Err(DomainError::conflict(format!(
                 "`{key}` is held by {} until {}",
                 record.holder, record.expires_at
@@ -200,9 +188,7 @@ impl LeaseStore for FileLeaseStore {
             expires_at: now + ttl,
             generation,
         };
-        let written = self.write_record(key, &record);
-        let _ = FileExt::unlock(&file);
-        written?;
+        self.write_record(key, &record)?;
 
         Ok(Lease::new(
             key.clone(),
@@ -217,10 +203,10 @@ impl LeaseStore for FileLeaseStore {
         if !self.lock_path(key).exists() {
             return Ok(());
         }
-        let file = self.open_lock(key)?;
+        let _guard = self.open_lock(key)?;
         let now = self.clock.now();
 
-        let released = match self.read_record(key) {
+        match self.read_record(key) {
             None => Ok(()),
             Some(record) if record.holder != by.to_string() && record.expires_at > now => Err(
                 DomainError::forbidden(format!("`{key}` is held by {}, not {by}", record.holder)),
@@ -232,10 +218,7 @@ impl LeaseStore for FileLeaseStore {
                     ..record
                 },
             ),
-        };
-
-        let _ = FileExt::unlock(&file);
-        released
+        }
     }
 
     async fn check(&self, key: &ResourceKey) -> Result<Option<Lease>> {

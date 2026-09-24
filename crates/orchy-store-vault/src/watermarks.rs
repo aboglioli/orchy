@@ -1,9 +1,10 @@
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
-use fs4::fs_std::FileExt;
 use orchy_core::{ActorId, DomainError, Id, ReadWatermarks, Result};
+
+use crate::lock::{DEFAULT_WAIT, FileLock};
 
 /// Per actor, per machine, never tracked: a broadcast to six agents would otherwise put six
 /// writers on one file and record that agents looked at things.
@@ -19,27 +20,16 @@ impl FileWatermarks {
     fn path(&self, actor: &ActorId) -> PathBuf {
         self.root.join(format!("{actor}.json"))
     }
-
-    /// Locked rather than replaced, because one actor still runs several orchy processes at
-    /// once: a rename would swap the inode out from under the lock, and a bare truncate lets a
-    /// reader see the empty middle and conclude nothing has ever been read.
-    fn open(&self, actor: &ActorId) -> Result<File> {
-        std::fs::create_dir_all(&self.root)
-            .map_err(|e| DomainError::validation(format!("creating watermark directory: {e}")))?;
-        OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(false)
-            .open(self.path(actor))
-            .map_err(|e| DomainError::validation(format!("opening watermark: {e}")))
-    }
 }
 
-fn read_mark(file: &mut File) -> Option<Id> {
+/// Locked rather than replaced, because one actor still runs several orchy processes at once:
+/// a rename would swap the inode out from under the lock, and a bare truncate lets a reader
+/// see the empty middle and conclude nothing has ever been read.
+fn read_mark(file: &File) -> Option<Id> {
+    let mut handle = file;
     let mut text = String::new();
-    file.seek(SeekFrom::Start(0)).ok()?;
-    file.read_to_string(&mut text).ok()?;
+    handle.seek(SeekFrom::Start(0)).ok()?;
+    handle.read_to_string(&mut text).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     value
         .get("watermark")
@@ -52,35 +42,25 @@ impl ReadWatermarks for FileWatermarks {
         if !self.path(actor).exists() {
             return Ok(None);
         }
-        let mut file = self.open(actor)?;
-        FileExt::lock_shared(&file)
-            .map_err(|e| DomainError::validation(format!("locking watermark: {e}")))?;
-        let mark = read_mark(&mut file);
-        let _ = FileExt::unlock(&file);
-        Ok(mark)
+        let lock = FileLock::shared(&self.path(actor), "watermark", DEFAULT_WAIT)?;
+        Ok(read_mark(lock.file()))
     }
 
     /// Ids are time-ordered, so the mark only moves forward: otherwise one agent's two
     /// processes race and the older mark resurrects everything in between.
     fn advance(&self, actor: &ActorId, to: &Id) -> Result<()> {
-        let mut file = self.open(actor)?;
-        FileExt::lock_exclusive(&file)
-            .map_err(|e| DomainError::validation(format!("locking watermark: {e}")))?;
+        let lock = FileLock::exclusive(&self.path(actor), "watermark", DEFAULT_WAIT)?;
+        let file = lock.file();
+        if read_mark(file).is_some_and(|current| current >= *to) {
+            return Ok(());
+        }
 
-        let written = (|| -> Result<()> {
-            if read_mark(&mut file).is_some_and(|current| current >= *to) {
-                return Ok(());
-            }
-            let value =
-                serde_json::json!({ "actor": actor.to_string(), "watermark": to.to_string() });
-            file.set_len(0)
-                .and_then(|()| file.seek(SeekFrom::Start(0)))
-                .and_then(|_| file.write_all(value.to_string().as_bytes()))
-                .and_then(|()| file.sync_all())
-                .map_err(|e| DomainError::validation(format!("writing watermark: {e}")))
-        })();
-
-        let _ = FileExt::unlock(&file);
-        written
+        let mut handle = file;
+        let value = serde_json::json!({ "actor": actor.to_string(), "watermark": to.to_string() });
+        file.set_len(0)
+            .and_then(|()| handle.seek(SeekFrom::Start(0)))
+            .and_then(|_| handle.write_all(value.to_string().as_bytes()))
+            .and_then(|()| file.sync_all())
+            .map_err(|e| DomainError::validation(format!("writing watermark: {e}")))
     }
 }

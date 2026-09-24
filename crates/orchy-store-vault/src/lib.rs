@@ -4,6 +4,7 @@ pub mod documents;
 pub mod edges;
 pub mod eventlog;
 pub mod layout;
+pub mod lock;
 pub mod markdown;
 pub mod messages;
 pub mod roster;
