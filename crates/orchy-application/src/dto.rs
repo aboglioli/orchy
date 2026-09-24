@@ -190,7 +190,7 @@ pub struct HitDto {
     pub excerpt: String,
     pub namespace: String,
     pub updated_at: DateTime<Utc>,
-    pub matches: usize,
+    pub relevance: f64,
 }
 
 impl From<&Hit> for HitDto {
@@ -201,7 +201,7 @@ impl From<&Hit> for HitDto {
             excerpt: hit.excerpt.clone(),
             namespace: hit.namespace.to_string(),
             updated_at: hit.updated_at,
-            matches: hit.matches,
+            relevance: hit.relevance,
         }
     }
 }

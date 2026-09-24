@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use grep_matcher::Matcher;
-use grep_regex::{RegexMatcher, RegexMatcherBuilder};
-use grep_searcher::{Searcher, sinks::UTF8};
-use orchy_core::{DomainError, Hit, Result, Search, SearchQuery};
+use orchy_core::{Document, Hit, Passage, Result, Search, SearchQuery, document::score};
 
 use crate::documents::VaultDocumentStore;
+
+const EXCERPT: usize = 240;
 
 pub struct VaultSearch {
     documents: Arc<VaultDocumentStore>,
@@ -21,93 +20,54 @@ impl VaultSearch {
 #[async_trait]
 impl Search for VaultSearch {
     async fn sections(&self, query: &SearchQuery) -> Result<Vec<Hit>> {
-        // people type what they remember, not what was capitalised
-        let matcher = RegexMatcherBuilder::new()
-            .case_insensitive(true)
-            .build(&regex_syntax::escape(&query.text))
-            .map_err(|e| DomainError::validation(format!("bad search pattern: {e}")))?;
-
-        let mut hits = Vec::new();
+        let mut passages = Vec::new();
         for document in self.documents.all().await? {
-            if let Some(kinds) = &query.kind
-                && !kinds.contains(document.kind())
-            {
+            if !selected(&document, query) {
                 continue;
             }
-            if let Some(statuses) = &query.status {
-                match document.status() {
-                    Some(status) if statuses.contains(&status) => {}
-                    _ => continue,
-                }
-            }
-            if let Some(namespace) = &query.namespace
-                && !namespace.contains(document.namespace())
-            {
-                continue;
-            }
-            if !query.tags.iter().all(|t| document.tags().contains(t)) {
-                continue;
-            }
-
-            // the title is searchable in its own right: a document whose subject only appears
-            // in its name is otherwise unfindable by the command meant to find things
-            let title_matches = count_matches(&matcher, document.title().as_str())?;
-            if title_matches > 0 {
-                hits.push(Hit {
-                    document: document.id().clone(),
-                    heading: Some(document.title().to_string()),
-                    excerpt: document.body().as_str().trim().chars().take(240).collect(),
-                    namespace: document.namespace().clone(),
-                    updated_at: document.updated_at(),
-                    matches: title_matches,
-                });
-            }
-
-            for section in document.body().sections() {
-                let haystack = format!("{}\n{}", section.heading, section.body);
-                let matches = count_matches(&matcher, &haystack)?;
-                if matches == 0 && !query.text.is_empty() {
-                    continue;
-                }
-                hits.push(Hit {
-                    document: document.id().clone(),
-                    heading: Some(section.heading.clone()),
-                    excerpt: section.body.trim().chars().take(240).collect(),
-                    namespace: document.namespace().clone(),
-                    updated_at: document.updated_at(),
-                    matches,
-                });
-            }
-
-            if document.body().sections().is_empty() {
-                let matches = count_matches(&matcher, document.body().as_str())?;
-                if matches > 0 || query.text.is_empty() {
-                    hits.push(Hit {
-                        document: document.id().clone(),
-                        heading: None,
-                        excerpt: document.body().as_str().trim().chars().take(240).collect(),
-                        namespace: document.namespace().clone(),
-                        updated_at: document.updated_at(),
-                        matches,
-                    });
-                }
-            }
+            passages.extend(passages_of(&document));
         }
-        Ok(hits)
+        Ok(score(passages, &query.text))
     }
 }
 
-fn count_matches(matcher: &RegexMatcher, haystack: &str) -> Result<usize> {
-    let mut count = 0;
-    Searcher::new()
-        .search_slice(
-            matcher,
-            haystack.as_bytes(),
-            UTF8(|_, line| {
-                count += matcher.find_iter(line.as_bytes(), |_| true).is_ok() as usize;
-                Ok(true)
-            }),
-        )
-        .map_err(|e| DomainError::validation(format!("search failed: {e}")))?;
-    Ok(count)
+fn selected(document: &Document, query: &SearchQuery) -> bool {
+    if let Some(kinds) = &query.kind
+        && !kinds.contains(document.kind())
+    {
+        return false;
+    }
+    if let Some(statuses) = &query.status {
+        match document.status() {
+            Some(status) if statuses.contains(&status) => {}
+            _ => return false,
+        }
+    }
+    if let Some(namespace) = &query.namespace
+        && !namespace.contains(document.namespace())
+    {
+        return false;
+    }
+    query.tags.iter().all(|t| document.tags().contains(t))
+}
+
+fn passages_of(document: &Document) -> Vec<Passage> {
+    let passage = |heading: Option<String>, body: &str| Passage {
+        document: document.id().clone(),
+        heading,
+        title: document.title().to_string(),
+        body: body.to_owned(),
+        excerpt: body.trim().chars().take(EXCERPT).collect(),
+        namespace: document.namespace().clone(),
+        updated_at: document.updated_at(),
+    };
+
+    let sections = document.body().sections();
+    if sections.is_empty() {
+        return vec![passage(None, document.body().as_str())];
+    }
+    sections
+        .iter()
+        .map(|section| passage(Some(section.heading.clone()), section.body))
+        .collect()
 }
