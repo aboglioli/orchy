@@ -1,4 +1,4 @@
-use orchy_core::{ActorId, EntityKind, Id, Namespace, TaskStatus};
+use orchy_core::{ActorId, EntityKind, Id, Namespace, SkillName, TaskStatus};
 
 /// Placement is a projection of frontmatter, never a source of it: a task is done because
 /// its frontmatter says so and lands in `tasks/done/` as a consequence. A file in the wrong
@@ -9,13 +9,14 @@ pub struct Layout;
 pub const DOCS: &str = "docs";
 pub const TASKS: &str = "tasks";
 pub const MESSAGES: &str = "messages";
+pub const SKILLS: &str = "skills";
 pub const AGENTS: &str = "agents";
 pub const EVENTS: &str = "events";
 pub const RUNTIME: &str = ".orchy";
 
 /// The root is fixed. Documents live under `docs/`, where their namespace shapes the tree
 /// however you like; everything else at the root is orchy's own.
-pub const ROOTS: [&str; 6] = [DOCS, TASKS, MESSAGES, AGENTS, EVENTS, RUNTIME];
+pub const ROOTS: [&str; 7] = [DOCS, TASKS, MESSAGES, SKILLS, AGENTS, EVENTS, RUNTIME];
 
 impl Layout {
     pub fn task_key(&self, id: &Id, status: TaskStatus) -> String {
@@ -25,6 +26,19 @@ impl Layout {
 
     pub fn message_key(&self, thread: &Id, id: &Id) -> String {
         format!("{MESSAGES}/{thread}/{id}.md")
+    }
+
+    /// Named rather than numbered, because a skill is addressed by name: `orchy skill show
+    /// migrations` has to find it, and a human reading `skills/` should see what is there. The
+    /// name still lives in frontmatter, and renaming refiles the file exactly as a status
+    /// change refiles a task.
+    pub fn skill_key(&self, namespace: &Namespace, name: &SkillName) -> String {
+        let folder = namespace.as_str().trim_start_matches('/');
+        if folder.is_empty() {
+            format!("{SKILLS}/{name}.md")
+        } else {
+            format!("{SKILLS}/{folder}/{name}.md")
+        }
     }
 
     pub fn actor_key(&self, actor: &ActorId) -> String {
@@ -45,6 +59,8 @@ impl Layout {
             EntityKind::Task => self.task_key(id, TaskStatus::Pending),
             EntityKind::Message => self.message_key(id, id),
             EntityKind::Document => self.document_key(namespace, id),
+            // a skill is filed by name, which the caller has and an id alone cannot supply
+            EntityKind::Skill => format!("{SKILLS}/{id}.md"),
             EntityKind::Actor => format!("{AGENTS}/{id}.md"),
         }
     }

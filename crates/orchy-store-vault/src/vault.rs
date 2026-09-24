@@ -323,6 +323,7 @@ fn kind_from(declared: Option<&str>) -> EntityKind {
     match declared {
         Some("task") => EntityKind::Task,
         Some("message") => EntityKind::Message,
+        Some("skill") => EntityKind::Skill,
         Some("agent") => EntityKind::Actor,
         _ => EntityKind::Document,
     }

@@ -2,7 +2,8 @@ use chrono::{DateTime, Utc};
 use orchy_core::{
     Actor, ActorId, Body, Document, DocumentStatus, DomainError, EntityKind, EntityRef,
     Frontmatter, Id, Kind, Message, MessageStatus, Namespace, Priority, Recipient, RestoreDocument,
-    RestoreMessage, RestoreTask, Result, Role, Tag, Task, TaskStatus, Title,
+    RestoreMessage, RestoreSkill, RestoreTask, Result, Role, Skill, SkillName, SkillStatus,
+    Summary, Tag, Task, TaskStatus, Title,
 };
 use serde_json::{Value, json};
 
@@ -408,3 +409,56 @@ pub fn carried_frontmatter(file: &MarkdownFile) -> Frontmatter {
 }
 
 pub const MESSAGE_FIELDS: [&str; 11] = MESSAGE_KEYS;
+
+pub fn skill_to_markdown(skill: &Skill) -> MarkdownFile {
+    let mut frontmatter = Frontmatter::new();
+    frontmatter.set("id", json!(skill.id().to_string()));
+    frontmatter.set("type", json!("skill"));
+    frontmatter.set("name", json!(skill.name().to_string()));
+    frontmatter.set("summary", json!(skill.summary().to_string()));
+    frontmatter.set("namespace", json!(skill.namespace().to_string()));
+    frontmatter.set("status", json!(skill.status().as_str()));
+    if !skill.tags().is_empty() {
+        frontmatter.set("tags", list(skill.tags().iter().map(ToString::to_string)));
+    }
+    frontmatter.set("created", stamp(skill.created_at()));
+    frontmatter.set("updated", stamp(skill.updated_at()));
+
+    MarkdownFile {
+        frontmatter,
+        body: skill.body().clone(),
+    }
+}
+
+pub fn skill_from_markdown(file: &MarkdownFile, key: &str) -> Result<Skill> {
+    let fm = &file.frontmatter;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
+    let name = SkillName::new(fm.string("name").ok_or_else(|| missing("name", key))?)?;
+    let summary = Summary::new(
+        fm.string("summary")
+            .ok_or_else(|| missing("summary", key))?,
+    )?;
+
+    Ok(Skill::new(RestoreSkill {
+        id: id.clone(),
+        name,
+        summary,
+        namespace: fm
+            .string("namespace")
+            .map(Namespace::new)
+            .transpose()?
+            .unwrap_or_default(),
+        status: match fm.string("status") {
+            Some("retired") => SkillStatus::Retired,
+            _ => SkillStatus::Active,
+        },
+        tags: fm
+            .strings("tags")
+            .iter()
+            .map(Tag::new)
+            .collect::<Result<Vec<_>>>()?,
+        body: file.body.clone(),
+        created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
+        updated_at: timestamp(fm, "updated").unwrap_or_else(|| id.created_at()),
+    }))
+}

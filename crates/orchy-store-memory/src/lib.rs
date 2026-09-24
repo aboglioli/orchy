@@ -4,6 +4,7 @@ mod eventlog;
 mod messages;
 mod roster;
 mod search;
+mod skills;
 mod tasks;
 mod time;
 
@@ -13,6 +14,7 @@ pub use eventlog::MemoryEventLog;
 pub use messages::{MemoryMessageStore, MemoryWatermarks};
 pub use roster::{MemoryActorStore, MemoryLeaseStore};
 pub use search::MemorySearch;
+pub use skills::MemorySkillStore;
 pub use tasks::MemoryTaskStore;
 pub use time::{FixedClock, SeqIdGenerator};
 
@@ -27,6 +29,7 @@ pub struct MemoryBackend {
     pub actors: Arc<MemoryActorStore>,
     pub leases: Arc<MemoryLeaseStore>,
     pub watermarks: Arc<MemoryWatermarks>,
+    pub skills: Arc<MemorySkillStore>,
     pub search: Arc<MemorySearch>,
     pub log: Arc<MemoryEventLog>,
     pub clock: Arc<FixedClock>,
@@ -43,6 +46,7 @@ impl MemoryBackend {
             documents,
             tasks: Arc::new(MemoryTaskStore::new(Arc::clone(&log))),
             messages: Arc::new(MemoryMessageStore::new(Arc::clone(&log))),
+            skills: Arc::new(MemorySkillStore::new(Arc::clone(&log))),
             edges: Arc::new(MemoryEdgeStore::new()),
             actors: Arc::new(MemoryActorStore::new()),
             leases: Arc::new(MemoryLeaseStore::new(Arc::clone(&clock))),

@@ -143,6 +143,7 @@ fn kind_name(kind: EntityKind) -> &'static str {
         EntityKind::Document => "document",
         EntityKind::Task => "task",
         EntityKind::Message => "message",
+        EntityKind::Skill => "skill",
         EntityKind::Actor => "actor",
     }
 }
