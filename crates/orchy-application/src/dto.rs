@@ -187,7 +187,10 @@ impl From<&Lease> for LeaseDto {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HitDto {
-    pub document: String,
+    /// `document:<id>` or `skill:<id>`, so a caller knows what it found and can read it back.
+    pub entity: String,
+    pub kind: String,
+    pub id: String,
     pub heading: Option<String>,
     pub excerpt: String,
     pub namespace: String,
@@ -198,7 +201,9 @@ pub struct HitDto {
 impl From<&Hit> for HitDto {
     fn from(hit: &Hit) -> Self {
         Self {
-            document: hit.document.to_string(),
+            entity: hit.entity.to_string(),
+            kind: hit.entity.kind().to_string(),
+            id: hit.entity.id().to_string(),
             heading: hit.heading.clone(),
             excerpt: hit.excerpt.clone(),
             namespace: hit.namespace.to_string(),

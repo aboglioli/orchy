@@ -127,6 +127,7 @@ pub(crate) async fn recall(
     app: &Application,
     query: Vec<String>,
     kind: Vec<String>,
+    entities: Vec<String>,
     tags: Vec<String>,
     namespace: Option<String>,
     anchor: Option<String>,
@@ -137,7 +138,9 @@ pub(crate) async fn recall(
         .recall
         .execute(RecallCommand {
             text: query.join(" "),
+            entities,
             kind,
+            retired: false,
             status: Vec::new(),
             namespace,
             anchor,
@@ -266,8 +269,9 @@ fn render_hits(hits: &[HitDto], out: &Output) -> String {
         .map(|h| {
             let heading = h.heading.as_deref().unwrap_or("(body)");
             format!(
-                "{}  {}\n  {}",
-                out.dim(short(&h.document)),
+                "{}  {}  {}\n  {}",
+                out.dim(short(&h.id)),
+                out.dim(&h.kind),
                 out.bold(heading),
                 h.excerpt.lines().next().unwrap_or("")
             )

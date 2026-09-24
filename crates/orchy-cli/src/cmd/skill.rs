@@ -2,6 +2,7 @@ use orchy_application::Application;
 use orchy_application::dto::SkillDto;
 use orchy_application::list_skills::ListSkillsCommand;
 use orchy_application::read_skill::ReadSkillCommand;
+use orchy_application::recall::RecallCommand;
 use orchy_application::retire_skill::RetireSkillCommand;
 use orchy_application::set_skill_field::SetSkillFieldCommand;
 use orchy_application::write_skill::WriteSkillCommand;
@@ -98,6 +99,48 @@ pub(crate) async fn list(
             return "no skills yet: `orchy skill write <name> --summary ...`".to_owned();
         }
         list.iter().map(summarise).collect::<Vec<_>>().join("\n")
+    })
+}
+
+pub(crate) async fn find(
+    app: &Application,
+    query: Vec<String>,
+    namespace: Option<String>,
+    tag: Vec<String>,
+    retired: bool,
+    limit: Option<usize>,
+    out: &Output,
+) -> CliResult<()> {
+    let hits = app
+        .recall
+        .execute(RecallCommand {
+            text: query.join(" "),
+            entities: vec!["skill".to_owned()],
+            retired,
+            tags: tag,
+            // ranked towards where the agent works, not filtered to it: a skill worth knowing
+            // about may well be declared somewhere else
+            anchor: namespace,
+            limit,
+            ..Default::default()
+        })
+        .await?;
+
+    out.emit(&hits, |found| {
+        if found.is_empty() {
+            return "no skill matches that".to_owned();
+        }
+        found
+            .iter()
+            .map(|h| {
+                format!(
+                    "  {:<24}{}",
+                    h.heading.as_deref().unwrap_or(""),
+                    h.excerpt.lines().next().unwrap_or("")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     })
 }
 

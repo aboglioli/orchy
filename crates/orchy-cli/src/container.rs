@@ -39,10 +39,15 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
         Arc::clone(&log),
     ));
 
+    let skills = Arc::new(VaultSkillStore::new(Arc::clone(&vault), Arc::clone(&log)));
+
     Ok(Application::new(ApplicationDeps {
-        search: Arc::new(VaultSearch::new(Arc::clone(&documents))) as Arc<dyn Search>,
+        search: Arc::new(VaultSearch::new(
+            Arc::clone(&documents),
+            Arc::clone(&skills),
+        )) as Arc<dyn Search>,
         documents: Arc::clone(&documents) as _,
-        skills: Arc::new(VaultSkillStore::new(Arc::clone(&vault), Arc::clone(&log))),
+        skills,
         tasks: Arc::new(VaultTaskStore::new(Arc::clone(&vault), Arc::clone(&log))),
         messages: Arc::new(VaultMessageStore::new(
             Arc::clone(&vault),

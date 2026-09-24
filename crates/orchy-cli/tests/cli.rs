@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -728,4 +729,177 @@ fn orchy_help_says_the_same_thing_as_running_it_bare() {
 
     assert!(helped.contains("orchy announce"));
     assert!(helped.contains("skills"), "the pillars are named: {helped}");
+}
+
+fn seeded_for_search() -> tempfile::TempDir {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--namespace",
+            "/backend",
+            "--summary",
+            "never edit an applied migration; add a new one",
+            "--body",
+            "Rolling back in place corrupts every environment that already ran it.",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "db-pooling",
+            "--namespace",
+            "/backend",
+            "--summary",
+            "one pool per process, never per request",
+            "--body",
+            "Connection churn is the usual cause of migration timeouts.",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "discovery",
+            "migration lock timeout",
+            "--body",
+            "A long migration holds the lock and blocks deploys.",
+        ],
+    );
+    temp
+}
+
+#[test]
+fn a_skill_is_found_by_text_in_its_name_summary_or_body() {
+    let temp = seeded_for_search();
+    let found = json(temp.path(), &["skill", "find", "migration"]);
+
+    let names: Vec<&str> = found
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["heading"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["migrations", "db-pooling"],
+        "the skill that matches in its name and summary outranks one that only mentions it \
+         in passing: {names:?}"
+    );
+    assert_eq!(
+        found[0]["excerpt"], "never edit an applied migration; add a new one",
+        "a hit carries the line that tells an agent whether to open it"
+    );
+}
+
+#[test]
+fn finding_a_skill_never_returns_one_that_is_out_of_force() {
+    let temp = seeded_for_search();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "old-way",
+            "--summary",
+            "how we used to run migrations",
+        ],
+    );
+    ok(temp.path(), &["skill", "retire", "old-way"]);
+
+    let found = ok(temp.path(), &["skill", "find", "migrations"]);
+    assert!(
+        !found.contains("old-way"),
+        "a retired skill must not be offered as something to follow: {found}"
+    );
+    assert!(
+        ok(temp.path(), &["skill", "find", "migrations", "--retired"]).contains("old-way"),
+        "but it is still searchable when asked for"
+    );
+}
+
+#[test]
+fn recall_searches_documents_and_skills_together_and_says_which_is_which() {
+    let temp = seeded_for_search();
+    let hits = json(temp.path(), &["recall", "migration"]);
+
+    let kinds: BTreeSet<&str> = hits
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        BTreeSet::from(["document", "skill"]),
+        "one search covers what the team knows and how it works: {kinds:?}"
+    );
+    for hit in hits.as_array().unwrap() {
+        assert!(
+            hit["entity"].as_str().unwrap().contains(':'),
+            "a hit is addressable as kind:id so it can be read back"
+        );
+    }
+}
+
+#[test]
+fn recall_can_be_narrowed_to_one_kind_of_entity() {
+    let temp = seeded_for_search();
+
+    let only_skills = json(temp.path(), &["recall", "migration", "--entity", "skill"]);
+    assert!(
+        only_skills
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|h| h["kind"] == "skill"),
+        "{only_skills}"
+    );
+
+    let only_docs = json(
+        temp.path(),
+        &["recall", "migration", "--entity", "document"],
+    );
+    assert!(
+        only_docs
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|h| h["kind"] == "document"),
+        "{only_docs}"
+    );
+    assert!(!only_docs.as_array().unwrap().is_empty());
+}
+
+#[test]
+fn a_skill_declared_where_the_agent_works_is_ranked_first() {
+    let temp = vault();
+    for (name, namespace) in [("deploy-checks", "/frontend"), ("deploy-steps", "/backend")] {
+        ok(
+            temp.path(),
+            &[
+                "skill",
+                "write",
+                name,
+                "--namespace",
+                namespace,
+                "--summary",
+                "how deploys work here",
+            ],
+        );
+    }
+
+    let found = json(
+        temp.path(),
+        &["skill", "find", "deploy", "--namespace", "/backend"],
+    );
+    assert_eq!(
+        found[0]["heading"], "deploy-steps",
+        "equal matches break towards the namespace the agent is standing in: {found}"
+    );
 }

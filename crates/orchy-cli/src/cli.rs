@@ -134,11 +134,14 @@ pub(crate) enum Command {
         /// field=value, repeatable
         assignments: Vec<String>,
     },
-    /// Search document sections, ranked
+    /// Search documents and skills by text, best first
     Recall {
         query: Vec<String>,
         #[arg(long)]
         kind: Vec<String>,
+        /// Look only in `document` or only in `skill`; both by default
+        #[arg(long = "entity")]
+        entities: Vec<String>,
         #[arg(long)]
         tag: Vec<String>,
         #[arg(long)]
@@ -413,6 +416,20 @@ pub(crate) enum SkillCommand {
         /// Include retired skills
         #[arg(long)]
         retired: bool,
+    },
+    /// Match free text against every skill, best first — the way to find one among hundreds
+    Find {
+        query: Vec<String>,
+        /// Rank skills declared here first
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long)]
+        tag: Vec<String>,
+        /// Search retired skills too
+        #[arg(long)]
+        retired: bool,
+        #[arg(long)]
+        limit: Option<usize>,
     },
     /// Read one, by name or id
     Show {

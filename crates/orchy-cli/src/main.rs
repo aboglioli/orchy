@@ -120,6 +120,13 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 everywhere,
                 retired,
             } => cmd::skill::list(&app, namespace, tag, everywhere, retired, out).await,
+            SkillCommand::Find {
+                query,
+                namespace,
+                tag,
+                retired,
+                limit,
+            } => cmd::skill::find(&app, query, namespace, tag, retired, limit, out).await,
             SkillCommand::Show { target, namespace } => {
                 cmd::skill::show(&app, target, namespace, out).await
             }
@@ -199,11 +206,17 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Command::Recall {
             query,
             kind,
+            entities,
             tag,
             namespace,
             anchor,
             limit,
-        } => cmd::doc::recall(&app, query, kind, tag, namespace, anchor, limit, out).await,
+        } => {
+            cmd::doc::recall(
+                &app, query, kind, entities, tag, namespace, anchor, limit, out,
+            )
+            .await
+        }
 
         Command::Link { from, to, rel } => cmd::doc::link(&app, from, to, rel, false, out).await,
         Command::Unlink { from, to, rel } => cmd::doc::link(&app, from, to, rel, true, out).await,
