@@ -11,6 +11,8 @@ use orchy_core::{
 use crate::documents::VaultDocumentStore;
 use crate::skills::VaultSkillStore;
 
+const HEADLINE_WEIGHT: usize = 3;
+
 pub struct VaultSearch {
     documents: Arc<VaultDocumentStore>,
     skills: Arc<VaultSkillStore>,
@@ -122,8 +124,8 @@ impl VaultSearch {
             }
 
             let headline = format!("{} {}", skill.name(), skill.summary());
-            let matches =
-                count_matches(matcher, &headline)? + count_matches(matcher, skill.body().as_str())?;
+            let matches = HEADLINE_WEIGHT * count_matches(matcher, &headline)?
+                + count_matches(matcher, skill.body().as_str())?;
             if matches == 0 && !query.text.is_empty() {
                 continue;
             }
