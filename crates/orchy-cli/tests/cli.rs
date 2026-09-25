@@ -903,3 +903,104 @@ fn a_skill_declared_where_the_agent_works_is_ranked_first() {
         "equal matches break towards the namespace the agent is standing in: {found}"
     );
 }
+
+#[test]
+fn a_lock_is_renewed_by_its_holder_and_by_nobody_else() {
+    let temp = vault();
+    ok(temp.path(), &["lock", "acquire", "build", "--ttl", "60"]);
+    let taken = json(temp.path(), &["lock", "check", "build"]);
+
+    let renewed = json(temp.path(), &["lock", "renew", "build", "--ttl", "600"]);
+    assert_eq!(
+        renewed["generation"], taken["generation"],
+        "renewing is not re-taking, so the fencing token stands"
+    );
+    assert!(renewed["expires_at"].as_str() > taken["expires_at"].as_str());
+
+    let stolen = Command::new(env!("CARGO_BIN_EXE_orchy"))
+        .args(["lock", "renew", "build"])
+        .env("ORCHY_VAULT", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path().join(".config"))
+        .env("ORCHY_ACTOR", "codex")
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    assert_eq!(stolen.status.code(), Some(5));
+}
+
+#[test]
+fn resources_that_sanitise_alike_are_still_two_locks() {
+    let temp = vault();
+    ok(temp.path(), &["lock", "acquire", "deploy/prod"]);
+
+    let other = Command::new(env!("CARGO_BIN_EXE_orchy"))
+        .args(["lock", "acquire", "deploy-prod"])
+        .env("ORCHY_VAULT", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path().join(".config"))
+        .env("ORCHY_ACTOR", "codex")
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    assert!(
+        other.status.success(),
+        "`deploy-prod` is not `deploy/prod`: {}",
+        String::from_utf8_lossy(&other.stderr)
+    );
+}
+
+#[test]
+fn list_shows_what_is_held_and_drops_what_has_lapsed() {
+    let temp = vault();
+    ok(temp.path(), &["lock", "acquire", "alpha", "--ttl", "600"]);
+    ok(temp.path(), &["lock", "acquire", "brief", "--ttl", "1"]);
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+
+    let held = json(temp.path(), &["lock", "list"]);
+    let names: Vec<&str> = held
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["resource"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["alpha"]);
+}
+
+#[test]
+fn with_holds_a_resource_for_one_command_and_gives_it_back_either_way() {
+    let temp = vault();
+
+    ok(temp.path(), &["lock", "with", "deploy", "--", "true"]);
+    assert!(
+        json(temp.path(), &["lock", "check", "deploy"]).is_null(),
+        "a lease taken for a command does not outlive it"
+    );
+
+    let failed = orchy(temp.path(), &["lock", "with", "deploy", "--", "false"]);
+    assert_eq!(
+        failed.status.code(),
+        Some(1),
+        "the command's own exit code reaches the caller"
+    );
+    assert!(
+        json(temp.path(), &["lock", "check", "deploy"]).is_null(),
+        "and a command that fails still gives the resource back"
+    );
+
+    let unstartable = orchy(
+        temp.path(),
+        &["lock", "with", "deploy", "--", "/nope/nothing"],
+    );
+    assert!(!unstartable.status.success());
+    assert!(
+        json(temp.path(), &["lock", "check", "deploy"]).is_null(),
+        "so does one that never started"
+    );
+}
+
+#[test]
+fn a_lease_that_has_already_lapsed_is_refused_where_it_is_typed() {
+    let temp = vault();
+    let refused = orchy(temp.path(), &["lock", "acquire", "build", "--ttl=0"]);
+    assert_eq!(refused.status.code(), Some(6), "bad input, not contention");
+    assert!(json(temp.path(), &["lock", "check", "build"]).is_null());
+}

@@ -23,7 +23,7 @@ WHAT TO RUN
   orchy new decision <title>          write down a choice and why
   orchy skill show <name>             read a convention in full
   orchy msg send broadcast --body     tell everyone
-  orchy lock acquire <resource>       hold something nobody else should touch
+  orchy lock with <res> -- <cmd>      hold something for one command, no matter how it ends
 
 BEFORE YOU STOP
   orchy new context handoff --body    what you did, what is left, what to watch out for";

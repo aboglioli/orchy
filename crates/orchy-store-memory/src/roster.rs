@@ -106,6 +106,27 @@ impl LeaseStore for MemoryLeaseStore {
         Ok(lease)
     }
 
+    async fn renew(&self, key: &ResourceKey, by: &ActorId, ttl: Duration) -> Result<Lease> {
+        let now = self.clock.now();
+        let mut leases = self.leases.lock().expect("lease mutex");
+
+        let Some(existing) = leases.get(key).filter(|l| !l.is_expired_at(now)) else {
+            return Err(DomainError::conflict(format!(
+                "`{key}` is not held; acquire it rather than renewing it"
+            )));
+        };
+        if existing.holder() != by {
+            return Err(DomainError::forbidden(format!(
+                "`{key}` is held by {}, not {by}",
+                existing.holder()
+            )));
+        }
+
+        let renewed = existing.renewed(ttl, now);
+        leases.insert(key.clone(), renewed.clone());
+        Ok(renewed)
+    }
+
     async fn release(&self, key: &ResourceKey, by: &ActorId) -> Result<()> {
         let mut leases = self.leases.lock().expect("lease mutex");
         match leases.get(key) {
@@ -130,5 +151,17 @@ impl LeaseStore for MemoryLeaseStore {
             .get(key)
             .filter(|l| !l.is_expired_at(now))
             .cloned())
+    }
+
+    async fn held(&self) -> Result<Vec<Lease>> {
+        let now = self.clock.now();
+        Ok(self
+            .leases
+            .lock()
+            .expect("lease mutex")
+            .values()
+            .filter(|l| !l.is_expired_at(now))
+            .cloned()
+            .collect())
     }
 }
