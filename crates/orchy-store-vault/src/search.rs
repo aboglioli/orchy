@@ -4,30 +4,42 @@ use async_trait::async_trait;
 use grep_matcher::Matcher;
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
 use grep_searcher::{Searcher, sinks::UTF8};
-use orchy_core::{DomainError, Hit, Result, Search, SearchQuery};
+use orchy_core::{
+    DomainError, EntityKind, EntityRef, Hit, Result, Search, SearchQuery, SkillStore,
+};
 
 use crate::documents::VaultDocumentStore;
+use crate::skills::VaultSkillStore;
+
+const HEADLINE_WEIGHT: usize = 3;
 
 pub struct VaultSearch {
     documents: Arc<VaultDocumentStore>,
+    skills: Arc<VaultSkillStore>,
 }
 
 impl VaultSearch {
-    pub fn new(documents: Arc<VaultDocumentStore>) -> Self {
-        Self { documents }
+    pub fn new(documents: Arc<VaultDocumentStore>, skills: Arc<VaultSkillStore>) -> Self {
+        Self { documents, skills }
     }
 }
 
 #[async_trait]
 impl Search for VaultSearch {
     async fn sections(&self, query: &SearchQuery) -> Result<Vec<Hit>> {
-        // people type what they remember, not what was capitalised
         let matcher = RegexMatcherBuilder::new()
             .case_insensitive(true)
             .build(&regex_syntax::escape(&query.text))
             .map_err(|e| DomainError::validation(format!("bad search pattern: {e}")))?;
 
         let mut hits = Vec::new();
+        if query.covers(EntityKind::Skill) {
+            hits.extend(self.skills(query, &matcher).await?);
+        }
+        if !query.covers(EntityKind::Document) {
+            return Ok(hits);
+        }
+
         for document in self.documents.all().await? {
             if let Some(kinds) = &query.kind
                 && !kinds.contains(document.kind())
@@ -49,12 +61,10 @@ impl Search for VaultSearch {
                 continue;
             }
 
-            // the title is searchable in its own right: a document whose subject only appears
-            // in its name is otherwise unfindable by the command meant to find things
             let title_matches = count_matches(&matcher, document.title().as_str())?;
             if title_matches > 0 {
                 hits.push(Hit {
-                    document: document.id().clone(),
+                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
                     heading: Some(document.title().to_string()),
                     excerpt: document.body().as_str().trim().chars().take(240).collect(),
                     namespace: document.namespace().clone(),
@@ -70,7 +80,7 @@ impl Search for VaultSearch {
                     continue;
                 }
                 hits.push(Hit {
-                    document: document.id().clone(),
+                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
                     heading: Some(section.heading.clone()),
                     excerpt: section.body.trim().chars().take(240).collect(),
                     namespace: document.namespace().clone(),
@@ -83,7 +93,7 @@ impl Search for VaultSearch {
                 let matches = count_matches(&matcher, document.body().as_str())?;
                 if matches > 0 || query.text.is_empty() {
                     hits.push(Hit {
-                        document: document.id().clone(),
+                        entity: EntityRef::new(EntityKind::Document, document.id().clone()),
                         heading: None,
                         excerpt: document.body().as_str().trim().chars().take(240).collect(),
                         namespace: document.namespace().clone(),
@@ -92,6 +102,42 @@ impl Search for VaultSearch {
                     });
                 }
             }
+        }
+        Ok(hits)
+    }
+}
+
+impl VaultSearch {
+    async fn skills(&self, query: &SearchQuery, matcher: &RegexMatcher) -> Result<Vec<Hit>> {
+        let mut hits = Vec::new();
+        for skill in self.skills.all().await? {
+            if !query.retired && !skill.is_active() {
+                continue;
+            }
+            if let Some(namespace) = &query.namespace
+                && !namespace.contains(skill.namespace())
+            {
+                continue;
+            }
+            if !query.tags.iter().all(|t| skill.tags().contains(t)) {
+                continue;
+            }
+
+            let headline = format!("{} {}", skill.name(), skill.summary());
+            let matches = HEADLINE_WEIGHT * count_matches(matcher, &headline)?
+                + count_matches(matcher, skill.body().as_str())?;
+            if matches == 0 && !query.text.is_empty() {
+                continue;
+            }
+
+            hits.push(Hit {
+                entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),
+                heading: Some(skill.name().to_string()),
+                excerpt: skill.summary().to_string(),
+                namespace: skill.namespace().clone(),
+                updated_at: skill.updated_at(),
+                matches,
+            });
         }
         Ok(hits)
     }

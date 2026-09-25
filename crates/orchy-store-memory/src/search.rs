@@ -1,17 +1,19 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{Hit, Result, Search, SearchQuery};
+use orchy_core::{EntityKind, EntityRef, Hit, Result, Search, SearchQuery, SkillStore};
 
 use crate::documents::MemoryDocumentStore;
+use crate::skills::MemorySkillStore;
 
 pub struct MemorySearch {
     documents: Arc<MemoryDocumentStore>,
+    skills: Arc<MemorySkillStore>,
 }
 
 impl MemorySearch {
-    pub fn new(documents: Arc<MemoryDocumentStore>) -> Self {
-        Self { documents }
+    pub fn new(documents: Arc<MemoryDocumentStore>, skills: Arc<MemorySkillStore>) -> Self {
+        Self { documents, skills }
     }
 }
 
@@ -20,6 +22,36 @@ impl Search for MemorySearch {
     async fn sections(&self, query: &SearchQuery) -> Result<Vec<Hit>> {
         let needle = query.text.to_lowercase();
         let mut hits = Vec::new();
+
+        if query.covers(EntityKind::Skill) {
+            for skill in self.skills.all().await? {
+                if !query.retired && !skill.is_active() {
+                    continue;
+                }
+                let haystack = format!(
+                    "{} {} {}",
+                    skill.name(),
+                    skill.summary(),
+                    skill.body().as_str()
+                )
+                .to_lowercase();
+                let matches = haystack.matches(&needle).count();
+                if matches == 0 && !needle.is_empty() {
+                    continue;
+                }
+                hits.push(Hit {
+                    entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),
+                    heading: Some(skill.name().to_string()),
+                    excerpt: skill.summary().to_string(),
+                    namespace: skill.namespace().clone(),
+                    updated_at: skill.updated_at(),
+                    matches,
+                });
+            }
+        }
+        if !query.covers(EntityKind::Document) {
+            return Ok(hits);
+        }
 
         for document in self.documents.snapshot() {
             if let Some(kinds) = &query.kind
@@ -50,7 +82,7 @@ impl Search for MemorySearch {
                 .count();
             if title_matches > 0 {
                 hits.push(Hit {
-                    document: document.id().clone(),
+                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
                     heading: Some(document.title().to_string()),
                     excerpt: excerpt(document.body().as_str()),
                     namespace: document.namespace().clone(),
@@ -69,7 +101,7 @@ impl Search for MemorySearch {
                     .count();
                 if matches > 0 || needle.is_empty() {
                     hits.push(Hit {
-                        document: document.id().clone(),
+                        entity: EntityRef::new(EntityKind::Document, document.id().clone()),
                         heading: None,
                         excerpt: excerpt(document.body().as_str()),
                         namespace: document.namespace().clone(),
@@ -87,7 +119,7 @@ impl Search for MemorySearch {
                     continue;
                 }
                 hits.push(Hit {
-                    document: document.id().clone(),
+                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
                     heading: Some(section.heading.clone()),
                     excerpt: excerpt(section.body),
                     namespace: document.namespace().clone(),

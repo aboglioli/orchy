@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -349,6 +350,558 @@ fn completions_are_generated_without_a_vault() {
     let temp = tempfile::tempdir().unwrap();
     let script = ok(temp.path(), &["completions", "fish"]);
     assert!(script.contains("orchy"), "a fish completion script");
+}
+
+fn as_actor(vault: &Path, actor: &str, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_orchy"))
+        .args(args)
+        .env("ORCHY_VAULT", vault)
+        .env("XDG_CONFIG_HOME", vault.join(".config"))
+        .env("ORCHY_ACTOR", actor)
+        .env("NO_COLOR", "1")
+        .output()
+        .expect("orchy binary runs")
+}
+
+#[test]
+fn a_skill_is_filed_by_name_where_a_human_would_look_for_it() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "never edit an applied migration",
+            "--namespace",
+            "/backend",
+            "--body",
+            "add a new one instead",
+        ],
+    );
+
+    assert!(
+        temp.path().join("skills/backend/migrations.md").is_file(),
+        "a skill is addressed by name, so it is filed under one"
+    );
+    let shown = ok(temp.path(), &["skill", "show", "migrations"]);
+    assert!(shown.contains("add a new one instead"));
+}
+
+#[test]
+fn writing_a_skill_twice_revises_it_rather_than_duplicating_it() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["skill", "write", "review", "--summary", "first attempt"],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "review",
+            "--summary",
+            "what we settled on",
+        ],
+    );
+
+    let listed = json(temp.path(), &["skill", "list"]);
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["summary"], "what we settled on");
+}
+
+#[test]
+fn a_new_skill_without_a_summary_is_refused() {
+    let temp = vault();
+    let refused = orchy(temp.path(), &["skill", "write", "nameless", "--body", "x"]);
+    assert_eq!(refused.status.code(), Some(6));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("summary"),
+        "the refusal says what is missing"
+    );
+}
+
+#[test]
+fn skills_are_inherited_downward_and_the_nearest_one_wins() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["skill", "write", "review", "--summary", "the house rule"],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "review",
+            "--summary",
+            "what backend does instead",
+            "--namespace",
+            "/backend",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "backend only",
+            "--namespace",
+            "/backend",
+        ],
+    );
+
+    let at_root = json(temp.path(), &["skill", "list"]);
+    assert_eq!(
+        at_root.as_array().unwrap().len(),
+        1,
+        "root inherits nothing"
+    );
+    assert_eq!(at_root[0]["summary"], "the house rule");
+
+    let in_backend = json(temp.path(), &["skill", "list", "--namespace", "/backend"]);
+    let summaries: Vec<&str> = in_backend
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["summary"].as_str().unwrap())
+        .collect();
+    assert_eq!(summaries, vec!["backend only", "what backend does instead"]);
+}
+
+#[test]
+fn a_retired_skill_stays_readable_but_teaches_nobody() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["skill", "write", "old-way", "--summary", "how we used to"],
+    );
+    ok(temp.path(), &["skill", "retire", "old-way"]);
+
+    assert!(
+        json(temp.path(), &["skill", "list"])
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "a retired skill is in force nowhere"
+    );
+    assert_eq!(
+        json(temp.path(), &["skill", "list", "--retired"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "but it is still there when asked for"
+    );
+
+    ok(temp.path(), &["skill", "restore", "old-way"]);
+    assert_eq!(
+        json(temp.path(), &["skill", "list"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn announcing_returns_the_briefing_an_agent_needs_to_start() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "code-review",
+            "--summary",
+            "two approvals, always",
+        ],
+    );
+    ok(temp.path(), &["task", "new", "wire up auth"]);
+    ok(temp.path(), &["announce"]);
+    as_actor(temp.path(), "codex", &["announce"]);
+    ok(
+        temp.path(),
+        &["msg", "send", "@codex", "--body", "heads up"],
+    );
+
+    let briefing =
+        String::from_utf8_lossy(&as_actor(temp.path(), "codex", &["announce"]).stdout).into_owned();
+
+    assert!(briefing.contains("ORCHY IN ONE MINUTE"), "{briefing}");
+    assert!(
+        briefing.contains("two approvals, always"),
+        "the skills in force are summarised, not just counted: {briefing}"
+    );
+    assert!(briefing.contains("1 unread"), "{briefing}");
+    assert!(briefing.contains("wire up auth"), "{briefing}");
+}
+
+#[test]
+fn the_briefing_carries_a_summary_per_skill_rather_than_the_skills_themselves() {
+    let temp = vault();
+    for n in 0..30 {
+        ok(
+            temp.path(),
+            &[
+                "skill",
+                "write",
+                &format!("convention-{n}"),
+                "--summary",
+                &format!("the {n}th thing to know"),
+                "--body",
+                "a long body nobody wants inlined thirty times over",
+            ],
+        );
+    }
+    ok(temp.path(), &["announce"]);
+
+    let briefing = ok(temp.path(), &["announce"]);
+    assert!(briefing.contains("SKILLS IN FORCE HERE (30)"));
+    assert!(briefing.contains("the 29th thing to know"));
+    assert!(
+        !briefing.contains("a long body nobody wants inlined"),
+        "hundreds of skills have to stay scannable: the body is behind `skill show`"
+    );
+}
+
+#[test]
+fn the_guide_explains_orchy_without_joining_the_roster() {
+    let temp = vault();
+    let guide = ok(temp.path(), &["guide"]);
+
+    assert!(guide.contains("ORCHY IN ONE MINUTE"));
+    assert!(
+        json(temp.path(), &["agents"])
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "reading the manual is not announcing yourself"
+    );
+}
+
+#[test]
+fn a_team_puts_its_own_frontmatter_on_a_skill_and_orchy_keeps_it() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "never edit one",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "set",
+            "migrations",
+            "owner=platform-team",
+            "review_by=2027-01-01",
+            "risk=3",
+        ],
+    );
+
+    let shown = json(temp.path(), &["skill", "show", "migrations"]);
+    assert_eq!(shown["frontmatter"]["owner"], "platform-team");
+    assert_eq!(shown["frontmatter"]["risk"], 3, "a number stays a number");
+
+    ok(
+        temp.path(),
+        &["skill", "write", "migrations", "--summary", "revised"],
+    );
+    let revised = json(temp.path(), &["skill", "show", "migrations"]);
+    assert_eq!(
+        revised["frontmatter"]["owner"], "platform-team",
+        "revising the skill does not discard what the team wrote on it"
+    );
+
+    ok(
+        temp.path(),
+        &["skill", "set", "migrations", "--remove", "risk"],
+    );
+    assert!(
+        json(temp.path(), &["skill", "show", "migrations"])["frontmatter"]
+            .get("risk")
+            .is_none()
+    );
+}
+
+#[test]
+fn the_fields_orchy_maintains_are_refused_by_name() {
+    let temp = vault();
+    ok(temp.path(), &["skill", "write", "review", "--summary", "x"]);
+
+    for (field, hint) in [
+        ("status=retired", "orchy skill retire"),
+        ("name=other", "under the new name"),
+        ("summary=sneaky", "--summary"),
+        ("id=01ARZ3NDEKTSV4RRFFQ69G5FAV", "immutable"),
+    ] {
+        let refused = orchy(temp.path(), &["skill", "set", "review", field]);
+        assert_eq!(
+            refused.status.code(),
+            Some(5),
+            "`{field}` should be refused"
+        );
+        let message = String::from_utf8_lossy(&refused.stderr);
+        assert!(
+            message.contains(hint),
+            "the refusal names the command that does change it: {message}"
+        );
+    }
+}
+
+#[test]
+fn skills_carry_tags_and_can_be_listed_by_them() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--summary",
+            "one",
+            "--tag",
+            "database",
+            "--tag",
+            "safety",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "style",
+            "--summary",
+            "two",
+            "--tag",
+            "formatting",
+        ],
+    );
+
+    let tagged = json(temp.path(), &["skill", "list", "--tag", "database"]);
+    assert_eq!(tagged.as_array().unwrap().len(), 1);
+    assert_eq!(tagged[0]["name"], "migrations");
+
+    ok(
+        temp.path(),
+        &["skill", "set", "migrations", "--untag", "safety"],
+    );
+    let left = json(temp.path(), &["skill", "show", "migrations"]);
+    assert_eq!(left["tags"], serde_json::json!(["database"]));
+}
+
+#[test]
+fn an_agent_that_runs_orchy_with_no_arguments_is_told_where_to_start() {
+    let temp = vault();
+    let bare = orchy(temp.path(), &[]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&bare.stdout),
+        String::from_utf8_lossy(&bare.stderr)
+    );
+
+    assert!(
+        text.contains("orchy announce"),
+        "the one command an agent must run has to be in the first thing it reads: {text}"
+    );
+    assert!(
+        text.contains("EXIT CODES"),
+        "so an agent can branch: {text}"
+    );
+    assert!(text.contains("WHERE THINGS LIVE"), "{text}");
+}
+
+#[test]
+fn orchy_help_says_the_same_thing_as_running_it_bare() {
+    let temp = vault();
+    let helped = String::from_utf8_lossy(&orchy(temp.path(), &["help"]).stdout).into_owned();
+
+    assert!(helped.contains("orchy announce"));
+    assert!(helped.contains("skills"), "the pillars are named: {helped}");
+}
+
+fn seeded_for_search() -> tempfile::TempDir {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "migrations",
+            "--namespace",
+            "/backend",
+            "--summary",
+            "never edit an applied migration; add a new one",
+            "--body",
+            "Rolling back in place corrupts every environment that already ran it.",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "db-pooling",
+            "--namespace",
+            "/backend",
+            "--summary",
+            "one pool per process, never per request",
+            "--body",
+            "Connection churn is the usual cause of migration timeouts.",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "discovery",
+            "migration lock timeout",
+            "--body",
+            "A long migration holds the lock and blocks deploys.",
+        ],
+    );
+    temp
+}
+
+#[test]
+fn a_skill_is_found_by_text_in_its_name_summary_or_body() {
+    let temp = seeded_for_search();
+    let found = json(temp.path(), &["skill", "find", "migration"]);
+
+    let names: Vec<&str> = found
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["heading"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["migrations", "db-pooling"],
+        "the skill that matches in its name and summary outranks one that only mentions it \
+         in passing: {names:?}"
+    );
+    assert_eq!(
+        found[0]["excerpt"], "never edit an applied migration; add a new one",
+        "a hit carries the line that tells an agent whether to open it"
+    );
+}
+
+#[test]
+fn finding_a_skill_never_returns_one_that_is_out_of_force() {
+    let temp = seeded_for_search();
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "old-way",
+            "--summary",
+            "how we used to run migrations",
+        ],
+    );
+    ok(temp.path(), &["skill", "retire", "old-way"]);
+
+    let found = ok(temp.path(), &["skill", "find", "migrations"]);
+    assert!(
+        !found.contains("old-way"),
+        "a retired skill must not be offered as something to follow: {found}"
+    );
+    assert!(
+        ok(temp.path(), &["skill", "find", "migrations", "--retired"]).contains("old-way"),
+        "but it is still searchable when asked for"
+    );
+}
+
+#[test]
+fn recall_searches_documents_and_skills_together_and_says_which_is_which() {
+    let temp = seeded_for_search();
+    let hits = json(temp.path(), &["recall", "migration"]);
+
+    let kinds: BTreeSet<&str> = hits
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        BTreeSet::from(["document", "skill"]),
+        "one search covers what the team knows and how it works: {kinds:?}"
+    );
+    for hit in hits.as_array().unwrap() {
+        assert!(
+            hit["entity"].as_str().unwrap().contains(':'),
+            "a hit is addressable as kind:id so it can be read back"
+        );
+    }
+}
+
+#[test]
+fn recall_can_be_narrowed_to_one_kind_of_entity() {
+    let temp = seeded_for_search();
+
+    let only_skills = json(temp.path(), &["recall", "migration", "--entity", "skill"]);
+    assert!(
+        only_skills
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|h| h["kind"] == "skill"),
+        "{only_skills}"
+    );
+
+    let only_docs = json(
+        temp.path(),
+        &["recall", "migration", "--entity", "document"],
+    );
+    assert!(
+        only_docs
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|h| h["kind"] == "document"),
+        "{only_docs}"
+    );
+    assert!(!only_docs.as_array().unwrap().is_empty());
+}
+
+#[test]
+fn a_skill_declared_where_the_agent_works_is_ranked_first() {
+    let temp = vault();
+    for (name, namespace) in [("deploy-checks", "/frontend"), ("deploy-steps", "/backend")] {
+        ok(
+            temp.path(),
+            &[
+                "skill",
+                "write",
+                name,
+                "--namespace",
+                namespace,
+                "--summary",
+                "how deploys work here",
+            ],
+        );
+    }
+
+    let found = json(
+        temp.path(),
+        &["skill", "find", "deploy", "--namespace", "/backend"],
+    );
+    assert_eq!(
+        found[0]["heading"], "deploy-steps",
+        "equal matches break towards the namespace the agent is standing in: {found}"
+    );
 }
 
 #[test]

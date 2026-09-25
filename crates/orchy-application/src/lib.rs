@@ -1,5 +1,6 @@
 pub mod announce_actor;
 pub mod block_task;
+pub mod brief;
 pub mod cancel_task;
 pub mod claim_task;
 pub mod complete_task;
@@ -14,6 +15,7 @@ pub mod get_task;
 pub mod link_entities;
 pub mod list_actors;
 pub mod list_sent;
+pub mod list_skills;
 pub mod list_tasks;
 pub mod manage_dependencies;
 pub mod manage_lease;
@@ -24,14 +26,17 @@ pub mod read_document;
 pub mod read_events;
 pub mod read_inbox;
 pub mod read_message;
+pub mod read_skill;
 pub mod read_thread;
 pub mod recall;
 pub mod release_task;
 pub mod replace_task;
 pub mod resolve_thread;
+pub mod retire_skill;
 pub mod rollup_ancestors;
 pub mod send_message;
 pub mod set_document_field;
+pub mod set_skill_field;
 pub mod split_task;
 pub mod start_task;
 pub mod supersede_document;
@@ -39,18 +44,20 @@ pub mod traverse_graph;
 pub mod unblock_task;
 pub mod update_document;
 pub mod update_task;
+pub mod write_skill;
 
 use std::sync::Arc;
 
 use orchy_core::{
     ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, LeaseStore, MessageStore,
-    ReadWatermarks, Search, TaskStore,
+    ReadWatermarks, Search, SkillStore, TaskStore,
 };
 
 pub use error::{ApplicationError, ApplicationResult};
 
 use announce_actor::AnnounceActor;
 use block_task::BlockTask;
+use brief::Brief;
 use cancel_task::CancelTask;
 use claim_task::ClaimTask;
 use complete_task::CompleteTask;
@@ -63,6 +70,7 @@ use get_task::GetTask;
 use link_entities::LinkEntities;
 use list_actors::ListActors;
 use list_sent::ListSent;
+use list_skills::ListSkills;
 use list_tasks::ListTasks;
 use manage_dependencies::ManageDependencies;
 use manage_lease::ManageLease;
@@ -73,14 +81,17 @@ use read_document::ReadDocument;
 use read_events::ReadEvents;
 use read_inbox::ReadInbox;
 use read_message::ReadMessage;
+use read_skill::ReadSkill;
 use read_thread::ReadThread;
 use recall::Recall;
 use release_task::ReleaseTask;
 use replace_task::ReplaceTask;
 use resolve_thread::ResolveThread;
+use retire_skill::RetireSkill;
 use rollup_ancestors::RollupAncestors;
 use send_message::SendMessage;
 use set_document_field::SetDocumentField;
+use set_skill_field::SetSkillField;
 use split_task::SplitTask;
 use start_task::StartTask;
 use supersede_document::SupersedeDocument;
@@ -88,9 +99,11 @@ use traverse_graph::TraverseGraph;
 use unblock_task::UnblockTask;
 use update_document::UpdateDocument;
 use update_task::UpdateTask;
+use write_skill::WriteSkill;
 
 pub struct ApplicationDeps {
     pub documents: Arc<dyn DocumentStore>,
+    pub skills: Arc<dyn SkillStore>,
     pub tasks: Arc<dyn TaskStore>,
     pub messages: Arc<dyn MessageStore>,
     pub edges: Arc<dyn EdgeStore>,
@@ -105,6 +118,7 @@ pub struct ApplicationDeps {
 
 pub struct Application {
     pub announce_actor: AnnounceActor,
+    pub brief: Brief,
     pub list_actors: ListActors,
     pub manage_lease: ManageLease,
 
@@ -137,6 +151,12 @@ pub struct Application {
 
     pub send_message: SendMessage,
     pub read_inbox: ReadInbox,
+
+    pub write_skill: WriteSkill,
+    pub read_skill: ReadSkill,
+    pub list_skills: ListSkills,
+    pub retire_skill: RetireSkill,
+    pub set_skill_field: SetSkillField,
     pub read_message: ReadMessage,
     pub read_thread: ReadThread,
     pub list_sent: ListSent,
@@ -153,6 +173,7 @@ impl Application {
     pub fn new(deps: ApplicationDeps) -> Self {
         let ApplicationDeps {
             documents,
+            skills,
             tasks,
             messages,
             edges,
@@ -243,6 +264,20 @@ impl Application {
                 Arc::clone(&clock),
             ),
             read_inbox: ReadInbox::new(Arc::clone(&messages), Arc::clone(&watermarks)),
+
+            brief: Brief::new(
+                Arc::clone(&actors),
+                Arc::clone(&skills),
+                Arc::clone(&tasks),
+                Arc::clone(&messages),
+                Arc::clone(&watermarks),
+                Arc::clone(&documents),
+            ),
+            write_skill: WriteSkill::new(Arc::clone(&skills), Arc::clone(&ids), Arc::clone(&clock)),
+            read_skill: ReadSkill::new(Arc::clone(&skills)),
+            list_skills: ListSkills::new(Arc::clone(&skills)),
+            retire_skill: RetireSkill::new(Arc::clone(&skills), Arc::clone(&clock)),
+            set_skill_field: SetSkillField::new(Arc::clone(&skills), Arc::clone(&clock)),
             read_message: ReadMessage::new(Arc::clone(&messages), Arc::clone(&watermarks)),
             read_thread: ReadThread::new(Arc::clone(&messages)),
             list_sent: ListSent::new(Arc::clone(&messages)),

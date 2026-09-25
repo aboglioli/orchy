@@ -1,7 +1,6 @@
 mod events;
 mod frontmatter;
 mod kind;
-mod search;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -14,7 +13,6 @@ pub use events::{
 };
 pub use frontmatter::Frontmatter;
 pub use kind::{DocumentStatus, Kind};
-pub use search::{Hit, Search, SearchQuery, rank};
 
 use crate::body::Body;
 use crate::clock::Clock;
@@ -301,8 +299,6 @@ impl Document {
         self.kind.is_candidate()
     }
 
-    /// Candidacy is the kind, not a directory, so promotion declares what the proposal
-    /// becomes rather than moving a file.
     pub fn promote(&mut self, into: Kind, namespace: Namespace, clock: &dyn Clock) -> Result<()> {
         if !self.is_candidate() {
             return Err(DomainError::conflict(

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    Clock, DocumentStatus, Kind, Namespace, Search, SearchQuery, Tag, document::rank,
+    Clock, DocumentStatus, EntityKind, Kind, Namespace, Search, SearchQuery, Tag, rank,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,9 @@ const DEFAULT_LIMIT: usize = 20;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RecallCommand {
     pub text: String,
+    pub entities: Vec<String>,
     pub kind: Vec<String>,
+    pub retired: bool,
     pub status: Vec<String>,
     pub namespace: Option<String>,
     pub anchor: Option<String>,
@@ -35,6 +37,17 @@ impl Recall {
         let limit = cmd.limit.unwrap_or(DEFAULT_LIMIT);
         let query = SearchQuery {
             text: cmd.text,
+            entities: if cmd.entities.is_empty() {
+                None
+            } else {
+                Some(
+                    cmd.entities
+                        .iter()
+                        .map(|e| e.parse::<EntityKind>())
+                        .collect::<orchy_core::Result<Vec<_>>>()?,
+                )
+            },
+            retired: cmd.retired,
             kind: if cmd.kind.is_empty() {
                 None
             } else {
