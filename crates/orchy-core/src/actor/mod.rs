@@ -27,8 +27,13 @@ pub trait ActorStore: Send + Sync {
 #[async_trait]
 pub trait LeaseStore: Send + Sync {
     async fn acquire(&self, key: &ResourceKey, by: &ActorId, ttl: Duration) -> Result<Lease>;
+
+    async fn renew(&self, key: &ResourceKey, by: &ActorId, ttl: Duration) -> Result<Lease>;
+
     async fn release(&self, key: &ResourceKey, by: &ActorId) -> Result<()>;
     async fn check(&self, key: &ResourceKey) -> Result<Option<Lease>>;
+
+    async fn held(&self) -> Result<Vec<Lease>>;
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
