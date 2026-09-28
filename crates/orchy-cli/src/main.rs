@@ -9,12 +9,11 @@ mod resolve;
 mod stdin;
 
 use clap::{CommandFactory, Parser};
-use orchy_application::announce_actor::AnnounceActorCommand;
 use orchy_application::list_actors::ListActorsCommand;
-use orchy_application::manage_lease::{LeaseAction, ManageLeaseCommand};
+use orchy_application::manage_lease::LeaseAction;
 use orchy_application::read_events::ReadEventsCommand;
 
-use cli::{Cli, Command, LockCommand};
+use cli::{Cli, Command, LockCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
 use output::{Output, short};
@@ -34,10 +33,14 @@ async fn main() -> std::process::ExitCode {
 }
 
 async fn run(cli: Cli, out: &Output) -> CliResult<()> {
+    let Some(command) = cli.command else {
+        use clap::CommandFactory;
+        Cli::command().print_long_help()?;
+        return Ok(());
+    };
     let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
 
-    // three commands run before there is a vault to open
-    match cli.command {
+    let command = match command {
         Command::Init { path } => {
             let root = path.unwrap_or_else(|| config.vault.clone());
             let written = init::scaffold(&root)?;
@@ -73,8 +76,8 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             clap_complete::generate(shell, &mut Cli::command(), "orchy", &mut std::io::stdout());
             return Ok(());
         }
-        _ => {}
-    }
+        other => other,
+    };
 
     if !config.is_initialised() {
         return Err(CliError::not_a_vault(config.vault.display()));
@@ -83,27 +86,51 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let app = container::build(&config).await?;
     let actor = config.actor.to_string();
 
-    match cli.command {
+    match command {
         Command::Init { .. } | Command::Status | Command::Completions { .. } => {
-            unreachable!()
+            unreachable!("answered before the vault is opened")
         }
 
         Command::Announce {
             roles,
             namespace,
             name,
-        } => {
-            let announced = app
-                .announce_actor
-                .execute(AnnounceActorCommand {
-                    actor: actor.clone(),
-                    roles,
-                    namespace,
-                    display_name: name,
-                })
-                .await?;
-            out.emit(&announced, |a| format!("{}  {}", a.id, a.roles.join(", ")))
-        }
+        } => cmd::brief::announce(&app, &actor, roles, namespace, name, out).await,
+
+        Command::Guide => cmd::brief::guide(out),
+
+        Command::Skill(command) => match command {
+            SkillCommand::Write {
+                name,
+                summary,
+                namespace,
+                body,
+                tag,
+            } => cmd::skill::write(&app, name, summary, namespace, body, tag, out).await,
+            SkillCommand::Set {
+                target,
+                namespace,
+                edits,
+            } => cmd::skill::set(&app, target, namespace, edits, out).await,
+            SkillCommand::List {
+                namespace,
+                tag,
+                everywhere,
+                retired,
+            } => cmd::skill::list(&app, namespace, tag, everywhere, retired, out).await,
+            SkillCommand::Find {
+                query,
+                namespace,
+                tag,
+                retired,
+                limit,
+            } => cmd::skill::find(&app, query, namespace, tag, retired, limit, out).await,
+            SkillCommand::Show { target, namespace } => {
+                cmd::skill::show(&app, target, namespace, out).await
+            }
+            SkillCommand::Retire { target } => cmd::skill::retire(&app, target, false, out).await,
+            SkillCommand::Restore { target } => cmd::skill::retire(&app, target, true, out).await,
+        },
 
         Command::Agents { live } => {
             let actors = app
@@ -177,11 +204,17 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Command::Recall {
             query,
             kind,
+            entities,
             tag,
             namespace,
             anchor,
             limit,
-        } => cmd::doc::recall(&app, query, kind, tag, namespace, anchor, limit, out).await,
+        } => {
+            cmd::doc::recall(
+                &app, query, kind, entities, tag, namespace, anchor, limit, out,
+            )
+            .await
+        }
 
         Command::Link { from, to, rel } => cmd::doc::link(&app, from, to, rel, false, out).await,
         Command::Unlink { from, to, rel } => cmd::doc::link(&app, from, to, rel, true, out).await,
@@ -195,31 +228,26 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             namespace,
         } => cmd::doc::promote(&app, target, into, namespace, out).await,
 
-        Command::Lock(command) => {
-            let (resource, ttl, action) = match command {
-                LockCommand::Acquire { resource, ttl } => (resource, ttl, LeaseAction::Acquire),
-                LockCommand::Release { resource } => (resource, None, LeaseAction::Release),
-                LockCommand::Check { resource } => (resource, None, LeaseAction::Check),
-            };
-            let lease = app
-                .manage_lease
-                .execute(ManageLeaseCommand {
-                    resource,
-                    actor: actor.clone(),
-                    ttl_seconds: ttl,
-                    action,
-                })
-                .await?;
-            out.emit(&lease, |l| match l {
-                Some(lease) => format!(
-                    "{} held by {} until {}",
-                    lease.resource,
-                    lease.holder,
-                    lease.expires_at.format("%H:%M:%S")
-                ),
-                None => "not held".to_owned(),
-            })
-        }
+        Command::Lock(command) => match command {
+            LockCommand::Acquire { resource, ttl } => {
+                cmd::lock::manage(&app, &actor, resource, ttl, LeaseAction::Acquire, out).await
+            }
+            LockCommand::Renew { resource, ttl } => {
+                cmd::lock::manage(&app, &actor, resource, ttl, LeaseAction::Renew, out).await
+            }
+            LockCommand::Release { resource } => {
+                cmd::lock::manage(&app, &actor, resource, None, LeaseAction::Release, out).await
+            }
+            LockCommand::Check { resource } => {
+                cmd::lock::manage(&app, &actor, resource, None, LeaseAction::Check, out).await
+            }
+            LockCommand::List => cmd::lock::list(&app, out).await,
+            LockCommand::With {
+                resource,
+                ttl,
+                command,
+            } => cmd::lock::with(&app, &actor, resource, ttl, command, out).await,
+        },
 
         Command::Events {
             topic,

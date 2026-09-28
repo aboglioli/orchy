@@ -9,6 +9,7 @@ pub mod markdown;
 pub mod messages;
 pub mod roster;
 pub mod search;
+pub mod skills;
 pub mod tasks;
 pub mod time;
 pub mod vault;

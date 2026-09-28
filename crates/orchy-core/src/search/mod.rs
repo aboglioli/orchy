@@ -7,9 +7,9 @@ use chrono::{DateTime, Utc};
 
 pub use terms::tokenise;
 
-use super::kind::{DocumentStatus, Kind};
+use crate::document::{DocumentStatus, Kind};
+use crate::entity_ref::{EntityKind, EntityRef};
 use crate::error::Result;
-use crate::id::Id;
 use crate::namespace::Namespace;
 use crate::tag::Tag;
 
@@ -26,17 +26,25 @@ pub trait Search: Send + Sync {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchQuery {
     pub text: String,
+    pub entities: Option<Vec<EntityKind>>,
     pub kind: Option<Vec<Kind>>,
     pub status: Option<Vec<DocumentStatus>>,
+    pub retired: bool,
     pub namespace: Option<Namespace>,
     pub tags: Vec<Tag>,
     pub since: Option<DateTime<Utc>>,
     pub limit: usize,
 }
 
+impl SearchQuery {
+    pub fn covers(&self, kind: EntityKind) -> bool {
+        self.entities.as_ref().is_none_or(|k| k.contains(&kind))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Passage {
-    pub document: Id,
+    pub entity: EntityRef,
     pub heading: Option<String>,
     pub title: String,
     pub body: String,
@@ -47,7 +55,7 @@ pub struct Passage {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
-    pub document: Id,
+    pub entity: EntityRef,
     pub heading: Option<String>,
     pub excerpt: String,
     pub namespace: Namespace,
@@ -58,7 +66,7 @@ pub struct Hit {
 impl Passage {
     fn into_hit(self, relevance: f64) -> Hit {
         Hit {
-            document: self.document,
+            entity: self.entity,
             heading: self.heading,
             excerpt: self.excerpt,
             namespace: self.namespace,
@@ -160,7 +168,7 @@ pub fn rank(hits: &mut [Hit], anchor: Option<&Namespace>, now: DateTime<Utc>) {
         weight(b, anchor, now)
             .total_cmp(&weight(a, anchor, now))
             .then_with(|| b.updated_at.cmp(&a.updated_at))
-            .then_with(|| a.document.cmp(&b.document))
+            .then_with(|| a.entity.id().cmp(b.entity.id()))
     });
 }
 
@@ -178,6 +186,7 @@ fn weight(hit: &Hit, anchor: Option<&Namespace>, now: DateTime<Utc>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::id::Id;
 
     fn at(days_ago: i64, now: DateTime<Utc>) -> DateTime<Utc> {
         now - chrono::Duration::days(days_ago)
@@ -185,7 +194,7 @@ mod tests {
 
     fn hit(id: &str, ns: &str, relevance: f64, updated_at: DateTime<Utc>) -> Hit {
         Hit {
-            document: Id::new(id).unwrap(),
+            entity: EntityRef::new(EntityKind::Document, Id::new(id).unwrap()),
             heading: None,
             excerpt: String::new(),
             namespace: Namespace::new(ns).unwrap(),
@@ -207,7 +216,7 @@ mod tests {
         let now = now();
         let mut hits = vec![hit(A, "/", 1.0, now), hit(B, "/", 5.0, now)];
         rank(&mut hits, None, now);
-        assert_eq!(hits[0].document.to_string(), B);
+        assert_eq!(hits[0].entity.id().to_string(), B);
     }
 
     #[test]
@@ -215,7 +224,7 @@ mod tests {
         let now = now();
         let mut hits = vec![hit(A, "/", 3.0, at(365, now)), hit(B, "/", 3.0, at(1, now))];
         rank(&mut hits, None, now);
-        assert_eq!(hits[0].document.to_string(), B, "recency breaks the tie");
+        assert_eq!(hits[0].entity.id().to_string(), B, "recency breaks the tie");
     }
 
     #[test]
@@ -224,7 +233,7 @@ mod tests {
         let anchor = Namespace::new("/backend").unwrap();
         let mut hits = vec![hit(A, "/frontend", 3.0, now), hit(B, "/backend", 3.0, now)];
         rank(&mut hits, Some(&anchor), now);
-        assert_eq!(hits[0].document.to_string(), B);
+        assert_eq!(hits[0].entity.id().to_string(), B);
     }
 
     #[test]
@@ -237,7 +246,7 @@ mod tests {
             hit(C, "/backend", 3.0, now),
         ];
         rank(&mut hits, Some(&anchor), now);
-        let order: Vec<String> = hits.iter().map(|h| h.document.to_string()).collect();
+        let order: Vec<String> = hits.iter().map(|h| h.entity.id().to_string()).collect();
         assert_eq!(order, vec![C.to_owned(), B.to_owned(), A.to_owned()]);
     }
 
@@ -251,11 +260,11 @@ mod tests {
         assert_eq!(
             first
                 .iter()
-                .map(|h| h.document.to_string())
+                .map(|h| h.entity.id().to_string())
                 .collect::<Vec<_>>(),
             second
                 .iter()
-                .map(|h| h.document.to_string())
+                .map(|h| h.entity.id().to_string())
                 .collect::<Vec<_>>(),
             "a tie must break on id, not on input order"
         );
@@ -273,6 +282,7 @@ mod tests {
 #[cfg(test)]
 mod scoring_tests {
     use super::*;
+    use crate::id::Id;
 
     fn at(n: u8) -> Id {
         Id::new(format!("01ARZ3NDEKTSV4RRFFQ69G5F{n:02}")).unwrap()
@@ -280,7 +290,7 @@ mod scoring_tests {
 
     fn passage(n: u8, title: &str, body: &str) -> Passage {
         Passage {
-            document: at(n),
+            entity: EntityRef::new(EntityKind::Document, at(n)),
             heading: None,
             title: title.to_owned(),
             body: body.to_owned(),
@@ -292,7 +302,7 @@ mod scoring_tests {
 
     fn relevance_of(hits: &[Hit], n: u8) -> f64 {
         hits.iter()
-            .find(|h| h.document == at(n))
+            .find(|h| h.entity.id() == &at(n))
             .map(|h| h.relevance)
             .unwrap_or(0.0)
     }
@@ -347,7 +357,9 @@ mod scoring_tests {
             hits.iter()
                 .max_by(|a, b| a.relevance.total_cmp(&b.relevance))
                 .unwrap()
-                .document,
+                .entity
+                .id()
+                .clone(),
             at(10),
             "the one term that distinguishes a passage is worth more than the one they share"
         );
@@ -436,6 +448,6 @@ mod scoring_tests {
             "migration",
         );
         rank(&mut hits, None, now);
-        assert_eq!(hits[0].document, at(2));
+        assert_eq!(hits[0].entity.id(), &at(2));
     }
 }

@@ -12,13 +12,16 @@ pub enum EntityKind {
     Document,
     Task,
     Message,
+    Skill,
     Actor,
 }
 
 impl EntityKind {
-    /// An actor is a participant, not something a provenance relation can be about.
     pub fn is_content(&self) -> bool {
-        matches!(self, Self::Document | Self::Task | Self::Message)
+        matches!(
+            self,
+            Self::Document | Self::Task | Self::Message | Self::Skill
+        )
     }
 
     pub fn as_str(&self) -> &'static str {
@@ -26,6 +29,7 @@ impl EntityKind {
             Self::Document => "document",
             Self::Task => "task",
             Self::Message => "message",
+            Self::Skill => "skill",
             Self::Actor => "actor",
         }
     }
@@ -45,6 +49,7 @@ impl FromStr for EntityKind {
             "document" => Ok(Self::Document),
             "task" => Ok(Self::Task),
             "message" => Ok(Self::Message),
+            "skill" => Ok(Self::Skill),
             "actor" => Ok(Self::Actor),
             other => Err(DomainError::validation(format!(
                 "unknown entity kind: {other}"
@@ -92,9 +97,6 @@ impl fmt::Display for EntityRef {
 }
 
 impl EntityRef {
-    /// `kind:id` as orchy writes it, or a bare id as a person may have typed one. Guessing a
-    /// missing kind is how an edge ends up claiming a pairing its relation forbids, so
-    /// `assumed` comes from the relation and nothing else is invented.
     pub fn parse_or_assume(text: &str, assumed: Option<EntityKind>) -> Result<Self> {
         if let Some((kind, id)) = text.split_once(':') {
             return Ok(Self::new(kind.parse()?, Id::new(id)?));
