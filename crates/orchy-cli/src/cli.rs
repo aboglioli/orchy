@@ -2,14 +2,38 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+const AFTER_HELP: &str = "\
+WHERE THINGS LIVE
+  skills     how this team works — binding conventions, inherited down namespaces
+  docs       what the team knows — decisions, discoveries, specs, handoffs
+  tasks      work with owners and a state machine
+  messages   the board every agent posts to
+
+COMMON PATHS
+  join              orchy announce
+  take work         orchy task next  ->  orchy task done <id> --note ...
+  look something up orchy recall <query>  ·  orchy skill show <name>
+  write it down     orchy new decision <title>  ·  orchy skill write <name> --summary ...
+  say something     orchy msg send broadcast --body ...
+  before you stop   orchy new context handoff --body ...
+
+EXIT CODES
+  0 ok · 4 not found · 5 refused · 6 bad input · 7 ambiguous · 8 io
+
+`orchy guide` explains the model without joining. `orchy <command> --help` for one command.
+";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "orchy",
     version,
+    before_help = "START HERE: run `orchy announce`. It puts you on the roster and returns the \
+                   conventions you are expected to follow and the work waiting for you.",
     about = "A shared, file-backed memory for coding agents",
     long_about = "orchy stores knowledge, work and conversation as ordinary markdown files in a \
                   vault you can read, edit and commit by hand. Agents drive it through this CLI; \
-                  humans can ignore it and edit the files directly."
+                  humans can ignore it and edit the files directly.",
+    after_help = AFTER_HELP
 )]
 pub(crate) struct Cli {
     /// Vault directory (default: $ORCHY_VAULT, then settings, then $XDG_DATA_HOME/orchy)
@@ -28,8 +52,10 @@ pub(crate) struct Cli {
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Optional so that a bare `orchy` prints the guidance rather than clap's one-line
+    /// refusal, which is all an agent would otherwise get once ORCHY_VAULT is set.
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -38,7 +64,7 @@ pub(crate) enum Command {
     Init { path: Option<PathBuf> },
     /// Show the resolved configuration and whether the vault exists
     Status,
-    /// Join the roster and refresh presence
+    /// Join the roster and get your briefing: the conventions here, and what is waiting for you
     Announce {
         #[arg(long)]
         roles: Vec<String>,
@@ -47,6 +73,11 @@ pub(crate) enum Command {
         #[arg(long)]
         name: Option<String>,
     },
+    /// What orchy is and how to drive it, without joining the roster
+    Guide,
+    /// Conventions this vault expects every agent to follow
+    #[command(subcommand)]
+    Skill(SkillCommand),
     /// List the roster
     Agents {
         /// Only actors seen recently on this machine
@@ -101,11 +132,14 @@ pub(crate) enum Command {
         /// field=value, repeatable
         assignments: Vec<String>,
     },
-    /// Search document sections, ranked
+    /// Search documents and skills by text, best first
     Recall {
         query: Vec<String>,
         #[arg(long)]
         kind: Vec<String>,
+        /// Look only in `document` or only in `skill`; both by default
+        #[arg(long = "entity")]
+        entities: Vec<String>,
         #[arg(long)]
         tag: Vec<String>,
         #[arg(long)]
@@ -340,6 +374,84 @@ pub(crate) enum MsgCommand {
         #[arg(long)]
         role: Vec<String>,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum SkillCommand {
+    /// Write a skill down, or revise the one already there
+    Write {
+        name: String,
+        /// The one line every agent reads before deciding to open it
+        #[arg(long)]
+        summary: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
+        /// The skill itself, or `-` to read it from stdin
+        #[arg(long)]
+        body: Option<String>,
+        /// Cross-cutting label, repeatable
+        #[arg(long)]
+        tag: Vec<String>,
+    },
+    /// Set any other frontmatter a team wants on a skill
+    Set {
+        target: String,
+        #[arg(long)]
+        namespace: Option<String>,
+        #[command(flatten)]
+        edits: SkillEdits,
+    },
+    /// The skills in force where you are working
+    List {
+        #[arg(long)]
+        namespace: Option<String>,
+        /// Only skills carrying this label, repeatable
+        #[arg(long)]
+        tag: Vec<String>,
+        /// Every skill in the vault, not only the ones your namespace inherits
+        #[arg(long)]
+        everywhere: bool,
+        /// Include retired skills
+        #[arg(long)]
+        retired: bool,
+    },
+    /// Match free text against every skill, best first — the way to find one among hundreds
+    Find {
+        query: Vec<String>,
+        /// Rank skills declared here first
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long)]
+        tag: Vec<String>,
+        /// Search retired skills too
+        #[arg(long)]
+        retired: bool,
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// Read one, by name or id
+    Show {
+        target: String,
+        #[arg(long)]
+        namespace: Option<String>,
+    },
+    /// Take a skill out of every briefing without deleting it
+    Retire { target: String },
+    /// Put a retired skill back in force
+    Restore { target: String },
+}
+
+#[derive(clap::Args, Debug)]
+pub(crate) struct SkillEdits {
+    /// field=value, repeatable
+    pub assignments: Vec<String>,
+    /// Drop a field, repeatable
+    #[arg(long)]
+    pub remove: Vec<String>,
+    #[arg(long)]
+    pub tag: Vec<String>,
+    #[arg(long)]
+    pub untag: Vec<String>,
 }
 
 #[derive(Subcommand, Debug)]

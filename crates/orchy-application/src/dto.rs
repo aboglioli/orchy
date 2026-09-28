@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
-use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Task};
+use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Skill, Task};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +189,9 @@ impl From<&Lease> for LeaseDto {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HitDto {
-    pub document: String,
+    pub entity: String,
+    pub kind: String,
+    pub id: String,
     pub heading: Option<String>,
     pub excerpt: String,
     pub namespace: String,
@@ -198,7 +202,9 @@ pub struct HitDto {
 impl From<&Hit> for HitDto {
     fn from(hit: &Hit) -> Self {
         Self {
-            document: hit.document.to_string(),
+            entity: hit.entity.to_string(),
+            kind: hit.entity.kind().to_string(),
+            id: hit.entity.id().to_string(),
             heading: hit.heading.clone(),
             excerpt: hit.excerpt.clone(),
             namespace: hit.namespace.to_string(),
@@ -248,4 +254,49 @@ impl<T> PageDto<T> {
             limit,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillDto {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    pub namespace: String,
+    pub status: String,
+    pub tags: Vec<String>,
+    pub frontmatter: BTreeMap<String, serde_json::Value>,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<&Skill> for SkillDto {
+    fn from(skill: &Skill) -> Self {
+        Self {
+            id: skill.id().to_string(),
+            name: skill.name().to_string(),
+            summary: skill.summary().to_string(),
+            namespace: skill.namespace().to_string(),
+            status: skill.status().as_str().to_owned(),
+            tags: skill.tags().iter().map(ToString::to_string).collect(),
+            frontmatter: skill
+                .frontmatter()
+                .iter()
+                .map(|(k, v)| (k.to_owned(), v.clone()))
+                .collect(),
+            body: skill.body().as_str().to_owned(),
+            created_at: skill.created_at(),
+            updated_at: skill.updated_at(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BriefingDto {
+    pub actor: ActorDto,
+    pub skills: Vec<SkillDto>,
+    pub unread: usize,
+    pub claimed: Vec<TaskDto>,
+    pub next: Option<TaskDto>,
+    pub handoff: Option<DocumentDto>,
 }

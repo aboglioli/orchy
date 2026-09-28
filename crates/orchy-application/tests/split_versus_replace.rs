@@ -15,6 +15,7 @@ fn app() -> Application {
     let backend = MemoryBackend::new();
     Application::new(ApplicationDeps {
         documents: Arc::clone(&backend.documents) as _,
+        skills: Arc::clone(&backend.skills) as _,
         tasks: Arc::clone(&backend.tasks) as _,
         messages: Arc::clone(&backend.messages) as _,
         edges: Arc::clone(&backend.edges) as _,
