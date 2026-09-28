@@ -1,613 +1,398 @@
 # orchy
 
-Multi-agent coordination server. Orchy is the shared infrastructure that
-allows multiple AI agents (Claude Code, Codex, Gemini, Cursor, etc.) to work
-together on complex goals — like a company operating system for agents.
+A single CLI binary, `orchy`, that gives coding agents a shared, file-backed memory.
+Everything lives in a **vault**: markdown files with YAML frontmatter plus an append-only
+event log. No server, no database, no daemon, no MCP endpoint — a shell is the only
+integration an agent needs. `README.md` is the user-facing reference for the command
+surface; this file is for working on the code.
 
-## What Orchy Does
+## Scope
 
-Orchy exposes **71** MCP tools over Streamable HTTP and a stateless CLI
-(`orchy`) for agents without MCP support. Agents connect, register, and use
-these tools to coordinate. Orchy enforces the rules; agents bring the
-intelligence.
+Three pillars, and nothing else:
 
-Think of orchy as the operating system for a company made of agents. Every
-company needs three things to function: people need to **talk** to each other,
-there needs to be **work** to do with clear ownership, and the organization
-needs to **remember** what it has learned. Orchy provides all three.
+| pillar | aggregate | stored under | defining invariant |
+|---|---|---|---|
+| **Knowledge** | `Document`, `Skill` | `docs/<namespace>/`, `skills/<namespace>/` | identified by `id`, never by path; relations are typed and registered; a skill's name is unique per namespace and inherited downwards |
+| **Work** | `Task` | `tasks/{open,done}/` | status moves only along the state machine; a parent's status is a function of its children's |
+| **Conversation** | `Message` | `messages/<thread>/` | a message informs and never tracks work; addressed by alias, role, namespace or broadcast |
 
-### Communication (Slack for agents)
+Supporting them: `graph` (relations across pillars), `search` (lexical ranking across
+documents and skills), `actor` (identity, roster, presence, leases) and the event log. The pillars are peers: none imports another. Where they refer
+to each other they go through `EntityRef` and the relation registry.
 
-How agents coordinate in real time.
+Two things stay separate: **the tool** (this repository) and **the vault** (a directory
+whose location is configuration). Never hard-code a vault path.
 
-- **Direct messages** — send to a specific agent by alias (`@coder-1`)
-- **Role broadcasts** — send to all agents with a role (`role:reviewer`)
-- **Namespace broadcasts** — send to all agents in a namespace (`ns:/backend`)
-- **Project broadcasts** — send to everyone except yourself (`broadcast`)
-- **Threading** — reply to messages, walk full conversation threads
-- **Delivery tracking** — pending, delivered, read status
-- **System notifications** — dependency failures are delivered as messages to
-  your mailbox automatically
+## Non-negotiables
 
-### Work (JIRA/Trello for agents)
-
-How agents organize, claim, and complete work.
-
-- **Tasks** — hierarchical, with dependencies, priorities, tags, and a full
-  state machine (pending -> claimed -> in_progress -> completed/failed)
-- **Hierarchy** — split tasks into subtasks, delegate without blocking parent,
-  merge related tasks. Parent auto-completes when all children finish.
-- **Dependencies** — tasks block until dependencies complete. Cascading failure
-  notifications when a dependency fails.
-- **Specs and planning** — use documents for spec-driven development. Write the
-  spec first, then create implementation tasks from it.
-- **Resource locks** — prevent two agents from editing the same file or area.
-  TTL-based, auto-released on disconnect.
-- **Task staleness** — tasks become stale after inactivity, claimable by other
-  agents. No automatic release on disconnect.
-
-### Knowledge (Notion/Wiki for agents)
-
-How the organization remembers what it has learned.
-
-Agents don't retain state between sessions. Every insight, decision, and
-finding must be externalized or it's lost. All knowledge lives in a **unified
-module** with typed entries (`kind`). Each entry has a `path` for hierarchical
-organization and `tags` for cross-cutting labels.
-
-- **Decisions** (`kind: decision`) — choices made with rationale. "We chose
-  RS256 over HS256 for key rotation support."
-- **Discoveries** (`kind: discovery`) — things found or learned during work.
-  Gotchas, constraints, performance findings.
-- **Documents** (`kind: document`) — long-form specs, architecture decisions,
-  analysis, post-mortems.
-- **Skills** (`kind: skill`) — reusable conventions and instructions that all
-  agents must follow. Inherited through namespace hierarchy.
-- **Contexts** (`kind: context`) — session handoff snapshots. What you were
-  working on, what's left. The next agent loads this to continue your work.
-- **Patterns**, **plans**, **configs**, **references**, **notes**, **logs** — see
-  `list_knowledge_types` for the full set.
-- **Cross-project sharing** — link projects to import knowledge entries. A
-  "global" project serves as a shared resource pool across all projects.
-- **Semantic search** — `search_knowledge` finds relevant entries by meaning,
-  not just exact match. Powered by embeddings when configured.
-- **Temporal validity** — knowledge entries have optional `valid_from`/`valid_until`.
-  Expired entries excluded from search by default.
-- **Promotion** — promote a decision/discovery/pattern into a reusable `skill`.
-- **Consolidation** — merge related knowledge entries into one, deleting sources.
+- **orchy never invokes git.** The vault must stay git-compatible (`.gitignore`,
+  `.gitattributes`, one file per entity), but orchy never runs, reads or depends on git.
+  Committing is the user's job.
+- **Frontmatter is the only source of truth.** No state is derived from a path or a filename.
+  Placement is a projection of frontmatter: a task lands in `tasks/done/` *because* its
+  status is terminal. A file in the wrong directory is a placement error to move, never a
+  reason to rewrite frontmatter. Filenames are `<id>.md` and nothing else.
+- **Plain files are the storage**, not a cache in front of one. A human editing a file in
+  any editor is a supported write path, and nothing has to resynchronise afterwards.
+- **Agents cannot answer prompts.** Content comes from a flag or stdin; orchy never blocks
+  waiting for input.
 
 ## Architecture
 
-Rust. DDD + Hexagonal. Domain layer has zero external dependencies. Store
-traits defined in domain, implemented by infrastructure crates.
+Rust, edition 2024, MSRV 1.89. DDD + hexagonal. Every port is declared in the domain and
+implemented by a store crate. Only the CLI wires concrete types.
 
 ```
 crates/
-├── orchy-events/          # reusable event sourcing library (no domain deps)
+├── orchy-core/          domain: aggregates, value objects, domain events, ports. No I/O.
 │   └── src/
-│       ├── event.rs       # Event, EventId, RestoreEvent
-│       ├── topic.rs       # Topic (dot-separated, validated)
-│       ├── namespace.rs   # Namespace (canonical type used by all crates)
-│       ├── organization.rs # Organization (tenant scope)
-│       ├── payload.rs     # Payload with ContentType (JSON, text, binary)
-│       ├── metadata.rs    # Key-value metadata
-│       ├── collector.rs   # EventCollector for aggregates
-│       ├── serialization.rs # SerializedEvent for DB persistence
-│       └── io/            # Acker, Message<A>, Handler, Reader, Writer traits
+│       ├── id.rs              Id (ULID), IdGenerator port
+│       ├── namespace.rs       Namespace (/, /backend, /backend/auth)
+│       ├── entity_ref.rs      EntityKind, EntityRef (`kind:id`) — how contexts refer to each other
+│       ├── clock.rs           Clock port
+│       ├── event.rs           DomainEvent, EventCollector, EventLog port, RecordedEvent, EventQuery
+│       ├── error.rs           DomainError, ErrorCode, exit codes
+│       ├── pagination.rs      Page, PageRequest
+│       ├── body.rs            Body, Section (split on markdown headings)
+│       ├── title.rs · tag.rs · priority.rs
+│       ├── search/            Search port, SearchQuery, Passage, Hit, BM25 `score`, `rank`, `tokenise`
+│       ├── document/          Document, Frontmatter, Kind, DocumentStatus, DocumentStore
+│       ├── skill/             Skill, SkillName, Summary, SkillStatus, SkillStore, `in_scope`
+│       ├── task/              Task, TaskStatus, TaskStore, rollup
+│       ├── message/           Message, Recipient, MessageStore, ReadWatermarks
+│       ├── graph/             Edge, Relation, EdgeStore, traversal
+│       └── actor/             Actor, ActorId, ActorAlias, MachineId, Role, ActorStore, Lease, LeaseStore
 │
-├── orchy-core/            # domain types, traits, store traits
+├── orchy-application/   use cases, one file each: Command in, DTO out. No rules.
+│                        `brief.rs` assembles the briefing `announce` returns.
+│
+├── orchy-store-memory/  every port in RAM — tests
+├── orchy-store-vault/   every port over the filesystem
 │   └── src/
-│       ├── agent/         # Agent aggregate + AgentStore trait + events
-│       ├── task/          # Task + state machine
-│       ├── message/       # Message threading + delivery tracking
-│       ├── knowledge/     # Unified knowledge: notes, decisions, skills, context, docs
-│       ├── graph/         # Edge aggregate, GraphStore trait, traversal, neighborhoods
-│       │   ├── mod.rs     # Edge, EdgeId, EdgeStore, RelationType, TraversalDirection
-│       │   ├── neighborhood.rs  # EntityNeighborhood, PeerEntity, Relation summaries
-│       │   ├── relation_options.rs  # RelationOptions, RelationQuery
-│       │   └── rules.rs   # Graph validation rules (cycle detection)
-│       ├── project/       # Project metadata
-│       ├── organization/  # Organization aggregate + events
-│       ├── resource_lock/ # TTL-based distributed locking
-│       ├── namespace.rs   # ProjectId value object
-│       ├── resource_ref.rs # ResourceRef for cross-entity links
-│       ├── pagination.rs  # PageParams + Page<T> for paginated queries
-│       ├── error.rs       # Domain error types
-│       └── embeddings/    # Embedding value object + search (RRF algorithm)
+│       ├── blob.rs            BlobStore seam, FsBlobStore: atomic writes, compare-and-swap
+│       ├── vault.rs           id → file index, built by scanning frontmatter
+│       ├── layout.rs          where each entity kind is placed
+│       ├── markdown.rs · codec.rs   frontmatter + body parsing and rendering
+│       ├── documents.rs · skills.rs · tasks.rs · messages.rs · edges.rs · roster.rs
+│       ├── search.rs          gathers document sections and skills into passages for `score`
+│       ├── eventlog.rs        EventLog over eventuary's fs backend
+│       ├── watermarks.rs      per-actor inbox read watermarks
+│       ├── lock.rs            file locks
+│       └── time.rs            SystemClock, UlidGenerator
 │
-├── orchy-application/     # use cases / application layer + EmbeddingsProvider trait
-│
-├── orchy-store-memory/    # in-memory HashMap backend (dev/test)
-├── orchy-store-sqlite/    # SQLite + sea-query backend (single-node)
-├── orchy-store-pg/        # PostgreSQL + pgvector backend (production)
-│
-├── orchy-cli/             # stateless CLI binary (`orchy`) — REST client for non-MCP agents
-│
-└── orchy-server/          # MCP + REST API server binary
+└── orchy-cli/           the `orchy` binary
     └── src/
-        ├── main.rs        # HTTP server + MCP routing
-        ├── container.rs   # DI container wiring all services
-        ├── config.rs      # config.toml structure
-        ├── event_query.rs # EventQuery adapters per backend
-        ├── bootstrap.rs   # Dynamic bootstrap prompt generation
-        ├── heartbeat.rs   # Agent timeout monitor
-        ├── api/           # REST handlers (axum)
-        │   ├── graph.rs   # Graph endpoints: add_edge, remove_edge, query_relations, assemble_context
-        │   └── ...
-        └── mcp/
-            ├── handler.rs # Session state + ServerHandler + INSTRUCTIONS
-            ├── params.rs  # MCP tool parameter structs
-            └── tools/     # MCP tool implementations (one file per domain)
+        ├── main.rs            command dispatch
+        ├── cli.rs             clap definitions
+        ├── config.rs          settings.toml, orchy.toml, vault/actor resolution
+        ├── container.rs       the only place that names a concrete store
+        ├── init.rs            `orchy init` scaffold
+        ├── resolve.rs         id prefix / suffix / title fragment → full id
+        ├── output.rs          text vs --json rendering
+        ├── stdin.rs · error.rs
+        └── cmd/               doc.rs, skill.rs, task.rs, msg.rs, lock.rs, brief.rs (announce, guide)
 ```
 
-### Layer Rules
+### Layer rules
 
-| Layer | Can Import | Cannot Import |
-|-------|-----------|---------------|
-| orchy-events | stdlib, serde, uuid, chrono | orchy-core, application, stores, server |
-| orchy-core | stdlib, orchy-events | application, stores, server |
-| orchy-application | stdlib, orchy-core, orchy-events | stores, server |
-| orchy-store-* | stdlib, orchy-core, orchy-events | application, server, other stores |
-| orchy-server | everything | — |
+| crate | may depend on | must not |
+|---|---|---|
+| `orchy-core` | stdlib, `chrono`, `serde`, `serde_json`, `thiserror`, `ulid`, `sha2`, `hex`, `async-trait`, `rust-stemmers`, `eventuary` (value types `Topic` and `Payload` only) | any store, any I/O, `tokio`, `orchy-application` |
+| `orchy-application` | `orchy-core`, `async-trait`, `serde`, `chrono`, `thiserror` | any `orchy-store-*`, the CLI |
+| `orchy-store-*` | `orchy-core`, their own infrastructure deps | `orchy-application` (outside tests), the CLI, each other (outside tests) |
+| `orchy-cli` | everything, but concrete stores **only in `container.rs`** | domain aggregates in command handlers |
 
-## Key Patterns
+The sanctioned exception: tests may use real in-memory ports. `orchy-application` tests
+import `orchy-store-memory`, and `orchy-store-vault` tests import `orchy-application` and
+`orchy-store-memory`.
 
-### Layered Errors
+### Domain vs application
 
-Errors are split per layer. `From` impls compose them via `?`.
+- **Domain answers "what is always true".** Examples: `pending` cannot jump to `completed`;
+  only the holder may finish a task; a parent whose children all failed or completed takes
+  a derived status (`task::rollup::resolve`, a pure domain service); a relation connects
+  only the kinds it declares.
+- **Application answers "what happens when someone asks for X"**: load, call the aggregate,
+  persist, roll up ancestors, release the lease, return a DTO. If a use case branches on a
+  domain enum to decide whether something is *allowed*, the rule has leaked; move it into
+  the aggregate.
+- **Stores persist and load.** They never recompute a parent or enforce a rule.
 
-```
-orchy-core::error
-  DomainError      — pure rules: Validation, InvalidTransition,
-                     DependencyNotMet, RuleViolation, PasswordMismatch,
-                     Deactivated, Internal
-  StoreError       — infra: Connection, PoolExhausted, Timeout, Constraint,
-                     NotFound, Decode{table,column,cause}, Serialization,
-                     Migration, Other
-  Resource         — typed enum (Agent, ApiKey, Edge, Knowledge, Lock,
-                     Message, Namespace, Organization, Project, Task, User)
-  Error            — repository-tier: NotFound{Resource,id}, Conflict,
-                     VersionMismatch, Store(#[from]), Domain(#[from])
+## Key patterns
 
-orchy-store-pg::PgError      — Sqlx, Json, Domain via #[from]
-orchy-store-sqlite::SqliteError — Sqlite, Json, Poisoned, Domain via #[from]
-  Both: From<Self> for orchy_core::Error categorizes backend errors
+### Aggregates and constructors
 
-orchy-application::ApplicationError
-  - Core(#[from] CoreError)
-  - AuthenticationFailed (HTTP 401)
-  - PermissionDenied (HTTP 403)
-  - OrganizationMismatch
-  - EmbeddingsProvider
-  PasswordMismatch and Deactivated DomainErrors auto-map to AuthenticationFailed.
-```
+| pattern | purpose | events? |
+|---|---|---|
+| `Task::create(...)`, `Document::create(...)`, `Skill::create(...)` | first-time creation with validation | yes |
+| `Task::new(RestoreTask { .. })` | reconstruction from storage, no validation | no |
 
-**Constructor helpers** route through the proper layer:
+`Restore*` structs have public named fields; never positional parameters. Value objects
+(`Id`, `Namespace`, `ActorAlias`, `Role`, `Tag`, `Title`, `ResourceKey`, …) are validated
+in `new` and implement `FromStr` / `TryFrom<String>`. Never construct one by casting.
 
-```rust
-Error::invalid_input(s)        // routes to Error::Domain(DomainError::Validation(s))
-Error::invalid_transition(a,b) // routes to Error::Domain(DomainError::InvalidTransition{..})
-Error::dependency_not_met(id)  // routes to Error::Domain(DomainError::DependencyNotMet(id))
-Error::not_found(Resource::Task, "t1")
-Error::version_mismatch(1, 2)
-DomainError::validation(s) / rule_violation(s) / invalid_transition(a,b)
-```
+### Events
 
-**Layer return types:**
-- aggregate methods → `DomainResult<_>`
-- store traits → `Result<_, Error>`  (repository-tier facade)
-- use cases (orchy-application) → `ApplicationResult<_>`
-- API/MCP handlers convert ApplicationError to HTTP/MCP response via `ApiError`/`mcp_app_error`
-
-**Pattern matching uses Domain wrapper for explicit layering:**
-
-```rust
-matches!(e, Error::Domain(DomainError::Validation(_)))
-matches!(app_err, ApplicationError::Core(Error::NotFound { .. }))
-```
-
-### Event Sourcing
-
-Every aggregate has an `EventCollector`. Every mutation collects a semantic
-event. Every `save()` drains events and persists them via `io::Writer`.
+Every mutation collects a semantic event into the aggregate's `EventCollector`. `save(&mut
+entity)` writes the file, drains the collector and appends the events through the
+`EventLog` port:
 
 ```
-Aggregate mutation -> EventCollector.collect() -> save() -> drain_events() -> Writer::write()
+aggregate mutation → collector.collect() → store.save(&mut e) → drain() → EventLog::append()
 ```
 
-Events go to an `events` table in the same database as projections. The event
-log is append-only. Projections (entity tables) are denormalized views.
+The vault's log is eventuary's fs backend under `events/<machine>/`, one root per machine,
+partitioned (default 10, fixed at creation, configurable in `orchy.toml` `[events]
+partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
+`message.sent`, `edge.created`). `orchy events` replays them.
 
-Delete operations go through the aggregate: `mark_deleted()` -> `save()` (persists
-event) -> `store.delete()` (removes projection).
+eventuary is pinned by git tag (`v0.3.0-rc.4`) until it is on crates.io; that is the
+blocker for publishing orchy.
 
-### Constructor Convention
-
-| Pattern | Purpose | Events? |
-|---------|---------|---------|
-| `Entity::new(...)` | First-time creation with validation | Yes |
-| `Entity::restore(RestoreX { ... })` | Reconstruct from DB, no validation | No |
-
-All `restore()` methods take a single struct with named fields (not positional
-params). The `RestoreX` struct has public fields.
-
-### Store Trait Pattern
-
-Domain defines traits. Each store crate implements them as per-entity stores
-(e.g. `PgAgentStore`, `SqliteTaskStore`). Container wires them as `Arc<dyn Trait>`.
-All `save()` methods take `&mut` to drain events.
-
-```rust
-#[async_trait]
-pub trait TaskStore: Send + Sync {
-    async fn save(&self, task: &mut Task) -> Result<()>;
-    async fn find_by_id(&self, id: &TaskId) -> Result<Option<Task>>;
-    async fn list(&self, filter: TaskFilter, page: PageParams) -> Result<Page<Task>>;
-}
-```
-
-### Application Service Contract
-
-Every use case in `orchy-application` follows:
-- Command DTO in, Response DTO out
-- No domain aggregates cross the application boundary
-- `Arc<dyn Trait>` for store dependencies
-
-### Task State Machine
+### Errors
 
 ```
-Pending -> Claimed -> InProgress -> Completed
-   |         |          |
-   v         v          v
-Blocked   Failed     Failed
-   |         |          |
-   v         v          v
-Cancelled Cancelled  Cancelled
+orchy-core        DomainError { Validation, InvalidTransition, NotFound, Conflict,
+                                Forbidden, UnknownType, UnknownRelation, Ambiguous }
+                  ErrorCode   → exit code; orchy_core::Result<T> = Result<T, DomainError>
+orchy-application ApplicationError { Domain(#[from] DomainError), Storage(String) }
+                  ApplicationResult<T>
+orchy-cli         CliError { Application, Config, Io, NotAVault }
 ```
 
-Additional transitions:
-- `Claimed -> Blocked`, `InProgress -> Blocked` (split_task)
-- `Blocked -> Pending` (unblock, manual or auto on dependency complete)
-- `Claimed -> Completed` (auto_complete when all children finish)
+Exit codes are part of the CLI contract, because agents branch on them:
 
-**Stale task reclaim:** When an agent disconnects, claimed or in-progress
-  tasks become stale after `stale_after_secs` of inactivity. Other agents can
-  then claim them via `get_next_task` or `claim_task`. The new assignee takes
-  over and the task moves to `claimed` state. `touch_task` keeps long-running
-  work alive by resetting the staleness timer.
+| code | cause |
+|---|---|
+| 4 | `NotFound`, `NotAVault` |
+| 5 | `Conflict`, `InvalidTransition`, `Forbidden` |
+| 6 | `Validation`, `UnknownType`, `UnknownRelation`, `Config` |
+| 7 | `Ambiguous` |
+| 8 | `Storage`, `Io` |
 
-**Invalid transitions enforced:**
-  - `Blocked` can only go to `Pending` (unblock) or `Cancelled`
-  - `Completed`/`Failed`/`Cancelled` are terminal (except archive)
-  - `InProgress` cannot be directly reclaimed (must go stale first)
+Constructors: `DomainError::validation(..)`, `invalid_transition(from, to)`,
+`not_found(resource, id)`, `conflict(..)`, `forbidden(..)`.
 
-### Other Patterns
+### Use cases
 
-**Value objects** — Immutable, validated on creation, never direct-cast.
-UUID v7 for all IDs (time-ordered).
+One file per use case in `orchy-application/src/`, each with a `*Command` struct and an
+`execute` method. Dependencies come in through the constructor as `Arc<dyn Port>`, never as
+`execute` arguments. Commands carry `String` fields; value objects are parsed inside
+`execute`. Responses are DTOs from `dto.rs` (`TaskDto`, `DocumentDto`, …), never aggregates.
+`Application::new(ApplicationDeps)` wires every use case.
 
-**Value Object Pattern** — Value objects are used from `execute()` downward, NOT in command DTOs:
+### Vault storage
+
+- **Index by id.** `Vault::open` scans every markdown file and maps frontmatter `id` →
+  file, so files can be moved or renamed freely.
+- **Layout.** `docs/<namespace>/<id>.md`, `skills/<namespace>/<name>.md`,
+  `tasks/open|done/<id>.md`, `messages/<thread>/<id>.md`, `agents/<alias>@<machine>.md`. The
+  roots `docs`, `skills`, `tasks`, `messages`, `agents`, `events` and `.orchy` are fixed. A
+  skill is the one entity filed by name, because its name is unique per namespace.
+- **Atomic writes.** Temp file, fsync, rename.
+- **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
+  digests to what this process last read (compare-and-swap under a per-file guard in
+  `.orchy/write-guards/`). Two agents that load and change one entity get a conflict, not a
+  lost update. Document edits additionally support `--if-match <content_hash>` across
+  commands.
+- **Runtime state** lives in `.orchy/` and is never committed: `presence/`, `read/`
+  (watermarks), `locks/` (leases), `write-guards/`.
+- **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's
+  writes. `orchy skill set` writes such fields; `skill::managed_field` lists the ones it
+  refuses.
+- **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are rendered
+  from edges and refused by `orchy set`.
+
+### Briefing
+
+`orchy announce` saves the actor and returns `Brief`'s `BriefingDto` for the actor's
+namespace:
+
+- the skills in force;
+- the unread message count;
+- the tasks the actor holds;
+- the next pending task;
+- the latest `context` document.
+
+`orchy guide` and a bare `orchy` print the same orientation without touching the roster.
+Agents are told to run `announce` first, so this is the text every session starts from:
+change it deliberately.
+
+### Identity, presence, leases
+
+- **Identity.** An actor is `ActorId` = `alias@machine`. `MachineId` is a ULID generated
+  once and stored in `$XDG_CONFIG_HOME/orchy/settings.toml`; it separates this machine's
+  event log and actors from every other's. The alias is 2–32 characters: lowercase, digits
+  and `-`.
+- **Roster.** `orchy announce` writes `agents/<id>.md` (roles, namespace) and refreshes
+  presence. Presence is same-machine only: `agents --live` means seen in the last 300 s.
+- **Leases** (`LeaseStore`) are TTL-based, same-machine, and carry a generation counter.
+  Expiry is a timestamp checked by the reader; nothing reaps them. `orchy lock` exposes them
+  directly (default TTL 300 s). Claiming a task takes the lease `task:<id>` (default 900 s)
+  so racing claimers cannot both win.
+
+## Domain rules
+
+### Tasks
 
 ```
-API/MCP Handler (String input)
-    ↓ parse with value object constructors
-Command DTO (String fields) ✅ OK as-is
-    ↓ parse to value objects inside execute()
-Application Service: execute() ✅ PARSE HERE
-    ↓
-Store Trait: method(&VO) ✅ REQUIRED
-    ↓
-Domain Entity
+pending ─▶ claimed ─▶ in_progress
+   ▲          │            │
+   └─release──┴────────────┤
+                           ▼
+        completed · failed · cancelled · superseded   (terminal, absorbing)
+
+pending | claimed | in_progress ─block─▶ blocked ─unblock─▶ pending
+pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 ```
 
-Key value objects:
-- `Alias` — agent identity: lowercase alphanumeric + hyphens, 2-32 chars
-- `KnowledgePath` — knowledge entry path: no slashes at edges, alphanumeric segments
-- UUID-based IDs (`AgentId`, `TaskId`, `MessageId`, etc.) — already have FromStr
+- **Claiming.** Only `pending` is claimable, and claiming is not a self-transition.
+- **Holder only.** Completing, failing, cancelling a claimed task and releasing it are
+  restricted to the holder.
+- **No reclaim.** A claimed task is never taken over; it returns to `pending` only through
+  `release`.
+- **Rollup** (`task::rollup::resolve`) runs when a child reaches a terminal status. While
+  any child is open it yields nothing. Otherwise the parent takes:
+  - `failed` if any child failed;
+  - `completed` if any child completed;
+  - `superseded` if every child was superseded;
+  - `cancelled` in every remaining case.
 
-**Namespace hierarchy** — `/` (root), `/backend`, `/backend/auth`. Reads without
-namespace see everything. Writes default to agent's current namespace.
+  `cancelled` and `superseded` are neutral: they carry no verdict. Rollup recurses up to
+  `MAX_DEPTH` (64) and stops on cycles.
+- **Split vs replace.** `split` keeps the original as an umbrella that waits for its new
+  children. `replace` supersedes the original; the new tasks inherit its parent and get
+  `supersedes` edges to it.
+- **Next.** `task next` considers `pending` tasks with an empty `depends_on`, ranks them by
+  priority (`urgent > high > normal > low`), then by age, then by id, and walks down the
+  ranking on contention. Dependencies are not cleared automatically when the work they point
+  at finishes.
 
-**Optimistic concurrency** — Knowledge entries use `Version` field.
+### Documents
 
-**Resource locking** — TTL-based. Released on disconnect. Use for files, not data.
+- **Kinds.** Fifteen, in `Kind::ALL`: `note`, `decision`, `discovery`, `pattern`,
+  `document`, `config`, `reference`, `plan`, `log`, `skill`, `overview`, `summary`,
+  `report`, `context`, `candidate`.
+- **Statuses.** Canon kinds use `draft | active | superseded | archived`. `candidate` uses
+  `proposed | promoted | rejected`, and the two sets never overlap. Status changes are
+  semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
+- **Sections.** A body is split into sections by markdown headings (any level).
+- **The `skill` kind.** It still exists as a document kind. Binding conventions are `Skill`
+  entities, which are what briefings carry.
 
-**Session continuity** — `write_knowledge(kind: "context")` before disconnect.
-On startup, `register_agent` returns skills, handoff context, inbox, and
-pending tasks in one call.
+### Skills
 
-### Agent Disconnect Cleanup
+- **Name.** `SkillName`: 2–48 characters, lowercase, digits and `-`, unique per namespace.
+  `Summary` is the single line a briefing shows.
+- **Inheritance.** `skill::in_scope(skills, namespace)` resolves the active skills in force
+  at a namespace: the namespace's own plus every ancestor's, with the nearest one winning
+  when two share a name.
+- **Statuses.** `active | retired`. Retired skills leave briefings, listings and search
+  unless asked for.
+- **Managed fields.** `id`, `type`, `name`, `summary`, `namespace`, `status`, `tags`,
+  `created` and `updated` change only through their commands; any other field is the team's.
 
-When an agent stops heartbeating or times out:
-1. Agent status becomes `stale` (derived from `last_seen`)
-2. Claimed or in-progress tasks become stale after `stale_after_secs` of no
-   activity. Other agents can reclaim them — the new claimant takes ownership.
-3. Resource locks held by the agent are released
+### Search
 
-No automatic task release on disconnect. Tasks stay assigned until they
-become stale and another agent claims them, or until explicitly released.
-Use `touch_task` to prevent staleness for long-running work.
+- **Stores gather, the domain scores.** Stores turn entities into `Passage`s (one per
+  document section, one per skill) after applying the query's filters, and call
+  `search::score`. They never rank.
+- **Terms.** `tokenise` splits on non-alphanumerics, lowercases, and applies the English
+  Snowball stemmer.
+- **`score`** is BM25:
+  - `k1 = 1.2`, `b = 0.75`;
+  - title terms count 3× (a skill's title is its name plus summary);
+  - × the fraction of query terms matched;
+  - × 1.5 when the passage holds the exact phrase.
 
-## Agent Lifecycle
+  A passage matching no term is dropped; an empty query returns everything with zero
+  relevance.
+- **`rank`** orders by relevance × recency (90-day decay) × namespace proximity to the
+  anchor, then by recency, then by id, so ties are deterministic.
 
-### MCP agents
+### Relations
 
-**Startup:**
-1. `register_agent(alias="coder-1", project, description)` — roles auto-assigned from task demand. Returns full context: agent info, inbox, pending tasks, skills, handoff context, rescue info.
-2. `get_next_task` — `claim: true` (default) to claim; `claim: false` to peek
-3. `heartbeat` every ~30s (updates `last_seen`)
+- **Registry.** Sixteen relations in `Relation::ALL`. Endpoints are `EntityKind`s:
+  `document`, `skill`, `task`, `message`, `actor`; the first four count as content. Each declares its endpoints
+  (`accepts`), inverse, symmetry and arity as an exhaustive match, so adding a variant
+  without deciding them does not compile.
+- **Managed relations.** `parent`, `depends_on`, `supersedes` and `spawned_by` have side
+  effects and are refused by `orchy link`; `managed_by()` names the command that sets each.
 
-**Working:**
-- `poll_updates` + `check_mailbox` for reactivity
-- `lock_resource` before editing shared files
-- `write_knowledge` for decisions, discoveries, patterns
-- `touch_task` for long-running work (prevents staleness)
+### Messages
 
-**Completing:**
-- `complete_task` with actionable summary (never just "done")
-- `write_knowledge` for each key decision or discovery
+- **Recipients.** `@alias`, `@alias@machine`, `role:<r>`, `ns:<path>`, `broadcast`. They are
+  stored as written and resolved against the roster at read time (`Recipient::delivers_to`).
+- **Statuses.** Threads are `open | resolved`.
+- **Inbox.** Messages past the actor's read watermark.
+- **Promote.** `msg promote` creates a task with a `spawned_by` edge and resolves the thread.
 
-**Renaming:**
-- `rename_alias(new_alias)` — change alias, all internal references use UUID so nothing breaks
+## Code style
 
-**Disconnecting:**
-- `write_knowledge(kind: "context", path: "handoff")` with: task ID, progress, blockers, decisions
-- No `disconnect` tool — agents just stop calling. Tasks become stale, locks released.
+- No comments unless they explain something non-obvious. No TODOs, no docstrings on every
+  function.
+- No helper or utils files, and no generic module names (`utils`, `types`, `helpers`,
+  `common`, `shared`). A type belongs at the `orchy-core` crate root only if two or more
+  contexts name it in a public signature.
+- Traits first in each file, then types, constructors, methods, getters.
+- Return early; no `else` after `return`.
+- Test names read as sentences:
+  `fn a_blocked_task_must_be_unblocked_before_it_can_be_claimed()`.
+- Workspace lints: `unsafe_code = "deny"`, `unreachable_pub = "warn"`, clippy `all`. CI runs
+  clippy with `-D warnings`.
 
-### CLI agents (stateless, no MCP)
+### Import style
 
-For agents without MCP support (pi coding agent, Codex CLI, shell scripts). Each call is an independent REST request — no session, no heartbeat.
+Import types and use the short name everywhere; qualify only where the module adds meaning.
 
-**Config** (lowest → highest priority):
-1. `~/.orchy/config.toml` — global
-2. `.orchy.toml` — repo-local (walk up from cwd)
-3. Env vars: `ORCHY_URL`, `ORCHY_API_KEY`, `ORCHY_PROJECT`, `ORCHY_NAMESPACE`, `ORCHY_ALIAS`
-4. Per-call flags
+- **Types.** Never write `std::sync::Arc`, `chrono::DateTime` or `serde_json::Value` inline
+  in signatures, fields or bindings when an import works.
+- **Stdlib.** `Arc::new()`, `HashMap::new()`, `fmt::Display`, `io::Error`.
+- **External functions.** Import and use short (`Utc::now()`, `Duration::seconds()`), unless
+  the name is too generic to read alone.
+- **Internal paths.** Import them; do not write `crate::a::b::C` in type positions.
+- **Shadowed stdlib names.** When the domain `Result` shadows `std::result::Result`, import
+  the latter as `StdResult`.
 
-**Startup:**
-```bash
-orchy bootstrap --json      # briefing: inbox, tasks, skills, handoff context
-orchy agent register --alias coder-1 --description "Backend dev"
-```
+## Git and commits
 
-**Working:**
-```bash
-orchy task next --json                          # claim next task (default)
-orchy task next --claim false --json            # peek only, don't claim
-orchy task claim <id>
-orchy task start <id>
-orchy task touch <id>                           # keep-alive for long-running work
-orchy knowledge write <path> --kind decision --title "..." --content "..." --task-id <id>
-orchy message send --to @architect --body "..."
-orchy message send --to role:reviewer --body "..."
-orchy message send --to ns:/backend --body "..."
-orchy message send --to broadcast --body "..."
-orchy lock acquire <name> --ttl 300
-orchy event poll --json
-```
+- Conventional Commits: `type(scope): description`, lowercase, one line by default.
+  Scopes are crate or context names (`core/task`, `store-vault`, `cli`).
+- Branches are prefixed with the change type (`feat/…`, `fix/…`, `docs/…`). Feature work
+  happens in a worktree under `.worktrees/<branch-with-slashes-as-dashes>`.
+- Never push. Never stage without being asked. No `Co-Authored-By` or tool attribution.
+- Do not change commit-signing settings, and never bypass signing to get a commit through.
 
-**Completing:**
-```bash
-orchy task complete <id> --summary "..."
-orchy knowledge write handoff --kind context --title "Handoff" --content "..."
-```
+## Documentation policy
 
-`register_agent`, `heartbeat`, `disconnect`, and `session_status` do not exist in the CLI. Use `ORCHY_ALIAS` (or `--alias`) to identify yourself across calls.
-
-## Knowledge Module
-
-All persistent knowledge lives in a single unified module with typed entries.
-Use `list_knowledge_types` to discover available kinds.
-
-| Kind | Use for |
-|------|---------|
-| `note` | general observations and records |
-| `decision` | choices made with rationale |
-| `discovery` | things found or learned |
-| `pattern` | recurring approaches or conventions |
-| `context` | session summaries / agent state snapshots |
-| `document` | long-form specs, analysis, architecture |
-| `config` | configuration or setup information |
-| `reference` | external references or links |
-| `plan` | strategies, roadmaps, approaches |
-| `log` | activity or change log entries |
-| `skill` | instructions/conventions agents must follow |
-| `overview` | project summaries surfaced in bootstrap prompts |
-| `summary` | compact synthesized output: task summaries, agent rollups, state snapshots |
-| `report` | richer completion artifact: implementation reports, post-task writeups |
-
-**Paths** identify the topic: `auth-algorithm`, `api-design`, `error-handling`.
-Use hierarchy for sub-topics: `auth/jwt-strategy`. Don't repeat the kind in
-the path — the kind already categorizes. Scoped by `(project, namespace, path)`.
-
-**Skills** (kind=skill) inherit through namespace hierarchy — child namespaces
-override parent skills with the same path.
-
-A new agent joining the project should:
-1. `register_agent` returns skills, handoff context, inbox, and pending tasks
-2. `search_knowledge` to find decisions and discoveries relevant to the assigned work
-
-## Maintenance Patterns
-
-A "janitor" agent can compact and reorganize:
-
-- **Compact knowledge** — list related entries, merge into one, delete old ones
-  via `consolidate_knowledge`
-- **Extract skills** — find recurring patterns in knowledge, create kind=skill entries
-  via `promote_knowledge`
-- **Reorganize tasks** — merge related items, move to correct namespace
-- **Lock during compaction** — `lock_resource("compaction")` to prevent conflicts
-
-## Decisions Log
-
-- Memory uses optimistic concurrency (Version field), not locks. ResourceLock
-  handles external resource locking with TTL.
-- EventLog trait replaced by io::Writer — stores implement Writer directly.
-  Events persisted through: aggregate -> drain -> Writer::write.
-- sea-query for dynamic SQL in sqlite/pg stores. Recursive CTEs and FTS queries
-  remain as raw SQL (not expressible in sea-query's AST).
-- Restore structs over positional params for DB reconstruction.
-- UUID v7 everywhere for time-ordered identifiers.
-- Embeddings provider trait lives in orchy-application; implementations live in orchy-server crate.
-- TaskService was removed; all orchestration lives in orchy-application use cases.
-- poll_updates queries the events table, not task projections.
-- All tools require a registered session except `register_agent`,
-  `session_status`, `list_knowledge_types`, and `list_agents` (when `project`
-  is passed).
-- `Task.parent_id`, `Task.depends_on[]`, and `Knowledge.agent_id` were removed
-  as first-class DB columns. Relationships now live in the Edge graph layer:
-  `spawns` (parent→child), `depends_on` (task→task), `owned_by` (knowledge→agent).
-  Edge creation is automatic for `split_task`, `delegate_task`, `merge_tasks`,
-  `add_dependency`, and `write_knowledge` with `task_id`.
-- `get_neighbors`, `get_graph`, `list_edges` MCP tools removed — superseded by
-  `query_relations` (richer neighborhood traversal with semantic re-ranking).
-- **Alias-based identity** replaces UUID-based registration. Agents register
-  and reconnect via `(org, project, alias)`. UUID is internal only.
-- **Last-writer-wins on registration** — re-registering with same alias resumes
-  existing agent. No lockouts.
-- **Status derived from `last_seen`** — no stored state machine. Status is
-  computed as active/idle/stale from elapsed time since last heartbeat.
-- **Task staleness replaces auto-release** — tasks stay claimed but become
-  claimable after `stale_after_secs` of inactivity. `touch_task` keeps alive.
-- **Messages resolved at read time** — role/ns/broadcast targets stored as raw
-  strings, resolved dynamically when reading inbox.
-- **No disconnect tool** — agents stop calling. Tasks become stale naturally.
-  Resource locks released via heartbeat monitor.
-- **Auth-derived agent ownership** — API key resolution returns `ApiKeyPrincipal`
-  with org + user_id. Agent registration derives ownership from the authenticated
-  principal, not caller-supplied values. Ownership resume rules: none→attach,
-  same→resume, different→conflict.
-- **User-targeted messages are logical** — `user:<uuid>` targets are stored as
-  raw strings and resolved dynamically at mailbox-read time against the agent's
-  persisted `user_id`. No fan-out at send time.
-- **Claim semantics for logical targets** — role/ns/broadcast/user messages support
-  optional claim/unclaim. Claimed logical messages are hidden from sibling default
-  inboxes but remain visible in history/thread views.
-- **MCP/REST alias parity** — both REST and MCP resolve `@alias` in send_message
-  and lock_resource. Alias uniqueness enforced per `(org, project, alias)`.
-- **Namespace mark-read via receipts** — namespace-targeted messages create receipts
-  on read, enabling consistent mark_read behavior with other logical targets.
-- **Knowledge paths in edges resolved to UUIDs** — `add_edge` resolves knowledge
-  paths to UUIDs at creation time so edges don't break when entries are renamed
-  or moved. If the entry can't be found (e.g. doesn't exist yet), the path is
-  stored as-is as a fallback.
-- **Default relation types per anchor kind** — `query_relations` (and inlined
-  neighborhood queries) filter edges to relevant types by default:
-  - Task anchors: depends_on, spawns, implements, produces, supersedes, merged_from, derived_from, invalidates, contradicted_by
-  - Knowledge anchors: produces, supported_by, derived_from, invalidates
-  - Agent anchors: owned_by, reviewed_by
-  Pass explicit `rel_types` to override.
-
-## Configuration
-
-```toml
-[server]
-host = "127.0.0.1"
-port = 4310
-heartbeat_timeout_secs = 300
-
-[store]
-backend = "sqlite"    # "sqlite", "postgres", or "memory"
-
-[store.sqlite]
-path = "orchy.db"
-
-# [store.postgres]
-# url = "postgres://orchy:orchy@localhost:5432/orchy"
-
-# [auth]
-# jwt_duration_hours = 24
-# cookie_secure = false
-# bcrypt_cost = 10
-# keys_dir = "keys"
-
-# [skills]
-# dir = "skills"
-
-# [embeddings]
-# provider = "openai"
-# [embeddings.openai]
-# url = "https://api.openai.com/v1/embeddings"
-# model = "text-embedding-3-small"
-# dimensions = 1536
-```
-
-## Documentation Policy
-
-- `docs/` is tracked in git and is for durable, human-facing project documentation.
-- Agents MUST NOT write to `docs/` or commit into it unless explicitly requested by a human.
-- Commit only docs written for humans: architecture notes, operator/user docs, ADRs, status docs, migration notes, and similar long-lived references.
-- Never commit `docs/superpowers/**`.
-- Never commit agent-only artifacts anywhere under `docs/`: plans for agents, scratch analysis, investigation dumps, validation reports, prompt/session artifacts, or internal execution notes.
-- If agent work produces useful insight, rewrite it into a concise human-facing document before committing it under `docs/`.
-- When in doubt, do not commit the doc until it is clearly useful to a human reader who is not reconstructing agent context.
-
-## Code Style
-
-- Rust edition 2024, DDD + Hexagonal
-- No comments unless essential. No helper/utils files.
-- Traits first in each file, then types, constructors, methods, getters
-- Return early / guard clauses, no else after return
-- `cargo fmt` before committing
-- Conventional commits: `type(scope): description`
-- Do not change repo or global commit signing settings. Agent-run signed commits often fail because GPG prompts for a password. If signing would block an agent-run commit, ask the user to run it or use a one-off unsigned commit only when explicitly appropriate. No Co-Authored-By, never push
-
-### Import Style
-
-Import types and common values; use short names everywhere except where module qualification adds clarity.
-
-**Types** (structs, enums, traits, type aliases): Always import and use the short name. Never write `std::sync::Arc`, `chrono::DateTime`, `sqlx::PgPool`, `uuid::Uuid`, or `serde_json::Value` inline in signatures, fields, or let bindings when an import works.
-
-**Stdlib**: Import and use short. `Arc::new()`, `HashMap::new()`, `io::Error::new()`, `iter::repeat_n`, `fmt::Display`, `env::var`. No inline `std::collections::HashMap` or `std::io::ErrorKind`.
-
-**External crate functions**: Prefer importing and using short, but keep module qualification when the function name is too generic and the module adds needed context. `sqlx::query(...)` and `sqlx::query_as(...)` stay qualified; `Utc::now()`, `Duration::seconds()`, `Value::String(...)` become short.
-
-**Internal `crate::` paths**: Import and use short. Do not write `crate::a::b::C` in type positions or expressions. `crate::apply_cursor_pagination` is fine for a top-level crate helper, but `crate::foo::bar::Baz` in a type annotation must be imported. Exception: `module::function()` for internal utilities where the module name provides semantic context.
-
-**Turbofish / disambiguation**: When the domain `Result` shadows `std::result::Result`, import it aliased (`use std::result::Result as StdResult;`) rather than spelling out the full path in turbofish. Same pattern for other shadowed stdlib types.
-
-**Macro syntax**: `$crate::` in macro bodies and `rusqlite::params![]` are fine — they are macro-level qualification, not type annotations.
+- `docs/` is for durable, human-facing documentation: architecture notes, ADRs, operator
+  guides, migration notes.
+- Do not write to or commit into `docs/` unless a human explicitly asks.
+- Never commit agent-only artifacts (plans, scratch analysis, investigation dumps, session
+  notes). Rewrite useful insight into a concise human-facing document first.
+- Keep `README.md` in step with the command surface. When a command, flag, default or exit
+  code changes, update it in the same change.
 
 ## Running
 
-All common commands live in the `justfile`. Run `just` (no args) to list
-recipes.
-
 ```bash
-just              # list available recipes
+just              # list recipes
 just build        # cargo build --workspace
-just test         # unit tests (no containers)
+just test         # cargo test --workspace --no-fail-fast
 just lint         # cargo clippy --workspace --all-targets -- -D warnings
 just fmt          # cargo fmt --all
-just server       # cargo run -p orchy-server
-just cli -- --help
-
-# Integration tests (per-test testcontainers; podman/docker required)
-just it-pg          # orchy-store-pg
-just it-conformance # orchy-store-conformance
-just it-sqs         # orchy-events-sqs
-just it-kafka       # orchy-events-kafka
-just it             # all of the above
-
-# Single test by pattern, with stdout
-just t pg_reader_streaming
-
-# Manual postgres for `just server` against persistent DB (legacy flow)
-just db-up
-just db-down
+just check        # fmt + lint + test
+just t <pattern>  # matching tests, with output
+just orchy <args> # cargo run -p orchy-cli -- <args>
 ```
 
-The justfile auto-sets `DOCKER_HOST` to the rootless podman socket and
-disables ryuk. Override `DOCKER_HOST` externally if you use a different
-runtime.
+No containers or services are needed. Vault tests run in temporary directories. The
+`orchy-cli` integration tests (`tests/cli.rs`, `tests/concurrent_agents.rs`) drive the built
+binary, including many agents racing for the same work.
 
-For raw cargo invocations without `just`:
+To try the CLI without touching your real vault or settings:
 
 ```bash
-export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock
-export TESTCONTAINERS_RYUK_DISABLED=true
-cargo test -p <crate> --features integration-tests -- --test-threads=1
+export XDG_CONFIG_HOME=$(mktemp -d) ORCHY_VAULT=$(mktemp -d)/vault
+just orchy init && just orchy --actor coder-1 announce --roles developer
 ```
-
-The legacy `compose.yml` is kept for manual server runs against a
-persistent Postgres. Tests no longer require it.
