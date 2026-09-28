@@ -1,17 +1,15 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use grep_matcher::Matcher;
-use grep_regex::{RegexMatcher, RegexMatcherBuilder};
-use grep_searcher::{Searcher, sinks::UTF8};
 use orchy_core::{
-    DomainError, EntityKind, EntityRef, Hit, Result, Search, SearchQuery, SkillStore,
+    Document, EntityKind, EntityRef, Hit, Passage, Result, Search, SearchQuery, Skill, SkillStore,
+    score,
 };
 
 use crate::documents::VaultDocumentStore;
 use crate::skills::VaultSkillStore;
 
-const HEADLINE_WEIGHT: usize = 3;
+const EXCERPT: usize = 240;
 
 pub struct VaultSearch {
     documents: Arc<VaultDocumentStore>,
@@ -27,133 +25,86 @@ impl VaultSearch {
 #[async_trait]
 impl Search for VaultSearch {
     async fn sections(&self, query: &SearchQuery) -> Result<Vec<Hit>> {
-        let matcher = RegexMatcherBuilder::new()
-            .case_insensitive(true)
-            .build(&regex_syntax::escape(&query.text))
-            .map_err(|e| DomainError::validation(format!("bad search pattern: {e}")))?;
-
-        let mut hits = Vec::new();
+        let mut passages = Vec::new();
         if query.covers(EntityKind::Skill) {
-            hits.extend(self.skills(query, &matcher).await?);
-        }
-        if !query.covers(EntityKind::Document) {
-            return Ok(hits);
-        }
-
-        for document in self.documents.all().await? {
-            if let Some(kinds) = &query.kind
-                && !kinds.contains(document.kind())
-            {
-                continue;
-            }
-            if let Some(statuses) = &query.status {
-                match document.status() {
-                    Some(status) if statuses.contains(&status) => {}
-                    _ => continue,
-                }
-            }
-            if let Some(namespace) = &query.namespace
-                && !namespace.contains(document.namespace())
-            {
-                continue;
-            }
-            if !query.tags.iter().all(|t| document.tags().contains(t)) {
-                continue;
-            }
-
-            let title_matches = count_matches(&matcher, document.title().as_str())?;
-            if title_matches > 0 {
-                hits.push(Hit {
-                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
-                    heading: Some(document.title().to_string()),
-                    excerpt: document.body().as_str().trim().chars().take(240).collect(),
-                    namespace: document.namespace().clone(),
-                    updated_at: document.updated_at(),
-                    matches: title_matches,
-                });
-            }
-
-            for section in document.body().sections() {
-                let haystack = format!("{}\n{}", section.heading, section.body);
-                let matches = count_matches(&matcher, &haystack)?;
-                if matches == 0 && !query.text.is_empty() {
-                    continue;
-                }
-                hits.push(Hit {
-                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
-                    heading: Some(section.heading.clone()),
-                    excerpt: section.body.trim().chars().take(240).collect(),
-                    namespace: document.namespace().clone(),
-                    updated_at: document.updated_at(),
-                    matches,
-                });
-            }
-
-            if document.body().sections().is_empty() {
-                let matches = count_matches(&matcher, document.body().as_str())?;
-                if matches > 0 || query.text.is_empty() {
-                    hits.push(Hit {
-                        entity: EntityRef::new(EntityKind::Document, document.id().clone()),
-                        heading: None,
-                        excerpt: document.body().as_str().trim().chars().take(240).collect(),
-                        namespace: document.namespace().clone(),
-                        updated_at: document.updated_at(),
-                        matches,
-                    });
+            for skill in self.skills.all().await? {
+                if skill_selected(&skill, query) {
+                    passages.push(skill_passage(&skill));
                 }
             }
         }
-        Ok(hits)
+        if query.covers(EntityKind::Document) {
+            for document in self.documents.all().await? {
+                if document_selected(&document, query) {
+                    passages.extend(document_passages(&document));
+                }
+            }
+        }
+        Ok(score(passages, &query.text))
     }
 }
 
-impl VaultSearch {
-    async fn skills(&self, query: &SearchQuery, matcher: &RegexMatcher) -> Result<Vec<Hit>> {
-        let mut hits = Vec::new();
-        for skill in self.skills.all().await? {
-            if !query.retired && !skill.is_active() {
-                continue;
-            }
-            if let Some(namespace) = &query.namespace
-                && !namespace.contains(skill.namespace())
-            {
-                continue;
-            }
-            if !query.tags.iter().all(|t| skill.tags().contains(t)) {
-                continue;
-            }
+fn skill_selected(skill: &Skill, query: &SearchQuery) -> bool {
+    if !query.retired && !skill.is_active() {
+        return false;
+    }
+    if let Some(namespace) = &query.namespace
+        && !namespace.contains(skill.namespace())
+    {
+        return false;
+    }
+    query.tags.iter().all(|t| skill.tags().contains(t))
+}
 
-            let headline = format!("{} {}", skill.name(), skill.summary());
-            let matches = HEADLINE_WEIGHT * count_matches(matcher, &headline)?
-                + count_matches(matcher, skill.body().as_str())?;
-            if matches == 0 && !query.text.is_empty() {
-                continue;
-            }
-
-            hits.push(Hit {
-                entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),
-                heading: Some(skill.name().to_string()),
-                excerpt: skill.summary().to_string(),
-                namespace: skill.namespace().clone(),
-                updated_at: skill.updated_at(),
-                matches,
-            });
-        }
-        Ok(hits)
+fn skill_passage(skill: &Skill) -> Passage {
+    Passage {
+        entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),
+        heading: Some(skill.name().to_string()),
+        title: format!("{} {}", skill.name(), skill.summary()),
+        body: skill.body().as_str().to_owned(),
+        excerpt: skill.summary().to_string(),
+        namespace: skill.namespace().clone(),
+        updated_at: skill.updated_at(),
     }
 }
 
-fn count_matches(matcher: &RegexMatcher, haystack: &str) -> Result<usize> {
-    let mut count = 0;
-    Searcher::new()
-        .search_slice(
-            matcher,
-            haystack.as_bytes(),
-            UTF8(|_, line| {
-                count += matcher.find_iter(line.as_bytes(), |_| true).is_ok() as usize;
-                Ok(true)
-            }),
-        )
-        .map_err(|e| DomainError::validation(format!("search failed: {e}")))?;
-    Ok(count)
+fn document_selected(document: &Document, query: &SearchQuery) -> bool {
+    if let Some(kinds) = &query.kind
+        && !kinds.contains(document.kind())
+    {
+        return false;
+    }
+    if let Some(statuses) = &query.status {
+        match document.status() {
+            Some(status) if statuses.contains(&status) => {}
+            _ => return false,
+        }
+    }
+    if let Some(namespace) = &query.namespace
+        && !namespace.contains(document.namespace())
+    {
+        return false;
+    }
+    query.tags.iter().all(|t| document.tags().contains(t))
+}
+
+fn document_passages(document: &Document) -> Vec<Passage> {
+    let passage = |heading: Option<String>, body: &str| Passage {
+        entity: EntityRef::new(EntityKind::Document, document.id().clone()),
+        heading,
+        title: document.title().to_string(),
+        body: body.to_owned(),
+        excerpt: body.trim().chars().take(EXCERPT).collect(),
+        namespace: document.namespace().clone(),
+        updated_at: document.updated_at(),
+    };
+
+    let sections = document.body().sections();
+    if sections.is_empty() {
+        return vec![passage(None, document.body().as_str())];
+    }
+    sections
+        .iter()
+        .map(|section| passage(Some(section.heading.clone()), section.body))
+        .collect()
 }

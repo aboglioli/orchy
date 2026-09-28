@@ -352,6 +352,123 @@ fn completions_are_generated_without_a_vault() {
     assert!(script.contains("orchy"), "a fish completion script");
 }
 
+fn seeded_for_recall() -> tempfile::TempDir {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "decision",
+            "Never edit an applied migration",
+            "--body",
+            "A long migration holds the lock and blocks every deploy.",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Frontend tokens",
+            "--body",
+            "Design tokens are generated at build time.",
+        ],
+    );
+    temp
+}
+
+#[test]
+fn recall_finds_a_word_through_its_inflections() {
+    let temp = seeded_for_recall();
+
+    for query in ["migration", "migrations", "migrate", "MIGRATING"] {
+        let hits = json(temp.path(), &["recall", query]);
+        assert_eq!(
+            hits.as_array().unwrap().len(),
+            1,
+            "`{query}` should reach the same document"
+        );
+    }
+}
+
+#[test]
+fn recall_matches_words_that_are_not_next_to_each_other() {
+    let temp = seeded_for_recall();
+
+    for query in [
+        vec!["recall", "deploy", "lock"],
+        vec!["recall", "lock", "deploy"],
+        vec!["recall", "blocks", "migration", "deploy"],
+    ] {
+        let hits = json(temp.path(), &query);
+        assert_eq!(
+            hits.as_array().unwrap().len(),
+            1,
+            "{query:?} are all words in the document, in some order"
+        );
+    }
+}
+
+#[test]
+fn recall_leaves_out_what_carries_none_of_the_query() {
+    let temp = seeded_for_recall();
+    let hits = json(temp.path(), &["recall", "migration"]);
+
+    assert_eq!(hits.as_array().unwrap().len(), 1);
+    assert!(
+        !hits[0]["excerpt"]
+            .as_str()
+            .unwrap()
+            .contains("Design tokens"),
+        "an unrelated document is not a weak match, it is not a match"
+    );
+}
+
+#[test]
+fn a_hit_carries_how_relevant_it_was_so_a_caller_can_judge() {
+    let temp = seeded_for_recall();
+    let hits = json(temp.path(), &["recall", "migration"]);
+
+    assert!(
+        hits[0]["relevance"].as_f64().unwrap() > 0.0,
+        "relevance is reported, not just an order: {hits}"
+    );
+}
+
+#[test]
+fn the_document_a_query_is_most_about_comes_first() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Migration safety",
+            "--body",
+            "Never edit an applied migration.",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Weekly notes",
+            "--body",
+            "We talked about the migration in passing.",
+        ],
+    );
+
+    let hits = json(temp.path(), &["recall", "migration"]);
+    assert!(
+        hits[0]["excerpt"]
+            .as_str()
+            .unwrap()
+            .contains("Never edit an applied"),
+        "the document titled for the subject outranks one that mentions it: {hits}"
+    );
+}
+
 fn as_actor(vault: &Path, actor: &str, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_orchy"))
         .args(args)

@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{EntityKind, EntityRef, Hit, Result, Search, SearchQuery, SkillStore};
+use orchy_core::{
+    EntityKind, EntityRef, Hit, Passage, Result, Search, SearchQuery, SkillStore, score,
+};
 
 use crate::documents::MemoryDocumentStore;
 use crate::skills::MemorySkillStore;
+
+const EXCERPT: usize = 240;
 
 pub struct MemorySearch {
     documents: Arc<MemoryDocumentStore>,
@@ -20,37 +24,26 @@ impl MemorySearch {
 #[async_trait]
 impl Search for MemorySearch {
     async fn sections(&self, query: &SearchQuery) -> Result<Vec<Hit>> {
-        let needle = query.text.to_lowercase();
-        let mut hits = Vec::new();
+        let mut passages = Vec::new();
 
         if query.covers(EntityKind::Skill) {
             for skill in self.skills.all().await? {
                 if !query.retired && !skill.is_active() {
                     continue;
                 }
-                let haystack = format!(
-                    "{} {} {}",
-                    skill.name(),
-                    skill.summary(),
-                    skill.body().as_str()
-                )
-                .to_lowercase();
-                let matches = haystack.matches(&needle).count();
-                if matches == 0 && !needle.is_empty() {
-                    continue;
-                }
-                hits.push(Hit {
+                passages.push(Passage {
                     entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),
                     heading: Some(skill.name().to_string()),
+                    title: format!("{} {}", skill.name(), skill.summary()),
+                    body: skill.body().as_str().to_owned(),
                     excerpt: skill.summary().to_string(),
                     namespace: skill.namespace().clone(),
                     updated_at: skill.updated_at(),
-                    matches,
                 });
             }
         }
         if !query.covers(EntityKind::Document) {
-            return Ok(hits);
+            return Ok(score(passages, &query.text));
         }
 
         for document in self.documents.snapshot() {
@@ -74,65 +67,17 @@ impl Search for MemorySearch {
                 continue;
             }
 
-            let title_matches = document
-                .title()
-                .as_str()
-                .to_lowercase()
-                .matches(&needle)
-                .count();
-            if title_matches > 0 {
-                hits.push(Hit {
-                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
-                    heading: Some(document.title().to_string()),
-                    excerpt: excerpt(document.body().as_str()),
-                    namespace: document.namespace().clone(),
-                    updated_at: document.updated_at(),
-                    matches: title_matches,
-                });
-            }
-
-            let sections = document.body().sections();
-            if sections.is_empty() {
-                let matches = document
-                    .body()
-                    .as_str()
-                    .to_lowercase()
-                    .matches(&needle)
-                    .count();
-                if matches > 0 || needle.is_empty() {
-                    hits.push(Hit {
-                        entity: EntityRef::new(EntityKind::Document, document.id().clone()),
-                        heading: None,
-                        excerpt: excerpt(document.body().as_str()),
-                        namespace: document.namespace().clone(),
-                        updated_at: document.updated_at(),
-                        matches,
-                    });
-                }
-                continue;
-            }
-
-            for section in sections {
-                let haystack = format!("{} {}", section.heading, section.body).to_lowercase();
-                let matches = haystack.matches(&needle).count();
-                if matches == 0 && !needle.is_empty() {
-                    continue;
-                }
-                hits.push(Hit {
-                    entity: EntityRef::new(EntityKind::Document, document.id().clone()),
-                    heading: Some(section.heading.clone()),
-                    excerpt: excerpt(section.body),
-                    namespace: document.namespace().clone(),
-                    updated_at: document.updated_at(),
-                    matches,
-                });
-            }
+            let body = document.body().as_str();
+            passages.push(Passage {
+                entity: EntityRef::new(EntityKind::Document, document.id().clone()),
+                heading: None,
+                title: document.title().to_string(),
+                body: body.to_owned(),
+                excerpt: body.trim().chars().take(EXCERPT).collect(),
+                namespace: document.namespace().clone(),
+                updated_at: document.updated_at(),
+            });
         }
-
-        Ok(hits)
+        Ok(score(passages, &query.text))
     }
-}
-
-fn excerpt(body: &str) -> String {
-    body.trim().chars().take(240).collect()
 }

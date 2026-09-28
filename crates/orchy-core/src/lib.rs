@@ -36,7 +36,7 @@ pub use message::{
 pub use namespace::Namespace;
 pub use pagination::{Page, PageRequest};
 pub use priority::Priority;
-pub use search::{Hit, Search, SearchQuery, rank};
+pub use search::{Hit, Passage, Search, SearchQuery, rank, score, tokenise};
 pub use skill::{RestoreSkill, Skill, SkillName, SkillStatus, SkillStore, Summary};
 pub use tag::Tag;
 pub use task::{RestoreTask, Task, TaskQuery, TaskStatus, TaskStore, rollup};

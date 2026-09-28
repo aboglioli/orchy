@@ -484,14 +484,11 @@ async fn recall_finds_a_document_by_a_word_only_in_its_title() {
         1,
         "a document whose subject lives in its name must still be findable"
     );
-    assert_eq!(
-        hits[0].heading.as_deref(),
-        Some("Drop JWT for opaque tokens")
-    );
+    assert!(hits[0].relevance > 0.0);
 }
 
 #[tokio::test]
-async fn a_body_match_and_a_title_match_are_separate_hits() {
+async fn a_term_in_both_the_title_and_the_body_is_one_hit_not_two() {
     let fixture = Fixture::new().await;
     fixture
         .app
@@ -515,5 +512,10 @@ async fn a_body_match_and_a_title_match_are_separate_hits() {
         .await
         .unwrap();
 
-    assert_eq!(hits.len(), 2, "one for the title, one for the section");
+    assert_eq!(
+        hits.len(),
+        1,
+        "a title is weight on the section that matched, not a second row for the same document"
+    );
+    assert_eq!(hits[0].heading.as_deref(), Some("Detail"));
 }
