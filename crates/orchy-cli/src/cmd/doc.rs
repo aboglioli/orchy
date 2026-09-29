@@ -27,8 +27,19 @@ pub(crate) async fn new(
     command: CreateDocumentCommand,
     out: &Output,
 ) -> CliResult<()> {
-    let document = app.create_document.execute(command).await?;
-    out.emit(&document, |d| format!("{}  {}", short(&d.id), d.title))
+    let created = app.create_document.execute(command).await?;
+    out.emit(&created, |c| {
+        let mut lines = vec![format!("{}  {}", short(&c.document.id), c.document.title)];
+        if !c.similar.is_empty() {
+            lines.push("similar, supersede or link instead of repeating:".to_owned());
+            lines.extend(
+                c.similar
+                    .iter()
+                    .map(|h| format!("  {}  {}", short(&h.id), h.title)),
+            );
+        }
+        lines.join("\n")
+    })
 }
 
 pub(crate) async fn read(

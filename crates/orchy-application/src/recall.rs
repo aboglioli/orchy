@@ -160,6 +160,7 @@ impl Recall {
             if let Some(passage) = self.passage(&entity, query).await? {
                 hits.push(Hit {
                     entity: passage.entity,
+                    title: passage.title,
                     heading: passage.heading,
                     excerpt: passage.excerpt,
                     body: passage.body,

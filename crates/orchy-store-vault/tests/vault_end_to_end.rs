@@ -276,7 +276,8 @@ async fn a_documents_own_frontmatter_survives_an_edit_by_orchy() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .document;
 
     let path = format!("docs/backend/{}.md", document.id);
     let original = fixture.read(&path);
@@ -323,7 +324,8 @@ async fn an_edit_is_refused_when_the_document_changed_since_it_was_read() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .document;
 
     let stale = document.content_hash.clone();
     fixture

@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorId, ActorStore, Body, Clock, Document, DocumentStore, Edge, EdgeStore, EntityRef, Id,
-    IdGenerator, Kind, Namespace, Relation, Tag, TaskStore, Title,
+    ActorId, ActorStore, Body, Clock, Document, DocumentStatus, DocumentStore, Edge, EdgeStore,
+    EntityKind, EntityRef, Hit, Id, IdGenerator, Kind, Namespace, Relation, Search, SearchQuery,
+    Tag, TaskStore, Title,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::dto::DocumentDto;
+use crate::dto::{DocumentDto, HitDto};
 use crate::error::ApplicationResult;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -22,8 +23,21 @@ pub struct CreateDocumentCommand {
     pub fields: Vec<(String, Value)>,
 }
 
+const MAX_SIMILAR: usize = 3;
+/// Another document counts as similar when it matches the new title at least half as well
+/// as the new document itself does, which keeps the bar independent of vault size.
+const SIMILAR_SHARE: f64 = 0.5;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateDocumentResponse {
+    #[serde(flatten)]
+    pub document: DocumentDto,
+    pub similar: Vec<HitDto>,
+}
+
 pub struct CreateDocument {
     documents: Arc<dyn DocumentStore>,
+    search: Arc<dyn Search>,
     actors: Arc<dyn ActorStore>,
     tasks: Arc<dyn TaskStore>,
     edges: Arc<dyn EdgeStore>,
@@ -34,6 +48,7 @@ pub struct CreateDocument {
 impl CreateDocument {
     pub fn new(
         documents: Arc<dyn DocumentStore>,
+        search: Arc<dyn Search>,
         actors: Arc<dyn ActorStore>,
         tasks: Arc<dyn TaskStore>,
         edges: Arc<dyn EdgeStore>,
@@ -42,6 +57,7 @@ impl CreateDocument {
     ) -> Self {
         Self {
             documents,
+            search,
             actors,
             tasks,
             edges,
@@ -50,7 +66,10 @@ impl CreateDocument {
         }
     }
 
-    pub async fn execute(&self, cmd: CreateDocumentCommand) -> ApplicationResult<DocumentDto> {
+    pub async fn execute(
+        &self,
+        cmd: CreateDocumentCommand,
+    ) -> ApplicationResult<CreateDocumentResponse> {
         let kind = cmd.kind.parse::<Kind>()?;
         let producer = match &cmd.produced_by {
             Some(task) => Some(self.tasks.require(&Id::new(task)?).await?.id().clone()),
@@ -95,6 +114,49 @@ impl CreateDocument {
                 )?)
                 .await?;
         }
-        Ok(DocumentDto::from(&document))
+        Ok(CreateDocumentResponse {
+            similar: self.similar_to(&document).await?,
+            document: DocumentDto::from(&document),
+        })
+    }
+
+    async fn similar_to(&self, document: &Document) -> ApplicationResult<Vec<HitDto>> {
+        let hits = self
+            .search
+            .sections(&SearchQuery {
+                text: document.title().to_string(),
+                entities: Some(vec![EntityKind::Document]),
+                exclude_status: DocumentStatus::RETIRED.to_vec(),
+                limit: usize::MAX,
+                ..Default::default()
+            })
+            .await?;
+
+        let own = hits
+            .iter()
+            .filter(|h| h.entity.id() == document.id())
+            .map(|h| h.relevance)
+            .fold(0.0, f64::max);
+        if own <= 0.0 {
+            return Ok(Vec::new());
+        }
+
+        let mut best: Vec<&Hit> = Vec::new();
+        for hit in hits.iter().filter(|h| h.entity.id() != document.id()) {
+            if hit.relevance < own * SIMILAR_SHARE {
+                continue;
+            }
+            match best.iter_mut().find(|b| b.entity == hit.entity) {
+                Some(kept) if kept.relevance < hit.relevance => *kept = hit,
+                Some(_) => {}
+                None => best.push(hit),
+            }
+        }
+        best.sort_by(|a, b| b.relevance.total_cmp(&a.relevance));
+        Ok(best
+            .into_iter()
+            .take(MAX_SIMILAR)
+            .map(HitDto::from)
+            .collect())
     }
 }

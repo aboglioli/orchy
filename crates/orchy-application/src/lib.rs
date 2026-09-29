@@ -268,6 +268,7 @@ impl Application {
 
             create_document: CreateDocument::new(
                 Arc::clone(&documents),
+                Arc::clone(&search),
                 Arc::clone(&actors),
                 Arc::clone(&tasks),
                 Arc::clone(&edges),

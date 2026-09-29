@@ -3159,3 +3159,40 @@ fn export_prints_one_json_object_per_entity() {
         .collect();
     assert_eq!(entities, vec!["document", "skill", "task"]);
 }
+
+#[test]
+fn new_points_at_documents_that_already_cover_the_title() {
+    let temp = vault();
+    let existing = json(
+        temp.path(),
+        &["new", "decision", "rotate signing keys", "--body", "weekly"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    ok(
+        temp.path(),
+        &["new", "note", "caching layer", "--body", "redis"],
+    );
+
+    let created = json(
+        temp.path(),
+        &[
+            "new",
+            "decision",
+            "signing keys rotation",
+            "--body",
+            "monthly",
+        ],
+    );
+    let similar = created["similar"].as_array().unwrap();
+    assert_eq!(similar.len(), 1, "{created}");
+    assert_eq!(similar[0]["id"], existing.as_str());
+    assert_eq!(similar[0]["title"], "rotate signing keys");
+
+    let text = ok(
+        temp.path(),
+        &["new", "note", "unrelated topic", "--body", "z"],
+    );
+    assert!(!text.contains("similar"), "{text}");
+}

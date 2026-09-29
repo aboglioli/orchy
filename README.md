@@ -311,6 +311,9 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
   `candidate` starts `proposed` until `orchy promote` turns it into a real type or
   `orchy reject` turns it down; a rejected candidate stays in the vault, out of search. Promoting a candidate `--as skill` creates a skill from it instead, and the
   candidate stays behind, marked `promoted`, as the record of the proposal.
+- **Already known?** `new` lists up to three existing documents that match the new title
+  about as well as the new one does (`similar` in `--json`), so an agent can supersede or
+  link one instead of recording the same thing twice.
 - **Duplicates.** Merge their text into one document with `edit`, then
   `orchy consolidate <dup>... --into <doc>` supersedes the duplicates by it, carries their
   tags over and records `merged_from` links, so search returns only the merged document.

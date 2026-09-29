@@ -103,6 +103,7 @@ pub struct Passage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
     pub entity: EntityRef,
+    pub title: String,
     pub heading: Option<String>,
     pub excerpt: String,
     pub body: String,
@@ -115,6 +116,7 @@ impl Passage {
     fn into_hit(self, relevance: f64) -> Hit {
         Hit {
             entity: self.entity,
+            title: self.title,
             heading: self.heading,
             excerpt: self.excerpt,
             body: self.body,
@@ -315,6 +317,7 @@ mod tests {
     fn hit(id: &str, ns: &str, relevance: f64, updated_at: DateTime<Utc>) -> Hit {
         Hit {
             entity: EntityRef::new(EntityKind::Document, Id::new(id).unwrap()),
+            title: String::new(),
             heading: None,
             excerpt: String::new(),
             body: String::new(),
