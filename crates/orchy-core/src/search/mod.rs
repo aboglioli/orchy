@@ -7,15 +7,17 @@ use chrono::{DateTime, Utc};
 
 pub use terms::tokenise;
 
-use crate::document::{DocumentStatus, Kind};
+use crate::document::{Document, DocumentStatus, Kind};
 use crate::entity_ref::{EntityKind, EntityRef};
 use crate::error::Result;
 use crate::namespace::Namespace;
+use crate::skill::Skill;
 use crate::tag::Tag;
 
 const K1: f64 = 1.2;
 const B: f64 = 0.75;
 const TITLE_WEIGHT: f64 = 3.0;
+const HEADING_WEIGHT: f64 = 2.0;
 const PHRASE_BONUS: f64 = 1.5;
 
 #[async_trait]
@@ -42,6 +44,35 @@ impl SearchQuery {
         self.entities.as_ref().is_none_or(|k| k.contains(&kind))
     }
 
+    pub fn selects_document(&self, document: &Document) -> bool {
+        if let Some(kinds) = &self.kind
+            && !kinds.contains(document.kind())
+        {
+            return false;
+        }
+        if !self.admits(document.status()) {
+            return false;
+        }
+        if let Some(namespace) = &self.namespace
+            && !namespace.contains(document.namespace())
+        {
+            return false;
+        }
+        self.tags.iter().all(|t| document.tags().contains(t))
+    }
+
+    pub fn selects_skill(&self, skill: &Skill) -> bool {
+        if !self.retired && !skill.is_active() {
+            return false;
+        }
+        if let Some(namespace) = &self.namespace
+            && !namespace.contains(skill.namespace())
+        {
+            return false;
+        }
+        self.tags.iter().all(|t| skill.tags().contains(t))
+    }
+
     /// A document with no status always passes: it has not been retired from anything.
     pub fn admits(&self, status: Option<DocumentStatus>) -> bool {
         match (&self.status, status) {
@@ -57,6 +88,8 @@ impl SearchQuery {
 pub struct Passage {
     pub entity: EntityRef,
     pub heading: Option<String>,
+    /// Scored between the title and the body: the words a section is named by.
+    pub heading_terms: String,
     pub title: String,
     pub body: String,
     pub excerpt: String,
@@ -87,12 +120,15 @@ impl Passage {
     }
 
     fn holds_phrase(&self, needle: &str) -> bool {
-        self.title.to_lowercase().contains(needle) || self.body.to_lowercase().contains(needle)
+        [&self.title, &self.heading_terms, &self.body]
+            .iter()
+            .any(|text| text.to_lowercase().contains(needle))
     }
 }
 
 struct Indexed {
     title: Vec<String>,
+    heading: Vec<String>,
     body: Vec<String>,
 }
 
@@ -100,21 +136,71 @@ impl Indexed {
     fn of(passage: &Passage) -> Self {
         Self {
             title: tokenise(&passage.title),
+            heading: tokenise(&passage.heading_terms),
             body: tokenise(&passage.body),
         }
     }
 
     fn length(&self) -> f64 {
-        (self.title.len() + self.body.len()) as f64
+        (self.title.len() + self.heading.len() + self.body.len()) as f64
     }
 
     fn weighted_frequency(&self, term: &str) -> f64 {
         let occurrences = |tokens: &[String]| tokens.iter().filter(|t| *t == term).count() as f64;
-        TITLE_WEIGHT * occurrences(&self.title) + occurrences(&self.body)
+        TITLE_WEIGHT * occurrences(&self.title)
+            + HEADING_WEIGHT * occurrences(&self.heading)
+            + occurrences(&self.body)
     }
 
     fn holds(&self, term: &str) -> bool {
-        self.title.iter().any(|t| t == term) || self.body.iter().any(|t| t == term)
+        [&self.title, &self.heading, &self.body]
+            .iter()
+            .any(|tokens| tokens.iter().any(|t| t == term))
+    }
+}
+
+const EXCERPT: usize = 240;
+
+/// What a document is searched as: its preamble, then one passage per section, each carrying
+/// the document's title. A body with no headings is a single passage.
+pub fn document_passages(document: &Document) -> Vec<Passage> {
+    let passage = |heading: Option<&str>, body: &str| Passage {
+        entity: EntityRef::new(EntityKind::Document, document.id().clone()),
+        heading: heading.map(str::to_owned),
+        heading_terms: heading.unwrap_or_default().to_owned(),
+        title: document.title().to_string(),
+        body: body.to_owned(),
+        excerpt: body.trim().chars().take(EXCERPT).collect(),
+        namespace: document.namespace().clone(),
+        updated_at: document.updated_at(),
+    };
+
+    let body = document.body();
+    let sections = body.sections();
+    let preamble = body.preamble();
+    let mut passages = Vec::with_capacity(sections.len() + 1);
+    if !preamble.is_empty() || sections.is_empty() {
+        passages.push(passage(None, preamble));
+    }
+    passages.extend(
+        sections
+            .iter()
+            .map(|section| passage(Some(&section.heading), section.body)),
+    );
+    passages
+}
+
+/// A skill is one passage whose name and summary are what it is titled by.
+pub fn skill_passage(skill: &Skill) -> Passage {
+    Passage {
+        entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),
+        heading: Some(skill.name().to_string()),
+        heading_terms: String::new(),
+        title: format!("{} {}", skill.name(), skill.summary()),
+        body: skill.body().as_str().to_owned(),
+        excerpt: skill.summary().to_string(),
+        namespace: skill.namespace().clone(),
+        updated_at: skill.updated_at(),
     }
 }
 
@@ -303,6 +389,7 @@ mod scoring_tests {
         Passage {
             entity: EntityRef::new(EntityKind::Document, at(n)),
             heading: None,
+            heading_terms: String::new(),
             title: title.to_owned(),
             body: body.to_owned(),
             excerpt: body.to_owned(),
@@ -316,6 +403,26 @@ mod scoring_tests {
             .find(|h| h.entity.id() == &at(n))
             .map(|h| h.relevance)
             .unwrap_or(0.0)
+    }
+
+    fn with_heading(n: u8, heading: &str, body: &str) -> Passage {
+        Passage {
+            heading: Some(heading.to_owned()),
+            heading_terms: heading.to_owned(),
+            ..passage(n, "note", body)
+        }
+    }
+
+    #[test]
+    fn a_word_in_a_heading_outranks_the_same_word_in_a_body() {
+        let hits = score(
+            vec![
+                with_heading(1, "Deploy", "run the pipeline"),
+                with_heading(2, "Notes", "how we deploy things"),
+            ],
+            "deploy",
+        );
+        assert!(relevance_of(&hits, 1) > relevance_of(&hits, 2));
     }
 
     #[test]

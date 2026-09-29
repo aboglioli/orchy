@@ -351,14 +351,16 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 
 ### Search
 
-- **Stores gather, the domain scores.** Stores turn entities into `Passage`s (one per
-  document section, one per skill) after applying the query's filters, and call
-  `search::score`. They never rank.
+- **Stores gather, the domain decides.** Stores only list entities. The domain decides which
+  ones a query selects (`SearchQuery::selects_document`, `selects_skill`), how each is cut
+  into `Passage`s (`document_passages`: the preamble, then one per section; `skill_passage`)
+  and how they score (`score`). Both stores call the same functions, so they cannot drift.
 - **Terms.** `tokenise` splits on non-alphanumerics, lowercases, and applies the English
   Snowball stemmer.
 - **`score`** is BM25:
   - `k1 = 1.2`, `b = 0.75`;
-  - title terms count 3× (a skill's title is its name plus summary);
+  - title terms count 3× (a skill's title is its name plus summary), heading terms 2×,
+    body terms 1×;
   - × the fraction of query terms matched;
   - × 1.5 when the passage holds the exact phrase.
 

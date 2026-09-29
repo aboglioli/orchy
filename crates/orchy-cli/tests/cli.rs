@@ -1880,3 +1880,26 @@ fn an_edit_to_a_heading_used_twice_is_refused_until_one_is_picked() {
         "first"
     );
 }
+
+#[test]
+fn the_text_before_the_first_heading_and_the_headings_themselves_are_searchable() {
+    let temp = vault();
+    let doc = json(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Rules",
+            "--body",
+            "The zanzibar rule applies everywhere.\n\n## Details\nsee the handbook",
+        ],
+    );
+    let id = doc["id"].as_str().unwrap();
+    for query in ["zanzibar", "details"] {
+        let hits = json(temp.path(), &["recall", query]);
+        assert!(
+            hits.as_array().unwrap().iter().any(|h| h["id"] == id),
+            "`{query}` misses the document: {hits}"
+        );
+    }
+}
