@@ -210,7 +210,13 @@ impl Application {
             set_document_field: SetDocumentField::new(Arc::clone(&documents), Arc::clone(&clock)),
             update_document: UpdateDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             find_documents: FindDocuments::new(Arc::clone(&documents)),
-            promote_document: PromoteDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
+            promote_document: PromoteDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&skills),
+                Arc::clone(&edges),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
             supersede_document: SupersedeDocument::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),

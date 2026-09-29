@@ -323,6 +323,17 @@ impl Document {
         Ok(())
     }
 
+    /// A candidate that graduated into something other than a document, such as a skill,
+    /// stays behind as the record of the proposal.
+    pub fn mark_promoted(&mut self, clock: &dyn Clock) -> Result<()> {
+        if !self.is_candidate() {
+            return Err(DomainError::conflict(
+                "only a candidate can be promoted; this document is already canon",
+            ));
+        }
+        self.set_status(DocumentStatus::Promoted, clock)
+    }
+
     pub fn supersede(&mut self, by: Id, clock: &dyn Clock) -> Result<()> {
         if by == self.id {
             return Err(DomainError::validation(

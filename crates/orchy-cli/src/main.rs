@@ -226,7 +226,9 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             target,
             into,
             namespace,
-        } => cmd::doc::promote(&app, target, into, namespace, out).await,
+            name,
+            summary,
+        } => cmd::doc::promote(&app, target, into, namespace, name, summary, out).await,
 
         Command::Lock(command) => match command {
             LockCommand::Acquire { resource, ttl } => {

@@ -240,24 +240,39 @@ pub(crate) async fn set_status(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn promote(
     app: &Application,
     target: String,
     into: String,
     namespace: Option<String>,
+    skill_name: Option<String>,
+    summary: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
     let document_id = resolve::document(app, &target).await?;
-    let document = app
+    let promoted = app
         .promote_document
         .execute(PromoteDocumentCommand {
             document_id,
             into,
             namespace,
+            skill_name,
+            summary,
         })
         .await?;
-    out.emit(&document, |d| {
-        format!("{}  promoted to {}", short(&d.id), d.namespace)
+    out.emit(&promoted, |p| match &p.skill {
+        Some(skill) => format!(
+            "{}  promoted to skill `{}` in {}",
+            short(&p.document.id),
+            skill.name,
+            skill.namespace
+        ),
+        None => format!(
+            "{}  promoted to {}",
+            short(&p.document.id),
+            p.document.namespace
+        ),
     })
 }
 

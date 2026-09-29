@@ -1198,3 +1198,91 @@ fn the_briefing_counts_the_files_it_had_to_skip() {
     assert_eq!(briefing["unreadable"], 1);
     assert!(ok(temp.path(), &["announce"]).contains("orchy doctor"));
 }
+
+#[test]
+fn skill_is_refused_as_a_document_type_with_a_pointer_to_orchy_skill() {
+    let temp = vault();
+    let out = orchy(temp.path(), &["new", "skill", "x", "--body", "y"]);
+    assert_eq!(out.status.code(), Some(6));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("orchy skill write"));
+}
+
+#[test]
+fn a_candidate_promoted_into_a_skill_becomes_a_real_skill_and_stays_as_the_record() {
+    let temp = vault();
+    let candidate = json(
+        temp.path(),
+        &[
+            "new",
+            "candidate",
+            "Prefer jose",
+            "--body",
+            "jose supports RS256",
+        ],
+    );
+    let candidate_id = candidate["id"].as_str().unwrap();
+
+    let promoted = json(
+        temp.path(),
+        &["promote", candidate_id, "--as", "skill", "--name", "jose"],
+    );
+    assert_eq!(promoted["skill"]["name"], "jose");
+    assert_eq!(promoted["skill"]["summary"], "Prefer jose");
+    let skill_id = promoted["skill"]["id"].as_str().unwrap();
+
+    let skill_file = std::fs::read_to_string(temp.path().join("skills/jose.md")).unwrap();
+    assert!(skill_file.contains("jose supports RS256"), "{skill_file}");
+
+    let record =
+        std::fs::read_to_string(temp.path().join(format!("docs/{candidate_id}.md"))).unwrap();
+    assert!(record.contains("status: promoted"), "{record}");
+
+    let graph = ok(temp.path(), &["graph", &format!("skill:{skill_id}")]);
+    assert!(graph.contains("derived_from"), "{graph}");
+
+    ok(temp.path(), &["announce"]);
+    assert_eq!(
+        json(temp.path(), &["skill", "list"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn promoting_into_a_skill_name_already_in_use_is_refused() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["skill", "write", "jose", "--summary", "already here"],
+    );
+    let candidate = json(
+        temp.path(),
+        &["new", "candidate", "Prefer jose", "--body", "x"],
+    );
+    let out = orchy(
+        temp.path(),
+        &[
+            "promote",
+            candidate["id"].as_str().unwrap(),
+            "--as",
+            "skill",
+            "--name",
+            "jose",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(5));
+}
+
+#[test]
+fn a_hand_written_skill_document_without_a_name_does_not_stop_the_briefing() {
+    let temp = vault();
+    std::fs::write(
+        temp.path().join("docs/old.md"),
+        format!("---\nid: {BROKEN_ID}\ntype: skill\ntitle: old style\n---\n\nrule\n"),
+    )
+    .unwrap();
+    ok(temp.path(), &["announce"]);
+    ok(temp.path(), &["skill", "list", "--everywhere"]);
+}

@@ -300,15 +300,18 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 
 ### Documents
 
-- **Kinds.** Fifteen, in `Kind::ALL`: `note`, `decision`, `discovery`, `pattern`,
-  `document`, `config`, `reference`, `plan`, `log`, `skill`, `overview`, `summary`,
-  `report`, `context`, `candidate`.
+- **Kinds.** Fourteen, in `Kind::ALL`: `note`, `decision`, `discovery`, `pattern`,
+  `document`, `config`, `reference`, `plan`, `log`, `overview`, `summary`, `report`,
+  `context`, `candidate`. `skill` is reserved: parsing it as a kind fails and points at
+  `orchy skill write`, because skills are their own entity.
 - **Statuses.** Canon kinds use `draft | active | superseded | archived`. `candidate` uses
   `proposed | promoted | rejected`, and the two sets never overlap. Status changes are
   semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
 - **Sections.** A body is split into sections by markdown headings (any level).
-- **The `skill` kind.** It still exists as a document kind, and using it breaks the vault
-  (see Known gaps). Binding conventions are `Skill` entities, which are what briefings carry.
+- **Promotion.** `Document::promote` turns a candidate into a canon kind in place.
+  `promote --as skill --name <n>` instead creates a `Skill` from the candidate's body, marks
+  the candidate `promoted` (`Document::mark_promoted`), and links `skill -derived_from->
+  candidate`; the candidate stays in `docs/` as the record of the proposal.
 - **Placement.** A hand-written document outside `docs/` is moved to
   `docs/<namespace>/<id>.md` the next time orchy saves it. Markdown files without an `id` are
   ignored.
@@ -386,17 +389,11 @@ Agents branch on this behaviour, so treat it as API.
 ## Known gaps
 
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
-it drift. The first five lose data or break the vault; fix them first.
+it drift. The first three lose data or break the vault; fix them first.
 
 - **Task notes and reasons are lost.** `task done --note`, `task fail <reason>` and
   `task cancel <reason>` are never written to the task file, so `task get` shows
   `note: null` afterwards.
-
-- **A document of kind `skill` breaks the vault.** `orchy new skill …` or
-  `orchy promote <candidate> --as skill` writes `docs/<id>.md` with `type: skill`. The
-  vault's skill loading then reads it as a `Skill` entity, finds no `name`, and fails. From
-  then on `announce`, `recall` and every `skill` command exit 6 until the file is fixed by
-  hand. Either drop `Kind::Skill` or make `promote --as skill` create a real `Skill`.
 - **`supersede` stores the edge backwards.** `orchy supersede <old> --by <new>` writes
   `supersedes: [document:<new>]` on the old document (`supersede_document.rs`), while
   `task replace` stores replacement → original. The relation reads "from supersedes to", so

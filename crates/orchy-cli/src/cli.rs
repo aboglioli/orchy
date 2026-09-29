@@ -182,11 +182,17 @@ pub(crate) enum Command {
     /// Graduate a candidate into canon as a concrete type
     Promote {
         target: String,
-        /// What it becomes: decision, pattern, note, …
+        /// What it becomes: decision, pattern, note, … or `skill`
         #[arg(long = "as")]
         into: String,
         #[arg(long)]
         namespace: Option<String>,
+        /// The skill's name, when promoting into a skill
+        #[arg(long)]
+        name: Option<String>,
+        /// The skill's one-line summary (default: the candidate's title)
+        #[arg(long)]
+        summary: Option<String>,
     },
     /// Same-machine advisory locks
     #[command(subcommand)]
