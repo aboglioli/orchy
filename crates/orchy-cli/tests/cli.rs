@@ -1450,3 +1450,22 @@ fn a_task_keeps_its_completion_note_and_failure_reason_on_disk() {
         );
     }
 }
+
+#[test]
+fn an_edited_document_remembers_when_it_was_last_changed() {
+    let temp = vault();
+    let doc = json(
+        temp.path(),
+        &["new", "note", "Timestamps", "--body", "first"],
+    );
+    let id = doc["id"].as_str().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    ok(temp.path(), &["edit", id, "--content", "second"]);
+
+    let read = json(temp.path(), &["read", id]);
+    let created = read["document"]["created_at"].as_str().unwrap().to_owned();
+    let updated = read["document"]["updated_at"].as_str().unwrap().to_owned();
+    assert!(updated > created, "created {created}, updated {updated}");
+    let file = std::fs::read_to_string(temp.path().join(format!("docs/{id}.md"))).unwrap();
+    assert!(file.contains("\nupdated: "), "{file}");
+}

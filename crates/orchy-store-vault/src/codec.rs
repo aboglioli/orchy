@@ -40,7 +40,7 @@ const MESSAGE_KEYS: [&str; 11] = [
     "created",
 ];
 
-const DOCUMENT_KEYS: [&str; 7] = [
+const DOCUMENT_KEYS: [&str; 8] = [
     "id",
     "type",
     "title",
@@ -48,6 +48,7 @@ const DOCUMENT_KEYS: [&str; 7] = [
     "status",
     "tags",
     "created",
+    "updated",
 ];
 
 const SKILL_KEYS: [&str; 8] = [
@@ -290,6 +291,7 @@ pub fn document_to_markdown(document: &Document) -> MarkdownFile {
         );
     }
     frontmatter.set("created", stamp(document.created_at()));
+    frontmatter.set("updated", stamp(document.updated_at()));
 
     for (key, value) in document.frontmatter().iter() {
         if !DOCUMENT_KEYS.contains(&key) {
