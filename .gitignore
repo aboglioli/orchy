@@ -1,15 +1,2 @@
 /target
-.env
-target/
-*.db
-*.db-shm
-*.db-wal
-.mcp.json
-
-# frontend artifacts
-dashboard/node_modules/
-dashboard/dist/
-dashboard/.vite/
-dashboard/coverage/
-keys/
 .worktrees/
