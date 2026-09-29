@@ -20,8 +20,10 @@ impl VaultDocumentStore {
 
     pub async fn all(&self) -> Result<Vec<Document>> {
         let mut documents = Vec::new();
-        for (key, file) in self.vault.load_all(EntityKind::Document).await? {
-            documents.push(codec::document_from_markdown(&file, &key)?);
+        for (_, file) in self.vault.load_all(EntityKind::Document).await? {
+            if let Ok(decoded) = codec::document_from_markdown(&file) {
+                documents.push(decoded);
+            }
         }
         documents.sort_by(|a, b| a.id().cmp(b.id()));
         Ok(documents)
@@ -47,7 +49,9 @@ impl DocumentStore for VaultDocumentStore {
         ) {
             return Ok(None);
         }
-        codec::document_from_markdown(&file, &key).map(Some)
+        codec::document_from_markdown(&file)
+            .map_err(codec::at(&key))
+            .map(Some)
     }
 
     async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {

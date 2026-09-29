@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::result::Result as StdResult;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use orchy_core::{DomainError, EntityKind, Id, Result};
+use orchy_core::{DomainError, EntityKind, Id, Problem, ProblemKind, Result};
 use tokio::time::sleep;
 
 use crate::blob::{BlobStore, digest};
@@ -26,10 +27,16 @@ pub struct Located {
     pub seen: u64,
 }
 
+pub struct Scan {
+    pub entries: Vec<(Id, Located, MarkdownFile)>,
+    pub problems: Vec<Problem>,
+}
+
 pub struct Vault {
     blobs: Arc<dyn BlobStore>,
     layout: Layout,
     index: RwLock<HashMap<Id, Located>>,
+    problems: RwLock<Vec<Problem>>,
 }
 
 impl Vault {
@@ -38,6 +45,7 @@ impl Vault {
             blobs,
             layout: Layout,
             index: RwLock::new(HashMap::new()),
+            problems: RwLock::new(Vec::new()),
         };
         vault.reindex().await?;
         Ok(vault)
@@ -52,13 +60,19 @@ impl Vault {
     }
 
     pub async fn reindex(&self) -> Result<()> {
-        let scanned = self.scan().await?;
-        self.absorb(&scanned);
+        self.scan().await?;
         Ok(())
     }
 
-    async fn scan(&self) -> Result<Vec<(Id, Located, MarkdownFile)>> {
+    /// Files the latest scan could not index, each with where it is and what is wrong.
+    pub fn scan_problems(&self) -> Vec<Problem> {
+        self.problems.read().expect("problems lock").clone()
+    }
+
+    pub async fn scan(&self) -> Result<Scan> {
         let mut found = Vec::new();
+        let mut problems = Vec::new();
+        let mut owner_of: HashMap<Id, String> = HashMap::new();
         let mut seen_keys = HashSet::new();
         let mut batch = self.blobs.list("").await?;
 
@@ -74,15 +88,38 @@ impl Vault {
                     continue;
                 };
                 let seen = digest(&bytes);
-                let Some(file) = parse(&bytes, &key)? else {
-                    continue;
+                let file = match decode(&bytes) {
+                    Ok(file) => file,
+                    Err(detail) => {
+                        problems.push(Problem::new(ProblemKind::Unreadable, &key, None, detail));
+                        continue;
+                    }
                 };
                 let Some(raw) = codec::id_of(&file) else {
                     continue;
                 };
                 let Ok(id) = Id::new(raw) else {
+                    if codec::kind_of(&file) == Some("agent") {
+                        continue;
+                    }
+                    problems.push(Problem::new(
+                        ProblemKind::InvalidField,
+                        &key,
+                        None,
+                        format!("`id: {raw}` is not a ULID"),
+                    ));
                     continue;
                 };
+                if let Some(owner) = owner_of.get(&id) {
+                    problems.push(Problem::new(
+                        ProblemKind::DuplicateId,
+                        &key,
+                        Some(id.clone()),
+                        format!("`{id}` is also the id of `{owner}`"),
+                    ));
+                    continue;
+                }
+                owner_of.insert(id.clone(), key.clone());
                 let kind = kind_from(codec::kind_of(&file));
                 found.push((id, Located { kind, key, seen }, file));
             }
@@ -98,7 +135,13 @@ impl Vault {
                 break;
             }
         }
-        Ok(found)
+        let scan = Scan {
+            entries: found,
+            problems,
+        };
+        self.absorb(&scan.entries);
+        *self.problems.write().expect("problems lock") = scan.problems.clone();
+        Ok(scan)
     }
 
     fn absorb(&self, scanned: &[(Id, Located, MarkdownFile)]) {
@@ -137,9 +180,7 @@ impl Vault {
         let Some(bytes) = self.blobs.get(key).await? else {
             return Ok(None);
         };
-        let text = String::from_utf8(bytes)
-            .map_err(|_| DomainError::validation(format!("`{key}` is not valid UTF-8")))?;
-        MarkdownFile::parse(&text).map(Some)
+        parse(&bytes, key).map(Some)
     }
 
     pub async fn read_by_id(&self, id: &Id) -> Result<Option<(String, MarkdownFile)>> {
@@ -153,14 +194,16 @@ impl Vault {
                 ..located.clone()
             },
         );
-        Ok(parse(&bytes, &located.key)?.map(|file| (located.key, file)))
+        let file = parse(&bytes, &located.key)?;
+        Ok(Some((located.key, file)))
     }
 
     pub async fn peek_by_id(&self, id: &Id) -> Result<Option<(String, MarkdownFile)>> {
         let Some((located, bytes)) = self.bytes_of(id).await? else {
             return Ok(None);
         };
-        Ok(parse(&bytes, &located.key)?.map(|file| (located.key, file)))
+        let file = parse(&bytes, &located.key)?;
+        Ok(Some((located.key, file)))
     }
 
     async fn bytes_of(&self, id: &Id) -> Result<Option<(Located, Vec<u8>)>> {
@@ -269,9 +312,9 @@ impl Vault {
 
     pub async fn load_all(&self, kind: EntityKind) -> Result<Vec<(String, MarkdownFile)>> {
         let scanned = self.scan().await?;
-        self.absorb(&scanned);
 
         let mut loaded: Vec<(String, MarkdownFile)> = scanned
+            .entries
             .into_iter()
             .filter(|(_, located, _)| located.kind == kind)
             .map(|(_, located, file)| (located.key, file))
@@ -281,13 +324,23 @@ impl Vault {
     }
 }
 
-fn parse(bytes: &[u8], key: &str) -> Result<Option<MarkdownFile>> {
+fn parse(bytes: &[u8], key: &str) -> Result<MarkdownFile> {
+    decode(bytes).map_err(|detail| DomainError::validation(format!("{key}: {detail}")))
+}
+
+fn decode(bytes: &[u8]) -> StdResult<MarkdownFile, String> {
     let Ok(text) = std::str::from_utf8(bytes) else {
-        return Err(DomainError::validation(format!(
-            "`{key}` is not valid UTF-8"
-        )));
+        return Err("not valid UTF-8".to_owned());
     };
-    MarkdownFile::parse(text).map(Some)
+    if has_conflict_markers(text) {
+        return Err("holds unresolved merge conflict markers".to_owned());
+    }
+    MarkdownFile::parse(text).map_err(|e| e.to_string())
+}
+
+fn has_conflict_markers(text: &str) -> bool {
+    text.lines()
+        .any(|line| line.starts_with("<<<<<<< ") || line.starts_with(">>>>>>> "))
 }
 
 fn kind_from(declared: Option<&str>) -> EntityKind {

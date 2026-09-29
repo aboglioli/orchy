@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorId, ActorStore, DocumentQuery, DocumentStore, Kind, MessageStore, Namespace, PageRequest,
-    ReadWatermarks, SkillStore, TaskQuery, TaskStatus, TaskStore, skill,
+    ActorId, ActorStore, DocumentQuery, DocumentStore, Integrity, Kind, MessageStore, Namespace,
+    PageRequest, ReadWatermarks, SkillStore, TaskQuery, TaskStatus, TaskStore, skill,
 };
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +21,7 @@ pub struct Brief {
     messages: Arc<dyn MessageStore>,
     watermarks: Arc<dyn ReadWatermarks>,
     documents: Arc<dyn DocumentStore>,
+    integrity: Arc<dyn Integrity>,
 }
 
 impl Brief {
@@ -31,6 +32,7 @@ impl Brief {
         messages: Arc<dyn MessageStore>,
         watermarks: Arc<dyn ReadWatermarks>,
         documents: Arc<dyn DocumentStore>,
+        integrity: Arc<dyn Integrity>,
     ) -> Self {
         Self {
             actors,
@@ -39,6 +41,7 @@ impl Brief {
             messages,
             watermarks,
             documents,
+            integrity,
         }
     }
 
@@ -58,6 +61,7 @@ impl Brief {
             claimed: self.claimed_by(&id).await?,
             next: self.next_up(&namespace).await?,
             handoff: self.handoff(&namespace).await?,
+            unreadable: self.integrity.unreadable().await?.len(),
         })
     }
 

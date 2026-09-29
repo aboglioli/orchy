@@ -3,6 +3,7 @@ pub mod codec;
 pub mod documents;
 pub mod edges;
 pub mod eventlog;
+pub mod integrity;
 pub mod layout;
 pub mod lock;
 pub mod markdown;

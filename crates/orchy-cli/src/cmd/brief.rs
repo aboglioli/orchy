@@ -69,6 +69,10 @@ fn render(briefing: &BriefingDto) -> String {
         String::new(),
     ];
 
+    if let Some(block) = attention(briefing) {
+        lines.push(block);
+        lines.push(String::new());
+    }
     lines.push(skills(briefing));
     lines.push(String::new());
     lines.push(waiting(briefing));
@@ -83,6 +87,27 @@ fn render(briefing: &BriefingDto) -> String {
         ));
     }
     lines.join("\n")
+}
+
+fn attention(briefing: &BriefingDto) -> Option<String> {
+    let mut items = Vec::new();
+    if briefing.unreadable > 0 {
+        items.push(format!(
+            "  {} file{} could not be read and {} skipped — orchy doctor",
+            briefing.unreadable,
+            if briefing.unreadable == 1 { "" } else { "s" },
+            if briefing.unreadable == 1 {
+                "is"
+            } else {
+                "are"
+            },
+        ));
+    }
+    if items.is_empty() {
+        return None;
+    }
+    items.insert(0, "ATTENTION".to_owned());
+    Some(items.join("\n"))
 }
 
 fn skills(briefing: &BriefingDto) -> String {

@@ -32,7 +32,9 @@ impl ActorStore for VaultActorStore {
         let Some(file) = self.vault.read(&key).await? else {
             return Ok(None);
         };
-        codec::actor_from_markdown(&file, &key).map(Some)
+        codec::actor_from_markdown(&file)
+            .map_err(codec::at(&key))
+            .map(Some)
     }
 
     async fn roster(&self) -> Result<Vec<Actor>> {
@@ -41,8 +43,13 @@ impl ActorStore for VaultActorStore {
             if !self.vault.layout().is_markdown(&key) {
                 continue;
             }
-            if let Some(file) = self.vault.read(&key).await? {
-                actors.push(codec::actor_from_markdown(&file, &key)?);
+            let file = match self.vault.read(&key).await {
+                Ok(Some(file)) => file,
+                Ok(None) | Err(DomainError::Validation(_)) => continue,
+                Err(e) => return Err(e),
+            };
+            if let Ok(decoded) = codec::actor_from_markdown(&file) {
+                actors.push(decoded);
             }
         }
         actors.sort_by(|a, b| a.id().cmp(b.id()));

@@ -49,8 +49,8 @@ pub mod write_skill;
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, LeaseStore, MessageStore,
-    ReadWatermarks, Search, SkillStore, TaskStore,
+    ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, Integrity, LeaseStore,
+    MessageStore, ReadWatermarks, Search, SkillStore, TaskStore,
 };
 
 pub use error::{ApplicationError, ApplicationResult};
@@ -111,6 +111,7 @@ pub struct ApplicationDeps {
     pub leases: Arc<dyn LeaseStore>,
     pub watermarks: Arc<dyn ReadWatermarks>,
     pub search: Arc<dyn Search>,
+    pub integrity: Arc<dyn Integrity>,
     pub log: Arc<dyn EventLog>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGenerator>,
@@ -181,6 +182,7 @@ impl Application {
             leases,
             watermarks,
             search,
+            integrity,
             log,
             clock,
             ids,
@@ -272,6 +274,7 @@ impl Application {
                 Arc::clone(&messages),
                 Arc::clone(&watermarks),
                 Arc::clone(&documents),
+                Arc::clone(&integrity),
             ),
             write_skill: WriteSkill::new(Arc::clone(&skills), Arc::clone(&ids), Arc::clone(&clock)),
             read_skill: ReadSkill::new(Arc::clone(&skills)),

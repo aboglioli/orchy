@@ -26,13 +26,17 @@ impl SkillStore for VaultSkillStore {
         if codec::kind_of(&file) != Some("skill") {
             return Ok(None);
         }
-        codec::skill_from_markdown(&file, &key).map(Some)
+        codec::skill_from_markdown(&file)
+            .map_err(codec::at(&key))
+            .map(Some)
     }
 
     async fn all(&self) -> Result<Vec<Skill>> {
         let mut skills = Vec::new();
-        for (key, file) in self.vault.load_all(EntityKind::Skill).await? {
-            skills.push(codec::skill_from_markdown(&file, &key)?);
+        for (_, file) in self.vault.load_all(EntityKind::Skill).await? {
+            if let Ok(decoded) = codec::skill_from_markdown(&file) {
+                skills.push(decoded);
+            }
         }
         skills.sort_by(|a, b| a.name().as_str().cmp(b.name().as_str()));
         Ok(skills)

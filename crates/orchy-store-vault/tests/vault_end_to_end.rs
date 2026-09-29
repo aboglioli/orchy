@@ -13,6 +13,7 @@ use orchy_store_vault::blob::{BlobStore, FsBlobStore};
 use orchy_store_vault::documents::VaultDocumentStore;
 use orchy_store_vault::edges::VaultEdgeStore;
 use orchy_store_vault::eventlog::EventuaryLog;
+use orchy_store_vault::integrity::VaultIntegrity;
 use orchy_store_vault::messages::VaultMessageStore;
 use orchy_store_vault::roster::{FileLeaseStore, VaultActorStore};
 use orchy_store_vault::search::VaultSearch;
@@ -70,6 +71,7 @@ impl Fixture {
                 Arc::clone(&log),
             )),
             edges: Arc::new(VaultEdgeStore::new(Arc::clone(&vault))),
+            integrity: Arc::new(VaultIntegrity::new(Arc::clone(&vault))),
             actors,
             leases: Arc::new(FileLeaseStore::new(
                 root.path().join(".orchy/locks"),

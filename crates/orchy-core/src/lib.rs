@@ -7,6 +7,7 @@ pub mod error;
 pub mod event;
 pub mod graph;
 pub mod id;
+pub mod integrity;
 pub mod message;
 pub mod namespace;
 pub mod pagination;
@@ -30,6 +31,7 @@ pub use error::{DomainError, ErrorCode, Result};
 pub use event::{DomainEvent, EventCollector, EventLog, EventQuery, RecordedEvent};
 pub use graph::{Arity, Direction, Edge, EdgeStore, Relation, TraversalHop};
 pub use id::{Id, IdGenerator};
+pub use integrity::{Integrity, Problem, ProblemKind};
 pub use message::{
     Message, MessageStatus, MessageStore, ReadWatermarks, Recipient, RestoreMessage,
 };

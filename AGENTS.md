@@ -55,6 +55,7 @@ crates/
 │       ├── clock.rs           Clock port
 │       ├── event.rs           DomainEvent, EventCollector, EventLog port, RecordedEvent, EventQuery
 │       ├── error.rs           DomainError, ErrorCode, exit codes
+│       ├── integrity.rs       Integrity port, Problem, ProblemKind
 │       ├── pagination.rs      Page, PageRequest
 │       ├── body.rs            Body, Section (split on markdown headings)
 │       ├── title.rs · tag.rs · priority.rs
@@ -79,6 +80,7 @@ crates/
 │       ├── documents.rs · skills.rs · tasks.rs · messages.rs · edges.rs · roster.rs
 │       ├── search.rs          gathers document sections and skills into passages for `score`
 │       ├── eventlog.rs        EventLog over eventuary's fs backend
+│       ├── integrity.rs       VaultIntegrity: what the scan and the codecs could not read
 │       ├── watermarks.rs      per-actor inbox read watermarks
 │       ├── lock.rs            file locks
 │       └── time.rs            SystemClock, UlidGenerator
@@ -201,6 +203,11 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   `tasks/open|done/<id>.md`, `messages/<thread>/<id>.md`, `agents/<alias>@<machine>.md`. The
   roots `docs`, `skills`, `tasks`, `messages`, `agents`, `events` and `.orchy` are fixed. A
   skill is the one entity filed by name, because its name is unique per namespace.
+- **Unreadable files never take the vault down.** `Vault::scan` records a `Problem` for a
+  file it cannot parse (bad UTF-8, unclosed fence, invalid YAML, merge-conflict markers, a
+  non-ULID or duplicate `id`) and skips it; store listings skip a file their codec rejects.
+  `Integrity` reports them with their paths, and the briefing counts them. A direct read of
+  such an entity fails with the file's path in the message (`codec::at`).
 - **Atomic writes.** Temp file, fsync, rename.
 - **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
   digests to what this process last read (compare-and-swap under a per-file guard in
@@ -384,9 +391,6 @@ it drift. The first five lose data or break the vault; fix them first.
 - **Task notes and reasons are lost.** `task done --note`, `task fail <reason>` and
   `task cancel <reason>` are never written to the task file, so `task get` shows
   `note: null` afterwards.
-- **One malformed file breaks every listing.** A document with invalid YAML frontmatter or
-  an unknown `type` makes `task list`, `announce`, `recall` and the rest exit 6. The error
-  quotes the bad YAML but never names the file.
 
 - **A document of kind `skill` breaks the vault.** `orchy new skill …` or
   `orchy promote <candidate> --as skill` writes `docs/<id>.md` with `type: skill`. The

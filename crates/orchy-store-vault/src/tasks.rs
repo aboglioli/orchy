@@ -18,8 +18,10 @@ impl VaultTaskStore {
 
     async fn all(&self) -> Result<Vec<Task>> {
         let mut tasks = Vec::new();
-        for (key, file) in self.vault.load_all(EntityKind::Task).await? {
-            tasks.push(codec::task_from_markdown(&file, &key)?);
+        for (_, file) in self.vault.load_all(EntityKind::Task).await? {
+            if let Ok(decoded) = codec::task_from_markdown(&file) {
+                tasks.push(decoded);
+            }
         }
         tasks.sort_by(|a, b| a.id().cmp(b.id()));
         Ok(tasks)
@@ -35,7 +37,9 @@ impl TaskStore for VaultTaskStore {
         if codec::kind_of(&file) != Some("task") {
             return Ok(None);
         }
-        codec::task_from_markdown(&file, &key).map(Some)
+        codec::task_from_markdown(&file)
+            .map_err(codec::at(&key))
+            .map(Some)
     }
 
     async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>> {

@@ -1121,3 +1121,80 @@ fn a_lease_that_has_already_lapsed_is_refused_where_it_is_typed() {
     assert_eq!(refused.status.code(), Some(6), "bad input, not contention");
     assert!(json(temp.path(), &["lock", "check", "build"]).is_null());
 }
+
+const BROKEN_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+fn with_a_broken_file(contents: &str) -> tempfile::TempDir {
+    let temp = vault();
+    ok(temp.path(), &["announce", "--roles", "dev"]);
+    ok(
+        temp.path(),
+        &["new", "note", "healthy", "--body", "still findable"],
+    );
+    std::fs::write(temp.path().join("docs/broken.md"), contents).unwrap();
+    temp
+}
+
+fn every_listing_survives(temp: &tempfile::TempDir) {
+    for args in [
+        vec!["announce"],
+        vec!["recall", "findable"],
+        vec!["task", "list"],
+        vec!["skill", "list"],
+        vec!["msg", "inbox"],
+        vec!["agents"],
+    ] {
+        ok(temp.path(), &args);
+    }
+}
+
+#[test]
+fn a_file_with_invalid_yaml_does_not_take_the_vault_down() {
+    let temp = with_a_broken_file(&format!(
+        "---\nid: {BROKEN_ID}\ntype: note\ntitle: [broken\n---\n"
+    ));
+    every_listing_survives(&temp);
+    let hits = json(temp.path(), &["recall", "findable"]);
+    assert_eq!(
+        hits.as_array().unwrap().len(),
+        1,
+        "the healthy note is still found"
+    );
+}
+
+#[test]
+fn a_file_with_an_unknown_type_does_not_take_the_vault_down() {
+    let temp = with_a_broken_file(&format!(
+        "---\nid: {BROKEN_ID}\ntype: brainstorm\ntitle: x\n---\n"
+    ));
+    every_listing_survives(&temp);
+}
+
+#[test]
+fn a_file_left_with_merge_conflict_markers_does_not_take_the_vault_down() {
+    let temp = with_a_broken_file(&format!(
+        "---\nid: {BROKEN_ID}\ntype: note\n<<<<<<< HEAD\ntitle: ours\n=======\ntitle: theirs\n>>>>>>> other\n---\n"
+    ));
+    every_listing_survives(&temp);
+}
+
+#[test]
+fn reading_an_unreadable_entity_names_its_file() {
+    let temp = with_a_broken_file(&format!(
+        "---\nid: {BROKEN_ID}\ntype: note\nstatus: nonsense\ntitle: x\n---\n"
+    ));
+    let out = orchy(temp.path(), &["read", BROKEN_ID]);
+    assert_eq!(out.status.code(), Some(6));
+    let message = String::from_utf8_lossy(&out.stderr);
+    assert!(message.contains("docs/broken.md"), "{message}");
+}
+
+#[test]
+fn the_briefing_counts_the_files_it_had_to_skip() {
+    let temp = with_a_broken_file(&format!(
+        "---\nid: {BROKEN_ID}\ntype: note\ntitle: [broken\n---\n"
+    ));
+    let briefing = json(temp.path(), &["announce"]);
+    assert_eq!(briefing["unreadable"], 1);
+    assert!(ok(temp.path(), &["announce"]).contains("orchy doctor"));
+}

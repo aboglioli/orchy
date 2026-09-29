@@ -299,4 +299,5 @@ pub struct BriefingDto {
     pub claimed: Vec<TaskDto>,
     pub next: Option<TaskDto>,
     pub handoff: Option<DocumentDto>,
+    pub unreadable: usize,
 }

@@ -1,6 +1,7 @@
 mod documents;
 mod edges;
 mod eventlog;
+mod integrity;
 mod messages;
 mod roster;
 mod search;
@@ -11,6 +12,7 @@ mod time;
 pub use documents::MemoryDocumentStore;
 pub use edges::MemoryEdgeStore;
 pub use eventlog::MemoryEventLog;
+pub use integrity::MemoryIntegrity;
 pub use messages::{MemoryMessageStore, MemoryWatermarks};
 pub use roster::{MemoryActorStore, MemoryLeaseStore};
 pub use search::MemorySearch;
@@ -31,6 +33,7 @@ pub struct MemoryBackend {
     pub watermarks: Arc<MemoryWatermarks>,
     pub skills: Arc<MemorySkillStore>,
     pub search: Arc<MemorySearch>,
+    pub integrity: Arc<MemoryIntegrity>,
     pub log: Arc<MemoryEventLog>,
     pub clock: Arc<FixedClock>,
     pub ids: Arc<SeqIdGenerator>,
@@ -55,6 +58,7 @@ impl MemoryBackend {
             actors: Arc::new(MemoryActorStore::new()),
             leases: Arc::new(MemoryLeaseStore::new(Arc::clone(&clock))),
             watermarks: Arc::new(MemoryWatermarks::new()),
+            integrity: Arc::new(MemoryIntegrity::new()),
             log,
             clock,
             ids: Arc::new(SeqIdGenerator::new()),

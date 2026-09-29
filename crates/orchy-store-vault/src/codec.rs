@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use orchy_core::{
     Actor, ActorId, Body, Document, DocumentStatus, DomainError, EntityKind, EntityRef,
-    Frontmatter, Id, Kind, Message, MessageStatus, Namespace, Priority, Recipient, RestoreDocument,
-    RestoreMessage, RestoreSkill, RestoreTask, Result, Role, Skill, SkillName, SkillStatus,
-    Summary, Tag, Task, TaskStatus, Title,
+    Frontmatter, Id, Kind, Message, MessageStatus, Namespace, Priority, Problem, ProblemKind,
+    Recipient, RestoreDocument, RestoreMessage, RestoreSkill, RestoreTask, Result, Role, Skill,
+    SkillName, SkillStatus, Summary, Tag, Task, TaskStatus, Title,
 };
 use serde_json::{Value, json};
 
@@ -71,8 +71,35 @@ const ACTOR_KEYS: [&str; 7] = [
     "last_seen",
 ];
 
-fn missing(field: &str, key: &str) -> DomainError {
-    DomainError::validation(format!("`{key}` has no `{field}` in its frontmatter"))
+const MISSING: &str = "no `";
+
+fn missing(field: &str) -> DomainError {
+    DomainError::validation(format!("{MISSING}{field}` in its frontmatter"))
+}
+
+/// Names the file in a decoding error, which is the one thing a person needs to fix it.
+pub fn at(key: &str) -> impl Fn(DomainError) -> DomainError + '_ {
+    move |e| match e {
+        DomainError::Validation(detail) | DomainError::UnknownType(detail) => {
+            DomainError::validation(format!("{key}: {detail}"))
+        }
+        other => other,
+    }
+}
+
+/// Why a file the vault indexed could not be read as the entity it claims to be.
+pub fn problem(key: &str, file: &MarkdownFile, e: &DomainError) -> Problem {
+    let id = id_of(file).and_then(|raw| Id::new(raw).ok());
+    let kind = match e {
+        DomainError::UnknownType(_) => ProblemKind::UnknownType,
+        DomainError::Validation(detail) if detail.starts_with(MISSING) => ProblemKind::MissingField,
+        _ => ProblemKind::InvalidField,
+    };
+    let detail = match e {
+        DomainError::UnknownType(name) => format!("`{name}` is not a registered type"),
+        other => other.to_string(),
+    };
+    Problem::new(kind, key, id, detail)
 }
 
 fn timestamp(frontmatter: &Frontmatter, field: &str) -> Option<DateTime<Utc>> {
@@ -149,13 +176,13 @@ pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
     MarkdownFile { frontmatter, body }
 }
 
-pub fn task_from_markdown(file: &MarkdownFile, key: &str) -> Result<Task> {
+pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
-    let title = Title::new(fm.string("title").ok_or_else(|| missing("title", key))?)?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
+    let title = Title::new(fm.string("title").ok_or_else(|| missing("title"))?)?;
     let status: TaskStatus = fm
         .string("status")
-        .ok_or_else(|| missing("status", key))?
+        .ok_or_else(|| missing("status"))?
         .parse()?;
 
     let (description, acceptance_criteria) = split_acceptance(file.body.as_str());
@@ -247,12 +274,12 @@ pub fn document_to_markdown(document: &Document) -> MarkdownFile {
     }
 }
 
-pub fn document_from_markdown(file: &MarkdownFile, key: &str) -> Result<Document> {
+pub fn document_from_markdown(file: &MarkdownFile) -> Result<Document> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
     let kind = fm
         .string("type")
-        .ok_or_else(|| missing("type", key))?
+        .ok_or_else(|| missing("type"))?
         .parse::<Kind>()?;
     let title = Title::new(
         fm.string("title")
@@ -316,9 +343,9 @@ pub fn message_to_markdown(message: &Message) -> MarkdownFile {
     }
 }
 
-pub fn message_from_markdown(file: &MarkdownFile, key: &str) -> Result<Message> {
+pub fn message_from_markdown(file: &MarkdownFile) -> Result<Message> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
     let thread = fm
         .string("thread")
         .map(Id::new)
@@ -329,10 +356,7 @@ pub fn message_from_markdown(file: &MarkdownFile, key: &str) -> Result<Message> 
         id: id.clone(),
         thread,
         in_reply_to: fm.string("in_reply_to").map(Id::new).transpose()?,
-        from: fm
-            .string("from")
-            .ok_or_else(|| missing("from", key))?
-            .parse()?,
+        from: fm.string("from").ok_or_else(|| missing("from"))?.parse()?,
         to: fm
             .strings("to")
             .iter()
@@ -386,9 +410,9 @@ pub fn actor_to_markdown(actor: &Actor, carried: Frontmatter) -> MarkdownFile {
     }
 }
 
-pub fn actor_from_markdown(file: &MarkdownFile, key: &str) -> Result<Actor> {
+pub fn actor_from_markdown(file: &MarkdownFile) -> Result<Actor> {
     let fm = &file.frontmatter;
-    let id: ActorId = fm.string("id").ok_or_else(|| missing("id", key))?.parse()?;
+    let id: ActorId = fm.string("id").ok_or_else(|| missing("id"))?.parse()?;
     let announced = timestamp(fm, "announced").unwrap_or_else(Utc::now);
 
     Ok(Actor::new(
@@ -447,14 +471,11 @@ pub fn skill_to_markdown(skill: &Skill) -> MarkdownFile {
     }
 }
 
-pub fn skill_from_markdown(file: &MarkdownFile, key: &str) -> Result<Skill> {
+pub fn skill_from_markdown(file: &MarkdownFile) -> Result<Skill> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
-    let name = SkillName::new(fm.string("name").ok_or_else(|| missing("name", key))?)?;
-    let summary = Summary::new(
-        fm.string("summary")
-            .ok_or_else(|| missing("summary", key))?,
-    )?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
+    let name = SkillName::new(fm.string("name").ok_or_else(|| missing("name"))?)?;
+    let summary = Summary::new(fm.string("summary").ok_or_else(|| missing("summary"))?)?;
 
     let mut carried = Frontmatter::new();
     for (key, value) in fm.iter() {
