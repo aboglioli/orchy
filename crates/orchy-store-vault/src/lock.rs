@@ -37,7 +37,7 @@ impl FileLock {
     fn acquire(path: &Path, resource: &str, wait: Duration, shared: bool) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                DomainError::validation(format!("creating {}: {e}", parent.display()))
+                DomainError::unavailable(format!("creating {}: {e}", parent.display()))
             })?;
         }
         let file = OpenOptions::new()
@@ -46,7 +46,7 @@ impl FileLock {
             .write(true)
             .truncate(false)
             .open(path)
-            .map_err(|e| DomainError::validation(format!("opening {resource}: {e}")))?;
+            .map_err(|e| DomainError::unavailable(format!("opening {resource}: {e}")))?;
 
         let deadline = Instant::now() + wait;
         loop {
@@ -67,7 +67,7 @@ impl FileLock {
                     sleep(POLL.min(left));
                 }
                 Err(TryLockError::Error(e)) => {
-                    return Err(DomainError::validation(format!("locking {resource}: {e}")));
+                    return Err(DomainError::unavailable(format!("locking {resource}: {e}")));
                 }
             }
         }

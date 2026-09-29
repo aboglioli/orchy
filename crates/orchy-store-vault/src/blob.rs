@@ -42,7 +42,7 @@ pub trait BlobStore: Send + Sync {
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn io(context: &str, e: std::io::Error) -> DomainError {
-    DomainError::validation(format!("{context}: {e}"))
+    DomainError::unavailable(format!("{context}: {e}"))
 }
 
 async fn ensure_parent(path: &Path) -> Result<()> {
@@ -137,7 +137,7 @@ impl BlobStore for FsBlobStore {
         let contents = bytes.to_vec();
         tokio::task::spawn_blocking(move || write_atomically(&path, &contents))
             .await
-            .map_err(|e| DomainError::validation(format!("write task failed: {e}")))?
+            .map_err(|e| DomainError::unavailable(format!("write task failed: {e}")))?
     }
 
     async fn compare_and_put(
@@ -162,7 +162,7 @@ impl BlobStore for FsBlobStore {
             write_atomically(&path, &contents).map(|()| true)
         })
         .await
-        .map_err(|e| DomainError::validation(format!("write task failed: {e}")))?
+        .map_err(|e| DomainError::unavailable(format!("write task failed: {e}")))?
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
@@ -202,7 +202,7 @@ impl BlobStore for FsBlobStore {
             keys
         })
         .await
-        .map_err(|e| DomainError::validation(format!("list task failed: {e}")))
+        .map_err(|e| DomainError::unavailable(format!("list task failed: {e}")))
     }
 }
 

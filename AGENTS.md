@@ -160,9 +160,10 @@ exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry depe
 
 ```
 orchy-core        DomainError { Validation, InvalidTransition, NotFound, Conflict,
-                                Forbidden, UnknownType, UnknownRelation, Ambiguous }
+                                Forbidden, UnknownType, UnknownRelation, Ambiguous,
+                                Unavailable }
                   ErrorCode   → exit code; orchy_core::Result<T> = Result<T, DomainError>
-orchy-application ApplicationError { Domain(#[from] DomainError), Storage(String) }
+orchy-application ApplicationError { Domain(#[from] DomainError) }
                   ApplicationResult<T>
 orchy-cli         CliError { Application, Config, Io, NotAVault }
 ```
@@ -175,10 +176,14 @@ Exit codes are part of the CLI contract, because agents branch on them:
 | 5 | `Conflict`, `InvalidTransition`, `Forbidden` |
 | 6 | `Validation`, `UnknownType`, `UnknownRelation`, `Config` |
 | 7 | `Ambiguous` |
-| 8 | `Storage`, `Io` |
+| 8 | `Unavailable`, `Io` |
 
 Constructors: `DomainError::validation(..)`, `invalid_transition(from, to)`,
-`not_found(resource, id)`, `conflict(..)`, `forbidden(..)`.
+`not_found(resource, id)`, `conflict(..)`, `forbidden(..)`, `unavailable(..)`.
+
+Stores map every I/O failure (filesystem, event log, locks, background tasks) to
+`Unavailable`: the input was fine, the machine could not serve it. Content they cannot parse
+(bad UTF-8, invalid YAML, an invalid value) is `Validation`.
 
 ### Use cases
 

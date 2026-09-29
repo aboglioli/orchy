@@ -152,7 +152,7 @@ impl FileLeaseStore {
             self.lock_path(key),
             serde_json::to_vec(record).unwrap_or_default(),
         )
-        .map_err(|e| DomainError::validation(format!("writing lock: {e}")))
+        .map_err(|e| DomainError::unavailable(format!("writing lock: {e}")))
     }
 }
 
