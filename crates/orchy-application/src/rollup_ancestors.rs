@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use orchy_core::task::rollup;
-use orchy_core::{Clock, DomainError, Id, Task, TaskStore};
+use orchy_core::{Clock, DomainError, Id, LeaseStore, ResourceKey, Task, TaskStore};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
@@ -11,18 +11,38 @@ const DERIVE_ATTEMPTS: u32 = 4;
 
 pub struct RollupAncestors {
     tasks: Arc<dyn TaskStore>,
+    leases: Arc<dyn LeaseStore>,
     clock: Arc<dyn Clock>,
 }
 
 impl RollupAncestors {
-    pub fn new(tasks: Arc<dyn TaskStore>, clock: Arc<dyn Clock>) -> Self {
-        Self { tasks, clock }
+    pub fn new(
+        tasks: Arc<dyn TaskStore>,
+        leases: Arc<dyn LeaseStore>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            tasks,
+            leases,
+            clock,
+        }
     }
 
+    /// Re-derives every ancestor of `from`, nearest first, after one of its children changed.
     pub async fn execute(&self, from: &Id) -> ApplicationResult<Vec<TaskDto>> {
+        let parent = self.tasks.require(from).await?.parent().cloned();
+        self.climb(parent).await
+    }
+
+    /// Re-derives `parent` and whatever it rolls up into, after its set of children changed.
+    pub async fn from_parent(&self, parent: &Id) -> ApplicationResult<Vec<TaskDto>> {
+        self.climb(Some(parent.clone())).await
+    }
+
+    async fn climb(&self, start: Option<Id>) -> ApplicationResult<Vec<TaskDto>> {
         let mut seen = HashSet::new();
         let mut changed = Vec::new();
-        let mut cursor = self.tasks.require(from).await?.parent().cloned();
+        let mut cursor = start;
 
         while let Some(parent_id) = cursor {
             if !seen.insert(parent_id.clone()) || seen.len() > rollup::MAX_DEPTH {
@@ -60,9 +80,26 @@ impl RollupAncestors {
             match self.tasks.save(&mut parent).await {
                 Err(DomainError::Conflict(_)) => continue,
                 Err(e) => return Err(e.into()),
-                Ok(()) => return Ok(Some(parent)),
+                Ok(()) => {
+                    self.release_claim(&parent).await;
+                    return Ok(Some(parent));
+                }
             }
         }
         Ok(None)
+    }
+
+    /// A parent finished by rollup is nobody's work any more; best effort, like a holder
+    /// finishing it by hand, because an expired lease needs no releasing.
+    async fn release_claim(&self, parent: &Task) {
+        if !parent.status().is_terminal() {
+            return;
+        }
+        if let Some(holder) = parent.claimed_by() {
+            let _ = self
+                .leases
+                .release(&ResourceKey::task(parent.id()), holder)
+                .await;
+        }
     }
 }

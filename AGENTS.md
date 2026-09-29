@@ -287,7 +287,8 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   restricted to the holder.
 - **No reclaim.** A claimed task is never taken over; it returns to `pending` only through
   `release`.
-- **Rollup** (`task::rollup::resolve`) runs when a child reaches a terminal status. While
+- **Rollup** (`task::rollup::resolve`) runs when a child reaches a terminal status, and on
+  both the old and the new parent when `task update --parent`/`--detach` moves a child. While
   any child is open it yields nothing. Otherwise the parent takes:
   - `failed` if any child failed;
   - `completed` if any child completed;
@@ -295,7 +296,8 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   - `cancelled` in every remaining case.
 
   `cancelled` and `superseded` are neutral: they carry no verdict. Rollup recurses up to
-  `MAX_DEPTH` (64) and stops on cycles.
+  `MAX_DEPTH` (64) and stops on cycles. A parent it finishes gives back its `task:<id>`
+  lease, as a holder finishing it by hand would.
 - **Split vs replace.** `split` keeps the original as an umbrella that waits for its new
   children. `replace` supersedes the original; the new tasks inherit its parent and get
   `supersedes` edges to it.
@@ -408,9 +410,6 @@ it drift.
 
 - **`orchy new` ignores stdin.** Its `--body` help says it reads stdin when omitted, but
   `cmd::doc::new` passes `None` through and creates an empty body. `edit` does read stdin.
-- **Rollup leaves the lease behind.** When a parent reaches a terminal status through rollup,
-  its `task:<id>` lease is not released (`RollupAncestors`); `orchy lock list` still shows
-  it until it expires.
 - **Documents cannot be retitled, retyped, moved or retagged from the CLI.**
   `UpdateDocument` supports title, kind, namespace and tags, but the CLI only uses it for
   `archive`/`unarchive`. `orchy set` refuses those fields and points at commands that do

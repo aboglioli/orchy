@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
+use crate::rollup_ancestors::RollupAncestors;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateTaskCommand {
@@ -23,17 +24,27 @@ pub struct UpdateTaskCommand {
 
 pub struct UpdateTask {
     tasks: Arc<dyn TaskStore>,
+    rollup: Arc<RollupAncestors>,
     clock: Arc<dyn Clock>,
 }
 
 impl UpdateTask {
-    pub fn new(tasks: Arc<dyn TaskStore>, clock: Arc<dyn Clock>) -> Self {
-        Self { tasks, clock }
+    pub fn new(
+        tasks: Arc<dyn TaskStore>,
+        rollup: Arc<RollupAncestors>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            tasks,
+            rollup,
+            clock,
+        }
     }
 
     pub async fn execute(&self, cmd: UpdateTaskCommand) -> ApplicationResult<TaskDto> {
         let id = Id::new(&cmd.task_id)?;
         let mut task = self.tasks.require(&id).await?;
+        let previous_parent = task.parent().cloned();
 
         if cmd.detach {
             task.detach(&*self.clock);
@@ -86,6 +97,13 @@ impl UpdateTask {
         }
 
         self.tasks.save(&mut task).await?;
+
+        let parent = task.parent().cloned();
+        if parent != previous_parent {
+            for affected in [previous_parent, parent].into_iter().flatten() {
+                self.rollup.from_parent(&affected).await?;
+            }
+        }
         Ok(TaskDto::from(&task))
     }
 

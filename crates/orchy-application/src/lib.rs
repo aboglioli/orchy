@@ -192,7 +192,11 @@ impl Application {
             ids,
         } = deps;
 
-        let rollup = Arc::new(RollupAncestors::new(Arc::clone(&tasks), Arc::clone(&clock)));
+        let rollup = Arc::new(RollupAncestors::new(
+            Arc::clone(&tasks),
+            Arc::clone(&leases),
+            Arc::clone(&clock),
+        ));
         let claim = Arc::new(ClaimTask::new(
             Arc::clone(&tasks),
             Arc::clone(&leases),
@@ -243,7 +247,11 @@ impl Application {
             ),
             list_tasks: ListTasks::new(Arc::clone(&tasks)),
             next_task: NextTask::new(Arc::clone(&ranking), Arc::clone(&claim)),
-            update_task: UpdateTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
+            update_task: UpdateTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&rollup),
+                Arc::clone(&clock),
+            ),
             claim_task: Arc::clone(&claim),
             release_task: ReleaseTask::new(
                 Arc::clone(&tasks),

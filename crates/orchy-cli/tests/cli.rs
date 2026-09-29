@@ -1591,3 +1591,50 @@ fn the_briefing_hands_over_the_latest_handoff() {
     let briefing = json(temp.path(), &["announce"]);
     assert_eq!(briefing["handoff"]["title"], "handoff 21");
 }
+
+#[test]
+fn a_parent_finished_by_rollup_gives_its_lease_back() {
+    let temp = vault();
+    let goal = task_id(&temp, &["goal"]);
+    ok(temp.path(), &["task", "claim", &goal]);
+    let split = json(temp.path(), &["task", "split", &goal, "part a", "part b"]);
+    for child in split["created"].as_array().unwrap() {
+        let id = child["id"].as_str().unwrap();
+        ok(temp.path(), &["task", "claim", id]);
+        ok(temp.path(), &["task", "done", id]);
+    }
+    assert_eq!(
+        json(temp.path(), &["task", "get", &goal])["task"]["status"],
+        "completed"
+    );
+    let held = ok(temp.path(), &["lock", "list"]);
+    assert!(
+        !held.contains(&goal),
+        "the finished goal is still held:\n{held}"
+    );
+}
+
+#[test]
+fn detaching_the_last_open_child_lets_the_parent_roll_up() {
+    let temp = vault();
+    let goal = task_id(&temp, &["goal"]);
+    let split = json(temp.path(), &["task", "split", &goal, "a", "b"]);
+    let children: Vec<String> = split["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect();
+    ok(temp.path(), &["task", "claim", &children[0]]);
+    ok(temp.path(), &["task", "done", &children[0]]);
+    assert_ne!(
+        json(temp.path(), &["task", "get", &goal])["task"]["status"],
+        "completed"
+    );
+
+    ok(temp.path(), &["task", "update", &children[1], "--detach"]);
+    assert_eq!(
+        json(temp.path(), &["task", "get", &goal])["task"]["status"],
+        "completed"
+    );
+}
