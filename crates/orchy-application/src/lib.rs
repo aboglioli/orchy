@@ -41,6 +41,7 @@ pub mod recall;
 pub mod reject_document;
 pub mod release_task;
 pub mod replace_task;
+pub mod resolve_mentions;
 pub mod resolve_reference;
 pub mod resolve_thread;
 pub mod retire_skill;
@@ -108,6 +109,7 @@ use recall::Recall;
 use reject_document::RejectDocument;
 use release_task::ReleaseTask;
 use replace_task::ReplaceTask;
+use resolve_mentions::ResolveMentions;
 use resolve_reference::ResolveReference;
 use resolve_thread::ResolveThread;
 use retire_skill::RetireSkill;
@@ -231,6 +233,11 @@ impl Application {
             Arc::clone(&leases),
             Arc::clone(&clock),
         ));
+        let mentions = Arc::new(ResolveMentions::new(
+            Arc::clone(&documents),
+            Arc::clone(&tasks),
+            Arc::clone(&skills),
+        ));
         let dependencies = Arc::new(AssessDependencies::new(
             Arc::clone(&tasks),
             Arc::clone(&edges),
@@ -275,7 +282,11 @@ impl Application {
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
-            read_document: ReadDocument::new(Arc::clone(&documents), Arc::clone(&edges)),
+            read_document: ReadDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&edges),
+                Arc::clone(&mentions),
+            ),
             edit_document: EditDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             set_document_field: SetDocumentField::new(Arc::clone(&documents), Arc::clone(&clock)),
             update_document: UpdateDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
@@ -398,7 +409,11 @@ impl Application {
             ),
 
             link_entities: LinkEntities::new(Arc::clone(&edges)),
-            traverse_graph: TraverseGraph::new(Arc::clone(&edges)),
+            traverse_graph: TraverseGraph::new(
+                Arc::clone(&edges),
+                Arc::clone(&documents),
+                Arc::clone(&mentions),
+            ),
             explain_entity: ExplainEntity::new(Arc::clone(&log), Arc::clone(&edges)),
             export_vault: ExportVault::new(
                 Arc::clone(&documents),

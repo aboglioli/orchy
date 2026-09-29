@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dto::{DocumentDto, EdgeDto};
 use crate::error::ApplicationResult;
+use crate::resolve_mentions::ResolveMentions;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReadDocumentCommand {
@@ -18,16 +19,26 @@ pub struct ReadDocumentResponse {
     pub document: DocumentDto,
     pub section: Option<String>,
     pub edges: Vec<EdgeDto>,
+    pub mentions: Vec<String>,
 }
 
 pub struct ReadDocument {
     documents: Arc<dyn DocumentStore>,
     edges: Arc<dyn EdgeStore>,
+    mentions: Arc<ResolveMentions>,
 }
 
 impl ReadDocument {
-    pub fn new(documents: Arc<dyn DocumentStore>, edges: Arc<dyn EdgeStore>) -> Self {
-        Self { documents, edges }
+    pub fn new(
+        documents: Arc<dyn DocumentStore>,
+        edges: Arc<dyn EdgeStore>,
+        mentions: Arc<ResolveMentions>,
+    ) -> Self {
+        Self {
+            documents,
+            edges,
+            mentions,
+        }
     }
 
     pub async fn execute(
@@ -43,11 +54,13 @@ impl ReadDocument {
         };
 
         let edges = self.edges.out(&EntityRef::document(id), None).await?;
+        let mentions = self.mentions.execute(&document).await?;
 
         Ok(ReadDocumentResponse {
             document: DocumentDto::from(&document),
             section,
             edges: edges.iter().map(EdgeDto::from).collect(),
+            mentions: mentions.iter().map(ToString::to_string).collect(),
         })
     }
 }

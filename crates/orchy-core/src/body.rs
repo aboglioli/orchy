@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::error::{DomainError, Result};
+use crate::id::Id;
 
 #[derive(Clone, Eq, PartialEq, Debug, Default, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
@@ -98,6 +99,28 @@ impl Body {
         }
     }
 
+    /// Ids named by wikilinks, `[[<id>]]` or `[[<id>|label]]`, outside code blocks. A
+    /// wikilink to anything but an id (Obsidian's `[[Some title]]`) is left alone.
+    pub fn mentions(&self) -> Vec<Id> {
+        let mut mentioned = Vec::new();
+        let mut fence: Option<&str> = None;
+        for line in self.0.lines() {
+            match (fence, fence_marker(line)) {
+                (Some(open), Some(close)) if close == open => fence = None,
+                (None, Some(open)) => fence = Some(open),
+                (None, None) => mentioned.extend(wikilinks(line)),
+                _ => {}
+            }
+        }
+        let mut unique = Vec::with_capacity(mentioned.len());
+        for id in mentioned {
+            if !unique.contains(&id) {
+                unique.push(id);
+            }
+        }
+        unique
+    }
+
     fn spans(&self) -> Vec<Span> {
         let mut spans: Vec<Span> = Vec::new();
         let mut fence: Option<&str> = None;
@@ -143,6 +166,23 @@ impl Body {
             ))),
         }
     }
+}
+
+fn wikilinks(line: &str) -> Vec<Id> {
+    let mut found = Vec::new();
+    let mut rest = line;
+    while let Some(start) = rest.find("[[") {
+        let after = &rest[start + 2..];
+        let Some(end) = after.find("]]") else {
+            break;
+        };
+        let target = after[..end].split('|').next().unwrap_or_default().trim();
+        if let Ok(id) = Id::new(target) {
+            found.push(id);
+        }
+        rest = &after[end + 2..];
+    }
+    found
 }
 
 /// ATX only, and the space is required: `#tag` is not a heading.
@@ -312,5 +352,16 @@ mod tests {
             .replace_once("world", "there")
             .unwrap();
         assert_eq!(out.unwrap().as_str(), "hello there");
+    }
+
+    #[test]
+    fn wikilinks_to_ids_are_mentions_and_everything_else_is_text() {
+        let a = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+        let b = "01BX5ZZKBKACTAV9WEVGEMMVRZ";
+        let body = Body::new(format!(
+            "See [[{a}]] and [[{b}|the plan]], again [[{a}]].\n[[Some title]]\n```\n[[01BX5ZZKBKACTAV9WEVGEMMVS0]]\n```\n"
+        ));
+        let mentioned: Vec<String> = body.mentions().iter().map(ToString::to_string).collect();
+        assert_eq!(mentioned, vec![a, b]);
     }
 }

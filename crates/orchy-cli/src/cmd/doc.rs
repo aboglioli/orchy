@@ -58,9 +58,26 @@ pub(crate) async fn read(
             nth,
         })
         .await?;
-    out.emit(&response, |r| match &r.section {
-        Some(body) => body.clone(),
-        None => detail(&r.document, out),
+    out.emit(&response, |r| {
+        if let Some(body) = &r.section {
+            return body.clone();
+        }
+        let links = r
+            .edges
+            .iter()
+            .map(|e| (e.relation.as_str(), e.to.as_str()))
+            .chain(r.mentions.iter().map(|m| ("mentions", m.as_str())));
+        let mut header: Vec<String> = links
+            .map(|(relation, to)| format!("  {relation:<10} {to}"))
+            .collect();
+        let text = detail(&r.document, out);
+        match text.split_once("\n\n") {
+            Some((top, body)) if !header.is_empty() => {
+                header.insert(0, top.to_owned());
+                format!("{}\n\n{body}", header.join("\n"))
+            }
+            _ => text,
+        }
     })
 }
 

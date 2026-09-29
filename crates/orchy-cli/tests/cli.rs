@@ -3196,3 +3196,43 @@ fn new_points_at_documents_that_already_cover_the_title() {
     );
     assert!(!text.contains("similar"), "{text}");
 }
+
+#[test]
+fn wikilinks_to_ids_show_as_mentions_in_read_and_graph() {
+    let temp = vault();
+    let plan = json(temp.path(), &["new", "plan", "q4 plan", "--body", "x"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let task = json(temp.path(), &["task", "new", "ship it"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let body =
+        format!("Follows [[{plan}|the plan]] and tracks [[{task}]]; [[Other note]] is not ours.");
+    let note = json(temp.path(), &["new", "note", "status", "--body", &body])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let read = json(temp.path(), &["read", &note]);
+    let mentions: Vec<&str> = read["mentions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        mentions,
+        vec![format!("document:{plan}"), format!("task:{task}")]
+    );
+    assert!(ok(temp.path(), &["read", &note]).contains(&format!("mentions   document:{plan}")));
+
+    let graph = json(
+        temp.path(),
+        &["graph", &format!("document:{note}"), "--rel", "mentions"],
+    );
+    let hops = graph.as_array().unwrap();
+    assert_eq!(hops.len(), 2, "{graph}");
+    assert!(hops.iter().all(|h| h["edge"]["relation"] == "mentions"));
+}

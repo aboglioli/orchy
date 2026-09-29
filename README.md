@@ -497,6 +497,11 @@ diagram to paste into a pull request or render with Graphviz. `orchy why` tells 
 entity's story: every recorded event about it, with who did it and when, and every link
 from and to it.
 
+A wikilink to an id in a document's body, `[[<id>]]` or `[[<id>|label]]` as Obsidian
+writes them, shows up as `mentions` in `read` and `graph`, so orchy and Obsidian's graph
+view agree. Mentions are read from the text each time; they are not links you can
+`unlink`, and wikilinks by title are left alone.
+
 Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill`,
 `message` or `actor`. Relations with side effects are set by their own commands instead:
 
