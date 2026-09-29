@@ -303,4 +303,15 @@ pub struct BriefingDto {
     pub handoff: Option<DocumentDto>,
     pub unreadable: usize,
     pub doomed: Vec<TaskDto>,
+    pub since_last: Option<SinceLastDto>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SinceLastDto {
+    pub since: DateTime<Utc>,
+    pub tasks_completed: usize,
+    pub tasks_failed: usize,
+    pub documents_created: usize,
+    pub documents_superseded: usize,
+    pub skills_changed: usize,
 }

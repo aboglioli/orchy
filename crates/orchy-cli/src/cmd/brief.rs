@@ -1,6 +1,6 @@
+use chrono::SecondsFormat;
 use orchy_application::Application;
 use orchy_application::announce_actor::AnnounceActorCommand;
-use orchy_application::brief::BriefCommand;
 use orchy_application::dto::BriefingDto;
 
 use crate::cmd::skill::summarise;
@@ -36,19 +36,13 @@ pub(crate) async fn announce(
     name: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
-    app.announce_actor
+    let briefing = app
+        .announce_actor
         .execute(AnnounceActorCommand {
             actor: actor.to_owned(),
             roles,
             namespace,
             display_name: name,
-        })
-        .await?;
-
-    let briefing = app
-        .brief
-        .execute(BriefCommand {
-            actor: actor.to_owned(),
         })
         .await?;
     out.emit(&briefing, render)
@@ -70,6 +64,10 @@ fn render(briefing: &BriefingDto) -> String {
     ];
 
     if let Some(block) = attention(briefing) {
+        lines.push(block);
+        lines.push(String::new());
+    }
+    if let Some(block) = since_last(briefing) {
         lines.push(block);
         lines.push(String::new());
     }
@@ -116,6 +114,39 @@ fn attention(briefing: &BriefingDto) -> Option<String> {
     }
     items.insert(0, "ATTENTION".to_owned());
     Some(items.join("\n"))
+}
+
+fn since_last(briefing: &BriefingDto) -> Option<String> {
+    let changes = briefing.since_last.as_ref()?;
+    let items: Vec<String> = [
+        (changes.tasks_completed, "task completed", "tasks completed"),
+        (changes.tasks_failed, "task failed", "tasks failed"),
+        (
+            changes.documents_created,
+            "document written",
+            "documents written",
+        ),
+        (
+            changes.documents_superseded,
+            "document superseded",
+            "documents superseded",
+        ),
+        (changes.skills_changed, "skill change", "skill changes"),
+    ]
+    .into_iter()
+    .filter(|(count, _, _)| *count > 0)
+    .map(|(count, one, many)| format!("  {count} {}", if count == 1 { one } else { many }))
+    .collect();
+    if items.is_empty() {
+        return None;
+    }
+    let mut block = vec![format!(
+        "SINCE YOU WERE LAST HERE ({}) — orchy events --since {}",
+        changes.since.format("%Y-%m-%d %H:%M"),
+        changes.since.to_rfc3339_opts(SecondsFormat::Secs, true)
+    )];
+    block.extend(items);
+    Some(block.join("\n"))
 }
 
 fn skills(briefing: &BriefingDto) -> String {

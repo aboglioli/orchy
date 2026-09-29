@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use orchy_core::{
     Actor, ActorId, Body, Document, DocumentStatus, DomainError, EntityKind, EntityRef,
     Frontmatter, Id, Kind, Message, MessageStatus, Namespace, Priority, Problem, ProblemKind,
@@ -109,7 +109,7 @@ fn timestamp(frontmatter: &Frontmatter, field: &str) -> Option<DateTime<Utc>> {
 }
 
 fn stamp(at: DateTime<Utc>) -> Value {
-    json!(at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    json!(at.to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
 fn task_ref(id: &Id) -> String {
@@ -422,7 +422,14 @@ pub fn actor_to_markdown(actor: &Actor, carried: Frontmatter) -> MarkdownFile {
     }
     frontmatter.set("namespace", json!(actor.namespace().to_string()));
     frontmatter.set("announced", stamp(actor.announced_at()));
-    frontmatter.set("last_seen", stamp(actor.last_seen()));
+    frontmatter.set(
+        "last_seen",
+        json!(
+            actor
+                .last_seen()
+                .to_rfc3339_opts(SecondsFormat::Millis, true)
+        ),
+    );
 
     for (key, value) in carried.iter() {
         if !ACTOR_KEYS.contains(&key) {

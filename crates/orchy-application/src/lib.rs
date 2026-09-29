@@ -136,7 +136,6 @@ pub struct ApplicationDeps {
 pub struct Application {
     pub announce_actor: AnnounceActor,
     pub touch_actor: TouchActor,
-    pub brief: Brief,
     pub list_actors: ListActors,
     pub manage_lease: ManageLease,
 
@@ -228,9 +227,25 @@ impl Application {
             Arc::clone(&tasks),
             Arc::clone(&dependencies),
         ));
+        let brief = Arc::new(Brief::new(BriefSources {
+            actors: Arc::clone(&actors),
+            skills: Arc::clone(&skills),
+            tasks: Arc::clone(&tasks),
+            messages: Arc::clone(&messages),
+            watermarks: Arc::clone(&watermarks),
+            documents: Arc::clone(&documents),
+            integrity: Arc::clone(&integrity),
+            ranking: Arc::clone(&ranking),
+            dependencies: Arc::clone(&dependencies),
+            log: Arc::clone(&log),
+        }));
 
         Self {
-            announce_actor: AnnounceActor::new(Arc::clone(&actors), Arc::clone(&clock)),
+            announce_actor: AnnounceActor::new(
+                Arc::clone(&actors),
+                Arc::clone(&brief),
+                Arc::clone(&clock),
+            ),
             touch_actor: TouchActor::new(Arc::clone(&actors), Arc::clone(&clock)),
             list_actors: ListActors::new(Arc::clone(&actors), Arc::clone(&clock)),
             manage_lease: ManageLease::new(
@@ -341,17 +356,6 @@ impl Application {
             ),
             read_inbox: ReadInbox::new(Arc::clone(&messages), Arc::clone(&watermarks)),
 
-            brief: Brief::new(BriefSources {
-                actors: Arc::clone(&actors),
-                skills: Arc::clone(&skills),
-                tasks: Arc::clone(&tasks),
-                messages: Arc::clone(&messages),
-                watermarks: Arc::clone(&watermarks),
-                documents: Arc::clone(&documents),
-                integrity: Arc::clone(&integrity),
-                ranking: Arc::clone(&ranking),
-                dependencies: Arc::clone(&dependencies),
-            }),
             write_skill: WriteSkill::new(Arc::clone(&skills), Arc::clone(&ids), Arc::clone(&clock)),
             read_skill: ReadSkill::new(Arc::clone(&skills)),
             list_skills: ListSkills::new(Arc::clone(&skills)),

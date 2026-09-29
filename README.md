@@ -93,7 +93,9 @@ change without writing it.
 - the skills in force where it is working, which it is expected to follow;
 - unread messages, and any tasks it already holds;
 - the most urgent task waiting in its area;
-- the handoff note left by the last session there.
+- the handoff note left by the last session there;
+- for a returning agent, what others did in its area since it last announced: tasks
+  completed or failed, documents written or superseded, skills changed.
 
 That briefing is all an agent needs to start working. `orchy guide` prints the same
 orientation without joining, and running `orchy` with no arguments shows it along with the

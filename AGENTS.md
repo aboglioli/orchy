@@ -273,15 +273,18 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 
 ### Briefing
 
-`orchy announce` saves the actor and returns `Brief`'s `BriefingDto` for the actor's
-namespace:
+`AnnounceActor` saves the actor and returns the briefing itself (it owns `Brief`), so any
+handler gets the same behaviour from one use case. The briefing covers the actor's namespace:
 
 - the skills in force;
 - the unread message count;
 - the tasks the actor holds, and those of them a failed dependency dooms;
 - the task `orchy task next --namespace <ns>` would hand out (`RankClaimable`);
 - the most recently updated `context` document;
-- how many files the stores had to skip (`Integrity::unreadable`).
+- how many files the stores had to skip (`Integrity::unreadable`);
+- for a returning actor, `since_last`: what others changed in its namespace since its
+  previous announce, counted from the event log. The roster keeps `last_seen` to the
+  millisecond so that count starts exactly where the last one ended.
 
 `orchy guide` and a bare `orchy` print the same orientation without touching the roster.
 Agents are told to run `announce` first, so this is the text every session starts from:

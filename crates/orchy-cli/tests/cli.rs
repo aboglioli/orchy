@@ -2506,3 +2506,39 @@ fn an_abandoned_claim_can_be_taken_back_once_its_lease_expires() {
     assert_eq!(released[0]["payload"]["forced"], true);
     assert_eq!(released[0]["payload"]["reason"], "crashed agent");
 }
+
+#[test]
+fn a_returning_agent_is_told_what_others_did_while_it_was_away() {
+    let temp = vault();
+    ok(temp.path(), &["announce"]);
+
+    ok(
+        temp.path(),
+        &["--actor", "codex", "new", "decision", "d", "--body", "x"],
+    );
+    let t = task_id(&temp, &["done by codex"]);
+    ok(temp.path(), &["--actor", "codex", "task", "claim", &t]);
+    ok(temp.path(), &["--actor", "codex", "task", "done", &t]);
+    ok(
+        temp.path(),
+        &["new", "note", "mine", "--body", "own work is not news"],
+    );
+
+    let text = ok(temp.path(), &["announce"]);
+    assert!(text.contains("SINCE YOU WERE LAST HERE"), "{text}");
+    assert!(
+        text.contains("1 document written") && text.contains("1 task completed"),
+        "{text}"
+    );
+
+    ok(
+        temp.path(),
+        &["--actor", "codex", "new", "note", "later", "--body", "y"],
+    );
+    let briefing = json(temp.path(), &["announce"]);
+    assert_eq!(
+        briefing["since_last"]["documents_created"], 1,
+        "counted from the previous announce"
+    );
+    assert_eq!(briefing["since_last"]["tasks_completed"], 0);
+}

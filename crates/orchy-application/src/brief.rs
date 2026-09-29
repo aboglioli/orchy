@@ -1,20 +1,23 @@
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use orchy_core::task::dependencies::Outcome;
 use orchy_core::{
-    ActorId, ActorStore, DocumentQuery, DocumentStore, Integrity, Kind, MessageStore, Namespace,
-    ReadWatermarks, SkillStore, Task, TaskQuery, TaskStatus, TaskStore, skill,
+    ActorId, ActorStore, DocumentQuery, DocumentStore, EventLog, EventQuery, Integrity, Kind,
+    MessageStore, Namespace, ReadWatermarks, SkillStore, Task, TaskQuery, TaskStatus, TaskStore,
+    skill,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::assess_dependencies::AssessDependencies;
-use crate::dto::{ActorDto, BriefingDto, DocumentDto, SkillDto, TaskDto};
+use crate::dto::{ActorDto, BriefingDto, DocumentDto, SinceLastDto, SkillDto, TaskDto};
 use crate::error::{ApplicationError, ApplicationResult};
 use crate::rank_claimable::RankClaimable;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BriefCommand {
     pub actor: String,
+    pub since: Option<DateTime<Utc>>,
 }
 
 pub struct BriefSources {
@@ -27,6 +30,7 @@ pub struct BriefSources {
     pub integrity: Arc<dyn Integrity>,
     pub ranking: Arc<RankClaimable>,
     pub dependencies: Arc<AssessDependencies>,
+    pub log: Arc<dyn EventLog>,
 }
 
 pub struct Brief {
@@ -65,7 +69,54 @@ impl Brief {
             handoff: self.handoff(&namespace).await?,
             unreadable: self.sources.integrity.unreadable().await?.len(),
             doomed,
+            since_last: match cmd.since {
+                Some(since) => Some(self.since_last(&id, &namespace, since).await?),
+                None => None,
+            },
         })
+    }
+
+    /// What others changed where the actor works while it was away.
+    async fn since_last(
+        &self,
+        actor: &ActorId,
+        namespace: &Namespace,
+        since: DateTime<Utc>,
+    ) -> ApplicationResult<SinceLastDto> {
+        let events = self
+            .sources
+            .log
+            .replay(&EventQuery {
+                since: Some(since),
+                ..Default::default()
+            })
+            .await?;
+        let mut changes = SinceLastDto {
+            since,
+            ..Default::default()
+        };
+        let me = actor.to_string();
+        for event in events {
+            if event.actor.as_deref() == Some(me.as_str()) {
+                continue;
+            }
+            let within = Namespace::new(&event.namespace).is_ok_and(|ns| namespace.contains(&ns));
+            if !within {
+                continue;
+            }
+            match event.topic.as_str() {
+                "task.finished" | "task.rolled_up" => match event.payload["status"].as_str() {
+                    Some("completed") => changes.tasks_completed += 1,
+                    Some("failed") => changes.tasks_failed += 1,
+                    _ => {}
+                },
+                "document.created" => changes.documents_created += 1,
+                "document.superseded" => changes.documents_superseded += 1,
+                topic if topic.starts_with("skill.") => changes.skills_changed += 1,
+                _ => {}
+            }
+        }
+        Ok(changes)
     }
 
     async fn skills_in_force(&self, namespace: &Namespace) -> ApplicationResult<Vec<SkillDto>> {
