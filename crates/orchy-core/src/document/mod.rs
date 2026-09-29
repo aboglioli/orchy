@@ -19,6 +19,7 @@ pub use kind::{DocumentStatus, Kind};
 
 use crate::body::Body;
 use crate::clock::Clock;
+use crate::content_hash;
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
 use crate::id::{Id, IdGenerator};
@@ -442,8 +443,17 @@ impl Document {
         &self.body
     }
     pub fn content_hash(&self) -> &str {
-        self.content_hash
-            .get_or_init(|| hash_of(&self.title, &self.body, &self.frontmatter))
+        self.content_hash.get_or_init(|| {
+            content_hash::content_hash(
+                &[("title", self.title.as_str()), ("body", self.body.as_str())],
+                &self.frontmatter,
+            )
+        })
+    }
+
+    /// Refuses a write made against an older version than the one stored.
+    pub fn ensure_unchanged(&self, expected: Option<&str>) -> Result<()> {
+        content_hash::ensure_matches(self.content_hash(), expected)
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -463,23 +473,6 @@ fn semantic_command_for(field: &str) -> Option<&'static str> {
         "title" => Some("orchy retitle"),
         _ => None,
     }
-}
-
-fn hash_of(title: &Title, body: &Body, frontmatter: &Frontmatter) -> String {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-    hasher.update(b"title\x00");
-    hasher.update(title.as_str().as_bytes());
-    hasher.update(b"\x00body\x00");
-    hasher.update(body.as_str().as_bytes());
-    for (key, value) in frontmatter.iter() {
-        hasher.update(b"\x00field\x00");
-        hasher.update(key.as_bytes());
-        hasher.update(b"\x00");
-        hasher.update(value.to_string().as_bytes());
-    }
-    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]

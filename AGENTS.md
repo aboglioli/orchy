@@ -247,8 +247,9 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 - **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
   digests to what this process last read (compare-and-swap under a per-file guard in
   `.orchy/write-guards/`). Two agents that load and change one entity get a conflict, not a
-  lost update. Document edits additionally support `--if-match <content_hash>` across
-  commands.
+  lost update. Every command that changes a document or a skill also takes
+  `--if-match <content_hash>`, checked by `ensure_unchanged` on the aggregate, so a change
+  made between an agent's read and its write is refused (exit 5) rather than overwritten.
 - **Runtime state** lives in `.orchy/` and is never committed: `presence/`, `read/`
   (watermarks), `locks/` (leases), `write-guards/`.
 - **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's

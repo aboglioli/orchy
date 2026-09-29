@@ -15,6 +15,7 @@ pub struct SetSkillFieldCommand {
     pub remove: Vec<String>,
     pub tag: Vec<String>,
     pub untag: Vec<String>,
+    pub if_match: Option<String>,
 }
 
 pub struct SetSkillField {
@@ -41,6 +42,7 @@ impl SetSkillField {
             })
             .await?;
         let mut skill = self.skills.require(&found.id.parse()?).await?;
+        skill.ensure_unchanged(cmd.if_match.as_deref())?;
 
         for (field, value) in &cmd.fields {
             skill.set_field(field, value.clone(), &*self.clock)?;

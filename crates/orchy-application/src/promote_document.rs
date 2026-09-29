@@ -19,6 +19,7 @@ pub struct PromoteDocumentCommand {
     pub namespace: Option<String>,
     pub skill_name: Option<String>,
     pub summary: Option<String>,
+    pub if_match: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +61,7 @@ impl PromoteDocument {
         cmd: PromoteDocumentCommand,
     ) -> ApplicationResult<PromoteDocumentResponse> {
         let mut document = self.documents.require(&Id::new(&cmd.document_id)?).await?;
+        document.ensure_unchanged(cmd.if_match.as_deref())?;
         let into = match (&cmd.namespace, &cmd.actor) {
             (Some(ns), _) => Namespace::new(ns)?,
             (None, Some(actor)) => self.actors.home_of(&actor.parse::<ActorId>()?).await?,

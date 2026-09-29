@@ -14,6 +14,7 @@ pub struct WriteSkillCommand {
     pub summary: Option<String>,
     pub namespace: Option<String>,
     pub body: Option<String>,
+    pub if_match: Option<String>,
 }
 
 pub struct WriteSkill {
@@ -49,6 +50,7 @@ impl WriteSkill {
 
         let mut skill = match existing {
             Some(mut found) => {
+                found.ensure_unchanged(cmd.if_match.as_deref())?;
                 if let Some(summary) = &cmd.summary {
                     found.describe(Summary::new(summary)?, &*self.clock);
                 }
@@ -56,6 +58,12 @@ impl WriteSkill {
                     found.edit(Body::new(body), &*self.clock);
                 }
                 found
+            }
+            None if cmd.if_match.is_some() => {
+                return Err(DomainError::conflict(format!(
+                    "no skill `{name}` in {namespace} to match against"
+                ))
+                .into());
             }
             None => {
                 let summary = cmd.summary.as_deref().ok_or_else(|| {

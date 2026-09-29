@@ -66,6 +66,7 @@ pub(crate) async fn set(
     app: &Application,
     target: String,
     assignments: Vec<String>,
+    if_match: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
     let mut fields = Vec::new();
@@ -84,6 +85,7 @@ pub(crate) async fn set(
         .execute(SetDocumentFieldCommand {
             document_id,
             fields,
+            if_match,
         })
         .await?;
     out.emit(&document, |d| format!("{}  updated", short(&d.id)))
@@ -238,13 +240,18 @@ pub(crate) async fn supersede(
     app: &Application,
     old: String,
     by: String,
+    if_match: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
     let old_id = resolve::document(app, &old).await?;
     let new_id = resolve::document(app, &by).await?;
     let document = app
         .supersede_document
-        .execute(SupersedeDocumentCommand { old_id, new_id })
+        .execute(SupersedeDocumentCommand {
+            old_id,
+            new_id,
+            if_match,
+        })
         .await?;
     out.emit(&document, |d| format!("{}  superseded", short(&d.id)))
 }
@@ -291,6 +298,7 @@ pub(crate) async fn reject(
     app: &Application,
     target: String,
     reason: Option<String>,
+    if_match: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
     let document_id = resolve::document(app, &target).await?;
@@ -299,6 +307,7 @@ pub(crate) async fn reject(
         .execute(RejectDocumentCommand {
             document_id,
             reason,
+            if_match,
         })
         .await?;
     out.emit(&document, |d| format!("{}  rejected", short(&d.id)))
@@ -308,6 +317,7 @@ pub(crate) async fn set_status(
     app: &Application,
     target: String,
     status: &str,
+    if_match: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
     let document_id = resolve::document(app, &target).await?;
@@ -316,6 +326,7 @@ pub(crate) async fn set_status(
         .execute(UpdateDocumentCommand {
             document_id,
             status: Some(status.to_owned()),
+            if_match,
             ..Default::default()
         })
         .await?;
@@ -381,6 +392,7 @@ fn detail(document: &DocumentDto, out: &Output) -> String {
     if !document.tags.is_empty() {
         lines.push(format!("  tags       {}", document.tags.join(", ")));
     }
+    lines.push(format!("  hash       {}", document.content_hash));
     lines.push(String::new());
     lines.push(document.body.clone());
     lines.join("\n")

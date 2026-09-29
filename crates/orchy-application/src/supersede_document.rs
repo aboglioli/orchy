@@ -10,6 +10,7 @@ use crate::error::ApplicationResult;
 pub struct SupersedeDocumentCommand {
     pub old_id: String,
     pub new_id: String,
+    pub if_match: Option<String>,
 }
 
 pub struct SupersedeDocument {
@@ -37,6 +38,7 @@ impl SupersedeDocument {
         self.documents.require(&new_id).await?;
 
         let mut old = self.documents.require(&old_id).await?;
+        old.ensure_unchanged(cmd.if_match.as_deref())?;
         old.supersede(new_id.clone(), &*self.clock)?;
         self.documents.save(&mut old).await?;
 

@@ -2944,3 +2944,89 @@ fn consolidate_supersedes_the_sources_and_hides_them_from_recall() {
     );
     assert_eq!(graph.matches("merged_from").count(), 2, "{graph}");
 }
+
+#[test]
+fn a_stale_hash_refuses_every_document_and_skill_change() {
+    let temp = vault();
+    let created = json(
+        temp.path(),
+        &["new", "decision", "keys", "--body", "rotate"],
+    );
+    let id = created["id"].as_str().unwrap().to_owned();
+    let hash = created["content_hash"].as_str().unwrap().to_owned();
+    assert!(
+        ok(temp.path(), &["read", &id]).contains(&hash),
+        "the hash is in the text header"
+    );
+    ok(temp.path(), &["edit", &id, "--content", "later"]);
+
+    for args in [
+        vec!["retitle", &id, "other"],
+        vec!["retype", &id, "note"],
+        vec!["tag", "--if-match", &hash, &id, "+x"],
+        vec!["set", &id, "reviewer=alan"],
+        vec!["archive", &id],
+        vec!["ns", "move", &id, "/web"],
+    ] {
+        let mut args = args.clone();
+        if !args.contains(&"--if-match") {
+            args.extend(["--if-match", &hash]);
+        }
+        let refused = orchy(temp.path(), &args);
+        assert_eq!(refused.status.code(), Some(5), "{args:?}");
+    }
+    let misplaced = orchy(temp.path(), &["tag", &id, "+x", "--if-match", &hash]);
+    assert_eq!(
+        misplaced.status.code(),
+        Some(6),
+        "a trailing option is refused, not taken as a tag"
+    );
+    let unchanged = json(temp.path(), &["read", &id])["document"].clone();
+    assert!(unchanged["tags"].as_array().is_none_or(|t| t.is_empty()));
+    assert_eq!(unchanged["title"], "keys");
+    assert_eq!(unchanged["status"], "active");
+
+    let fresh = unchanged["content_hash"].as_str().unwrap().to_owned();
+    ok(temp.path(), &["archive", &id, "--if-match", &fresh]);
+
+    let skill = json(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "commits",
+            "--summary",
+            "one line",
+            "--body",
+            "x",
+        ],
+    );
+    let skill_hash = skill["content_hash"].as_str().unwrap().to_owned();
+    ok(temp.path(), &["skill", "write", "commits", "--body", "y"]);
+    let refused = orchy(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "commits",
+            "--body",
+            "z",
+            "--if-match",
+            &skill_hash,
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(5));
+    let refused = orchy(
+        temp.path(),
+        &[
+            "skill",
+            "set",
+            "commits",
+            "--tag",
+            "git",
+            "--if-match",
+            &skill_hash,
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(5));
+}

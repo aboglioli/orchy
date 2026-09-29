@@ -1,6 +1,7 @@
 pub mod actor;
 pub mod body;
 pub mod clock;
+mod content_hash;
 pub mod document;
 pub mod entity_ref;
 pub mod error;

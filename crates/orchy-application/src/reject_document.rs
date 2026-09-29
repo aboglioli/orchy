@@ -10,6 +10,7 @@ use crate::error::ApplicationResult;
 pub struct RejectDocumentCommand {
     pub document_id: String,
     pub reason: Option<String>,
+    pub if_match: Option<String>,
 }
 
 pub struct RejectDocument {
@@ -24,6 +25,7 @@ impl RejectDocument {
 
     pub async fn execute(&self, cmd: RejectDocumentCommand) -> ApplicationResult<DocumentDto> {
         let mut document = self.documents.require(&Id::new(&cmd.document_id)?).await?;
+        document.ensure_unchanged(cmd.if_match.as_deref())?;
         document.reject(cmd.reason, &*self.clock)?;
         self.documents.save(&mut document).await?;
         Ok(DocumentDto::from(&document))

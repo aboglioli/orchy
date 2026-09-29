@@ -321,6 +321,10 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
   - `--replace` replaces the whole body.
 
   Content comes from `--content` or from standard input.
+- **Stale writes.** `read` shows the document's `hash`. Pass it back with `--if-match` on
+  `edit`, `set`, `retitle`, `retype`, `tag`, `ns move`, `supersede`, `archive`, `unarchive`,
+  `promote` or `reject`, and the change is refused (exit 5) if someone else changed the
+  document in between. `skill write` and `skill set` take it too.
 - **Where it came from.** `new --task <task>` links the document to the task whose work
   produced it, so `orchy graph task:<id>` shows what a piece of work left behind.
 - **Your own fields.** `set` adds any header field you like (`reviewer=alan`,

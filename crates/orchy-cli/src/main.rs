@@ -20,10 +20,12 @@ use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_events::ReadEventsCommand;
 use orchy_application::recall::RecallCommand;
 use orchy_application::update_document::UpdateDocumentCommand;
+use orchy_application::write_skill::WriteSkillCommand;
 
 use cli::{Cli, Command, LockCommand, NsCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
+use orchy_core::DomainError;
 use output::{Output, short};
 
 #[tokio::main(flavor = "current_thread")]
@@ -135,7 +137,17 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 namespace,
                 body,
                 tag,
-            } => cmd::skill::write(&app, name, summary, namespace, body, tag, out).await,
+                if_match,
+            } => {
+                let command = WriteSkillCommand {
+                    name,
+                    summary,
+                    namespace,
+                    body,
+                    if_match,
+                };
+                cmd::skill::write(&app, command, tag, out).await
+            }
             SkillCommand::Set {
                 target,
                 namespace,
@@ -267,7 +279,8 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Command::Set {
             target,
             assignments,
-        } => cmd::doc::set(&app, target, assignments, out).await,
+            if_match,
+        } => cmd::doc::set(&app, target, assignments, if_match, out).await,
 
         Command::Recall {
             query,
@@ -311,23 +324,48 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             rel,
             format,
         } => cmd::doc::graph(&app, from, depth, rel, format, out).await,
-        Command::Retitle { target, title } => {
+        Command::Retitle {
+            target,
+            title,
+            if_match,
+        } => {
             let command = UpdateDocumentCommand {
                 title: Some(title),
+                if_match,
                 ..Default::default()
             };
             cmd::doc::update(&app, target, command, out).await
         }
-        Command::Retype { target, kind } => {
+        Command::Retype {
+            target,
+            kind,
+            if_match,
+        } => {
             let command = UpdateDocumentCommand {
                 kind: Some(kind),
+                if_match,
                 ..Default::default()
             };
             cmd::doc::update(&app, target, command, out).await
         }
-        Command::Tag { target, changes } => {
-            let mut command = UpdateDocumentCommand::default();
+        Command::Tag {
+            target,
+            changes,
+            if_match,
+        } => {
+            let mut command = UpdateDocumentCommand {
+                if_match,
+                ..Default::default()
+            };
             for change in changes {
+                if change.starts_with("--") {
+                    return Err(CliError::Application(
+                        DomainError::validation(format!(
+                            "`{change}` came after the tag changes; put options before them"
+                        ))
+                        .into(),
+                    ));
+                }
                 match change.strip_prefix('-') {
                     Some(tag) => command.remove_tags.push(tag.to_owned()),
                     None => command
@@ -337,30 +375,47 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             }
             cmd::doc::update(&app, target, command, out).await
         }
-        Command::Ns(NsCommand::Move { target, namespace }) => {
+        Command::Ns(NsCommand::Move {
+            target,
+            namespace,
+            if_match,
+        }) => {
             let command = UpdateDocumentCommand {
                 namespace: Some(namespace),
+                if_match,
                 ..Default::default()
             };
             cmd::doc::update(&app, target, command, out).await
         }
-        Command::Reject { target, reason } => cmd::doc::reject(&app, target, reason, out).await,
+        Command::Reject {
+            target,
+            reason,
+            if_match,
+        } => cmd::doc::reject(&app, target, reason, if_match, out).await,
         Command::Why { entity } => cmd::doc::why(&app, entity, out).await,
         Command::Doctor { fix } => cmd::doctor::run(&app, fix, out).await,
-        Command::Supersede { old, by } => cmd::doc::supersede(&app, old, by, out).await,
+        Command::Supersede { old, by, if_match } => {
+            cmd::doc::supersede(&app, old, by, if_match, out).await
+        }
         Command::Consolidate { sources, into } => {
             cmd::doc::consolidate(&app, sources, into, out).await
         }
-        Command::Archive { target } => cmd::doc::set_status(&app, target, "archived", out).await,
-        Command::Unarchive { target } => cmd::doc::set_status(&app, target, "active", out).await,
+        Command::Archive { target, if_match } => {
+            cmd::doc::set_status(&app, target, "archived", if_match, out).await
+        }
+        Command::Unarchive { target, if_match } => {
+            cmd::doc::set_status(&app, target, "active", if_match, out).await
+        }
         Command::Promote {
             target,
             into,
             namespace,
             name,
             summary,
+            if_match,
         } => {
             let command = PromoteDocumentCommand {
+                if_match,
                 actor: Some(actor.clone()),
                 document_id: target,
                 into,

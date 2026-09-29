@@ -268,6 +268,7 @@ pub struct SkillDto {
     pub tags: Vec<String>,
     pub frontmatter: BTreeMap<String, serde_json::Value>,
     pub body: String,
+    pub content_hash: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -287,6 +288,7 @@ impl From<&Skill> for SkillDto {
                 .map(|(k, v)| (k.to_owned(), v.clone()))
                 .collect(),
             body: skill.body().as_str().to_owned(),
+            content_hash: skill.content_hash(),
             created_at: skill.created_at(),
             updated_at: skill.updated_at(),
         }

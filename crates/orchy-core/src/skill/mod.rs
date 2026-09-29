@@ -16,6 +16,7 @@ pub use name::{SkillName, Summary};
 
 use crate::body::Body;
 use crate::clock::Clock;
+use crate::content_hash;
 use crate::document::Frontmatter;
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
@@ -307,6 +308,21 @@ impl Skill {
 
     pub fn frontmatter(&self) -> &Frontmatter {
         &self.frontmatter
+    }
+
+    pub fn content_hash(&self) -> String {
+        content_hash::content_hash(
+            &[
+                ("name", self.name.as_str()),
+                ("summary", self.summary.as_str()),
+                ("body", self.body.as_str()),
+            ],
+            &self.frontmatter,
+        )
+    }
+
+    pub fn ensure_unchanged(&self, expected: Option<&str>) -> Result<()> {
+        content_hash::ensure_matches(&self.content_hash(), expected)
     }
 
     pub fn body(&self) -> &Body {

@@ -140,6 +140,9 @@ pub(crate) enum Command {
         target: String,
         /// field=value, repeatable
         assignments: Vec<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Search documents and skills by text, best first
     Recall {
@@ -199,14 +202,29 @@ pub(crate) enum Command {
     /// The story of one entity: what happened to it, by whom, and what it is linked to
     Why { entity: String },
     /// Give a document a new title
-    Retitle { target: String, title: String },
+    Retitle {
+        target: String,
+        title: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
     /// Change what kind of document it is
-    Retype { target: String, kind: String },
+    Retype {
+        target: String,
+        kind: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
     /// Add or remove tags: `+t` or `t` adds, `-t` removes
     Tag {
         target: String,
         #[arg(allow_hyphen_values = true, required = true)]
         changes: Vec<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Namespaces
     #[command(subcommand)]
@@ -216,6 +234,9 @@ pub(crate) enum Command {
         old: String,
         #[arg(long)]
         by: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Record that duplicates were merged into one document: the sources become superseded
     /// by it and their tags carry over. Merge the bodies first, with `edit`.
@@ -226,9 +247,19 @@ pub(crate) enum Command {
         into: String,
     },
     /// Retire a document from active use
-    Archive { target: String },
+    Archive {
+        target: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
     /// Bring an archived document back
-    Unarchive { target: String },
+    Unarchive {
+        target: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
     /// Graduate a candidate into canon as a concrete type
     Promote {
         target: String,
@@ -243,12 +274,18 @@ pub(crate) enum Command {
         /// The skill's one-line summary (default: the candidate's title)
         #[arg(long)]
         summary: Option<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Turn a candidate down; it stays, marked rejected, out of recall
     Reject {
         target: String,
         #[arg(long)]
         reason: Option<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Same-machine advisory locks
     #[command(subcommand)]
@@ -520,6 +557,9 @@ pub(crate) enum SkillCommand {
         /// Cross-cutting label, repeatable
         #[arg(long)]
         tag: Vec<String>,
+        /// Refuse unless the skill still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Set any other frontmatter a team wants on a skill
     Set {
@@ -580,6 +620,9 @@ pub(crate) struct SkillEdits {
     pub tag: Vec<String>,
     #[arg(long)]
     pub untag: Vec<String>,
+    /// Refuse unless the skill still hashes to this
+    #[arg(long)]
+    pub if_match: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -592,7 +635,13 @@ pub(crate) enum GraphFormat {
 #[derive(Subcommand, Debug)]
 pub(crate) enum NsCommand {
     /// Move a document to another namespace; its file moves with it
-    Move { target: String, namespace: String },
+    Move {
+        target: String,
+        namespace: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

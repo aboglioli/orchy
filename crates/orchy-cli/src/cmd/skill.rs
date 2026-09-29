@@ -14,22 +14,13 @@ use crate::stdin;
 
 pub(crate) async fn write(
     app: &Application,
-    name: String,
-    summary: Option<String>,
-    namespace: Option<String>,
-    body: Option<String>,
+    mut command: WriteSkillCommand,
     tag: Vec<String>,
     out: &Output,
 ) -> CliResult<()> {
-    let skill = app
-        .write_skill
-        .execute(WriteSkillCommand {
-            name: name.clone(),
-            summary,
-            namespace: namespace.clone(),
-            body: piped(body)?,
-        })
-        .await?;
+    let (name, namespace) = (command.name.clone(), command.namespace.clone());
+    command.body = piped(command.body)?;
+    let skill = app.write_skill.execute(command).await?;
     if tag.is_empty() {
         return out.emit(&skill, |s| format!("{}  {}", s.name, s.summary));
     }
@@ -72,6 +63,7 @@ pub(crate) async fn set(
             remove: edits.remove,
             tag: edits.tag,
             untag: edits.untag,
+            if_match: edits.if_match,
         })
         .await?;
     out.emit(&skill, |s| format!("{}  updated", s.name))
@@ -159,8 +151,8 @@ pub(crate) async fn show(
         .await?;
     out.emit(&skill, |s| {
         format!(
-            "{}  {}\n  namespace {}\n  status    {}\n\n{}",
-            s.name, s.summary, s.namespace, s.status, s.body
+            "{}  {}\n  namespace {}\n  status    {}\n  hash      {}\n\n{}",
+            s.name, s.summary, s.namespace, s.status, s.content_hash, s.body
         )
     })
 }
