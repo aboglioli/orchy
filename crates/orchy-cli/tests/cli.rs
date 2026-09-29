@@ -2623,3 +2623,33 @@ fn a_target_file_shows_who_replaced_produced_or_subdivided_it() {
         file_of(&temp, &note)
     );
 }
+
+#[test]
+fn the_inbox_can_keep_to_one_conversation() {
+    let temp = vault();
+    ok(temp.path(), &["announce"]);
+    let send = |actor: &str, args: &[&str]| -> String {
+        let mut full = vec!["--actor", actor, "msg", "send"];
+        full.extend_from_slice(args);
+        json(temp.path(), &full)["id"].as_str().unwrap().to_owned()
+    };
+    let first = send("codex", &["@claude", "--body", "about keys"]);
+    send("codex", &["@claude", "--body", "about lunch"]);
+    let answer = send(
+        "claude",
+        &["@codex", "--reply-to", &first, "--body", "which keys?"],
+    );
+    send(
+        "codex",
+        &["@claude", "--reply-to", &answer, "--body", "more on keys"],
+    );
+
+    let thread = json(temp.path(), &["msg", "inbox", "--thread", &first]);
+    let bodies: Vec<&str> = thread
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["body"].as_str().unwrap())
+        .collect();
+    assert_eq!(bodies, vec!["about keys", "more on keys"]);
+}

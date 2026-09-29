@@ -47,12 +47,17 @@ pub(crate) async fn run(
             out.emit(&message, |m| format!("{}  sent", short(&m.id)))
         }
 
-        MsgCommand::Inbox { all } => {
+        MsgCommand::Inbox { all, thread } => {
+            let thread = match thread {
+                Some(message) => Some(resolve::message(app, &message).await?),
+                None => None,
+            };
             let messages = app
                 .read_inbox
                 .execute(ReadInboxCommand {
                     actor: actor.to_owned(),
                     all,
+                    thread,
                 })
                 .await?;
             out.emit(&messages, |m| render_list(m, out))

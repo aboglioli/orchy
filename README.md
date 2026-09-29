@@ -434,7 +434,7 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
 
 ```bash
 orchy msg send <recipient>... [--subject …] [--body …] [--reply-to <msg>] [--priority …]
-orchy msg inbox [--all]
+orchy msg inbox [--all] [--thread <msg>]
 orchy msg read <msg>
 orchy msg thread <msg>
 orchy msg sent
@@ -451,7 +451,7 @@ orchy msg promote <msg> [--title …] [--role r]...
 | `broadcast` | everyone except the sender |
 
 - **Inbox.** `inbox` shows what is new since you last read; `msg read` marks a message read,
-  and `--all` shows everything.
+  `--all` shows everything, and `--thread <msg>` keeps to one conversation.
 - **Roster.** Role and area messages reach agents on the roster, so an agent must have run
   `orchy announce` to receive them.
 - **Threads.** `msg resolve` closes a thread.

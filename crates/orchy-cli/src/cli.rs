@@ -454,6 +454,9 @@ pub(crate) enum MsgCommand {
     Inbox {
         #[arg(long)]
         all: bool,
+        /// Only the conversation this message belongs to
+        #[arg(long)]
+        thread: Option<String>,
     },
     /// Show a message and advance the watermark
     Read { target: String },

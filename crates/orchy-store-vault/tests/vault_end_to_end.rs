@@ -382,6 +382,7 @@ async fn a_message_is_one_file_under_its_thread_and_reaches_an_inbox() {
         .execute(orchy_application::read_inbox::ReadInboxCommand {
             actor: ACTOR.to_owned(),
             all: false,
+            thread: None,
         })
         .await
         .unwrap();
