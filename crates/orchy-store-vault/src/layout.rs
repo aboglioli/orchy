@@ -120,7 +120,7 @@ mod tests {
         assert!(key.ends_with(&format!("{B}.md")), "{key}");
         assert!(
             !key.contains("claude"),
-            "no sender, no slug: the id is the only thing in the name (D42)"
+            "no sender, no slug: the id is the only thing in the name"
         );
     }
 

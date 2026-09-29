@@ -274,7 +274,7 @@ mod tests {
         let log = log(temp.path());
         assert!(
             log.root().ends_with(MACHINE),
-            "each machine owns its own partition set (D33): {:?}",
+            "each machine owns its own partition set: {:?}",
             log.root()
         );
     }
