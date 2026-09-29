@@ -28,7 +28,7 @@ use crate::title::Title;
 #[async_trait]
 pub trait TaskStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Task>>;
-    /// Every task the query matches, ordered by id, never truncated.
+    /// Never paged: callers rely on seeing every match.
     async fn matching(&self, query: &TaskQuery) -> Result<Vec<Task>>;
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>>;
     async fn save(&self, task: &mut Task) -> Result<()>;

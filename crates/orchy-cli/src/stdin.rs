@@ -18,8 +18,7 @@ pub(crate) fn or_read(provided: Option<String>) -> CliResult<String> {
     Ok(buffer)
 }
 
-/// Content that may legitimately be empty: a flag wins, `-` insists on stdin, and otherwise
-/// stdin is read only when something is piped in, so an interactive shell is never blocked.
+/// Stdin is read only when something is piped in, so an interactive shell is never blocked.
 pub(crate) fn optional(provided: Option<String>) -> CliResult<Option<String>> {
     match provided.as_deref() {
         Some("-") => or_read(None).map(Some),

@@ -49,7 +49,7 @@ const CANDIDATE: [DocumentStatus; 3] = [
     DocumentStatus::Rejected,
 ];
 
-/// Skills are their own entity (`crate::skill`), so the name is reserved rather than a kind.
+/// Reserved rather than a kind: skills are their own entity (`crate::skill`).
 const SKILL: &str = "skill";
 
 /// Maintained from events: authoring one by hand is refused.
@@ -127,8 +127,7 @@ impl Kind {
 }
 
 impl DocumentStatus {
-    /// Knowledge that was replaced, retired or turned down: kept (D14), but not what an agent
-    /// should find when it asks what the team knows.
+    /// Kept (D14) but left out of recall unless asked for.
     pub const RETIRED: [Self; 3] = [Self::Superseded, Self::Archived, Self::Rejected];
 
     pub const ALL: [Self; 7] = [

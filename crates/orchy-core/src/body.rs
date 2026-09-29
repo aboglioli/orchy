@@ -42,7 +42,6 @@ impl Body {
             .collect()
     }
 
-    /// The text before the first heading: often the most important sentence of a document.
     pub fn preamble(&self) -> &str {
         let end = self
             .spans()
@@ -51,8 +50,6 @@ impl Body {
         self.0[..end].trim()
     }
 
-    /// The section under `heading` (case-insensitive). With several such headings, `nth`
-    /// (1-based) picks one; without it the address is ambiguous and nothing is guessed.
     pub fn section(&self, heading: &str, nth: Option<usize>) -> Result<Section<'_>> {
         let span = self.pick(heading, nth)?;
         Ok(Section {
@@ -148,15 +145,14 @@ impl Body {
     }
 }
 
-/// An ATX heading: one to six `#`, then a space or the end of the line, as markdown has it.
-/// `#tag` is not a heading.
+/// ATX only, and the space is required: `#tag` is not a heading.
 fn heading_level(line: &str) -> Option<usize> {
     let hashes = line.chars().take_while(|c| *c == '#').count();
     let rest = &line[hashes..];
     ((1..=6).contains(&hashes) && (rest.is_empty() || rest.starts_with(' '))).then_some(hashes)
 }
 
-/// The fence a code block opens or closes with; headings inside one are code, not structure.
+/// A heading inside a fenced code block is code, not structure.
 fn fence_marker(line: &str) -> Option<&'static str> {
     let line = line.trim_start();
     if line.starts_with("```") {

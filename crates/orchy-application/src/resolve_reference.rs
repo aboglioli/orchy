@@ -21,9 +21,7 @@ pub struct ResolveReferenceCommand {
     pub input: String,
 }
 
-/// What people type to point at an entity: a full id, an id prefix or suffix, or, for tasks
-/// and documents, a fragment of the title. Every entity is considered, never a page of them,
-/// and more than one match is refused rather than guessed.
+/// More than one match is refused, never guessed.
 pub struct ResolveReference {
     tasks: Arc<dyn TaskStore>,
     documents: Arc<dyn DocumentStore>,

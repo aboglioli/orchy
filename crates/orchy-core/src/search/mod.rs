@@ -73,7 +73,7 @@ impl SearchQuery {
         self.tags.iter().all(|t| skill.tags().contains(t))
     }
 
-    /// A document with no status always passes: it has not been retired from anything.
+    /// A document with no status always passes.
     pub fn admits(&self, status: Option<DocumentStatus>) -> bool {
         match (&self.status, status) {
             (Some(wanted), Some(status)) => wanted.contains(&status),
@@ -88,7 +88,6 @@ impl SearchQuery {
 pub struct Passage {
     pub entity: EntityRef,
     pub heading: Option<String>,
-    /// Scored between the title and the body: the words a section is named by.
     pub heading_terms: String,
     pub title: String,
     pub body: String,
@@ -161,8 +160,6 @@ impl Indexed {
 
 const EXCERPT: usize = 240;
 
-/// What a document is searched as: its preamble, then one passage per section, each carrying
-/// the document's title. A body with no headings is a single passage.
 pub fn document_passages(document: &Document) -> Vec<Passage> {
     let passage = |heading: Option<&str>, body: &str| Passage {
         entity: EntityRef::new(EntityKind::Document, document.id().clone()),
@@ -190,7 +187,6 @@ pub fn document_passages(document: &Document) -> Vec<Passage> {
     passages
 }
 
-/// A skill is one passage whose name and summary are what it is titled by.
 pub fn skill_passage(skill: &Skill) -> Passage {
     Passage {
         entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),

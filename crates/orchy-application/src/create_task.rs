@@ -11,7 +11,6 @@ use crate::error::ApplicationResult;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateTaskCommand {
-    /// Whose home namespace the task lands in when `namespace` is absent.
     pub actor: Option<String>,
     pub title: String,
     pub description: Option<String>,

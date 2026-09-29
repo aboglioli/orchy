@@ -7,8 +7,6 @@ use orchy_core::{Namespace, Role, Task, TaskQuery, TaskStatus, TaskStore};
 use crate::assess_dependencies::AssessDependencies;
 use crate::error::ApplicationResult;
 
-/// The queue `task next` draws from, in the order it draws: pending, every dependency
-/// satisfied, ranked by `task::ranking`. The briefing and `task ready` read the same queue.
 pub struct RankClaimable {
     tasks: Arc<dyn TaskStore>,
     dependencies: Arc<AssessDependencies>,

@@ -13,7 +13,6 @@ const INTO_SKILL: &str = "skill";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromoteDocumentCommand {
-    /// Whose home namespace the promoted entity lands in when `namespace` is absent.
     pub actor: Option<String>,
     pub document_id: String,
     pub into: String,

@@ -1,7 +1,6 @@
 use super::Task;
 
-/// The one order claimable work is handed out in: most urgent first, then oldest, then by id
-/// so that ties never depend on the order tasks were read in.
+/// Ties break on id so the order never depends on how tasks were read.
 pub fn rank(tasks: &mut [Task]) {
     tasks.sort_by(|a, b| {
         b.priority()
@@ -11,7 +10,6 @@ pub fn rank(tasks: &mut [Task]) {
     });
 }
 
-/// Pending tasks that `ready` accepts, in `rank` order.
 pub fn claimable(tasks: Vec<Task>, ready: impl Fn(&Task) -> bool) -> Vec<Task> {
     let mut claimable: Vec<Task> = tasks
         .into_iter()

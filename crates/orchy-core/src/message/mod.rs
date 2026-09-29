@@ -23,7 +23,6 @@ use crate::title::Title;
 #[async_trait]
 pub trait MessageStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Message>>;
-    /// Every message, ordered by id.
     async fn all(&self) -> Result<Vec<Message>>;
     async fn thread(&self, thread: &Id) -> Result<Vec<Message>>;
     async fn inbox(&self, for_actor: &ActorId, after: Option<&Id>) -> Result<Vec<Message>>;
@@ -279,7 +278,7 @@ impl Message {
         Ok(())
     }
 
-    /// Part of composing a message, before it is sent; a sent message is immutable.
+    /// Before sending only: a sent message is immutable.
     pub fn with_priority(mut self, priority: Priority) -> Self {
         self.priority = priority;
         self

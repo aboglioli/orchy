@@ -28,7 +28,7 @@ use crate::title::Title;
 #[async_trait]
 pub trait DocumentStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Document>>;
-    /// Every document the query matches, ordered by id, never truncated.
+    /// Never paged: callers rely on seeing every match.
     async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>>;
     async fn save(&self, document: &mut Document) -> Result<()>;
     async fn delete(&self, id: &Id) -> Result<()>;
@@ -337,8 +337,7 @@ impl Document {
         Ok(())
     }
 
-    /// A candidate that graduated into something other than a document, such as a skill,
-    /// stays behind as the record of the proposal.
+    /// For a candidate that became a skill: the document stays as the record of the proposal.
     pub fn mark_promoted(&mut self, clock: &dyn Clock) -> Result<()> {
         if !self.is_candidate() {
             return Err(DomainError::conflict(

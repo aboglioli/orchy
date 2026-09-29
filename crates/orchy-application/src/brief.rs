@@ -17,7 +17,6 @@ pub struct BriefCommand {
     pub actor: String,
 }
 
-/// What a briefing is assembled from.
 pub struct BriefSources {
     pub actors: Arc<dyn ActorStore>,
     pub skills: Arc<dyn SkillStore>,

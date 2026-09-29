@@ -11,7 +11,6 @@ use crate::error::ApplicationResult;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateDocumentCommand {
-    /// Whose home namespace the document lands in when `namespace` is absent.
     pub actor: Option<String>,
     pub kind: String,
     pub title: String,

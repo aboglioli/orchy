@@ -41,8 +41,6 @@ pub struct TaskCreated {
 }
 task_event!(TaskCreated, "task.created");
 
-/// A task withdrawn before anyone worked on it, such as a duplicate subtask two agents split
-/// out at once.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskDeleted {
     pub id: Id,

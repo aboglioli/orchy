@@ -13,8 +13,6 @@ pub struct DependencyDto {
     pub outcome: Outcome,
 }
 
-/// Decides whether a task's dependencies let it be worked on, following a superseded
-/// dependency to whatever replaced it.
 pub struct AssessDependencies {
     tasks: Arc<dyn TaskStore>,
     edges: Arc<dyn EdgeStore>,
@@ -31,7 +29,6 @@ impl AssessDependencies {
         Ok(dependencies::combine(&outcomes))
     }
 
-    /// Every dependency with its own outcome, in the order the task lists them.
     pub async fn each(&self, task: &Task) -> ApplicationResult<Vec<DependencyDto>> {
         let mut assessed = Vec::new();
         for dependency in task.depends_on() {

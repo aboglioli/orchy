@@ -26,8 +26,7 @@ pub trait ActorStore: Send + Sync {
     async fn present(&self, now: DateTime<Utc>) -> Result<Vec<ActorId>>;
     async fn touch(&self, id: &ActorId, now: DateTime<Utc>) -> Result<()>;
 
-    /// Where an actor works, which is where its writes land unless it names another place
-    /// (D16). An actor not on the roster works at the root.
+    /// An actor not on the roster works at the root (D16).
     async fn home_of(&self, id: &ActorId) -> Result<Namespace> {
         Ok(self
             .get(id)

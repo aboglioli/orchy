@@ -64,7 +64,6 @@ impl Vault {
         Ok(())
     }
 
-    /// Files the latest scan could not index, each with where it is and what is wrong.
     pub fn scan_problems(&self) -> Vec<Problem> {
         self.problems.read().expect("problems lock").clone()
     }

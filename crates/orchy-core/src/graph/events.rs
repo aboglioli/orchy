@@ -9,7 +9,6 @@ use crate::event::{DomainEvent, payload_of, topic};
 use crate::id::Id;
 use crate::namespace::Namespace;
 
-/// A link is recorded against the entity it starts from, which is the file that stores it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EdgeAdded {
     pub from: EntityRef,

@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use orchy_core::{Integrity, Problem, Result};
 
-/// Entities in memory are always the values the domain built, so nothing can be unreadable.
 #[derive(Debug, Default)]
 pub struct MemoryIntegrity;
 

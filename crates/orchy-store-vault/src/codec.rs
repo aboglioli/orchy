@@ -78,7 +78,6 @@ fn missing(field: &str) -> DomainError {
     DomainError::validation(format!("{MISSING}{field}` in its frontmatter"))
 }
 
-/// Names the file in a decoding error, which is the one thing a person needs to fix it.
 pub fn at(key: &str) -> impl Fn(DomainError) -> DomainError + '_ {
     move |e| match e {
         DomainError::Validation(detail) | DomainError::UnknownType(detail) => {
@@ -88,7 +87,6 @@ pub fn at(key: &str) -> impl Fn(DomainError) -> DomainError + '_ {
     }
 }
 
-/// Why a file the vault indexed could not be read as the entity it claims to be.
 pub fn problem(key: &str, file: &MarkdownFile, e: &DomainError) -> Problem {
     let id = id_of(file).and_then(|raw| Id::new(raw).ok());
     let kind = match e {
@@ -249,8 +247,7 @@ struct TaskBody {
     note: Option<String>,
 }
 
-/// A task's description, then its trailing `## Acceptance` and `## Outcome` sections, in
-/// either order. Only a line that is exactly one of those headings starts a section.
+/// Only a line that is exactly `## Acceptance` or `## Outcome` starts a section.
 fn split_task_body(body: &str) -> TaskBody {
     let mut description = Vec::new();
     let mut acceptance = Vec::new();

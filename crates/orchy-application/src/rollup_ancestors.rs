@@ -28,13 +28,11 @@ impl RollupAncestors {
         }
     }
 
-    /// Re-derives every ancestor of `from`, nearest first, after one of its children changed.
     pub async fn execute(&self, from: &Id) -> ApplicationResult<Vec<TaskDto>> {
         let parent = self.tasks.require(from).await?.parent().cloned();
         self.climb(parent).await
     }
 
-    /// Re-derives `parent` and whatever it rolls up into, after its set of children changed.
     pub async fn from_parent(&self, parent: &Id) -> ApplicationResult<Vec<TaskDto>> {
         self.climb(Some(parent.clone())).await
     }
@@ -89,8 +87,7 @@ impl RollupAncestors {
         Ok(None)
     }
 
-    /// A parent finished by rollup is nobody's work any more; best effort, like a holder
-    /// finishing it by hand, because an expired lease needs no releasing.
+    /// Best effort, like a holder finishing by hand: an expired lease needs no releasing.
     async fn release_claim(&self, parent: &Task) {
         if !parent.status().is_terminal() {
             return;

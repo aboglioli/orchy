@@ -83,8 +83,6 @@ pub struct EventQuery {
 }
 
 impl EventQuery {
-    /// `limit` asks for the most recent events: drops the oldest from `events`, which must be
-    /// in recording order, and keeps the rest in that order.
     pub fn keep_latest(&self, events: &mut Vec<RecordedEvent>) {
         if let Some(limit) = self.limit
             && events.len() > limit

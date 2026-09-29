@@ -10,8 +10,7 @@ use crate::event::{DomainEvent, payload_of, topic};
 use crate::id::Id;
 use crate::namespace::Namespace;
 
-/// An actor's id is `alias@machine`, not a ULID, so its events are keyed by the machine it
-/// belongs to; the actor itself is in the payload and in the event's own `actor`.
+/// Keyed by the machine: an actor id (`alias@machine`) is not a ULID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActorAnnounced {
     pub actor: ActorId,
@@ -66,8 +65,7 @@ pub enum LeaseChange {
     Released,
 }
 
-/// A lock taken, extended or given back. Keyed, like actor events, by the holder's machine:
-/// a resource name is free text, not an id.
+/// Keyed by the holder's machine: a resource name is free text, not a ULID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LeaseChanged {
     pub change: LeaseChange,

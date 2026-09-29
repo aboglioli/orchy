@@ -8,13 +8,11 @@ use crate::id::Id;
 
 #[async_trait]
 pub trait Integrity: Send + Sync {
-    /// Files the stores skip because they cannot be read as the entity they claim to be.
+    /// The files store listings skip.
     async fn unreadable(&self) -> Result<Vec<Problem>>;
 
-    /// Everything wrong with the vault, unreadable files included.
     async fn problems(&self) -> Result<Vec<Problem>>;
 
-    /// Repairs one problem when it is mechanical; `false` when it needs a person.
     async fn repair(&self, problem: &Problem) -> Result<bool>;
 }
 
@@ -64,7 +62,6 @@ impl ProblemKind {
         }
     }
 
-    /// Whether `orchy doctor --fix` can repair it without a person deciding anything.
     pub fn is_mechanical(&self) -> bool {
         matches!(
             self,

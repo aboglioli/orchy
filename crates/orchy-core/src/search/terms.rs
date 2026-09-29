@@ -23,8 +23,6 @@ fn stem(word: &str) -> String {
     ENGLISH.stem(&word.to_lowercase()).into_owned()
 }
 
-/// `UserRepository` → `User`, `Repository`; `HTTPServer` → `HTTP`, `Server`; `sha256` →
-/// `sha`, `256`: identifiers are searched for by the words they are made of.
 fn parts_of(word: &str) -> Vec<&str> {
     let chars: Vec<(usize, char)> = word.char_indices().collect();
     let mut parts = Vec::new();
