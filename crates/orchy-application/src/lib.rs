@@ -24,6 +24,7 @@ pub mod list_tasks;
 pub mod list_waiting_tasks;
 pub mod manage_dependencies;
 pub mod manage_lease;
+pub mod merge_tasks;
 pub mod next_task;
 pub mod promote_document;
 pub mod promote_message;
@@ -88,6 +89,7 @@ use list_tasks::ListTasks;
 use list_waiting_tasks::ListWaitingTasks;
 use manage_dependencies::ManageDependencies;
 use manage_lease::ManageLease;
+use merge_tasks::MergeTasks;
 use next_task::NextTask;
 use promote_document::PromoteDocument;
 use promote_message::PromoteMessage;
@@ -168,6 +170,7 @@ pub struct Application {
     pub unblock_task: UnblockTask,
     pub split_task: SplitTask,
     pub replace_task: ReplaceTask,
+    pub merge_tasks: MergeTasks,
     pub manage_dependencies: ManageDependencies,
     pub rollup_ancestors: Arc<RollupAncestors>,
 
@@ -346,6 +349,12 @@ impl Application {
                 Arc::clone(&edges),
                 Arc::clone(&rollup),
                 Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
+            merge_tasks: MergeTasks::new(
+                Arc::clone(&tasks),
+                Arc::clone(&edges),
+                Arc::clone(&rollup),
                 Arc::clone(&clock),
             ),
             manage_dependencies: ManageDependencies::new(Arc::clone(&tasks), Arc::clone(&clock)),

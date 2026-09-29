@@ -1,3 +1,5 @@
+use std::slice;
+
 use orchy_application::Application;
 use orchy_application::block_task::BlockTaskCommand;
 use orchy_application::cancel_task::CancelTaskCommand;
@@ -11,6 +13,7 @@ use orchy_application::list_ready_tasks::ListReadyTasksCommand;
 use orchy_application::list_tasks::ListTasksCommand;
 use orchy_application::list_waiting_tasks::{ListWaitingTasksCommand, WaitingTaskDto};
 use orchy_application::manage_dependencies::ManageDependenciesCommand;
+use orchy_application::merge_tasks::MergeTasksCommand;
 use orchy_application::next_task::NextTaskCommand;
 use orchy_application::release_task::ReleaseTaskCommand;
 use orchy_application::replace_task::ReplaceTaskCommand;
@@ -314,6 +317,29 @@ pub(crate) async fn run(
                 out.note(format!("↑ {} → {}", short(&parent.id), parent.status));
             }
             out.emit(&response, |r| render_list(&r.created, out))
+        }
+
+        TaskCommand::Merge { keep, others } => {
+            let keep = resolve::task(app, &keep).await?;
+            let mut resolved = Vec::new();
+            for other in &others {
+                resolved.push(resolve::task(app, other).await?);
+            }
+            let response = app
+                .merge_tasks
+                .execute(MergeTasksCommand {
+                    keep,
+                    others: resolved,
+                    actor: actor.to_owned(),
+                })
+                .await?;
+            out.note(format!(
+                "{} merged into {}, {} subtasks moved",
+                response.merged.len(),
+                short(&response.kept.id),
+                response.moved.len()
+            ));
+            out.emit(&response, |r| render_list(slice::from_ref(&r.kept), out))
         }
 
         TaskCommand::Dep {

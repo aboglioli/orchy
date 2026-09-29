@@ -402,6 +402,7 @@ orchy task block <task> [--on <task>]... [--reason …]
 orchy task unblock <task>
 orchy task split <task> <title>...
 orchy task replace <task> <title>... [--reason …]
+orchy task merge <keep> <task>...
 orchy task dep <task> [--add <task>]... [--remove <task>]...
 orchy task update <task> [--title …] [--description …] [--acceptance …] [--priority …]
                          [--role r]... [--namespace /x] [--parent <task> | --detach] [--tag t]... [--untag t]...
@@ -429,6 +430,9 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
   - otherwise `completed` if any completed;
   - `superseded` if every subtask was replaced, and `cancelled` otherwise.
 - **`replace`** retires a task in favour of new, independent ones.
+- **`merge`** folds duplicates into the task you keep: the others become `superseded`, and
+  their subtasks, tags and dependencies move over. Work that depended on a duplicate now
+  waits on the kept task.
 - **Dependencies** (`--depends-on`, `task dep --add`, `task block --on`) hold a task back
   until every one of them is completed. A dependency that was replaced (`task replace`)
   counts as done once all its replacements are. If a dependency fails or is cancelled, the

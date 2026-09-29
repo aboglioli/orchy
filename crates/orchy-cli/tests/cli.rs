@@ -2827,3 +2827,54 @@ fn task_next_hands_out_first_the_task_others_depend_on() {
     let next = json(temp.path(), &["task", "next", "--peek"]);
     assert_eq!(next["title"], "blocker", "{next}");
 }
+
+#[test]
+fn task_merge_folds_duplicates_into_the_kept_task() {
+    let temp = vault();
+    let keep = json(temp.path(), &["task", "new", "ship login", "--tag", "auth"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let other = json(temp.path(), &["task", "new", "login flow", "--tag", "web"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let child = json(temp.path(), &["task", "new", "form", "--parent", &other])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let dependent = json(
+        temp.path(),
+        &["task", "new", "announce", "--depends-on", &other],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let merged = json(temp.path(), &["task", "merge", &keep, &other]);
+    assert_eq!(merged["merged"][0]["status"], "superseded");
+    assert_eq!(merged["moved"][0]["id"], child.as_str());
+
+    let kept = json(temp.path(), &["task", "get", &keep]);
+    let tags: Vec<&str> = kept["task"]["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_str().unwrap())
+        .collect();
+    assert_eq!(tags, vec!["auth", "web"]);
+    assert_eq!(
+        json(temp.path(), &["task", "get", &child])["task"]["parent"],
+        keep.as_str()
+    );
+
+    ok(temp.path(), &["task", "claim", &child]);
+    ok(temp.path(), &["task", "done", &child]);
+    assert_eq!(
+        json(temp.path(), &["task", "get", &keep])["task"]["status"],
+        "completed",
+        "rollup holds"
+    );
+    let waiting = json(temp.path(), &["task", "get", &dependent]);
+    assert_eq!(waiting["readiness"], "satisfied", "{waiting}");
+}

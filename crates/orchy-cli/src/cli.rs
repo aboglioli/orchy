@@ -410,6 +410,13 @@ pub(crate) enum TaskCommand {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Fold duplicates into one task: the others become `superseded`, and their subtasks,
+    /// tags and dependencies move to the one kept
+    Merge {
+        keep: String,
+        #[arg(required = true)]
+        others: Vec<String>,
+    },
     /// Add or remove dependencies
     Dep {
         target: String,
