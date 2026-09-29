@@ -11,13 +11,10 @@ name = "orchy"
 path = "src/main.rs"
 
 [dependencies]
-chrono.workspace = true
 clap = { workspace = true }
 clap_complete.workspace = true
-clap_mangen.workspace = true
 orchy-application.workspace = true
 orchy-core.workspace = true
-orchy-store-memory.workspace = true
 orchy-store-vault.workspace = true
 serde.workspace = true
 serde_json.workspace = true

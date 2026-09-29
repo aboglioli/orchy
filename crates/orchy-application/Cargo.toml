@@ -7,7 +7,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-async-trait.workspace = true
 chrono.workspace = true
 orchy-core.workspace = true
 serde.workspace = true

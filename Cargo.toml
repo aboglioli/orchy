@@ -18,14 +18,10 @@ license = "MIT"
 repository = "https://github.com/aboglioli/orchy"
 
 [workspace.dependencies]
-# Event toolkit. Pinned by tag until eventuary reaches crates.io; a path dependency
-# resolved outside the repository, which cannot be checked out by CI.
-# The facade is the only entry point: backends come from it by feature, never as
-# separate crates, so every import in the workspace reads `use eventuary::`.
-eventuary = { git = "https://github.com/aboglioli/eventuary", tag = "v0.3.0-rc.4", features = [
-    "fs",
-    "memory",
-] }
+# Event toolkit. The facade is the only entry point: backends come from it by feature, never
+# as separate crates, so every import in the workspace reads `use eventuary::`. Pinned exactly
+# while it is a release candidate.
+eventuary = { version = "=0.3.0-rc.4", features = ["fs", "memory"] }
 
 # Domain
 chrono = { version = "0.4", features = ["serde"] }
@@ -50,7 +46,6 @@ toml = "0.9"
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
-clap_mangen = "0.2"
 
 # Testing
 tempfile = "3"
