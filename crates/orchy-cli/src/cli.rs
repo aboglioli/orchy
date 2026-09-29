@@ -184,6 +184,11 @@ pub(crate) enum Command {
         from: String,
         #[arg(long, default_value_t = 1)]
         depth: u8,
+        /// Follow only these relations, repeatable
+        #[arg(long)]
+        rel: Vec<String>,
+        #[arg(long, value_enum, default_value_t = GraphFormat::Text)]
+        format: GraphFormat,
     },
     /// Give a document a new title
     Retitle { target: String, title: String },
@@ -552,6 +557,13 @@ pub(crate) struct SkillEdits {
     pub tag: Vec<String>,
     #[arg(long)]
     pub untag: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum GraphFormat {
+    Text,
+    Mermaid,
+    Dot,
 }
 
 #[derive(Subcommand, Debug)]

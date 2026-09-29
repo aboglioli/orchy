@@ -2664,3 +2664,57 @@ fn a_listing_cut_short_says_how_much_is_left() {
     assert!(text.contains("showing 2 of 3"), "{text}");
     assert!(!ok(temp.path(), &["task", "list"]).contains("showing"));
 }
+
+#[test]
+fn a_graph_can_follow_one_relation_and_render_as_a_diagram() {
+    let temp = vault();
+    let doc = |title: &str| {
+        json(temp.path(), &["new", "note", title, "--body", "x"])["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (a, b, c) = (doc("a"), doc("b"), doc("c"));
+    ok(
+        temp.path(),
+        &[
+            "link",
+            &format!("document:{a}"),
+            &format!("document:{b}"),
+            "--rel",
+            "derived_from",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "link",
+            &format!("document:{a}"),
+            &format!("document:{c}"),
+            "--rel",
+            "related_to",
+        ],
+    );
+
+    let only = json(
+        temp.path(),
+        &["graph", &format!("document:{a}"), "--rel", "derived_from"],
+    );
+    assert_eq!(only.as_array().unwrap().len(), 1);
+    assert_eq!(only[0]["edge"]["relation"], "derived_from");
+
+    let mermaid = ok(
+        temp.path(),
+        &["graph", &format!("document:{a}"), "--format", "mermaid"],
+    );
+    assert!(mermaid.starts_with("graph LR"), "{mermaid}");
+    assert!(mermaid.contains("-->|related_to|"), "{mermaid}");
+    let dot = ok(
+        temp.path(),
+        &["graph", &format!("document:{a}"), "--format", "dot"],
+    );
+    assert!(
+        dot.starts_with("digraph orchy {") && dot.contains("[label=\"derived_from\"]"),
+        "{dot}"
+    );
+}

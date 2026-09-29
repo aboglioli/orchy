@@ -297,7 +297,12 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
 
         Command::Link { from, to, rel } => cmd::doc::link(&app, from, to, rel, false, out).await,
         Command::Unlink { from, to, rel } => cmd::doc::link(&app, from, to, rel, true, out).await,
-        Command::Graph { from, depth } => cmd::doc::graph(&app, from, depth, out).await,
+        Command::Graph {
+            from,
+            depth,
+            rel,
+            format,
+        } => cmd::doc::graph(&app, from, depth, rel, format, out).await,
         Command::Retitle { target, title } => {
             let command = UpdateDocumentCommand {
                 title: Some(title),

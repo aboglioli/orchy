@@ -9,9 +9,10 @@ use orchy_application::recall::RecallCommand;
 use orchy_application::reject_document::RejectDocumentCommand;
 use orchy_application::set_document_field::SetDocumentFieldCommand;
 use orchy_application::supersede_document::SupersedeDocumentCommand;
-use orchy_application::traverse_graph::TraverseGraphCommand;
+use orchy_application::traverse_graph::{TraversalHopDto, TraverseGraphCommand};
 use orchy_application::update_document::UpdateDocumentCommand;
 
+use crate::cli::GraphFormat;
 use crate::error::{CliError, CliResult};
 use crate::output::{Output, short};
 use crate::resolve;
@@ -127,6 +128,8 @@ pub(crate) async fn graph(
     app: &Application,
     from: String,
     depth: u8,
+    relations: Vec<String>,
+    format: GraphFormat,
     out: &Output,
 ) -> CliResult<()> {
     let hops = app
@@ -134,25 +137,63 @@ pub(crate) async fn graph(
         .execute(TraverseGraphCommand {
             from,
             depth: Some(depth),
+            relations,
         })
         .await?;
-    out.emit(&hops, |h| {
-        if h.is_empty() {
-            return "no links".to_owned();
-        }
-        h.iter()
-            .map(|hop| {
-                format!(
-                    "{}{} -{}-> {}",
-                    "  ".repeat(hop.depth.saturating_sub(1) as usize),
-                    short(&hop.edge.from),
-                    hop.edge.relation,
-                    short(&hop.edge.to)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+    out.emit(&hops, |h| match format {
+        GraphFormat::Text => render_graph(h),
+        GraphFormat::Mermaid => mermaid(h),
+        GraphFormat::Dot => dot(h),
     })
+}
+
+fn mermaid(hops: &[TraversalHopDto]) -> String {
+    let mut lines = vec!["graph LR".to_owned()];
+    lines.extend(hops.iter().map(|hop| {
+        format!(
+            "  {}[\"{}\"] -->|{}| {}[\"{}\"]",
+            node_id(&hop.edge.from),
+            hop.edge.from,
+            hop.edge.relation,
+            node_id(&hop.edge.to),
+            hop.edge.to
+        )
+    }));
+    lines.join("\n")
+}
+
+fn dot(hops: &[TraversalHopDto]) -> String {
+    let mut lines = vec!["digraph orchy {".to_owned()];
+    lines.extend(hops.iter().map(|hop| {
+        format!(
+            "  \"{}\" -> \"{}\" [label=\"{}\"];",
+            hop.edge.from, hop.edge.to, hop.edge.relation
+        )
+    }));
+    lines.push("}".to_owned());
+    lines.join("\n")
+}
+
+fn node_id(entity: &str) -> String {
+    entity.replace(':', "_")
+}
+
+fn render_graph(hops: &[TraversalHopDto]) -> String {
+    if hops.is_empty() {
+        return "no links".to_owned();
+    }
+    hops.iter()
+        .map(|hop| {
+            format!(
+                "{}{} -{}-> {}",
+                "  ".repeat(hop.depth.saturating_sub(1) as usize),
+                short(&hop.edge.from),
+                hop.edge.relation,
+                short(&hop.edge.to)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub(crate) async fn supersede(

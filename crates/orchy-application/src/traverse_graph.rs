@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{EdgeStore, EntityRef};
+use orchy_core::{EdgeStore, EntityRef, Relation};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::EdgeDto;
@@ -10,6 +10,7 @@ use crate::error::ApplicationResult;
 pub struct TraverseGraphCommand {
     pub from: String,
     pub depth: Option<u8>,
+    pub relations: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,16 +33,47 @@ impl TraverseGraph {
         cmd: TraverseGraphCommand,
     ) -> ApplicationResult<Vec<TraversalHopDto>> {
         let from: EntityRef = cmd.from.parse()?;
+        let relations = cmd
+            .relations
+            .iter()
+            .map(|r| r.parse::<Relation>())
+            .collect::<orchy_core::Result<Vec<_>>>()?;
         let hops = self
             .edges
             .neighbourhood(&from, cmd.depth.unwrap_or(1))
             .await?;
-        Ok(hops
-            .iter()
-            .map(|hop| TraversalHopDto {
+        if relations.is_empty() {
+            return Ok(hops
+                .iter()
+                .map(|hop| TraversalHopDto {
+                    edge: EdgeDto::from(&hop.edge),
+                    depth: hop.depth,
+                })
+                .collect());
+        }
+
+        // only what is reachable through the chosen relations counts, however near
+        let mut reached = vec![from];
+        let mut kept = Vec::new();
+        for hop in hops {
+            if !relations.contains(hop.edge.relation()) {
+                continue;
+            }
+            let (a, b) = (hop.edge.from(), hop.edge.to());
+            let joins = reached.contains(a) || reached.contains(b);
+            if !joins {
+                continue;
+            }
+            for end in [a, b] {
+                if !reached.contains(end) {
+                    reached.push(end.clone());
+                }
+            }
+            kept.push(TraversalHopDto {
                 edge: EdgeDto::from(&hop.edge),
                 depth: hop.depth,
-            })
-            .collect())
+            });
+        }
+        Ok(kept)
     }
 }

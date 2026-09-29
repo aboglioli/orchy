@@ -468,8 +468,11 @@ evidence. `orchy types` lists every relation and what it can connect.
 ```bash
 orchy link task:<id> document:<id> --rel produces
 orchy unlink task:<id> document:<id> --rel produces
-orchy graph task:<id> [--depth n]
+orchy graph task:<id> [--depth n] [--rel r]... [--format text|mermaid|dot]
 ```
+
+`--rel` follows only the named relations; `--format mermaid` or `--format dot` prints a
+diagram to paste into a pull request or render with Graphviz.
 
 Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill`,
 `message` or `actor`. Relations with side effects are set by their own commands instead:
