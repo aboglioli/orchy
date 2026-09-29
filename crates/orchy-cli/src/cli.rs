@@ -251,6 +251,11 @@ pub(crate) enum Command {
     },
     /// Generate a shell completion script
     Completions { shell: clap_complete::Shell },
+    /// Print the man page, or write one per command into a directory
+    Man {
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

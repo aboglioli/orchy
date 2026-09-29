@@ -46,6 +46,9 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     if let Command::Guide = command {
         return cmd::brief::guide(out);
     }
+    if let Command::Man { out: dir } = &command {
+        return man(dir.as_deref());
+    }
     let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
 
     let command = match command {
@@ -97,7 +100,11 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
 
     let refreshes_presence = !matches!(command, Command::Announce { .. });
     let result = match command {
-        Command::Init { .. } | Command::Status | Command::Completions { .. } | Command::Guide => {
+        Command::Init { .. }
+        | Command::Status
+        | Command::Completions { .. }
+        | Command::Man { .. }
+        | Command::Guide => {
             unreachable!("answered before the vault is opened")
         }
 
@@ -434,4 +441,16 @@ fn join(value: &serde_json::Value) -> String {
                 .join("\n  ")
         })
         .unwrap_or_default()
+}
+
+fn man(dir: Option<&std::path::Path>) -> CliResult<()> {
+    use clap::CommandFactory;
+    match dir {
+        Some(dir) => {
+            std::fs::create_dir_all(dir)?;
+            clap_mangen::generate_to(Cli::command(), dir)?;
+        }
+        None => clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?,
+    }
+    Ok(())
 }

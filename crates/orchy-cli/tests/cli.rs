@@ -2380,3 +2380,27 @@ fn a_budget_returns_whole_sections_up_to_roughly_that_many_tokens() {
     assert!(texts.iter().sum::<usize>() <= 2000 + longest, "{texts:?}");
     assert!(texts.len() < 6, "the budget cut the list: {texts:?}");
 }
+
+#[test]
+fn the_man_pages_cover_every_command_without_a_vault() {
+    let temp = tempfile::tempdir().unwrap();
+    let pages = temp.path().join("man");
+    let out = orchy(
+        &temp.path().join("nowhere"),
+        &["man", "--out", pages.to_str().unwrap()],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    for page in [
+        "orchy.1",
+        "orchy-task.1",
+        "orchy-task-next.1",
+        "orchy-skill-write.1",
+        "orchy-doctor.1",
+    ] {
+        assert!(pages.join(page).exists(), "{page} missing");
+    }
+}

@@ -39,6 +39,12 @@ orchy completions bash > ~/.local/share/bash-completion/completions/orchy
 orchy completions zsh  > "${fpath[1]}/_orchy"
 ```
 
+Man pages, one per command:
+
+```bash
+orchy man --out ~/.local/share/man/man1    # then: man orchy, man orchy-task-next
+```
+
 ## Set up a vault
 
 ```bash
