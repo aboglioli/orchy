@@ -24,6 +24,8 @@ use crate::title::Title;
 #[async_trait]
 pub trait MessageStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Message>>;
+    /// Every message, ordered by id.
+    async fn all(&self) -> Result<Vec<Message>>;
     async fn thread(&self, thread: &Id) -> Result<Vec<Message>>;
     async fn inbox(&self, for_actor: &ActorId, after: Option<&Id>) -> Result<Vec<Message>>;
     async fn sent_by(&self, actor: &ActorId) -> Result<Vec<Message>>;

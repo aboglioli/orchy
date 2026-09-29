@@ -1926,3 +1926,41 @@ fn an_identifier_is_found_by_its_parts_and_by_its_whole_name() {
         );
     }
 }
+
+#[test]
+fn a_message_is_addressed_by_the_short_id_the_inbox_prints() {
+    let temp = vault();
+    ok(temp.path(), &["announce"]);
+    let sent = json(
+        temp.path(),
+        &[
+            "--actor", "codex", "msg", "send", "@claude", "--body", "hello",
+        ],
+    );
+    let id = sent["id"].as_str().unwrap();
+    let short = &id[id.len() - 6..];
+    assert!(ok(temp.path(), &["msg", "inbox"]).contains(short));
+
+    let read = json(temp.path(), &["msg", "read", short]);
+    assert_eq!(read["id"], id);
+    ok(
+        temp.path(),
+        &[
+            "msg",
+            "send",
+            "@claude",
+            "--reply-to",
+            short,
+            "--body",
+            "again",
+        ],
+    );
+    ok(temp.path(), &["msg", "thread", short]);
+
+    let out = orchy(temp.path(), &["msg", "read", &id[..2]]);
+    assert_eq!(
+        out.status.code(),
+        Some(7),
+        "a prefix every message shares is ambiguous"
+    );
+}

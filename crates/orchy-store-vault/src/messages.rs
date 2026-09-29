@@ -16,7 +16,10 @@ impl VaultMessageStore {
     pub fn new(vault: Arc<Vault>, actors: Arc<dyn ActorStore>, log: Arc<dyn EventLog>) -> Self {
         Self { vault, actors, log }
     }
+}
 
+#[async_trait]
+impl MessageStore for VaultMessageStore {
     async fn all(&self) -> Result<Vec<Message>> {
         let mut messages = Vec::new();
         for (_, file) in self.vault.load_all(EntityKind::Message).await? {
@@ -27,10 +30,7 @@ impl VaultMessageStore {
         messages.sort_by(|a, b| a.id().cmp(b.id()));
         Ok(messages)
     }
-}
 
-#[async_trait]
-impl MessageStore for VaultMessageStore {
     async fn get(&self, id: &Id) -> Result<Option<Message>> {
         let Some((key, file)) = self.vault.read_by_id(id).await? else {
             return Ok(None);

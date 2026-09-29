@@ -33,6 +33,7 @@ pub mod read_thread;
 pub mod recall;
 pub mod release_task;
 pub mod replace_task;
+pub mod resolve_reference;
 pub mod resolve_thread;
 pub mod retire_skill;
 pub mod rollup_ancestors;
@@ -90,6 +91,7 @@ use read_thread::ReadThread;
 use recall::Recall;
 use release_task::ReleaseTask;
 use replace_task::ReplaceTask;
+use resolve_reference::ResolveReference;
 use resolve_thread::ResolveThread;
 use retire_skill::RetireSkill;
 use rollup_ancestors::RollupAncestors;
@@ -170,6 +172,7 @@ pub struct Application {
 
     pub link_entities: LinkEntities,
     pub traverse_graph: TraverseGraph,
+    pub resolve_reference: ResolveReference,
     pub recall: Recall,
     pub read_events: ReadEvents,
 }
@@ -335,6 +338,11 @@ impl Application {
 
             link_entities: LinkEntities::new(Arc::clone(&edges)),
             traverse_graph: TraverseGraph::new(Arc::clone(&edges)),
+            resolve_reference: ResolveReference::new(
+                Arc::clone(&tasks),
+                Arc::clone(&documents),
+                Arc::clone(&messages),
+            ),
             recall: Recall::new(Arc::clone(&search), Arc::clone(&clock)),
             read_events: ReadEvents::new(Arc::clone(&log)),
         }

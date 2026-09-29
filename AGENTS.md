@@ -408,10 +408,12 @@ Agents branch on this behaviour, so treat it as API.
   marks a vault, and only its `[events] partitions` key is read.
 - **No vault.** Only `init`, `status`, `completions`, `guide` and a bare `orchy` run without one;
   everything else exits 4 and names `orchy init`.
-- **Resolving ids.** Tasks and documents accept a full ULID, an id prefix, an id suffix or a
-  title fragment (`resolve.rs`); more than one match is `Ambiguous` (exit 7), never a guess.
-  Skills resolve by id, or by name: first in scope at `--namespace`, then anywhere if the
-  name is unique. Messages and `link`/`graph` refs (`kind:id`) take full ids only.
+- **Resolving ids.** `ResolveReference` turns what people type into one id, considering
+  every entity (`TaskStore::matching`, `DocumentStore::matching`, `MessageStore::all`, never
+  a page): a full ULID, an id prefix or suffix, or for tasks and documents a title fragment.
+  More than one match is `Ambiguous` (exit 7), never a guess. Skills resolve by id, or by
+  name: first in scope at `--namespace`, then anywhere if the name is unique. `link`/`graph`
+  refs (`kind:id`) take full ids only.
 - **Input.** Content comes from a flag or stdin, never a prompt (`stdin.rs`). Required
   content (`edit`, `msg send`) reads stdin when the flag is absent; optional content
   (`new --body`) reads it only when something is piped, and `-` asks for it explicitly.
@@ -428,8 +430,6 @@ it drift.
   the topics exist. Announces, locks, and some document and skill field changes record
   nothing either.
 - **`events --limit n` returns the oldest n events**, not the most recent.
-- **Short message ids are not resolved.** `msg inbox` prints short ids, but `msg read`,
-  `thread`, `resolve` and `promote` take only full ULIDs.
 - **No partial-word search.** `migr` finds nothing; there is no prefix or substring
   fallback. Add one only if measured to help.
 - **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a

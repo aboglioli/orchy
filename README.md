@@ -426,7 +426,8 @@ orchy msg promote <msg> [--title …] [--role r]...
   `orchy announce` to receive them.
 - **Threads.** `msg resolve` closes a thread.
 - **Promoting.** `msg promote` turns a message into a task that links back to it.
-- **Message ids.** Message commands need the full message id, which `--json` prints.
+- **Message ids.** Message commands take the short id `inbox` prints, or any unique prefix
+  or suffix of the full id.
 
 ## Links between things
 

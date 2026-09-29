@@ -11,7 +11,7 @@ use orchy_application::send_message::SendMessageCommand;
 use crate::cli::MsgCommand;
 use crate::error::CliResult;
 use crate::output::{Output, short};
-use crate::stdin;
+use crate::{resolve, stdin};
 
 pub(crate) async fn run(
     app: &Application,
@@ -28,6 +28,10 @@ pub(crate) async fn run(
             reply_to,
             priority,
         } => {
+            let reply_to = match reply_to {
+                Some(parent) => Some(resolve::message(app, &parent).await?),
+                None => None,
+            };
             let message = app
                 .send_message
                 .execute(SendMessageCommand {
@@ -55,6 +59,7 @@ pub(crate) async fn run(
         }
 
         MsgCommand::Read { target } => {
+            let target = resolve::message(app, &target).await?;
             let message = app
                 .read_message
                 .execute(ReadMessageCommand {
@@ -66,6 +71,7 @@ pub(crate) async fn run(
         }
 
         MsgCommand::Thread { target } => {
+            let target = resolve::message(app, &target).await?;
             let thread = app
                 .read_thread
                 .execute(ReadThreadCommand { message_id: target })
@@ -89,6 +95,7 @@ pub(crate) async fn run(
         }
 
         MsgCommand::Resolve { target } => {
+            let target = resolve::message(app, &target).await?;
             let message = app
                 .resolve_thread
                 .execute(ResolveThreadCommand {
@@ -104,6 +111,7 @@ pub(crate) async fn run(
             title,
             role,
         } => {
+            let target = resolve::message(app, &target).await?;
             let response = app
                 .promote_message
                 .execute(PromoteMessageCommand {
