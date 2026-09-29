@@ -98,6 +98,11 @@ impl MergeTasks {
                 moved.push(TaskDto::from(&child));
             }
 
+            merged.push(other);
+        }
+        // links live in the kept task's file, so it is saved before they are added
+        self.tasks.save(&mut keep).await?;
+        for other_id in &other_ids {
             let (from, to) = (
                 EntityRef::task(keep_id.clone()),
                 EntityRef::task(other_id.clone()),
@@ -108,9 +113,7 @@ impl MergeTasks {
             self.edges
                 .add(&Edge::new(from, to, Relation::Supersedes)?)
                 .await?;
-            merged.push(other);
         }
-        self.tasks.save(&mut keep).await?;
 
         for other in &merged {
             self.rollup.execute(other.id()).await?;
