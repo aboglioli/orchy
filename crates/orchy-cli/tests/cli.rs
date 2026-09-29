@@ -1469,3 +1469,15 @@ fn an_edited_document_remembers_when_it_was_last_changed() {
     let file = std::fs::read_to_string(temp.path().join(format!("docs/{id}.md"))).unwrap();
     assert!(file.contains("\nupdated: "), "{file}");
 }
+
+#[test]
+fn the_guide_works_where_there_is_no_vault_yet() {
+    let temp = tempfile::tempdir().unwrap();
+    let out = orchy(&temp.path().join("nowhere"), &["guide"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("orchy task next"));
+}

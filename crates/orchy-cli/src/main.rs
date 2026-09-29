@@ -39,6 +39,9 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Cli::command().print_long_help()?;
         return Ok(());
     };
+    if let Command::Guide = command {
+        return cmd::brief::guide(out);
+    }
     let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
 
     let command = match command {
@@ -88,7 +91,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let actor = config.actor.to_string();
 
     match command {
-        Command::Init { .. } | Command::Status | Command::Completions { .. } => {
+        Command::Init { .. } | Command::Status | Command::Completions { .. } | Command::Guide => {
             unreachable!("answered before the vault is opened")
         }
 
@@ -97,8 +100,6 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             namespace,
             name,
         } => cmd::brief::announce(&app, &actor, roles, namespace, name, out).await,
-
-        Command::Guide => cmd::brief::guide(out),
 
         Command::Skill(command) => match command {
             SkillCommand::Write {

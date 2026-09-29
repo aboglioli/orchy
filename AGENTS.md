@@ -381,7 +381,7 @@ Agents branch on this behaviour, so treat it as API.
 - **Files.** `$XDG_CONFIG_HOME/orchy/settings.toml` is per machine (`machine`, `vault`,
   `actor`); `machine` is generated on first run and must never change. `<vault>/orchy.toml`
   marks a vault, and only its `[events] partitions` key is read.
-- **No vault.** Only `init`, `status`, `completions` and a bare `orchy` run without one;
+- **No vault.** Only `init`, `status`, `completions`, `guide` and a bare `orchy` run without one;
   everything else exits 4 and names `orchy init`.
 - **Resolving ids.** Tasks and documents accept a full ULID, an id prefix, an id suffix or a
   title fragment (`resolve.rs`); more than one match is `Ambiguous` (exit 7), never a guess.
@@ -416,8 +416,6 @@ it drift.
 - **`events --limit n` returns the oldest n events**, not the most recent.
 - **Short message ids are not resolved.** `msg inbox` prints short ids, but `msg read`,
   `thread`, `resolve` and `promote` take only full ULIDs.
-- **`orchy guide` needs a vault**, although it only prints static text and its help says it
-  works without joining. It exits 4 outside a vault; a bare `orchy` does not.
 - **camelCase is one search term.** `tokenise` splits on non-alphanumerics only, so
   `UserRepository` never matches `repository`. There is no prefix or substring fallback
   either.
