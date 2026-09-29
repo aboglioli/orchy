@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use rust_stemmers::{Algorithm, Stemmer};
@@ -5,18 +6,43 @@ use rust_stemmers::{Algorithm, Stemmer};
 static ENGLISH: LazyLock<Stemmer> = LazyLock::new(|| Stemmer::create(Algorithm::English));
 
 pub fn tokenise(text: &str) -> Vec<String> {
-    let mut terms = Vec::new();
-    for word in text.split(|c: char| !c.is_alphanumeric()) {
-        if word.is_empty() {
-            continue;
-        }
-        terms.push(stem(word));
-        let parts = parts_of(word);
-        if parts.len() > 1 {
-            terms.extend(parts.into_iter().map(stem));
+    Tokeniser::default().terms(text)
+}
+
+/// Remembers every stem it computed, so a corpus that repeats its words stems each once.
+#[derive(Default)]
+pub struct Tokeniser {
+    stems: HashMap<String, String>,
+}
+
+impl Tokeniser {
+    pub fn terms(&mut self, text: &str) -> Vec<String> {
+        let mut terms = Vec::new();
+        self.each(text, |term| terms.push(term.to_owned()));
+        terms
+    }
+
+    pub fn each(&mut self, text: &str, mut visit: impl FnMut(&str)) {
+        for word in text.split(|c: char| !c.is_alphanumeric()) {
+            if word.is_empty() {
+                continue;
+            }
+            visit(self.stem(word));
+            let parts = parts_of(word);
+            if parts.len() > 1 {
+                for part in parts {
+                    visit(self.stem(part));
+                }
+            }
         }
     }
-    terms
+
+    fn stem(&mut self, word: &str) -> &str {
+        if !self.stems.contains_key(word) {
+            self.stems.insert(word.to_owned(), stem(word));
+        }
+        &self.stems[word]
+    }
 }
 
 fn stem(word: &str) -> String {

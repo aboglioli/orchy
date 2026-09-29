@@ -226,6 +226,22 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   write-guard files: they are `flock` targets, and removing one while another process waits
   on it lets two processes both believe they hold it. An expired lease is harmless anyway,
   because readers check its expiry.
+- **Scanning.** Every listing rescans the vault so it sees what other agents wrote since the
+  last one; nothing is cached across scans that could hide a write. What makes that cheap:
+  - `BlobStore::list_fingerprinted` walks in parallel and fingerprints each file (inode,
+    ctime, mtime, size); a file whose fingerprint is unchanged is taken from the parse cache
+    without being read;
+  - other files are read in one parallel batch (`get_many`) and parsed in parallel;
+  - the vault is relisted only when a file vanished between listing and reading;
+  - `Document::content_hash` is computed on first use.
+
+  Scoring stems each distinct word once per query (`Tokeniser`) and keeps, per passage, only
+  its length and the counts of the query's terms.
+
+  Measured on 10 000 notes (release build): `announce` 340 ms, `recall` 570 ms, `task list`
+  170 ms; before, 3.0 s, 2.2 s and 0.85 s. A
+  scan cached for a whole command would cut `announce` further, but rollup and split rely on
+  rereading to see concurrent writers, so it is not done.
 - **Atomic writes.** Temp file, fsync, rename.
 - **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
   digests to what this process last read (compare-and-swap under a per-file guard in

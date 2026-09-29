@@ -1,11 +1,11 @@
 mod terms;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-pub use terms::tokenise;
+pub use terms::{Tokeniser, tokenise};
 
 use crate::document::{Document, DocumentStatus, Kind};
 use crate::entity_ref::{EntityKind, EntityRef};
@@ -127,36 +127,33 @@ impl Passage {
     }
 }
 
+/// A passage reduced to what BM25 needs: its length in terms and, for each query term, the
+/// weighted number of times it occurs.
 struct Indexed {
-    title: Vec<String>,
-    heading: Vec<String>,
-    body: Vec<String>,
+    length: f64,
+    frequencies: Vec<f64>,
 }
 
 impl Indexed {
-    fn of(passage: &Passage) -> Self {
-        Self {
-            title: tokenise(&passage.title),
-            heading: tokenise(&passage.heading_terms),
-            body: tokenise(&passage.body),
+    fn of(passage: &Passage, wanted: &[String], tokeniser: &mut Tokeniser) -> Self {
+        let mut length = 0;
+        let mut frequencies = vec![0.0; wanted.len()];
+        for (text, weight) in [
+            (&passage.title, TITLE_WEIGHT),
+            (&passage.heading_terms, HEADING_WEIGHT),
+            (&passage.body, 1.0),
+        ] {
+            tokeniser.each(text, |term| {
+                length += 1;
+                if let Some(at) = wanted.iter().position(|w| w == term) {
+                    frequencies[at] += weight;
+                }
+            });
         }
-    }
-
-    fn length(&self) -> f64 {
-        (self.title.len() + self.heading.len() + self.body.len()) as f64
-    }
-
-    fn weighted_frequency(&self, term: &str) -> f64 {
-        let occurrences = |tokens: &[String]| tokens.iter().filter(|t| *t == term).count() as f64;
-        TITLE_WEIGHT * occurrences(&self.title)
-            + HEADING_WEIGHT * occurrences(&self.heading)
-            + occurrences(&self.body)
-    }
-
-    fn holds(&self, term: &str) -> bool {
-        [&self.title, &self.heading, &self.body]
-            .iter()
-            .any(|tokens| tokens.iter().any(|t| t == term))
+        Self {
+            length: length as f64,
+            frequencies,
+        }
     }
 }
 
@@ -203,22 +200,29 @@ pub fn skill_passage(skill: &Skill) -> Passage {
 }
 
 pub fn score(passages: Vec<Passage>, text: &str) -> Vec<Hit> {
-    let wanted: BTreeSet<String> = tokenise(text).into_iter().collect();
+    let wanted: Vec<String> = tokenise(text)
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     if wanted.is_empty() {
         return passages.into_iter().map(|p| p.into_hit(0.0)).collect();
     }
 
-    let indexed: Vec<Indexed> = passages.iter().map(Indexed::of).collect();
-    let total = indexed.len() as f64;
-    let average_length = (indexed.iter().map(Indexed::length).sum::<f64>() / total).max(1.0);
-
-    let carrying: BTreeMap<&String, f64> = wanted
+    let mut tokeniser = Tokeniser::default();
+    let indexed: Vec<Indexed> = passages
         .iter()
-        .map(|term| {
-            (
-                term,
-                indexed.iter().filter(|doc| doc.holds(term)).count() as f64,
-            )
+        .map(|passage| Indexed::of(passage, &wanted, &mut tokeniser))
+        .collect();
+    let total = indexed.len() as f64;
+    let average_length = (indexed.iter().map(|doc| doc.length).sum::<f64>() / total).max(1.0);
+
+    let carrying: Vec<f64> = (0..wanted.len())
+        .map(|at| {
+            indexed
+                .iter()
+                .filter(|doc| doc.frequencies[at] > 0.0)
+                .count() as f64
         })
         .collect();
 
@@ -231,16 +235,15 @@ pub fn score(passages: Vec<Passage>, text: &str) -> Vec<Hit> {
             let mut relevance = 0.0;
             let mut matched = 0usize;
 
-            for term in &wanted {
-                let frequency = doc.weighted_frequency(term);
+            for (at, frequency) in doc.frequencies.iter().copied().enumerate() {
                 if frequency == 0.0 {
                     continue;
                 }
                 matched += 1;
-                let documents = carrying[term];
+                let documents = carrying[at];
                 let rarity = (1.0 + (total - documents + 0.5) / (documents + 0.5)).ln();
                 let saturation =
-                    frequency / (frequency + K1 * (1.0 - B + B * doc.length() / average_length));
+                    frequency / (frequency + K1 * (1.0 - B + B * doc.length / average_length));
                 relevance += rarity * (K1 + 1.0) * saturation;
             }
 

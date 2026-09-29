@@ -2,6 +2,8 @@ mod events;
 mod frontmatter;
 mod kind;
 
+use std::sync::OnceLock;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -104,7 +106,9 @@ pub struct Document {
     tags: Vec<Tag>,
     frontmatter: Frontmatter,
     body: Body,
-    content_hash: String,
+    /// Computed on first use: listing thousands of documents rarely needs it.
+    #[serde(skip)]
+    content_hash: OnceLock<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(skip)]
@@ -127,7 +131,6 @@ pub struct RestoreDocument {
 
 impl Document {
     pub fn new(restore: RestoreDocument) -> Self {
-        let content_hash = hash_of(&restore.title, &restore.body, &restore.frontmatter);
         Self {
             id: restore.id,
             kind: restore.kind,
@@ -137,7 +140,7 @@ impl Document {
             tags: restore.tags,
             frontmatter: restore.frontmatter,
             body: restore.body,
-            content_hash,
+            content_hash: OnceLock::new(),
             created_at: restore.created_at,
             updated_at: restore.updated_at,
             collector: EventCollector::new(),
@@ -171,20 +174,20 @@ impl Document {
             namespace,
             kind,
             title: title.into(),
-            content_hash: document.content_hash.clone(),
+            content_hash: document.content_hash().to_owned(),
             at: now,
         });
         document
     }
 
     pub fn edit(&mut self, body: Body, clock: &dyn Clock) {
-        let prev_hash = self.content_hash.clone();
+        let prev_hash = self.content_hash().to_owned();
         self.body = body;
         self.rehash(clock);
         self.collector.collect(DocumentWritten {
             id: self.id.clone(),
             namespace: self.namespace.clone(),
-            content_hash: self.content_hash.clone(),
+            content_hash: self.content_hash().to_owned(),
             prev_hash,
             at: self.updated_at,
         });
@@ -203,14 +206,14 @@ impl Document {
         clock: &dyn Clock,
     ) -> Result<()> {
         let body = self.body.replace_section(heading, nth, content)?;
-        let prev_hash = self.content_hash.clone();
+        let prev_hash = self.content_hash().to_owned();
         self.body = body;
         self.rehash(clock);
         self.collector.collect(DocumentSectionReplaced {
             id: self.id.clone(),
             namespace: self.namespace.clone(),
             heading: heading.to_owned(),
-            content_hash: self.content_hash.clone(),
+            content_hash: self.content_hash().to_owned(),
             prev_hash,
             at: self.updated_at,
         });
@@ -407,7 +410,7 @@ impl Document {
 
     fn rehash(&mut self, clock: &dyn Clock) {
         self.updated_at = clock.now();
-        self.content_hash = hash_of(&self.title, &self.body, &self.frontmatter);
+        self.content_hash = OnceLock::new();
     }
 
     pub fn drain_events(&mut self) -> Vec<Box<dyn DomainEvent>> {
@@ -439,7 +442,8 @@ impl Document {
         &self.body
     }
     pub fn content_hash(&self) -> &str {
-        &self.content_hash
+        self.content_hash
+            .get_or_init(|| hash_of(&self.title, &self.body, &self.frontmatter))
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at

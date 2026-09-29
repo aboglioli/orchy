@@ -23,6 +23,16 @@ pub fn digest(bytes: &[u8]) -> u64 {
 #[async_trait]
 pub trait BlobStore: Send + Sync {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>>;
+
+    /// One call for many keys, in the order given.
+    async fn get_many(&self, keys: &[String]) -> Result<Vec<Option<Vec<u8>>>> {
+        let mut found = Vec::with_capacity(keys.len());
+        for key in keys {
+            found.push(self.get(key).await?);
+        }
+        Ok(found)
+    }
+
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<()>;
 
     /// Replace `key` only if what is there now digests to `expected`, atomically with respect
@@ -34,6 +44,18 @@ pub trait BlobStore: Send + Sync {
 
     async fn delete(&self, key: &str) -> Result<()>;
     async fn list(&self, prefix: &str) -> Result<Vec<String>>;
+
+    /// Each key with a value that changes whenever its bytes may have, when the backend can
+    /// tell without reading them; `None` means the caller has to read.
+    async fn list_fingerprinted(&self, prefix: &str) -> Result<Vec<(String, Option<u64>)>> {
+        Ok(self
+            .list(prefix)
+            .await?
+            .into_iter()
+            .map(|key| (key, None))
+            .collect())
+    }
+
     async fn exists(&self, key: &str) -> Result<bool> {
         Ok(self.get(key).await?.is_some())
     }
@@ -52,6 +74,51 @@ async fn ensure_parent(path: &Path) -> Result<()> {
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| io(&format!("creating {}", parent.display()), e))
+}
+
+/// Writes replace files by rename, so a rewrite always changes the inode; an editor writing
+/// in place changes the modification time.
+fn fingerprint(meta: &std::fs::Metadata) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    meta.len().hash(&mut hasher);
+    meta.modified().ok().hash(&mut hasher);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        (meta.dev(), meta.ino(), meta.ctime(), meta.ctime_nsec()).hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+fn read_all(paths: &[PathBuf]) -> Result<Vec<Option<Vec<u8>>>> {
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
+    let chunk = paths.len().div_ceil(workers).max(1);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = paths
+            .chunks(chunk)
+            .map(|part| {
+                scope.spawn(move || part.iter().map(|p| read_one(p)).collect::<Result<Vec<_>>>())
+            })
+            .collect();
+        let mut all = Vec::with_capacity(paths.len());
+        for handle in handles {
+            all.extend(
+                handle
+                    .join()
+                    .map_err(|_| DomainError::unavailable("a read worker panicked"))??,
+            );
+        }
+        Ok(all)
+    })
+}
+
+fn read_one(path: &Path) -> Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(io(&format!("reading {}", path.display()), e)),
+    }
 }
 
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -107,6 +174,55 @@ impl FsBlobStore {
             .join(format!("{safe}.lock")))
     }
 
+    async fn walk(&self, prefix: &str, fingerprints: bool) -> Result<Vec<(String, Option<u64>)>> {
+        let root = self.root.clone();
+        let prefix = prefix.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let base = root.join(&prefix);
+            if !base.exists() {
+                return Vec::new();
+            }
+            let found = std::sync::Mutex::new(Vec::new());
+            ignore::WalkBuilder::new(&base)
+                .hidden(true)
+                .git_ignore(true)
+                .build_parallel()
+                .run(|| {
+                    Box::new(|entry| {
+                        let Ok(entry) = entry else {
+                            return ignore::WalkState::Continue;
+                        };
+                        if !entry.file_type().is_some_and(|t| t.is_file()) {
+                            return ignore::WalkState::Continue;
+                        }
+                        let Some(key) = entry
+                            .path()
+                            .strip_prefix(&root)
+                            .ok()
+                            .and_then(|relative| relative.to_str())
+                        else {
+                            return ignore::WalkState::Continue;
+                        };
+                        let print = if fingerprints {
+                            entry.metadata().ok().map(|m| fingerprint(&m))
+                        } else {
+                            None
+                        };
+                        found
+                            .lock()
+                            .expect("walk results lock")
+                            .push((key.to_owned(), print));
+                        ignore::WalkState::Continue
+                    })
+                });
+            let mut keys = found.into_inner().expect("walk results lock");
+            keys.sort();
+            keys
+        })
+        .await
+        .map_err(|e| DomainError::unavailable(format!("list task failed: {e}")))
+    }
+
     fn path_of(&self, key: &str) -> Result<PathBuf> {
         if key.is_empty() {
             return Err(DomainError::validation("blob key must not be empty"));
@@ -129,6 +245,16 @@ impl BlobStore for FsBlobStore {
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
             Err(e) => Err(io(&format!("reading {}", path.display()), e)),
         }
+    }
+
+    async fn get_many(&self, keys: &[String]) -> Result<Vec<Option<Vec<u8>>>> {
+        let paths = keys
+            .iter()
+            .map(|key| self.path_of(key))
+            .collect::<Result<Vec<_>>>()?;
+        tokio::task::spawn_blocking(move || read_all(&paths))
+            .await
+            .map_err(|e| DomainError::unavailable(format!("read task failed: {e}")))?
     }
 
     async fn put(&self, key: &str, bytes: &[u8]) -> Result<()> {
@@ -175,34 +301,16 @@ impl BlobStore for FsBlobStore {
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<String>> {
-        let root = self.root.clone();
-        let prefix = prefix.to_owned();
-        tokio::task::spawn_blocking(move || {
-            let base = root.join(&prefix);
-            if !base.exists() {
-                return Vec::new();
-            }
-            let mut keys = Vec::new();
-            for entry in ignore::WalkBuilder::new(&base)
-                .hidden(true)
-                .git_ignore(true)
-                .build()
-                .flatten()
-            {
-                if !entry.file_type().is_some_and(|t| t.is_file()) {
-                    continue;
-                }
-                if let Ok(relative) = entry.path().strip_prefix(&root)
-                    && let Some(key) = relative.to_str()
-                {
-                    keys.push(key.to_owned());
-                }
-            }
-            keys.sort();
-            keys
-        })
-        .await
-        .map_err(|e| DomainError::unavailable(format!("list task failed: {e}")))
+        Ok(self
+            .walk(prefix, false)
+            .await?
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect())
+    }
+
+    async fn list_fingerprinted(&self, prefix: &str) -> Result<Vec<(String, Option<u64>)>> {
+        self.walk(prefix, true).await
     }
 }
 

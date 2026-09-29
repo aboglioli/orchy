@@ -28,7 +28,7 @@ pub struct Located {
 }
 
 pub struct Scan {
-    pub entries: Vec<(Id, Located, MarkdownFile)>,
+    pub entries: Vec<(Id, Located, Arc<MarkdownFile>)>,
     pub problems: Vec<Problem>,
 }
 
@@ -37,6 +37,15 @@ pub struct Vault {
     layout: Layout,
     index: RwLock<HashMap<Id, Located>>,
     problems: RwLock<Vec<Problem>>,
+    /// Only a file whose fingerprint proves it unchanged is skipped: every scan must see
+    /// what other agents wrote since the last one.
+    parsed: RwLock<HashMap<String, Parsed>>,
+}
+
+struct Parsed {
+    print: Option<u64>,
+    digest: u64,
+    file: Arc<MarkdownFile>,
 }
 
 impl Vault {
@@ -46,6 +55,7 @@ impl Vault {
             layout: Layout,
             index: RwLock::new(HashMap::new()),
             problems: RwLock::new(Vec::new()),
+            parsed: RwLock::new(HashMap::new()),
         };
         vault.reindex().await?;
         Ok(vault)
@@ -73,21 +83,17 @@ impl Vault {
         let mut problems = Vec::new();
         let mut owner_of: HashMap<Id, String> = HashMap::new();
         let mut seen_keys = HashSet::new();
-        let mut batch = self.blobs.list("").await?;
+        let mut batch = self.blobs.list_fingerprinted("").await?;
 
         for _ in 0..RESCAN_PASSES {
-            for key in batch {
-                if !seen_keys.insert(key.clone()) {
-                    continue;
-                }
-                if !self.layout.is_markdown(&key) || self.layout.is_runtime(&key) {
-                    continue;
-                }
-                let Some(bytes) = self.blobs.get(&key).await? else {
-                    continue;
-                };
-                let seen = digest(&bytes);
-                let file = match decode(&bytes) {
+            let wanted: Vec<(String, Option<u64>)> = batch
+                .into_iter()
+                .filter(|(key, _)| seen_keys.insert(key.clone()))
+                .filter(|(key, _)| self.layout.is_markdown(key) && !self.layout.is_runtime(key))
+                .collect();
+            let (parsed, vanished) = self.parse_all(wanted).await?;
+            for (key, seen, decoded) in parsed {
+                let file = match decoded {
                     Ok(file) => file,
                     Err(detail) => {
                         problems.push(Problem::new(ProblemKind::Unreadable, &key, None, detail));
@@ -123,12 +129,16 @@ impl Vault {
                 found.push((id, Located { kind, key, seen }, file));
             }
 
+            // a file that vanished between listing and reading was moved: look for where it went
+            if !vanished {
+                break;
+            }
             batch = self
                 .blobs
-                .list("")
+                .list_fingerprinted("")
                 .await?
                 .into_iter()
-                .filter(|key| !seen_keys.contains(key))
+                .filter(|(key, _)| !seen_keys.contains(key))
                 .collect();
             if batch.is_empty() {
                 break;
@@ -143,7 +153,70 @@ impl Vault {
         Ok(scan)
     }
 
-    fn absorb(&self, scanned: &[(Id, Located, MarkdownFile)]) {
+    /// A file whose fingerprint still matches is taken from the cache without being read;
+    /// every other file is read, digested and parsed.
+    async fn parse_all(
+        &self,
+        listed: Vec<(String, Option<u64>)>,
+    ) -> Result<(
+        Vec<(String, u64, StdResult<Arc<MarkdownFile>, String>)>,
+        bool,
+    )> {
+        let cached: Vec<Option<(u64, Arc<MarkdownFile>)>> = {
+            let cache = self.parsed.read().expect("parse cache lock");
+            listed
+                .iter()
+                .map(|(key, print)| {
+                    let entry = cache.get(key)?;
+                    (print.is_some() && entry.print == *print)
+                        .then(|| (entry.digest, Arc::clone(&entry.file)))
+                })
+                .collect()
+        };
+        let to_read: Vec<String> = listed
+            .iter()
+            .zip(&cached)
+            .filter(|(_, hit)| hit.is_none())
+            .map(|((key, _), _)| key.clone())
+            .collect();
+        let contents = self.blobs.get_many(&to_read).await?;
+        let digests: Vec<Option<u64>> = contents.iter().map(|b| b.as_deref().map(digest)).collect();
+        let bytes: Vec<&[u8]> = contents.iter().flatten().map(Vec::as_slice).collect();
+        let mut parsed = decode_in_parallel(&bytes).into_iter();
+        let mut read = contents.iter().zip(digests);
+
+        let mut cache = self.parsed.write().expect("parse cache lock");
+        let mut decoded = Vec::with_capacity(listed.len());
+        let mut vanished = false;
+        for ((key, print), hit) in listed.into_iter().zip(cached) {
+            if let Some((seen, file)) = hit {
+                decoded.push((key, seen, Ok(file)));
+                continue;
+            }
+            let (Some(_), Some(seen)) = read.next().expect("one read per miss") else {
+                vanished = true;
+                continue;
+            };
+            let result = parsed
+                .next()
+                .expect("one parse per file read")
+                .map(Arc::new);
+            if let Ok(file) = &result {
+                cache.insert(
+                    key.clone(),
+                    Parsed {
+                        print,
+                        digest: seen,
+                        file: Arc::clone(file),
+                    },
+                );
+            }
+            decoded.push((key, seen, result));
+        }
+        Ok((decoded, vanished))
+    }
+
+    fn absorb(&self, scanned: &[(Id, Located, Arc<MarkdownFile>)]) {
         let mut index = self.index.write().expect("index lock");
         let mut refreshed: HashMap<Id, Located> = HashMap::new();
         for (id, located, _) in scanned {
@@ -321,10 +394,10 @@ impl Vault {
         Ok(())
     }
 
-    pub async fn load_all(&self, kind: EntityKind) -> Result<Vec<(String, MarkdownFile)>> {
+    pub async fn load_all(&self, kind: EntityKind) -> Result<Vec<(String, Arc<MarkdownFile>)>> {
         let scanned = self.scan().await?;
 
-        let mut loaded: Vec<(String, MarkdownFile)> = scanned
+        let mut loaded: Vec<(String, Arc<MarkdownFile>)> = scanned
             .entries
             .into_iter()
             .filter(|(_, located, _)| located.kind == kind)
@@ -337,6 +410,21 @@ impl Vault {
 
 fn parse(bytes: &[u8], key: &str) -> Result<MarkdownFile> {
     decode(bytes).map_err(|detail| DomainError::validation(format!("{key}: {detail}")))
+}
+
+fn decode_in_parallel(files: &[&[u8]]) -> Vec<StdResult<MarkdownFile, String>> {
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
+    let chunk = files.len().div_ceil(workers).max(1);
+    std::thread::scope(|scope| {
+        let mut workers = Vec::new();
+        for part in files.chunks(chunk) {
+            workers.push(scope.spawn(move || part.iter().map(|b| decode(b)).collect::<Vec<_>>()));
+        }
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().expect("a parse worker panicked"))
+            .collect()
+    })
 }
 
 fn decode(bytes: &[u8]) -> StdResult<MarkdownFile, String> {
@@ -636,5 +724,40 @@ mod tests {
 
         assert!(vault.locate(&id).is_none());
         assert!(blobs.get("notes/a.md").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_rescan_sees_a_file_rewritten_on_disk_even_at_the_same_size() {
+        use crate::blob::FsBlobStore;
+
+        let temp = tempfile::tempdir().unwrap();
+        let blobs = Arc::new(FsBlobStore::new(temp.path()));
+        let note = |title: &str| format!("---\nid: {A}\ntype: note\ntitle: {title}\n---\n");
+        blobs
+            .put("docs/a.md", note("first").as_bytes())
+            .await
+            .unwrap();
+        let vault = Vault::open(Arc::clone(&blobs) as Arc<dyn BlobStore>)
+            .await
+            .unwrap();
+
+        std::fs::write(temp.path().join("docs/a.md"), note("again")).unwrap();
+        let loaded = vault.load_all(EntityKind::Document).await.unwrap();
+        assert_eq!(
+            loaded[0].1.frontmatter.string("title"),
+            Some("again"),
+            "an in-place edit is seen"
+        );
+
+        blobs
+            .put("docs/a.md", note("third").as_bytes())
+            .await
+            .unwrap();
+        let loaded = vault.load_all(EntityKind::Document).await.unwrap();
+        assert_eq!(
+            loaded[0].1.frontmatter.string("title"),
+            Some("third"),
+            "a replaced file is seen"
+        );
     }
 }
