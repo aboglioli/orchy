@@ -7,7 +7,9 @@ use orchy_application::create_task::CreateTaskCommand;
 use orchy_application::dto::TaskDto;
 use orchy_application::fail_task::FailTaskCommand;
 use orchy_application::get_task::GetTaskCommand;
+use orchy_application::list_ready_tasks::ListReadyTasksCommand;
 use orchy_application::list_tasks::ListTasksCommand;
+use orchy_application::list_waiting_tasks::{ListWaitingTasksCommand, WaitingTaskDto};
 use orchy_application::manage_dependencies::ManageDependenciesCommand;
 use orchy_application::next_task::NextTaskCommand;
 use orchy_application::release_task::ReleaseTaskCommand;
@@ -68,6 +70,26 @@ pub(crate) async fn run(
         }
 
         TaskCommand::List {
+            namespace,
+            blocked: true,
+            ..
+        } => {
+            let waiting = app
+                .list_waiting_tasks
+                .execute(ListWaitingTasksCommand { namespace })
+                .await?;
+            out.emit(&waiting, |w| render_waiting(w, out))
+        }
+
+        TaskCommand::Ready { namespace, role } => {
+            let ready = app
+                .list_ready_tasks
+                .execute(ListReadyTasksCommand { namespace, role })
+                .await?;
+            out.emit(&ready, |r| render_list(r, out))
+        }
+
+        TaskCommand::List {
             status,
             namespace,
             mine,
@@ -75,6 +97,7 @@ pub(crate) async fn run(
             parent,
             tag,
             limit,
+            ..
         } => {
             let page = app
                 .list_tasks
@@ -348,6 +371,34 @@ fn emit_finished(response: &CompleteTaskResponse, out: &Output) -> CliResult<()>
         out.note(format!("↑ {} → {}", short(&parent.id), parent.status));
     }
     out.emit(response, |r| detail(&r.task, out))
+}
+
+fn render_waiting(waiting: &[WaitingTaskDto], out: &Output) -> String {
+    if waiting.is_empty() {
+        return "nothing waiting".to_owned();
+    }
+    waiting
+        .iter()
+        .map(|w| {
+            let on = if w.waiting_on.is_empty() {
+                w.task.note.clone().unwrap_or_else(|| "blocked".to_owned())
+            } else {
+                w.waiting_on
+                    .iter()
+                    .map(|d| short(&d.id))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            format!(
+                "{}  {:<12} {}\n  waits on {}",
+                out.dim(short(&w.task.id)),
+                w.task.status,
+                w.task.title,
+                on
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn render_list(tasks: &[TaskDto], out: &Output) -> String {

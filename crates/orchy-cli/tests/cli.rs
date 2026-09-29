@@ -2232,3 +2232,57 @@ fn any_command_keeps_an_announced_agent_live_without_touching_the_roster_file() 
         1
     );
 }
+
+#[test]
+fn ready_and_blocked_together_are_exactly_the_open_board() {
+    let temp = vault();
+    let first = task_id(&temp, &["first"]);
+    let waits = task_id(&temp, &["waits", "--depends-on", &first]);
+    let parked = task_id(&temp, &["parked"]);
+    ok(
+        temp.path(),
+        &["task", "block", &parked, "--reason", "vendor"],
+    );
+    let free = task_id(&temp, &["free", "--priority", "high"]);
+
+    let ids = |value: serde_json::Value, path: &str| -> Vec<String> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.pointer(path).unwrap().as_str().unwrap().to_owned())
+            .collect()
+    };
+    let ready = ids(json(temp.path(), &["task", "ready"]), "/id");
+    assert_eq!(
+        ready,
+        vec![free.clone(), first.clone()],
+        "in the order task next draws"
+    );
+
+    let blocked = json(temp.path(), &["task", "list", "--blocked"]);
+    assert_eq!(ids(blocked.clone(), "/task/id").len(), 2);
+    let waiting_on = blocked
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["task"]["id"] == waits.as_str())
+        .unwrap()["waiting_on"][0]["id"]
+        .clone();
+    assert_eq!(waiting_on, first.as_str());
+
+    let mut union: Vec<String> = ready.into_iter().chain(ids(blocked, "/task/id")).collect();
+    union.sort();
+    let board = json(
+        temp.path(),
+        &["task", "list", "--status", "pending", "--status", "blocked"],
+    );
+    let mut open: Vec<String> = board["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap().to_owned())
+        .collect();
+    open.sort();
+    assert_eq!(union, open);
+}

@@ -267,6 +267,9 @@ pub(crate) enum TaskCommand {
         status: Vec<String>,
         #[arg(long)]
         namespace: Option<String>,
+        /// Only work `task next` will not hand out yet, with what each waits on
+        #[arg(long, conflicts_with_all = ["status", "mine", "role", "parent", "tag"])]
+        blocked: bool,
         #[arg(long)]
         mine: bool,
         #[arg(long)]
@@ -280,6 +283,13 @@ pub(crate) enum TaskCommand {
     },
     /// Show a task with its subtasks and links
     Get { target: String },
+    /// The queue `task next` draws from, in the order it draws
+    Ready {
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long)]
+        role: Option<String>,
+    },
     /// The highest-ranked claimable task
     Next {
         #[arg(long)]

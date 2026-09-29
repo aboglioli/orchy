@@ -16,9 +16,11 @@ pub mod find_documents;
 pub mod get_task;
 pub mod link_entities;
 pub mod list_actors;
+pub mod list_ready_tasks;
 pub mod list_sent;
 pub mod list_skills;
 pub mod list_tasks;
+pub mod list_waiting_tasks;
 pub mod manage_dependencies;
 pub mod manage_lease;
 pub mod next_task;
@@ -76,9 +78,11 @@ use find_documents::FindDocuments;
 use get_task::GetTask;
 use link_entities::LinkEntities;
 use list_actors::ListActors;
+use list_ready_tasks::ListReadyTasks;
 use list_sent::ListSent;
 use list_skills::ListSkills;
 use list_tasks::ListTasks;
+use list_waiting_tasks::ListWaitingTasks;
 use manage_dependencies::ManageDependencies;
 use manage_lease::ManageLease;
 use next_task::NextTask;
@@ -146,6 +150,8 @@ pub struct Application {
     pub create_task: CreateTask,
     pub get_task: GetTask,
     pub list_tasks: ListTasks,
+    pub list_ready_tasks: ListReadyTasks,
+    pub list_waiting_tasks: ListWaitingTasks,
     pub next_task: NextTask,
     pub update_task: UpdateTask,
     pub claim_task: Arc<ClaimTask>,
@@ -268,6 +274,11 @@ impl Application {
             ),
             list_tasks: ListTasks::new(Arc::clone(&tasks)),
             next_task: NextTask::new(Arc::clone(&ranking), Arc::clone(&claim)),
+            list_ready_tasks: ListReadyTasks::new(Arc::clone(&ranking)),
+            list_waiting_tasks: ListWaitingTasks::new(
+                Arc::clone(&tasks),
+                Arc::clone(&dependencies),
+            ),
             update_task: UpdateTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&rollup),

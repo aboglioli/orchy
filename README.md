@@ -363,7 +363,9 @@ pending, claimed, in_progress ──block──▶ blocked ──unblock──�
 orchy task new <title> [--description …] [--priority low|normal|high|urgent] [--namespace /x]
                        [--role r]... [--tag t]... [--parent <task>] [--depends-on <task>]...
 orchy task list [--status s]... [--namespace /x] [--mine] [--role r] [--parent <task>] [--tag t]... [--limit n]
+orchy task list --blocked [--namespace /x]
 orchy task get <task>
+orchy task ready [--role r] [--namespace /x]
 orchy task next [--role r] [--namespace /x] [--peek]
 orchy task claim <task> [--ttl secs] [--start]
 orchy task start <task>
@@ -383,7 +385,8 @@ orchy task update <task> [--title …] [--description …] [--priority …] [--n
 - **Taking work.** `task next` hands out the most urgent, then oldest, `pending` task whose
   dependencies are done, and claims it. When several agents ask at once, each gets a
   different task. `--peek` looks without taking. The briefing's "next up" is always the task
-  `task next` would hand out.
+  `task next` would hand out. `task ready` shows the whole queue in that order, and
+  `task list --blocked` shows the rest of the open work with what each task waits on.
 - **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
   the holder can mark it done, failed or cancelled.
 - **Outcomes.** The `--note` of `task done` and the reason given to `task fail` or

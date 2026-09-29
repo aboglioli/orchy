@@ -328,7 +328,9 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Ranking.** `task::ranking::claimable` is the only ordering of claimable work: pending,
   ready, then priority (`urgent > high > normal > low`), age and id. `RankClaimable` applies
   it to every matching task (`TaskStore::matching` never pages). `NextTask` walks down it on
-  contention; the briefing's "next up" is its first entry for the actor's namespace.
+  contention; the briefing's "next up" is its first entry for the actor's namespace;
+  `task ready` (`ListReadyTasks`) lists all of it. `task list --blocked` (`ListWaitingTasks`)
+  is every other pending or blocked task with the dependencies it waits on.
 
 ### Documents
 
