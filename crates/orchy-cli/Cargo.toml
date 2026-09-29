@@ -5,6 +5,9 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "../../README.md"
+keywords = ["agents", "ai", "coordination", "markdown", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "orchy"

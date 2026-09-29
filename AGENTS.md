@@ -481,6 +481,25 @@ Import types and use the short name everywhere; qualify only where the module ad
 - Never push. Never stage without being asked. No `Co-Authored-By` or tool attribution.
 - Do not change commit-signing settings, and never bypass signing to get a commit through.
 
+## Releasing
+
+Nothing is released yet. Everything is in place for a first release:
+
+- **Binaries.** `cargo-dist` (config in `dist-workspace.toml`, workflow in
+  `.github/workflows/release.yml`) builds `orchy` for `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`, with checksums and a shell
+  installer, when a `v*` tag is pushed. Windows is deliberately not a target: `orchy init`
+  creates a symlink and nothing has been tested there. After changing `dist-workspace.toml`,
+  run `dist generate` (e.g. `mise exec cargo-dist@0.33.0 -- dist generate`) and commit the
+  regenerated workflow; never edit it by hand.
+- **Crates.** Internal dependencies carry a version, so `cargo publish --workspace` publishes
+  all five crates in dependency order; `cargo publish --workspace --dry-run` verifies that.
+- **Versions.** Semver from `0.1.0`, one version for the whole workspace
+  (`workspace.package.version`). Record changes in `CHANGELOG.md` under `Unreleased`, and move
+  them under the version when tagging.
+
+Only a person tags, pushes and publishes.
+
 ## Documentation policy
 
 - `docs/` is for durable, human-facing documentation: architecture notes, ADRs, operator
