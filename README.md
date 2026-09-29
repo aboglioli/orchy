@@ -478,6 +478,26 @@ orchy events [--topic task.] [--key <id>] [--by <agent>] [--limit n]
 `--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`, `edge.` (links),
 `actor.` (the roster) and `lock.`. `--limit n` shows the `n` most recent.
 
+## Keeping the vault healthy
+
+Hand edits, git merges and older versions of orchy can leave files in states no single
+command notices. A file orchy cannot read is skipped rather than allowed to break every
+command, and `orchy announce` says how many were skipped. `orchy doctor` lists everything
+wrong, with each file's path:
+
+```bash
+orchy doctor          # report; exits 6 while anything is wrong, so it can gate a commit hook
+orchy doctor --fix    # repair what needs no decision, then report what is left
+```
+
+| problem | `--fix` |
+|---|---|
+| a file that cannot be read: broken YAML, merge conflict markers, an unknown type, a missing or invalid field, an id used twice | no: the report says where and why |
+| a file in the wrong folder, or not named after its id | moves or renames it |
+| a goal whose subtasks are all finished but which is still open | finishes it |
+| a `supersedes` link recorded the wrong way round by an older version | turns it around |
+| a link to something that does not exist, or a task that is its own ancestor | no |
+
 ## Scripting
 
 Every command accepts `--json`. Colour is used only on a terminal, and never when

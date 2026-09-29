@@ -300,6 +300,18 @@ impl Vault {
         Ok(())
     }
 
+    pub async fn relocate(&self, id: &Id, to: &str) -> Result<()> {
+        let Some((key, file)) = self.read_by_id(id).await? else {
+            return Err(DomainError::not_found("entity", id));
+        };
+        if key == to {
+            return Ok(());
+        }
+        let kind = self.locate(id).map_or(EntityKind::Document, |l| l.kind);
+        self.write_if(to, &file, id, kind, Precondition::Unchanged)
+            .await
+    }
+
     pub async fn remove(&self, id: &Id) -> Result<()> {
         let Some(located) = self.locate(id) else {
             return Ok(());

@@ -12,6 +12,7 @@ pub(crate) enum CliError {
     Io(std::io::Error),
     NotAVault(String),
     WrongEntity(String),
+    ProblemsRemain(usize),
 }
 
 impl CliError {
@@ -40,6 +41,7 @@ impl CliError {
             Self::Application(e) => e.exit_code(),
             Self::Config(_) => 6,
             Self::NotAVault(_) | Self::WrongEntity(_) => 4,
+            Self::ProblemsRemain(_) => 6,
             Self::Io(_) => 8,
         }
     }
@@ -50,6 +52,11 @@ impl fmt::Display for CliError {
         match self {
             Self::Application(e) => write!(f, "{e}"),
             Self::Config(m) | Self::NotAVault(m) | Self::WrongEntity(m) => f.write_str(m),
+            Self::ProblemsRemain(n) => write!(
+                f,
+                "{n} problem{} left; `orchy doctor --fix` repairs what needs no decision",
+                if *n == 1 { "" } else { "s" }
+            ),
             Self::Io(e) => write!(f, "{e}"),
         }
     }

@@ -232,6 +232,11 @@ pub(crate) enum Command {
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// Find what is wrong with the vault; `--fix` repairs what needs no decision
+    Doctor {
+        #[arg(long)]
+        fix: bool,
+    },
     /// Generate a shell completion script
     Completions { shell: clap_complete::Shell },
 }

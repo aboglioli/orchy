@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{EntityKind, Integrity, Problem, Result};
+use orchy_core::{EntityKind, EntityRef, Id, Integrity, Problem, ProblemKind, Relation, Result};
 
 use crate::codec;
+use crate::edges::refs_in;
 use crate::markdown::MarkdownFile;
 use crate::vault::Vault;
 
@@ -14,6 +15,92 @@ pub struct VaultIntegrity {
 impl VaultIntegrity {
     pub fn new(vault: Arc<Vault>) -> Self {
         Self { vault }
+    }
+
+    fn placement(
+        &self,
+        id: &Id,
+        key: &str,
+        kind: EntityKind,
+        file: &MarkdownFile,
+    ) -> Option<Problem> {
+        let expected = self.expected_key(id, kind, file)?;
+        if expected == key {
+            return None;
+        }
+        let folder = |k: &str| {
+            k.rsplit_once('/')
+                .map(|(f, _)| f.to_owned())
+                .unwrap_or_default()
+        };
+        let problem = if folder(&expected) == folder(key) {
+            ProblemKind::MisnamedFile
+        } else {
+            ProblemKind::Misplaced
+        };
+        Some(Problem::new(
+            problem,
+            key,
+            Some(id.clone()),
+            format!("belongs at `{expected}`"),
+        ))
+    }
+
+    /// Where the file should be. A document may sit anywhere under its namespace folder, so
+    /// only its name is fixed there.
+    fn expected_key(&self, id: &Id, kind: EntityKind, file: &MarkdownFile) -> Option<String> {
+        let layout = self.vault.layout();
+        match kind {
+            EntityKind::Document => {
+                let document = codec::document_from_markdown(file).ok()?;
+                let key = self.vault.locate(id)?.key;
+                let name = format!("{id}.md");
+                let folder = layout.document_folder(document.namespace());
+                if !key.starts_with(&folder) {
+                    return Some(layout.document_key(document.namespace(), id));
+                }
+                let current_folder = key.rsplit_once('/').map_or("", |(f, _)| f);
+                Some(format!("{current_folder}/{name}"))
+            }
+            EntityKind::Task => {
+                let task = codec::task_from_markdown(file).ok()?;
+                Some(layout.task_key(id, task.status()))
+            }
+            EntityKind::Message => {
+                let message = codec::message_from_markdown(file).ok()?;
+                Some(layout.message_key(message.thread(), id))
+            }
+            EntityKind::Skill => {
+                let skill = codec::skill_from_markdown(file).ok()?;
+                Some(layout.skill_key(skill.namespace(), skill.name()))
+            }
+            EntityKind::Actor => None,
+        }
+    }
+
+    fn dangling(&self, key: &str, id: &Id, file: &MarkdownFile) -> Vec<Problem> {
+        let mut problems = Vec::new();
+        for (field, value) in file.frontmatter.iter() {
+            let Ok(relation) = field.parse::<Relation>() else {
+                continue;
+            };
+            for target in refs_in(value) {
+                let Ok(to) = EntityRef::parse_or_assume(&target, relation.sole_target_kind())
+                else {
+                    continue;
+                };
+                if to.kind() == EntityKind::Actor || self.vault.locate(to.id()).is_some() {
+                    continue;
+                }
+                problems.push(Problem::new(
+                    ProblemKind::DanglingEdge,
+                    key,
+                    Some(id.clone()),
+                    format!("`{relation}` points at {to}, which does not exist"),
+                ));
+            }
+        }
+        problems
     }
 }
 
@@ -32,11 +119,40 @@ impl Integrity for VaultIntegrity {
     }
 
     async fn problems(&self) -> Result<Vec<Problem>> {
-        self.unreadable().await
+        let mut problems = self.unreadable().await?;
+        let scan = self.vault.scan().await?;
+        for (id, located, file) in &scan.entries {
+            problems.extend(self.placement(id, &located.key, located.kind, file));
+            problems.extend(self.dangling(&located.key, id, file));
+        }
+        problems.sort_by(|a, b| a.location.cmp(&b.location).then(a.kind.cmp(&b.kind)));
+        Ok(problems)
     }
 
-    async fn repair(&self, _problem: &Problem) -> Result<bool> {
-        Ok(false)
+    async fn repair(&self, problem: &Problem) -> Result<bool> {
+        if !matches!(
+            problem.kind,
+            ProblemKind::Misplaced | ProblemKind::MisnamedFile
+        ) {
+            return Ok(false);
+        }
+        let Some(id) = &problem.id else {
+            return Ok(false);
+        };
+        let Some((key, file)) = self.vault.read_by_id(id).await? else {
+            return Ok(false);
+        };
+        let Some(kind) = self.vault.locate(id).map(|l| l.kind) else {
+            return Ok(false);
+        };
+        let Some(expected) = self.expected_key(id, kind, &file) else {
+            return Ok(false);
+        };
+        if expected == key {
+            return Ok(true);
+        }
+        self.vault.relocate(id, &expected).await?;
+        Ok(true)
     }
 }
 
@@ -142,15 +258,87 @@ mod tests {
         assert_eq!(found[0].1, ProblemKind::DuplicateId);
     }
 
+    async fn everything(files: &[(&str, &str)]) -> (VaultIntegrity, Vec<(String, ProblemKind)>) {
+        let integrity = integrity_over(files).await;
+        let found = integrity
+            .problems()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.location, p.kind))
+            .collect();
+        (integrity, found)
+    }
+
+    #[tokio::test]
+    async fn a_task_outside_its_status_folder_is_misplaced_and_moved_back() {
+        let (integrity, found) = everything(&[(
+            "tasks/done/x.md",
+            &format!("---\nid: {A}\ntype: task\ntitle: t\nstatus: pending\n---\n"),
+        )])
+        .await;
+        assert_eq!(
+            found,
+            vec![("tasks/done/x.md".to_owned(), ProblemKind::Misplaced)]
+        );
+
+        let problem = integrity.problems().await.unwrap().remove(0);
+        assert!(integrity.repair(&problem).await.unwrap());
+        assert!(integrity.problems().await.unwrap().is_empty());
+        assert!(
+            integrity
+                .vault
+                .locate(&Id::new(A).unwrap())
+                .unwrap()
+                .key
+                .ends_with(&format!("tasks/open/{A}.md"))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_document_filed_by_hand_keeps_its_folder_but_takes_its_id_as_name() {
+        let (integrity, found) = everything(&[(
+            "docs/backend/notes/mine.md",
+            &format!("---\nid: {A}\ntype: note\ntitle: t\nnamespace: /backend\n---\n"),
+        )])
+        .await;
+        assert_eq!(
+            found,
+            vec![(
+                "docs/backend/notes/mine.md".to_owned(),
+                ProblemKind::MisnamedFile
+            )]
+        );
+        let problem = integrity.problems().await.unwrap().remove(0);
+        integrity.repair(&problem).await.unwrap();
+        assert_eq!(
+            integrity.vault.locate(&Id::new(A).unwrap()).unwrap().key,
+            format!("docs/backend/notes/{A}.md")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_link_to_nothing_is_reported_but_left_alone() {
+        let (integrity, found) = everything(&[(
+            &format!("docs/{A}.md"),
+            &format!("---\nid: {A}\ntype: note\ntitle: t\nrelated_to:\n  - document:{B}\n---\n"),
+        )])
+        .await;
+        assert_eq!(
+            found,
+            vec![(format!("docs/{A}.md"), ProblemKind::DanglingEdge)]
+        );
+        let problem = integrity.problems().await.unwrap().remove(0);
+        assert!(!integrity.repair(&problem).await.unwrap());
+    }
+
     #[tokio::test]
     async fn a_healthy_vault_has_nothing_to_report() {
-        let found = kinds(&[
+        let note = format!("docs/{A}.md");
+        let (_, found) = everything(&[
+            (&note, &format!("---\nid: {A}\ntype: note\ntitle: a\n---\n")),
             (
-                "docs/a.md",
-                &format!("---\nid: {A}\ntype: note\ntitle: a\n---\n"),
-            ),
-            (
-                "skills/b.md",
+                "skills/commits.md",
                 &format!("---\nid: {B}\ntype: skill\nname: commits\nsummary: s\n---\n"),
             ),
         ])

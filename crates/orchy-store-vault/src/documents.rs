@@ -28,13 +28,6 @@ impl VaultDocumentStore {
     }
 }
 
-fn parent_of(key: &str) -> String {
-    match key.rsplit_once('/') {
-        Some((folder, _)) => format!("{folder}/"),
-        None => String::new(),
-    }
-}
-
 #[async_trait]
 impl DocumentStore for VaultDocumentStore {
     async fn get(&self, id: &Id) -> Result<Option<Document>> {
@@ -63,15 +56,11 @@ impl DocumentStore for VaultDocumentStore {
 
     async fn save(&self, document: &mut Document) -> Result<()> {
         let events = document.drain_events();
-        let placed = self
-            .vault
-            .layout()
-            .document_key(document.namespace(), document.id());
+        let layout = self.vault.layout();
+        let folder = layout.document_folder(document.namespace());
         let key = match self.vault.locate(document.id()) {
-            // a document someone filed by hand stays where they put it, as long as it is still
-            // inside the namespace it claims
-            Some(located) if located.key.starts_with(&parent_of(&placed)) => located.key,
-            _ => placed,
+            Some(located) if located.key.starts_with(&folder) => located.key,
+            _ => layout.document_key(document.namespace(), document.id()),
         };
 
         let file = codec::document_to_markdown(document);

@@ -7,6 +7,7 @@ pub mod claim_task;
 pub mod complete_task;
 pub mod create_document;
 pub mod create_task;
+pub mod doctor;
 pub mod dto;
 pub mod edit_document;
 pub mod error;
@@ -67,6 +68,7 @@ use claim_task::ClaimTask;
 use complete_task::CompleteTask;
 use create_document::CreateDocument;
 use create_task::CreateTask;
+use doctor::Doctor;
 use edit_document::EditDocument;
 use fail_task::FailTask;
 use find_documents::FindDocuments;
@@ -173,6 +175,7 @@ pub struct Application {
     pub link_entities: LinkEntities,
     pub traverse_graph: TraverseGraph,
     pub resolve_reference: ResolveReference,
+    pub doctor: Doctor,
     pub recall: Recall,
     pub read_events: ReadEvents,
 }
@@ -347,6 +350,13 @@ impl Application {
 
             link_entities: LinkEntities::new(Arc::clone(&edges)),
             traverse_graph: TraverseGraph::new(Arc::clone(&edges)),
+            doctor: Doctor::new(
+                Arc::clone(&integrity),
+                Arc::clone(&tasks),
+                Arc::clone(&documents),
+                Arc::clone(&edges),
+                Arc::clone(&rollup),
+            ),
             resolve_reference: ResolveReference::new(
                 Arc::clone(&tasks),
                 Arc::clone(&documents),

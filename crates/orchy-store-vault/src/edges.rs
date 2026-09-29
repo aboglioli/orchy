@@ -133,7 +133,7 @@ fn same_entity(a: &str, b: &str) -> bool {
     id_of(a) == id_of(b)
 }
 
-fn refs_in(value: &Value) -> Vec<String> {
+pub(crate) fn refs_in(value: &Value) -> Vec<String> {
     match value {
         Value::String(s) => vec![s.clone()],
         Value::Array(items) => items

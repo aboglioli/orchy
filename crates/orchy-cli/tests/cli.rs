@@ -2053,3 +2053,145 @@ fn links_roster_changes_locks_and_skill_edits_all_reach_the_event_log() {
         "{skill:?}"
     );
 }
+
+const ID_1: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA1";
+const ID_2: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA2";
+const ID_3: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA3";
+const ID_4: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA4";
+const ID_5: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA5";
+const ID_6: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA6";
+const ID_7: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA7";
+const ID_8: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA8";
+
+fn seed(temp: &tempfile::TempDir, key: &str, text: &str) {
+    let path = temp.path().join(key);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, text).unwrap();
+}
+
+fn doctor_kinds(temp: &tempfile::TempDir, args: &[&str]) -> (Option<i32>, Vec<(String, String)>) {
+    let mut full = vec!["--json", "doctor"];
+    full.extend_from_slice(args);
+    let out = orchy(temp.path(), &full);
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let mut kinds: Vec<(String, String)> = report["problems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["kind"].as_str().unwrap().to_owned(),
+                p["fixable"].to_string(),
+            )
+        })
+        .collect();
+    kinds.sort();
+    (out.status.code(), kinds)
+}
+
+#[test]
+fn doctor_finds_every_kind_of_problem_and_fixes_the_mechanical_ones() {
+    let temp = vault();
+    seed(
+        &temp,
+        "docs/broken.md",
+        &format!("---\nid: {ID_1}\ntype: note\ntitle: [x\n---\n"),
+    );
+    seed(
+        &temp,
+        "docs/odd.md",
+        &format!("---\nid: {ID_2}\ntype: brainstorm\ntitle: x\n---\n"),
+    );
+    seed(
+        &temp,
+        "tasks/done/misplaced.md",
+        &format!("---\nid: {ID_3}\ntype: task\ntitle: t\nstatus: pending\n---\n"),
+    );
+    seed(
+        &temp,
+        "docs/hand/named.md",
+        &format!("---\nid: {ID_4}\ntype: note\ntitle: n\nrelated_to:\n  - document:{ID_8}\n---\n"),
+    );
+    seed(
+        &temp,
+        &format!("tasks/open/{ID_5}.md"),
+        &format!("---\nid: {ID_5}\ntype: task\ntitle: goal\nstatus: pending\n---\n"),
+    );
+    seed(
+        &temp,
+        &format!("tasks/done/{ID_6}.md"),
+        &format!(
+            "---\nid: {ID_6}\ntype: task\ntitle: child\nstatus: completed\nparent: task:{ID_5}\n---\n"
+        ),
+    );
+    seed(
+        &temp,
+        &format!("docs/{ID_7}.md"),
+        &format!(
+            "---\nid: {ID_7}\ntype: decision\ntitle: old\nstatus: superseded\nsupersedes:\n  - document:{ID_4}\n---\n"
+        ),
+    );
+
+    let (code, before) = doctor_kinds(&temp, &[]);
+    assert_eq!(code, Some(6));
+    let names: Vec<&str> = before.iter().map(|(k, _)| k.as_str()).collect();
+    for kind in [
+        "dangling_edge",
+        "inverted_supersedes",
+        "misnamed_file",
+        "misplaced",
+        "stale_rollup",
+        "unknown_type",
+        "unreadable",
+    ] {
+        assert!(names.contains(&kind), "{kind} missing from {before:?}");
+    }
+
+    let (code, after) = doctor_kinds(&temp, &["--fix"]);
+    assert_eq!(code, Some(6), "manual problems remain");
+    assert!(
+        after.iter().all(|(_, fixable)| fixable == "false"),
+        "{after:?}"
+    );
+    assert!(temp.path().join(format!("tasks/open/{ID_3}.md")).exists());
+    assert!(temp.path().join(format!("docs/hand/{ID_4}.md")).exists());
+    assert_eq!(
+        json(temp.path(), &["task", "get", ID_5])["task"]["status"],
+        "completed"
+    );
+    let new_home =
+        std::fs::read_to_string(temp.path().join(format!("docs/hand/{ID_4}.md"))).unwrap();
+    assert!(new_home.contains(&format!("document:{ID_7}")), "{new_home}");
+
+    let (_, again) = doctor_kinds(&temp, &["--fix"]);
+    assert_eq!(again, after, "a second --fix is a no-op");
+}
+
+#[test]
+fn doctor_on_a_healthy_vault_exits_zero() {
+    let temp = vault();
+    ok(temp.path(), &["new", "note", "fine", "--body", "x"]);
+    assert!(ok(temp.path(), &["doctor"]).contains("healthy"));
+}
+
+#[test]
+fn doctor_reports_a_parent_cycle_once() {
+    let temp = vault();
+    seed(
+        &temp,
+        &format!("tasks/open/{ID_1}.md"),
+        &format!(
+            "---\nid: {ID_1}\ntype: task\ntitle: a\nstatus: pending\nparent: task:{ID_2}\n---\n"
+        ),
+    );
+    seed(
+        &temp,
+        &format!("tasks/open/{ID_2}.md"),
+        &format!(
+            "---\nid: {ID_2}\ntype: task\ntitle: b\nstatus: pending\nparent: task:{ID_1}\n---\n"
+        ),
+    );
+    let (code, kinds) = doctor_kinds(&temp, &[]);
+    assert_eq!(code, Some(6));
+    assert_eq!(kinds, vec![("parent_cycle".to_owned(), "false".to_owned())]);
+}

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use async_trait::async_trait;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 use crate::id::Id;
@@ -16,7 +16,7 @@ pub trait Integrity: Send + Sync {
     async fn repair(&self, problem: &Problem) -> Result<bool>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProblemKind {
     Unreadable,
@@ -30,11 +30,9 @@ pub enum ProblemKind {
     ParentCycle,
     StaleRollup,
     InvertedSupersedes,
-    ExpiredLease,
-    OrphanedGuard,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Problem {
     pub kind: ProblemKind,
     pub location: String,
@@ -57,20 +55,13 @@ impl ProblemKind {
             Self::ParentCycle => "parent_cycle",
             Self::StaleRollup => "stale_rollup",
             Self::InvertedSupersedes => "inverted_supersedes",
-            Self::ExpiredLease => "expired_lease",
-            Self::OrphanedGuard => "orphaned_guard",
         }
     }
 
     pub fn is_mechanical(&self) -> bool {
         matches!(
             self,
-            Self::Misplaced
-                | Self::MisnamedFile
-                | Self::StaleRollup
-                | Self::InvertedSupersedes
-                | Self::ExpiredLease
-                | Self::OrphanedGuard
+            Self::Misplaced | Self::MisnamedFile | Self::StaleRollup | Self::InvertedSupersedes
         )
     }
 }

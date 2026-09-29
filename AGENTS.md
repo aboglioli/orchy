@@ -82,7 +82,7 @@ crates/
 │       ├── documents.rs · skills.rs · tasks.rs · messages.rs · edges.rs · roster.rs
 │       ├── search.rs          gathers document sections and skills into passages for `score`
 │       ├── eventlog.rs        EventLog over eventuary's fs backend
-│       ├── integrity.rs       VaultIntegrity: what the scan and the codecs could not read
+│       ├── integrity.rs       VaultIntegrity: unreadable, misplaced and misnamed files, dangling links
 │       ├── watermarks.rs      per-actor inbox read watermarks
 │       ├── lock.rs            file locks
 │       └── time.rs            SystemClock, UlidGenerator
@@ -218,6 +218,14 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   non-ULID or duplicate `id`) and skips it; store listings skip a file their codec rejects.
   `Integrity` reports them with their paths, and the briefing counts them. A direct read of
   such an entity fails with the file's path in the message (`codec::at`).
+- **`orchy doctor`.** The `Doctor` use case adds the domain checks to `Integrity::problems`:
+  parent cycles, stale rollups, and `supersedes` stored on the replaced document by older
+  versions. `--fix` repairs the kinds `ProblemKind::is_mechanical` names, each through the
+  part that owns it: `Integrity::repair` moves or renames files, `RollupAncestors` re-derives
+  a parent, the edge store turns a link around. It deliberately never deletes lease or
+  write-guard files: they are `flock` targets, and removing one while another process waits
+  on it lets two processes both believe they hold it. An expired lease is harmless anyway,
+  because readers check its expiry.
 - **Atomic writes.** Temp file, fsync, rename.
 - **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
   digests to what this process last read (compare-and-swap under a per-file guard in
