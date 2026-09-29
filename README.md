@@ -258,6 +258,10 @@ orchy read <doc> [--section <heading>]
 orchy edit <doc> [--section <heading> | --replace-in <text> | --replace] [--content "…"]
 orchy set <doc> field=value...
 orchy recall <query> [--entity document|skill] [--kind k]... [--status s]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n]
+orchy retitle <doc> <title>
+orchy retype <doc> <type>
+orchy tag <doc> [+t | -t]...
+orchy ns move <doc> <namespace>
 orchy supersede <old> --by <new>
 orchy archive <doc>
 orchy unarchive <doc>
@@ -296,8 +300,10 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 
   Content comes from `--content` or from standard input.
 - **Your own fields.** `set` adds any header field you like (`reviewer=alan`,
-  `ticket=ORG-42`). Fields orchy manages — status, title, type, namespace, tags — are
-  refused.
+  `ticket=ORG-42`). Fields orchy manages have their own commands, and `set` names the right
+  one when refused: `retitle`, `retype`, `tag`, `ns move`, and `archive`, `unarchive`,
+  `supersede` or `promote` for the status. Moving a document to another namespace moves its
+  file too.
 
 ### Searching
 

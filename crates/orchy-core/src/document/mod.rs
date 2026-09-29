@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use events::{
-    DocumentCreated, DocumentFieldSet, DocumentMoved, DocumentPromoted, DocumentRetyped,
-    DocumentSectionReplaced, DocumentStatusChanged, DocumentSuperseded, DocumentWritten,
+    DocumentCreated, DocumentFieldSet, DocumentMoved, DocumentPromoted, DocumentRetitled,
+    DocumentRetyped, DocumentSectionReplaced, DocumentStatusChanged, DocumentSuperseded,
+    DocumentTagged, DocumentWritten,
 };
 pub use frontmatter::Frontmatter;
 pub use kind::{DocumentStatus, Kind};
@@ -267,8 +268,18 @@ impl Document {
     }
 
     pub fn retitle(&mut self, title: Title, clock: &dyn Clock) {
-        self.title = title;
+        if title == self.title {
+            return;
+        }
+        let from = std::mem::replace(&mut self.title, title);
         self.rehash(clock);
+        self.collector.collect(DocumentRetitled {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            from: from.to_string(),
+            to: self.title.to_string(),
+            at: self.updated_at,
+        });
     }
 
     pub fn retype(&mut self, kind: Kind, clock: &dyn Clock) -> Result<()> {
@@ -358,8 +369,28 @@ impl Document {
     }
 
     pub fn retag(&mut self, add: Vec<Tag>, remove: &[Tag], clock: &dyn Clock) {
+        let before = self.tags.clone();
         tag::apply(&mut self.tags, add, remove);
+        if self.tags == before {
+            return;
+        }
         self.rehash(clock);
+        self.collector.collect(DocumentTagged {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            added: self
+                .tags
+                .iter()
+                .filter(|t| !before.contains(t))
+                .map(ToString::to_string)
+                .collect(),
+            removed: before
+                .iter()
+                .filter(|t| !self.tags.contains(t))
+                .map(ToString::to_string)
+                .collect(),
+            at: self.updated_at,
+        });
     }
 
     fn rehash(&mut self, clock: &dyn Clock) {
@@ -408,7 +439,7 @@ impl Document {
 
 fn semantic_command_for(field: &str) -> Option<&'static str> {
     match field {
-        "status" => Some("orchy archive / orchy supersede"),
+        "status" => Some("orchy archive / orchy unarchive / orchy supersede / orchy promote"),
         "type" => Some("orchy retype"),
         "namespace" => Some("orchy ns move"),
         "id" => Some("(ids are immutable)"),

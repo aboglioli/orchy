@@ -322,6 +322,10 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `proposed | promoted | rejected`, and the two sets never overlap. Status changes are
   semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
 - **Sections.** A body is split into sections by markdown headings (any level).
+- **Managed fields.** `document::semantic_command_for` maps each field `orchy set` refuses to
+  the command that changes it (D32): `retitle`, `retype`, `tag`, `ns move`, and the status
+  commands. All of them go through `UpdateDocument` and emit `document.retitled`,
+  `document.retyped`, `document.tagged` or `document.moved`.
 - **Promotion.** `Document::promote` turns a candidate into a canon kind in place.
   `promote --as skill --name <n>` instead creates a `Skill` from the candidate's body, marks
   the candidate `promoted` (`Document::mark_promoted`), and links `skill -derived_from->
@@ -414,11 +418,6 @@ Agents branch on this behaviour, so treat it as API.
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
 it drift.
 
-- **Documents cannot be retitled, retyped, moved or retagged from the CLI.**
-  `UpdateDocument` supports title, kind, namespace and tags, but the CLI only uses it for
-  `archive`/`unarchive`. `orchy set` refuses those fields and points at commands that do
-  not exist (`orchy retitle`, `orchy retype`, `orchy ns move`, `orchy tag` —
-  `document::semantic_command_for`).
 - **The event log is incomplete.** `link` and `unlink` record no `edge.*` event, although
   the topics exist. Announces, locks, and some document and skill field changes record
   nothing either.

@@ -15,8 +15,9 @@ use orchy_application::manage_lease::LeaseAction;
 use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_events::ReadEventsCommand;
 use orchy_application::recall::RecallCommand;
+use orchy_application::update_document::UpdateDocumentCommand;
 
-use cli::{Cli, Command, LockCommand, SkillCommand};
+use cli::{Cli, Command, LockCommand, NsCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
 use output::{Output, short};
@@ -247,6 +248,39 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Command::Link { from, to, rel } => cmd::doc::link(&app, from, to, rel, false, out).await,
         Command::Unlink { from, to, rel } => cmd::doc::link(&app, from, to, rel, true, out).await,
         Command::Graph { from, depth } => cmd::doc::graph(&app, from, depth, out).await,
+        Command::Retitle { target, title } => {
+            let command = UpdateDocumentCommand {
+                title: Some(title),
+                ..Default::default()
+            };
+            cmd::doc::update(&app, target, command, out).await
+        }
+        Command::Retype { target, kind } => {
+            let command = UpdateDocumentCommand {
+                kind: Some(kind),
+                ..Default::default()
+            };
+            cmd::doc::update(&app, target, command, out).await
+        }
+        Command::Tag { target, changes } => {
+            let mut command = UpdateDocumentCommand::default();
+            for change in changes {
+                match change.strip_prefix('-') {
+                    Some(tag) => command.remove_tags.push(tag.to_owned()),
+                    None => command
+                        .add_tags
+                        .push(change.trim_start_matches('+').to_owned()),
+                }
+            }
+            cmd::doc::update(&app, target, command, out).await
+        }
+        Command::Ns(NsCommand::Move { target, namespace }) => {
+            let command = UpdateDocumentCommand {
+                namespace: Some(namespace),
+                ..Default::default()
+            };
+            cmd::doc::update(&app, target, command, out).await
+        }
         Command::Supersede { old, by } => cmd::doc::supersede(&app, old, by, out).await,
         Command::Archive { target } => cmd::doc::set_status(&app, target, "archived", out).await,
         Command::Unarchive { target } => cmd::doc::set_status(&app, target, "active", out).await,

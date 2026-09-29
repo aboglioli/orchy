@@ -187,6 +187,17 @@ pub(crate) async fn supersede(
     out.emit(&document, |d| format!("{}  superseded", short(&d.id)))
 }
 
+pub(crate) async fn update(
+    app: &Application,
+    target: String,
+    mut command: UpdateDocumentCommand,
+    out: &Output,
+) -> CliResult<()> {
+    command.document_id = resolve::document(app, &target).await?;
+    let document = app.update_document.execute(command).await?;
+    out.emit(&document, |d| detail(d, out))
+}
+
 pub(crate) async fn set_status(
     app: &Application,
     target: String,

@@ -173,6 +173,19 @@ pub(crate) enum Command {
         #[arg(long, default_value_t = 1)]
         depth: u8,
     },
+    /// Give a document a new title
+    Retitle { target: String, title: String },
+    /// Change what kind of document it is
+    Retype { target: String, kind: String },
+    /// Add or remove tags: `+t` or `t` adds, `-t` removes
+    Tag {
+        target: String,
+        #[arg(allow_hyphen_values = true, required = true)]
+        changes: Vec<String>,
+    },
+    /// Namespaces
+    #[command(subcommand)]
+    Ns(NsCommand),
     /// Mark a document superseded by another
     Supersede {
         old: String,
@@ -462,6 +475,12 @@ pub(crate) struct SkillEdits {
     pub tag: Vec<String>,
     #[arg(long)]
     pub untag: Vec<String>,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum NsCommand {
+    /// Move a document to another namespace; its file moves with it
+    Move { target: String, namespace: String },
 }
 
 #[derive(Subcommand, Debug)]

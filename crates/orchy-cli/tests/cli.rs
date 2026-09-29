@@ -1738,3 +1738,90 @@ fn a_new_document_takes_its_body_from_a_pipe() {
     let doc: serde_json::Value = serde_json::from_slice(&dash.stdout).unwrap();
     assert_eq!(doc["body"], "explicit");
 }
+
+#[test]
+fn a_document_can_be_retitled_retyped_retagged_and_moved_and_each_is_recorded() {
+    let temp = vault();
+    let doc = json(
+        temp.path(),
+        &["new", "note", "Draft idea", "--tag", "old", "--body", "x"],
+    );
+    let id = doc["id"].as_str().unwrap();
+
+    ok(temp.path(), &["retitle", id, "Settled idea"]);
+    ok(temp.path(), &["retype", id, "decision"]);
+    ok(temp.path(), &["tag", id, "+auth", "-old", "crypto"]);
+    ok(temp.path(), &["ns", "move", id, "/web"]);
+
+    let read = json(temp.path(), &["read", id])["document"].clone();
+    assert_eq!(read["title"], "Settled idea");
+    assert_eq!(read["kind"], "decision");
+    assert_eq!(read["namespace"], "/web");
+    let tags: Vec<&str> = read["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_str().unwrap())
+        .collect();
+    assert_eq!(tags, vec!["auth", "crypto"]);
+
+    let files: Vec<_> = walk(temp.path(), "docs");
+    assert_eq!(
+        files,
+        vec![format!("docs/web/{id}.md")],
+        "exactly one file, under docs/web/"
+    );
+
+    let topics: Vec<String> = json(temp.path(), &["events", "--key", id])
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["topic"].as_str().unwrap().to_owned())
+        .collect();
+    for topic in [
+        "document.retitled",
+        "document.retyped",
+        "document.tagged",
+        "document.moved",
+    ] {
+        assert!(
+            topics.contains(&topic.to_owned()),
+            "{topic} missing from {topics:?}"
+        );
+    }
+}
+
+#[test]
+fn setting_a_managed_field_names_the_command_that_exists_for_it() {
+    let temp = vault();
+    let doc = json(temp.path(), &["new", "note", "x", "--body", "y"]);
+    let out = orchy(
+        temp.path(),
+        &["set", doc["id"].as_str().unwrap(), "title=renamed"],
+    );
+    assert_eq!(out.status.code(), Some(5));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("orchy retitle"));
+}
+
+fn walk(root: &Path, dir: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.join(dir)];
+    while let Some(path) = stack.pop() {
+        for entry in std::fs::read_dir(&path).unwrap() {
+            let entry = entry.unwrap().path();
+            if entry.is_dir() {
+                stack.push(entry);
+            } else {
+                found.push(
+                    entry
+                        .strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+        }
+    }
+    found.sort();
+    found
+}
