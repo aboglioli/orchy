@@ -2404,3 +2404,29 @@ fn the_man_pages_cover_every_command_without_a_vault() {
         assert!(pages.join(page).exists(), "{page} missing");
     }
 }
+
+#[test]
+fn events_since_a_moment_leave_out_what_came_before() {
+    let temp = vault();
+    task_id(&temp, &["old"]);
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let cut = chrono::Utc::now().to_rfc3339();
+    let recent = task_id(&temp, &["recent"]);
+    let keys: Vec<String> = json(
+        temp.path(),
+        &["events", "--topic", "task.created", "--since", &cut],
+    )
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|e| e["key"].as_str().unwrap().to_owned())
+    .collect();
+    assert_eq!(keys, vec![recent]);
+    assert!(
+        json(temp.path(), &["events", "--since", "1h"])
+            .as_array()
+            .unwrap()
+            .len()
+            > 1
+    );
+}

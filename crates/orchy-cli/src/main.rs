@@ -6,8 +6,10 @@ mod error;
 mod init;
 mod output;
 mod resolve;
+mod since;
 mod stdin;
 
+use chrono::Utc;
 use clap::{CommandFactory, Parser};
 use orchy_application::create_document::CreateDocumentCommand;
 use orchy_application::edit_document::{EditDocumentCommand, EditMode};
@@ -365,15 +367,20 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             topic,
             key,
             by,
+            since,
             limit,
         } => {
+            let since = since
+                .as_deref()
+                .map(|s| since::parse(s, Utc::now()))
+                .transpose()?;
             let events = app
                 .read_events
                 .execute(ReadEventsCommand {
                     topic_prefix: topic,
                     key,
                     actor: by,
-                    since: None,
+                    since,
                     limit,
                 })
                 .await?;

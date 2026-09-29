@@ -241,6 +241,9 @@ pub(crate) enum Command {
         /// Only events recorded by this actor id
         #[arg(long = "by")]
         by: Option<String>,
+        /// Only events after this: a timestamp, or a window such as 2h or 3d
+        #[arg(long)]
+        since: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
     },

@@ -489,7 +489,7 @@ so a crashed agent never leaves one stuck.
 Every change any agent makes is recorded with who made it and when:
 
 ```bash
-orchy events [--topic task.] [--key <id>] [--by <agent>] [--limit n]
+orchy events [--topic task.] [--key <id>] [--by <agent>] [--since 2h|<timestamp>] [--limit n]
 ```
 
 `--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`, `edge.` (links),
