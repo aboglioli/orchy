@@ -3236,3 +3236,32 @@ fn wikilinks_to_ids_show_as_mentions_in_read_and_graph() {
     assert_eq!(hops.len(), 2, "{graph}");
     assert!(hops.iter().all(|h| h["edge"]["relation"] == "mentions"));
 }
+
+#[test]
+fn a_hand_written_comment_survives_an_orchy_rewrite() {
+    let temp = vault();
+    let id = json(
+        temp.path(),
+        &["new", "decision", "keys", "--body", "rotate"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let path = temp.path().join("docs").join(format!("{id}.md"));
+    let original = std::fs::read_to_string(&path).unwrap();
+    let edited = original.replacen(
+        "title: keys\n",
+        "title: keys\n# ask security before changing\nowner: [team-a, team-b]\n",
+        1,
+    );
+    assert_ne!(edited, original);
+    std::fs::write(&path, &edited).unwrap();
+
+    ok(temp.path(), &["set", &id, "reviewer=alan"]);
+    let rewritten = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        rewritten.contains("# ask security before changing\nowner: [team-a, team-b]\n"),
+        "{rewritten}"
+    );
+    assert!(rewritten.contains("reviewer: alan"), "{rewritten}");
+}

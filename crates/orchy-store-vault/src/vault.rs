@@ -323,8 +323,15 @@ impl Vault {
         kind: EntityKind,
         precondition: Precondition,
     ) -> Result<()> {
-        let rendered = file.render()?;
         let previous = self.locate(id);
+        let on_disk = match &previous {
+            Some(located) => self.blobs.get(&located.key).await?,
+            None => None,
+        };
+        let rendered = match on_disk.as_deref().map(str::from_utf8) {
+            Some(Ok(original)) => file.render_over(original)?,
+            _ => file.render()?,
+        };
 
         match (precondition, &previous) {
             (Precondition::Unchanged, Some(located)) => {

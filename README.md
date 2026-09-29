@@ -226,7 +226,8 @@ result. Moving a file by hand changes nothing, and neither does renaming it: eve
 carries a stable `id` and orchy finds it by that. Links between files use the id, so they
 survive any reorganisation. A file also shows what points at it: a replaced document lists
 `superseded_by`, a goal lists its `subtasks`, and a document written for a task shows
-`produced_by`.
+`produced_by`. You can edit headers by hand: when orchy rewrites a file it keeps your
+comments and leaves the lines of fields it did not change exactly as you wrote them.
 
 A task file:
 

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem;
 
 use orchy_core::{Body, DomainError, Frontmatter, Result};
 use serde_json::Value;
@@ -38,6 +39,49 @@ impl MarkdownFile {
         })
     }
 
+    /// Renders over the file as it is on disk so a human's formatting survives in the diff:
+    /// comments are kept, and a field whose value did not change keeps its original lines.
+    pub fn render_over(&self, original: &str) -> Result<String> {
+        let original = original.strip_prefix('\u{feff}').unwrap_or(original);
+        let Some(rest) = original.strip_prefix(FENCE) else {
+            return self.render();
+        };
+        let rest = rest.strip_prefix('\n').unwrap_or(rest);
+        let Some((yaml_len, _)) = find_closing_fence(rest) else {
+            return self.render();
+        };
+        let yaml = &rest[..yaml_len];
+        let Ok(before) = parse_frontmatter(yaml) else {
+            return self.render();
+        };
+        if self.frontmatter.is_empty() {
+            return self.render();
+        }
+
+        let (blocks, trailing) = blocks_of(yaml);
+        let mut out = String::new();
+        for (key, value) in self.frontmatter.iter() {
+            let block = blocks.iter().find(|b| b.key == key);
+            if let Some(block) = block {
+                out.push_str(&block.leading);
+            }
+            match block {
+                Some(block) if before.get(key) == Some(value) => out.push_str(&block.text),
+                _ => {
+                    let mut single = Frontmatter::new();
+                    single.set(key, value.clone());
+                    out.push_str(&render_frontmatter(&single)?);
+                }
+            }
+        }
+        out.push_str(&trailing);
+
+        if self.body.is_empty() {
+            return Ok(format!("{FENCE}\n{out}{FENCE}\n"));
+        }
+        Ok(format!("{FENCE}\n{out}{FENCE}\n\n{}\n", self.body.as_str()))
+    }
+
     pub fn render(&self) -> Result<String> {
         if self.frontmatter.is_empty() {
             return Ok(format!("{}\n", self.body.as_str()));
@@ -51,6 +95,43 @@ impl MarkdownFile {
             self.body.as_str()
         ))
     }
+}
+
+struct Block {
+    key: String,
+    leading: String,
+    text: String,
+}
+
+/// Splits frontmatter into one block per top-level key: its own lines, plus the comment and
+/// blank lines just above it. Comments after the last key are returned apart.
+fn blocks_of(yaml: &str) -> (Vec<Block>, String) {
+    let mut blocks: Vec<Block> = Vec::new();
+    let mut pending = String::new();
+    for line in yaml.split_inclusive('\n') {
+        let is_aside = line.trim().is_empty() || line.starts_with('#');
+        let is_continuation = line.starts_with([' ', '\t', '-']);
+        if is_aside {
+            pending.push_str(line);
+            continue;
+        }
+        if is_continuation && let Some(last) = blocks.last_mut() {
+            last.text.push_str(&pending);
+            pending.clear();
+            last.text.push_str(line);
+            continue;
+        }
+        let key = line
+            .split_once(':')
+            .map(|(key, _)| key.trim().trim_matches(['"', '\'']).to_owned())
+            .unwrap_or_default();
+        blocks.push(Block {
+            key,
+            leading: mem::take(&mut pending),
+            text: line.to_owned(),
+        });
+    }
+    (blocks, pending)
 }
 
 /// Returns `(bytes of yaml before the fence, bytes of the fence line itself)`.
@@ -251,5 +332,19 @@ mod tests {
     fn a_byte_order_mark_does_not_hide_the_frontmatter() {
         let file = MarkdownFile::parse("\u{feff}---\ntype: note\n---\n\nbody\n").unwrap();
         assert_eq!(file.frontmatter.string("type"), Some("note"));
+    }
+
+    #[test]
+    fn rewriting_keeps_comments_and_the_lines_of_unchanged_fields() {
+        let original = "---\nid: 1\n# who signs off\nreviewer: bob\ntags: [a, b]   # flow style\nowner: 'carol'\n# end of fields\n---\n\nbody\n";
+        let mut file = MarkdownFile::parse(original).unwrap();
+        file.frontmatter.set("reviewer", json!("alan"));
+
+        let rendered = file.render_over(original).unwrap();
+        assert_eq!(
+            rendered,
+            "---\nid: 1\n# who signs off\nreviewer: alan\ntags: [a, b]   # flow style\nowner: 'carol'\n# end of fields\n---\n\nbody\n"
+        );
+        assert_eq!(MarkdownFile::parse(&rendered).unwrap(), file);
     }
 }

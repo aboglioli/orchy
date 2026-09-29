@@ -255,6 +255,10 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 - **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's
   writes. `orchy skill set` writes such fields; `skill::managed_field` lists the ones it
   refuses.
+- **Rewrites keep formatting.** `Vault::write_if` renders over the file on disk
+  (`MarkdownFile::render_over`): YAML comments stay where they were, and a field whose value
+  did not change keeps its original lines, quoting and flow style, so `git diff` shows only
+  what orchy changed.
 - **Task bodies.** A task's file body is its description, then optional trailing
   `## Acceptance` (acceptance criteria) and `## Outcome` (the `done` note or the `fail`,
   `cancel` or `replace` reason) sections (`codec::split_task_body`).
