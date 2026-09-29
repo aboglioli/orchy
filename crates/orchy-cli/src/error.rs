@@ -11,6 +11,7 @@ pub(crate) enum CliError {
     Config(String),
     Io(std::io::Error),
     NotAVault(String),
+    WrongEntity(String),
 }
 
 impl CliError {
@@ -20,6 +21,12 @@ impl CliError {
 
     pub(crate) fn io(e: std::io::Error) -> Self {
         Self::Io(e)
+    }
+
+    pub(crate) fn skill_given_to_a_document_command(id: impl fmt::Display) -> Self {
+        Self::WrongEntity(format!(
+            "`{id}` is a skill, not a document: use `orchy skill show|write|set|retire`"
+        ))
     }
 
     pub(crate) fn not_a_vault(path: impl fmt::Display) -> Self {
@@ -32,7 +39,7 @@ impl CliError {
         match self {
             Self::Application(e) => e.exit_code(),
             Self::Config(_) => 6,
-            Self::NotAVault(_) => 4,
+            Self::NotAVault(_) | Self::WrongEntity(_) => 4,
             Self::Io(_) => 8,
         }
     }
@@ -42,7 +49,7 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Application(e) => write!(f, "{e}"),
-            Self::Config(m) | Self::NotAVault(m) => f.write_str(m),
+            Self::Config(m) | Self::NotAVault(m) | Self::WrongEntity(m) => f.write_str(m),
             Self::Io(e) => write!(f, "{e}"),
         }
     }

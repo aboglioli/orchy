@@ -1,6 +1,7 @@
 use orchy_application::Application;
 use orchy_application::find_documents::FindDocumentsCommand;
 use orchy_application::list_tasks::ListTasksCommand;
+use orchy_application::read_skill::ReadSkillCommand;
 use orchy_core::{DomainError, Id};
 
 use crate::error::{CliError, CliResult};
@@ -29,6 +30,17 @@ pub(crate) async fn task(app: &Application, input: &str) -> CliResult<String> {
 
 pub(crate) async fn document(app: &Application, input: &str) -> CliResult<String> {
     if let Ok(id) = Id::new(input) {
+        let is_skill = app
+            .read_skill
+            .execute(ReadSkillCommand {
+                target: id.to_string(),
+                namespace: None,
+            })
+            .await
+            .is_ok();
+        if is_skill {
+            return Err(CliError::skill_given_to_a_document_command(id));
+        }
         return Ok(id.to_string());
     }
     let documents = app

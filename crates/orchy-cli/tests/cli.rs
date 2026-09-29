@@ -1286,3 +1286,32 @@ fn a_hand_written_skill_document_without_a_name_does_not_stop_the_briefing() {
     ok(temp.path(), &["announce"]);
     ok(temp.path(), &["skill", "list", "--everywhere"]);
 }
+
+#[test]
+fn document_commands_refuse_a_skill_and_leave_its_file_untouched() {
+    let temp = vault();
+    let skill = json(
+        temp.path(),
+        &["skill", "write", "commits", "--summary", "one line"],
+    );
+    let id = skill["id"].as_str().unwrap();
+    let path = temp.path().join("skills/commits.md");
+    let before = std::fs::read(&path).unwrap();
+
+    for args in [
+        vec!["set", id, "reviewer=alan"],
+        vec!["archive", id],
+        vec!["edit", id, "--content", "x"],
+        vec!["read", id],
+    ] {
+        let out = orchy(temp.path(), &args);
+        assert_eq!(out.status.code(), Some(4), "`orchy {}`", args.join(" "));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("orchy skill"));
+    }
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "the skill file is byte-identical"
+    );
+    assert!(!temp.path().join(format!("docs/{id}.md")).exists());
+}

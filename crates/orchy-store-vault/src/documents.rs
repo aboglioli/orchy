@@ -45,7 +45,7 @@ impl DocumentStore for VaultDocumentStore {
         };
         if matches!(
             codec::kind_of(&file),
-            Some("task") | Some("message") | Some("agent")
+            Some("task") | Some("message") | Some("agent") | Some("skill")
         ) {
             return Ok(None);
         }
