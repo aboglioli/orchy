@@ -43,6 +43,7 @@ pub use pagination::{Page, PageRequest};
 pub use priority::Priority;
 pub use search::{
     Hit, Passage, Search, SearchQuery, document_passages, rank, score, skill_passage, tokenise,
+    within_budget,
 };
 pub use skill::{RestoreSkill, Skill, SkillName, SkillStatus, SkillStore, Summary};
 pub use tag::Tag;

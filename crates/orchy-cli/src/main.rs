@@ -257,8 +257,10 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             namespace,
             anchor,
             limit,
+            budget,
         } => {
             let command = RecallCommand {
+                budget,
                 text: query.join(" "),
                 entities,
                 kind,

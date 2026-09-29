@@ -161,6 +161,9 @@ pub(crate) enum Command {
         anchor: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Return the best sections in full, up to about this many tokens
+        #[arg(long)]
+        budget: Option<usize>,
     },
     /// Link two entities with a registered relation
     Link {

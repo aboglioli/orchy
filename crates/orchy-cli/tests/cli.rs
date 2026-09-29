@@ -2357,3 +2357,26 @@ fn a_document_written_for_a_task_is_linked_to_it() {
     assert_eq!(edge["relation"], "produces");
     assert!(edge["to"].as_str().unwrap().ends_with(doc));
 }
+
+#[test]
+fn a_budget_returns_whole_sections_up_to_roughly_that_many_tokens() {
+    let temp = vault();
+    for n in 0..6 {
+        let body = format!("## Deploy {n}\n{}", "deploy steps in detail. ".repeat(40));
+        ok(
+            temp.path(),
+            &["new", "note", &format!("runbook {n}"), "--body", &body],
+        );
+    }
+    let hits = json(temp.path(), &["recall", "deploy", "--budget", "500"]);
+    let texts: Vec<usize> = hits
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["text"].as_str().unwrap().chars().count())
+        .collect();
+    assert!(!texts.is_empty());
+    let longest = *texts.iter().max().unwrap();
+    assert!(texts.iter().sum::<usize>() <= 2000 + longest, "{texts:?}");
+    assert!(texts.len() < 6, "the budget cut the list: {texts:?}");
+}

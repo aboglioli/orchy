@@ -392,6 +392,8 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Retired knowledge.** `Recall` sets `SearchQuery.exclude_status` to
   `DocumentStatus::RETIRED` (superseded, archived, rejected) unless the caller names
   statuses; `SearchQuery::admits` applies both, and a document without a status always passes.
+- **Budget.** `within_budget` keeps ranked hits until their full text reaches the budget
+  (4 characters per token); the hit that crosses it and the best hit are always kept.
 - **`rank`** orders by relevance × recency (90-day decay) × namespace proximity to the
   anchor, then by recency, then by id, so ties are deterministic.
 

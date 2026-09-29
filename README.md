@@ -257,7 +257,7 @@ orchy new <type> <title> [--namespace /x] [--tag t]... [--task <task>] [--body "
 orchy read <doc> [--section <heading> [--nth n]]
 orchy edit <doc> [--section <heading> [--nth n] | --replace-in <text> | --replace] [--content "…"]
 orchy set <doc> field=value...
-orchy recall <query> [--entity document|skill] [--kind k]... [--status s]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n]
+orchy recall <query> [--entity document|skill] [--kind k]... [--status s]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n] [--budget tokens]
 orchy retitle <doc> <title>
 orchy retype <doc> <type>
 orchy tag <doc> [+t | -t]...
@@ -321,6 +321,8 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
   typed counts more than the same words scattered;
 - recent documents rank above old ones, and `--anchor /backend` prefers results from that
   area without hiding the rest (`--namespace` hides the rest);
+- `--budget 2000` answers with the best sections in full, up to about that many tokens,
+  instead of a list of excerpts to open one by one;
 - superseded, archived and rejected documents are left out, so replaced knowledge never
   competes with what replaced it. `--status superseded` searches them on purpose.
 

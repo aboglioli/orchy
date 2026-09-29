@@ -101,6 +101,7 @@ pub struct Hit {
     pub entity: EntityRef,
     pub heading: Option<String>,
     pub excerpt: String,
+    pub body: String,
     pub namespace: Namespace,
     pub updated_at: DateTime<Utc>,
     pub relevance: f64,
@@ -112,6 +113,7 @@ impl Passage {
             entity: self.entity,
             heading: self.heading,
             excerpt: self.excerpt,
+            body: self.body,
             namespace: self.namespace,
             updated_at: self.updated_at,
             relevance,
@@ -256,6 +258,24 @@ pub fn score(passages: Vec<Passage>, text: &str) -> Vec<Hit> {
         .collect()
 }
 
+const CHARS_PER_TOKEN: usize = 4;
+
+/// Takes ranked hits until their full text spends the budget, so the last one may overrun
+/// it; the best hit is always kept, however long.
+pub fn within_budget(hits: Vec<Hit>, tokens: usize) -> Vec<Hit> {
+    let budget = tokens.saturating_mul(CHARS_PER_TOKEN);
+    let mut spent = 0;
+    let mut kept = Vec::new();
+    for hit in hits {
+        if !kept.is_empty() && spent >= budget {
+            break;
+        }
+        spent += hit.body.chars().count();
+        kept.push(hit);
+    }
+    kept
+}
+
 pub fn rank(hits: &mut [Hit], anchor: Option<&Namespace>, now: DateTime<Utc>) {
     hits.sort_by(|a, b| {
         weight(b, anchor, now)
@@ -290,6 +310,7 @@ mod tests {
             entity: EntityRef::new(EntityKind::Document, Id::new(id).unwrap()),
             heading: None,
             excerpt: String::new(),
+            body: String::new(),
             namespace: Namespace::new(ns).unwrap(),
             updated_at,
             relevance,
@@ -563,5 +584,23 @@ mod scoring_tests {
         );
         rank(&mut hits, None, now);
         assert_eq!(hits[0].entity.id(), &at(2));
+    }
+
+    #[test]
+    fn a_budget_keeps_the_best_hits_until_it_is_spent_and_never_returns_nothing() {
+        let sized = |n: u8, chars: usize| Hit {
+            body: "x".repeat(chars),
+            ..passage(n, "note", "").into_hit(1.0)
+        };
+        let hits = vec![sized(1, 1500), sized(2, 400), sized(3, 400), sized(4, 400)];
+        let kept = within_budget(hits.clone(), 500);
+        assert_eq!(
+            kept.len(),
+            3,
+            "2 000 chars: 1 500 + 400 fits, the next overruns once"
+        );
+
+        let kept = within_budget(vec![sized(1, 9000)], 10);
+        assert_eq!(kept.len(), 1, "the best hit is kept however long");
     }
 }

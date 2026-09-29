@@ -197,6 +197,7 @@ pub struct HitDto {
     pub namespace: String,
     pub updated_at: DateTime<Utc>,
     pub relevance: f64,
+    pub text: Option<String>,
 }
 
 impl From<&Hit> for HitDto {
@@ -210,6 +211,7 @@ impl From<&Hit> for HitDto {
             namespace: hit.namespace.to_string(),
             updated_at: hit.updated_at,
             relevance: hit.relevance,
+            text: None,
         }
     }
 }

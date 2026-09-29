@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use orchy_core::{
     Clock, DocumentStatus, EntityKind, Kind, Namespace, Search, SearchQuery, Tag, rank,
+    within_budget,
 };
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +22,7 @@ pub struct RecallCommand {
     pub anchor: Option<String>,
     pub tags: Vec<String>,
     pub limit: Option<usize>,
+    pub budget: Option<usize>,
 }
 
 pub struct Recall {
@@ -88,6 +90,15 @@ impl Recall {
         rank(&mut hits, anchor.as_ref(), self.clock.now());
         hits.truncate(limit);
 
-        Ok(hits.iter().map(HitDto::from).collect())
+        let Some(tokens) = cmd.budget else {
+            return Ok(hits.iter().map(HitDto::from).collect());
+        };
+        Ok(within_budget(hits, tokens)
+            .iter()
+            .map(|hit| HitDto {
+                text: Some(hit.body.trim().to_owned()),
+                ..HitDto::from(hit)
+            })
+            .collect())
     }
 }

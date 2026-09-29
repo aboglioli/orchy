@@ -241,12 +241,16 @@ fn render_hits(hits: &[HitDto], out: &Output) -> String {
     hits.iter()
         .map(|h| {
             let heading = h.heading.as_deref().unwrap_or("(body)");
+            let shown = match &h.text {
+                Some(text) => text.clone(),
+                None => h.excerpt.lines().next().unwrap_or("").to_owned(),
+            };
             format!(
                 "{}  {}  {}\n  {}",
                 out.dim(short(&h.id)),
                 out.dim(&h.kind),
                 out.bold(heading),
-                h.excerpt.lines().next().unwrap_or("")
+                shown.replace('\n', "\n  ")
             )
         })
         .collect::<Vec<_>>()
