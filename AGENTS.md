@@ -321,7 +321,10 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Statuses.** Canon kinds use `draft | active | superseded | archived`. `candidate` uses
   `proposed | promoted | rejected`, and the two sets never overlap. Status changes are
   semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
-- **Sections.** A body is split into sections by markdown headings (any level).
+- **Sections.** A body is split into sections by ATX headings (`#` to `######` followed by a
+  space); a heading inside a fenced code block is code, and `#tag` is not a heading. Text
+  before the first heading is the `preamble`. `Body::section` and `replace_section` refuse a
+  heading shared by several sections (`Ambiguous`, exit 7) unless `nth` picks one.
 - **Managed fields.** `document::semantic_command_for` maps each field `orchy set` refuses to
   the command that changes it (D32): `retitle`, `retype`, `tag`, `ns move`, and the status
   commands. All of them go through `UpdateDocument` and emit `document.retitled`,

@@ -1825,3 +1825,58 @@ fn walk(root: &Path, dir: &str) -> Vec<String> {
     found.sort();
     found
 }
+
+#[test]
+fn an_edit_to_a_heading_used_twice_is_refused_until_one_is_picked() {
+    let temp = vault();
+    let doc = json(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Log",
+            "--body",
+            "## Notes\nfirst\n\n## Notes\nsecond\n\n## End\nend",
+        ],
+    );
+    let id = doc["id"].as_str().unwrap();
+    let before = json(temp.path(), &["read", id])["document"]["body"].clone();
+
+    let out = orchy(
+        temp.path(),
+        &["edit", id, "--section", "Notes", "--content", "x"],
+    );
+    assert_eq!(out.status.code(), Some(7));
+    assert_eq!(
+        json(temp.path(), &["read", id])["document"]["body"],
+        before,
+        "nothing changed"
+    );
+
+    ok(
+        temp.path(),
+        &[
+            "edit",
+            id,
+            "--section",
+            "Notes",
+            "--nth",
+            "2",
+            "--content",
+            "changed",
+        ],
+    );
+    let body = json(temp.path(), &["read", id])["document"]["body"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(body, "## Notes\nfirst\n\n## Notes\nchanged\n\n## End\nend");
+    assert_eq!(
+        ok(
+            temp.path(),
+            &["read", id, "--section", "Notes", "--nth", "1"]
+        )
+        .trim(),
+        "first"
+    );
+}

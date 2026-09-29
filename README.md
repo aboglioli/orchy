@@ -254,8 +254,8 @@ A **namespace** is a path that says which part of the project something belongs 
 
 ```bash
 orchy new <type> <title> [--namespace /x] [--tag t]... [--body "…" | --body - | < file]
-orchy read <doc> [--section <heading>]
-orchy edit <doc> [--section <heading> | --replace-in <text> | --replace] [--content "…"]
+orchy read <doc> [--section <heading> [--nth n]]
+orchy edit <doc> [--section <heading> [--nth n] | --replace-in <text> | --replace] [--content "…"]
 orchy set <doc> field=value...
 orchy recall <query> [--entity document|skill] [--kind k]... [--status s]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n]
 orchy retitle <doc> <title>
@@ -294,7 +294,8 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
   `rejected`. Promoting a candidate `--as skill` creates a skill from it instead, and the
   candidate stays behind, marked `promoted`, as the record of the proposal.
 - **Editing.** `edit` appends to the body by default:
-  - `--section` replaces what is under a heading;
+  - `--section` replaces what is under a heading. When several headings share the name,
+    orchy refuses (exit 7) until `--nth` picks one;
   - `--replace-in` replaces a piece of text that appears exactly once;
   - `--replace` replaces the whole body.
 

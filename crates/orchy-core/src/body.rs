@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::error::Result;
+use crate::error::{DomainError, Result};
 
 #[derive(Clone, Eq, PartialEq, Debug, Default, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
@@ -32,65 +32,108 @@ impl Body {
     }
 
     pub fn sections(&self) -> Vec<Section<'_>> {
-        let mut sections = Vec::new();
-        let mut current: Option<(String, usize, usize)> = None;
+        self.spans()
+            .into_iter()
+            .map(|span| Section {
+                heading: span.heading,
+                level: span.level,
+                body: &self.0[span.body_start..span.end],
+            })
+            .collect()
+    }
+
+    /// The text before the first heading: often the most important sentence of a document.
+    pub fn preamble(&self) -> &str {
+        let end = self
+            .spans()
+            .first()
+            .map_or(self.0.len(), |span| span.heading_start);
+        self.0[..end].trim()
+    }
+
+    /// The section under `heading` (case-insensitive). With several such headings, `nth`
+    /// (1-based) picks one; without it the address is ambiguous and nothing is guessed.
+    pub fn section(&self, heading: &str, nth: Option<usize>) -> Result<Section<'_>> {
+        let span = self.pick(heading, nth)?;
+        Ok(Section {
+            body: &self.0[span.body_start..span.end],
+            heading: span.heading,
+            level: span.level,
+        })
+    }
+
+    pub fn replace_section(
+        &self,
+        heading: &str,
+        nth: Option<usize>,
+        replacement: &str,
+    ) -> Result<Self> {
+        let span = self.pick(heading, nth)?;
+        let mut out = String::with_capacity(self.0.len() + replacement.len());
+        out.push_str(&self.0[..span.body_start]);
+        out.push_str(replacement.trim());
+        out.push('\n');
+        if span.end < self.0.len() {
+            out.push('\n');
+            out.push_str(&self.0[span.end..]);
+        }
+        Ok(Self::new(out))
+    }
+
+    fn pick(&self, heading: &str, nth: Option<usize>) -> Result<Span> {
+        let mut matching: Vec<Span> = self
+            .spans()
+            .into_iter()
+            .filter(|span| span.heading.eq_ignore_ascii_case(heading.trim()))
+            .collect();
+        match (nth, matching.len()) {
+            (_, 0) => Err(DomainError::not_found("section", heading)),
+            (None, 1) => Ok(matching.remove(0)),
+            (None, count) => Err(DomainError::Ambiguous {
+                input: heading.trim().to_owned(),
+                count,
+            }),
+            (Some(n), count) if n >= 1 && n <= count => Ok(matching.remove(n - 1)),
+            (Some(n), count) => Err(DomainError::not_found(
+                "section",
+                format!("{heading} #{n} (there are {count})"),
+            )),
+        }
+    }
+
+    fn spans(&self) -> Vec<Span> {
+        let mut spans: Vec<Span> = Vec::new();
+        let mut fence: Option<&str> = None;
         let mut offset = 0;
 
         for line in self.0.split_inclusive('\n') {
             let trimmed = line.trim_end();
-            if let Some(level) = heading_level(trimmed) {
-                if let Some((heading, start, end)) = current.take() {
-                    sections.push(Section {
-                        heading,
-                        level: 0,
-                        body: &self.0[start..end],
-                    });
+            let marker = fence_marker(trimmed);
+            match (fence, marker) {
+                (Some(open), Some(close)) if close == open => fence = None,
+                (None, Some(open)) => fence = Some(open),
+                _ => {}
+            }
+            let heading = if fence.is_none() && marker.is_none() {
+                heading_level(trimmed)
+            } else {
+                None
+            };
+            if let Some(level) = heading {
+                if let Some(last) = spans.last_mut() {
+                    last.end = offset;
                 }
-                let _ = level;
-                current = Some((
-                    trimmed.trim_start_matches('#').trim().to_owned(),
-                    offset + line.len(),
-                    offset + line.len(),
-                ));
-            } else if let Some((_, _, end)) = current.as_mut() {
-                *end = offset + line.len();
+                spans.push(Span {
+                    heading: trimmed.trim_start_matches('#').trim().to_owned(),
+                    level,
+                    heading_start: offset,
+                    body_start: offset + line.len(),
+                    end: self.0.len(),
+                });
             }
             offset += line.len();
         }
-        if let Some((heading, start, end)) = current {
-            sections.push(Section {
-                heading,
-                level: 0,
-                body: &self.0[start..end],
-            });
-        }
-        sections
-    }
-
-    pub fn replace_section(&self, heading: &str, replacement: &str) -> Option<Self> {
-        let mut out = String::new();
-        let mut replaced = false;
-        let mut skipping = false;
-
-        for line in self.0.split_inclusive('\n') {
-            let trimmed = line.trim_end();
-            if heading_level(trimmed).is_some() {
-                let name = trimmed.trim_start_matches('#').trim();
-                if name.eq_ignore_ascii_case(heading) {
-                    out.push_str(line);
-                    out.push_str(replacement.trim());
-                    out.push('\n');
-                    replaced = true;
-                    skipping = true;
-                    continue;
-                }
-                skipping = false;
-            }
-            if !skipping {
-                out.push_str(line);
-            }
-        }
-        replaced.then(|| Self::new(out))
+        spans
     }
 
     pub fn replace_once(&self, needle: &str, replacement: &str) -> Result<Option<Self>> {
@@ -98,16 +141,39 @@ impl Body {
         match count {
             0 => Ok(None),
             1 => Ok(Some(Self::new(self.0.replacen(needle, replacement, 1)))),
-            n => Err(crate::error::DomainError::validation(format!(
+            n => Err(DomainError::validation(format!(
                 "`{needle}` appears {n} times; it must be unique to be replaced"
             ))),
         }
     }
 }
 
+/// An ATX heading: one to six `#`, then a space or the end of the line, as markdown has it.
+/// `#tag` is not a heading.
 fn heading_level(line: &str) -> Option<usize> {
     let hashes = line.chars().take_while(|c| *c == '#').count();
-    (1..=6).contains(&hashes).then_some(hashes)
+    let rest = &line[hashes..];
+    ((1..=6).contains(&hashes) && (rest.is_empty() || rest.starts_with(' '))).then_some(hashes)
+}
+
+/// The fence a code block opens or closes with; headings inside one are code, not structure.
+fn fence_marker(line: &str) -> Option<&'static str> {
+    let line = line.trim_start();
+    if line.starts_with("```") {
+        return Some("```");
+    }
+    if line.starts_with("~~~") {
+        return Some("~~~");
+    }
+    None
+}
+
+struct Span {
+    heading: String,
+    level: usize,
+    heading_start: usize,
+    body_start: usize,
+    end: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -169,19 +235,68 @@ mod tests {
     #[test]
     fn replace_section_swaps_only_the_named_section() {
         let body = Body::new("# One\nalpha\n\n# Two\nbeta\n");
-        let out = body.replace_section("Two", "gamma").unwrap();
+        let out = body.replace_section("Two", None, "gamma").unwrap();
         assert!(out.as_str().contains("alpha"));
         assert!(out.as_str().contains("gamma"));
         assert!(!out.as_str().contains("beta"));
     }
 
     #[test]
-    fn replace_section_returns_none_when_the_heading_is_absent() {
+    fn a_missing_heading_is_not_found() {
+        let err = Body::new("# One\nalpha")
+            .replace_section("Nope", None, "x")
+            .unwrap_err();
+        assert!(matches!(err, DomainError::NotFound { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn two_sections_sharing_a_heading_are_ambiguous_until_one_is_picked() {
+        let body = Body::new("## Notes\nfirst\n\n## Notes\nsecond\n\n## End\nend");
+        let err = body.replace_section("notes", None, "x").unwrap_err();
         assert!(
-            Body::new("# One\nalpha")
-                .replace_section("Nope", "x")
-                .is_none()
+            matches!(err, DomainError::Ambiguous { count: 2, .. }),
+            "{err:?}"
         );
+
+        let out = body.replace_section("Notes", Some(2), "changed").unwrap();
+        assert_eq!(
+            out.as_str(),
+            "## Notes\nfirst\n\n## Notes\nchanged\n\n## End\nend",
+            "only the second changes, and the blank line before the next heading stays"
+        );
+        assert_eq!(body.section("Notes", Some(1)).unwrap().body.trim(), "first");
+    }
+
+    #[test]
+    fn sections_know_their_level() {
+        let body = Body::new("# Top\n## Sub\n### Deep");
+        let levels: Vec<usize> = body.sections().iter().map(|s| s.level).collect();
+        assert_eq!(levels, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn a_hash_inside_a_code_block_is_not_a_heading() {
+        let body = Body::new("## Setup\n```bash\n# install first\nmake\n```\n\n## Use\nrun");
+        let headings: Vec<String> = body.sections().into_iter().map(|s| s.heading).collect();
+        assert_eq!(headings, vec!["Setup", "Use"]);
+    }
+
+    #[test]
+    fn a_hashtag_is_not_a_heading() {
+        assert!(Body::new("#tag and more\ntext").sections().is_empty());
+    }
+
+    #[test]
+    fn the_preamble_is_what_comes_before_the_first_heading() {
+        assert_eq!(
+            Body::new("Intro line.\n\n## Details\nx").preamble(),
+            "Intro line."
+        );
+        assert_eq!(
+            Body::new("no headings at all").preamble(),
+            "no headings at all"
+        );
+        assert_eq!(Body::new("## Starts with one").preamble(), "");
     }
 
     #[test]

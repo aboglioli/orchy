@@ -20,7 +20,10 @@ pub enum EditMode {
     #[default]
     Append,
     Replace,
-    Section(String),
+    Section {
+        heading: String,
+        nth: Option<usize>,
+    },
     ReplaceIn(String),
 }
 
@@ -51,8 +54,8 @@ impl EditDocument {
         match &cmd.mode {
             EditMode::Append => document.append(&cmd.content, &*self.clock),
             EditMode::Replace => document.edit(Body::new(&cmd.content), &*self.clock),
-            EditMode::Section(heading) => {
-                document.replace_section(heading, &cmd.content, &*self.clock)?
+            EditMode::Section { heading, nth } => {
+                document.replace_section(heading, *nth, &cmd.content, &*self.clock)?
             }
             EditMode::ReplaceIn(needle) => {
                 document.replace_once(needle, &cmd.content, &*self.clock)?

@@ -1,7 +1,7 @@
 use orchy_application::Application;
 use orchy_application::create_document::CreateDocumentCommand;
 use orchy_application::dto::{DocumentDto, HitDto};
-use orchy_application::edit_document::{EditDocumentCommand, EditMode};
+use orchy_application::edit_document::EditDocumentCommand;
 use orchy_application::link_entities::LinkEntitiesCommand;
 use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_document::ReadDocumentCommand;
@@ -13,7 +13,7 @@ use orchy_application::update_document::UpdateDocumentCommand;
 
 use crate::error::{CliError, CliResult};
 use crate::output::{Output, short};
-use crate::{resolve, stdin};
+use crate::resolve;
 
 pub(crate) async fn new(
     app: &Application,
@@ -28,6 +28,7 @@ pub(crate) async fn read(
     app: &Application,
     target: String,
     section: Option<String>,
+    nth: Option<usize>,
     out: &Output,
 ) -> CliResult<()> {
     let document_id = resolve::document(app, &target).await?;
@@ -36,6 +37,7 @@ pub(crate) async fn read(
         .execute(ReadDocumentCommand {
             document_id,
             section,
+            nth,
         })
         .await?;
     out.emit(&response, |r| match &r.section {
@@ -44,39 +46,13 @@ pub(crate) async fn read(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn edit(
     app: &Application,
-    target: String,
-    section: Option<String>,
-    replace_in: Option<String>,
-    replace: bool,
-    if_match: Option<String>,
-    content: Option<String>,
+    mut command: EditDocumentCommand,
     out: &Output,
 ) -> CliResult<()> {
-    let mode = match (section, replace_in, replace) {
-        (Some(heading), None, false) => EditMode::Section(heading),
-        (None, Some(needle), false) => EditMode::ReplaceIn(needle),
-        (None, None, true) => EditMode::Replace,
-        (None, None, false) => EditMode::Append,
-        _ => {
-            return Err(CliError::config(
-                "choose one of --section, --replace-in or --replace",
-            ));
-        }
-    };
-
-    let document_id = resolve::document(app, &target).await?;
-    let document = app
-        .edit_document
-        .execute(EditDocumentCommand {
-            document_id,
-            content: stdin::or_read(content)?,
-            mode,
-            if_match,
-        })
-        .await?;
+    command.document_id = resolve::document(app, &command.document_id).await?;
+    let document = app.edit_document.execute(command).await?;
     out.emit(&document, |d| {
         format!("{}  {}", short(&d.id), out.dim(&d.content_hash[..12]))
     })

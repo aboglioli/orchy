@@ -10,6 +10,7 @@ mod stdin;
 
 use clap::{CommandFactory, Parser};
 use orchy_application::create_document::CreateDocumentCommand;
+use orchy_application::edit_document::{EditDocumentCommand, EditMode};
 use orchy_application::list_actors::ListActorsCommand;
 use orchy_application::manage_lease::LeaseAction;
 use orchy_application::promote_document::PromoteDocumentCommand;
@@ -200,20 +201,39 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             cmd::doc::new(&app, command, out).await
         }
 
-        Command::Read { target, section } => cmd::doc::read(&app, target, section, out).await,
+        Command::Read {
+            target,
+            section,
+            nth,
+        } => cmd::doc::read(&app, target, section, nth, out).await,
 
         Command::Edit {
             target,
             section,
+            nth,
             replace_in,
             replace,
             if_match,
             content,
         } => {
-            cmd::doc::edit(
-                &app, target, section, replace_in, replace, if_match, content, out,
-            )
-            .await
+            let mode = match (section, replace_in, replace) {
+                (Some(heading), None, false) => EditMode::Section { heading, nth },
+                (None, Some(needle), false) => EditMode::ReplaceIn(needle),
+                (None, None, true) => EditMode::Replace,
+                (None, None, false) => EditMode::Append,
+                _ => {
+                    return Err(CliError::config(
+                        "choose one of --section, --replace-in or --replace",
+                    ));
+                }
+            };
+            let command = EditDocumentCommand {
+                document_id: target,
+                content: stdin::or_read(content)?,
+                mode,
+                if_match,
+            };
+            cmd::doc::edit(&app, command, out).await
         }
 
         Command::Set {

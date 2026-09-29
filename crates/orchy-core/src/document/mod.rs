@@ -196,13 +196,11 @@ impl Document {
     pub fn replace_section(
         &mut self,
         heading: &str,
+        nth: Option<usize>,
         content: &str,
         clock: &dyn Clock,
     ) -> Result<()> {
-        let body = self
-            .body
-            .replace_section(heading, content)
-            .ok_or_else(|| DomainError::not_found("section", heading))?;
+        let body = self.body.replace_section(heading, nth, content)?;
         let prev_hash = self.content_hash.clone();
         self.body = body;
         self.rehash(clock);
@@ -710,7 +708,7 @@ mod tests {
     fn replace_section_targets_one_heading() {
         let mut document = document();
         document
-            .replace_section("Decision", "Move to EdDSA.", &clock())
+            .replace_section("Decision", None, "Move to EdDSA.", &clock())
             .unwrap();
         assert!(document.body().as_str().contains("EdDSA"));
         assert!(document.body().as_str().contains("We use HS256"));
@@ -720,7 +718,9 @@ mod tests {
     #[test]
     fn replace_section_reports_a_missing_heading_as_not_found() {
         let mut document = document();
-        let err = document.replace_section("Nope", "x", &clock()).unwrap_err();
+        let err = document
+            .replace_section("Nope", None, "x", &clock())
+            .unwrap_err();
         assert!(matches!(err, DomainError::NotFound { .. }), "{err:?}");
     }
 

@@ -109,12 +109,18 @@ pub(crate) enum Command {
         target: String,
         #[arg(long)]
         section: Option<String>,
+        /// Which of several sections sharing the heading (1-based)
+        #[arg(long, requires = "section")]
+        nth: Option<usize>,
     },
     /// Change a document's body
     Edit {
         target: String,
         #[arg(long)]
         section: Option<String>,
+        /// Which of several sections sharing the heading (1-based)
+        #[arg(long, requires = "section")]
+        nth: Option<usize>,
         #[arg(long)]
         replace_in: Option<String>,
         #[arg(long)]
