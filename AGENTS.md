@@ -219,6 +219,9 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 - **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's
   writes. `orchy skill set` writes such fields; `skill::managed_field` lists the ones it
   refuses.
+- **Task bodies.** A task's file body is its description, then optional trailing
+  `## Acceptance` (acceptance criteria) and `## Outcome` (the `done` note or the `fail`,
+  `cancel` or `replace` reason) sections (`codec::split_task_body`).
 - **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are
   reserved for inverses derived from edges. Nothing renders them into files yet, but
   `orchy set` already refuses them.
@@ -392,11 +395,8 @@ Agents branch on this behaviour, so treat it as API.
 ## Known gaps
 
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
-it drift. The first one loses data; fix it first.
+it drift.
 
-- **Task notes and reasons are lost.** `task done --note`, `task fail <reason>` and
-  `task cancel <reason>` are never written to the task file, so `task get` shows
-  `note: null` afterwards.
 - **`orchy new` ignores stdin.** Its `--body` help says it reads stdin when omitted, but
   `cmd::doc::new` passes `None` through and creates an empty body. `edit` does read stdin.
 - **Rollup leaves the lease behind.** When a parent reaches a terminal status through rollup,

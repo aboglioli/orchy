@@ -165,15 +165,20 @@ pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
         }
     }
 
-    let body = match task.acceptance_criteria() {
-        Some(criteria) => Body::new(format!(
-            "{}\n\n## Acceptance\n\n{criteria}",
-            task.description()
-        )),
-        None => Body::new(task.description()),
-    };
+    let mut body = task.description().to_owned();
+    for (heading, text) in [
+        (ACCEPTANCE, task.acceptance_criteria()),
+        (OUTCOME, task.note()),
+    ] {
+        if let Some(text) = text {
+            body.push_str(&format!("\n\n{heading}\n\n{text}"));
+        }
+    }
 
-    MarkdownFile { frontmatter, body }
+    MarkdownFile {
+        frontmatter,
+        body: Body::new(body),
+    }
 }
 
 pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {
@@ -185,7 +190,11 @@ pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {
         .ok_or_else(|| missing("status"))?
         .parse()?;
 
-    let (description, acceptance_criteria) = split_acceptance(file.body.as_str());
+    let TaskBody {
+        description,
+        acceptance_criteria,
+        note,
+    } = split_task_body(file.body.as_str());
 
     Ok(Task::new(RestoreTask {
         id: id.clone(),
@@ -225,23 +234,43 @@ pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {
             .map(Tag::new)
             .collect::<Result<Vec<_>>>()?,
         refs: Vec::new(),
-        note: None,
+        note,
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
         updated_at: timestamp(fm, "updated").unwrap_or_else(|| id.created_at()),
     }))
 }
 
-fn split_acceptance(body: &str) -> (String, Option<String>) {
-    const HEADING: &str = "## Acceptance";
-    match body.split_once(HEADING) {
-        Some((description, criteria)) => {
-            let criteria = criteria.trim();
-            (
-                description.trim().to_owned(),
-                (!criteria.is_empty()).then(|| criteria.to_owned()),
-            )
+const ACCEPTANCE: &str = "## Acceptance";
+const OUTCOME: &str = "## Outcome";
+
+struct TaskBody {
+    description: String,
+    acceptance_criteria: Option<String>,
+    note: Option<String>,
+}
+
+/// A task's description, then its trailing `## Acceptance` and `## Outcome` sections, in
+/// either order. Only a line that is exactly one of those headings starts a section.
+fn split_task_body(body: &str) -> TaskBody {
+    let mut description = Vec::new();
+    let mut acceptance = Vec::new();
+    let mut outcome = Vec::new();
+    let mut current = &mut description;
+    for line in body.lines() {
+        match line.trim_end() {
+            ACCEPTANCE => current = &mut acceptance,
+            OUTCOME => current = &mut outcome,
+            _ => current.push(line),
         }
-        None => (body.trim().to_owned(), None),
+    }
+    let section = |lines: Vec<&str>| {
+        let text = lines.join("\n").trim().to_owned();
+        (!text.is_empty()).then_some(text)
+    };
+    TaskBody {
+        description: description.join("\n").trim().to_owned(),
+        acceptance_criteria: section(acceptance),
+        note: section(outcome),
     }
 }
 
@@ -507,4 +536,32 @@ pub fn skill_from_markdown(file: &MarkdownFile) -> Result<Skill> {
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
         updated_at: timestamp(fm, "updated").unwrap_or_else(|| id.created_at()),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_task_body_splits_into_description_criteria_and_outcome_in_either_order() {
+        let body = split_task_body(
+            "Do it.\n\n## Outcome\n\nDone in abc123.\n\n## Acceptance\n\nTests pass.",
+        );
+        assert_eq!(body.description, "Do it.");
+        assert_eq!(body.acceptance_criteria.as_deref(), Some("Tests pass."));
+        assert_eq!(body.note.as_deref(), Some("Done in abc123."));
+    }
+
+    #[test]
+    fn a_lookalike_heading_is_part_of_the_description() {
+        let body = split_task_body("Intro\n### Acceptance\nnot a section");
+        assert_eq!(body.description, "Intro\n### Acceptance\nnot a section");
+        assert!(body.acceptance_criteria.is_none());
+    }
+
+    #[test]
+    fn an_empty_section_is_no_section() {
+        let body = split_task_body("Intro\n\n## Outcome\n\n");
+        assert!(body.note.is_none());
+    }
 }

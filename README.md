@@ -373,6 +373,8 @@ orchy task update <task> [--title …] [--description …] [--priority …] [--n
   without taking.
 - **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
   the holder can mark it done, failed or cancelled.
+- **Outcomes.** The `--note` of `task done` and the reason given to `task fail` or
+  `task cancel` are kept in the task file, under `## Outcome`, for the next agent to read.
 - **`split`** breaks a task into subtasks and keeps the original as the goal. The goal
   finishes by itself when its subtasks do:
   - `failed` if any subtask failed;

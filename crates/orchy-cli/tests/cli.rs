@@ -1423,3 +1423,30 @@ fn recall_leaves_out_superseded_and_archived_knowledge_unless_asked() {
     ));
     assert_eq!(history, vec![old["id"].as_str().unwrap().to_owned()]);
 }
+
+#[test]
+fn a_task_keeps_its_completion_note_and_failure_reason_on_disk() {
+    let temp = vault();
+    for (title, finish) in [
+        ("finished", vec!["done", "--note", "shipped in abc123"]),
+        ("failed", vec!["fail", "the lib lacks RS256"]),
+        ("cancelled", vec!["cancel", "duplicate of another"]),
+    ] {
+        let task = json(temp.path(), &["task", "new", title]);
+        let id = task["id"].as_str().unwrap().to_owned();
+        ok(temp.path(), &["task", "claim", &id]);
+        let mut args = vec!["task", finish[0], id.as_str()];
+        args.extend_from_slice(&finish[1..]);
+        ok(temp.path(), &args);
+
+        let expected = finish.last().unwrap();
+        let reread = json(temp.path(), &["task", "get", &id]);
+        assert_eq!(reread["task"]["note"], *expected, "{title}: {reread}");
+        let file =
+            std::fs::read_to_string(temp.path().join(format!("tasks/done/{id}.md"))).unwrap();
+        assert!(
+            file.contains("## Outcome") && file.contains(expected),
+            "{file}"
+        );
+    }
+}
