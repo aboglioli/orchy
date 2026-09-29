@@ -1,25 +1,27 @@
 # Orchy
 
-A shared, file-backed memory for coding agents.
+A shared memory for your coding agents.
 
-orchy is a single binary, `orchy`, that gives several agents — Claude Code, Codex, Gemini
-CLI, OpenCode, pi, or a shell script — one place to keep what they know, what they are
-working on, and what they need to tell each other. Everything lives in a **vault**: a
-directory of ordinary markdown files with YAML frontmatter, plus an append-only event log.
-No server, no database, no daemon. A shell is the only integration an agent needs.
+Run several agents at once — Claude Code, Codex, Gemini CLI, OpenCode, pi, a shell script —
+and orchy gives them one place to keep what they know, what they are working on, and what
+they need to tell each other. They drive it through a single command, `orchy`, so any agent
+that can run a shell command can join in.
 
-Humans can ignore the CLI entirely: open the vault in any editor, read it, fix it, commit it.
+Everything lives in a **vault**: a folder of ordinary markdown files. There is no server,
+no database and nothing running in the background. Open the vault in your editor to see what
+your agents did, fix anything by hand, and commit it to git like any other notes.
 
-## Three pillars
+## What your agents get
 
-| | what it is | commands |
-|---|---|---|
-| **Knowledge** | typed markdown documents, skills (the conventions a team expects every agent to follow), and a registered relation graph over them | `new` `read` `edit` `set` `recall` `link` `graph` `supersede` `promote` `archive` `skill …` |
-| **Work** | a task board with a real state machine, where a goal can be split and its status derived from its subtasks | `task …` |
-| **Conversation** | a message board agents post to, addressed by alias, role, namespace or broadcast | `msg …` |
+| | what it is |
+|---|---|
+| **Knowledge** | notes, decisions, discoveries and specs they write down and search later, linked to each other and to the work that produced them |
+| **Skills** | the conventions you want every agent to follow — commit style, what never to touch, how migrations work. Each agent receives them when it joins |
+| **Work** | a task board: agents claim tasks, split big ones into subtasks, and report what they did. A goal finishes when its subtasks do |
+| **Conversation** | a message board: agents write to one another by name, by role, by area of the project, or to everyone |
 
-Around them: a roster of agents that brief themselves on joining (`announce`, `agents`),
-advisory locks (`lock …`) and the event log (`events`).
+Plus a roster of who is working, locks so two agents don't edit the same thing at once, and
+a full history of every change.
 
 ## Install
 
@@ -27,12 +29,6 @@ Requires Rust 1.89 or newer.
 
 ```bash
 cargo install --git https://github.com/aboglioli/orchy orchy-cli
-```
-
-Or from a checkout:
-
-```bash
-cargo install --path crates/orchy-cli
 ```
 
 Shell completions:
@@ -43,28 +39,100 @@ orchy completions bash > ~/.local/share/bash-completion/completions/orchy
 orchy completions zsh  > "${fpath[1]}/_orchy"
 ```
 
-## Quick start
+## Set up a vault
 
 ```bash
-orchy init                                   # scaffold the vault (default: $XDG_DATA_HOME/orchy)
-export ORCHY_ACTOR=coder-1                   # who is acting
-
-orchy announce --roles developer             # join the roster and get a briefing
-orchy skill write commits --summary "Conventional commits, one line" \
-  --body "Write type(scope): description, lowercase."
-orchy task new "Rotate JWT keys" --priority high --role developer --namespace /backend
-orchy task next                              # claim the highest-ranked task
-orchy task start rotate                      # tasks resolve by id prefix, suffix or title fragment
-orchy new decision "JWT algorithm" --namespace /backend --tag auth \
-  --body $'## Context\nHS256 cannot rotate.\n\n## Decision\nUse RS256.'
-orchy task done rotate --note "RS256 in place, keys under /backend"
-orchy msg send role:reviewer --subject "JWT" --body "RS256 landed, please review"
-orchy recall rs256
+orchy init                     # creates ~/.local/share/orchy
+orchy status                   # shows which vault and identity orchy is using
 ```
 
-Every command accepts `--json` for machine-readable output. `orchy guide` explains the model
-without joining the roster, and a bare `orchy` prints the same guidance with the command
-list.
+Pass a path to put the vault somewhere else (`orchy init ~/vault`), then point orchy at it
+with `ORCHY_VAULT=~/vault` or in the settings file (see [Configuration](#configuration)).
+
+The vault is designed to live in git. orchy never runs git itself — you commit when you
+like, with your own signing and push setup. `orchy init` writes a `.gitignore` and a
+`.gitattributes` so that only the files worth sharing get committed.
+
+## Connect your agents
+
+Each agent needs two things: a name, and the instruction to run `orchy announce` first.
+
+**Give each agent its own name** with `ORCHY_ACTOR`, set in the environment you launch it
+from:
+
+```bash
+ORCHY_ACTOR=coder-1 claude
+ORCHY_ACTOR=reviewer codex
+```
+
+A name is 2–32 characters of lowercase letters, digits and `-`. Commands you run yourself
+without a name act as `human`.
+
+**Tell it to use orchy.** Add a line like this to the instructions file of the repository
+the agent works in (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`…):
+
+```markdown
+Before starting, run `orchy announce --roles developer --namespace /backend` and follow what it says.
+```
+
+`orchy announce` puts the agent on the roster and answers with a briefing:
+
+- what orchy is and which commands to use;
+- the skills in force where it is working, which it is expected to follow;
+- unread messages, and any tasks it already holds;
+- the most urgent task waiting in its area;
+- the handoff note left by the last session there.
+
+That briefing is all an agent needs to start working. `orchy guide` prints the same
+orientation without joining, and running `orchy` with no arguments shows it along with the
+command list.
+
+## A day with orchy
+
+**Write down how you work.** Skills are the rules every agent receives on joining:
+
+```bash
+orchy skill write commits --summary "Conventional commits, one line" \
+  --body "Write type(scope): description, lowercase. No trailers."
+orchy skill write migrations --namespace /backend \
+  --summary "Never edit an applied migration" --body "Add a new one instead."
+```
+
+**Queue up work.** Agents pick it up with `orchy task next`:
+
+```bash
+orchy task new "Rotate JWT keys" --priority high --role developer --namespace /backend \
+  --description "Move from HS256 to RS256 so keys can rotate."
+orchy task new "Update the auth docs" --depends-on "Rotate JWT keys"
+```
+
+**See what is happening:**
+
+```bash
+orchy task list                     # the board
+orchy task get rotate               # one task, its subtasks and links
+orchy agents --live                 # who is active on this machine right now
+orchy msg inbox                     # messages addressed to you
+orchy recall jwt rotation           # search everything your agents wrote down
+orchy events --limit 20             # the latest changes, and who made them
+```
+
+**Talk to your agents:**
+
+```bash
+orchy msg send @coder-1 --body "Keep the HS256 path until Friday."
+orchy msg send role:reviewer --subject "JWT" --body "RS256 landed, please review."
+orchy msg send broadcast --body "Freeze merges to main for an hour."
+```
+
+**Read and fix things by hand.** Everything is a markdown file under the vault. Edit
+anything in your editor; orchy picks it up on the next command.
+
+**Commit** the vault whenever you like.
+
+Most commands that take a task or a document accept a fragment of its title (`rotate`)
+or of its id instead of the whole thing. When more than one thing matches, orchy asks you to
+be more specific rather than guessing.
 
 ## Configuration
 
@@ -72,85 +140,77 @@ orchy keeps two kinds of configuration apart: **per machine** and **per vault**.
 
 ### Per machine — `settings.toml`
 
-`$XDG_CONFIG_HOME/orchy/settings.toml` (default `~/.config/orchy/settings.toml`):
+`~/.config/orchy/settings.toml` (or `$XDG_CONFIG_HOME/orchy/settings.toml`):
 
 ```toml
 machine = "01M3HQK02Y7WBFTTM60JJ2JAJH"   # generated on first run; never change it
 vault   = "/home/me/vault"               # optional
-actor   = "coder-1"                      # optional
+actor   = "human"                        # optional
 ```
 
-`machine` separates this machine's event log and agent identities from every other
-machine's. orchy writes it the first time it runs.
+`machine` keeps this computer's history and agents apart from any other computer sharing the
+vault. orchy writes it the first time it runs.
 
-Resolution, highest priority first:
+Which vault and which name orchy uses, highest priority first:
 
-| | vault | actor |
+| | vault | name |
 |---|---|---|
-| flag | `--vault <dir>` | `--actor <alias>` |
+| flag | `--vault <dir>` | `--actor <name>` |
 | environment | `ORCHY_VAULT` | `ORCHY_ACTOR` |
 | settings | `vault` | `actor` |
-| default | `$XDG_DATA_HOME/orchy` (`~/.local/share/orchy`) | `human` |
-
-`orchy status` prints what resolved and whether the vault is initialised.
+| default | `~/.local/share/orchy` | `human` |
 
 ### Per vault — `orchy.toml`
 
-Committed with the vault. orchy currently reads one setting from it:
+Lives in the vault and is committed with it. A folder without `orchy.toml` is not a vault,
+and orchy refuses to work there until you run `orchy init`.
 
 ```toml
 [events]
-partitions = 10   # fixed when this machine's log is first created; changing it later is refused
+partitions = 10   # set once, when this machine first writes to the vault; do not change it
 ```
 
-A directory without `orchy.toml` is not a vault. Every command except `init`, `status` and
-`completions` refuses to run there (exit 4).
+## Several agents, several machines
 
-## Identity
+An agent's full identity is `name@machine`, such as `coder-1@01M3HQK02Y7WBFTTM60JJ2JAJH`.
+Running `coder-1` on two computers gives you two separate agents that share the name.
+`@coder-1` reaches both; `@coder-1@<machine>` reaches one.
 
-An agent is `alias@machine`, for example `coder-1@01M3HQK02Y7WBFTTM60JJ2JAJH`. The alias is 2–32
-characters: lowercase letters, digits and `-`. Pass a bare alias and orchy appends this
-machine's id; pass `alias@machine` to act as a specific instance.
+**On one machine**, agents see each other's changes immediately: they all read and write
+the same folder.
 
-`orchy announce` writes the agent to the roster (`agents/<alias>@<machine>.md`) with its
-roles and namespace, refreshes its presence, and returns a **briefing** for that namespace:
+**Across machines**, the vault syncs through git. Push from one, pull on the other, and the
+agents there see the new tasks, notes and messages. Each machine keeps its own history
+folder, so histories from different machines never collide. `orchy agents --live` and locks
+only cover agents on the same machine.
 
-- how orchy works and what to run;
-- the skills in force, which the agent is expected to follow;
-- how many unread messages are waiting, and the tasks it already holds;
-- the highest-priority pending task in its namespace;
-- the latest `context` document there (the handoff from the last session).
-
-An agent's first command should be `orchy announce`. `orchy agents` lists the roster;
-`orchy agents --live` lists only agents announced on this machine in the last five
-minutes. Role and namespace messages reach only agents on the roster, so announce before
-you expect mail.
+If two agents change the same task or document at the same moment, the second one gets an
+error (exit 5) instead of overwriting the first. It re-reads and tries again.
 
 ## The vault
 
 ```
 <vault>/
-├── orchy.toml            vault configuration
-├── AGENTS.md             instructions for agents working in the vault
+├── orchy.toml            vault settings
+├── AGENTS.md             instructions for any agent that opens the vault directly
 ├── CLAUDE.md -> AGENTS.md
 ├── index.md
-├── .gitignore            keeps .orchy/ and event-log locks out of git
-├── .gitattributes        marks events/** as unmergeable
 │
-├── docs/                 documents, placed by namespace: docs/backend/auth/<id>.md
-├── skills/               skills, placed by namespace and named: skills/backend/migrations.md
-├── tasks/open/<id>.md    tasks that are not finished
-├── tasks/done/<id>.md    tasks in a terminal status
-├── messages/<thread>/<id>.md
-├── agents/<alias>@<machine>.md
-├── events/<machine>/     append-only event log, one per machine
-└── .orchy/               runtime state: presence, read watermarks, locks. Never committed.
+├── docs/                 notes, decisions, specs… filed by area: docs/backend/auth/<id>.md
+├── skills/               conventions, filed by area and name: skills/backend/migrations.md
+├── tasks/open/           tasks still in play
+├── tasks/done/           finished, failed, cancelled or replaced tasks
+├── messages/<thread>/    one folder per conversation, one file per message
+├── agents/               the roster, one file per agent
+├── events/<machine>/     the history of every change, one folder per machine
+└── .orchy/               this machine's live state: who is active, locks. Never committed.
 ```
 
-**Frontmatter is the only source of truth.** A file's location is a projection of its
-frontmatter, never the reverse: a task sits in `tasks/done/` because its `status` is
-terminal, not the other way round. orchy never infers state from a path or a filename.
-Every entity has a stable ULID `id`; orchy finds files by the id in their frontmatter.
+Every file starts with a YAML header, and **the header is what counts**. A task is done
+because its header says `status: completed`, and orchy files it under `tasks/done/` as a
+result. Moving a file by hand changes nothing, and neither does renaming it: every file
+carries a stable `id` and orchy finds it by that. Links between files use the id, so they
+survive any reorganisation.
 
 A task file:
 
@@ -173,166 +233,114 @@ updated: "2026-09-27T15:26:33Z"
 Move to RS256
 ```
 
-### Writes and concurrency
+### Areas of a project
 
-- Each entity is its own file, so agents working on different things never touch the same
-  bytes.
-- Writes are atomic: temp file, fsync, rename. A crash never leaves a half-written document.
-- A write succeeds only if the file still holds the bytes orchy last read. When two agents
-  load the same entity and both change it, the second write is refused with a conflict
-  rather than silently overwriting the first.
-- `orchy edit --if-match <hash>` extends that check across commands: the edit is refused
-  unless the document still hashes to what you read (`content_hash` in `orchy read --json`).
+A **namespace** is a path that says which part of the project something belongs to: `/`,
+`/backend`, `/backend/auth`. Tasks, documents, skills, messages and agents each carry one;
+the default is `/`.
 
-### Git
-
-orchy never runs git. The vault is designed to be a git repository you commit yourself,
-under whatever signing and push policy you already use. `orchy init` writes a `.gitignore`
-that keeps runtime state out, and a `.gitattributes` that stops git from line-merging the
-event log.
-
-## Namespaces
-
-A namespace is a slash-rooted path: `/`, `/backend`, `/backend/auth`. Documents, tasks and
-messages each carry one; the default is `/`. Filters on a namespace include its
-descendants: `--namespace /backend` matches `/backend/auth`. A `ns:/backend` message reaches
-every agent announced in `/backend` or below.
+- **Filters include everything below.** `orchy task list --namespace /backend` shows
+  `/backend/auth` too.
+- **Skills are inherited downwards.** An agent in `/backend/auth` follows the skills of `/`,
+  `/backend` and `/backend/auth`. A skill with the same name further down replaces the one
+  above it.
+- **Messages to an area** (`ns:/backend`) reach every agent announced there or below.
 
 ## Knowledge
 
-### Document types
-
-`orchy types` prints the registry.
+```bash
+orchy new <type> <title> [--namespace /x] [--tag t]... --body "…"
+orchy read <doc> [--section <heading>]
+orchy edit <doc> [--section <heading> | --replace-in <text> | --replace] [--content "…"]
+orchy set <doc> field=value...
+orchy recall <query> [--entity document|skill] [--kind k]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n]
+orchy supersede <old> --by <new>
+orchy archive <doc>
+orchy unarchive <doc>
+orchy promote <candidate> --as <type> [--namespace /x]
+orchy types                         # every document type, status and relation
+```
 
 | type | use for |
 |---|---|
 | `note` | general observations |
 | `decision` | a choice made, with its rationale |
 | `discovery` | something found or learned: gotchas, constraints, findings |
-| `pattern` | a recurring approach or convention |
+| `pattern` | a recurring approach |
 | `document` | long-form specs, architecture, analysis |
 | `config` | configuration or setup information |
 | `reference` | external references and links |
 | `plan` | strategies, roadmaps, approaches |
 | `log` | activity or change log entries |
-| `skill` | instructions, as a document. Binding conventions belong in `orchy skill` instead |
+| `skill` | instructions kept as a document. For rules every agent must follow, use `orchy skill` |
 | `overview` | project summaries |
-| `summary` | compact synthesized output |
-| `report` | post-task write-ups, implementation reports |
-| `context` | session handoff snapshots |
-| `candidate` | a proposal that has not yet been accepted into canon |
+| `summary` | compact write-ups |
+| `report` | post-task write-ups |
+| `context` | a handoff: what was done, what is left. The latest one reaches the next agent's briefing |
+| `candidate` | a proposal not yet accepted |
 
-Canon types move through `draft`, `active`, `superseded` and `archived`. A `candidate` has
-its own lifecycle, `proposed`, `promoted` and `rejected`, and graduates into canon with
-`orchy promote <candidate> --as <type>`.
+- **Lifecycle.** Documents move through `draft`, `active`, `superseded` and `archived`. A
+  `candidate` is `proposed` until `orchy promote` turns it into a real type, or it is
+  `rejected`.
+- **Editing.** `edit` appends to the body by default:
+  - `--section` replaces what is under a heading;
+  - `--replace-in` replaces a piece of text that appears exactly once;
+  - `--replace` replaces the whole body.
 
-### Commands
+  Content comes from `--content` or from standard input.
+- **Your own fields.** `set` adds any header field you like (`reviewer=alan`,
+  `ticket=ORG-42`). Fields orchy manages — status, title, type, namespace, tags — are
+  refused.
 
-```bash
-orchy new <type> <title> [--namespace /x] [--tag t]... --body "…"
-orchy read <doc> [--section <heading>]
-orchy edit <doc> [--section <heading> | --replace-in <text> | --replace] [--if-match <hash>] [--content "…"]
-orchy set <doc> field=value [field=value]...
-orchy recall <query> [--kind k]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n]
-orchy supersede <old> --by <new>
-orchy archive <doc>
-orchy unarchive <doc>
-orchy promote <candidate> --as <type> [--namespace /x]
-```
+### Searching
 
-- **`edit`** appends by default. `--section` replaces the body under an existing heading,
-  `--replace-in` replaces a piece of text that must occur exactly once, and `--replace` replaces the whole body. Content
-  comes from `--content` or stdin.
-- **`set`** writes inert frontmatter fields. A value parses as JSON when it can and falls
-  back to a string. `status` is refused: change it with `archive`, `unarchive`, `supersede`
-  or `promote`. Fields orchy maintains itself (`superseded_by`, `derives`, `produced_by`,
-  `subtasks`) are refused too.
-- **`recall`** searches documents and skills together; `--entity document` or
-  `--entity skill` narrows it. See [Search](#search).
+`orchy recall` searches documents and skills together and returns the best matches first:
 
-Commands that take a document or a task accept a full id, an id prefix, an id suffix or a
-fragment of the title. When more than one entry matches, orchy refuses rather than guesses
-(exit 7).
+- words can appear in any order, and each is matched on its own;
+- different forms of a word match each other: `migrate`, `migrations` and `migrating` all
+  find "migration";
+- titles count more than bodies, and the exact phrase you typed counts more than the same
+  words scattered;
+- recent documents rank above old ones, and `--anchor /backend` prefers results from that
+  area without hiding the rest (`--namespace` hides the rest).
+
+It matches words, not meaning: `k8s` won't find "kubernetes", typos won't match, and part of
+a word (`migr`) finds nothing.
 
 ## Skills
 
-A skill is a convention the team expects every agent to follow: how to write commits, how
-migrations work, what never to touch. Skills are their own entity, not documents: each has
-a unique `name` (2–48 characters: lowercase, digits, `-`), a one-line `summary` that
-agents read before deciding to open it, a body, tags and a namespace.
+A skill is a rule you want every agent to follow. Each has a short `name`, a one-line
+`summary` that agents see in their briefing, a body with the detail, and a namespace.
 
 ```bash
 orchy skill write <name> --summary "…" [--body "…" | --body -] [--namespace /x] [--tag t]...
-orchy skill show <name|id> [--namespace /x]
+orchy skill show <name> [--namespace /x]
 orchy skill list [--namespace /x] [--tag t]... [--everywhere] [--retired]
 orchy skill find <query> [--namespace /x] [--tag t]... [--retired] [--limit n]
-orchy skill set <name|id> [field=value]... [--remove field]... [--tag t]... [--untag t]...
-orchy skill retire <name|id>
-orchy skill restore <name|id>
+orchy skill set <name> [field=value]... [--remove field]... [--tag t]... [--untag t]...
+orchy skill retire <name>
+orchy skill restore <name>
 ```
 
-- **Inheritance.** Skills are inherited down the namespace tree. `/backend` gets every skill
-  declared at `/`, and a skill with the same name declared at `/backend` overrides it there.
-  `list` and `show` resolve from `--namespace` (default `/`); `list --everywhere` shows
-  every skill in the vault.
-- **Writing.** `write` creates a skill, or revises the one with that name in that namespace.
-  A new skill needs `--summary`. `--body -` reads the body from stdin.
-- **Your own fields.** `set` adds any other frontmatter a team wants on a skill. orchy keeps
-  `id`, `type`, `name`, `summary`, `namespace`, `status`, `tags`, `created` and `updated`
-  to itself and refuses to set them.
-- **Retiring.** `retire` takes a skill out of every briefing and listing without deleting
-  it; `restore` puts it back.
-- **Finding one.** `find` ranks skills against free text. `--namespace` ranks skills
-  declared there first instead of filtering.
-
-## Search
-
-`orchy recall` (documents and skills) and `orchy skill find` (skills only) share one
-lexical engine:
-
-- **Terms, not strings.** Text is split into words, lowercased and reduced to its English
-  root, so `migrate`, `migrations` and `MIGRATING` all match "migration". Query words match
-  independently and in any order.
-- **BM25 relevance.**
-  - A word few passages contain is worth more than one they all contain.
-  - Repeating a word has diminishing returns.
-  - A long passage does not win on length alone.
-- **Extra signals.**
-  - Words in a title count three times.
-  - A passage carrying every query word beats one carrying some; one carrying none is not a
-    hit.
-  - The exact phrase as typed earns a bonus.
-- **Passages.** Each section of a document (split on markdown headings) is its own passage,
-  and the document's title adds weight to each. A skill's name and summary act as its title.
-- **Ranking.** Relevance is then weighted by recency (a 90-day decay) and, with
-  `--anchor /x`, by how close the namespace is to the anchor. `--namespace` filters; `--anchor`
-  only ranks. The default limit is 20. `--json` reports each hit's `relevance`.
-
-It is still lexical: there are no synonyms (`k8s` does not find `kubernetes`), no typo
-tolerance, and no partial-word matching (`migr` finds nothing). Words split only on
-characters that are not letters or digits, so a camelCase identifier such as
-`UserRepository` is one term.
+- **Writing and revising.** `write` creates a skill or revises the one with that name in that
+  namespace. A new skill needs `--summary`; `--body -` reads the body from standard input.
+- **What's in force.** `list` shows the skills in force at a namespace (default `/`), after
+  inheritance; `--everywhere` shows all of them.
+- **Your own fields.** `set` adds your own header fields.
+- **Retiring.** `retire` removes a skill from briefings without deleting it; `restore`
+  brings it back.
 
 ## Work
-
-### Task states
 
 ```
 pending ──claim──▶ claimed ──start──▶ in_progress
    ▲                  │                    │
    └────release───────┴────────────────────┤
                                            ▼
-                completed · failed · cancelled · superseded   (terminal)
+                completed · failed · cancelled · superseded
 
 pending, claimed, in_progress ──block──▶ blocked ──unblock──▶ pending
 ```
-
-- Only `pending` tasks can be claimed.
-- A claimed task can be finished from `claimed` or `in_progress`.
-- Terminal statuses are final.
-- Only the agent holding a task may finish it or release it.
-
-### Commands
 
 ```bash
 orchy task new <title> [--description …] [--priority low|normal|high|urgent] [--namespace /x]
@@ -355,23 +363,20 @@ orchy task update <task> [--title …] [--description …] [--priority …] [--n
                          [--parent <task> | --detach] [--tag t]... [--untag t]...
 ```
 
-- **`next`** picks from `pending` tasks that list no dependencies, ranked by priority and
-  then age, and claims the first one it wins. With several agents racing, each gets a
-  different task. `--peek` looks without claiming.
-- **Claims are leases.** Claiming takes a lease on `task:<id>` for 15 minutes by default
-  (`--ttl`), so two agents racing for one task cannot both win. The task stays with its
-  holder until it is released or finished.
-- **Split and replace** answer different questions:
-  - `split` keeps the goal open as an umbrella over new subtasks. When every subtask is
-    terminal the goal rolls up: `failed` if any subtask failed, otherwise `completed` if any
-    completed, `superseded` if all were superseded, and `cancelled` otherwise. Rollup walks
-    up through grandparents.
-  - `replace` retires the original as `superseded`. The new tasks stand alone, under
-    whatever goal the original sat under.
-- **Dependencies** are explicit. `task next` skips a task while it lists any dependency,
-  so remove it with `task dep --remove` once the work it waited on is done, or claim the task
-  directly. `task block --on <task>` records the dependency and blocks in one step;
-  `--reason` covers blockers that are not tasks.
+- **Taking work.** `task next` hands out the most urgent, then oldest, `pending` task and
+  claims it. When several agents ask at once, each gets a different task. `--peek` looks
+  without taking.
+- **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
+  the holder can mark it done, failed or cancelled.
+- **`split`** breaks a task into subtasks and keeps the original as the goal. The goal
+  finishes by itself when its subtasks do:
+  - `failed` if any subtask failed;
+  - otherwise `completed` if any completed;
+  - `superseded` if every subtask was replaced, and `cancelled` otherwise.
+- **`replace`** retires a task in favour of new, independent ones.
+- **Dependencies.** A task with dependencies (`--depends-on`, `task dep --add`,
+  `task block --on`) is not handed out by `task next`. Remove the dependency with
+  `task dep --remove` once the earlier work is done, or claim the task directly.
 
 ## Conversation
 
@@ -387,118 +392,82 @@ orchy msg promote <msg> [--title …] [--role r]...
 
 | recipient | reaches |
 |---|---|
-| `@alias` | every instance of that alias |
-| `@alias@machine` | one instance |
-| `role:<role>` | every agent with that role |
-| `ns:/path` | every agent in that namespace or below |
+| `@name` | that agent, on every machine |
+| `@name@machine` | that agent on one machine |
+| `role:<role>` | every agent announced with that role |
+| `ns:/path` | every agent announced in that area or below |
 | `broadcast` | everyone except the sender |
 
-- Recipients resolve against the roster when mail is read, not when it is sent.
-- A thread is a directory, and every message in it is its own file.
-- `inbox` shows what arrived after your read watermark; `msg read` advances it, and `--all`
-  ignores it.
-- `msg resolve` marks a thread finished.
-- `msg promote` turns a message into a task linked back with `spawned_by`, and resolves the
-  thread.
-- Message commands take the full message id, which `--json` output prints.
+- **Inbox.** `inbox` shows what is new since you last read; `msg read` marks a message read,
+  and `--all` shows everything.
+- **Roster.** Role and area messages reach agents on the roster, so an agent must have run
+  `orchy announce` to receive them.
+- **Threads.** `msg resolve` closes a thread.
+- **Promoting.** `msg promote` turns a message into a task that links back to it.
+- **Message ids.** Message commands need the full message id, which `--json` prints.
 
-## Relations
+## Links between things
 
-Typed, directed edges between documents, tasks, messages and agents. `orchy types` lists
-them with their inverses.
+Tasks, documents, skills, messages and agents can be linked with named relations: a task
+`produces` a decision, a document `supersedes` an older one, a finding is `supported_by`
+evidence. `orchy types` lists every relation and what it can connect.
 
 ```bash
-orchy link document:<id> task:<id> --rel implements
-orchy unlink document:<id> task:<id> --rel implements
+orchy link task:<id> document:<id> --rel produces
+orchy unlink task:<id> document:<id> --rel produces
 orchy graph task:<id> [--depth n]
 ```
 
-Entity refs are `kind:id`, where `kind` is one of `document`, `skill`, `task`, `message` or
-`actor`, and `id` is the full id. "Content" below means a document, skill, task or message.
+Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill`,
+`message` or `actor`. Relations with side effects are set by their own commands instead:
 
-| relation | inverse | connects |
-|---|---|---|
-| `supersedes` | `superseded_by` | like to like |
-| `merged_from` | `merged_into` | like to like |
-| `derived_from` | `derives` | content to content |
-| `summarizes` | `summarized_by` | content to content |
-| `invalidates` | `invalidated_by` | content to content |
-| `confirms` | `confirmed_by` | content to content |
-| `supported_by` | `supports` | content to content |
-| `contradicted_by` | `contradicts` | content to content |
-| `related_to` | `related_to` | anything to anything |
-| `depends_on` | `blocks` | task to task |
-| `parent` | `subtasks` | task to task |
-| `spawned_by` | `spawns` | task to message |
-| `produces` | `produced_by` | task to document or skill |
-| `implements` | `implemented_by` | task to document or skill |
-| `owned_by` | `owns` | anything to actor |
-| `reviewed_by` | `reviewed` | anything to actor |
-
-`parent`, `depends_on`, `supersedes` and `spawned_by` have consequences beyond the edge
-itself. Set them through `task update --parent`, `task dep --add`, `supersede` or
-`task replace`, and `msg promote`; `orchy link` refuses them.
+| relation | set with |
+|---|---|
+| a subtask's parent | `task update --parent` |
+| a dependency | `task dep --add` |
+| a replacement | `supersede`, `task replace` |
+| a task created from a message | `msg promote` |
 
 ## Locks
 
-Advisory, TTL-based leases, shared by every agent on the same machine:
+Stop two agents on the same machine from touching the same thing at once:
 
 ```bash
-orchy lock acquire <resource> [--ttl secs]    # default 300; fails if someone else holds it
+orchy lock acquire <resource> [--ttl secs]    # default 300 seconds; fails if someone else holds it
 orchy lock renew <resource> [--ttl secs]
 orchy lock release <resource>
 orchy lock check <resource>
 orchy lock list
-orchy lock with <resource> [--ttl secs] -- <command>...   # hold it exactly as long as the command runs
+orchy lock with <resource> [--ttl secs] -- <command>...   # hold it only while the command runs
 ```
 
-A resource is any name: a file path, a service, `migrations`. Leases expire on their own;
-nothing has to clean up after a crashed agent. Lock state lives in `.orchy/locks/` and is
-never committed.
+A resource is any name: a file path, `migrations`, `staging-db`. Locks expire on their own,
+so a crashed agent never leaves one stuck.
 
-## Event log
+## History
 
-Every change is recorded as a domain event: `document.*`, `skill.*`, `task.*`, `message.*`
-and `edge.*`.
-Each machine appends to its own log under `events/<machine>/`, so logs from several
-machines never contend.
+Every change any agent makes is recorded with who made it and when:
 
 ```bash
-orchy events [--topic task.] [--key <id>] [--by <actor>] [--limit n]
+orchy events [--topic task.] [--key <id>] [--by <agent>] [--limit n]
 ```
 
-`--topic` matches by prefix.
+`--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`, `edge.`.
 
-## Exit codes
+## Scripting
+
+Every command accepts `--json`. Colour is used only on a terminal, and never when
+`NO_COLOR` is set. Exit codes:
 
 | code | meaning |
 |---|---|
 | 0 | success |
 | 2 | bad arguments |
 | 4 | not found, or not a vault |
-| 5 | conflict: held by someone else, an invalid transition, or not yours to change |
-| 6 | invalid input: validation, unknown type or relation, configuration |
-| 7 | ambiguous: the input matched more than one entry |
+| 5 | refused: held by someone else, not allowed from the current status, or not yours |
+| 6 | invalid input |
+| 7 | ambiguous: more than one thing matched |
 | 8 | storage or I/O failure |
-
-## Development
-
-```bash
-just            # list recipes
-just build      # cargo build --workspace
-just test       # cargo test --workspace
-just lint       # cargo clippy --workspace --all-targets -- -D warnings
-just fmt        # cargo fmt --all
-just check      # fmt, lint and test
-just t <pattern>          # run matching tests with output
-just orchy <args>         # run the CLI from source
-```
-
-The tests need no containers or services: the vault tests run against temporary
-directories.
-
-orchy depends on [eventuary](https://github.com/aboglioli/eventuary) for its event log,
-pinned by git tag until it is published on crates.io.
 
 ## License
 

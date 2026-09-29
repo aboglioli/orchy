@@ -3,8 +3,11 @@
 A single CLI binary, `orchy`, that gives coding agents a shared, file-backed memory.
 Everything lives in a **vault**: markdown files with YAML frontmatter plus an append-only
 event log. No server, no database, no daemon, no MCP endpoint — a shell is the only
-integration an agent needs. `README.md` is the user-facing reference for the command
-surface; this file is for working on the code.
+integration an agent needs.
+
+`README.md` is for people who use orchy day to day to coordinate their agents. This file is
+for working on orchy itself: how it is built, the rules the code must keep, how to run and
+test it, and what is known to be missing.
 
 ## Scope
 
@@ -146,8 +149,10 @@ partitioned (default 10, fixed at creation, configurable in `orchy.toml` `[event
 partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
 `message.sent`, `edge.created`). `orchy events` replays them.
 
-eventuary is pinned by git tag (`v0.3.0-rc.4`) until it is on crates.io; that is the
-blocker for publishing orchy.
+The workspace depends on `eventuary` through a git tag (`v0.3.0-rc.4`) with the `fs` and
+`memory` features. `eventuary` and `eventuary-fs` `0.3.0-rc.4` are on crates.io, so the
+comment in `Cargo.toml` saying it waits for a release is stale. Switch to
+`version = "=0.3.0-rc.4"` before publishing orchy: `cargo publish` refuses git dependencies.
 
 ### Errors
 
@@ -202,6 +207,16 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   refuses.
 - **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are rendered
   from edges and refused by `orchy set`.
+
+### Sharing a vault
+
+- **Same machine.** Agents on one machine share the folder directly. Every change is
+  visible on the next command, because `Vault::open` re-indexes each run.
+- **Across machines.** Sharing goes through git, which orchy never runs. Each machine gets
+  a `MachineId` and its own event-log root, `events/<machine>/`, because file locks cannot
+  coordinate offsets across a remote. `orchy init` marks `events/** -merge` in
+  `.gitattributes` so git never line-merges two logs.
+- **Machine-local state.** Presence and leases never cross machines.
 
 ### Briefing
 
@@ -327,6 +342,74 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Inbox.** Messages past the actor's read watermark.
 - **Promote.** `msg promote` creates a task with a `spawned_by` edge and resolves the thread.
 
+## CLI contract
+
+Agents branch on this behaviour, so treat it as API.
+
+- **Resolution.** `Config::resolve` (`config.rs`):
+  - vault: `--vault` → `ORCHY_VAULT` → `settings.vault` → `$XDG_DATA_HOME/orchy`;
+  - actor: `--actor` → `ORCHY_ACTOR` → `settings.actor` → `human`.
+
+  A bare alias gets `@<machine>` appended.
+- **Files.** `$XDG_CONFIG_HOME/orchy/settings.toml` is per machine (`machine`, `vault`,
+  `actor`); `machine` is generated on first run and must never change. `<vault>/orchy.toml`
+  marks a vault, and only its `[events] partitions` key is read.
+- **No vault.** Only `init`, `status`, `completions` and a bare `orchy` run without one;
+  everything else exits 4 and names `orchy init`.
+- **Resolving ids.** Tasks and documents accept a full ULID, an id prefix, an id suffix or a
+  title fragment (`resolve.rs`); more than one match is `Ambiguous` (exit 7), never a guess.
+  Skills resolve by id, or by name: first in scope at `--namespace`, then anywhere if the
+  name is unique. Messages and `link`/`graph` refs (`kind:id`) take full ids only.
+- **Input.** Content comes from a flag or stdin, never a prompt (`stdin.rs`).
+- **Output.** Every command supports `--json`. Colour is used only on a TTY, never with
+  `--no-color` or `NO_COLOR`.
+- **Errors.** Exit codes follow the table under Errors. clap's own usage errors exit 2.
+
+## Known gaps
+
+Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
+it drift.
+
+- **`orchy new` ignores stdin.** Its `--body` help says it reads stdin when omitted, but
+  `cmd::doc::new` passes `None` through and creates an empty body. `edit` does read stdin.
+- **Rollup leaves the lease behind.** When a parent reaches a terminal status through rollup,
+  its `task:<id>` lease is not released (`RollupAncestors`); `orchy lock list` still shows
+  it until it expires.
+- **Dependencies are never cleared.** `NextTask` skips any task whose `depends_on` is
+  non-empty, even when every dependency is completed, and nothing removes them. A dependent
+  task stays invisible to `task next` until someone runs `task dep --remove`.
+- **Documents cannot be retitled, retyped, moved or retagged from the CLI.**
+  `UpdateDocument` supports title, kind, namespace and tags, but the CLI only uses it for
+  `archive`/`unarchive`. `orchy set` refuses those fields and points at commands that do
+  not exist (`orchy retitle`, `orchy retype`, `orchy ns move`, `orchy tag` —
+  `document::semantic_command_for`).
+- **Short message ids are not resolved.** `msg inbox` prints short ids, but `msg read`,
+  `thread`, `resolve` and `promote` take only full ULIDs.
+- **`orchy guide` needs a vault**, although it only prints static text and its help says it
+  works without joining. It exits 4 outside a vault; a bare `orchy` does not.
+- **camelCase is one search term.** `tokenise` splits on non-alphanumerics only, so
+  `UserRepository` never matches `repository`. There is no prefix or substring fallback
+  either.
+- **Vault scaffolding writes dead config.**
+  - `orchy init` writes `[vault] name`, `[recall] default_limit` and
+    `[audit] stale_after_days` into `orchy.toml`, and none of them is read.
+  - `.gitattributes` gets `journal/** merge=union` for a `journal/` that does not exist.
+- **Unused dependencies.** `orchy-cli` declares `clap_mangen` and `orchy-store-memory` and
+  uses neither. The `orchy-store-memory` description mentions "ephemeral vaults", which
+  nothing wires up.
+- **Server-era files.** These were left behind by the move to a single binary:
+  - `Dockerfile` builds `orchy-server` and copies `migrations/`, neither of which exists,
+    so `.github/workflows/container.yml` fails on the next release;
+  - `.dockerignore`, `config.toml`, `config.default.toml`, `examples/`, `.orchy.toml`
+    (with a committed API key) and `dashboard/`, a React client for the removed REST API.
+    A dashboard is an explicit non-goal.
+
+  `.gitignore` still lists `*.db`, `keys/`, `.mcp.json` and the dashboard build paths.
+- **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a
+  silent double claim rather than an error.
+- **Spec references.** Two code comments cite decisions from `docs/spec.md` (`D33` in
+  `eventlog.rs`, `D42` in `layout.rs`). That file is untracked, so the references dangle.
+
 ## Code style
 
 - No comments unless they explain something non-obvious. No TODOs, no docstrings on every
@@ -372,6 +455,9 @@ Import types and use the short name everywhere; qualify only where the module ad
   notes). Rewrite useful insight into a concise human-facing document first.
 - Keep `README.md` in step with the command surface. When a command, flag, default or exit
   code changes, update it in the same change.
+- `README.md` is written for people using orchy, not for contributors: what it does, how to
+  set it up, how to use each command. Keep internals (storage mechanics, scoring formulas,
+  crate layout, build instructions, known gaps) here instead.
 
 ## Running
 
@@ -385,6 +471,8 @@ just check        # fmt + lint + test
 just t <pattern>  # matching tests, with output
 just orchy <args> # cargo run -p orchy-cli -- <args>
 ```
+
+Install your working copy with `cargo install --path crates/orchy-cli`.
 
 No containers or services are needed. Vault tests run in temporary directories. The
 `orchy-cli` integration tests (`tests/cli.rs`, `tests/concurrent_agents.rs`) drive the built
