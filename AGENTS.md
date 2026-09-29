@@ -565,6 +565,9 @@ Install your working copy with `cargo install --path crates/orchy-cli`.
 No containers or services are needed. Vault tests run in temporary directories. The
 `orchy-cli` integration tests (`tests/cli.rs`, `tests/concurrent_agents.rs`) drive the built
 binary, including many agents racing for the same work.
+`orchy-store-vault/tests/conformance.rs` runs each scenario against both stores; when a port
+gains behaviour, add a scenario there so the in-memory store used by application tests and
+the vault cannot drift apart.
 
 To try the CLI without touching your real vault or settings:
 
