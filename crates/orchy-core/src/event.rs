@@ -83,6 +83,16 @@ pub struct EventQuery {
 }
 
 impl EventQuery {
+    /// `limit` asks for the most recent events: drops the oldest from `events`, which must be
+    /// in recording order, and keeps the rest in that order.
+    pub fn keep_latest(&self, events: &mut Vec<RecordedEvent>) {
+        if let Some(limit) = self.limit
+            && events.len() > limit
+        {
+            events.drain(..events.len() - limit);
+        }
+    }
+
     pub fn matches(&self, event: &RecordedEvent) -> bool {
         if let Some(prefix) = &self.topic_prefix
             && !event.topic.starts_with(prefix)
@@ -117,6 +127,30 @@ pub trait EventLog: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn recorded(key: &str) -> RecordedEvent {
+        RecordedEvent {
+            topic: "task.created".to_owned(),
+            key: key.to_owned(),
+            namespace: "/".to_owned(),
+            actor: None,
+            machine: None,
+            payload: serde_json::Value::Null,
+            recorded_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn a_limit_keeps_the_most_recent_events_in_order() {
+        let mut events: Vec<RecordedEvent> = ["1", "2", "3", "4", "5"].map(recorded).to_vec();
+        EventQuery {
+            limit: Some(2),
+            ..Default::default()
+        }
+        .keep_latest(&mut events);
+        let keys: Vec<&str> = events.iter().map(|e| e.key.as_str()).collect();
+        assert_eq!(keys, vec!["4", "5"]);
+    }
 
     #[derive(Debug)]
     struct Noted(Id);

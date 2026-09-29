@@ -125,9 +125,7 @@ impl EventLog for EventuaryLog {
                 .then_with(|| a.key.cmp(&b.key))
                 .then_with(|| a.topic.cmp(&b.topic))
         });
-        if let Some(limit) = query.limit {
-            all.truncate(limit);
-        }
+        query.keep_latest(&mut all);
         Ok(all)
     }
 }

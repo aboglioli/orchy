@@ -1964,3 +1964,22 @@ fn a_message_is_addressed_by_the_short_id_the_inbox_prints() {
         "a prefix every message shares is ambiguous"
     );
 }
+
+#[test]
+fn events_with_a_limit_are_the_most_recent_ones() {
+    let temp = vault();
+    let ids: Vec<String> = (1..=5)
+        .map(|n| task_id(&temp, &[&format!("t{n}")]))
+        .collect();
+    let latest = json(
+        temp.path(),
+        &["events", "--topic", "task.created", "--limit", "2"],
+    );
+    let keys: Vec<&str> = latest
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, vec![ids[3].as_str(), ids[4].as_str()]);
+}

@@ -429,7 +429,6 @@ it drift.
 - **The event log is incomplete.** `link` and `unlink` record no `edge.*` event, although
   the topics exist. Announces, locks, and some document and skill field changes record
   nothing either.
-- **`events --limit n` returns the oldest n events**, not the most recent.
 - **No partial-word search.** `migr` finds nothing; there is no prefix or substring
   fallback. Add one only if measured to help.
 - **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a

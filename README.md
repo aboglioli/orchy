@@ -475,7 +475,8 @@ Changes to tasks, documents, skills and messages are recorded with who made them
 orchy events [--topic task.] [--key <id>] [--by <agent>] [--limit n]
 ```
 
-`--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`.
+`--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`. `--limit n` shows the
+`n` most recent.
 
 ## Scripting
 
