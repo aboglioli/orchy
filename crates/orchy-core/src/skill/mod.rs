@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use events::{
-    SkillCreated, SkillMoved, SkillRenamed, SkillRestored, SkillRetired, SkillWritten,
+    SkillCreated, SkillFieldSet, SkillMoved, SkillRenamed, SkillRestored, SkillRetired,
+    SkillTagged, SkillWritten,
 };
 pub use name::{SkillName, Summary};
 
@@ -214,8 +215,28 @@ impl Skill {
     }
 
     pub fn tag(&mut self, add: Vec<Tag>, remove: &[Tag], clock: &dyn Clock) {
+        let before = self.tags.clone();
         tag::apply(&mut self.tags, add, remove);
+        if self.tags == before {
+            return;
+        }
         self.touch(clock);
+        self.collector.collect(SkillTagged {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            added: self
+                .tags
+                .iter()
+                .filter(|t| !before.contains(t))
+                .map(ToString::to_string)
+                .collect(),
+            removed: before
+                .iter()
+                .filter(|t| !self.tags.contains(t))
+                .map(ToString::to_string)
+                .collect(),
+            at: self.updated_at,
+        });
     }
 
     pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
@@ -224,8 +245,9 @@ impl Skill {
                 "`{field}` is maintained by orchy; use {command}"
             )));
         }
-        self.frontmatter.set(field, value);
+        self.frontmatter.set(field, value.clone());
         self.touch(clock);
+        self.field_changed(field, Some(value));
         Ok(())
     }
 
@@ -237,7 +259,18 @@ impl Skill {
         }
         self.frontmatter.remove(field);
         self.touch(clock);
+        self.field_changed(field, None);
         Ok(())
+    }
+
+    fn field_changed(&mut self, field: &str, value: Option<Value>) {
+        self.collector.collect(SkillFieldSet {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            field: field.to_owned(),
+            value,
+            at: self.updated_at,
+        });
     }
 
     fn touch(&mut self, clock: &dyn Clock) {
@@ -363,6 +396,52 @@ mod tests {
             &Ids,
             &FixedClock,
         )
+    }
+
+    type Mutation = fn(&mut Skill);
+    type Case = (&'static str, fn() -> Skill, Mutation);
+
+    #[test]
+    fn every_change_to_a_skill_records_an_event() {
+        let fresh = || skill("commits", "/");
+        let retired = || {
+            let mut s = skill("commits", "/");
+            s.retire(&FixedClock).unwrap();
+            s
+        };
+        let cases: Vec<Case> = vec![
+            ("edit", fresh, |s| s.edit(Body::new("other"), &FixedClock)),
+            ("describe", fresh, |s| {
+                s.describe(Summary::new("new").unwrap(), &FixedClock)
+            }),
+            ("rename", fresh, |s| {
+                s.rename(SkillName::new("renamed").unwrap(), &FixedClock)
+            }),
+            ("move_to", fresh, |s| {
+                s.move_to(Namespace::new("/web").unwrap(), &FixedClock)
+            }),
+            ("retire", fresh, |s| s.retire(&FixedClock).unwrap()),
+            ("restore", retired, |s| s.restore(&FixedClock).unwrap()),
+            ("tag", fresh, |s| {
+                s.tag(vec![Tag::new("x").unwrap()], &[], &FixedClock)
+            }),
+            ("set_field", fresh, |s| {
+                s.set_field("owner", serde_json::json!("alan"), &FixedClock)
+                    .unwrap()
+            }),
+            ("remove_field", fresh, |s| {
+                s.remove_field("owner", &FixedClock).unwrap()
+            }),
+        ];
+        for (label, start, mutate) in cases {
+            let mut skill = start();
+            skill.drain_events();
+            mutate(&mut skill);
+            assert!(
+                !skill.drain_events().is_empty(),
+                "`{label}` changed the skill without recording an event"
+            );
+        }
     }
 
     #[test]

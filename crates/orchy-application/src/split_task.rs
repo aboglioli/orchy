@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, Id, IdGenerator, Task, TaskStore, Title};
+use orchy_core::task::TaskDeleted;
+use orchy_core::{Clock, EventLog, Id, IdGenerator, Task, TaskStore, Title};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
@@ -23,6 +24,7 @@ pub struct SplitTaskResponse {
 
 pub struct SplitTask {
     tasks: Arc<dyn TaskStore>,
+    log: Arc<dyn EventLog>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
 }
@@ -30,10 +32,16 @@ pub struct SplitTask {
 impl SplitTask {
     pub fn new(
         tasks: Arc<dyn TaskStore>,
+        log: Arc<dyn EventLog>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
     ) -> Self {
-        Self { tasks, ids, clock }
+        Self {
+            tasks,
+            log,
+            ids,
+            clock,
+        }
     }
 
     pub async fn execute(&self, cmd: SplitTaskCommand) -> ApplicationResult<SplitTaskResponse> {
@@ -115,6 +123,13 @@ impl SplitTask {
                 continue;
             }
             self.tasks.delete(child.id()).await?;
+            let deleted = TaskDeleted {
+                id: child.id().clone(),
+                namespace: child.namespace().clone(),
+                reason: "a sibling with the same title was split out first".to_owned(),
+                at: self.clock.now(),
+            };
+            self.log.append(&[Box::new(deleted)]).await?;
             withdrawn.push(child.title().to_string());
         }
         Ok((kept, withdrawn))

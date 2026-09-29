@@ -517,6 +517,62 @@ mod tests {
         )
     }
 
+    type Mutation = fn(&mut Document);
+    type Case = (&'static str, fn() -> Document, Mutation);
+
+    #[test]
+    fn every_change_to_a_document_records_an_event() {
+        let cases: Vec<Case> = vec![
+            ("edit", document, |d| d.edit(Body::new("new"), &clock())),
+            ("append", document, |d| d.append("more", &clock())),
+            ("replace_section", document, |d| {
+                d.replace_section("Decision", None, "EdDSA", &clock())
+                    .unwrap()
+            }),
+            ("replace_once", document, |d| {
+                d.replace_once("HS256", "RS256", &clock()).unwrap()
+            }),
+            ("set_field", document, |d| {
+                d.set_field("reviewer", json!("alan"), &clock()).unwrap()
+            }),
+            ("set_status", document, |d| {
+                d.set_status(DocumentStatus::Archived, &clock()).unwrap()
+            }),
+            ("retitle", document, |d| {
+                d.retitle(Title::new("Other").unwrap(), &clock())
+            }),
+            ("retype", document, |d| {
+                d.retype(Kind::Note, &clock()).unwrap()
+            }),
+            ("move_to", document, |d| {
+                d.move_to(Namespace::new("/web").unwrap(), &clock())
+            }),
+            ("promote", candidate, |d| {
+                d.promote(Kind::Decision, Namespace::root(), &clock())
+                    .unwrap()
+            }),
+            ("mark_promoted", candidate, |d| {
+                d.mark_promoted(&clock()).unwrap()
+            }),
+            ("supersede", document, |d| {
+                d.supersede(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
+                    .unwrap()
+            }),
+            ("retag", document, |d| {
+                d.retag(vec![Tag::new("x").unwrap()], &[], &clock())
+            }),
+        ];
+        for (label, start, mutate) in cases {
+            let mut document = start();
+            document.drain_events();
+            mutate(&mut document);
+            assert!(
+                !document.drain_events().is_empty(),
+                "`{label}` changed the document without recording an event"
+            );
+        }
+    }
+
     #[test]
     fn creating_emits_one_event_carrying_the_content_hash() {
         let mut document = document();

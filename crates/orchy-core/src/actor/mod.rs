@@ -1,3 +1,4 @@
+mod events;
 mod identity;
 mod lease;
 
@@ -8,11 +9,13 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
+pub use events::{ActorAnnounced, ActorUpdated, LeaseChange, LeaseChanged};
 pub use identity::{ActorAlias, ActorId, MachineId};
 pub use lease::{Lease, ResourceKey};
 
 use crate::clock::Clock;
 use crate::error::{DomainError, Result};
+use crate::event::{DomainEvent, EventCollector};
 use crate::namespace::Namespace;
 
 #[async_trait]
@@ -108,6 +111,8 @@ pub struct Actor {
     namespace: Namespace,
     announced_at: DateTime<Utc>,
     last_seen: DateTime<Utc>,
+    #[serde(skip)]
+    collector: EventCollector,
 }
 
 impl Actor {
@@ -126,6 +131,7 @@ impl Actor {
             namespace,
             announced_at,
             last_seen,
+            collector: EventCollector::new(),
         }
     }
 
@@ -136,19 +142,49 @@ impl Actor {
         clock: &dyn Clock,
     ) -> Self {
         let now = clock.now();
-        Self::new(id, None, roles, namespace, now, now)
+        let mut actor = Self::new(id, None, roles, namespace, now, now);
+        actor.collector.collect(ActorAnnounced {
+            actor: actor.id.clone(),
+            namespace: actor.namespace.clone(),
+            roles: actor.roles.clone(),
+            at: now,
+        });
+        actor
     }
 
-    pub fn rename(&mut self, display_name: Option<String>) {
-        self.display_name = display_name.filter(|n| !n.trim().is_empty());
+    pub fn rename(&mut self, display_name: Option<String>, clock: &dyn Clock) {
+        let display_name = display_name.filter(|n| !n.trim().is_empty());
+        if display_name != self.display_name {
+            self.display_name = display_name;
+            self.updated("display_name", clock);
+        }
     }
 
-    pub fn set_roles(&mut self, roles: Vec<Role>) {
-        self.roles = roles;
+    pub fn set_roles(&mut self, roles: Vec<Role>, clock: &dyn Clock) {
+        if roles != self.roles {
+            self.roles = roles;
+            self.updated("roles", clock);
+        }
     }
 
-    pub fn move_to(&mut self, namespace: Namespace) {
-        self.namespace = namespace;
+    pub fn move_to(&mut self, namespace: Namespace, clock: &dyn Clock) {
+        if namespace != self.namespace {
+            self.namespace = namespace;
+            self.updated("namespace", clock);
+        }
+    }
+
+    fn updated(&mut self, field: &str, clock: &dyn Clock) {
+        self.collector.collect(ActorUpdated {
+            actor: self.id.clone(),
+            namespace: self.namespace.clone(),
+            field: field.to_owned(),
+            at: clock.now(),
+        });
+    }
+
+    pub fn drain_events(&mut self) -> Vec<Box<dyn DomainEvent>> {
+        self.collector.drain()
     }
 
     pub fn seen_at(&mut self, now: DateTime<Utc>) {
@@ -210,6 +246,31 @@ mod tests {
     }
 
     #[test]
+    fn announcing_and_every_real_change_is_recorded_and_a_no_op_is_not() {
+        let clock = FixedClock(at(1000));
+        let mut actor = actor();
+        let topics = |a: &mut Actor| -> Vec<String> {
+            a.drain_events()
+                .iter()
+                .map(|e| e.topic().to_string())
+                .collect()
+        };
+        assert_eq!(topics(&mut actor), vec!["actor.announced"]);
+
+        actor.move_to(Namespace::root(), &clock);
+        actor.set_roles(vec![Role::new("reviewer").unwrap()], &clock);
+        assert!(topics(&mut actor).is_empty(), "nothing changed");
+
+        actor.move_to(Namespace::new("/backend").unwrap(), &clock);
+        actor.set_roles(vec![Role::new("developer").unwrap()], &clock);
+        actor.rename(Some("Claude".to_owned()), &clock);
+        assert_eq!(
+            topics(&mut actor),
+            vec!["actor.updated", "actor.updated", "actor.updated"]
+        );
+    }
+
+    #[test]
     fn announcing_records_the_roster_entry_and_the_first_sighting_together() {
         let actor = actor();
         assert_eq!(actor.announced_at(), at(1000));
@@ -231,9 +292,9 @@ mod tests {
     #[test]
     fn a_blank_display_name_is_treated_as_absent() {
         let mut actor = actor();
-        actor.rename(Some("   ".to_owned()));
+        actor.rename(Some("   ".to_owned()), &FixedClock(at(1000)));
         assert_eq!(actor.display_name(), None);
-        actor.rename(Some("Claude".to_owned()));
+        actor.rename(Some("Claude".to_owned()), &FixedClock(at(1000)));
         assert_eq!(actor.display_name(), Some("Claude"));
     }
 

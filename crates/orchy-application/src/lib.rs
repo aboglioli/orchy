@@ -217,7 +217,11 @@ impl Application {
         Self {
             announce_actor: AnnounceActor::new(Arc::clone(&actors), Arc::clone(&clock)),
             list_actors: ListActors::new(Arc::clone(&actors), Arc::clone(&clock)),
-            manage_lease: ManageLease::new(Arc::clone(&leases)),
+            manage_lease: ManageLease::new(
+                Arc::clone(&leases),
+                Arc::clone(&log),
+                Arc::clone(&clock),
+            ),
 
             create_document: CreateDocument::new(
                 Arc::clone(&documents),
@@ -289,7 +293,12 @@ impl Application {
             ),
             block_task: BlockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
             unblock_task: UnblockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
-            split_task: SplitTask::new(Arc::clone(&tasks), Arc::clone(&ids), Arc::clone(&clock)),
+            split_task: SplitTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&log),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
             replace_task: ReplaceTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&edges),

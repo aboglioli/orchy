@@ -36,10 +36,10 @@ impl AnnounceActor {
         let mut actor = match self.actors.get(&id).await? {
             Some(mut existing) => {
                 if !roles.is_empty() {
-                    existing.set_roles(roles);
+                    existing.set_roles(roles, &*self.clock);
                 }
                 if let Some(namespace) = namespace {
-                    existing.move_to(namespace);
+                    existing.move_to(namespace, &*self.clock);
                 }
                 existing.seen_at(self.clock.now());
                 existing
@@ -48,7 +48,7 @@ impl AnnounceActor {
         };
 
         if cmd.display_name.is_some() {
-            actor.rename(cmd.display_name);
+            actor.rename(cmd.display_name, &*self.clock);
         }
 
         self.actors.save(&mut actor).await?;

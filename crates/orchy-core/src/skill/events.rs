@@ -85,3 +85,23 @@ pub struct SkillRestored {
     pub at: DateTime<Utc>,
 }
 skill_event!(SkillRestored, "skill.restored");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillTagged {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub at: DateTime<Utc>,
+}
+skill_event!(SkillTagged, "skill.tagged");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillFieldSet {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub field: String,
+    pub value: Option<serde_json::Value>,
+    pub at: DateTime<Utc>,
+}
+skill_event!(SkillFieldSet, "skill.field_set");

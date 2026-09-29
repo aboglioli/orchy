@@ -234,7 +234,6 @@ pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {
             .iter()
             .map(Tag::new)
             .collect::<Result<Vec<_>>>()?,
-        refs: Vec::new(),
         note,
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
         updated_at: timestamp(fm, "updated").unwrap_or_else(|| id.created_at()),
@@ -410,7 +409,6 @@ pub fn message_from_markdown(file: &MarkdownFile) -> Result<Message> {
             .map(Namespace::new)
             .transpose()?
             .unwrap_or_default(),
-        refs: Vec::new(),
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
     }))
 }

@@ -54,8 +54,11 @@ impl MemoryBackend {
             tasks: Arc::new(MemoryTaskStore::new(Arc::clone(&log))),
             messages: Arc::new(MemoryMessageStore::new(Arc::clone(&log))),
             skills,
-            edges: Arc::new(MemoryEdgeStore::new()),
-            actors: Arc::new(MemoryActorStore::new()),
+            edges: Arc::new(MemoryEdgeStore::new(
+                Arc::clone(&log) as _,
+                Arc::clone(&clock) as _,
+            )),
+            actors: Arc::new(MemoryActorStore::new(Arc::clone(&log) as _)),
             leases: Arc::new(MemoryLeaseStore::new(Arc::clone(&clock))),
             watermarks: Arc::new(MemoryWatermarks::new()),
             integrity: Arc::new(MemoryIntegrity::new()),

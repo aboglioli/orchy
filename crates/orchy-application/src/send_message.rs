@@ -67,7 +67,7 @@ impl SendMessage {
         };
 
         if let Some(priority) = &cmd.priority {
-            message.set_priority(priority.parse::<Priority>()?);
+            message = message.with_priority(priority.parse::<Priority>()?);
         }
 
         self.messages.save(&mut message).await?;

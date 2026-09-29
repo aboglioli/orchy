@@ -1983,3 +1983,73 @@ fn events_with_a_limit_are_the_most_recent_ones() {
         .collect();
     assert_eq!(keys, vec![ids[3].as_str(), ids[4].as_str()]);
 }
+
+fn topics(temp: &tempfile::TempDir, args: &[&str]) -> Vec<String> {
+    let mut full = vec!["events"];
+    full.extend_from_slice(args);
+    json(temp.path(), &full)
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["topic"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn links_roster_changes_locks_and_skill_edits_all_reach_the_event_log() {
+    let temp = vault();
+    ok(temp.path(), &["announce", "--roles", "dev"]);
+    ok(temp.path(), &["announce", "--namespace", "/web"]);
+    let a = json(temp.path(), &["new", "note", "a", "--body", "x"]);
+    let b = json(temp.path(), &["new", "note", "b", "--body", "y"]);
+    let (a, b) = (a["id"].as_str().unwrap(), b["id"].as_str().unwrap());
+    ok(
+        temp.path(),
+        &[
+            "link",
+            &format!("document:{a}"),
+            &format!("document:{b}"),
+            "--rel",
+            "related_to",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "unlink",
+            &format!("document:{a}"),
+            &format!("document:{b}"),
+            "--rel",
+            "related_to",
+        ],
+    );
+    ok(temp.path(), &["lock", "acquire", "deploy"]);
+    ok(temp.path(), &["lock", "renew", "deploy"]);
+    ok(temp.path(), &["lock", "release", "deploy"]);
+    ok(
+        temp.path(),
+        &["skill", "write", "commits", "--summary", "one line"],
+    );
+    ok(
+        temp.path(),
+        &["skill", "set", "commits", "owner=alan", "--tag", "git"],
+    );
+
+    assert_eq!(
+        topics(&temp, &["--key", a, "--topic", "edge."]),
+        vec!["edge.added", "edge.removed"]
+    );
+    assert_eq!(
+        topics(&temp, &["--topic", "actor."]),
+        vec!["actor.announced", "actor.updated"]
+    );
+    assert_eq!(
+        topics(&temp, &["--topic", "lock."]),
+        vec!["lock.acquired", "lock.renewed", "lock.released"]
+    );
+    let skill = topics(&temp, &["--topic", "skill."]);
+    assert!(
+        skill.contains(&"skill.tagged".to_owned()) && skill.contains(&"skill.field_set".to_owned()),
+        "{skill:?}"
+    );
+}

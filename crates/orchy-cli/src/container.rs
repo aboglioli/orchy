@@ -33,7 +33,8 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
         config.vault_config.events.partitions,
     )?);
 
-    let actors: Arc<dyn ActorStore> = Arc::new(VaultActorStore::new(Arc::clone(&vault)));
+    let actors: Arc<dyn ActorStore> =
+        Arc::new(VaultActorStore::new(Arc::clone(&vault), Arc::clone(&log)));
     let documents = Arc::new(VaultDocumentStore::new(
         Arc::clone(&vault),
         Arc::clone(&log),
@@ -54,7 +55,11 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
             Arc::clone(&actors),
             Arc::clone(&log),
         )),
-        edges: Arc::new(VaultEdgeStore::new(Arc::clone(&vault))),
+        edges: Arc::new(VaultEdgeStore::new(
+            Arc::clone(&vault),
+            Arc::clone(&log),
+            Arc::clone(&clock),
+        )),
         integrity: Arc::new(VaultIntegrity::new(Arc::clone(&vault))),
         actors,
         leases: Arc::new(FileLeaseStore::new(

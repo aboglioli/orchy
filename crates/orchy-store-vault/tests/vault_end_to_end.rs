@@ -50,7 +50,8 @@ impl Fixture {
             .unwrap(),
         );
 
-        let actors: Arc<dyn ActorStore> = Arc::new(VaultActorStore::new(Arc::clone(&vault)));
+        let actors: Arc<dyn ActorStore> =
+            Arc::new(VaultActorStore::new(Arc::clone(&vault), Arc::clone(&log)));
         let documents = Arc::new(VaultDocumentStore::new(
             Arc::clone(&vault),
             Arc::clone(&log),
@@ -70,7 +71,11 @@ impl Fixture {
                 Arc::clone(&actors),
                 Arc::clone(&log),
             )),
-            edges: Arc::new(VaultEdgeStore::new(Arc::clone(&vault))),
+            edges: Arc::new(VaultEdgeStore::new(
+                Arc::clone(&vault),
+                Arc::clone(&log),
+                Arc::clone(&clock),
+            )),
             integrity: Arc::new(VaultIntegrity::new(Arc::clone(&vault))),
             actors,
             leases: Arc::new(FileLeaseStore::new(

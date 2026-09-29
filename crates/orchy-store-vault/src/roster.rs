@@ -4,7 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use orchy_core::{
-    Actor, ActorId, ActorStore, Clock, DomainError, Lease, LeaseStore, ResourceKey, Result,
+    Actor, ActorId, ActorStore, Clock, DomainError, EventLog, Lease, LeaseStore, ResourceKey,
+    Result,
 };
 
 use sha2::{Digest, Sha256};
@@ -17,11 +18,12 @@ const PRESENCE_TTL_SECS: i64 = 300;
 
 pub struct VaultActorStore {
     vault: Arc<Vault>,
+    log: Arc<dyn EventLog>,
 }
 
 impl VaultActorStore {
-    pub fn new(vault: Arc<Vault>) -> Self {
-        Self { vault }
+    pub fn new(vault: Arc<Vault>, log: Arc<dyn EventLog>) -> Self {
+        Self { vault, log }
     }
 }
 
@@ -74,7 +76,8 @@ impl ActorStore for VaultActorStore {
         self.vault
             .blobs()
             .put(&presence, stamp.to_string().as_bytes())
-            .await
+            .await?;
+        self.log.append(&actor.drain_events()).await
     }
 
     async fn present(&self, now: DateTime<Utc>) -> Result<Vec<ActorId>> {

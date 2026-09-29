@@ -19,7 +19,8 @@ pub mod task;
 pub mod title;
 
 pub use actor::{
-    Actor, ActorAlias, ActorId, ActorStore, Lease, LeaseStore, MachineId, ResourceKey, Role,
+    Actor, ActorAlias, ActorId, ActorStore, Lease, LeaseChange, LeaseChanged, LeaseStore,
+    MachineId, ResourceKey, Role,
 };
 pub use body::{Body, Section};
 pub use clock::Clock;
@@ -29,7 +30,9 @@ pub use document::{
 pub use entity_ref::{EntityKind, EntityRef};
 pub use error::{DomainError, ErrorCode, Result};
 pub use event::{DomainEvent, EventCollector, EventLog, EventQuery, RecordedEvent};
-pub use graph::{Arity, Direction, Edge, EdgeStore, Relation, TraversalHop};
+pub use graph::{
+    Arity, Direction, Edge, EdgeAdded, EdgeRemoved, EdgeStore, Relation, TraversalHop,
+};
 pub use id::{Id, IdGenerator};
 pub use integrity::{Integrity, Problem, ProblemKind};
 pub use message::{

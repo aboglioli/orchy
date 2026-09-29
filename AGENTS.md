@@ -140,7 +140,7 @@ in `new` and implement `FromStr` / `TryFrom<String>`. Never construct one by cas
 
 ### Events
 
-Aggregate mutations collect a semantic event into the aggregate's `EventCollector`.
+Every aggregate mutation collects a semantic event into the aggregate's `EventCollector`.
 `save(&mut entity)` writes the file, drains the collector and appends the events through the
 `EventLog` port:
 
@@ -153,8 +153,16 @@ partitioned (default 10, fixed at creation, configurable in `orchy.toml` `[event
 partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
 `message.sent`, `skill.written`). `orchy events` replays them.
 
-Coverage is incomplete (see Known gaps): links, announces, locks and some field changes
-record nothing. Any new mutation must emit an event.
+- **Coverage is enforced.** Each aggregate has a test that calls every state-changing
+  method and asserts it collected an event; add a case when you add a mutator. A method
+  that changes nothing (retagging with the same tags) records nothing.
+- **Not every change has an aggregate.** The edge stores append `edge.added` and
+  `edge.removed` themselves, so automatic links are covered too; `ManageLease` appends
+  `lock.acquired`, `lock.renewed` and `lock.released`; `SplitTask` appends `task.deleted`
+  for a duplicate subtask it withdraws.
+- **Keys are ULIDs.** An actor's id (`alias@machine`) and a lock's resource are not, so
+  `actor.*` and `lock.*` events are keyed by the machine id, with the actor in the payload
+  and in the event's own `actor`. Filter them by `--topic` or `--by`.
 
 The workspace takes `eventuary` from crates.io with the `fs` and `memory` features, pinned
 exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry dependency:
@@ -426,9 +434,6 @@ Agents branch on this behaviour, so treat it as API.
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
 it drift.
 
-- **The event log is incomplete.** `link` and `unlink` record no `edge.*` event, although
-  the topics exist. Announces, locks, and some document and skill field changes record
-  nothing either.
 - **No partial-word search.** `migr` finds nothing; there is no prefix or substring
   fallback. Add one only if measured to help.
 - **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a
