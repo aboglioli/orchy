@@ -368,9 +368,10 @@ orchy task update <task> [--title …] [--description …] [--priority …] [--n
                          [--parent <task> | --detach] [--tag t]... [--untag t]...
 ```
 
-- **Taking work.** `task next` hands out the most urgent, then oldest, `pending` task and
-  claims it. When several agents ask at once, each gets a different task. `--peek` looks
-  without taking.
+- **Taking work.** `task next` hands out the most urgent, then oldest, `pending` task whose
+  dependencies are done, and claims it. When several agents ask at once, each gets a
+  different task. `--peek` looks without taking. The briefing's "next up" is always the task
+  `task next` would hand out.
 - **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
   the holder can mark it done, failed or cancelled.
 - **Outcomes.** The `--note` of `task done` and the reason given to `task fail` or
@@ -381,9 +382,11 @@ orchy task update <task> [--title …] [--description …] [--priority …] [--n
   - otherwise `completed` if any completed;
   - `superseded` if every subtask was replaced, and `cancelled` otherwise.
 - **`replace`** retires a task in favour of new, independent ones.
-- **Dependencies.** A task with dependencies (`--depends-on`, `task dep --add`,
-  `task block --on`) is not handed out by `task next`. Remove the dependency with
-  `task dep --remove` once the earlier work is done, or claim the task directly.
+- **Dependencies** (`--depends-on`, `task dep --add`, `task block --on`) hold a task back
+  until every one of them is completed. A dependency that was replaced (`task replace`)
+  counts as done once all its replacements are. If a dependency fails or is cancelled, the
+  task can never start as planned: `task get` says so, and the briefing flags it to whoever
+  holds it. Remove or re-point the dependency with `task dep` to change the plan.
 
 ## Conversation
 

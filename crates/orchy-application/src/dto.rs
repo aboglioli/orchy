@@ -300,4 +300,6 @@ pub struct BriefingDto {
     pub next: Option<TaskDto>,
     pub handoff: Option<DocumentDto>,
     pub unreadable: usize,
+    /// Tasks the actor holds that can never be finished as planned: a dependency failed.
+    pub doomed: Vec<TaskDto>,
 }

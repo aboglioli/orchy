@@ -1,4 +1,6 @@
+pub mod dependencies;
 mod events;
+pub mod ranking;
 pub mod rollup;
 mod status;
 
@@ -27,10 +29,15 @@ use crate::title::Title;
 #[async_trait]
 pub trait TaskStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Task>>;
-    async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>>;
+    /// Every task the query matches, ordered by id, never truncated.
+    async fn matching(&self, query: &TaskQuery) -> Result<Vec<Task>>;
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>>;
     async fn save(&self, task: &mut Task) -> Result<()>;
     async fn delete(&self, id: &Id) -> Result<()>;
+
+    async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>> {
+        Ok(Page::slice(self.matching(query).await?, page))
+    }
 
     async fn require(&self, id: &Id) -> Result<Task> {
         self.get(id)

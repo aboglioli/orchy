@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use orchy_core::{Document, DocumentQuery, DocumentStore, EventLog, Id, Page, PageRequest, Result};
+use orchy_core::{Document, DocumentQuery, DocumentStore, EventLog, Id, Result};
 
 use crate::eventlog::MemoryEventLog;
 
@@ -40,14 +40,14 @@ impl DocumentStore for MemoryDocumentStore {
             .cloned())
     }
 
-    async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {
+    async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>> {
         let mut matched: Vec<Document> = self
             .snapshot()
             .into_iter()
             .filter(|d| query.matches(d))
             .collect();
         matched.sort_by(|a, b| a.id().cmp(b.id()));
-        Ok(Page::slice(matched, page))
+        Ok(matched)
     }
 
     async fn save(&self, document: &mut Document) -> Result<()> {

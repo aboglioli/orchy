@@ -27,9 +27,14 @@ use crate::title::Title;
 #[async_trait]
 pub trait DocumentStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Document>>;
-    async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>>;
+    /// Every document the query matches, ordered by id, never truncated.
+    async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>>;
     async fn save(&self, document: &mut Document) -> Result<()>;
     async fn delete(&self, id: &Id) -> Result<()>;
+
+    async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {
+        Ok(Page::slice(self.matching(query).await?, page))
+    }
 
     async fn require(&self, id: &Id) -> Result<Document> {
         self.get(id)

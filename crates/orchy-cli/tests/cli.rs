@@ -1481,3 +1481,113 @@ fn the_guide_works_where_there_is_no_vault_yet() {
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("orchy task next"));
 }
+
+fn task_id(temp: &tempfile::TempDir, args: &[&str]) -> String {
+    let mut full = vec!["task", "new"];
+    full.extend_from_slice(args);
+    json(temp.path(), &full)["id"].as_str().unwrap().to_owned()
+}
+
+fn peek(temp: &tempfile::TempDir) -> Option<String> {
+    let next = json(temp.path(), &["task", "next", "--peek"]);
+    next["id"].as_str().map(str::to_owned)
+}
+
+#[test]
+fn a_dependent_task_is_handed_out_once_its_dependency_completes_with_no_extra_step() {
+    let temp = vault();
+    let b = task_id(&temp, &["first", "--priority", "low"]);
+    let a = task_id(&temp, &["second", "--priority", "high", "--depends-on", &b]);
+
+    assert_eq!(peek(&temp), Some(b.clone()), "A waits while B is pending");
+    ok(temp.path(), &["task", "claim", &b]);
+    ok(temp.path(), &["task", "done", &b]);
+    assert_eq!(
+        peek(&temp),
+        Some(a.clone()),
+        "and is handed out once B completes"
+    );
+    assert_eq!(
+        json(temp.path(), &["task", "get", &a])["readiness"],
+        "satisfied"
+    );
+}
+
+#[test]
+fn a_task_whose_dependency_failed_is_never_handed_out_and_says_why() {
+    let temp = vault();
+    let b = task_id(&temp, &["first"]);
+    let a = task_id(&temp, &["second", "--depends-on", &b]);
+    ok(temp.path(), &["task", "claim", &b]);
+    ok(temp.path(), &["task", "fail", &b, "no luck"]);
+
+    assert_eq!(peek(&temp), None);
+    let got = json(temp.path(), &["task", "get", &a]);
+    assert_eq!(got["readiness"], "doomed");
+    assert_eq!(got["dependencies"][0]["outcome"], "doomed");
+    assert!(ok(temp.path(), &["task", "get", &a]).contains("failed or cancelled"));
+}
+
+#[test]
+fn a_superseded_dependency_is_satisfied_once_its_replacements_complete() {
+    let temp = vault();
+    let b = task_id(&temp, &["original"]);
+    let a = task_id(&temp, &["dependent", "--depends-on", &b]);
+    let replaced = json(
+        temp.path(),
+        &["task", "replace", &b, "part one", "part two"],
+    );
+    let parts: Vec<String> = replaced["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap().to_owned())
+        .collect();
+
+    ok(temp.path(), &["task", "claim", &parts[0]]);
+    ok(temp.path(), &["task", "done", &parts[0]]);
+    assert_eq!(
+        json(temp.path(), &["task", "get", &a])["readiness"],
+        "pending"
+    );
+
+    ok(temp.path(), &["task", "claim", &parts[1]]);
+    ok(temp.path(), &["task", "done", &parts[1]]);
+    assert_eq!(
+        json(temp.path(), &["task", "get", &a])["readiness"],
+        "satisfied"
+    );
+    assert_eq!(peek(&temp), Some(a));
+}
+
+#[test]
+fn the_briefing_names_the_same_task_that_task_next_hands_out() {
+    let temp = vault();
+    ok(temp.path(), &["announce"]);
+    for n in 0..20 {
+        task_id(&temp, &[&format!("filler {n}")]);
+    }
+    let blocker = task_id(&temp, &["blocker", "--priority", "low"]);
+    task_id(
+        &temp,
+        &["blocked", "--priority", "urgent", "--depends-on", &blocker],
+    );
+    let urgent = task_id(&temp, &["urgent one", "--priority", "high"]);
+
+    let briefing = json(temp.path(), &["announce"]);
+    assert_eq!(briefing["next"]["id"], urgent.as_str());
+    assert_eq!(peek(&temp), Some(urgent));
+}
+
+#[test]
+fn the_briefing_hands_over_the_latest_handoff() {
+    let temp = vault();
+    for n in 1..=21 {
+        ok(
+            temp.path(),
+            &["new", "context", &format!("handoff {n}"), "--body", "state"],
+        );
+    }
+    let briefing = json(temp.path(), &["announce"]);
+    assert_eq!(briefing["handoff"]["title"], "handoff 21");
+}

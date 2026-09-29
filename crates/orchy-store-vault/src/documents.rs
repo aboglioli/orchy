@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{
-    Document, DocumentQuery, DocumentStore, EntityKind, EventLog, Id, Page, PageRequest, Result,
-};
+use orchy_core::{Document, DocumentQuery, DocumentStore, EntityKind, EventLog, Id, Result};
 
 use crate::codec;
 use crate::vault::{Precondition, Vault};
@@ -54,14 +52,13 @@ impl DocumentStore for VaultDocumentStore {
             .map(Some)
     }
 
-    async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {
-        let matched: Vec<Document> = self
+    async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>> {
+        Ok(self
             .all()
             .await?
             .into_iter()
             .filter(|d| query.matches(d))
-            .collect();
-        Ok(Page::slice(matched, page))
+            .collect())
     }
 
     async fn save(&self, document: &mut Document) -> Result<()> {

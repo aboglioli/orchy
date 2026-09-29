@@ -1,4 +1,5 @@
 pub mod announce_actor;
+pub mod assess_dependencies;
 pub mod block_task;
 pub mod brief;
 pub mod cancel_task;
@@ -22,6 +23,7 @@ pub mod manage_lease;
 pub mod next_task;
 pub mod promote_document;
 pub mod promote_message;
+pub mod rank_claimable;
 pub mod read_document;
 pub mod read_events;
 pub mod read_inbox;
@@ -56,8 +58,9 @@ use orchy_core::{
 pub use error::{ApplicationError, ApplicationResult};
 
 use announce_actor::AnnounceActor;
+use assess_dependencies::AssessDependencies;
 use block_task::BlockTask;
-use brief::Brief;
+use brief::{Brief, BriefSources};
 use cancel_task::CancelTask;
 use claim_task::ClaimTask;
 use complete_task::CompleteTask;
@@ -77,6 +80,7 @@ use manage_lease::ManageLease;
 use next_task::NextTask;
 use promote_document::PromoteDocument;
 use promote_message::PromoteMessage;
+use rank_claimable::RankClaimable;
 use read_document::ReadDocument;
 use read_events::ReadEvents;
 use read_inbox::ReadInbox;
@@ -194,6 +198,14 @@ impl Application {
             Arc::clone(&leases),
             Arc::clone(&clock),
         ));
+        let dependencies = Arc::new(AssessDependencies::new(
+            Arc::clone(&tasks),
+            Arc::clone(&edges),
+        ));
+        let ranking = Arc::new(RankClaimable::new(
+            Arc::clone(&tasks),
+            Arc::clone(&dependencies),
+        ));
 
         Self {
             announce_actor: AnnounceActor::new(Arc::clone(&actors), Arc::clone(&clock)),
@@ -224,9 +236,13 @@ impl Application {
             ),
 
             create_task: CreateTask::new(Arc::clone(&tasks), Arc::clone(&ids), Arc::clone(&clock)),
-            get_task: GetTask::new(Arc::clone(&tasks), Arc::clone(&edges)),
+            get_task: GetTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&edges),
+                Arc::clone(&dependencies),
+            ),
             list_tasks: ListTasks::new(Arc::clone(&tasks)),
-            next_task: NextTask::new(Arc::clone(&tasks), Arc::clone(&claim)),
+            next_task: NextTask::new(Arc::clone(&ranking), Arc::clone(&claim)),
             update_task: UpdateTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
             claim_task: Arc::clone(&claim),
             release_task: ReleaseTask::new(
@@ -273,15 +289,17 @@ impl Application {
             ),
             read_inbox: ReadInbox::new(Arc::clone(&messages), Arc::clone(&watermarks)),
 
-            brief: Brief::new(
-                Arc::clone(&actors),
-                Arc::clone(&skills),
-                Arc::clone(&tasks),
-                Arc::clone(&messages),
-                Arc::clone(&watermarks),
-                Arc::clone(&documents),
-                Arc::clone(&integrity),
-            ),
+            brief: Brief::new(BriefSources {
+                actors: Arc::clone(&actors),
+                skills: Arc::clone(&skills),
+                tasks: Arc::clone(&tasks),
+                messages: Arc::clone(&messages),
+                watermarks: Arc::clone(&watermarks),
+                documents: Arc::clone(&documents),
+                integrity: Arc::clone(&integrity),
+                ranking: Arc::clone(&ranking),
+                dependencies: Arc::clone(&dependencies),
+            }),
             write_skill: WriteSkill::new(Arc::clone(&skills), Arc::clone(&ids), Arc::clone(&clock)),
             read_skill: ReadSkill::new(Arc::clone(&skills)),
             list_skills: ListSkills::new(Arc::clone(&skills)),

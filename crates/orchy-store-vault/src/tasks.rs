@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{EntityKind, EventLog, Id, Page, PageRequest, Result, Task, TaskQuery, TaskStore};
+use orchy_core::{EntityKind, EventLog, Id, Result, Task, TaskQuery, TaskStore};
 
 use crate::codec;
 use crate::vault::{Precondition, Vault};
@@ -42,14 +42,13 @@ impl TaskStore for VaultTaskStore {
             .map(Some)
     }
 
-    async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>> {
-        let matched: Vec<Task> = self
+    async fn matching(&self, query: &TaskQuery) -> Result<Vec<Task>> {
+        Ok(self
             .all()
             .await?
             .into_iter()
             .filter(|t| query.matches(t))
-            .collect();
-        Ok(Page::slice(matched, page))
+            .collect())
     }
 
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>> {

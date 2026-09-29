@@ -68,7 +68,9 @@ crates/
 │       └── actor/             Actor, ActorId, ActorAlias, MachineId, Role, ActorStore, Lease, LeaseStore
 │
 ├── orchy-application/   use cases, one file each: Command in, DTO out. No rules.
-│                        `brief.rs` assembles the briefing `announce` returns.
+│                        `brief.rs` assembles the briefing `announce` returns;
+│                        `assess_dependencies.rs` and `rank_claimable.rs` are shared
+│                        steps several use cases call, like `rollup_ancestors.rs`.
 │
 ├── orchy-store-memory/  every port in RAM — tests
 ├── orchy-store-vault/   every port over the filesystem
@@ -243,9 +245,10 @@ namespace:
 
 - the skills in force;
 - the unread message count;
-- the tasks the actor holds;
-- the next pending task;
-- the latest `context` document.
+- the tasks the actor holds, and those of them a failed dependency dooms;
+- the task `orchy task next --namespace <ns>` would hand out (`RankClaimable`);
+- the most recently updated `context` document;
+- how many files the stores had to skip (`Integrity::unreadable`).
 
 `orchy guide` and a bare `orchy` print the same orientation without touching the roster.
 Agents are told to run `announce` first, so this is the text every session starts from:
@@ -296,10 +299,16 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Split vs replace.** `split` keeps the original as an umbrella that waits for its new
   children. `replace` supersedes the original; the new tasks inherit its parent and get
   `supersedes` edges to it.
-- **Next.** `task next` considers `pending` tasks with an empty `depends_on`, ranks them by
-  priority (`urgent > high > normal > low`), then by age, then by id, and walks down the
-  ranking on contention. Dependencies are not cleared automatically when the work they point
-  at finishes.
+- **Dependencies.** `task::dependencies::outcome` gives each dependency an `Outcome`:
+  `Satisfied` when completed, or superseded with every replacement satisfied; `Doomed` when
+  failed or cancelled; `Pending` otherwise, including a missing or unreplaced dependency.
+  `combine` folds them: any doomed dooms the task, all satisfied makes it ready.
+  `AssessDependencies` loads the statuses and follows `supersedes` edges to replacements.
+  `depends_on` is never cleared; it stays as history.
+- **Ranking.** `task::ranking::claimable` is the only ordering of claimable work: pending,
+  ready, then priority (`urgent > high > normal > low`), age and id. `RankClaimable` applies
+  it to every matching task (`TaskStore::matching` never pages). `NextTask` walks down it on
+  contention; the briefing's "next up" is its first entry for the actor's namespace.
 
 ### Documents
 
@@ -402,9 +411,6 @@ it drift.
 - **Rollup leaves the lease behind.** When a parent reaches a terminal status through rollup,
   its `task:<id>` lease is not released (`RollupAncestors`); `orchy lock list` still shows
   it until it expires.
-- **Dependencies are never cleared.** `NextTask` skips any task whose `depends_on` is
-  non-empty, even when every dependency is completed, and nothing removes them. A dependent
-  task stays invisible to `task next` until someone runs `task dep --remove`.
 - **Documents cannot be retitled, retyped, moved or retagged from the CLI.**
   `UpdateDocument` supports title, kind, namespace and tags, but the CLI only uses it for
   `archive`/`unarchive`. `orchy set` refuses those fields and points at commands that do

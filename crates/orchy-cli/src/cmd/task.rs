@@ -16,6 +16,7 @@ use orchy_application::split_task::SplitTaskCommand;
 use orchy_application::start_task::StartTaskCommand;
 use orchy_application::unblock_task::UnblockTaskCommand;
 use orchy_application::update_task::UpdateTaskCommand;
+use orchy_core::task::dependencies::Outcome;
 
 use crate::cli::TaskCommand;
 use crate::error::CliResult;
@@ -98,6 +99,22 @@ pub(crate) async fn run(
             let response = app.get_task.execute(GetTaskCommand { task_id }).await?;
             out.emit(&response, |r| {
                 let mut lines = vec![detail(&r.task, out)];
+                if !r.dependencies.is_empty() {
+                    lines.push(String::new());
+                    lines.push(out.bold(match r.readiness {
+                        Outcome::Satisfied => "depends on (all done)",
+                        Outcome::Pending => "waits on",
+                        Outcome::Doomed => "cannot start: a dependency failed or was cancelled",
+                    }));
+                    lines.extend(r.dependencies.iter().map(|d| {
+                        let state = match d.outcome {
+                            Outcome::Satisfied => "done",
+                            Outcome::Pending => "pending",
+                            Outcome::Doomed => "failed or cancelled",
+                        };
+                        format!("{}  {state}", short(&d.id))
+                    }));
+                }
                 if !r.subtasks.is_empty() {
                     lines.push(String::new());
                     lines.push(out.bold("subtasks"));

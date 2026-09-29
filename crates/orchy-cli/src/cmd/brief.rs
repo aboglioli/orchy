@@ -103,6 +103,14 @@ fn attention(briefing: &BriefingDto) -> Option<String> {
             },
         ));
     }
+    for task in &briefing.doomed {
+        items.push(format!(
+            "  {}  {} — a dependency failed or was cancelled; orchy task get {}",
+            short(&task.id),
+            task.title,
+            short(&task.id)
+        ));
+    }
     if items.is_empty() {
         return None;
     }
@@ -143,9 +151,14 @@ fn waiting(briefing: &BriefingDto) -> String {
         );
     }
 
+    let next = if briefing.actor.namespace == "/" {
+        "orchy task next".to_owned()
+    } else {
+        format!("orchy task next --namespace {}", briefing.actor.namespace)
+    };
     match &briefing.next {
         Some(task) => out.push(format!(
-            "  next up: {}  {} — orchy task next",
+            "  next up: {}  {} — {next}",
             short(&task.id),
             task.title
         )),
