@@ -218,6 +218,7 @@ impl Application {
 
             create_document: CreateDocument::new(
                 Arc::clone(&documents),
+                Arc::clone(&actors),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
@@ -228,6 +229,7 @@ impl Application {
             find_documents: FindDocuments::new(Arc::clone(&documents)),
             promote_document: PromoteDocument::new(
                 Arc::clone(&documents),
+                Arc::clone(&actors),
                 Arc::clone(&skills),
                 Arc::clone(&edges),
                 Arc::clone(&ids),
@@ -239,7 +241,12 @@ impl Application {
                 Arc::clone(&clock),
             ),
 
-            create_task: CreateTask::new(Arc::clone(&tasks), Arc::clone(&ids), Arc::clone(&clock)),
+            create_task: CreateTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&actors),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
             get_task: GetTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&edges),
@@ -292,6 +299,7 @@ impl Application {
 
             send_message: SendMessage::new(
                 Arc::clone(&messages),
+                Arc::clone(&actors),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    Clock, Document, DocumentStore, DomainError, Edge, EdgeStore, EntityKind, EntityRef, Id,
-    IdGenerator, Kind, Namespace, Relation, Skill, SkillName, SkillStore, Summary,
+    ActorId, ActorStore, Clock, Document, DocumentStore, DomainError, Edge, EdgeStore, EntityKind,
+    EntityRef, Id, IdGenerator, Kind, Namespace, Relation, Skill, SkillName, SkillStore, Summary,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,8 @@ const INTO_SKILL: &str = "skill";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromoteDocumentCommand {
+    /// Whose home namespace the promoted entity lands in when `namespace` is absent.
+    pub actor: Option<String>,
     pub document_id: String,
     pub into: String,
     pub namespace: Option<String>,
@@ -28,6 +30,7 @@ pub struct PromoteDocumentResponse {
 
 pub struct PromoteDocument {
     documents: Arc<dyn DocumentStore>,
+    actors: Arc<dyn ActorStore>,
     skills: Arc<dyn SkillStore>,
     edges: Arc<dyn EdgeStore>,
     ids: Arc<dyn IdGenerator>,
@@ -37,6 +40,7 @@ pub struct PromoteDocument {
 impl PromoteDocument {
     pub fn new(
         documents: Arc<dyn DocumentStore>,
+        actors: Arc<dyn ActorStore>,
         skills: Arc<dyn SkillStore>,
         edges: Arc<dyn EdgeStore>,
         ids: Arc<dyn IdGenerator>,
@@ -44,6 +48,7 @@ impl PromoteDocument {
     ) -> Self {
         Self {
             documents,
+            actors,
             skills,
             edges,
             ids,
@@ -56,9 +61,10 @@ impl PromoteDocument {
         cmd: PromoteDocumentCommand,
     ) -> ApplicationResult<PromoteDocumentResponse> {
         let mut document = self.documents.require(&Id::new(&cmd.document_id)?).await?;
-        let into = match &cmd.namespace {
-            Some(ns) => Namespace::new(ns)?,
-            None => Namespace::root(),
+        let into = match (&cmd.namespace, &cmd.actor) {
+            (Some(ns), _) => Namespace::new(ns)?,
+            (None, Some(actor)) => self.actors.home_of(&actor.parse::<ActorId>()?).await?,
+            (None, None) => Namespace::root(),
         };
 
         if cmd.into.trim().eq_ignore_ascii_case(INTO_SKILL) {

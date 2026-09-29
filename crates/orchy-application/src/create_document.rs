@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use orchy_core::{Body, Clock, Document, DocumentStore, IdGenerator, Kind, Namespace, Tag, Title};
+use orchy_core::{
+    ActorId, ActorStore, Body, Clock, Document, DocumentStore, IdGenerator, Kind, Namespace, Tag,
+    Title,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::DocumentDto;
@@ -8,6 +11,8 @@ use crate::error::ApplicationResult;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateDocumentCommand {
+    /// Whose home namespace the document lands in when `namespace` is absent.
+    pub actor: Option<String>,
     pub kind: String,
     pub title: String,
     pub namespace: Option<String>,
@@ -17,6 +22,7 @@ pub struct CreateDocumentCommand {
 
 pub struct CreateDocument {
     documents: Arc<dyn DocumentStore>,
+    actors: Arc<dyn ActorStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
 }
@@ -24,11 +30,13 @@ pub struct CreateDocument {
 impl CreateDocument {
     pub fn new(
         documents: Arc<dyn DocumentStore>,
+        actors: Arc<dyn ActorStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             documents,
+            actors,
             ids,
             clock,
         }
@@ -37,9 +45,10 @@ impl CreateDocument {
     pub async fn execute(&self, cmd: CreateDocumentCommand) -> ApplicationResult<DocumentDto> {
         let kind = cmd.kind.parse::<Kind>()?;
 
-        let namespace = match &cmd.namespace {
-            Some(ns) => Namespace::new(ns)?,
-            None => Namespace::root(),
+        let namespace = match (&cmd.namespace, &cmd.actor) {
+            (Some(ns), _) => Namespace::new(ns)?,
+            (None, Some(actor)) => self.actors.home_of(&actor.parse::<ActorId>()?).await?,
+            (None, None) => Namespace::root(),
         };
 
         let mut document = Document::create(

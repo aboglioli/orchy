@@ -9,8 +9,10 @@ mod resolve;
 mod stdin;
 
 use clap::{CommandFactory, Parser};
+use orchy_application::create_document::CreateDocumentCommand;
 use orchy_application::list_actors::ListActorsCommand;
 use orchy_application::manage_lease::LeaseAction;
+use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_events::ReadEventsCommand;
 use orchy_application::recall::RecallCommand;
 
@@ -89,6 +91,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
 
     let app = container::build(&config).await?;
     let actor = config.actor.to_string();
+    let here = |flag: Option<String>| flag.or_else(|| config.namespace.clone());
 
     match command {
         Command::Init { .. } | Command::Status | Command::Completions { .. } | Command::Guide => {
@@ -99,7 +102,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             roles,
             namespace,
             name,
-        } => cmd::brief::announce(&app, &actor, roles, namespace, name, out).await,
+        } => cmd::brief::announce(&app, &actor, roles, here(namespace), name, out).await,
 
         Command::Skill(command) => match command {
             SkillCommand::Write {
@@ -171,8 +174,12 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             })
         }
 
-        Command::Task(command) => cmd::task::run(&app, &actor, command, out).await,
-        Command::Msg(command) => cmd::msg::run(&app, &actor, command, out).await,
+        Command::Task(command) => {
+            cmd::task::run(&app, &actor, config.namespace.as_deref(), command, out).await
+        }
+        Command::Msg(command) => {
+            cmd::msg::run(&app, &actor, config.namespace.as_deref(), command, out).await
+        }
 
         Command::New {
             kind,
@@ -180,7 +187,17 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             namespace,
             tag,
             body,
-        } => cmd::doc::new(&app, kind, title, namespace, tag, body, out).await,
+        } => {
+            let command = CreateDocumentCommand {
+                actor: Some(actor.clone()),
+                kind,
+                title,
+                namespace: here(namespace),
+                body,
+                tags: tag,
+            };
+            cmd::doc::new(&app, command, out).await
+        }
 
         Command::Read { target, section } => cmd::doc::read(&app, target, section, out).await,
 
@@ -239,7 +256,17 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             namespace,
             name,
             summary,
-        } => cmd::doc::promote(&app, target, into, namespace, name, summary, out).await,
+        } => {
+            let command = PromoteDocumentCommand {
+                actor: Some(actor.clone()),
+                document_id: target,
+                into,
+                namespace: here(namespace),
+                skill_name: name,
+                summary,
+            };
+            cmd::doc::promote(&app, command, out).await
+        }
 
         Command::Lock(command) => match command {
             LockCommand::Acquire { resource, ttl } => {

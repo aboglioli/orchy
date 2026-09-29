@@ -236,8 +236,12 @@ Move to RS256
 ### Areas of a project
 
 A **namespace** is a path that says which part of the project something belongs to: `/`,
-`/backend`, `/backend/auth`. Tasks, documents, skills, messages and agents each carry one;
-the default is `/`.
+`/backend`, `/backend/auth`. Tasks, documents, skills, messages and agents each carry one.
+
+- **Writes land where the agent works.** A new note, task, message or promotion goes to the
+  namespace the agent announced itself in, unless `--namespace` says otherwise.
+  `ORCHY_NAMESPACE=/web` does the same for one shell. An agent that never announced writes
+  to `/`. Re-running `orchy announce` without `--namespace` keeps the agent where it was.
 
 - **Filters include everything below.** `orchy task list --namespace /backend` shows
   `/backend/auth` too.

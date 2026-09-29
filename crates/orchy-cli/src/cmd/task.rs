@@ -26,6 +26,7 @@ use crate::resolve;
 pub(crate) async fn run(
     app: &Application,
     actor: &str,
+    here: Option<&str>,
     command: TaskCommand,
     out: &Output,
 ) -> CliResult<()> {
@@ -51,11 +52,12 @@ pub(crate) async fn run(
             let task = app
                 .create_task
                 .execute(CreateTaskCommand {
+                    actor: Some(actor.to_owned()),
                     title,
                     description,
                     acceptance_criteria: None,
                     priority,
-                    namespace,
+                    namespace: namespace.or_else(|| here.map(str::to_owned)),
                     roles: role,
                     tags: tag,
                     parent,

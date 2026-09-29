@@ -389,6 +389,10 @@ Agents branch on this behaviour, so treat it as API.
   - actor: `--actor` → `ORCHY_ACTOR` → `settings.actor` → `human`.
 
   A bare alias gets `@<machine>` appended.
+- **Namespace for writes.** Creating commands (`new`, `task new`, `msg send`, `promote`)
+  take `--namespace`, else `ORCHY_NAMESPACE` (`Config.namespace`), else the use case asks
+  `ActorStore::home_of` for the actor's roster namespace, else `/`. `announce` without
+  `--namespace` keeps the actor's namespace. Reads without a namespace see everything (D16).
 - **Files.** `$XDG_CONFIG_HOME/orchy/settings.toml` is per machine (`machine`, `vault`,
   `actor`); `machine` is generated on first run and must never change. `<vault>/orchy.toml`
   marks a vault, and only its `[events] partitions` key is read.

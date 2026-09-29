@@ -265,6 +265,7 @@ async fn a_documents_own_frontmatter_survives_an_edit_by_orchy() {
             namespace: Some("/backend".to_owned()),
             body: Some("# Context\n\nWe use HS256.".to_owned()),
             tags: vec!["auth".to_owned()],
+            ..Default::default()
         })
         .await
         .unwrap();

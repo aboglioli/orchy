@@ -16,6 +16,7 @@ use crate::stdin;
 pub(crate) async fn run(
     app: &Application,
     actor: &str,
+    here: Option<&str>,
     command: MsgCommand,
     out: &Output,
 ) -> CliResult<()> {
@@ -34,7 +35,7 @@ pub(crate) async fn run(
                     to,
                     subject,
                     body: stdin::or_read(body)?,
-                    namespace: None,
+                    namespace: here.map(str::to_owned),
                     priority,
                     reply_to,
                 })

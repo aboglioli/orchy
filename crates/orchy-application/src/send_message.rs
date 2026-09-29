@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorId, Body, Clock, Id, IdGenerator, Message, MessageStore, Namespace, Priority, Recipient,
-    Title,
+    ActorId, ActorStore, Body, Clock, Id, IdGenerator, Message, MessageStore, Namespace, Priority,
+    Recipient, Title,
 };
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +22,7 @@ pub struct SendMessageCommand {
 
 pub struct SendMessage {
     messages: Arc<dyn MessageStore>,
+    actors: Arc<dyn ActorStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
 }
@@ -29,11 +30,13 @@ pub struct SendMessage {
 impl SendMessage {
     pub fn new(
         messages: Arc<dyn MessageStore>,
+        actors: Arc<dyn ActorStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             messages,
+            actors,
             ids,
             clock,
         }
@@ -57,7 +60,7 @@ impl SendMessage {
                 let subject = cmd.subject.as_deref().map(Title::new).transpose()?;
                 let namespace = match &cmd.namespace {
                     Some(ns) => Namespace::new(ns)?,
-                    None => Namespace::root(),
+                    None => self.actors.home_of(&from).await?,
                 };
                 Message::send(from, to, subject, body, namespace, &*self.ids, &*self.clock)?
             }

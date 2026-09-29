@@ -1638,3 +1638,53 @@ fn detaching_the_last_open_child_lets_the_parent_roll_up() {
         "completed"
     );
 }
+
+#[test]
+fn announcing_again_keeps_the_namespace_an_agent_works_in() {
+    let temp = vault();
+    ok(temp.path(), &["announce", "--namespace", "/backend"]);
+    let again = json(temp.path(), &["announce"]);
+    assert_eq!(again["actor"]["namespace"], "/backend");
+}
+
+#[test]
+fn writes_land_where_the_agent_works_unless_told_otherwise() {
+    let temp = vault();
+    ok(temp.path(), &["announce", "--namespace", "/backend"]);
+
+    let note = json(temp.path(), &["new", "note", "here", "--body", "x"]);
+    assert!(
+        temp.path()
+            .join(format!("docs/backend/{}.md", note["id"].as_str().unwrap()))
+            .exists()
+    );
+    assert_eq!(
+        json(temp.path(), &["task", "new", "t"])["namespace"],
+        "/backend"
+    );
+
+    let rooted = json(
+        temp.path(),
+        &["new", "note", "root", "--namespace", "/", "--body", "x"],
+    );
+    assert_eq!(rooted["namespace"], "/", "an explicit namespace wins");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_orchy"))
+        .args(["--json", "new", "note", "web", "--body", "x"])
+        .env("ORCHY_VAULT", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path().join(".config"))
+        .env("ORCHY_ACTOR", "claude")
+        .env("ORCHY_NAMESPACE", "/web")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let web: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        web["namespace"], "/web",
+        "ORCHY_NAMESPACE overrides the roster"
+    );
+}

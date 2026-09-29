@@ -22,6 +22,16 @@ pub trait ActorStore: Send + Sync {
     async fn save(&self, actor: &mut Actor) -> Result<()>;
     async fn present(&self, now: DateTime<Utc>) -> Result<Vec<ActorId>>;
     async fn touch(&self, id: &ActorId, now: DateTime<Utc>) -> Result<()>;
+
+    /// Where an actor works, which is where its writes land unless it names another place
+    /// (D16). An actor not on the roster works at the root.
+    async fn home_of(&self, id: &ActorId) -> Result<Namespace> {
+        Ok(self
+            .get(id)
+            .await?
+            .map(|actor| actor.namespace().clone())
+            .unwrap_or_default())
+    }
 }
 
 #[async_trait]

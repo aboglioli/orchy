@@ -31,21 +31,20 @@ impl AnnounceActor {
             .iter()
             .map(Role::new)
             .collect::<orchy_core::Result<Vec<_>>>()?;
-        let namespace = match &cmd.namespace {
-            Some(ns) => Namespace::new(ns)?,
-            None => Namespace::root(),
-        };
+        let namespace = cmd.namespace.as_deref().map(Namespace::new).transpose()?;
 
         let mut actor = match self.actors.get(&id).await? {
             Some(mut existing) => {
                 if !roles.is_empty() {
                     existing.set_roles(roles);
                 }
-                existing.move_to(namespace);
+                if let Some(namespace) = namespace {
+                    existing.move_to(namespace);
+                }
                 existing.seen_at(self.clock.now());
                 existing
             }
-            None => Actor::announce(id, roles, namespace, &*self.clock),
+            None => Actor::announce(id, roles, namespace.unwrap_or_default(), &*self.clock),
         };
 
         if cmd.display_name.is_some() {

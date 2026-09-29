@@ -45,6 +45,8 @@ pub(crate) struct Config {
     pub machine: MachineId,
     pub organization: String,
     pub vault_config: VaultConfig,
+    /// `ORCHY_NAMESPACE`: where this shell's writes land when a command names no namespace.
+    pub namespace: Option<String>,
 }
 
 impl Config {
@@ -79,6 +81,9 @@ impl Config {
             machine,
             organization: APP.to_owned(),
             vault_config,
+            namespace: std::env::var("ORCHY_NAMESPACE")
+                .ok()
+                .filter(|ns| !ns.trim().is_empty()),
         })
     }
 

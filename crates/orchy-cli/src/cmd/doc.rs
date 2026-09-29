@@ -17,23 +17,10 @@ use crate::{resolve, stdin};
 
 pub(crate) async fn new(
     app: &Application,
-    kind: String,
-    title: String,
-    namespace: Option<String>,
-    tags: Vec<String>,
-    body: Option<String>,
+    command: CreateDocumentCommand,
     out: &Output,
 ) -> CliResult<()> {
-    let document = app
-        .create_document
-        .execute(CreateDocumentCommand {
-            kind,
-            title,
-            namespace,
-            body,
-            tags,
-        })
-        .await?;
+    let document = app.create_document.execute(command).await?;
     out.emit(&document, |d| format!("{}  {}", short(&d.id), d.title))
 }
 
@@ -220,27 +207,13 @@ pub(crate) async fn set_status(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn promote(
     app: &Application,
-    target: String,
-    into: String,
-    namespace: Option<String>,
-    skill_name: Option<String>,
-    summary: Option<String>,
+    mut command: PromoteDocumentCommand,
     out: &Output,
 ) -> CliResult<()> {
-    let document_id = resolve::document(app, &target).await?;
-    let promoted = app
-        .promote_document
-        .execute(PromoteDocumentCommand {
-            document_id,
-            into,
-            namespace,
-            skill_name,
-            summary,
-        })
-        .await?;
+    command.document_id = resolve::document(app, &command.document_id).await?;
+    let promoted = app.promote_document.execute(command).await?;
     out.emit(&promoted, |p| match &p.skill {
         Some(skill) => format!(
             "{}  promoted to skill `{}` in {}",
