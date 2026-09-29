@@ -1340,3 +1340,86 @@ fn supersede_records_the_edge_on_the_replacement_pointing_at_what_it_replaced() 
     assert!(edge["from"].as_str().unwrap().ends_with(new_id));
     assert!(edge["to"].as_str().unwrap().ends_with(old_id));
 }
+
+#[test]
+fn recall_leaves_out_superseded_and_archived_knowledge_unless_asked() {
+    let temp = vault();
+    let old = json(
+        temp.path(),
+        &[
+            "new",
+            "decision",
+            "Use HS256 tokens",
+            "--body",
+            "tokens signed with a shared key",
+        ],
+    );
+    let new = json(
+        temp.path(),
+        &[
+            "new",
+            "decision",
+            "Use RS256 tokens",
+            "--body",
+            "tokens signed with a key pair",
+        ],
+    );
+    let archived = json(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Token notes",
+            "--body",
+            "tokens were discussed",
+        ],
+    );
+    let plain = json(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Token glossary",
+            "--body",
+            "what tokens mean",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "supersede",
+            old["id"].as_str().unwrap(),
+            "--by",
+            new["id"].as_str().unwrap(),
+        ],
+    );
+    ok(temp.path(), &["archive", archived["id"].as_str().unwrap()]);
+
+    let ids = |hits: serde_json::Value| -> Vec<String> {
+        hits.as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let found = ids(json(temp.path(), &["recall", "tokens"]));
+    assert!(found.contains(&new["id"].as_str().unwrap().to_owned()));
+    assert!(
+        found.contains(&plain["id"].as_str().unwrap().to_owned()),
+        "no status always passes"
+    );
+    assert!(
+        !found.contains(&old["id"].as_str().unwrap().to_owned()),
+        "superseded is hidden"
+    );
+    assert!(
+        !found.contains(&archived["id"].as_str().unwrap().to_owned()),
+        "archived is hidden"
+    );
+
+    let history = ids(json(
+        temp.path(),
+        &["recall", "tokens", "--status", "superseded"],
+    ));
+    assert_eq!(history, vec![old["id"].as_str().unwrap().to_owned()]);
+}

@@ -122,32 +122,12 @@ pub(crate) async fn set(
     out.emit(&document, |d| format!("{}  updated", short(&d.id)))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn recall(
     app: &Application,
-    query: Vec<String>,
-    kind: Vec<String>,
-    entities: Vec<String>,
-    tags: Vec<String>,
-    namespace: Option<String>,
-    anchor: Option<String>,
-    limit: Option<usize>,
+    command: RecallCommand,
     out: &Output,
 ) -> CliResult<()> {
-    let hits = app
-        .recall
-        .execute(RecallCommand {
-            text: query.join(" "),
-            entities,
-            kind,
-            retired: false,
-            status: Vec::new(),
-            namespace,
-            anchor,
-            tags,
-            limit,
-        })
-        .await?;
+    let hits = app.recall.execute(command).await?;
     out.emit(&hits, |h| render_hits(h, out))
 }
 

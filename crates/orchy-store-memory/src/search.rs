@@ -52,11 +52,8 @@ impl Search for MemorySearch {
             {
                 continue;
             }
-            if let Some(statuses) = &query.status {
-                match document.status() {
-                    Some(status) if statuses.contains(&status) => {}
-                    _ => continue,
-                }
+            if !query.admits(document.status()) {
+                continue;
             }
             if let Some(namespace) = &query.namespace
                 && !namespace.contains(document.namespace())

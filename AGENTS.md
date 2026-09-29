@@ -343,6 +343,9 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 
   A passage matching no term is dropped; an empty query returns everything with zero
   relevance.
+- **Retired knowledge.** `Recall` sets `SearchQuery.exclude_status` to
+  `DocumentStatus::RETIRED` (superseded, archived, rejected) unless the caller names
+  statuses; `SearchQuery::admits` applies both, and a document without a status always passes.
 - **`rank`** orders by relevance × recency (90-day decay) × namespace proximity to the
   anchor, then by recency, then by id, so ties are deterministic.
 
@@ -389,14 +392,11 @@ Agents branch on this behaviour, so treat it as API.
 ## Known gaps
 
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
-it drift. The first two lose data or break the vault; fix them first.
+it drift. The first one loses data; fix it first.
 
 - **Task notes and reasons are lost.** `task done --note`, `task fail <reason>` and
   `task cancel <reason>` are never written to the task file, so `task get` shows
   `note: null` afterwards.
-- **`recall` returns superseded and archived documents.** The CLI never passes a status
-  filter, and `RecallCommand.status` is not exposed as a flag.
-
 - **`orchy new` ignores stdin.** Its `--body` help says it reads stdin when omitted, but
   `cmd::doc::new` passes `None` through and creates an empty body. `edit` does read stdin.
 - **Rollup leaves the lease behind.** When a parent reaches a terminal status through rollup,

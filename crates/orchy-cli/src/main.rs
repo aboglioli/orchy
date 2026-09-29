@@ -12,6 +12,7 @@ use clap::{CommandFactory, Parser};
 use orchy_application::list_actors::ListActorsCommand;
 use orchy_application::manage_lease::LeaseAction;
 use orchy_application::read_events::ReadEventsCommand;
+use orchy_application::recall::RecallCommand;
 
 use cli::{Cli, Command, LockCommand, SkillCommand};
 use config::Config;
@@ -205,15 +206,24 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             query,
             kind,
             entities,
+            status,
             tag,
             namespace,
             anchor,
             limit,
         } => {
-            cmd::doc::recall(
-                &app, query, kind, entities, tag, namespace, anchor, limit, out,
-            )
-            .await
+            let command = RecallCommand {
+                text: query.join(" "),
+                entities,
+                kind,
+                retired: false,
+                status,
+                namespace,
+                anchor,
+                tags: tag,
+                limit,
+            };
+            cmd::doc::recall(&app, command, out).await
         }
 
         Command::Link { from, to, rel } => cmd::doc::link(&app, from, to, rel, false, out).await,

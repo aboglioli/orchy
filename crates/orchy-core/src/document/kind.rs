@@ -127,6 +127,10 @@ impl Kind {
 }
 
 impl DocumentStatus {
+    /// Knowledge that was replaced, retired or turned down: kept (D14), but not what an agent
+    /// should find when it asks what the team knows.
+    pub const RETIRED: [Self; 3] = [Self::Superseded, Self::Archived, Self::Rejected];
+
     pub const ALL: [Self; 7] = [
         Self::Draft,
         Self::Active,

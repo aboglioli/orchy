@@ -29,6 +29,7 @@ pub struct SearchQuery {
     pub entities: Option<Vec<EntityKind>>,
     pub kind: Option<Vec<Kind>>,
     pub status: Option<Vec<DocumentStatus>>,
+    pub exclude_status: Vec<DocumentStatus>,
     pub retired: bool,
     pub namespace: Option<Namespace>,
     pub tags: Vec<Tag>,
@@ -39,6 +40,16 @@ pub struct SearchQuery {
 impl SearchQuery {
     pub fn covers(&self, kind: EntityKind) -> bool {
         self.entities.as_ref().is_none_or(|k| k.contains(&kind))
+    }
+
+    /// A document with no status always passes: it has not been retired from anything.
+    pub fn admits(&self, status: Option<DocumentStatus>) -> bool {
+        match (&self.status, status) {
+            (Some(wanted), Some(status)) => wanted.contains(&status),
+            (Some(_), None) => false,
+            (None, Some(status)) => !self.exclude_status.contains(&status),
+            (None, None) => true,
+        }
     }
 }
 

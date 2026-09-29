@@ -140,6 +140,10 @@ pub(crate) enum Command {
         /// Look only in `document` or only in `skill`; both by default
         #[arg(long = "entity")]
         entities: Vec<String>,
+        /// Only documents with this status; superseded, archived and rejected ones are
+        /// left out unless asked for
+        #[arg(long)]
+        status: Vec<String>,
         #[arg(long)]
         tag: Vec<String>,
         #[arg(long)]

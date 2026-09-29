@@ -74,11 +74,8 @@ fn document_selected(document: &Document, query: &SearchQuery) -> bool {
     {
         return false;
     }
-    if let Some(statuses) = &query.status {
-        match document.status() {
-            Some(status) if statuses.contains(&status) => {}
-            _ => return false,
-        }
+    if !query.admits(document.status()) {
+        return false;
     }
     if let Some(namespace) = &query.namespace
         && !namespace.contains(document.namespace())

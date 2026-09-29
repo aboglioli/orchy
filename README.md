@@ -253,7 +253,7 @@ orchy new <type> <title> [--namespace /x] [--tag t]... --body "…"
 orchy read <doc> [--section <heading>]
 orchy edit <doc> [--section <heading> | --replace-in <text> | --replace] [--content "…"]
 orchy set <doc> field=value...
-orchy recall <query> [--entity document|skill] [--kind k]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n]
+orchy recall <query> [--entity document|skill] [--kind k]... [--status s]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n]
 orchy supersede <old> --by <new>
 orchy archive <doc>
 orchy unarchive <doc>
@@ -305,7 +305,9 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 - titles count more than bodies, and the exact phrase you typed counts more than the same
   words scattered;
 - recent documents rank above old ones, and `--anchor /backend` prefers results from that
-  area without hiding the rest (`--namespace` hides the rest).
+  area without hiding the rest (`--namespace` hides the rest);
+- superseded, archived and rejected documents are left out, so replaced knowledge never
+  competes with what replaced it. `--status superseded` searches them on purpose.
 
 It matches words, not meaning: `k8s` won't find "kubernetes", typos won't match, and part of
 a word (`migr`) finds nothing.

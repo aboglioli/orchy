@@ -58,6 +58,11 @@ impl Recall {
                         .collect::<orchy_core::Result<Vec<_>>>()?,
                 )
             },
+            exclude_status: if cmd.status.is_empty() {
+                DocumentStatus::RETIRED.to_vec()
+            } else {
+                Vec::new()
+            },
             status: if cmd.status.is_empty() {
                 None
             } else {
