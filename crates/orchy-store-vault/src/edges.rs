@@ -97,6 +97,7 @@ impl VaultEdgeStore {
         let mut edges = Vec::new();
         for kind in [
             EntityKind::Document,
+            EntityKind::Skill,
             EntityKind::Task,
             EntityKind::Message,
             EntityKind::Actor,
@@ -253,6 +254,46 @@ mod tests {
                 .unwrap();
         }
         Arc::new(Vault::open(blobs as Arc<dyn BlobStore>).await.unwrap())
+    }
+
+    const SKILL: &str = "01DX5ZZKBKACTAV9WEVGEMMVRZ";
+
+    #[tokio::test]
+    async fn an_edge_from_any_kind_is_seen_from_both_ends() {
+        let vault = vault_with(&[
+            ("tasks/open/t.md", TASK, "task"),
+            ("messages/m/m.md", MESSAGE, "message"),
+            ("docs/d.md", DOC, "note"),
+            ("skills/s.md", SKILL, "skill"),
+        ])
+        .await;
+        let store = VaultEdgeStore::new(Arc::clone(&vault));
+        let target = EntityRef::document(Id::new(DOC).unwrap());
+
+        for (kind, id) in [
+            (EntityKind::Skill, SKILL),
+            (EntityKind::Task, TASK),
+            (EntityKind::Message, MESSAGE),
+        ] {
+            let from = EntityRef::new(kind, Id::new(id).unwrap());
+            let edge = Edge::new(from.clone(), target.clone(), Relation::RelatedTo).unwrap();
+            store.add(&edge).await.unwrap();
+
+            assert_eq!(store.out(&from, None).await.unwrap(), vec![edge.clone()]);
+            assert!(
+                store.incoming(&target, None).await.unwrap().contains(&edge),
+                "{kind:?} edge invisible from its target"
+            );
+            assert!(
+                store
+                    .neighbourhood(&from, 1)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|hop| hop.edge == edge),
+                "{kind:?} edge missing from its neighbourhood"
+            );
+        }
     }
 
     #[tokio::test]
