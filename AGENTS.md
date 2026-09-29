@@ -389,15 +389,11 @@ Agents branch on this behaviour, so treat it as API.
 ## Known gaps
 
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
-it drift. The first three lose data or break the vault; fix them first.
+it drift. The first two lose data or break the vault; fix them first.
 
 - **Task notes and reasons are lost.** `task done --note`, `task fail <reason>` and
   `task cancel <reason>` are never written to the task file, so `task get` shows
   `note: null` afterwards.
-- **`supersede` stores the edge backwards.** `orchy supersede <old> --by <new>` writes
-  `supersedes: [document:<new>]` on the old document (`supersede_document.rs`), while
-  `task replace` stores replacement → original. The relation reads "from supersedes to", so
-  documents are the ones that are wrong.
 - **`recall` returns superseded and archived documents.** The CLI never passes a status
   filter, and `RecallCommand.status` is not exposed as a flag.
 

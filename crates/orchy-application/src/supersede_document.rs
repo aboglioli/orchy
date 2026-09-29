@@ -42,8 +42,8 @@ impl SupersedeDocument {
 
         self.edges
             .add(&Edge::new(
-                EntityRef::document(old_id),
                 EntityRef::document(new_id),
+                EntityRef::document(old_id),
                 Relation::Supersedes,
             )?)
             .await?;

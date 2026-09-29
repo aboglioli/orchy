@@ -1315,3 +1315,28 @@ fn document_commands_refuse_a_skill_and_leave_its_file_untouched() {
     );
     assert!(!temp.path().join(format!("docs/{id}.md")).exists());
 }
+
+#[test]
+fn supersede_records_the_edge_on_the_replacement_pointing_at_what_it_replaced() {
+    let temp = vault();
+    let old = json(temp.path(), &["new", "decision", "Old way", "--body", "x"]);
+    let new = json(temp.path(), &["new", "decision", "New way", "--body", "y"]);
+    let (old_id, new_id) = (old["id"].as_str().unwrap(), new["id"].as_str().unwrap());
+
+    ok(temp.path(), &["supersede", old_id, "--by", new_id]);
+
+    let new_file = std::fs::read_to_string(temp.path().join(format!("docs/{new_id}.md"))).unwrap();
+    assert!(
+        new_file.contains(&format!("document:{old_id}")),
+        "{new_file}"
+    );
+    let old_file = std::fs::read_to_string(temp.path().join(format!("docs/{old_id}.md"))).unwrap();
+    assert!(!old_file.contains("\nsupersedes:"), "{old_file}");
+    assert!(old_file.contains("status: superseded"), "{old_file}");
+
+    let graph = json(temp.path(), &["graph", &format!("document:{new_id}")]);
+    let edge = &graph.as_array().unwrap()[0]["edge"];
+    assert_eq!(edge["relation"], "supersedes");
+    assert!(edge["from"].as_str().unwrap().ends_with(new_id));
+    assert!(edge["to"].as_str().unwrap().ends_with(old_id));
+}
