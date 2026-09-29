@@ -276,8 +276,10 @@ change it deliberately.
   once and stored in `$XDG_CONFIG_HOME/orchy/settings.toml`; it separates this machine's
   event log and actors from every other's. The alias is 2–32 characters: lowercase, digits
   and `-`.
-- **Roster.** `orchy announce` writes `agents/<id>.md` (roles, namespace) and refreshes
-  presence. Presence is same-machine only: `agents --live` means seen in the last 300 s.
+- **Roster and presence.** `orchy announce` writes `agents/<id>.md` (roles, namespace),
+  which is committed. Every other successful command refreshes only the actor's presence file
+  (`TouchActor` → `ActorStore::touch`, `.orchy/presence/`), so being busy never churns git.
+  Presence is same-machine only: `agents --live` means some command ran in the last 300 s.
 - **Leases** (`LeaseStore`) are TTL-based, same-machine, and carry a generation counter.
   Expiry is a timestamp checked by the reader; nothing reaps them. `orchy lock` exposes them
   directly (default TTL 300 s). Claiming a task takes the lease `task:<id>` (default 900 s)

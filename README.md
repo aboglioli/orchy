@@ -111,7 +111,7 @@ orchy task new "Update the auth docs" --depends-on "Rotate JWT keys"
 ```bash
 orchy task list                     # the board
 orchy task get rotate               # one task, its subtasks and links
-orchy agents --live                 # who is active on this machine right now
+orchy agents --live                 # who ran a command on this machine in the last 5 minutes
 orchy msg inbox                     # messages addressed to you
 orchy recall jwt rotation           # search everything your agents wrote down
 orchy events --limit 20             # the latest changes, and who made them

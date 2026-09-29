@@ -2195,3 +2195,40 @@ fn doctor_reports_a_parent_cycle_once() {
     assert_eq!(code, Some(6));
     assert_eq!(kinds, vec![("parent_cycle".to_owned(), "false".to_owned())]);
 }
+
+#[test]
+fn any_command_keeps_an_announced_agent_live_without_touching_the_roster_file() {
+    let temp = vault();
+    ok(temp.path(), &["announce"]);
+    let roster: Vec<_> = std::fs::read_dir(temp.path().join("agents"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    let before = std::fs::read(&roster[0]).unwrap();
+    let presence: Vec<_> = std::fs::read_dir(temp.path().join(".orchy/presence"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    let stamp = std::fs::read(&presence[0]).unwrap();
+
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    ok(temp.path(), &["task", "list"]);
+
+    assert_eq!(
+        std::fs::read(&roster[0]).unwrap(),
+        before,
+        "the committed roster file is untouched"
+    );
+    assert_ne!(
+        std::fs::read(&presence[0]).unwrap(),
+        stamp,
+        "presence was refreshed"
+    );
+    assert_eq!(
+        json(temp.path(), &["agents", "--live"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}

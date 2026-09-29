@@ -95,7 +95,8 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let actor = config.actor.to_string();
     let here = |flag: Option<String>| flag.or_else(|| config.namespace.clone());
 
-    match command {
+    let refreshes_presence = !matches!(command, Command::Announce { .. });
+    let result = match command {
         Command::Init { .. } | Command::Status | Command::Completions { .. } | Command::Guide => {
             unreachable!("answered before the vault is opened")
         }
@@ -377,7 +378,11 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                     .join("\n")
             })
         }
+    };
+    if result.is_ok() && refreshes_presence {
+        app.touch_actor.execute(&actor).await?;
     }
+    result
 }
 
 fn kind_names() -> Vec<String> {

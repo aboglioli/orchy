@@ -44,6 +44,7 @@ pub mod set_skill_field;
 pub mod split_task;
 pub mod start_task;
 pub mod supersede_document;
+pub mod touch_actor;
 pub mod traverse_graph;
 pub mod unblock_task;
 pub mod update_document;
@@ -103,6 +104,7 @@ use set_skill_field::SetSkillField;
 use split_task::SplitTask;
 use start_task::StartTask;
 use supersede_document::SupersedeDocument;
+use touch_actor::TouchActor;
 use traverse_graph::TraverseGraph;
 use unblock_task::UnblockTask;
 use update_document::UpdateDocument;
@@ -127,6 +129,7 @@ pub struct ApplicationDeps {
 
 pub struct Application {
     pub announce_actor: AnnounceActor,
+    pub touch_actor: TouchActor,
     pub brief: Brief,
     pub list_actors: ListActors,
     pub manage_lease: ManageLease,
@@ -219,6 +222,7 @@ impl Application {
 
         Self {
             announce_actor: AnnounceActor::new(Arc::clone(&actors), Arc::clone(&clock)),
+            touch_actor: TouchActor::new(Arc::clone(&actors), Arc::clone(&clock)),
             list_actors: ListActors::new(Arc::clone(&actors), Arc::clone(&clock)),
             manage_lease: ManageLease::new(
                 Arc::clone(&leases),

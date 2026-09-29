@@ -114,13 +114,20 @@ impl ActorStore for VaultActorStore {
         Ok(present)
     }
 
+    /// Presence only: rewriting the committed roster file on every command would churn git.
     async fn touch(&self, id: &ActorId, now: DateTime<Utc>) -> Result<()> {
-        let mut actor = self
-            .get(id)
-            .await?
-            .ok_or_else(|| DomainError::not_found("actor", id))?;
-        actor.seen_at(now);
-        self.save(&mut actor).await
+        if self.get(id).await?.is_none() {
+            return Err(DomainError::not_found("actor", id));
+        }
+        let presence = self.vault.layout().presence_key(id);
+        let stamp = serde_json::json!({
+            "actor": id.to_string(),
+            "last_seen": now.to_rfc3339(),
+        });
+        self.vault
+            .blobs()
+            .put(&presence, stamp.to_string().as_bytes())
+            .await
     }
 }
 
