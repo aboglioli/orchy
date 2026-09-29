@@ -233,16 +233,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
-name = "clap_mangen"
-version = "0.2.33"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e30ffc187e2e3aeafcd1c6e2aa416e29739454c0ccaa419226d5ecd181f2d78"
-dependencies = [
- "clap",
- "roff",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -363,7 +353,8 @@ dependencies = [
 [[package]]
 name = "eventuary"
 version = "0.3.0-rc.4"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.4#bd9bcbf4213713fc4a5a8cbe03f29bb9d4f8311d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ab56158a81457fba82fb19e57bb8dfd52d340183a63a3cf2969bcc9632cdf0a"
 dependencies = [
  "eventuary-core",
  "eventuary-fs",
@@ -373,7 +364,8 @@ dependencies = [
 [[package]]
 name = "eventuary-core"
 version = "0.3.0-rc.4"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.4#bd9bcbf4213713fc4a5a8cbe03f29bb9d4f8311d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56e4f4acc0f523f313eb90641e3260668ce0802ba8bc29518dd5a1893480e321"
 dependencies = [
  "base64",
  "bytes",
@@ -393,7 +385,8 @@ dependencies = [
 [[package]]
 name = "eventuary-fs"
 version = "0.3.0-rc.4"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.4#bd9bcbf4213713fc4a5a8cbe03f29bb9d4f8311d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a85ab526eb0c8c914e67084fce8f5a4eeceedde14caa11e84c0292966db725ba"
 dependencies = [
  "chrono",
  "eventuary-core",
@@ -407,7 +400,8 @@ dependencies = [
 [[package]]
 name = "eventuary-memory"
 version = "0.3.0-rc.4"
-source = "git+https://github.com/aboglioli/eventuary?tag=v0.3.0-rc.4#bd9bcbf4213713fc4a5a8cbe03f29bb9d4f8311d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b07dfa8887913df0ab9f490ede82864c64d25f900348e37b044d640c1d2585f"
 dependencies = [
  "chrono",
  "eventuary-core",
@@ -794,7 +788,6 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "orchy-application"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "chrono",
  "orchy-core",
  "orchy-store-memory",
@@ -808,13 +801,10 @@ dependencies = [
 name = "orchy-cli"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "clap",
  "clap_complete",
- "clap_mangen",
  "orchy-application",
  "orchy-core",
- "orchy-store-memory",
  "orchy-store-vault",
  "serde",
  "serde_json",
@@ -1005,12 +995,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "roff"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323c417e1d9665a65b263ec744ba09030cfb277e9daa0b018a4ab62e57bc8189"
 
 [[package]]
 name = "rust-stemmers"

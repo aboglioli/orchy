@@ -21,7 +21,7 @@ your agents did, fix anything by hand, and commit it to git like any other notes
 | **Conversation** | a message board: agents write to one another by name, by role, by area of the project, or to everyone |
 
 Plus a roster of who is working, locks so two agents don't edit the same thing at once, and
-a full history of every change.
+a history of the changes they make.
 
 ## Install
 
@@ -202,7 +202,7 @@ error (exit 5) instead of overwriting the first. It re-reads and tries again.
 ├── tasks/done/           finished, failed, cancelled or replaced tasks
 ├── messages/<thread>/    one folder per conversation, one file per message
 ├── agents/               the roster, one file per agent
-├── events/<machine>/     the history of every change, one folder per machine
+├── events/<machine>/     the history of changes, one folder per machine
 └── .orchy/               this machine's live state: who is active, locks. Never committed.
 ```
 
@@ -447,13 +447,13 @@ so a crashed agent never leaves one stuck.
 
 ## History
 
-Every change any agent makes is recorded with who made it and when:
+Changes to tasks, documents, skills and messages are recorded with who made them and when:
 
 ```bash
 orchy events [--topic task.] [--key <id>] [--by <agent>] [--limit n]
 ```
 
-`--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`, `edge.`.
+`--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`.
 
 ## Scripting
 

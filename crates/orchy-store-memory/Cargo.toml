@@ -1,6 +1,6 @@
 [package]
 name = "orchy-store-memory"
-description = "In-memory implementations of every orchy port, for tests and ephemeral vaults"
+description = "In-memory implementations of every orchy port, for tests"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

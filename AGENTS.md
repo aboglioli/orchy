@@ -101,7 +101,7 @@ crates/
 | crate | may depend on | must not |
 |---|---|---|
 | `orchy-core` | stdlib, `chrono`, `serde`, `serde_json`, `thiserror`, `ulid`, `sha2`, `hex`, `async-trait`, `rust-stemmers`, `eventuary` (value types `Topic` and `Payload` only) | any store, any I/O, `tokio`, `orchy-application` |
-| `orchy-application` | `orchy-core`, `async-trait`, `serde`, `chrono`, `thiserror` | any `orchy-store-*`, the CLI |
+| `orchy-application` | `orchy-core`, `serde`, `serde_json`, `chrono`, `thiserror` | any `orchy-store-*`, the CLI |
 | `orchy-store-*` | `orchy-core`, their own infrastructure deps | `orchy-application` (outside tests), the CLI, each other (outside tests) |
 | `orchy-cli` | everything, but concrete stores **only in `container.rs`** | domain aggregates in command handlers |
 
@@ -136,8 +136,8 @@ in `new` and implement `FromStr` / `TryFrom<String>`. Never construct one by cas
 
 ### Events
 
-Every mutation collects a semantic event into the aggregate's `EventCollector`. `save(&mut
-entity)` writes the file, drains the collector and appends the events through the
+Aggregate mutations collect a semantic event into the aggregate's `EventCollector`.
+`save(&mut entity)` writes the file, drains the collector and appends the events through the
 `EventLog` port:
 
 ```
@@ -147,12 +147,14 @@ aggregate mutation → collector.collect() → store.save(&mut e) → drain() �
 The vault's log is eventuary's fs backend under `events/<machine>/`, one root per machine,
 partitioned (default 10, fixed at creation, configurable in `orchy.toml` `[events]
 partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
-`message.sent`, `edge.created`). `orchy events` replays them.
+`message.sent`, `skill.written`). `orchy events` replays them.
 
-The workspace depends on `eventuary` through a git tag (`v0.3.0-rc.4`) with the `fs` and
-`memory` features. `eventuary` and `eventuary-fs` `0.3.0-rc.4` are on crates.io, so the
-comment in `Cargo.toml` saying it waits for a release is stale. Switch to
-`version = "=0.3.0-rc.4"` before publishing orchy: `cargo publish` refuses git dependencies.
+Coverage is incomplete (see Known gaps): links, announces, locks and some field changes
+record nothing. Any new mutation must emit an event.
+
+The workspace takes `eventuary` from crates.io with the `fs` and `memory` features, pinned
+exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry dependency:
+`cargo publish` refuses git ones.
 
 ### Errors
 
@@ -205,8 +207,9 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 - **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's
   writes. `orchy skill set` writes such fields; `skill::managed_field` lists the ones it
   refuses.
-- **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are rendered
-  from edges and refused by `orchy set`.
+- **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are
+  reserved for inverses derived from edges. Nothing renders them into files yet, but
+  `orchy set` already refuses them.
 
 ### Sharing a vault
 
@@ -371,7 +374,14 @@ Agents branch on this behaviour, so treat it as API.
 ## Known gaps
 
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
-it drift. The first three corrupt data or break the vault; fix them first.
+it drift. The first five lose data or break the vault; fix them first.
+
+- **Task notes and reasons are lost.** `task done --note`, `task fail <reason>` and
+  `task cancel <reason>` are never written to the task file, so `task get` shows
+  `note: null` afterwards.
+- **One malformed file breaks every listing.** A document with invalid YAML frontmatter or
+  an unknown `type` makes `task list`, `announce`, `recall` and the rest exit 6. The error
+  quotes the bad YAML but never names the file.
 
 - **A document of kind `skill` breaks the vault.** `orchy new skill …` or
   `orchy promote <candidate> --as skill` writes `docs/<id>.md` with `type: skill`. The
@@ -398,6 +408,10 @@ it drift. The first three corrupt data or break the vault; fix them first.
   `archive`/`unarchive`. `orchy set` refuses those fields and points at commands that do
   not exist (`orchy retitle`, `orchy retype`, `orchy ns move`, `orchy tag` —
   `document::semantic_command_for`).
+- **The event log is incomplete.** `link` and `unlink` record no `edge.*` event, although
+  the topics exist. Announces, locks, and some document and skill field changes record
+  nothing either.
+- **`events --limit n` returns the oldest n events**, not the most recent.
 - **Short message ids are not resolved.** `msg inbox` prints short ids, but `msg read`,
   `thread`, `resolve` and `promote` take only full ULIDs.
 - **`orchy guide` needs a vault**, although it only prints static text and its help says it
@@ -405,30 +419,8 @@ it drift. The first three corrupt data or break the vault; fix them first.
 - **camelCase is one search term.** `tokenise` splits on non-alphanumerics only, so
   `UserRepository` never matches `repository`. There is no prefix or substring fallback
   either.
-- **Vault scaffolding writes dead config.**
-  - `orchy init` writes `[vault] name`, `[recall] default_limit` and
-    `[audit] stale_after_days` into `orchy.toml`, and none of them is read.
-  - `.gitattributes` gets `journal/** merge=union` for a `journal/` that does not exist.
-- **Unused dependencies.** `orchy-cli` declares `clap_mangen` and `orchy-store-memory` and
-  uses neither. The `orchy-store-memory` description mentions "ephemeral vaults", which
-  nothing wires up.
-- **Server-era files.** These were left behind by the move to a single binary:
-  - `Dockerfile` builds `orchy-server` and copies `migrations/`, neither of which exists,
-    so `.github/workflows/container.yml` fails on the next release;
-  - `.dockerignore`, `config.toml`, `config.default.toml`, `examples/`, `.orchy.toml`
-    (with a committed API key) and `dashboard/`, a React client for the removed REST API.
-    A dashboard is an explicit non-goal.
-
-  `.gitignore` still lists `*.db`, `keys/`, `.mcp.json` and the dashboard build paths.
 - **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a
   silent double claim rather than an error.
-- **Spec references.** Two code comments cite decisions from `docs/spec.md` (`D33` in
-  `eventlog.rs`, `D42` in `layout.rs`). That file is untracked, so the references dangle.
-- **Dead source files.** These are never declared as modules, so they don't compile into
-  anything:
-  - `orchy-core/src/message/events.rs`;
-  - `orchy-core/src/graph/events.rs`, `neighborhood.rs`, `relation_options.rs` and
-    `rules.rs`.
 
 ## Code style
 
