@@ -182,7 +182,7 @@ pub(crate) enum Command {
     /// Graduate a candidate into canon as a concrete type
     Promote {
         target: String,
-        /// What it becomes: decision, pattern, skill, …
+        /// What it becomes: decision, pattern, note, …
         #[arg(long = "as")]
         into: String,
         #[arg(long)]
