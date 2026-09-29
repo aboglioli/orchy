@@ -50,7 +50,7 @@ impl SearchQuery {
         {
             return false;
         }
-        if !self.admits(document.status()) {
+        if !self.admits(document.status()) || !self.recent(document.updated_at()) {
             return false;
         }
         if let Some(namespace) = &self.namespace
@@ -62,7 +62,7 @@ impl SearchQuery {
     }
 
     pub fn selects_skill(&self, skill: &Skill) -> bool {
-        if !self.retired && !skill.is_active() {
+        if (!self.retired && !skill.is_active()) || !self.recent(skill.updated_at()) {
             return false;
         }
         if let Some(namespace) = &self.namespace
@@ -71,6 +71,10 @@ impl SearchQuery {
             return false;
         }
         self.tags.iter().all(|t| skill.tags().contains(t))
+    }
+
+    fn recent(&self, updated_at: DateTime<Utc>) -> bool {
+        self.since.is_none_or(|since| updated_at >= since)
     }
 
     /// A document with no status always passes.

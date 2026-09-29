@@ -279,9 +279,17 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             anchor,
             limit,
             budget,
+            since,
+            graph,
         } => {
+            let since = since
+                .as_deref()
+                .map(|s| since::parse(s, Utc::now()))
+                .transpose()?;
             let command = RecallCommand {
                 budget,
+                since,
+                graph,
                 text: query.join(" "),
                 entities,
                 kind,

@@ -164,6 +164,12 @@ pub(crate) enum Command {
         /// Return the best sections in full, up to about this many tokens
         #[arg(long)]
         budget: Option<usize>,
+        /// Only what changed since a timestamp or within a window: 30m, 2h, 3d, 1w
+        #[arg(long)]
+        since: Option<String>,
+        /// Also return what the hits link to, up to this many hops away
+        #[arg(long, default_value_t = 0)]
+        graph: u8,
     },
     /// Link two entities with a registered relation
     Link {

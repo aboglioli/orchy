@@ -273,7 +273,7 @@ orchy new <type> <title> [--namespace /x] [--tag t]... [--task <task>] [--body "
 orchy read <doc> [--section <heading> [--nth n]]
 orchy edit <doc> [--section <heading> [--nth n] | --replace-in <text> | --replace] [--content "…"]
 orchy set <doc> field=value...
-orchy recall <query> [--entity document|skill] [--kind k]... [--status s]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n] [--budget tokens]
+orchy recall <query> [--entity document|skill] [--kind k]... [--status s]... [--tag t]... [--namespace /x] [--anchor /x] [--limit n] [--budget tokens] [--since 3d] [--graph hops]
 orchy retitle <doc> <title>
 orchy retype <doc> <type>
 orchy tag <doc> [+t | -t]...
@@ -339,6 +339,10 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
   area without hiding the rest (`--namespace` hides the rest);
 - `--budget 2000` answers with the best sections in full, up to about that many tokens,
   instead of a list of excerpts to open one by one;
+- `--since 1w` keeps only what changed in the last week (or since a timestamp), for "what
+  was decided this week";
+- `--graph 1` also returns what the hits link to, such as the replacement of a decision or
+  the evidence behind it, ranked below the hit that led there;
 - superseded, archived and rejected documents are left out, so replaced knowledge never
   competes with what replaced it. `--status superseded` searches them on purpose.
 

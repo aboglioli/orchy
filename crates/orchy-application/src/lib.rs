@@ -391,7 +391,13 @@ impl Application {
                 Arc::clone(&documents),
                 Arc::clone(&messages),
             ),
-            recall: Recall::new(Arc::clone(&search), Arc::clone(&clock)),
+            recall: Recall::new(
+                Arc::clone(&search),
+                Arc::clone(&documents),
+                Arc::clone(&skills),
+                Arc::clone(&edges),
+                Arc::clone(&clock),
+            ),
             read_events: ReadEvents::new(Arc::clone(&log)),
         }
     }

@@ -2756,3 +2756,57 @@ fn why_tells_what_happened_to_an_entity_and_what_it_is_linked_to() {
         "{text}"
     );
 }
+
+#[test]
+fn recall_since_leaves_out_what_did_not_change_in_the_window() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &["new", "decision", "rotate keys", "--body", "rotate weekly"],
+    );
+
+    let recent = json(temp.path(), &["recall", "rotate", "--since", "1h"]);
+    assert_eq!(recent.as_array().unwrap().len(), 1);
+    let future = json(
+        temp.path(),
+        &["recall", "rotate", "--since", "2999-01-01T00:00:00Z"],
+    );
+    assert!(future.as_array().unwrap().is_empty(), "{future}");
+}
+
+#[test]
+fn recall_graph_adds_what_the_hits_link_to_at_lower_relevance() {
+    let temp = vault();
+    let hit = json(
+        temp.path(),
+        &["new", "decision", "rotate keys", "--body", "rotate weekly"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let linked = json(
+        temp.path(),
+        &["new", "note", "incident", "--body", "the outage"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    ok(
+        temp.path(),
+        &[
+            "link",
+            &format!("document:{linked}"),
+            &format!("document:{hit}"),
+            "--rel",
+            "related_to",
+        ],
+    );
+
+    let plain = json(temp.path(), &["recall", "rotate"]);
+    assert_eq!(plain.as_array().unwrap().len(), 1);
+    let expanded = json(temp.path(), &["recall", "rotate", "--graph", "1"]);
+    let hits = expanded.as_array().unwrap();
+    assert_eq!(hits.len(), 2, "{expanded}");
+    assert_eq!(hits[1]["id"], linked.as_str());
+    assert!(hits[1]["relevance"].as_f64() < hits[0]["relevance"].as_f64());
+}
