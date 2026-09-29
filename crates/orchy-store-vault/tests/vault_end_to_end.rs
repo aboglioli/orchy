@@ -221,9 +221,12 @@ async fn the_parent_file_is_rewritten_when_its_last_subtask_finishes() {
             .contains(&format!("parent: task:{}", parent.id)),
         "the hierarchy is stored on the child, and names the kind it points at"
     );
+    let parent_text = fixture.read(&parent_open);
     assert!(
-        !fixture.read(&parent_open).contains("subtasks"),
-        "the parent file is not rewritten when a child is added"
+        children
+            .iter()
+            .all(|c| parent_text.contains(&format!("task:{}", c.id))),
+        "the parent file lists its subtasks, rendered from the children: {parent_text}"
     );
 
     for child in &children {

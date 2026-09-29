@@ -224,7 +224,9 @@ Every file starts with a YAML header, and **the header is what counts**. A task 
 because its header says `status: completed`, and orchy files it under `tasks/done/` as a
 result. Moving a file by hand changes nothing, and neither does renaming it: every file
 carries a stable `id` and orchy finds it by that. Links between files use the id, so they
-survive any reorganisation.
+survive any reorganisation. A file also shows what points at it: a replaced document lists
+`superseded_by`, a goal lists its `subtasks`, and a document written for a task shows
+`produced_by`.
 
 A task file:
 

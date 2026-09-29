@@ -6,13 +6,23 @@ use std::time::Duration;
 use orchy_core::{DomainError, EntityKind, Id, Problem, ProblemKind, Result};
 use tokio::time::sleep;
 
+use serde_json::Value;
+
 use crate::blob::{BlobStore, digest};
 use crate::codec;
 use crate::layout::Layout;
 use crate::markdown::MarkdownFile;
 
 const LOOKUP_ATTEMPTS: u32 = 4;
+const AMEND_ATTEMPTS: u32 = 16;
 const RESCAN_PASSES: u32 = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Amended {
+    Missing,
+    Unchanged,
+    Changed,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Precondition {
@@ -373,6 +383,47 @@ impl Vault {
         Ok(())
     }
 
+    /// Edits a list of entity refs in one frontmatter field, retrying when another writer got
+    /// there first.
+    pub async fn amend_refs(
+        &self,
+        id: &Id,
+        kind: EntityKind,
+        field: &str,
+        edit: impl Fn(&mut Vec<String>),
+    ) -> Result<Amended> {
+        for attempt in 0..AMEND_ATTEMPTS {
+            let Some((key, mut file)) = self.read_by_id(id).await? else {
+                return Ok(Amended::Missing);
+            };
+            let mut targets = refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null));
+            let before = targets.clone();
+            edit(&mut targets);
+            if targets == before {
+                return Ok(Amended::Unchanged);
+            }
+            if targets.is_empty() {
+                file.frontmatter.remove(field);
+            } else {
+                targets.sort();
+                file.frontmatter.set(
+                    field,
+                    Value::Array(targets.into_iter().map(Value::String).collect()),
+                );
+            }
+            match self
+                .write_if(&key, &file, id, kind, Precondition::Unchanged)
+                .await
+            {
+                Err(DomainError::Conflict(_)) if attempt + 1 < AMEND_ATTEMPTS => {
+                    sleep(backoff(attempt)).await;
+                }
+                other => return other.map(|()| Amended::Changed),
+            }
+        }
+        unreachable!("the loop returns on its last attempt")
+    }
+
     pub async fn relocate(&self, id: &Id, to: &str) -> Result<()> {
         let Some((key, file)) = self.read_by_id(id).await? else {
             return Err(DomainError::not_found("entity", id));
@@ -440,6 +491,22 @@ fn decode(bytes: &[u8]) -> StdResult<MarkdownFile, String> {
 fn has_conflict_markers(text: &str) -> bool {
     text.lines()
         .any(|line| line.starts_with("<<<<<<< ") || line.starts_with(">>>>>>> "))
+}
+
+fn backoff(attempt: u32) -> Duration {
+    let jitter = u64::from(std::process::id() % 5);
+    Duration::from_millis(u64::from(attempt) * 2 + jitter + 1)
+}
+
+pub(crate) fn refs_in(value: &Value) -> Vec<String> {
+    match value {
+        Value::String(s) => vec![s.clone()],
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn kind_from(declared: Option<&str>) -> EntityKind {

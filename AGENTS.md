@@ -257,9 +257,13 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 - **Task bodies.** A task's file body is its description, then optional trailing
   `## Acceptance` (acceptance criteria) and `## Outcome` (the `done` note or the `fail`,
   `cancel` or `replace` reason) sections (`codec::split_task_body`).
-- **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are
-  reserved for inverses derived from edges. Nothing renders them into files yet, but
-  `orchy set` already refuses them.
+- **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are inverses
+  written onto the target so that `cat` answers "what replaced this" and "what are its
+  subtasks". A link stays stored once, on its source (D43); the edge store also amends the
+  target's inverse field when a `supersedes`, `derived_from` or `produces` link is added or
+  removed, and the task store keeps a parent's `subtasks` in step when a child's `parent`
+  changes. Both go through `Vault::amend_refs`, which retries on a write conflict. `orchy set`
+  refuses these fields.
 
 ### Sharing a vault
 

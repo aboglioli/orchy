@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{EntityKind, EventLog, Id, Result, Task, TaskQuery, TaskStore};
+use orchy_core::{EntityKind, EntityRef, EventLog, Id, Result, Task, TaskQuery, TaskStore};
 
 use crate::codec;
 use crate::vault::{Precondition, Vault};
@@ -14,6 +14,24 @@ pub struct VaultTaskStore {
 impl VaultTaskStore {
     pub fn new(vault: Arc<Vault>, log: Arc<dyn EventLog>) -> Self {
         Self { vault, log }
+    }
+
+    /// Keeps a parent's `subtasks` field in step with the children that name it (D43 stores
+    /// the hierarchy on the child; this is the rendered inverse).
+    async fn list_under(&self, parent: Option<&Id>, child: &Task, present: bool) -> Result<()> {
+        let Some(parent) = parent else {
+            return Ok(());
+        };
+        let reference = EntityRef::task(child.id().clone()).to_string();
+        self.vault
+            .amend_refs(parent, EntityKind::Task, "subtasks", |refs| {
+                refs.retain(|r| r != &reference);
+                if present {
+                    refs.push(reference.clone());
+                }
+            })
+            .await
+            .map(drop)
     }
 
     async fn all(&self) -> Result<Vec<Task>> {
@@ -62,9 +80,14 @@ impl TaskStore for VaultTaskStore {
 
     async fn save(&self, task: &mut Task) -> Result<()> {
         let events = task.drain_events();
-        let carried = match self.vault.peek_by_id(task.id()).await? {
-            Some((_, file)) => codec::carried_frontmatter(&file),
-            None => Default::default(),
+        let (carried, previous_parent) = match self.vault.peek_by_id(task.id()).await? {
+            Some((_, file)) => (
+                codec::carried_frontmatter(&file),
+                codec::task_from_markdown(&file)
+                    .ok()
+                    .and_then(|t| t.parent().cloned()),
+            ),
+            None => (Default::default(), None),
         };
 
         let key = self.vault.layout().task_key(task.id(), task.status());
@@ -78,6 +101,11 @@ impl TaskStore for VaultTaskStore {
                 Precondition::Unchanged,
             )
             .await?;
+        if previous_parent.as_ref() != task.parent() {
+            self.list_under(previous_parent.as_ref(), task, false)
+                .await?;
+            self.list_under(task.parent(), task, true).await?;
+        }
         self.log.append(&events).await
     }
 

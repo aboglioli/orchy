@@ -2542,3 +2542,84 @@ fn a_returning_agent_is_told_what_others_did_while_it_was_away() {
     );
     assert_eq!(briefing["since_last"]["tasks_completed"], 0);
 }
+
+fn file_of(temp: &tempfile::TempDir, id: &str) -> String {
+    let found = walk(temp.path(), "docs")
+        .into_iter()
+        .chain(walk(temp.path(), "tasks"))
+        .find(|key| key.ends_with(&format!("{id}.md")))
+        .unwrap();
+    std::fs::read_to_string(temp.path().join(found)).unwrap()
+}
+
+#[test]
+fn a_target_file_shows_who_replaced_produced_or_subdivided_it() {
+    let temp = vault();
+    let old = json(temp.path(), &["new", "decision", "old way", "--body", "x"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let new = json(temp.path(), &["new", "decision", "new way", "--body", "y"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    ok(temp.path(), &["supersede", &old, "--by", &new]);
+    assert!(
+        file_of(&temp, &old).contains(&format!("superseded_by:\n  - document:{new}")),
+        "{}",
+        file_of(&temp, &old)
+    );
+
+    let task = task_id(&temp, &["research"]);
+    let note = json(
+        temp.path(),
+        &["new", "note", "findings", "--task", &task, "--body", "z"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        file_of(&temp, &note).contains(&format!("produced_by:\n  - task:{task}")),
+        "{}",
+        file_of(&temp, &note)
+    );
+
+    let goal = task_id(&temp, &["goal"]);
+    let split = json(temp.path(), &["task", "split", &goal, "a", "b"]);
+    let children: Vec<String> = split["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect();
+    let goal_file = file_of(&temp, &goal);
+    assert!(
+        children
+            .iter()
+            .all(|c| goal_file.contains(&format!("task:{c}"))),
+        "{goal_file}"
+    );
+
+    ok(temp.path(), &["task", "update", &children[1], "--detach"]);
+    let goal_file = file_of(&temp, &goal);
+    assert!(
+        !goal_file.contains(&children[1]),
+        "a detached child leaves the list: {goal_file}"
+    );
+
+    ok(
+        temp.path(),
+        &[
+            "unlink",
+            &format!("task:{task}"),
+            &format!("document:{note}"),
+            "--rel",
+            "produces",
+        ],
+    );
+    assert!(
+        !file_of(&temp, &note).contains("produced_by"),
+        "{}",
+        file_of(&temp, &note)
+    );
+}

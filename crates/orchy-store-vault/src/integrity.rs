@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use orchy_core::{EntityKind, EntityRef, Id, Integrity, Problem, ProblemKind, Relation, Result};
 
 use crate::codec;
-use crate::edges::refs_in;
 use crate::markdown::MarkdownFile;
 use crate::vault::Vault;
+use crate::vault::refs_in;
 
 pub struct VaultIntegrity {
     vault: Arc<Vault>,
