@@ -101,7 +101,7 @@ crates/
 | crate | may depend on | must not |
 |---|---|---|
 | `orchy-core` | stdlib, `chrono`, `serde`, `serde_json`, `thiserror`, `ulid`, `sha2`, `hex`, `async-trait`, `rust-stemmers`, `eventuary` (value types `Topic` and `Payload` only) | any store, any I/O, `tokio`, `orchy-application` |
-| `orchy-application` | `orchy-core`, `async-trait`, `serde`, `chrono`, `thiserror` | any `orchy-store-*`, the CLI |
+| `orchy-application` | `orchy-core`, `serde`, `serde_json`, `chrono`, `thiserror` | any `orchy-store-*`, the CLI |
 | `orchy-store-*` | `orchy-core`, their own infrastructure deps | `orchy-application` (outside tests), the CLI, each other (outside tests) |
 | `orchy-cli` | everything, but concrete stores **only in `container.rs`** | domain aggregates in command handlers |
 
@@ -149,10 +149,9 @@ partitioned (default 10, fixed at creation, configurable in `orchy.toml` `[event
 partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
 `message.sent`, `edge.created`). `orchy events` replays them.
 
-The workspace depends on `eventuary` through a git tag (`v0.3.0-rc.4`) with the `fs` and
-`memory` features. `eventuary` and `eventuary-fs` `0.3.0-rc.4` are on crates.io, so the
-comment in `Cargo.toml` saying it waits for a release is stale. Switch to
-`version = "=0.3.0-rc.4"` before publishing orchy: `cargo publish` refuses git dependencies.
+The workspace takes `eventuary` from crates.io with the `fs` and `memory` features, pinned
+exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry dependency:
+`cargo publish` refuses git ones.
 
 ### Errors
 
@@ -405,30 +404,8 @@ it drift. The first three corrupt data or break the vault; fix them first.
 - **camelCase is one search term.** `tokenise` splits on non-alphanumerics only, so
   `UserRepository` never matches `repository`. There is no prefix or substring fallback
   either.
-- **Vault scaffolding writes dead config.**
-  - `orchy init` writes `[vault] name`, `[recall] default_limit` and
-    `[audit] stale_after_days` into `orchy.toml`, and none of them is read.
-  - `.gitattributes` gets `journal/** merge=union` for a `journal/` that does not exist.
-- **Unused dependencies.** `orchy-cli` declares `clap_mangen` and `orchy-store-memory` and
-  uses neither. The `orchy-store-memory` description mentions "ephemeral vaults", which
-  nothing wires up.
-- **Server-era files.** These were left behind by the move to a single binary:
-  - `Dockerfile` builds `orchy-server` and copies `migrations/`, neither of which exists,
-    so `.github/workflows/container.yml` fails on the next release;
-  - `.dockerignore`, `config.toml`, `config.default.toml`, `examples/`, `.orchy.toml`
-    (with a committed API key) and `dashboard/`, a React client for the removed REST API.
-    A dashboard is an explicit non-goal.
-
-  `.gitignore` still lists `*.db`, `keys/`, `.mcp.json` and the dashboard build paths.
 - **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a
   silent double claim rather than an error.
-- **Spec references.** Two code comments cite decisions from `docs/spec.md` (`D33` in
-  `eventlog.rs`, `D42` in `layout.rs`). That file is untracked, so the references dangle.
-- **Dead source files.** These are never declared as modules, so they don't compile into
-  anything:
-  - `orchy-core/src/message/events.rs`;
-  - `orchy-core/src/graph/events.rs`, `neighborhood.rs`, `relation_options.rs` and
-    `rules.rs`.
 
 ## Code style
 
