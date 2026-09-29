@@ -111,7 +111,7 @@ pub(crate) async fn find(
     limit: Option<usize>,
     out: &Output,
 ) -> CliResult<()> {
-    let hits = app
+    let found = app
         .recall
         .execute(RecallCommand {
             text: query.join(" "),
@@ -124,11 +124,12 @@ pub(crate) async fn find(
         })
         .await?;
 
-    out.emit(&hits, |found| {
+    let total = found.total;
+    out.emit(&found.hits, |found| {
         if found.is_empty() {
             return "no skill matches that".to_owned();
         }
-        found
+        let lines = found
             .iter()
             .map(|h| {
                 format!(
@@ -138,7 +139,11 @@ pub(crate) async fn find(
                 )
             })
             .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n");
+        match out.truncated(found.len(), total) {
+            Some(note) => format!("{lines}\n\n{note}"),
+            None => lines,
+        }
     })
 }
 

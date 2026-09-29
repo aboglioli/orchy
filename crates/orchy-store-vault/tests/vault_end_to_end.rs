@@ -489,7 +489,8 @@ async fn recall_finds_a_document_by_a_word_only_in_its_title() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .hits;
 
     assert_eq!(
         hits.len(),
@@ -522,7 +523,8 @@ async fn a_term_in_both_the_title_and_the_body_is_one_hit_not_two() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .hits;
 
     assert_eq!(
         hits.len(),

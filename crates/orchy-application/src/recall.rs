@@ -25,6 +25,12 @@ pub struct RecallCommand {
     pub budget: Option<usize>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecallDto {
+    pub hits: Vec<HitDto>,
+    pub total: usize,
+}
+
 pub struct Recall {
     search: Arc<dyn Search>,
     clock: Arc<dyn Clock>,
@@ -35,7 +41,7 @@ impl Recall {
         Self { search, clock }
     }
 
-    pub async fn execute(&self, cmd: RecallCommand) -> ApplicationResult<Vec<HitDto>> {
+    pub async fn execute(&self, cmd: RecallCommand) -> ApplicationResult<RecallDto> {
         let limit = cmd.limit.unwrap_or(DEFAULT_LIMIT);
         let query = SearchQuery {
             text: cmd.text,
@@ -88,17 +94,19 @@ impl Recall {
         let anchor = cmd.anchor.as_deref().map(Namespace::new).transpose()?;
         let mut hits = self.search.sections(&query).await?;
         rank(&mut hits, anchor.as_ref(), self.clock.now());
+        let total = hits.len();
         hits.truncate(limit);
 
-        let Some(tokens) = cmd.budget else {
-            return Ok(hits.iter().map(HitDto::from).collect());
+        let hits = match cmd.budget {
+            None => hits.iter().map(HitDto::from).collect(),
+            Some(tokens) => within_budget(hits, tokens)
+                .iter()
+                .map(|hit| HitDto {
+                    text: Some(hit.body.trim().to_owned()),
+                    ..HitDto::from(hit)
+                })
+                .collect(),
         };
-        Ok(within_budget(hits, tokens)
-            .iter()
-            .map(|hit| HitDto {
-                text: Some(hit.body.trim().to_owned()),
-                ..HitDto::from(hit)
-            })
-            .collect())
+        Ok(RecallDto { hits, total })
     }
 }

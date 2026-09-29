@@ -117,7 +117,13 @@ pub(crate) async fn run(
                     limit,
                 })
                 .await?;
-            out.emit(&page, |p| render_list(&p.items, out))
+            out.emit(&page, |p| {
+                let mut text = render_list(&p.items, out);
+                if let Some(note) = out.truncated(p.items.len(), p.total) {
+                    text.push_str(&format!("\n\n{note}"));
+                }
+                text
+            })
         }
 
         TaskCommand::Get { target } => {

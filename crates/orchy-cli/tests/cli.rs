@@ -2653,3 +2653,14 @@ fn the_inbox_can_keep_to_one_conversation() {
         .collect();
     assert_eq!(bodies, vec!["about keys", "more on keys"]);
 }
+
+#[test]
+fn a_listing_cut_short_says_how_much_is_left() {
+    let temp = vault();
+    for n in 0..3 {
+        task_id(&temp, &[&format!("t{n}")]);
+    }
+    let text = ok(temp.path(), &["task", "list", "--limit", "2"]);
+    assert!(text.contains("showing 2 of 3"), "{text}");
+    assert!(!ok(temp.path(), &["task", "list"]).contains("showing"));
+}

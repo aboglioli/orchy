@@ -91,8 +91,14 @@ pub(crate) async fn recall(
     command: RecallCommand,
     out: &Output,
 ) -> CliResult<()> {
-    let hits = app.recall.execute(command).await?;
-    out.emit(&hits, |h| render_hits(h, out))
+    let found = app.recall.execute(command).await?;
+    out.emit(&found.hits, |h| {
+        let mut text = render_hits(h, out);
+        if let Some(note) = out.truncated(h.len(), found.total) {
+            text.push_str(&format!("\n\n{note}"));
+        }
+        text
+    })
 }
 
 pub(crate) async fn link(
