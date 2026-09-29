@@ -551,6 +551,21 @@ orchy doctor --fix    # repair what needs no decision, then report what is left
 | a `supersedes` link recorded the wrong way round by an older version | turns it around |
 | a link to something that does not exist, or a task that is its own ancestor | no |
 
+## Bringing notes in, taking them out
+
+```bash
+orchy import notes/deploys.md --kind document     # a markdown file
+orchy import https://example.com/runbook.md --kind reference
+pbpaste | orchy import - --kind note --title "Standup"
+orchy export [--namespace /web] > web.jsonl
+```
+
+`import` creates one document. A frontmatter block in the input supplies its title and tags,
+and its other fields are kept on the document; fields orchy manages itself (`id`, `status`,
+`created`, …) are ignored. Without a title, orchy uses the first `# ` heading, then the file
+name. `export` prints every document, skill, task and message, one JSON object per line
+with an `entity` field saying which.
+
 ## Scripting
 
 Every command accepts `--json`. Colour is used only on a terminal, and never when

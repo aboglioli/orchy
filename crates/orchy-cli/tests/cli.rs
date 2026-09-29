@@ -3030,3 +3030,132 @@ fn a_stale_hash_refuses_every_document_and_skill_change() {
     );
     assert_eq!(refused.status.code(), Some(5));
 }
+
+#[test]
+fn import_takes_a_markdown_file_with_its_frontmatter() {
+    let temp = vault();
+    let file = temp.path().join("deploys.md");
+    std::fs::write(
+        &file,
+        "---\ntitle: Deploy guide\ntags: [ops]\nowner: alan\nid: not-ours\n---\n\n## Rollback\nundo it\n",
+    )
+    .unwrap();
+
+    let imported = json(
+        temp.path(),
+        &[
+            "import",
+            file.to_str().unwrap(),
+            "--kind",
+            "document",
+            "--tag",
+            "web",
+        ],
+    );
+    assert_eq!(imported["title"], "Deploy guide");
+    assert_eq!(imported["frontmatter"]["owner"], "alan");
+    let tags: Vec<&str> = imported["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_str().unwrap())
+        .collect();
+    assert_eq!(tags, vec!["ops", "web"]);
+    assert_ne!(imported["id"], "not-ours");
+
+    let from_stdin = piped(
+        temp.path(),
+        &["--json", "import", "-", "--kind", "note"],
+        "# Standup\n\nnothing new\n",
+    );
+    assert!(
+        from_stdin.status.success(),
+        "{}",
+        String::from_utf8_lossy(&from_stdin.stderr)
+    );
+    let note: serde_json::Value = serde_json::from_slice(&from_stdin.stdout).unwrap();
+    assert_eq!(note["title"], "Standup");
+}
+
+#[test]
+fn import_fetches_a_url() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/runbook.md", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0; 1024];
+        let _ = stream.read(&mut request).unwrap();
+        let body = "restart the worker\n";
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+    });
+
+    let temp = vault();
+    let imported = json(temp.path(), &["import", &url, "--kind", "reference"]);
+    server.join().unwrap();
+    assert_eq!(imported["title"], "runbook");
+    assert_eq!(imported["body"], "restart the worker");
+}
+
+#[test]
+fn export_prints_one_json_object_per_entity() {
+    let temp = vault();
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "in web",
+            "--namespace",
+            "/web",
+            "--body",
+            "x",
+        ],
+    );
+    ok(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "elsewhere",
+            "--namespace",
+            "/api",
+            "--body",
+            "y",
+        ],
+    );
+    ok(temp.path(), &["task", "new", "ship", "--namespace", "/web"]);
+    ok(
+        temp.path(),
+        &[
+            "skill",
+            "write",
+            "commits",
+            "--summary",
+            "one line",
+            "--namespace",
+            "/web",
+        ],
+    );
+
+    let everything = ok(temp.path(), &["export"]);
+    assert_eq!(everything.lines().count(), 4);
+    let web = ok(temp.path(), &["export", "--namespace", "/web"]);
+    let entities: Vec<String> = web
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["entity"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(entities, vec!["document", "skill", "task"]);
+}

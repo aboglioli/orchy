@@ -199,6 +199,24 @@ pub(crate) enum Command {
         #[arg(long, value_enum, default_value_t = GraphFormat::Text)]
         format: GraphFormat,
     },
+    /// Create a document from a markdown file, a URL, or `-` for stdin; its frontmatter
+    /// supplies the title, tags and any other fields
+    Import {
+        source: String,
+        #[arg(long)]
+        kind: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long)]
+        tag: Vec<String>,
+    },
+    /// Print every document, skill, task and message as one JSON object per line
+    Export {
+        #[arg(long)]
+        namespace: Option<String>,
+    },
     /// The story of one entity: what happened to it, by whom, and what it is linked to
     Why { entity: String },
     /// Give a document a new title

@@ -5,6 +5,7 @@ use orchy_core::{
     IdGenerator, Kind, Namespace, Relation, Tag, TaskStore, Title,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::dto::DocumentDto;
 use crate::error::ApplicationResult;
@@ -18,6 +19,7 @@ pub struct CreateDocumentCommand {
     pub body: Option<String>,
     pub tags: Vec<String>,
     pub produced_by: Option<String>,
+    pub fields: Vec<(String, Value)>,
 }
 
 pub struct CreateDocument {
@@ -77,6 +79,10 @@ impl CreateDocument {
                 .map(Tag::new)
                 .collect::<orchy_core::Result<Vec<_>>>()?;
             document.retag(tags, &[], &*self.clock);
+        }
+
+        for (field, value) in cmd.fields {
+            document.set_field(&field, value, &*self.clock)?;
         }
 
         self.documents.save(&mut document).await?;

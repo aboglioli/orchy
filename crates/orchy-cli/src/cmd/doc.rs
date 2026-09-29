@@ -1,9 +1,12 @@
+use std::io::{self, Write};
+
 use orchy_application::Application;
 use orchy_application::consolidate_documents::ConsolidateDocumentsCommand;
 use orchy_application::create_document::CreateDocumentCommand;
 use orchy_application::dto::{DocumentDto, HitDto};
 use orchy_application::edit_document::EditDocumentCommand;
 use orchy_application::explain_entity::ExplainEntityCommand;
+use orchy_application::export_vault::ExportVaultCommand;
 use orchy_application::link_entities::LinkEntitiesCommand;
 use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_document::ReadDocumentCommand;
@@ -149,6 +152,20 @@ pub(crate) async fn graph(
         GraphFormat::Mermaid => mermaid(h),
         GraphFormat::Dot => dot(h),
     })
+}
+
+pub(crate) async fn export(app: &Application, namespace: Option<String>) -> CliResult<()> {
+    let exported = app
+        .export_vault
+        .execute(ExportVaultCommand { namespace })
+        .await?;
+    let mut stdout = io::stdout().lock();
+    for entity in &exported {
+        let line = serde_json::to_string(entity)
+            .map_err(|e| CliError::config(format!("encoding the export: {e}")))?;
+        writeln!(stdout, "{line}")?;
+    }
+    Ok(())
 }
 
 pub(crate) async fn why(app: &Application, entity: String, out: &Output) -> CliResult<()> {

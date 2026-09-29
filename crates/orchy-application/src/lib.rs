@@ -13,6 +13,7 @@ pub mod dto;
 pub mod edit_document;
 pub mod error;
 pub mod explain_entity;
+pub mod export_vault;
 pub mod fail_task;
 pub mod find_documents;
 pub mod get_task;
@@ -79,6 +80,7 @@ use create_task::CreateTask;
 use doctor::Doctor;
 use edit_document::EditDocument;
 use explain_entity::ExplainEntity;
+use export_vault::ExportVault;
 use fail_task::FailTask;
 use find_documents::FindDocuments;
 use get_task::GetTask;
@@ -194,6 +196,7 @@ pub struct Application {
     pub link_entities: LinkEntities,
     pub traverse_graph: TraverseGraph,
     pub explain_entity: ExplainEntity,
+    pub export_vault: ExportVault,
     pub resolve_reference: ResolveReference,
     pub doctor: Doctor,
     pub recall: Recall,
@@ -396,6 +399,12 @@ impl Application {
             link_entities: LinkEntities::new(Arc::clone(&edges)),
             traverse_graph: TraverseGraph::new(Arc::clone(&edges)),
             explain_entity: ExplainEntity::new(Arc::clone(&log), Arc::clone(&edges)),
+            export_vault: ExportVault::new(
+                Arc::clone(&documents),
+                Arc::clone(&skills),
+                Arc::clone(&tasks),
+                Arc::clone(&messages),
+            ),
             doctor: Doctor::new(
                 Arc::clone(&integrity),
                 Arc::clone(&tasks),

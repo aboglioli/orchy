@@ -3,6 +3,7 @@ mod cmd;
 mod config;
 mod container;
 mod error;
+mod import;
 mod init;
 mod integrate;
 mod output;
@@ -237,6 +238,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 namespace: here(namespace),
                 body: stdin::optional(body)?,
                 tags: tag,
+                fields: Vec::new(),
             };
             cmd::doc::new(&app, command, out).await
         }
@@ -392,6 +394,28 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             reason,
             if_match,
         } => cmd::doc::reject(&app, target, reason, if_match, out).await,
+        Command::Import {
+            source,
+            kind,
+            title,
+            namespace,
+            tag,
+        } => {
+            let text = import::read(&source)?;
+            let import = import::Import {
+                source,
+                kind,
+                title,
+                namespace: here(namespace),
+                tags: tag,
+            };
+            let command = CreateDocumentCommand {
+                actor: Some(actor.clone()),
+                ..import::command(import, &text)?
+            };
+            cmd::doc::new(&app, command, out).await
+        }
+        Command::Export { namespace } => cmd::doc::export(&app, namespace).await,
         Command::Why { entity } => cmd::doc::why(&app, entity, out).await,
         Command::Doctor { fix } => cmd::doctor::run(&app, fix, out).await,
         Command::Supersede { old, by, if_match } => {
