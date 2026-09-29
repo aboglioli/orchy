@@ -4,6 +4,7 @@ mod config;
 mod container;
 mod error;
 mod init;
+mod integrate;
 mod output;
 mod resolve;
 mod since;
@@ -50,6 +51,16 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     }
     if let Command::Man { out: dir } = &command {
         return man(dir.as_deref());
+    }
+    if let Command::Integrate {
+        agent,
+        dir,
+        namespace,
+        role,
+        print,
+    } = command
+    {
+        return integrate_agent(agent, dir, namespace, &role, print, out);
     }
     let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
 
@@ -106,6 +117,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         | Command::Status
         | Command::Completions { .. }
         | Command::Man { .. }
+        | Command::Integrate { .. }
         | Command::Guide => {
             unreachable!("answered before the vault is opened")
         }
@@ -460,4 +472,39 @@ fn man(dir: Option<&std::path::Path>) -> CliResult<()> {
         None => clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?,
     }
     Ok(())
+}
+
+fn integrate_agent(
+    agent: integrate::Agent,
+    dir: Option<std::path::PathBuf>,
+    namespace: Option<String>,
+    roles: &[String],
+    print: bool,
+    out: &Output,
+) -> CliResult<()> {
+    let repo = match dir {
+        Some(dir) => dir,
+        None => std::env::current_dir()?,
+    };
+    let announce = integrate::announce_command(namespace.as_deref(), roles);
+    let change = integrate::plan(agent, &repo, &announce)?;
+    if !print {
+        if let Some(parent) = change.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&change.path, &change.contents)?;
+    }
+    let report = serde_json::json!({
+        "path": change.path.display().to_string(),
+        "written": !print,
+        "contents": change.contents,
+    });
+    out.emit(&report, |r| {
+        let path = r["path"].as_str().unwrap_or_default();
+        if print {
+            format!("{path}\n\n{}", r["contents"].as_str().unwrap_or_default())
+        } else {
+            format!("wrote {path}")
+        }
+    })
 }

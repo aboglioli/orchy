@@ -94,6 +94,7 @@ crates/
         ├── config.rs          settings.toml, orchy.toml, vault/actor resolution
         ├── container.rs       the only place that names a concrete store
         ├── init.rs            `orchy init` scaffold
+        ├── integrate.rs       `orchy integrate`: agent hooks and instruction blocks, embedded
         ├── resolve.rs         id prefix / suffix / title fragment → full id
         ├── output.rs          text vs --json rendering
         ├── stdin.rs · error.rs
@@ -446,8 +447,8 @@ Agents branch on this behaviour, so treat it as API.
 - **Files.** `$XDG_CONFIG_HOME/orchy/settings.toml` is per machine (`machine`, `vault`,
   `actor`); `machine` is generated on first run and must never change. `<vault>/orchy.toml`
   marks a vault, and only its `[events] partitions` key is read.
-- **No vault.** Only `init`, `status`, `completions`, `man`, `guide` and a bare `orchy` run
-  without one; everything else exits 4 and names `orchy init`.
+- **No vault.** Only `init`, `status`, `completions`, `man`, `guide`, `integrate` and a bare
+  `orchy` run without one; everything else exits 4 and names `orchy init`.
 - **Resolving ids.** `ResolveReference` turns what people type into one id, considering
   every entity (`TaskStore::matching`, `DocumentStore::matching`, `MessageStore::all`, never
   a page): a full ULID, an id prefix or suffix, or for tasks and documents a title fragment.

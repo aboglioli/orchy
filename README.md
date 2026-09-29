@@ -74,12 +74,18 @@ ORCHY_ACTOR=reviewer codex
 A name is 2–32 characters of lowercase letters, digits and `-`. Commands you run yourself
 without a name act as `human`.
 
-**Tell it to use orchy.** Add a line like this to the instructions file of the repository
-the agent works in (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`…):
+**Tell it to use orchy.** In the repository the agent works in:
 
-```markdown
-Before starting, run `orchy announce --roles developer --namespace /backend` and follow what it says.
+```bash
+orchy integrate claude-code --namespace /backend --role developer
+orchy integrate codex        # or opencode, gemini
 ```
+
+For Claude Code this adds a session-start hook to `.claude/settings.json`, so every session
+begins with the briefing already in context. For Codex and OpenCode it adds a short section to
+`AGENTS.md`, and for Gemini to `GEMINI.md`, telling the agent to run `orchy announce` first.
+Running it again updates what it wrote instead of adding a second copy; `--print` shows the
+change without writing it.
 
 `orchy announce` puts the agent on the roster and answers with a briefing:
 

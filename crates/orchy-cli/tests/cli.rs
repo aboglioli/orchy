@@ -2430,3 +2430,39 @@ fn events_since_a_moment_leave_out_what_came_before() {
             > 1
     );
 }
+
+#[test]
+fn integrating_claude_code_adds_one_session_hook_and_keeps_the_rest_in_order() {
+    let temp = tempfile::tempdir().unwrap();
+    let settings = temp.path().join(".claude/settings.json");
+    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    std::fs::write(
+        &settings,
+        "{\n  \"permissions\": {},\n  \"model\": \"opus\"\n}\n",
+    )
+    .unwrap();
+
+    for _ in 0..2 {
+        ok(
+            temp.path(),
+            &[
+                "integrate",
+                "claude-code",
+                "--dir",
+                temp.path().to_str().unwrap(),
+                "--namespace",
+                "/web",
+            ],
+        );
+    }
+    let text = std::fs::read_to_string(&settings).unwrap();
+    assert!(
+        text.find("permissions").unwrap() < text.find("model").unwrap(),
+        "{text}"
+    );
+    assert_eq!(
+        text.matches("orchy announce --namespace /web").count(),
+        1,
+        "{text}"
+    );
+}

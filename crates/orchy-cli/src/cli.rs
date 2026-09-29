@@ -254,6 +254,22 @@ pub(crate) enum Command {
     },
     /// Generate a shell completion script
     Completions { shell: clap_complete::Shell },
+    /// Make an agent run `orchy announce` at the start of every session
+    Integrate {
+        agent: crate::integrate::Agent,
+        /// The project to set up (default: the current directory)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Namespace the agent announces itself in
+        #[arg(long)]
+        namespace: Option<String>,
+        /// Roles the agent announces, repeatable
+        #[arg(long)]
+        role: Vec<String>,
+        /// Show the change instead of writing it
+        #[arg(long)]
+        print: bool,
+    },
     /// Print the man page, or write one per command into a directory
     Man {
         #[arg(long)]
