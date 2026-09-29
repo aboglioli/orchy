@@ -2466,3 +2466,43 @@ fn integrating_claude_code_adds_one_session_hook_and_keeps_the_rest_in_order() {
         "{text}"
     );
 }
+
+#[test]
+fn an_abandoned_claim_can_be_taken_back_once_its_lease_expires() {
+    let temp = vault();
+    let id = task_id(&temp, &["abandoned"]);
+    ok(
+        temp.path(),
+        &["--actor", "crashed", "task", "claim", &id, "--ttl", "1"],
+    );
+
+    let early = orchy(
+        temp.path(),
+        &["task", "release", &id, "--force", "--reason", "gone"],
+    );
+    assert_eq!(early.status.code(), Some(5), "the lease is still live");
+
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    ok(
+        temp.path(),
+        &[
+            "task",
+            "release",
+            &id,
+            "--force",
+            "--reason",
+            "crashed agent",
+        ],
+    );
+    assert_eq!(
+        json(temp.path(), &["task", "get", &id])["task"]["status"],
+        "pending"
+    );
+
+    let released = json(
+        temp.path(),
+        &["events", "--key", &id, "--topic", "task.released"],
+    );
+    assert_eq!(released[0]["payload"]["forced"], true);
+    assert_eq!(released[0]["payload"]["reason"], "crashed agent");
+}

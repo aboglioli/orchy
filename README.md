@@ -386,7 +386,7 @@ orchy task ready [--role r] [--namespace /x]
 orchy task next [--role r] [--namespace /x] [--peek]
 orchy task claim <task> [--ttl secs] [--start]
 orchy task start <task>
-orchy task release <task>
+orchy task release <task> [--force --reason …]
 orchy task done <task> [--note …]
 orchy task fail <task> <reason>
 orchy task cancel <task> <reason>
@@ -408,7 +408,10 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
   done (`-` reads it from standard input), so another agent can check the work. It is kept
   in the task file under `## Acceptance`.
 - **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
-  the holder can mark it done, failed or cancelled.
+  the holder can mark it done, failed or cancelled. If an agent crashes holding a task, any
+  agent can take it back with `task release --force --reason …` once the claim's lease has
+  expired (15 minutes by default, `--ttl` on claim). For long work, claim with a longer
+  `--ttl` or keep the claim alive with `orchy lock renew task:<id> --ttl 3600`.
 - **Outcomes.** The `--note` of `task done` and the reason given to `task fail` or
   `task cancel` are kept in the task file, under `## Outcome`, for the next agent to read.
 - **`split`** breaks a task into subtasks and keeps the original as the goal. The goal

@@ -184,13 +184,18 @@ pub(crate) async fn run(
             out.emit(&task, |t| detail(t, out))
         }
 
-        TaskCommand::Release { target } => {
+        TaskCommand::Release {
+            target,
+            force,
+            reason,
+        } => {
             let task_id = resolve::task(app, &target).await?;
             let task = app
                 .release_task
                 .execute(ReleaseTaskCommand {
                     task_id,
                     actor: actor.to_owned(),
+                    force: if force { reason } else { None },
                 })
                 .await?;
             out.emit(&task, |t| detail(t, out))

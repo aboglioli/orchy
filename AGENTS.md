@@ -320,8 +320,10 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Claiming.** Only `pending` is claimable, and claiming is not a self-transition.
 - **Holder only.** Completing, failing, cancelling a claimed task and releasing it are
   restricted to the holder.
-- **No reclaim.** A claimed task is never taken over; it returns to `pending` only through
-  `release`.
+- **Reclaiming.** A claimed task returns to `pending` only through `release`. The holder
+  releases freely; anyone else needs `--force` with a reason, and `ReleaseTask` refuses it
+  while the `task:<id>` lease is live, so a task is taken back only from an agent that stopped
+  renewing it. `task.released` records `forced` and the reason.
 - **Rollup** (`task::rollup::resolve`) runs when a child reaches a terminal status, and on
   both the old and the new parent when `task update --parent`/`--detach` moves a child. While
   any child is open it yields nothing. Otherwise the parent takes:

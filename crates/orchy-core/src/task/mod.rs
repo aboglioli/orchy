@@ -261,6 +261,25 @@ impl Task {
             }
             None => return Err(DomainError::conflict("task is not claimed")),
         }
+        self.give_back(by, false, None, clock)
+    }
+
+    /// Recovers a task whose holder stopped working on it. Whether that is so is decided by
+    /// its lease, which the caller has checked has expired.
+    pub fn force_release(&mut self, by: &ActorId, reason: String, clock: &dyn Clock) -> Result<()> {
+        if self.claimed_by.is_none() {
+            return Err(DomainError::conflict("task is not claimed"));
+        }
+        self.give_back(by, true, Some(reason), clock)
+    }
+
+    fn give_back(
+        &mut self,
+        by: &ActorId,
+        forced: bool,
+        reason: Option<String>,
+        clock: &dyn Clock,
+    ) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Pending)?;
         let now = clock.now();
         self.claimed_by = None;
@@ -270,6 +289,8 @@ impl Task {
             id: self.id.clone(),
             namespace: self.namespace.clone(),
             by: by.clone(),
+            forced,
+            reason,
             at: now,
         });
         Ok(())

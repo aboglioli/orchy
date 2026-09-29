@@ -348,7 +348,15 @@ pub(crate) enum TaskCommand {
         start: bool,
     },
     /// Give a task back
-    Release { target: String },
+    Release {
+        target: String,
+        /// Take back a task another agent claimed and abandoned; only once its lease expired
+        #[arg(long, requires = "reason")]
+        force: bool,
+        /// Why, recorded with the release
+        #[arg(long)]
+        reason: Option<String>,
+    },
     /// Move a claimed task to in_progress
     Start { target: String },
     /// Finish a task; rolls up to the parent

@@ -64,6 +64,8 @@ pub struct TaskReleased {
     pub id: Id,
     pub namespace: Namespace,
     pub by: ActorId,
+    pub forced: bool,
+    pub reason: Option<String>,
     pub at: DateTime<Utc>,
 }
 task_event!(TaskReleased, "task.released");
