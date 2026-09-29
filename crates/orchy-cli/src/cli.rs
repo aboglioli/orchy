@@ -103,6 +103,9 @@ pub(crate) enum Command {
         /// Body text, `-` for stdin; piped stdin is read when omitted
         #[arg(long)]
         body: Option<String>,
+        /// The task whose work produced it
+        #[arg(long)]
+        task: Option<String>,
     },
     /// Read a document, or one section of it
     Read {

@@ -253,7 +253,7 @@ A **namespace** is a path that says which part of the project something belongs 
 ## Knowledge
 
 ```bash
-orchy new <type> <title> [--namespace /x] [--tag t]... [--body "…" | --body - | < file]
+orchy new <type> <title> [--namespace /x] [--tag t]... [--task <task>] [--body "…" | --body - | < file]
 orchy read <doc> [--section <heading> [--nth n]]
 orchy edit <doc> [--section <heading> [--nth n] | --replace-in <text> | --replace] [--content "…"]
 orchy set <doc> field=value...
@@ -301,6 +301,8 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
   - `--replace` replaces the whole body.
 
   Content comes from `--content` or from standard input.
+- **Where it came from.** `new --task <task>` links the document to the task whose work
+  produced it, so `orchy graph task:<id>` shows what a piece of work left behind.
 - **Your own fields.** `set` adds any header field you like (`reviewer=alan`,
   `ticket=ORG-42`). Fields orchy manages have their own commands, and `set` names the right
   one when refused: `retitle`, `retype`, `tag`, `ns move`, and `archive`, `unarchive`,

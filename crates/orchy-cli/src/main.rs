@@ -190,8 +190,14 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             namespace,
             tag,
             body,
+            task,
         } => {
+            let produced_by = match task {
+                Some(task) => Some(resolve::task(&app, &task).await?),
+                None => None,
+            };
             let command = CreateDocumentCommand {
+                produced_by,
                 actor: Some(actor.clone()),
                 kind,
                 title,

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorId, ActorStore, Body, Clock, Document, DocumentStore, IdGenerator, Kind, Namespace, Tag,
-    Title,
+    ActorId, ActorStore, Body, Clock, Document, DocumentStore, Edge, EdgeStore, EntityRef, Id,
+    IdGenerator, Kind, Namespace, Relation, Tag, TaskStore, Title,
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,11 +17,14 @@ pub struct CreateDocumentCommand {
     pub namespace: Option<String>,
     pub body: Option<String>,
     pub tags: Vec<String>,
+    pub produced_by: Option<String>,
 }
 
 pub struct CreateDocument {
     documents: Arc<dyn DocumentStore>,
     actors: Arc<dyn ActorStore>,
+    tasks: Arc<dyn TaskStore>,
+    edges: Arc<dyn EdgeStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
 }
@@ -30,12 +33,16 @@ impl CreateDocument {
     pub fn new(
         documents: Arc<dyn DocumentStore>,
         actors: Arc<dyn ActorStore>,
+        tasks: Arc<dyn TaskStore>,
+        edges: Arc<dyn EdgeStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             documents,
             actors,
+            tasks,
+            edges,
             ids,
             clock,
         }
@@ -43,6 +50,10 @@ impl CreateDocument {
 
     pub async fn execute(&self, cmd: CreateDocumentCommand) -> ApplicationResult<DocumentDto> {
         let kind = cmd.kind.parse::<Kind>()?;
+        let producer = match &cmd.produced_by {
+            Some(task) => Some(self.tasks.require(&Id::new(task)?).await?.id().clone()),
+            None => None,
+        };
 
         let namespace = match (&cmd.namespace, &cmd.actor) {
             (Some(ns), _) => Namespace::new(ns)?,
@@ -69,6 +80,15 @@ impl CreateDocument {
         }
 
         self.documents.save(&mut document).await?;
+        if let Some(task) = producer {
+            self.edges
+                .add(&Edge::new(
+                    EntityRef::task(task),
+                    EntityRef::document(document.id().clone()),
+                    Relation::Produces,
+                )?)
+                .await?;
+        }
         Ok(DocumentDto::from(&document))
     }
 }

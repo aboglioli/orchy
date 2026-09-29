@@ -2340,3 +2340,20 @@ fn a_rejected_candidate_stays_but_leaves_recall() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_document_written_for_a_task_is_linked_to_it() {
+    let temp = vault();
+    let task = task_id(&temp, &["pick an algorithm"]);
+    let doc = json(
+        temp.path(),
+        &[
+            "new", "decision", "RS256", "--task", "pick an", "--body", "x",
+        ],
+    );
+    let doc = doc["id"].as_str().unwrap();
+    let graph = json(temp.path(), &["graph", &format!("task:{task}")]);
+    let edge = &graph.as_array().unwrap()[0]["edge"];
+    assert_eq!(edge["relation"], "produces");
+    assert!(edge["to"].as_str().unwrap().ends_with(doc));
+}

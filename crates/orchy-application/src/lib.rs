@@ -242,6 +242,8 @@ impl Application {
             create_document: CreateDocument::new(
                 Arc::clone(&documents),
                 Arc::clone(&actors),
+                Arc::clone(&tasks),
+                Arc::clone(&edges),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
