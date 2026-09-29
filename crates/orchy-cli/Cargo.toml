@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 readme = "../../README.md"
 keywords = ["agents", "ai", "coordination", "markdown", "cli"]
 categories = ["command-line-utilities", "development-tools"]
@@ -31,3 +32,6 @@ tempfile.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.dist]
+formula = "orchy"

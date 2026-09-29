@@ -517,6 +517,10 @@ Nothing is released yet. Everything is in place for a first release:
   creates a symlink and nothing has been tested there. After changing `dist-workspace.toml`,
   run `dist generate` (e.g. `mise exec cargo-dist@0.33.0 -- dist generate`) and commit the
   regenerated workflow; never edit it by hand.
+- **Homebrew.** The same release generates `orchy.rb` and pushes it to the tap
+  `aboglioli/homebrew-tap` (`brew install aboglioli/tap/orchy`). Before the first release that
+  repository must exist and the orchy repository needs a `HOMEBREW_TAP_TOKEN` secret that can
+  push to it; without them the release's `publish-homebrew-formula` job fails.
 - **Crates.** Internal dependencies carry a version, so `cargo publish --workspace` publishes
   all five crates in dependency order; `cargo publish --workspace --dry-run` verifies that.
 - **Versions.** Semver from `0.1.0`, one version for the whole workspace

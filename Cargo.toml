@@ -16,6 +16,7 @@ rust-version = "1.89"
 version = "0.1.0"
 license = "MIT"
 repository = "https://github.com/aboglioli/orchy"
+homepage = "https://github.com/aboglioli/orchy"
 
 [workspace.dependencies]
 # Event toolkit. The facade is the only entry point: backends come from it by feature, never
