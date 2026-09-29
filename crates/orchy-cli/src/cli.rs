@@ -100,7 +100,7 @@ pub(crate) enum Command {
         namespace: Option<String>,
         #[arg(long)]
         tag: Vec<String>,
-        /// Body text; reads stdin when omitted
+        /// Body text, `-` for stdin; piped stdin is read when omitted
         #[arg(long)]
         body: Option<String>,
     },

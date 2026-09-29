@@ -193,7 +193,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 kind,
                 title,
                 namespace: here(namespace),
-                body,
+                body: stdin::optional(body)?,
                 tags: tag,
             };
             cmd::doc::new(&app, command, out).await

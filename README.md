@@ -253,7 +253,7 @@ A **namespace** is a path that says which part of the project something belongs 
 ## Knowledge
 
 ```bash
-orchy new <type> <title> [--namespace /x] [--tag t]... --body "…"
+orchy new <type> <title> [--namespace /x] [--tag t]... [--body "…" | --body - | < file]
 orchy read <doc> [--section <heading>]
 orchy edit <doc> [--section <heading> | --replace-in <text> | --replace] [--content "…"]
 orchy set <doc> field=value...

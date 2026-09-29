@@ -402,7 +402,9 @@ Agents branch on this behaviour, so treat it as API.
   title fragment (`resolve.rs`); more than one match is `Ambiguous` (exit 7), never a guess.
   Skills resolve by id, or by name: first in scope at `--namespace`, then anywhere if the
   name is unique. Messages and `link`/`graph` refs (`kind:id`) take full ids only.
-- **Input.** Content comes from a flag or stdin, never a prompt (`stdin.rs`).
+- **Input.** Content comes from a flag or stdin, never a prompt (`stdin.rs`). Required
+  content (`edit`, `msg send`) reads stdin when the flag is absent; optional content
+  (`new --body`) reads it only when something is piped, and `-` asks for it explicitly.
 - **Output.** Every command supports `--json`. Colour is used only on a TTY, never with
   `--no-color` or `NO_COLOR`.
 - **Errors.** Exit codes follow the table under Errors. clap's own usage errors exit 2.
@@ -412,8 +414,6 @@ Agents branch on this behaviour, so treat it as API.
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
 it drift.
 
-- **`orchy new` ignores stdin.** Its `--body` help says it reads stdin when omitted, but
-  `cmd::doc::new` passes `None` through and creates an empty body. `edit` does read stdin.
 - **Documents cannot be retitled, retyped, moved or retagged from the CLI.**
   `UpdateDocument` supports title, kind, namespace and tags, but the CLI only uses it for
   `archive`/`unarchive`. `orchy set` refuses those fields and points at commands that do

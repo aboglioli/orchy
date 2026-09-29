@@ -1688,3 +1688,53 @@ fn writes_land_where_the_agent_works_unless_told_otherwise() {
         "ORCHY_NAMESPACE overrides the roster"
     );
 }
+
+fn piped(vault: &Path, args: &[&str], input: &str) -> Output {
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_orchy"))
+        .args(args)
+        .env("ORCHY_VAULT", vault)
+        .env("XDG_CONFIG_HOME", vault.join(".config"))
+        .env("ORCHY_ACTOR", "claude")
+        .env("NO_COLOR", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn a_new_document_takes_its_body_from_a_pipe() {
+    let temp = vault();
+    let out = piped(
+        temp.path(),
+        &["--json", "new", "note", "piped"],
+        "## Context\n\nfrom a heredoc\n",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        doc["body"].as_str().unwrap().contains("from a heredoc"),
+        "{doc}"
+    );
+
+    let dash = piped(
+        temp.path(),
+        &["--json", "new", "note", "dash", "--body", "-"],
+        "explicit",
+    );
+    let doc: serde_json::Value = serde_json::from_slice(&dash.stdout).unwrap();
+    assert_eq!(doc["body"], "explicit");
+}

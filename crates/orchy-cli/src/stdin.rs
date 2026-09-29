@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 
 use crate::error::{CliError, CliResult};
 
@@ -16,4 +16,19 @@ pub(crate) fn or_read(provided: Option<String>) -> CliResult<String> {
         ));
     }
     Ok(buffer)
+}
+
+/// Content that may legitimately be empty: a flag wins, `-` insists on stdin, and otherwise
+/// stdin is read only when something is piped in, so an interactive shell is never blocked.
+pub(crate) fn optional(provided: Option<String>) -> CliResult<Option<String>> {
+    match provided.as_deref() {
+        Some("-") => or_read(None).map(Some),
+        Some(_) => Ok(provided),
+        None if std::io::stdin().is_terminal() => Ok(None),
+        None => {
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            Ok((!buffer.trim().is_empty()).then_some(buffer))
+        }
+    }
 }
