@@ -190,6 +190,8 @@ pub(crate) enum Command {
         #[arg(long, value_enum, default_value_t = GraphFormat::Text)]
         format: GraphFormat,
     },
+    /// The story of one entity: what happened to it, by whom, and what it is linked to
+    Why { entity: String },
     /// Give a document a new title
     Retitle { target: String, title: String },
     /// Change what kind of document it is

@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod dto;
 pub mod edit_document;
 pub mod error;
+pub mod explain_entity;
 pub mod fail_task;
 pub mod find_documents;
 pub mod get_task;
@@ -74,6 +75,7 @@ use create_document::CreateDocument;
 use create_task::CreateTask;
 use doctor::Doctor;
 use edit_document::EditDocument;
+use explain_entity::ExplainEntity;
 use fail_task::FailTask;
 use find_documents::FindDocuments;
 use get_task::GetTask;
@@ -185,6 +187,7 @@ pub struct Application {
 
     pub link_entities: LinkEntities,
     pub traverse_graph: TraverseGraph,
+    pub explain_entity: ExplainEntity,
     pub resolve_reference: ResolveReference,
     pub doctor: Doctor,
     pub recall: Recall,
@@ -375,6 +378,7 @@ impl Application {
 
             link_entities: LinkEntities::new(Arc::clone(&edges)),
             traverse_graph: TraverseGraph::new(Arc::clone(&edges)),
+            explain_entity: ExplainEntity::new(Arc::clone(&log), Arc::clone(&edges)),
             doctor: Doctor::new(
                 Arc::clone(&integrity),
                 Arc::clone(&tasks),

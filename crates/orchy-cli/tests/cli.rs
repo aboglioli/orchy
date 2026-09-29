@@ -2718,3 +2718,41 @@ fn a_graph_can_follow_one_relation_and_render_as_a_diagram() {
         "{dot}"
     );
 }
+
+#[test]
+fn why_tells_what_happened_to_an_entity_and_what_it_is_linked_to() {
+    let temp = vault();
+    let old = json(temp.path(), &["new", "decision", "old", "--body", "x"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let new = json(
+        temp.path(),
+        &["--actor", "codex", "new", "decision", "new", "--body", "y"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    ok(
+        temp.path(),
+        &["--actor", "codex", "supersede", &old, "--by", &new],
+    );
+
+    let story = json(temp.path(), &["why", &format!("document:{old}")]);
+    let topics: Vec<&str> = story["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["topic"].as_str().unwrap())
+        .collect();
+    assert!(
+        topics.contains(&"document.created") && topics.contains(&"document.superseded"),
+        "{topics:?}"
+    );
+    assert_eq!(story["links_in"][0]["relation"], "supersedes");
+    let text = ok(temp.path(), &["why", &format!("document:{old}")]);
+    assert!(
+        text.contains("codex@") && text.contains("links to it"),
+        "{text}"
+    );
+}

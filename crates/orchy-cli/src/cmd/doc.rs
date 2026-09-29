@@ -2,6 +2,7 @@ use orchy_application::Application;
 use orchy_application::create_document::CreateDocumentCommand;
 use orchy_application::dto::{DocumentDto, HitDto};
 use orchy_application::edit_document::EditDocumentCommand;
+use orchy_application::explain_entity::ExplainEntityCommand;
 use orchy_application::link_entities::LinkEntitiesCommand;
 use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_document::ReadDocumentCommand;
@@ -144,6 +145,42 @@ pub(crate) async fn graph(
         GraphFormat::Text => render_graph(h),
         GraphFormat::Mermaid => mermaid(h),
         GraphFormat::Dot => dot(h),
+    })
+}
+
+pub(crate) async fn why(app: &Application, entity: String, out: &Output) -> CliResult<()> {
+    let story = app
+        .explain_entity
+        .execute(ExplainEntityCommand { entity })
+        .await?;
+    out.emit(&story, |s| {
+        let mut lines = vec![out.bold(&s.entity)];
+        if s.history.is_empty() {
+            lines.push("  no recorded history".to_owned());
+        }
+        for event in &s.history {
+            lines.push(format!(
+                "  {}  {:<26} {}",
+                event.recorded_at.format("%Y-%m-%d %H:%M:%S"),
+                event.topic,
+                event.actor.as_deref().unwrap_or("?")
+            ));
+        }
+        for (heading, links, outward) in [
+            ("links from it", &s.links_out, true),
+            ("links to it", &s.links_in, false),
+        ] {
+            if links.is_empty() {
+                continue;
+            }
+            lines.push(String::new());
+            lines.push(out.bold(heading));
+            lines.extend(links.iter().map(|e| {
+                let other = if outward { &e.to } else { &e.from };
+                format!("  {:<16} {other}", e.relation)
+            }));
+        }
+        lines.join("\n")
     })
 }
 

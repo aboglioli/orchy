@@ -469,10 +469,13 @@ evidence. `orchy types` lists every relation and what it can connect.
 orchy link task:<id> document:<id> --rel produces
 orchy unlink task:<id> document:<id> --rel produces
 orchy graph task:<id> [--depth n] [--rel r]... [--format text|mermaid|dot]
+orchy why document:<id>
 ```
 
 `--rel` follows only the named relations; `--format mermaid` or `--format dot` prints a
-diagram to paste into a pull request or render with Graphviz.
+diagram to paste into a pull request or render with Graphviz. `orchy why` tells one
+entity's story: every recorded event about it, with who did it and when, and every link
+from and to it.
 
 Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill`,
 `message` or `actor`. Relations with side effects are set by their own commands instead:
