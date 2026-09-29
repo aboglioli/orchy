@@ -1903,3 +1903,26 @@ fn the_text_before_the_first_heading_and_the_headings_themselves_are_searchable(
         );
     }
 }
+
+#[test]
+fn an_identifier_is_found_by_its_parts_and_by_its_whole_name() {
+    let temp = vault();
+    let doc = json(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "Persistence",
+            "--body",
+            "The UserRepository caches reads.",
+        ],
+    );
+    let id = doc["id"].as_str().unwrap();
+    for query in ["repository", "UserRepository"] {
+        let hits = json(temp.path(), &["recall", query]);
+        assert!(
+            hits.as_array().unwrap().iter().any(|h| h["id"] == id),
+            "`{query}`: {hits}"
+        );
+    }
+}

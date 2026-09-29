@@ -356,7 +356,8 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   into `Passage`s (`document_passages`: the preamble, then one per section; `skill_passage`)
   and how they score (`score`). Both stores call the same functions, so they cannot drift.
 - **Terms.** `tokenise` splits on non-alphanumerics, lowercases, and applies the English
-  Snowball stemmer.
+  Snowball stemmer. A word with camelCase, acronym or letter/digit boundaries also yields
+  its parts (`UserRepository` → `userrepository`, `user`, `repository`).
 - **`score`** is BM25:
   - `k1 = 1.2`, `b = 0.75`;
   - title terms count 3× (a skill's title is its name plus summary), heading terms 2×,
@@ -429,9 +430,8 @@ it drift.
 - **`events --limit n` returns the oldest n events**, not the most recent.
 - **Short message ids are not resolved.** `msg inbox` prints short ids, but `msg read`,
   `thread`, `resolve` and `promote` take only full ULIDs.
-- **camelCase is one search term.** `tokenise` splits on non-alphanumerics only, so
-  `UserRepository` never matches `repository`. There is no prefix or substring fallback
-  either.
+- **No partial-word search.** `migr` finds nothing; there is no prefix or substring
+  fallback. Add one only if measured to help.
 - **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a
   silent double claim rather than an error.
 

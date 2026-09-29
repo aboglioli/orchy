@@ -313,6 +313,7 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 - words can appear in any order, and each is matched on its own;
 - different forms of a word match each other: `migrate`, `migrations` and `migrating` all
   find "migration";
+- identifiers are found by their parts: `repository` finds `UserRepository`;
 - titles count more than headings, headings more than body text, and the exact phrase you
   typed counts more than the same words scattered;
 - recent documents rank above old ones, and `--anchor /backend` prefers results from that
