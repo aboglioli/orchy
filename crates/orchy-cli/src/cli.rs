@@ -217,6 +217,14 @@ pub(crate) enum Command {
         #[arg(long)]
         by: String,
     },
+    /// Record that duplicates were merged into one document: the sources become superseded
+    /// by it and their tags carry over. Merge the bodies first, with `edit`.
+    Consolidate {
+        #[arg(required = true)]
+        sources: Vec<String>,
+        #[arg(long)]
+        into: String,
+    },
     /// Retire a document from active use
     Archive { target: String },
     /// Bring an archived document back

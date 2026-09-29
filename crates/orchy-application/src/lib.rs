@@ -5,6 +5,7 @@ pub mod brief;
 pub mod cancel_task;
 pub mod claim_task;
 pub mod complete_task;
+pub mod consolidate_documents;
 pub mod create_document;
 pub mod create_task;
 pub mod doctor;
@@ -72,6 +73,7 @@ use brief::{Brief, BriefSources};
 use cancel_task::CancelTask;
 use claim_task::ClaimTask;
 use complete_task::CompleteTask;
+use consolidate_documents::ConsolidateDocuments;
 use create_document::CreateDocument;
 use create_task::CreateTask;
 use doctor::Doctor;
@@ -152,6 +154,7 @@ pub struct Application {
     pub promote_document: PromoteDocument,
     pub reject_document: RejectDocument,
     pub supersede_document: SupersedeDocument,
+    pub consolidate_documents: ConsolidateDocuments,
 
     pub create_task: CreateTask,
     pub get_task: GetTask,
@@ -283,6 +286,11 @@ impl Application {
             ),
             reject_document: RejectDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             supersede_document: SupersedeDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&edges),
+                Arc::clone(&clock),
+            ),
+            consolidate_documents: ConsolidateDocuments::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),
                 Arc::clone(&clock),

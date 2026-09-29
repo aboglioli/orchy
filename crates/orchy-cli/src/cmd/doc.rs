@@ -1,4 +1,5 @@
 use orchy_application::Application;
+use orchy_application::consolidate_documents::ConsolidateDocumentsCommand;
 use orchy_application::create_document::CreateDocumentCommand;
 use orchy_application::dto::{DocumentDto, HitDto};
 use orchy_application::edit_document::EditDocumentCommand;
@@ -246,6 +247,33 @@ pub(crate) async fn supersede(
         .execute(SupersedeDocumentCommand { old_id, new_id })
         .await?;
     out.emit(&document, |d| format!("{}  superseded", short(&d.id)))
+}
+
+pub(crate) async fn consolidate(
+    app: &Application,
+    sources: Vec<String>,
+    into: String,
+    out: &Output,
+) -> CliResult<()> {
+    let into = resolve::document(app, &into).await?;
+    let mut resolved = Vec::new();
+    for source in &sources {
+        resolved.push(resolve::document(app, source).await?);
+    }
+    let response = app
+        .consolidate_documents
+        .execute(ConsolidateDocumentsCommand {
+            sources: resolved,
+            into,
+        })
+        .await?;
+    out.emit(&response, |r| {
+        format!(
+            "{} consolidated into {}",
+            r.superseded.len(),
+            short(&r.into.id)
+        )
+    })
 }
 
 pub(crate) async fn update(

@@ -2875,6 +2875,72 @@ fn task_merge_folds_duplicates_into_the_kept_task() {
         "completed",
         "rollup holds"
     );
+    let links = ok(
+        temp.path(),
+        &["graph", &format!("task:{keep}"), "--rel", "merged_from"],
+    );
+    assert!(links.contains("merged_from"), "{links}");
     let waiting = json(temp.path(), &["task", "get", &dependent]);
     assert_eq!(waiting["readiness"], "satisfied", "{waiting}");
+}
+
+#[test]
+fn consolidate_supersedes_the_sources_and_hides_them_from_recall() {
+    let temp = vault();
+    let first = json(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "deploy steps",
+            "--body",
+            "rollout order",
+            "--tag",
+            "ops",
+        ],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second = json(
+        temp.path(),
+        &["new", "note", "deploy notes", "--body", "rollout checks"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let into = json(
+        temp.path(),
+        &[
+            "new",
+            "note",
+            "deploy guide",
+            "--body",
+            "rollout order and checks",
+        ],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let done = json(
+        temp.path(),
+        &["consolidate", &first, &second, "--into", &into],
+    );
+    assert_eq!(done["superseded"].as_array().unwrap().len(), 2);
+    assert_eq!(done["into"]["tags"][0], "ops");
+
+    let hits = json(temp.path(), &["recall", "rollout"]);
+    let ids: Vec<&str> = hits
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, vec![into.as_str()]);
+    let graph = ok(
+        temp.path(),
+        &["graph", &format!("document:{into}"), "--rel", "merged_from"],
+    );
+    assert_eq!(graph.matches("merged_from").count(), 2, "{graph}");
 }

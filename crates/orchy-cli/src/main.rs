@@ -348,6 +348,9 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         Command::Why { entity } => cmd::doc::why(&app, entity, out).await,
         Command::Doctor { fix } => cmd::doctor::run(&app, fix, out).await,
         Command::Supersede { old, by } => cmd::doc::supersede(&app, old, by, out).await,
+        Command::Consolidate { sources, into } => {
+            cmd::doc::consolidate(&app, sources, into, out).await
+        }
         Command::Archive { target } => cmd::doc::set_status(&app, target, "archived", out).await,
         Command::Unarchive { target } => cmd::doc::set_status(&app, target, "active", out).await,
         Command::Promote {

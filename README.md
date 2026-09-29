@@ -279,6 +279,7 @@ orchy retype <doc> <type>
 orchy tag <doc> [+t | -t]...
 orchy ns move <doc> <namespace>
 orchy supersede <old> --by <new>
+orchy consolidate <doc>... --into <doc>
 orchy archive <doc>
 orchy unarchive <doc>
 orchy promote <candidate> --as <type> [--namespace /x]
@@ -310,6 +311,9 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
   `candidate` starts `proposed` until `orchy promote` turns it into a real type or
   `orchy reject` turns it down; a rejected candidate stays in the vault, out of search. Promoting a candidate `--as skill` creates a skill from it instead, and the
   candidate stays behind, marked `promoted`, as the record of the proposal.
+- **Duplicates.** Merge their text into one document with `edit`, then
+  `orchy consolidate <dup>... --into <doc>` supersedes the duplicates by it, carries their
+  tags over and records `merged_from` links, so search returns only the merged document.
 - **Editing.** `edit` appends to the body by default:
   - `--section` replaces what is under a heading. When several headings share the name,
     orchy refuses (exit 7) until `--nth` picks one;
