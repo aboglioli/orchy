@@ -302,6 +302,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             };
             cmd::doc::update(&app, target, command, out).await
         }
+        Command::Reject { target, reason } => cmd::doc::reject(&app, target, reason, out).await,
         Command::Doctor { fix } => cmd::doctor::run(&app, fix, out).await,
         Command::Supersede { old, by } => cmd::doc::supersede(&app, old, by, out).await,
         Command::Archive { target } => cmd::doc::set_status(&app, target, "archived", out).await,

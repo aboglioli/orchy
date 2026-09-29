@@ -34,6 +34,7 @@ pub mod read_message;
 pub mod read_skill;
 pub mod read_thread;
 pub mod recall;
+pub mod reject_document;
 pub mod release_task;
 pub mod replace_task;
 pub mod resolve_reference;
@@ -96,6 +97,7 @@ use read_message::ReadMessage;
 use read_skill::ReadSkill;
 use read_thread::ReadThread;
 use recall::Recall;
+use reject_document::RejectDocument;
 use release_task::ReleaseTask;
 use replace_task::ReplaceTask;
 use resolve_reference::ResolveReference;
@@ -145,6 +147,7 @@ pub struct Application {
     pub update_document: UpdateDocument,
     pub find_documents: FindDocuments,
     pub promote_document: PromoteDocument,
+    pub reject_document: RejectDocument,
     pub supersede_document: SupersedeDocument,
 
     pub create_task: CreateTask,
@@ -255,6 +258,7 @@ impl Application {
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
+            reject_document: RejectDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             supersede_document: SupersedeDocument::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),

@@ -338,8 +338,10 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `document`, `config`, `reference`, `plan`, `log`, `overview`, `summary`, `report`,
   `context`, `candidate`. `skill` is reserved: parsing it as a kind fails and points at
   `orchy skill write`, because skills are their own entity.
-- **Statuses.** Canon kinds use `draft | active | superseded | archived`. `candidate` uses
-  `proposed | promoted | rejected`, and the two sets never overlap. Status changes are
+- **Statuses.** Canon kinds use `draft | active | superseded | archived` and start `active`;
+  `candidate` uses `proposed | promoted | rejected` and starts `proposed`
+  (`Kind::initial_status`). The two sets never overlap. `Document::reject` keeps its reason
+  in the `rejected_because` field. Status changes are
   semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
 - **Sections.** A body is split into sections by ATX headings (`#` to `######` followed by a
   space); a heading inside a fenced code block is code, and `#tag` is not a heading. Text

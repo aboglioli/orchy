@@ -2314,3 +2314,29 @@ fn a_task_carries_its_definition_of_done_and_the_roles_that_may_take_it() {
     );
     assert!(ok(temp.path(), &["task", "get", &id]).contains("tests and docs pass"));
 }
+
+#[test]
+fn a_rejected_candidate_stays_but_leaves_recall() {
+    let temp = vault();
+    let proposal = json(
+        temp.path(),
+        &["new", "candidate", "Use tabs", "--body", "tabs everywhere"],
+    );
+    let id = proposal["id"].as_str().unwrap();
+    assert_eq!(proposal["status"], "proposed");
+    assert_eq!(
+        json(temp.path(), &["new", "note", "n", "--body", "x"])["status"],
+        "active"
+    );
+
+    ok(temp.path(), &["reject", id, "--reason", "we use spaces"]);
+    let read = json(temp.path(), &["read", id])["document"].clone();
+    assert_eq!(read["status"], "rejected");
+    assert_eq!(read["frontmatter"]["rejected_because"], "we use spaces");
+    assert!(
+        json(temp.path(), &["recall", "tabs"])
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}

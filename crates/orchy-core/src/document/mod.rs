@@ -25,6 +25,8 @@ use crate::pagination::{Page, PageRequest};
 use crate::tag::{self, Tag};
 use crate::title::Title;
 
+const REJECTED_BECAUSE: &str = "rejected_because";
+
 #[async_trait]
 pub trait DocumentStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Document>>;
@@ -157,7 +159,7 @@ impl Document {
             kind,
             title: title.clone(),
             namespace: namespace.clone(),
-            status: None,
+            status: Some(kind.initial_status()),
             tags: Vec::new(),
             frontmatter: Frontmatter::new(),
             body,
@@ -345,6 +347,19 @@ impl Document {
             ));
         }
         self.set_status(DocumentStatus::Promoted, clock)
+    }
+
+    pub fn reject(&mut self, reason: Option<String>, clock: &dyn Clock) -> Result<()> {
+        if !self.is_candidate() {
+            return Err(DomainError::conflict(
+                "only a candidate can be rejected; archive or supersede canon instead",
+            ));
+        }
+        if let Some(reason) = reason {
+            self.frontmatter
+                .set(REJECTED_BECAUSE, Value::String(reason));
+        }
+        self.set_status(DocumentStatus::Rejected, clock)
     }
 
     pub fn supersede(&mut self, by: Id, clock: &dyn Clock) -> Result<()> {
@@ -855,12 +870,43 @@ mod tests {
 
     #[test]
     fn a_status_filter_excludes_documents_with_no_status_at_all() {
-        let document = document();
-        assert_eq!(document.status(), None);
+        let written = document();
+        let document = Document::new(RestoreDocument {
+            id: written.id().clone(),
+            kind: *written.kind(),
+            title: written.title().clone(),
+            namespace: written.namespace().clone(),
+            status: None,
+            tags: Vec::new(),
+            frontmatter: Frontmatter::new(),
+            body: written.body().clone(),
+            created_at: written.created_at(),
+            updated_at: written.updated_at(),
+        });
         let query = DocumentQuery {
             status: Some(vec![DocumentStatus::Active]),
             ..Default::default()
         };
         assert!(!query.matches(&document));
+    }
+
+    #[test]
+    fn canon_starts_active_and_a_candidate_starts_proposed() {
+        assert_eq!(document().status(), Some(DocumentStatus::Active));
+        assert_eq!(candidate().status(), Some(DocumentStatus::Proposed));
+    }
+
+    #[test]
+    fn only_a_candidate_can_be_rejected_and_the_reason_is_kept() {
+        let mut proposal = candidate();
+        proposal
+            .reject(Some("duplicate".to_owned()), &clock())
+            .unwrap();
+        assert_eq!(proposal.status(), Some(DocumentStatus::Rejected));
+        assert_eq!(
+            proposal.frontmatter().string(REJECTED_BECAUSE),
+            Some("duplicate")
+        );
+        assert!(document().reject(None, &clock()).is_err());
     }
 }

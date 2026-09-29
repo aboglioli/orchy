@@ -6,6 +6,7 @@ use orchy_application::link_entities::LinkEntitiesCommand;
 use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_document::ReadDocumentCommand;
 use orchy_application::recall::RecallCommand;
+use orchy_application::reject_document::RejectDocumentCommand;
 use orchy_application::set_document_field::SetDocumentFieldCommand;
 use orchy_application::supersede_document::SupersedeDocumentCommand;
 use orchy_application::traverse_graph::TraverseGraphCommand;
@@ -172,6 +173,23 @@ pub(crate) async fn update(
     command.document_id = resolve::document(app, &target).await?;
     let document = app.update_document.execute(command).await?;
     out.emit(&document, |d| detail(d, out))
+}
+
+pub(crate) async fn reject(
+    app: &Application,
+    target: String,
+    reason: Option<String>,
+    out: &Output,
+) -> CliResult<()> {
+    let document_id = resolve::document(app, &target).await?;
+    let document = app
+        .reject_document
+        .execute(RejectDocumentCommand {
+            document_id,
+            reason,
+        })
+        .await?;
+    out.emit(&document, |d| format!("{}  rejected", short(&d.id)))
 }
 
 pub(crate) async fn set_status(

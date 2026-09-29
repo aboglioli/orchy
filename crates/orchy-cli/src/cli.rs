@@ -217,6 +217,12 @@ pub(crate) enum Command {
         #[arg(long)]
         summary: Option<String>,
     },
+    /// Turn a candidate down; it stays, marked rejected, out of recall
+    Reject {
+        target: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
     /// Same-machine advisory locks
     #[command(subcommand)]
     Lock(LockCommand),

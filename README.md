@@ -267,6 +267,7 @@ orchy archive <doc>
 orchy unarchive <doc>
 orchy promote <candidate> --as <type> [--namespace /x]
 orchy promote <candidate> --as skill --name <name> [--summary …] [--namespace /x]
+orchy reject <candidate> [--reason …]
 orchy types                         # every document type, status and relation
 ```
 
@@ -289,9 +290,9 @@ orchy types                         # every document type, status and relation
 
 For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 
-- **Lifecycle.** Documents move through `draft`, `active`, `superseded` and `archived`. A
-  `candidate` is `proposed` until `orchy promote` turns it into a real type, or it is
-  `rejected`. Promoting a candidate `--as skill` creates a skill from it instead, and the
+- **Lifecycle.** A new document is `active`, and later `superseded` or `archived`. A
+  `candidate` starts `proposed` until `orchy promote` turns it into a real type or
+  `orchy reject` turns it down; a rejected candidate stays in the vault, out of search. Promoting a candidate `--as skill` creates a skill from it instead, and the
   candidate stays behind, marked `promoted`, as the record of the proposal.
 - **Editing.** `edit` appends to the body by default:
   - `--section` replaces what is under a heading. When several headings share the name,

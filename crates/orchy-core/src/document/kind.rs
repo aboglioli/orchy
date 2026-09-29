@@ -99,6 +99,13 @@ impl Kind {
         }
     }
 
+    pub fn initial_status(&self) -> DocumentStatus {
+        match self {
+            Self::Candidate => DocumentStatus::Proposed,
+            _ => DocumentStatus::Active,
+        }
+    }
+
     pub fn allows(&self, status: DocumentStatus) -> bool {
         self.statuses().contains(&status)
     }
