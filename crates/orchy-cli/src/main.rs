@@ -11,6 +11,10 @@ mod resolve;
 mod since;
 mod stdin;
 
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::{env, fs, io};
+
 use chrono::Utc;
 use clap::{CommandFactory, Parser};
 use orchy_application::create_document::CreateDocumentCommand;
@@ -22,30 +26,29 @@ use orchy_application::read_events::ReadEventsCommand;
 use orchy_application::recall::RecallCommand;
 use orchy_application::update_document::UpdateDocumentCommand;
 use orchy_application::write_skill::WriteSkillCommand;
+use orchy_core::DomainError;
 
 use cli::{Cli, Command, LockCommand, NsCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
-use orchy_core::DomainError;
 use output::{Output, short};
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> std::process::ExitCode {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
     let out = Output::new(cli.json, cli.no_color);
 
     match run(cli, &out).await {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+        Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("orchy: {e}");
-            std::process::ExitCode::from(e.exit_code() as u8)
+            ExitCode::from(e.exit_code() as u8)
         }
     }
 }
 
 async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let Some(command) = cli.command else {
-        use clap::CommandFactory;
         Cli::command().print_long_help()?;
         return Ok(());
     };
@@ -100,7 +103,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             });
         }
         Command::Completions { shell } => {
-            clap_complete::generate(shell, &mut Cli::command(), "orchy", &mut std::io::stdout());
+            clap_complete::generate(shell, &mut Cli::command(), "orchy", &mut io::stdout());
             return Ok(());
         }
         other => other,
@@ -558,21 +561,20 @@ fn join(value: &serde_json::Value) -> String {
         .unwrap_or_default()
 }
 
-fn man(dir: Option<&std::path::Path>) -> CliResult<()> {
-    use clap::CommandFactory;
+fn man(dir: Option<&Path>) -> CliResult<()> {
     match dir {
         Some(dir) => {
-            std::fs::create_dir_all(dir)?;
+            fs::create_dir_all(dir)?;
             clap_mangen::generate_to(Cli::command(), dir)?;
         }
-        None => clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?,
+        None => clap_mangen::Man::new(Cli::command()).render(&mut io::stdout())?,
     }
     Ok(())
 }
 
 fn integrate_agent(
     agent: integrate::Agent,
-    dir: Option<std::path::PathBuf>,
+    dir: Option<PathBuf>,
     namespace: Option<String>,
     roles: &[String],
     print: bool,
@@ -580,15 +582,15 @@ fn integrate_agent(
 ) -> CliResult<()> {
     let repo = match dir {
         Some(dir) => dir,
-        None => std::env::current_dir()?,
+        None => env::current_dir()?,
     };
     let announce = integrate::announce_command(namespace.as_deref(), roles);
     let change = integrate::plan(agent, &repo, &announce)?;
     if !print {
         if let Some(parent) = change.path.parent() {
-            std::fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent)?;
         }
-        std::fs::write(&change.path, &change.contents)?;
+        fs::write(&change.path, &change.contents)?;
     }
     let report = serde_json::json!({
         "path": change.path.display().to_string(),
