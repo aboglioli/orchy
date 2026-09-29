@@ -3,41 +3,73 @@ mod cmd;
 mod config;
 mod container;
 mod error;
+mod import;
 mod init;
+mod integrate;
 mod output;
+#[cfg(test)]
+mod reference;
 mod resolve;
+mod since;
 mod stdin;
 
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::{env, fs, io};
+
+use chrono::Utc;
 use clap::{CommandFactory, Parser};
+use orchy_application::create_document::CreateDocumentCommand;
+use orchy_application::edit_document::{EditDocumentCommand, EditMode};
 use orchy_application::list_actors::ListActorsCommand;
 use orchy_application::manage_lease::LeaseAction;
+use orchy_application::promote_document::PromoteDocumentCommand;
 use orchy_application::read_events::ReadEventsCommand;
+use orchy_application::recall::RecallCommand;
+use orchy_application::update_document::UpdateDocumentCommand;
+use orchy_application::write_skill::WriteSkillCommand;
+use orchy_core::DomainError;
 
-use cli::{Cli, Command, LockCommand, SkillCommand};
+use cli::{Cli, Command, LockCommand, NsCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
 use output::{Output, short};
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> std::process::ExitCode {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
     let out = Output::new(cli.json, cli.no_color);
 
     match run(cli, &out).await {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+        Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("orchy: {e}");
-            std::process::ExitCode::from(e.exit_code() as u8)
+            ExitCode::from(e.exit_code() as u8)
         }
     }
 }
 
 async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     let Some(command) = cli.command else {
-        use clap::CommandFactory;
         Cli::command().print_long_help()?;
         return Ok(());
     };
+    if let Command::Guide = command {
+        return cmd::brief::guide(out);
+    }
+    if let Command::Man { out: dir } = &command {
+        return man(dir.as_deref());
+    }
+    if let Command::Integrate {
+        agent,
+        dir,
+        namespace,
+        role,
+        print,
+    } = command
+    {
+        return integrate_agent(agent, dir, namespace, &role, print, out);
+    }
     let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
 
     let command = match command {
@@ -73,7 +105,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             });
         }
         Command::Completions { shell } => {
-            clap_complete::generate(shell, &mut Cli::command(), "orchy", &mut std::io::stdout());
+            clap_complete::generate(shell, &mut Cli::command(), "orchy", &mut io::stdout());
             return Ok(());
         }
         other => other,
@@ -85,9 +117,16 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
 
     let app = container::build(&config).await?;
     let actor = config.actor.to_string();
+    let here = |flag: Option<String>| flag.or_else(|| config.namespace.clone());
 
-    match command {
-        Command::Init { .. } | Command::Status | Command::Completions { .. } => {
+    let refreshes_presence = !matches!(command, Command::Announce { .. });
+    let result = match command {
+        Command::Init { .. }
+        | Command::Status
+        | Command::Completions { .. }
+        | Command::Man { .. }
+        | Command::Integrate { .. }
+        | Command::Guide => {
             unreachable!("answered before the vault is opened")
         }
 
@@ -95,9 +134,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             roles,
             namespace,
             name,
-        } => cmd::brief::announce(&app, &actor, roles, namespace, name, out).await,
-
-        Command::Guide => cmd::brief::guide(out),
+        } => cmd::brief::announce(&app, &actor, roles, here(namespace), name, out).await,
 
         Command::Skill(command) => match command {
             SkillCommand::Write {
@@ -106,7 +143,17 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 namespace,
                 body,
                 tag,
-            } => cmd::skill::write(&app, name, summary, namespace, body, tag, out).await,
+                if_match,
+            } => {
+                let command = WriteSkillCommand {
+                    name,
+                    summary,
+                    namespace,
+                    body,
+                    if_match,
+                };
+                cmd::skill::write(&app, command, tag, out).await
+            }
             SkillCommand::Set {
                 target,
                 namespace,
@@ -169,8 +216,12 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             })
         }
 
-        Command::Task(command) => cmd::task::run(&app, &actor, command, out).await,
-        Command::Msg(command) => cmd::msg::run(&app, &actor, command, out).await,
+        Command::Task(command) => {
+            cmd::task::run(&app, &actor, config.namespace.as_deref(), command, out).await
+        }
+        Command::Msg(command) => {
+            cmd::msg::run(&app, &actor, config.namespace.as_deref(), command, out).await
+        }
 
         Command::New {
             kind,
@@ -178,55 +229,231 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             namespace,
             tag,
             body,
-        } => cmd::doc::new(&app, kind, title, namespace, tag, body, out).await,
+            task,
+        } => {
+            let produced_by = match task {
+                Some(task) => Some(resolve::task(&app, &task).await?),
+                None => None,
+            };
+            let command = CreateDocumentCommand {
+                produced_by,
+                actor: Some(actor.clone()),
+                kind,
+                title,
+                namespace: here(namespace),
+                body: stdin::optional(body)?,
+                tags: tag,
+                fields: Vec::new(),
+            };
+            cmd::doc::new(&app, command, out).await
+        }
 
-        Command::Read { target, section } => cmd::doc::read(&app, target, section, out).await,
+        Command::Read {
+            target,
+            section,
+            nth,
+        } => cmd::doc::read(&app, target, section, nth, out).await,
 
         Command::Edit {
             target,
             section,
+            nth,
             replace_in,
             replace,
             if_match,
             content,
         } => {
-            cmd::doc::edit(
-                &app, target, section, replace_in, replace, if_match, content, out,
-            )
-            .await
+            let mode = match (section, replace_in, replace) {
+                (Some(heading), None, false) => EditMode::Section { heading, nth },
+                (None, Some(needle), false) => EditMode::ReplaceIn(needle),
+                (None, None, true) => EditMode::Replace,
+                (None, None, false) => EditMode::Append,
+                _ => {
+                    return Err(CliError::config(
+                        "choose one of --section, --replace-in or --replace",
+                    ));
+                }
+            };
+            let command = EditDocumentCommand {
+                document_id: target,
+                content: stdin::or_read(content)?,
+                mode,
+                if_match,
+            };
+            cmd::doc::edit(&app, command, out).await
         }
 
         Command::Set {
             target,
             assignments,
-        } => cmd::doc::set(&app, target, assignments, out).await,
+            if_match,
+        } => cmd::doc::set(&app, target, assignments, if_match, out).await,
 
         Command::Recall {
             query,
             kind,
             entities,
+            status,
             tag,
             namespace,
             anchor,
             limit,
+            budget,
+            since,
+            graph,
         } => {
-            cmd::doc::recall(
-                &app, query, kind, entities, tag, namespace, anchor, limit, out,
-            )
-            .await
+            let since = since
+                .as_deref()
+                .map(|s| since::parse(s, Utc::now()))
+                .transpose()?;
+            let command = RecallCommand {
+                budget,
+                since,
+                graph,
+                text: query.join(" "),
+                entities,
+                kind,
+                retired: false,
+                status,
+                namespace,
+                anchor,
+                tags: tag,
+                limit,
+            };
+            cmd::doc::recall(&app, command, out).await
         }
 
         Command::Link { from, to, rel } => cmd::doc::link(&app, from, to, rel, false, out).await,
         Command::Unlink { from, to, rel } => cmd::doc::link(&app, from, to, rel, true, out).await,
-        Command::Graph { from, depth } => cmd::doc::graph(&app, from, depth, out).await,
-        Command::Supersede { old, by } => cmd::doc::supersede(&app, old, by, out).await,
-        Command::Archive { target } => cmd::doc::set_status(&app, target, "archived", out).await,
-        Command::Unarchive { target } => cmd::doc::set_status(&app, target, "active", out).await,
+        Command::Graph {
+            from,
+            depth,
+            rel,
+            format,
+        } => cmd::doc::graph(&app, from, depth, rel, format, out).await,
+        Command::Retitle {
+            target,
+            title,
+            if_match,
+        } => {
+            let command = UpdateDocumentCommand {
+                title: Some(title),
+                if_match,
+                ..Default::default()
+            };
+            cmd::doc::update(&app, target, command, out).await
+        }
+        Command::Retype {
+            target,
+            kind,
+            if_match,
+        } => {
+            let command = UpdateDocumentCommand {
+                kind: Some(kind),
+                if_match,
+                ..Default::default()
+            };
+            cmd::doc::update(&app, target, command, out).await
+        }
+        Command::Tag {
+            target,
+            changes,
+            if_match,
+        } => {
+            let mut command = UpdateDocumentCommand {
+                if_match,
+                ..Default::default()
+            };
+            for change in changes {
+                if change.starts_with("--") {
+                    return Err(CliError::Application(
+                        DomainError::validation(format!(
+                            "`{change}` came after the tag changes; put options before them"
+                        ))
+                        .into(),
+                    ));
+                }
+                match change.strip_prefix('-') {
+                    Some(tag) => command.remove_tags.push(tag.to_owned()),
+                    None => command
+                        .add_tags
+                        .push(change.trim_start_matches('+').to_owned()),
+                }
+            }
+            cmd::doc::update(&app, target, command, out).await
+        }
+        Command::Ns(NsCommand::Move {
+            target,
+            namespace,
+            if_match,
+        }) => {
+            let command = UpdateDocumentCommand {
+                namespace: Some(namespace),
+                if_match,
+                ..Default::default()
+            };
+            cmd::doc::update(&app, target, command, out).await
+        }
+        Command::Reject {
+            target,
+            reason,
+            if_match,
+        } => cmd::doc::reject(&app, target, reason, if_match, out).await,
+        Command::Import {
+            source,
+            kind,
+            title,
+            namespace,
+            tag,
+        } => {
+            let text = import::read(&source)?;
+            let import = import::Import {
+                source,
+                kind,
+                title,
+                namespace: here(namespace),
+                tags: tag,
+            };
+            let command = CreateDocumentCommand {
+                actor: Some(actor.clone()),
+                ..import::command(import, &text)?
+            };
+            cmd::doc::new(&app, command, out).await
+        }
+        Command::Export { namespace } => cmd::doc::export(&app, namespace).await,
+        Command::Why { entity } => cmd::doc::why(&app, entity, out).await,
+        Command::Doctor { fix } => cmd::doctor::run(&app, fix, out).await,
+        Command::Supersede { old, by, if_match } => {
+            cmd::doc::supersede(&app, old, by, if_match, out).await
+        }
+        Command::Consolidate { sources, into } => {
+            cmd::doc::consolidate(&app, sources, into, out).await
+        }
+        Command::Archive { target, if_match } => {
+            cmd::doc::set_status(&app, target, "archived", if_match, out).await
+        }
+        Command::Unarchive { target, if_match } => {
+            cmd::doc::set_status(&app, target, "active", if_match, out).await
+        }
         Command::Promote {
             target,
             into,
             namespace,
-        } => cmd::doc::promote(&app, target, into, namespace, out).await,
+            name,
+            summary,
+            if_match,
+        } => {
+            let command = PromoteDocumentCommand {
+                if_match,
+                actor: Some(actor.clone()),
+                document_id: target,
+                into,
+                namespace: here(namespace),
+                skill_name: name,
+                summary,
+            };
+            cmd::doc::promote(&app, command, out).await
+        }
 
         Command::Lock(command) => match command {
             LockCommand::Acquire { resource, ttl } => {
@@ -253,15 +480,20 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             topic,
             key,
             by,
+            since,
             limit,
         } => {
+            let since = since
+                .as_deref()
+                .map(|s| since::parse(s, Utc::now()))
+                .transpose()?;
             let events = app
                 .read_events
                 .execute(ReadEventsCommand {
                     topic_prefix: topic,
                     key,
                     actor: by,
-                    since: None,
+                    since,
                     limit,
                 })
                 .await?;
@@ -282,7 +514,11 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                     .join("\n")
             })
         }
+    };
+    if result.is_ok() && refreshes_presence {
+        app.touch_actor.execute(&actor).await?;
     }
+    result
 }
 
 fn kind_names() -> Vec<String> {
@@ -325,4 +561,50 @@ fn join(value: &serde_json::Value) -> String {
                 .join("\n  ")
         })
         .unwrap_or_default()
+}
+
+fn man(dir: Option<&Path>) -> CliResult<()> {
+    match dir {
+        Some(dir) => {
+            fs::create_dir_all(dir)?;
+            clap_mangen::generate_to(Cli::command(), dir)?;
+        }
+        None => clap_mangen::Man::new(Cli::command()).render(&mut io::stdout())?,
+    }
+    Ok(())
+}
+
+fn integrate_agent(
+    agent: integrate::Agent,
+    dir: Option<PathBuf>,
+    namespace: Option<String>,
+    roles: &[String],
+    print: bool,
+    out: &Output,
+) -> CliResult<()> {
+    let repo = match dir {
+        Some(dir) => dir,
+        None => env::current_dir()?,
+    };
+    let announce = integrate::announce_command(namespace.as_deref(), roles);
+    let change = integrate::plan(agent, &repo, &announce)?;
+    if !print {
+        if let Some(parent) = change.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&change.path, &change.contents)?;
+    }
+    let report = serde_json::json!({
+        "path": change.path.display().to_string(),
+        "written": !print,
+        "contents": change.contents,
+    });
+    out.emit(&report, |r| {
+        let path = r["path"].as_str().unwrap_or_default();
+        if print {
+            format!("{path}\n\n{}", r["contents"].as_str().unwrap_or_default())
+        } else {
+            format!("wrote {path}")
+        }
+    })
 }

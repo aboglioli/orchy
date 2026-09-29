@@ -16,19 +16,21 @@ impl VaultMessageStore {
     pub fn new(vault: Arc<Vault>, actors: Arc<dyn ActorStore>, log: Arc<dyn EventLog>) -> Self {
         Self { vault, actors, log }
     }
-
-    async fn all(&self) -> Result<Vec<Message>> {
-        let mut messages = Vec::new();
-        for (key, file) in self.vault.load_all(EntityKind::Message).await? {
-            messages.push(codec::message_from_markdown(&file, &key)?);
-        }
-        messages.sort_by(|a, b| a.id().cmp(b.id()));
-        Ok(messages)
-    }
 }
 
 #[async_trait]
 impl MessageStore for VaultMessageStore {
+    async fn all(&self) -> Result<Vec<Message>> {
+        let mut messages = Vec::new();
+        for (_, file) in self.vault.load_all(EntityKind::Message).await? {
+            if let Ok(decoded) = codec::message_from_markdown(&file) {
+                messages.push(decoded);
+            }
+        }
+        messages.sort_by(|a, b| a.id().cmp(b.id()));
+        Ok(messages)
+    }
+
     async fn get(&self, id: &Id) -> Result<Option<Message>> {
         let Some((key, file)) = self.vault.read_by_id(id).await? else {
             return Ok(None);
@@ -36,7 +38,9 @@ impl MessageStore for VaultMessageStore {
         if codec::kind_of(&file) != Some("message") {
             return Ok(None);
         }
-        codec::message_from_markdown(&file, &key).map(Some)
+        codec::message_from_markdown(&file)
+            .map_err(codec::at(&key))
+            .map(Some)
     }
 
     async fn thread(&self, thread: &Id) -> Result<Vec<Message>> {

@@ -192,11 +192,13 @@ pub struct HitDto {
     pub entity: String,
     pub kind: String,
     pub id: String,
+    pub title: String,
     pub heading: Option<String>,
     pub excerpt: String,
     pub namespace: String,
     pub updated_at: DateTime<Utc>,
     pub relevance: f64,
+    pub text: Option<String>,
 }
 
 impl From<&Hit> for HitDto {
@@ -205,11 +207,13 @@ impl From<&Hit> for HitDto {
             entity: hit.entity.to_string(),
             kind: hit.entity.kind().to_string(),
             id: hit.entity.id().to_string(),
+            title: hit.title.clone(),
             heading: hit.heading.clone(),
             excerpt: hit.excerpt.clone(),
             namespace: hit.namespace.to_string(),
             updated_at: hit.updated_at,
             relevance: hit.relevance,
+            text: None,
         }
     }
 }
@@ -266,6 +270,7 @@ pub struct SkillDto {
     pub tags: Vec<String>,
     pub frontmatter: BTreeMap<String, serde_json::Value>,
     pub body: String,
+    pub content_hash: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -285,6 +290,7 @@ impl From<&Skill> for SkillDto {
                 .map(|(k, v)| (k.to_owned(), v.clone()))
                 .collect(),
             body: skill.body().as_str().to_owned(),
+            content_hash: skill.content_hash(),
             created_at: skill.created_at(),
             updated_at: skill.updated_at(),
         }
@@ -299,4 +305,17 @@ pub struct BriefingDto {
     pub claimed: Vec<TaskDto>,
     pub next: Option<TaskDto>,
     pub handoff: Option<DocumentDto>,
+    pub unreadable: usize,
+    pub doomed: Vec<TaskDto>,
+    pub since_last: Option<SinceLastDto>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SinceLastDto {
+    pub since: DateTime<Utc>,
+    pub tasks_completed: usize,
+    pub tasks_failed: usize,
+    pub documents_created: usize,
+    pub documents_superseded: usize,
+    pub skills_changed: usize,
 }

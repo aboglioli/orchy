@@ -13,7 +13,6 @@ pub use recipient::Recipient;
 use crate::actor::ActorId;
 use crate::body::Body;
 use crate::clock::Clock;
-use crate::entity_ref::EntityRef;
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector, payload_of, topic};
 use crate::id::{Id, IdGenerator};
@@ -24,6 +23,7 @@ use crate::title::Title;
 #[async_trait]
 pub trait MessageStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Message>>;
+    async fn all(&self) -> Result<Vec<Message>>;
     async fn thread(&self, thread: &Id) -> Result<Vec<Message>>;
     async fn inbox(&self, for_actor: &ActorId, after: Option<&Id>) -> Result<Vec<Message>>;
     async fn sent_by(&self, actor: &ActorId) -> Result<Vec<Message>>;
@@ -138,7 +138,6 @@ pub struct Message {
     priority: Priority,
     status: MessageStatus,
     namespace: Namespace,
-    refs: Vec<EntityRef>,
     created_at: DateTime<Utc>,
     #[serde(skip)]
     collector: EventCollector,
@@ -156,7 +155,6 @@ pub struct RestoreMessage {
     pub priority: Priority,
     pub status: MessageStatus,
     pub namespace: Namespace,
-    pub refs: Vec<EntityRef>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -173,7 +171,6 @@ impl Message {
             priority: restore.priority,
             status: restore.status,
             namespace: restore.namespace,
-            refs: restore.refs,
             created_at: restore.created_at,
             collector: EventCollector::new(),
         }
@@ -207,7 +204,6 @@ impl Message {
             priority: Priority::default(),
             status: MessageStatus::Open,
             namespace: namespace.clone(),
-            refs: Vec::new(),
             created_at: now,
         });
         message.collector.collect(MessageSent {
@@ -245,7 +241,6 @@ impl Message {
             priority: self.priority,
             status: MessageStatus::Open,
             namespace: self.namespace.clone(),
-            refs: Vec::new(),
             created_at: now,
         });
         reply.collector.collect(MessageSent {
@@ -283,14 +278,10 @@ impl Message {
         Ok(())
     }
 
-    pub fn set_priority(&mut self, priority: Priority) {
+    /// Before sending only: a sent message is immutable.
+    pub fn with_priority(mut self, priority: Priority) -> Self {
         self.priority = priority;
-    }
-
-    pub fn reference(&mut self, entity: EntityRef) {
-        if !self.refs.contains(&entity) {
-            self.refs.push(entity);
-        }
+        self
     }
 
     pub fn is_unread_for(&self, watermark: Option<&Id>) -> bool {
@@ -333,9 +324,6 @@ impl Message {
     }
     pub fn namespace(&self) -> &Namespace {
         &self.namespace
-    }
-    pub fn refs(&self) -> &[EntityRef] {
-        &self.refs
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -387,6 +375,14 @@ mod tests {
 
     fn ids() -> SeqIds {
         SeqIds(std::sync::atomic::AtomicU64::new(1))
+    }
+
+    #[test]
+    fn resolving_a_thread_records_an_event() {
+        let mut message = send(&ids());
+        message.drain_events();
+        message.resolve(actor("claude"), &clock()).unwrap();
+        assert!(!message.drain_events().is_empty());
     }
 
     #[test]
@@ -517,14 +513,5 @@ mod tests {
         }
         assert!("read".parse::<MessageStatus>().is_err());
         assert!("delivered".parse::<MessageStatus>().is_err());
-    }
-
-    #[test]
-    fn references_are_deduplicated() {
-        let mut message = send(&ids());
-        let task = EntityRef::task(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap());
-        message.reference(task.clone());
-        message.reference(task);
-        assert_eq!(message.refs().len(), 1);
     }
 }

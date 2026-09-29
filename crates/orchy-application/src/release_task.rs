@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{ActorId, Clock, Id, LeaseStore, ResourceKey, TaskStore};
+use orchy_core::{ActorId, Clock, DomainError, Id, LeaseStore, ResourceKey, TaskStore};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
@@ -10,6 +10,8 @@ use crate::error::ApplicationResult;
 pub struct ReleaseTaskCommand {
     pub task_id: String,
     pub actor: String,
+    /// Take the task back from whoever holds it, allowed only once their lease has expired.
+    pub force: Option<String>,
 }
 
 pub struct ReleaseTask {
@@ -36,10 +38,24 @@ impl ReleaseTask {
         let actor: ActorId = cmd.actor.parse()?;
 
         let mut task = self.tasks.require(&id).await?;
-        task.release(&actor, &*self.clock)?;
+        let key = ResourceKey::task(&id);
+        match cmd.force {
+            None => task.release(&actor, &*self.clock)?,
+            Some(reason) => {
+                if let Some(lease) = self.leases.check(&key).await? {
+                    return Err(DomainError::conflict(format!(
+                        "{} still holds it until {}; wait for the lease to expire",
+                        lease.holder(),
+                        lease.expires_at()
+                    ))
+                    .into());
+                }
+                task.force_release(&actor, reason, &*self.clock)?;
+            }
+        }
         self.tasks.save(&mut task).await?;
 
-        let _ = self.leases.release(&ResourceKey::task(&id), &actor).await;
+        let _ = self.leases.release(&key, &actor).await;
         Ok(TaskDto::from(&task))
     }
 }

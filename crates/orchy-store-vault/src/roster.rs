@@ -4,7 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use orchy_core::{
-    Actor, ActorId, ActorStore, Clock, DomainError, Lease, LeaseStore, ResourceKey, Result,
+    Actor, ActorId, ActorStore, Clock, DomainError, EventLog, Lease, LeaseStore, ResourceKey,
+    Result,
 };
 
 use sha2::{Digest, Sha256};
@@ -17,11 +18,12 @@ const PRESENCE_TTL_SECS: i64 = 300;
 
 pub struct VaultActorStore {
     vault: Arc<Vault>,
+    log: Arc<dyn EventLog>,
 }
 
 impl VaultActorStore {
-    pub fn new(vault: Arc<Vault>) -> Self {
-        Self { vault }
+    pub fn new(vault: Arc<Vault>, log: Arc<dyn EventLog>) -> Self {
+        Self { vault, log }
     }
 }
 
@@ -32,7 +34,9 @@ impl ActorStore for VaultActorStore {
         let Some(file) = self.vault.read(&key).await? else {
             return Ok(None);
         };
-        codec::actor_from_markdown(&file, &key).map(Some)
+        codec::actor_from_markdown(&file)
+            .map_err(codec::at(&key))
+            .map(Some)
     }
 
     async fn roster(&self) -> Result<Vec<Actor>> {
@@ -41,8 +45,13 @@ impl ActorStore for VaultActorStore {
             if !self.vault.layout().is_markdown(&key) {
                 continue;
             }
-            if let Some(file) = self.vault.read(&key).await? {
-                actors.push(codec::actor_from_markdown(&file, &key)?);
+            let file = match self.vault.read(&key).await {
+                Ok(Some(file)) => file,
+                Ok(None) | Err(DomainError::Validation(_)) => continue,
+                Err(e) => return Err(e),
+            };
+            if let Ok(decoded) = codec::actor_from_markdown(&file) {
+                actors.push(decoded);
             }
         }
         actors.sort_by(|a, b| a.id().cmp(b.id()));
@@ -67,7 +76,8 @@ impl ActorStore for VaultActorStore {
         self.vault
             .blobs()
             .put(&presence, stamp.to_string().as_bytes())
-            .await
+            .await?;
+        self.log.append(&actor.drain_events()).await
     }
 
     async fn present(&self, now: DateTime<Utc>) -> Result<Vec<ActorId>> {
@@ -104,13 +114,20 @@ impl ActorStore for VaultActorStore {
         Ok(present)
     }
 
+    /// Presence only: rewriting the committed roster file on every command would churn git.
     async fn touch(&self, id: &ActorId, now: DateTime<Utc>) -> Result<()> {
-        let mut actor = self
-            .get(id)
-            .await?
-            .ok_or_else(|| DomainError::not_found("actor", id))?;
-        actor.seen_at(now);
-        self.save(&mut actor).await
+        if self.get(id).await?.is_none() {
+            return Err(DomainError::not_found("actor", id));
+        }
+        let presence = self.vault.layout().presence_key(id);
+        let stamp = serde_json::json!({
+            "actor": id.to_string(),
+            "last_seen": now.to_rfc3339(),
+        });
+        self.vault
+            .blobs()
+            .put(&presence, stamp.to_string().as_bytes())
+            .await
     }
 }
 
@@ -152,7 +169,7 @@ impl FileLeaseStore {
             self.lock_path(key),
             serde_json::to_vec(record).unwrap_or_default(),
         )
-        .map_err(|e| DomainError::validation(format!("writing lock: {e}")))
+        .map_err(|e| DomainError::unavailable(format!("writing lock: {e}")))
     }
 }
 

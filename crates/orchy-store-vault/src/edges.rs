@@ -1,73 +1,51 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use orchy_core::{
-    DomainError, Edge, EdgeStore, EntityKind, EntityRef, Relation, Result, TraversalHop,
+    Clock, DomainError, Edge, EdgeAdded, EdgeRemoved, EdgeStore, EntityKind, EntityRef, EventLog,
+    Kind, Relation, Result, TraversalHop,
 };
-use serde_json::Value;
 
-use tokio::time::sleep;
-
-use crate::vault::{Precondition, Vault};
-
-const AMEND_ATTEMPTS: u32 = 16;
-
-fn backoff(attempt: u32) -> Duration {
-    let jitter = u64::from(std::process::id() % 5);
-    Duration::from_millis(u64::from(attempt) * 2 + jitter + 1)
-}
+use crate::vault::{Amended, Vault, refs_in};
 
 pub struct VaultEdgeStore {
     vault: Arc<Vault>,
+    log: Arc<dyn EventLog>,
+    clock: Arc<dyn Clock>,
 }
 
 impl VaultEdgeStore {
-    pub fn new(vault: Arc<Vault>) -> Self {
-        Self { vault }
+    pub fn new(vault: Arc<Vault>, log: Arc<dyn EventLog>, clock: Arc<dyn Clock>) -> Self {
+        Self { vault, log, clock }
     }
 
     async fn amend(
         &self,
         entity: &EntityRef,
-        relation: Relation,
+        field: &str,
         edit: impl Fn(&mut Vec<String>),
-    ) -> Result<bool> {
-        let field = relation.as_str();
-        for attempt in 0..AMEND_ATTEMPTS {
-            let Some((key, mut file)) = self.vault.read_by_id(entity.id()).await? else {
-                return Ok(false);
-            };
-            let mut targets = refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null));
-            edit(&mut targets);
-            if targets.is_empty() {
-                file.frontmatter.remove(field);
-            } else {
-                targets.sort();
-                file.frontmatter.set(
-                    field,
-                    Value::Array(targets.into_iter().map(Value::String).collect()),
-                );
-            }
+    ) -> Result<Amended> {
+        self.vault
+            .amend_refs(entity.id(), entity.kind(), field, edit)
+            .await
+    }
 
-            match self
-                .vault
-                .write_if(
-                    &key,
-                    &file,
-                    entity.id(),
-                    entity.kind(),
-                    Precondition::Unchanged,
-                )
-                .await
-            {
-                Err(DomainError::Conflict(_)) if attempt + 1 < AMEND_ATTEMPTS => {
-                    sleep(backoff(attempt)).await;
-                }
-                other => return other.map(|()| true),
-            }
+    /// The target's file shows who points at it for the relations whose inverse orchy
+    /// projects, so `cat` answers "what replaced this"; a missing target has nothing to show.
+    async fn render_inverse(&self, edge: &Edge, present: bool) -> Result<()> {
+        let inverse = edge.relation().inverse();
+        if !Kind::is_projected_field(inverse) {
+            return Ok(());
         }
-        unreachable!("the loop returns on its last attempt")
+        let source = edge.from().to_string();
+        self.amend(edge.to(), inverse, |refs| {
+            refs.retain(|r| r != &source);
+            if present {
+                refs.push(source.clone());
+            }
+        })
+        .await
+        .map(drop)
     }
 
     async fn edges_from(&self, entity: &EntityRef) -> Result<Vec<Edge>> {
@@ -97,6 +75,7 @@ impl VaultEdgeStore {
         let mut edges = Vec::new();
         for kind in [
             EntityKind::Document,
+            EntityKind::Skill,
             EntityKind::Task,
             EntityKind::Message,
             EntityKind::Actor,
@@ -118,17 +97,6 @@ fn same_entity(a: &str, b: &str) -> bool {
     id_of(a) == id_of(b)
 }
 
-fn refs_in(value: &Value) -> Vec<String> {
-    match value {
-        Value::String(s) => vec![s.clone()],
-        Value::Array(items) => items
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 fn kind_name(kind: EntityKind) -> &'static str {
     match kind {
         EntityKind::Document => "document",
@@ -143,29 +111,42 @@ fn kind_name(kind: EntityKind) -> &'static str {
 impl EdgeStore for VaultEdgeStore {
     async fn add(&self, edge: &Edge) -> Result<()> {
         let target = reference(edge);
-        let added = self
-            .amend(edge.from(), *edge.relation(), |targets| {
+        let amended = self
+            .amend(edge.from(), edge.relation().as_str(), |targets| {
                 if !targets.iter().any(|t| same_entity(t, &target)) {
                     targets.push(target.clone());
                 }
             })
             .await?;
-        if added {
-            return Ok(());
+        match amended {
+            Amended::Missing => Err(DomainError::not_found(
+                kind_name(edge.from().kind()),
+                edge.from().id(),
+            )),
+            Amended::Unchanged => Ok(()),
+            Amended::Changed => {
+                self.render_inverse(edge, true).await?;
+                self.log
+                    .append(&[Box::new(EdgeAdded::of(edge, self.clock.now()))])
+                    .await
+            }
         }
-        Err(DomainError::not_found(
-            kind_name(edge.from().kind()),
-            edge.from().id(),
-        ))
     }
 
     async fn remove(&self, edge: &Edge) -> Result<()> {
         let target = reference(edge);
-        self.amend(edge.from(), *edge.relation(), |targets| {
-            targets.retain(|t| !same_entity(t, &target));
-        })
-        .await
-        .map(|_| ())
+        let amended = self
+            .amend(edge.from(), edge.relation().as_str(), |targets| {
+                targets.retain(|t| !same_entity(t, &target));
+            })
+            .await?;
+        if amended != Amended::Changed {
+            return Ok(());
+        }
+        self.render_inverse(edge, false).await?;
+        self.log
+            .append(&[Box::new(EdgeRemoved::of(edge, self.clock.now()))])
+            .await
     }
 
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
@@ -255,6 +236,54 @@ mod tests {
         Arc::new(Vault::open(blobs as Arc<dyn BlobStore>).await.unwrap())
     }
 
+    fn store(vault: &Arc<Vault>) -> VaultEdgeStore {
+        VaultEdgeStore::new(
+            Arc::clone(vault),
+            Arc::new(orchy_store_memory::MemoryEventLog::new()),
+            Arc::new(orchy_store_memory::FixedClock::at(1_700_000_000)),
+        )
+    }
+
+    const SKILL: &str = "01DX5ZZKBKACTAV9WEVGEMMVRZ";
+
+    #[tokio::test]
+    async fn an_edge_from_any_kind_is_seen_from_both_ends() {
+        let vault = vault_with(&[
+            ("tasks/open/t.md", TASK, "task"),
+            ("messages/m/m.md", MESSAGE, "message"),
+            ("docs/d.md", DOC, "note"),
+            ("skills/s.md", SKILL, "skill"),
+        ])
+        .await;
+        let store = store(&vault);
+        let target = EntityRef::document(Id::new(DOC).unwrap());
+
+        for (kind, id) in [
+            (EntityKind::Skill, SKILL),
+            (EntityKind::Task, TASK),
+            (EntityKind::Message, MESSAGE),
+        ] {
+            let from = EntityRef::new(kind, Id::new(id).unwrap());
+            let edge = Edge::new(from.clone(), target.clone(), Relation::RelatedTo).unwrap();
+            store.add(&edge).await.unwrap();
+
+            assert_eq!(store.out(&from, None).await.unwrap(), vec![edge.clone()]);
+            assert!(
+                store.incoming(&target, None).await.unwrap().contains(&edge),
+                "{kind:?} edge invisible from its target"
+            );
+            assert!(
+                store
+                    .neighbourhood(&from, 1)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|hop| hop.edge == edge),
+                "{kind:?} edge missing from its neighbourhood"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn an_ambiguous_relation_records_the_kind_in_the_file() {
         let vault = vault_with(&[
@@ -262,7 +291,7 @@ mod tests {
             ("docs/b.md", DOC, "decision"),
         ])
         .await;
-        let store = VaultEdgeStore::new(Arc::clone(&vault));
+        let store = store(&vault);
 
         store
             .add(
@@ -295,7 +324,7 @@ mod tests {
             ("messages/m/b.md", MESSAGE, "message"),
         ])
         .await;
-        let store = VaultEdgeStore::new(Arc::clone(&vault));
+        let store = store(&vault);
 
         store
             .add(
@@ -328,7 +357,7 @@ mod tests {
             ("docs/b.md", DOC, "decision"),
         ])
         .await;
-        let store = VaultEdgeStore::new(Arc::clone(&vault));
+        let store = store(&vault);
         let from = EntityRef::task(Id::new(TASK).unwrap());
 
         store
@@ -357,7 +386,7 @@ mod tests {
     #[tokio::test]
     async fn a_missing_message_is_not_reported_as_a_document() {
         let vault = vault_with(&[("tasks/open/a.md", TASK, "task")]).await;
-        let store = VaultEdgeStore::new(Arc::clone(&vault));
+        let store = store(&vault);
         let from = EntityRef::task(Id::new(TASK).unwrap());
 
         store
@@ -394,7 +423,7 @@ mod tests {
             .await
             .unwrap();
 
-        let store = VaultEdgeStore::new(Arc::clone(&vault));
+        let store = store(&vault);
         let edges = store
             .out(&EntityRef::task(Id::new(TASK).unwrap()), None)
             .await
@@ -412,7 +441,7 @@ mod tests {
             ("docs/b.md", DOC, "decision"),
         ])
         .await;
-        let store = VaultEdgeStore::new(Arc::clone(&vault));
+        let store = store(&vault);
         let edge = Edge::new(
             EntityRef::task(Id::new(TASK).unwrap()),
             EntityRef::document(Id::new(DOC).unwrap()),

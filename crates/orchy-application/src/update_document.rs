@@ -15,6 +15,7 @@ pub struct UpdateDocumentCommand {
     pub status: Option<String>,
     pub add_tags: Vec<String>,
     pub remove_tags: Vec<String>,
+    pub if_match: Option<String>,
 }
 
 pub struct UpdateDocument {
@@ -29,6 +30,7 @@ impl UpdateDocument {
 
     pub async fn execute(&self, cmd: UpdateDocumentCommand) -> ApplicationResult<DocumentDto> {
         let mut document = self.documents.require(&Id::new(&cmd.document_id)?).await?;
+        document.ensure_unchanged(cmd.if_match.as_deref())?;
 
         if let Some(title) = &cmd.title {
             document.retitle(Title::new(title)?, &*self.clock);

@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use chrono::Duration;
-use orchy_core::{ActorId, DomainError, LeaseStore, ResourceKey};
+use orchy_core::{
+    ActorId, Clock, DomainError, EventLog, Lease, LeaseChange, LeaseChanged, LeaseStore,
+    ResourceKey,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::LeaseDto;
@@ -30,11 +33,30 @@ pub enum LeaseAction {
 
 pub struct ManageLease {
     leases: Arc<dyn LeaseStore>,
+    log: Arc<dyn EventLog>,
+    clock: Arc<dyn Clock>,
 }
 
 impl ManageLease {
-    pub fn new(leases: Arc<dyn LeaseStore>) -> Self {
-        Self { leases }
+    pub fn new(leases: Arc<dyn LeaseStore>, log: Arc<dyn EventLog>, clock: Arc<dyn Clock>) -> Self {
+        Self { leases, log, clock }
+    }
+
+    async fn record(
+        &self,
+        change: LeaseChange,
+        resource: &ResourceKey,
+        holder: &ActorId,
+        lease: Option<&Lease>,
+    ) -> ApplicationResult<()> {
+        let event = LeaseChanged {
+            change,
+            resource: resource.clone(),
+            holder: holder.clone(),
+            expires_at: lease.map(Lease::expires_at),
+            at: self.clock.now(),
+        };
+        Ok(self.log.append(&[Box::new(event)]).await?)
     }
 
     pub async fn execute(&self, cmd: ManageLeaseCommand) -> ApplicationResult<Option<LeaseDto>> {
@@ -55,16 +77,22 @@ impl ManageLease {
             LeaseAction::Acquire => {
                 let actor: ActorId = cmd.actor.parse()?;
                 let lease = self.leases.acquire(&key, &actor, ttl).await?;
+                self.record(LeaseChange::Acquired, &key, &actor, Some(&lease))
+                    .await?;
                 Ok(Some(LeaseDto::from(&lease)))
             }
             LeaseAction::Renew => {
                 let actor: ActorId = cmd.actor.parse()?;
                 let lease = self.leases.renew(&key, &actor, ttl).await?;
+                self.record(LeaseChange::Renewed, &key, &actor, Some(&lease))
+                    .await?;
                 Ok(Some(LeaseDto::from(&lease)))
             }
             LeaseAction::Release => {
                 let actor: ActorId = cmd.actor.parse()?;
                 self.leases.release(&key, &actor).await?;
+                self.record(LeaseChange::Released, &key, &actor, None)
+                    .await?;
                 Ok(None)
             }
             LeaseAction::Check => Ok(self.leases.check(&key).await?.as_ref().map(LeaseDto::from)),

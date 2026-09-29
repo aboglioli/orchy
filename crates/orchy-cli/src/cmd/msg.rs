@@ -11,11 +11,12 @@ use orchy_application::send_message::SendMessageCommand;
 use crate::cli::MsgCommand;
 use crate::error::CliResult;
 use crate::output::{Output, short};
-use crate::stdin;
+use crate::{resolve, stdin};
 
 pub(crate) async fn run(
     app: &Application,
     actor: &str,
+    here: Option<&str>,
     command: MsgCommand,
     out: &Output,
 ) -> CliResult<()> {
@@ -27,6 +28,10 @@ pub(crate) async fn run(
             reply_to,
             priority,
         } => {
+            let reply_to = match reply_to {
+                Some(parent) => Some(resolve::message(app, &parent).await?),
+                None => None,
+            };
             let message = app
                 .send_message
                 .execute(SendMessageCommand {
@@ -34,7 +39,7 @@ pub(crate) async fn run(
                     to,
                     subject,
                     body: stdin::or_read(body)?,
-                    namespace: None,
+                    namespace: here.map(str::to_owned),
                     priority,
                     reply_to,
                 })
@@ -42,18 +47,24 @@ pub(crate) async fn run(
             out.emit(&message, |m| format!("{}  sent", short(&m.id)))
         }
 
-        MsgCommand::Inbox { all } => {
+        MsgCommand::Inbox { all, thread } => {
+            let thread = match thread {
+                Some(message) => Some(resolve::message(app, &message).await?),
+                None => None,
+            };
             let messages = app
                 .read_inbox
                 .execute(ReadInboxCommand {
                     actor: actor.to_owned(),
                     all,
+                    thread,
                 })
                 .await?;
             out.emit(&messages, |m| render_list(m, out))
         }
 
         MsgCommand::Read { target } => {
+            let target = resolve::message(app, &target).await?;
             let message = app
                 .read_message
                 .execute(ReadMessageCommand {
@@ -65,6 +76,7 @@ pub(crate) async fn run(
         }
 
         MsgCommand::Thread { target } => {
+            let target = resolve::message(app, &target).await?;
             let thread = app
                 .read_thread
                 .execute(ReadThreadCommand { message_id: target })
@@ -88,6 +100,7 @@ pub(crate) async fn run(
         }
 
         MsgCommand::Resolve { target } => {
+            let target = resolve::message(app, &target).await?;
             let message = app
                 .resolve_thread
                 .execute(ResolveThreadCommand {
@@ -103,6 +116,7 @@ pub(crate) async fn run(
             title,
             role,
         } => {
+            let target = resolve::message(app, &target).await?;
             let response = app
                 .promote_message
                 .execute(PromoteMessageCommand {

@@ -1,8 +1,10 @@
+mod events;
 mod relation;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+pub use events::{EdgeAdded, EdgeRemoved};
 pub use relation::{Arity, Relation};
 
 use crate::entity_ref::EntityRef;

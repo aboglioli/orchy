@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use orchy_core::{EventLog, Id, Page, PageRequest, Result, Task, TaskQuery, TaskStore};
+use orchy_core::{EventLog, Id, Result, Task, TaskQuery, TaskStore};
 
 use crate::eventlog::MemoryEventLog;
 
@@ -35,14 +35,14 @@ impl TaskStore for MemoryTaskStore {
         Ok(self.tasks.lock().expect("task mutex").get(id).cloned())
     }
 
-    async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>> {
+    async fn matching(&self, query: &TaskQuery) -> Result<Vec<Task>> {
         let mut matched: Vec<Task> = self
             .snapshot()
             .into_iter()
             .filter(|t| query.matches(t))
             .collect();
         matched.sort_by(|a, b| a.id().cmp(b.id()));
-        Ok(Page::slice(matched, page))
+        Ok(matched)
     }
 
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>> {

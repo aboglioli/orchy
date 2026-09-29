@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{
-    Document, DocumentQuery, DocumentStore, EntityKind, EventLog, Id, Page, PageRequest, Result,
-};
+use orchy_core::{Document, DocumentQuery, DocumentStore, EntityKind, EventLog, Id, Result};
 
 use crate::codec;
 use crate::vault::{Precondition, Vault};
@@ -20,18 +18,13 @@ impl VaultDocumentStore {
 
     pub async fn all(&self) -> Result<Vec<Document>> {
         let mut documents = Vec::new();
-        for (key, file) in self.vault.load_all(EntityKind::Document).await? {
-            documents.push(codec::document_from_markdown(&file, &key)?);
+        for (_, file) in self.vault.load_all(EntityKind::Document).await? {
+            if let Ok(decoded) = codec::document_from_markdown(&file) {
+                documents.push(decoded);
+            }
         }
         documents.sort_by(|a, b| a.id().cmp(b.id()));
         Ok(documents)
-    }
-}
-
-fn parent_of(key: &str) -> String {
-    match key.rsplit_once('/') {
-        Some((folder, _)) => format!("{folder}/"),
-        None => String::new(),
     }
 }
 
@@ -43,34 +36,31 @@ impl DocumentStore for VaultDocumentStore {
         };
         if matches!(
             codec::kind_of(&file),
-            Some("task") | Some("message") | Some("agent")
+            Some("task") | Some("message") | Some("agent") | Some("skill")
         ) {
             return Ok(None);
         }
-        codec::document_from_markdown(&file, &key).map(Some)
+        codec::document_from_markdown(&file)
+            .map_err(codec::at(&key))
+            .map(Some)
     }
 
-    async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {
-        let matched: Vec<Document> = self
+    async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>> {
+        Ok(self
             .all()
             .await?
             .into_iter()
             .filter(|d| query.matches(d))
-            .collect();
-        Ok(Page::slice(matched, page))
+            .collect())
     }
 
     async fn save(&self, document: &mut Document) -> Result<()> {
         let events = document.drain_events();
-        let placed = self
-            .vault
-            .layout()
-            .document_key(document.namespace(), document.id());
+        let layout = self.vault.layout();
+        let folder = layout.document_folder(document.namespace());
         let key = match self.vault.locate(document.id()) {
-            // a document someone filed by hand stays where they put it, as long as it is still
-            // inside the namespace it claims
-            Some(located) if located.key.starts_with(&parent_of(&placed)) => located.key,
-            _ => placed,
+            Some(located) if located.key.starts_with(&folder) => located.key,
+            _ => layout.document_key(document.namespace(), document.id()),
         };
 
         let file = codec::document_to_markdown(document);

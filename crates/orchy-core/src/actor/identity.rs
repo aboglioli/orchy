@@ -79,6 +79,10 @@ impl MachineId {
     pub fn as_str(&self) -> String {
         self.0.to_string()
     }
+
+    pub fn id(&self) -> &Id {
+        &self.0
+    }
 }
 
 impl fmt::Display for MachineId {

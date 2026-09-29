@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, Id, IdGenerator, Namespace, Priority, Role, Tag, Task, TaskStore, Title};
+use orchy_core::{
+    ActorId, ActorStore, Clock, Id, IdGenerator, Namespace, Priority, Role, Tag, Task, TaskStore,
+    Title,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
@@ -8,6 +11,7 @@ use crate::error::ApplicationResult;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateTaskCommand {
+    pub actor: Option<String>,
     pub title: String,
     pub description: Option<String>,
     pub acceptance_criteria: Option<String>,
@@ -21,6 +25,7 @@ pub struct CreateTaskCommand {
 
 pub struct CreateTask {
     tasks: Arc<dyn TaskStore>,
+    actors: Arc<dyn ActorStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
 }
@@ -28,17 +33,24 @@ pub struct CreateTask {
 impl CreateTask {
     pub fn new(
         tasks: Arc<dyn TaskStore>,
+        actors: Arc<dyn ActorStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
     ) -> Self {
-        Self { tasks, ids, clock }
+        Self {
+            tasks,
+            actors,
+            ids,
+            clock,
+        }
     }
 
     pub async fn execute(&self, cmd: CreateTaskCommand) -> ApplicationResult<TaskDto> {
         let title = Title::new(&cmd.title)?;
-        let namespace = match &cmd.namespace {
-            Some(ns) => Namespace::new(ns)?,
-            None => Namespace::root(),
+        let namespace = match (&cmd.namespace, &cmd.actor) {
+            (Some(ns), _) => Namespace::new(ns)?,
+            (None, Some(actor)) => self.actors.home_of(&actor.parse::<ActorId>()?).await?,
+            (None, None) => Namespace::root(),
         };
 
         let mut task = Task::create(title, namespace, &*self.ids, &*self.clock);

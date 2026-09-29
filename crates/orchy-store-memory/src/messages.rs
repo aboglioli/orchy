@@ -39,6 +39,18 @@ impl MemoryMessageStore {
 
 #[async_trait]
 impl MessageStore for MemoryMessageStore {
+    async fn all(&self) -> Result<Vec<Message>> {
+        let mut all: Vec<Message> = self
+            .messages
+            .lock()
+            .expect("message mutex")
+            .values()
+            .cloned()
+            .collect();
+        all.sort_by(|a, b| a.id().cmp(b.id()));
+        Ok(all)
+    }
+
     async fn get(&self, id: &Id) -> Result<Option<Message>> {
         Ok(self
             .messages

@@ -1,35 +1,64 @@
 use std::collections::BTreeSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use orchy_core::{Edge, EdgeStore, EntityRef, Relation, Result, TraversalHop};
+use orchy_core::{
+    Clock, Edge, EdgeAdded, EdgeRemoved, EdgeStore, EntityRef, EventLog, Relation, Result,
+    TraversalHop,
+};
 
-#[derive(Default)]
-pub struct MemoryEdgeStore(Mutex<Vec<Edge>>);
+pub struct MemoryEdgeStore {
+    edges: Mutex<Vec<Edge>>,
+    log: Arc<dyn EventLog>,
+    clock: Arc<dyn Clock>,
+}
 
 impl MemoryEdgeStore {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(log: Arc<dyn EventLog>, clock: Arc<dyn Clock>) -> Self {
+        Self {
+            edges: Mutex::new(Vec::new()),
+            log,
+            clock,
+        }
     }
 
     fn all(&self) -> Vec<Edge> {
-        self.0.lock().expect("edge mutex").clone()
+        self.edges.lock().expect("edge mutex").clone()
     }
 }
 
 #[async_trait]
 impl EdgeStore for MemoryEdgeStore {
     async fn add(&self, edge: &Edge) -> Result<()> {
-        let mut edges = self.0.lock().expect("edge mutex");
-        if !edges.contains(edge) {
-            edges.push(edge.clone());
+        let added = {
+            let mut edges = self.edges.lock().expect("edge mutex");
+            let added = !edges.contains(edge);
+            if added {
+                edges.push(edge.clone());
+            }
+            added
+        };
+        if !added {
+            return Ok(());
         }
-        Ok(())
+        self.log
+            .append(&[Box::new(EdgeAdded::of(edge, self.clock.now()))])
+            .await
     }
 
     async fn remove(&self, edge: &Edge) -> Result<()> {
-        self.0.lock().expect("edge mutex").retain(|e| e != edge);
-        Ok(())
+        let removed = {
+            let mut edges = self.edges.lock().expect("edge mutex");
+            let before = edges.len();
+            edges.retain(|e| e != edge);
+            edges.len() != before
+        };
+        if !removed {
+            return Ok(());
+        }
+        self.log
+            .append(&[Box::new(EdgeRemoved::of(edge, self.clock.now()))])
+            .await
     }
 
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {

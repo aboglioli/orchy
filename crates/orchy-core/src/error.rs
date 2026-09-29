@@ -15,6 +15,7 @@ pub enum ErrorCode {
     UnknownType,
     UnknownRelation,
     Ambiguous,
+    Unavailable,
 }
 
 impl ErrorCode {
@@ -24,6 +25,7 @@ impl ErrorCode {
             Self::Conflict | Self::InvalidTransition | Self::Forbidden => 5,
             Self::Validation | Self::UnknownType | Self::UnknownRelation => 6,
             Self::Ambiguous => 7,
+            Self::Unavailable => 8,
         }
     }
 }
@@ -39,6 +41,7 @@ impl fmt::Display for ErrorCode {
             Self::UnknownType => "unknown_type",
             Self::UnknownRelation => "unknown_relation",
             Self::Ambiguous => "ambiguous",
+            Self::Unavailable => "unavailable",
         };
         f.write_str(s)
     }
@@ -69,6 +72,9 @@ pub enum DomainError {
 
     #[error("`{input}` matches {count} entries")]
     Ambiguous { input: String, count: usize },
+
+    #[error("{0}")]
+    Unavailable(String),
 }
 
 impl DomainError {
@@ -98,6 +104,10 @@ impl DomainError {
         Self::Forbidden(msg.into())
     }
 
+    pub fn unavailable(msg: impl Into<String>) -> Self {
+        Self::Unavailable(msg.into())
+    }
+
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::Validation(_) => ErrorCode::Validation,
@@ -108,6 +118,7 @@ impl DomainError {
             Self::UnknownType(_) => ErrorCode::UnknownType,
             Self::UnknownRelation(_) => ErrorCode::UnknownRelation,
             Self::Ambiguous { .. } => ErrorCode::Ambiguous,
+            Self::Unavailable(_) => ErrorCode::Unavailable,
         }
     }
 }
@@ -127,10 +138,20 @@ mod tests {
             ErrorCode::UnknownType,
             ErrorCode::UnknownRelation,
             ErrorCode::Ambiguous,
+            ErrorCode::Unavailable,
         ];
         for code in codes {
-            assert!((4..=7).contains(&code.exit_code()), "{code} escaped 4..=7");
+            assert!((4..=8).contains(&code.exit_code()), "{code} escaped 4..=8");
         }
+    }
+
+    #[test]
+    fn an_unavailable_store_exits_apart_from_every_refusal_of_input() {
+        assert_eq!(DomainError::unavailable("disk full").code().exit_code(), 8);
+        assert_ne!(
+            DomainError::unavailable("disk full").code().exit_code(),
+            DomainError::validation("bad").code().exit_code()
+        );
     }
 
     #[test]

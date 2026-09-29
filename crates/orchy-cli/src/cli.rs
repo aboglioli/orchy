@@ -100,21 +100,30 @@ pub(crate) enum Command {
         namespace: Option<String>,
         #[arg(long)]
         tag: Vec<String>,
-        /// Body text; reads stdin when omitted
+        /// Body text, `-` for stdin; piped stdin is read when omitted
         #[arg(long)]
         body: Option<String>,
+        /// The task whose work produced it
+        #[arg(long)]
+        task: Option<String>,
     },
     /// Read a document, or one section of it
     Read {
         target: String,
         #[arg(long)]
         section: Option<String>,
+        /// Which of several sections sharing the heading (1-based)
+        #[arg(long, requires = "section")]
+        nth: Option<usize>,
     },
     /// Change a document's body
     Edit {
         target: String,
         #[arg(long)]
         section: Option<String>,
+        /// Which of several sections sharing the heading (1-based)
+        #[arg(long, requires = "section")]
+        nth: Option<usize>,
         #[arg(long)]
         replace_in: Option<String>,
         #[arg(long)]
@@ -131,6 +140,9 @@ pub(crate) enum Command {
         target: String,
         /// field=value, repeatable
         assignments: Vec<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Search documents and skills by text, best first
     Recall {
@@ -140,6 +152,10 @@ pub(crate) enum Command {
         /// Look only in `document` or only in `skill`; both by default
         #[arg(long = "entity")]
         entities: Vec<String>,
+        /// Only documents with this status; superseded, archived and rejected ones are
+        /// left out unless asked for
+        #[arg(long)]
+        status: Vec<String>,
         #[arg(long)]
         tag: Vec<String>,
         #[arg(long)]
@@ -148,6 +164,15 @@ pub(crate) enum Command {
         anchor: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Return the best sections in full, up to about this many tokens
+        #[arg(long)]
+        budget: Option<usize>,
+        /// Only what changed since a timestamp or within a window: 30m, 2h, 3d, 1w
+        #[arg(long)]
+        since: Option<String>,
+        /// Also return what the hits link to, up to this many hops away
+        #[arg(long, default_value_t = 0)]
+        graph: u8,
     },
     /// Link two entities with a registered relation
     Link {
@@ -168,25 +193,117 @@ pub(crate) enum Command {
         from: String,
         #[arg(long, default_value_t = 1)]
         depth: u8,
+        /// Follow only these relations, repeatable
+        #[arg(long)]
+        rel: Vec<String>,
+        #[arg(long, value_enum, default_value_t = GraphFormat::Text)]
+        format: GraphFormat,
     },
+    /// Create a document from a markdown file, a URL, or `-` for stdin; its frontmatter
+    /// supplies the title, tags and any other fields
+    Import {
+        source: String,
+        #[arg(long)]
+        kind: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long)]
+        tag: Vec<String>,
+    },
+    /// Print every document, skill, task and message as one JSON object per line
+    Export {
+        #[arg(long)]
+        namespace: Option<String>,
+    },
+    /// The story of one entity: what happened to it, by whom, and what it is linked to
+    Why { entity: String },
+    /// Give a document a new title
+    Retitle {
+        target: String,
+        title: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
+    /// Change what kind of document it is
+    Retype {
+        target: String,
+        kind: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
+    /// Add or remove tags: `+t` or `t` adds, `-t` removes
+    Tag {
+        target: String,
+        #[arg(allow_hyphen_values = true, required = true)]
+        changes: Vec<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
+    /// Namespaces
+    #[command(subcommand)]
+    Ns(NsCommand),
     /// Mark a document superseded by another
     Supersede {
         old: String,
         #[arg(long)]
         by: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
+    /// Record that duplicates were merged into one document: the sources become superseded
+    /// by it and their tags carry over. Merge the bodies first, with `edit`.
+    Consolidate {
+        #[arg(required = true)]
+        sources: Vec<String>,
+        #[arg(long)]
+        into: String,
     },
     /// Retire a document from active use
-    Archive { target: String },
+    Archive {
+        target: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
     /// Bring an archived document back
-    Unarchive { target: String },
+    Unarchive {
+        target: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
     /// Graduate a candidate into canon as a concrete type
     Promote {
         target: String,
-        /// What it becomes: decision, pattern, note, …
+        /// What it becomes: decision, pattern, note, … or `skill`
         #[arg(long = "as")]
         into: String,
         #[arg(long)]
         namespace: Option<String>,
+        /// The skill's name, when promoting into a skill
+        #[arg(long)]
+        name: Option<String>,
+        /// The skill's one-line summary (default: the candidate's title)
+        #[arg(long)]
+        summary: Option<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
+    /// Turn a candidate down; it stays, marked rejected, out of recall
+    Reject {
+        target: String,
+        #[arg(long)]
+        reason: Option<String>,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Same-machine advisory locks
     #[command(subcommand)]
@@ -200,11 +317,40 @@ pub(crate) enum Command {
         /// Only events recorded by this actor id
         #[arg(long = "by")]
         by: Option<String>,
+        /// Only events after this: a timestamp, or a window such as 2h or 3d
+        #[arg(long)]
+        since: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// Find what is wrong with the vault; `--fix` repairs what needs no decision
+    Doctor {
+        #[arg(long)]
+        fix: bool,
+    },
     /// Generate a shell completion script
     Completions { shell: clap_complete::Shell },
+    /// Make an agent run `orchy announce` at the start of every session
+    Integrate {
+        agent: crate::integrate::Agent,
+        /// The project to set up (default: the current directory)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Namespace the agent announces itself in
+        #[arg(long)]
+        namespace: Option<String>,
+        /// Roles the agent announces, repeatable
+        #[arg(long)]
+        role: Vec<String>,
+        /// Show the change instead of writing it
+        #[arg(long)]
+        print: bool,
+    },
+    /// Print the man page, or write one per command into a directory
+    Man {
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -214,6 +360,9 @@ pub(crate) enum TaskCommand {
         title: String,
         #[arg(long)]
         description: Option<String>,
+        /// What must be true for the task to count as done; `-` reads stdin
+        #[arg(long)]
+        acceptance: Option<String>,
         #[arg(long)]
         priority: Option<String>,
         #[arg(long)]
@@ -233,6 +382,9 @@ pub(crate) enum TaskCommand {
         status: Vec<String>,
         #[arg(long)]
         namespace: Option<String>,
+        /// Only work `task next` will not hand out yet, with what each waits on
+        #[arg(long, conflicts_with_all = ["status", "mine", "role", "parent", "tag"])]
+        blocked: bool,
         #[arg(long)]
         mine: bool,
         #[arg(long)]
@@ -246,6 +398,13 @@ pub(crate) enum TaskCommand {
     },
     /// Show a task with its subtasks and links
     Get { target: String },
+    /// The queue `task next` draws from, in the order it draws
+    Ready {
+        #[arg(long)]
+        namespace: Option<String>,
+        #[arg(long)]
+        role: Option<String>,
+    },
     /// The highest-ranked claimable task
     Next {
         #[arg(long)]
@@ -265,7 +424,15 @@ pub(crate) enum TaskCommand {
         start: bool,
     },
     /// Give a task back
-    Release { target: String },
+    Release {
+        target: String,
+        /// Take back a task another agent claimed and abandoned; only once its lease expired
+        #[arg(long, requires = "reason")]
+        force: bool,
+        /// Why, recorded with the release
+        #[arg(long)]
+        reason: Option<String>,
+    },
     /// Move a claimed task to in_progress
     Start { target: String },
     /// Finish a task; rolls up to the parent
@@ -306,6 +473,13 @@ pub(crate) enum TaskCommand {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Fold duplicates into one task: the others become `superseded`, and their subtasks,
+    /// tags and dependencies move to the one kept
+    Merge {
+        keep: String,
+        #[arg(required = true)]
+        others: Vec<String>,
+    },
     /// Add or remove dependencies
     Dep {
         target: String,
@@ -327,8 +501,14 @@ pub(crate) enum TaskCommand {
         title: Option<String>,
         #[arg(long)]
         description: Option<String>,
+        /// What must be true for the task to count as done; `-` reads stdin
+        #[arg(long)]
+        acceptance: Option<String>,
         #[arg(long)]
         priority: Option<String>,
+        /// Replaces the roles that may claim it, repeatable
+        #[arg(long)]
+        role: Vec<String>,
         #[arg(long)]
         namespace: Option<String>,
         #[arg(long)]
@@ -357,6 +537,9 @@ pub(crate) enum MsgCommand {
     Inbox {
         #[arg(long)]
         all: bool,
+        /// Only the conversation this message belongs to
+        #[arg(long)]
+        thread: Option<String>,
     },
     /// Show a message and advance the watermark
     Read { target: String },
@@ -392,6 +575,9 @@ pub(crate) enum SkillCommand {
         /// Cross-cutting label, repeatable
         #[arg(long)]
         tag: Vec<String>,
+        /// Refuse unless the skill still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
     },
     /// Set any other frontmatter a team wants on a skill
     Set {
@@ -452,6 +638,28 @@ pub(crate) struct SkillEdits {
     pub tag: Vec<String>,
     #[arg(long)]
     pub untag: Vec<String>,
+    /// Refuse unless the skill still hashes to this
+    #[arg(long)]
+    pub if_match: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum GraphFormat {
+    Text,
+    Mermaid,
+    Dot,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum NsCommand {
+    /// Move a document to another namespace; its file moves with it
+    Move {
+        target: String,
+        namespace: String,
+        /// Refuse unless the document still hashes to this
+        #[arg(long)]
+        if_match: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

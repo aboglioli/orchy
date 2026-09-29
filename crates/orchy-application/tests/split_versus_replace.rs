@@ -23,6 +23,7 @@ fn app() -> Application {
         leases: Arc::clone(&backend.leases) as _,
         watermarks: Arc::clone(&backend.watermarks) as _,
         search: Arc::clone(&backend.search) as _,
+        integrity: Arc::clone(&backend.integrity) as _,
         log: Arc::clone(&backend.log) as _,
         clock: Arc::clone(&backend.clock) as _,
         ids: Arc::clone(&backend.ids) as _,

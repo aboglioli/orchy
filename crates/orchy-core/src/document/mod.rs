@@ -2,20 +2,24 @@ mod events;
 mod frontmatter;
 mod kind;
 
+use std::sync::OnceLock;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use events::{
-    DocumentCreated, DocumentFieldSet, DocumentMoved, DocumentPromoted, DocumentRetyped,
-    DocumentSectionReplaced, DocumentStatusChanged, DocumentSuperseded, DocumentWritten,
+    DocumentCreated, DocumentFieldSet, DocumentMoved, DocumentPromoted, DocumentRetitled,
+    DocumentRetyped, DocumentSectionReplaced, DocumentStatusChanged, DocumentSuperseded,
+    DocumentTagged, DocumentWritten,
 };
 pub use frontmatter::Frontmatter;
 pub use kind::{DocumentStatus, Kind};
 
 use crate::body::Body;
 use crate::clock::Clock;
+use crate::content_hash;
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
 use crate::id::{Id, IdGenerator};
@@ -24,12 +28,19 @@ use crate::pagination::{Page, PageRequest};
 use crate::tag::{self, Tag};
 use crate::title::Title;
 
+const REJECTED_BECAUSE: &str = "rejected_because";
+
 #[async_trait]
 pub trait DocumentStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Document>>;
-    async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>>;
+    /// Never paged: callers rely on seeing every match.
+    async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>>;
     async fn save(&self, document: &mut Document) -> Result<()>;
     async fn delete(&self, id: &Id) -> Result<()>;
+
+    async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {
+        Ok(Page::slice(self.matching(query).await?, page))
+    }
 
     async fn require(&self, id: &Id) -> Result<Document> {
         self.get(id)
@@ -96,7 +107,9 @@ pub struct Document {
     tags: Vec<Tag>,
     frontmatter: Frontmatter,
     body: Body,
-    content_hash: String,
+    /// Computed on first use: listing thousands of documents rarely needs it.
+    #[serde(skip)]
+    content_hash: OnceLock<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     #[serde(skip)]
@@ -119,7 +132,6 @@ pub struct RestoreDocument {
 
 impl Document {
     pub fn new(restore: RestoreDocument) -> Self {
-        let content_hash = hash_of(&restore.title, &restore.body, &restore.frontmatter);
         Self {
             id: restore.id,
             kind: restore.kind,
@@ -129,7 +141,7 @@ impl Document {
             tags: restore.tags,
             frontmatter: restore.frontmatter,
             body: restore.body,
-            content_hash,
+            content_hash: OnceLock::new(),
             created_at: restore.created_at,
             updated_at: restore.updated_at,
             collector: EventCollector::new(),
@@ -151,7 +163,7 @@ impl Document {
             kind,
             title: title.clone(),
             namespace: namespace.clone(),
-            status: None,
+            status: Some(kind.initial_status()),
             tags: Vec::new(),
             frontmatter: Frontmatter::new(),
             body,
@@ -163,20 +175,20 @@ impl Document {
             namespace,
             kind,
             title: title.into(),
-            content_hash: document.content_hash.clone(),
+            content_hash: document.content_hash().to_owned(),
             at: now,
         });
         document
     }
 
     pub fn edit(&mut self, body: Body, clock: &dyn Clock) {
-        let prev_hash = self.content_hash.clone();
+        let prev_hash = self.content_hash().to_owned();
         self.body = body;
         self.rehash(clock);
         self.collector.collect(DocumentWritten {
             id: self.id.clone(),
             namespace: self.namespace.clone(),
-            content_hash: self.content_hash.clone(),
+            content_hash: self.content_hash().to_owned(),
             prev_hash,
             at: self.updated_at,
         });
@@ -190,21 +202,19 @@ impl Document {
     pub fn replace_section(
         &mut self,
         heading: &str,
+        nth: Option<usize>,
         content: &str,
         clock: &dyn Clock,
     ) -> Result<()> {
-        let body = self
-            .body
-            .replace_section(heading, content)
-            .ok_or_else(|| DomainError::not_found("section", heading))?;
-        let prev_hash = self.content_hash.clone();
+        let body = self.body.replace_section(heading, nth, content)?;
+        let prev_hash = self.content_hash().to_owned();
         self.body = body;
         self.rehash(clock);
         self.collector.collect(DocumentSectionReplaced {
             id: self.id.clone(),
             namespace: self.namespace.clone(),
             heading: heading.to_owned(),
-            content_hash: self.content_hash.clone(),
+            content_hash: self.content_hash().to_owned(),
             prev_hash,
             at: self.updated_at,
         });
@@ -262,8 +272,18 @@ impl Document {
     }
 
     pub fn retitle(&mut self, title: Title, clock: &dyn Clock) {
-        self.title = title;
+        if title == self.title {
+            return;
+        }
+        let from = std::mem::replace(&mut self.title, title);
         self.rehash(clock);
+        self.collector.collect(DocumentRetitled {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            from: from.to_string(),
+            to: self.title.to_string(),
+            at: self.updated_at,
+        });
     }
 
     pub fn retype(&mut self, kind: Kind, clock: &dyn Clock) -> Result<()> {
@@ -323,6 +343,29 @@ impl Document {
         Ok(())
     }
 
+    /// For a candidate that became a skill: the document stays as the record of the proposal.
+    pub fn mark_promoted(&mut self, clock: &dyn Clock) -> Result<()> {
+        if !self.is_candidate() {
+            return Err(DomainError::conflict(
+                "only a candidate can be promoted; this document is already canon",
+            ));
+        }
+        self.set_status(DocumentStatus::Promoted, clock)
+    }
+
+    pub fn reject(&mut self, reason: Option<String>, clock: &dyn Clock) -> Result<()> {
+        if !self.is_candidate() {
+            return Err(DomainError::conflict(
+                "only a candidate can be rejected; archive or supersede canon instead",
+            ));
+        }
+        if let Some(reason) = reason {
+            self.frontmatter
+                .set(REJECTED_BECAUSE, Value::String(reason));
+        }
+        self.set_status(DocumentStatus::Rejected, clock)
+    }
+
     pub fn supersede(&mut self, by: Id, clock: &dyn Clock) -> Result<()> {
         if by == self.id {
             return Err(DomainError::validation(
@@ -342,13 +385,33 @@ impl Document {
     }
 
     pub fn retag(&mut self, add: Vec<Tag>, remove: &[Tag], clock: &dyn Clock) {
+        let before = self.tags.clone();
         tag::apply(&mut self.tags, add, remove);
+        if self.tags == before {
+            return;
+        }
         self.rehash(clock);
+        self.collector.collect(DocumentTagged {
+            id: self.id.clone(),
+            namespace: self.namespace.clone(),
+            added: self
+                .tags
+                .iter()
+                .filter(|t| !before.contains(t))
+                .map(ToString::to_string)
+                .collect(),
+            removed: before
+                .iter()
+                .filter(|t| !self.tags.contains(t))
+                .map(ToString::to_string)
+                .collect(),
+            at: self.updated_at,
+        });
     }
 
     fn rehash(&mut self, clock: &dyn Clock) {
         self.updated_at = clock.now();
-        self.content_hash = hash_of(&self.title, &self.body, &self.frontmatter);
+        self.content_hash = OnceLock::new();
     }
 
     pub fn drain_events(&mut self) -> Vec<Box<dyn DomainEvent>> {
@@ -380,7 +443,17 @@ impl Document {
         &self.body
     }
     pub fn content_hash(&self) -> &str {
-        &self.content_hash
+        self.content_hash.get_or_init(|| {
+            content_hash::content_hash(
+                &[("title", self.title.as_str()), ("body", self.body.as_str())],
+                &self.frontmatter,
+            )
+        })
+    }
+
+    /// Refuses a write made against an older version than the one stored.
+    pub fn ensure_unchanged(&self, expected: Option<&str>) -> Result<()> {
+        content_hash::ensure_matches(self.content_hash(), expected)
     }
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -392,7 +465,7 @@ impl Document {
 
 fn semantic_command_for(field: &str) -> Option<&'static str> {
     match field {
-        "status" => Some("orchy archive / orchy supersede"),
+        "status" => Some("orchy archive / orchy unarchive / orchy supersede / orchy promote"),
         "type" => Some("orchy retype"),
         "namespace" => Some("orchy ns move"),
         "id" => Some("(ids are immutable)"),
@@ -400,23 +473,6 @@ fn semantic_command_for(field: &str) -> Option<&'static str> {
         "title" => Some("orchy retitle"),
         _ => None,
     }
-}
-
-fn hash_of(title: &Title, body: &Body, frontmatter: &Frontmatter) -> String {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-    hasher.update(b"title\x00");
-    hasher.update(title.as_str().as_bytes());
-    hasher.update(b"\x00body\x00");
-    hasher.update(body.as_str().as_bytes());
-    for (key, value) in frontmatter.iter() {
-        hasher.update(b"\x00field\x00");
-        hasher.update(key.as_bytes());
-        hasher.update(b"\x00");
-        hasher.update(value.to_string().as_bytes());
-    }
-    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]
@@ -470,6 +526,62 @@ mod tests {
             &ids(),
             &clock(),
         )
+    }
+
+    type Mutation = fn(&mut Document);
+    type Case = (&'static str, fn() -> Document, Mutation);
+
+    #[test]
+    fn every_change_to_a_document_records_an_event() {
+        let cases: Vec<Case> = vec![
+            ("edit", document, |d| d.edit(Body::new("new"), &clock())),
+            ("append", document, |d| d.append("more", &clock())),
+            ("replace_section", document, |d| {
+                d.replace_section("Decision", None, "EdDSA", &clock())
+                    .unwrap()
+            }),
+            ("replace_once", document, |d| {
+                d.replace_once("HS256", "RS256", &clock()).unwrap()
+            }),
+            ("set_field", document, |d| {
+                d.set_field("reviewer", json!("alan"), &clock()).unwrap()
+            }),
+            ("set_status", document, |d| {
+                d.set_status(DocumentStatus::Archived, &clock()).unwrap()
+            }),
+            ("retitle", document, |d| {
+                d.retitle(Title::new("Other").unwrap(), &clock())
+            }),
+            ("retype", document, |d| {
+                d.retype(Kind::Note, &clock()).unwrap()
+            }),
+            ("move_to", document, |d| {
+                d.move_to(Namespace::new("/web").unwrap(), &clock())
+            }),
+            ("promote", candidate, |d| {
+                d.promote(Kind::Decision, Namespace::root(), &clock())
+                    .unwrap()
+            }),
+            ("mark_promoted", candidate, |d| {
+                d.mark_promoted(&clock()).unwrap()
+            }),
+            ("supersede", document, |d| {
+                d.supersede(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
+                    .unwrap()
+            }),
+            ("retag", document, |d| {
+                d.retag(vec![Tag::new("x").unwrap()], &[], &clock())
+            }),
+        ];
+        for (label, start, mutate) in cases {
+            let mut document = start();
+            document.drain_events();
+            mutate(&mut document);
+            assert!(
+                !document.drain_events().is_empty(),
+                "`{label}` changed the document without recording an event"
+            );
+        }
     }
 
     #[test]
@@ -663,7 +775,7 @@ mod tests {
     fn replace_section_targets_one_heading() {
         let mut document = document();
         document
-            .replace_section("Decision", "Move to EdDSA.", &clock())
+            .replace_section("Decision", None, "Move to EdDSA.", &clock())
             .unwrap();
         assert!(document.body().as_str().contains("EdDSA"));
         assert!(document.body().as_str().contains("We use HS256"));
@@ -673,7 +785,9 @@ mod tests {
     #[test]
     fn replace_section_reports_a_missing_heading_as_not_found() {
         let mut document = document();
-        let err = document.replace_section("Nope", "x", &clock()).unwrap_err();
+        let err = document
+            .replace_section("Nope", None, "x", &clock())
+            .unwrap_err();
         assert!(matches!(err, DomainError::NotFound { .. }), "{err:?}");
     }
 
@@ -753,12 +867,43 @@ mod tests {
 
     #[test]
     fn a_status_filter_excludes_documents_with_no_status_at_all() {
-        let document = document();
-        assert_eq!(document.status(), None);
+        let written = document();
+        let document = Document::new(RestoreDocument {
+            id: written.id().clone(),
+            kind: *written.kind(),
+            title: written.title().clone(),
+            namespace: written.namespace().clone(),
+            status: None,
+            tags: Vec::new(),
+            frontmatter: Frontmatter::new(),
+            body: written.body().clone(),
+            created_at: written.created_at(),
+            updated_at: written.updated_at(),
+        });
         let query = DocumentQuery {
             status: Some(vec![DocumentStatus::Active]),
             ..Default::default()
         };
         assert!(!query.matches(&document));
+    }
+
+    #[test]
+    fn canon_starts_active_and_a_candidate_starts_proposed() {
+        assert_eq!(document().status(), Some(DocumentStatus::Active));
+        assert_eq!(candidate().status(), Some(DocumentStatus::Proposed));
+    }
+
+    #[test]
+    fn only_a_candidate_can_be_rejected_and_the_reason_is_kept() {
+        let mut proposal = candidate();
+        proposal
+            .reject(Some("duplicate".to_owned()), &clock())
+            .unwrap();
+        assert_eq!(proposal.status(), Some(DocumentStatus::Rejected));
+        assert_eq!(
+            proposal.frontmatter().string(REJECTED_BECAUSE),
+            Some("duplicate")
+        );
+        assert!(document().reject(None, &clock()).is_err());
     }
 }

@@ -52,6 +52,11 @@ impl Output {
         }
     }
 
+    /// A list cut short says so, so it is never read as the whole of it.
+    pub(crate) fn truncated(&self, shown: usize, total: usize) -> Option<String> {
+        (total > shown).then(|| self.dim(&format!("showing {shown} of {total} — --limit")))
+    }
+
     pub(crate) fn dim(&self, text: &str) -> String {
         if self.colour {
             format!("\x1b[2m{text}\x1b[0m")

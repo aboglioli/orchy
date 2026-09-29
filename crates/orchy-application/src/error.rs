@@ -9,16 +9,9 @@ pub type ApplicationResult<T> = StdResult<T, ApplicationError>;
 pub enum ApplicationError {
     #[error(transparent)]
     Domain(#[from] DomainError),
-
-    #[error("{0}")]
-    Storage(String),
 }
 
 impl ApplicationError {
-    pub fn storage(msg: impl Into<String>) -> Self {
-        Self::Storage(msg.into())
-    }
-
     pub fn not_found(resource: &'static str, id: impl std::fmt::Display) -> Self {
         Self::Domain(DomainError::not_found(resource, id))
     }
@@ -26,15 +19,11 @@ impl ApplicationError {
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::Domain(e) => e.code(),
-            Self::Storage(_) => ErrorCode::Conflict,
         }
     }
 
     pub fn exit_code(&self) -> i32 {
-        match self {
-            Self::Storage(_) => 8,
-            Self::Domain(e) => e.code().exit_code(),
-        }
+        self.code().exit_code()
     }
 }
 
@@ -51,7 +40,7 @@ mod tests {
 
     #[test]
     fn a_storage_failure_exits_distinctly_from_any_domain_refusal() {
-        let err = ApplicationError::storage("disk gone");
+        let err: ApplicationError = DomainError::unavailable("disk gone").into();
         assert_eq!(err.exit_code(), 8);
         let refused: ApplicationError = DomainError::conflict("held").into();
         assert_ne!(err.exit_code(), refused.exit_code());

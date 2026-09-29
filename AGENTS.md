@@ -55,6 +55,7 @@ crates/
 │       ├── clock.rs           Clock port
 │       ├── event.rs           DomainEvent, EventCollector, EventLog port, RecordedEvent, EventQuery
 │       ├── error.rs           DomainError, ErrorCode, exit codes
+│       ├── integrity.rs       Integrity port, Problem, ProblemKind
 │       ├── pagination.rs      Page, PageRequest
 │       ├── body.rs            Body, Section (split on markdown headings)
 │       ├── title.rs · tag.rs · priority.rs
@@ -67,7 +68,9 @@ crates/
 │       └── actor/             Actor, ActorId, ActorAlias, MachineId, Role, ActorStore, Lease, LeaseStore
 │
 ├── orchy-application/   use cases, one file each: Command in, DTO out. No rules.
-│                        `brief.rs` assembles the briefing `announce` returns.
+│                        `brief.rs` assembles the briefing `announce` returns;
+│                        `assess_dependencies.rs` and `rank_claimable.rs` are shared
+│                        steps several use cases call, like `rollup_ancestors.rs`.
 │
 ├── orchy-store-memory/  every port in RAM — tests
 ├── orchy-store-vault/   every port over the filesystem
@@ -79,6 +82,7 @@ crates/
 │       ├── documents.rs · skills.rs · tasks.rs · messages.rs · edges.rs · roster.rs
 │       ├── search.rs          gathers document sections and skills into passages for `score`
 │       ├── eventlog.rs        EventLog over eventuary's fs backend
+│       ├── integrity.rs       VaultIntegrity: unreadable, misplaced and misnamed files, dangling links
 │       ├── watermarks.rs      per-actor inbox read watermarks
 │       ├── lock.rs            file locks
 │       └── time.rs            SystemClock, UlidGenerator
@@ -90,6 +94,7 @@ crates/
         ├── config.rs          settings.toml, orchy.toml, vault/actor resolution
         ├── container.rs       the only place that names a concrete store
         ├── init.rs            `orchy init` scaffold
+        ├── integrate.rs       `orchy integrate`: agent hooks and instruction blocks, embedded
         ├── resolve.rs         id prefix / suffix / title fragment → full id
         ├── output.rs          text vs --json rendering
         ├── stdin.rs · error.rs
@@ -136,7 +141,7 @@ in `new` and implement `FromStr` / `TryFrom<String>`. Never construct one by cas
 
 ### Events
 
-Aggregate mutations collect a semantic event into the aggregate's `EventCollector`.
+Every aggregate mutation collects a semantic event into the aggregate's `EventCollector`.
 `save(&mut entity)` writes the file, drains the collector and appends the events through the
 `EventLog` port:
 
@@ -149,8 +154,16 @@ partitioned (default 10, fixed at creation, configurable in `orchy.toml` `[event
 partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
 `message.sent`, `skill.written`). `orchy events` replays them.
 
-Coverage is incomplete (see Known gaps): links, announces, locks and some field changes
-record nothing. Any new mutation must emit an event.
+- **Coverage is enforced.** Each aggregate has a test that calls every state-changing
+  method and asserts it collected an event; add a case when you add a mutator. A method
+  that changes nothing (retagging with the same tags) records nothing.
+- **Not every change has an aggregate.** The edge stores append `edge.added` and
+  `edge.removed` themselves, so automatic links are covered too; `ManageLease` appends
+  `lock.acquired`, `lock.renewed` and `lock.released`; `SplitTask` appends `task.deleted`
+  for a duplicate subtask it withdraws.
+- **Keys are ULIDs.** An actor's id (`alias@machine`) and a lock's resource are not, so
+  `actor.*` and `lock.*` events are keyed by the machine id, with the actor in the payload
+  and in the event's own `actor`. Filter them by `--topic` or `--by`.
 
 The workspace takes `eventuary` from crates.io with the `fs` and `memory` features, pinned
 exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry dependency:
@@ -160,9 +173,10 @@ exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry depe
 
 ```
 orchy-core        DomainError { Validation, InvalidTransition, NotFound, Conflict,
-                                Forbidden, UnknownType, UnknownRelation, Ambiguous }
+                                Forbidden, UnknownType, UnknownRelation, Ambiguous,
+                                Unavailable }
                   ErrorCode   → exit code; orchy_core::Result<T> = Result<T, DomainError>
-orchy-application ApplicationError { Domain(#[from] DomainError), Storage(String) }
+orchy-application ApplicationError { Domain(#[from] DomainError) }
                   ApplicationResult<T>
 orchy-cli         CliError { Application, Config, Io, NotAVault }
 ```
@@ -175,10 +189,14 @@ Exit codes are part of the CLI contract, because agents branch on them:
 | 5 | `Conflict`, `InvalidTransition`, `Forbidden` |
 | 6 | `Validation`, `UnknownType`, `UnknownRelation`, `Config` |
 | 7 | `Ambiguous` |
-| 8 | `Storage`, `Io` |
+| 8 | `Unavailable`, `Io` |
 
 Constructors: `DomainError::validation(..)`, `invalid_transition(from, to)`,
-`not_found(resource, id)`, `conflict(..)`, `forbidden(..)`.
+`not_found(resource, id)`, `conflict(..)`, `forbidden(..)`, `unavailable(..)`.
+
+Stores map every I/O failure (filesystem, event log, locks, background tasks) to
+`Unavailable`: the input was fine, the machine could not serve it. Content they cannot parse
+(bad UTF-8, invalid YAML, an invalid value) is `Validation`.
 
 ### Use cases
 
@@ -196,20 +214,61 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   `tasks/open|done/<id>.md`, `messages/<thread>/<id>.md`, `agents/<alias>@<machine>.md`. The
   roots `docs`, `skills`, `tasks`, `messages`, `agents`, `events` and `.orchy` are fixed. A
   skill is the one entity filed by name, because its name is unique per namespace.
+- **Unreadable files never take the vault down.** `Vault::scan` records a `Problem` for a
+  file it cannot parse (bad UTF-8, unclosed fence, invalid YAML, merge-conflict markers, a
+  non-ULID or duplicate `id`) and skips it; store listings skip a file their codec rejects.
+  `Integrity` reports them with their paths, and the briefing counts them. A direct read of
+  such an entity fails with the file's path in the message (`codec::at`).
+- **`orchy doctor`.** The `Doctor` use case adds the domain checks to `Integrity::problems`:
+  parent cycles, stale rollups, and `supersedes` stored on the replaced document by older
+  versions. `--fix` repairs the kinds `ProblemKind::is_mechanical` names, each through the
+  part that owns it: `Integrity::repair` moves or renames files, `RollupAncestors` re-derives
+  a parent, the edge store turns a link around. It deliberately never deletes lease or
+  write-guard files: they are `flock` targets, and removing one while another process waits
+  on it lets two processes both believe they hold it. An expired lease is harmless anyway,
+  because readers check its expiry.
+- **Scanning.** Every listing rescans the vault so it sees what other agents wrote since the
+  last one; nothing is cached across scans that could hide a write. What makes that cheap:
+  - `BlobStore::list_fingerprinted` walks in parallel and fingerprints each file (inode,
+    ctime, mtime, size); a file whose fingerprint is unchanged is taken from the parse cache
+    without being read;
+  - other files are read in one parallel batch (`get_many`) and parsed in parallel;
+  - the vault is relisted only when a file vanished between listing and reading;
+  - `Document::content_hash` is computed on first use.
+
+  Scoring stems each distinct word once per query (`Tokeniser`) and keeps, per passage, only
+  its length and the counts of the query's terms.
+
+  Measured on 10 000 notes (release build): `announce` 340 ms, `recall` 570 ms, `task list`
+  170 ms; before, 3.0 s, 2.2 s and 0.85 s. A
+  scan cached for a whole command would cut `announce` further, but rollup and split rely on
+  rereading to see concurrent writers, so it is not done.
 - **Atomic writes.** Temp file, fsync, rename.
 - **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
   digests to what this process last read (compare-and-swap under a per-file guard in
   `.orchy/write-guards/`). Two agents that load and change one entity get a conflict, not a
-  lost update. Document edits additionally support `--if-match <content_hash>` across
-  commands.
+  lost update. Every command that changes a document or a skill also takes
+  `--if-match <content_hash>`, checked by `ensure_unchanged` on the aggregate, so a change
+  made between an agent's read and its write is refused (exit 5) rather than overwritten.
 - **Runtime state** lives in `.orchy/` and is never committed: `presence/`, `read/`
   (watermarks), `locks/` (leases), `write-guards/`.
 - **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's
   writes. `orchy skill set` writes such fields; `skill::managed_field` lists the ones it
   refuses.
-- **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are
-  reserved for inverses derived from edges. Nothing renders them into files yet, but
-  `orchy set` already refuses them.
+- **Rewrites keep formatting.** `Vault::write_if` renders over the file on disk
+  (`MarkdownFile::render_over`): YAML comments stay where they were, and a field whose value
+  did not change keeps its original lines, quoting and flow style, so `git diff` shows only
+  what orchy changed.
+- **Task bodies.** A task's file body is its description, then optional trailing
+  `## Acceptance` (acceptance criteria) and `## Outcome` (the `done` note or the `fail`,
+  `cancel` or `replace` reason) sections (`codec::split_task_body`).
+- **Projected fields** (`superseded_by`, `derives`, `produced_by`, `subtasks`) are inverses
+  written onto the target so that `cat` answers "what replaced this" and "what are its
+  subtasks". A link stays stored once, on its source (D43); the edge store also amends the
+  target's inverse field when a `supersedes`, `derived_from` or `produces` link is added or
+  removed, and the task store keeps a parent's `subtasks` in step when a child's `parent`
+  changes. Both go through `Vault::amend_refs`, which retries on a write conflict. `orchy set`
+  refuses these fields.
 
 ### Sharing a vault
 
@@ -223,14 +282,18 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 
 ### Briefing
 
-`orchy announce` saves the actor and returns `Brief`'s `BriefingDto` for the actor's
-namespace:
+`AnnounceActor` saves the actor and returns the briefing itself (it owns `Brief`), so any
+handler gets the same behaviour from one use case. The briefing covers the actor's namespace:
 
 - the skills in force;
 - the unread message count;
-- the tasks the actor holds;
-- the next pending task;
-- the latest `context` document.
+- the tasks the actor holds, and those of them a failed dependency dooms;
+- the task `orchy task next --namespace <ns>` would hand out (`RankClaimable`);
+- the most recently updated `context` document;
+- how many files the stores had to skip (`Integrity::unreadable`);
+- for a returning actor, `since_last`: what others changed in its namespace since its
+  previous announce, counted from the event log. The roster keeps `last_seen` to the
+  millisecond so that count starts exactly where the last one ended.
 
 `orchy guide` and a bare `orchy` print the same orientation without touching the roster.
 Agents are told to run `announce` first, so this is the text every session starts from:
@@ -242,8 +305,10 @@ change it deliberately.
   once and stored in `$XDG_CONFIG_HOME/orchy/settings.toml`; it separates this machine's
   event log and actors from every other's. The alias is 2–32 characters: lowercase, digits
   and `-`.
-- **Roster.** `orchy announce` writes `agents/<id>.md` (roles, namespace) and refreshes
-  presence. Presence is same-machine only: `agents --live` means seen in the last 300 s.
+- **Roster and presence.** `orchy announce` writes `agents/<id>.md` (roles, namespace),
+  which is committed. Every other successful command refreshes only the actor's presence file
+  (`TouchActor` → `ActorStore::touch`, `.orchy/presence/`), so being busy never churns git.
+  Presence is same-machine only: `agents --live` means some command ran in the last 300 s.
 - **Leases** (`LeaseStore`) are TTL-based, same-machine, and carry a generation counter.
   Expiry is a timestamp checked by the reader; nothing reaps them. `orchy lock` exposes them
   directly (default TTL 300 s). Claiming a task takes the lease `task:<id>` (default 900 s)
@@ -267,9 +332,12 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Claiming.** Only `pending` is claimable, and claiming is not a self-transition.
 - **Holder only.** Completing, failing, cancelling a claimed task and releasing it are
   restricted to the holder.
-- **No reclaim.** A claimed task is never taken over; it returns to `pending` only through
-  `release`.
-- **Rollup** (`task::rollup::resolve`) runs when a child reaches a terminal status. While
+- **Reclaiming.** A claimed task returns to `pending` only through `release`. The holder
+  releases freely; anyone else needs `--force` with a reason, and `ReleaseTask` refuses it
+  while the `task:<id>` lease is live, so a task is taken back only from an agent that stopped
+  renewing it. `task.released` records `forced` and the reason.
+- **Rollup** (`task::rollup::resolve`) runs when a child reaches a terminal status, and on
+  both the old and the new parent when `task update --parent`/`--detach` moves a child. While
   any child is open it yields nothing. Otherwise the parent takes:
   - `failed` if any child failed;
   - `completed` if any child completed;
@@ -277,26 +345,47 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   - `cancelled` in every remaining case.
 
   `cancelled` and `superseded` are neutral: they carry no verdict. Rollup recurses up to
-  `MAX_DEPTH` (64) and stops on cycles.
+  `MAX_DEPTH` (64) and stops on cycles. A parent it finishes gives back its `task:<id>`
+  lease, as a holder finishing it by hand would.
 - **Split vs replace.** `split` keeps the original as an umbrella that waits for its new
   children. `replace` supersedes the original; the new tasks inherit its parent and get
   `supersedes` edges to it.
-- **Next.** `task next` considers `pending` tasks with an empty `depends_on`, ranks them by
-  priority (`urgent > high > normal > low`), then by age, then by id, and walks down the
-  ranking on contention. Dependencies are not cleared automatically when the work they point
-  at finishes.
+- **Dependencies.** `task::dependencies::outcome` gives each dependency an `Outcome`:
+  `Satisfied` when completed, or superseded with every replacement satisfied; `Doomed` when
+  failed or cancelled; `Pending` otherwise, including a missing or unreplaced dependency.
+  `combine` folds them: any doomed dooms the task, all satisfied makes it ready.
+  `AssessDependencies` loads the statuses and follows `supersedes` edges to replacements.
+  `depends_on` is never cleared; it stays as history.
+- **Ranking.** `task::ranking::claimable` is the only ordering of claimable work: pending,
+  ready, then priority (`urgent > high > normal > low`), age and id. `RankClaimable` applies
+  it to every matching task (`TaskStore::matching` never pages). `NextTask` walks down it on
+  contention; the briefing's "next up" is its first entry for the actor's namespace;
+  `task ready` (`ListReadyTasks`) lists all of it. `task list --blocked` (`ListWaitingTasks`)
+  is every other pending or blocked task with the dependencies it waits on.
 
 ### Documents
 
-- **Kinds.** Fifteen, in `Kind::ALL`: `note`, `decision`, `discovery`, `pattern`,
-  `document`, `config`, `reference`, `plan`, `log`, `skill`, `overview`, `summary`,
-  `report`, `context`, `candidate`.
-- **Statuses.** Canon kinds use `draft | active | superseded | archived`. `candidate` uses
-  `proposed | promoted | rejected`, and the two sets never overlap. Status changes are
+- **Kinds.** Fourteen, in `Kind::ALL`: `note`, `decision`, `discovery`, `pattern`,
+  `document`, `config`, `reference`, `plan`, `log`, `overview`, `summary`, `report`,
+  `context`, `candidate`. `skill` is reserved: parsing it as a kind fails and points at
+  `orchy skill write`, because skills are their own entity.
+- **Statuses.** Canon kinds use `draft | active | superseded | archived` and start `active`;
+  `candidate` uses `proposed | promoted | rejected` and starts `proposed`
+  (`Kind::initial_status`). The two sets never overlap. `Document::reject` keeps its reason
+  in the `rejected_because` field. Status changes are
   semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
-- **Sections.** A body is split into sections by markdown headings (any level).
-- **The `skill` kind.** It still exists as a document kind, and using it breaks the vault
-  (see Known gaps). Binding conventions are `Skill` entities, which are what briefings carry.
+- **Sections.** A body is split into sections by ATX headings (`#` to `######` followed by a
+  space); a heading inside a fenced code block is code, and `#tag` is not a heading. Text
+  before the first heading is the `preamble`. `Body::section` and `replace_section` refuse a
+  heading shared by several sections (`Ambiguous`, exit 7) unless `nth` picks one.
+- **Managed fields.** `document::semantic_command_for` maps each field `orchy set` refuses to
+  the command that changes it (D32): `retitle`, `retype`, `tag`, `ns move`, and the status
+  commands. All of them go through `UpdateDocument` and emit `document.retitled`,
+  `document.retyped`, `document.tagged` or `document.moved`.
+- **Promotion.** `Document::promote` turns a candidate into a canon kind in place.
+  `promote --as skill --name <n>` instead creates a `Skill` from the candidate's body, marks
+  the candidate `promoted` (`Document::mark_promoted`), and links `skill -derived_from->
+  candidate`; the candidate stays in `docs/` as the record of the proposal.
 - **Placement.** A hand-written document outside `docs/` is moved to
   `docs/<namespace>/<id>.md` the next time orchy saves it. Markdown files without an `id` are
   ignored.
@@ -315,19 +404,27 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 
 ### Search
 
-- **Stores gather, the domain scores.** Stores turn entities into `Passage`s (one per
-  document section, one per skill) after applying the query's filters, and call
-  `search::score`. They never rank.
+- **Stores gather, the domain decides.** Stores only list entities. The domain decides which
+  ones a query selects (`SearchQuery::selects_document`, `selects_skill`), how each is cut
+  into `Passage`s (`document_passages`: the preamble, then one per section; `skill_passage`)
+  and how they score (`score`). Both stores call the same functions, so they cannot drift.
 - **Terms.** `tokenise` splits on non-alphanumerics, lowercases, and applies the English
-  Snowball stemmer.
+  Snowball stemmer. A word with camelCase, acronym or letter/digit boundaries also yields
+  its parts (`UserRepository` → `userrepository`, `user`, `repository`).
 - **`score`** is BM25:
   - `k1 = 1.2`, `b = 0.75`;
-  - title terms count 3× (a skill's title is its name plus summary);
+  - title terms count 3× (a skill's title is its name plus summary), heading terms 2×,
+    body terms 1×;
   - × the fraction of query terms matched;
   - × 1.5 when the passage holds the exact phrase.
 
   A passage matching no term is dropped; an empty query returns everything with zero
   relevance.
+- **Retired knowledge.** `Recall` sets `SearchQuery.exclude_status` to
+  `DocumentStatus::RETIRED` (superseded, archived, rejected) unless the caller names
+  statuses; `SearchQuery::admits` applies both, and a document without a status always passes.
+- **Budget.** `within_budget` keeps ranked hits until their full text reaches the budget
+  (4 characters per token); the hit that crosses it and the best hit are always kept.
 - **`rank`** orders by relevance × recency (90-day decay) × namespace proximity to the
   anchor, then by recency, then by id, so ties are deterministic.
 
@@ -357,16 +454,24 @@ Agents branch on this behaviour, so treat it as API.
   - actor: `--actor` → `ORCHY_ACTOR` → `settings.actor` → `human`.
 
   A bare alias gets `@<machine>` appended.
+- **Namespace for writes.** Creating commands (`new`, `task new`, `msg send`, `promote`)
+  take `--namespace`, else `ORCHY_NAMESPACE` (`Config.namespace`), else the use case asks
+  `ActorStore::home_of` for the actor's roster namespace, else `/`. `announce` without
+  `--namespace` keeps the actor's namespace. Reads without a namespace see everything (D16).
 - **Files.** `$XDG_CONFIG_HOME/orchy/settings.toml` is per machine (`machine`, `vault`,
   `actor`); `machine` is generated on first run and must never change. `<vault>/orchy.toml`
   marks a vault, and only its `[events] partitions` key is read.
-- **No vault.** Only `init`, `status`, `completions` and a bare `orchy` run without one;
-  everything else exits 4 and names `orchy init`.
-- **Resolving ids.** Tasks and documents accept a full ULID, an id prefix, an id suffix or a
-  title fragment (`resolve.rs`); more than one match is `Ambiguous` (exit 7), never a guess.
-  Skills resolve by id, or by name: first in scope at `--namespace`, then anywhere if the
-  name is unique. Messages and `link`/`graph` refs (`kind:id`) take full ids only.
-- **Input.** Content comes from a flag or stdin, never a prompt (`stdin.rs`).
+- **No vault.** Only `init`, `status`, `completions`, `man`, `guide`, `integrate` and a bare
+  `orchy` run without one; everything else exits 4 and names `orchy init`.
+- **Resolving ids.** `ResolveReference` turns what people type into one id, considering
+  every entity (`TaskStore::matching`, `DocumentStore::matching`, `MessageStore::all`, never
+  a page): a full ULID, an id prefix or suffix, or for tasks and documents a title fragment.
+  More than one match is `Ambiguous` (exit 7), never a guess. Skills resolve by id, or by
+  name: first in scope at `--namespace`, then anywhere if the name is unique. `link`/`graph`
+  refs (`kind:id`) take full ids only.
+- **Input.** Content comes from a flag or stdin, never a prompt (`stdin.rs`). Required
+  content (`edit`, `msg send`) reads stdin when the flag is absent; optional content
+  (`new --body`) reads it only when something is piped, and `-` asks for it explicitly.
 - **Output.** Every command supports `--json`. Colour is used only on a TTY, never with
   `--no-color` or `NO_COLOR`.
 - **Errors.** Exit codes follow the table under Errors. clap's own usage errors exit 2.
@@ -374,53 +479,10 @@ Agents branch on this behaviour, so treat it as API.
 ## Known gaps
 
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
-it drift. The first five lose data or break the vault; fix them first.
+it drift.
 
-- **Task notes and reasons are lost.** `task done --note`, `task fail <reason>` and
-  `task cancel <reason>` are never written to the task file, so `task get` shows
-  `note: null` afterwards.
-- **One malformed file breaks every listing.** A document with invalid YAML frontmatter or
-  an unknown `type` makes `task list`, `announce`, `recall` and the rest exit 6. The error
-  quotes the bad YAML but never names the file.
-
-- **A document of kind `skill` breaks the vault.** `orchy new skill …` or
-  `orchy promote <candidate> --as skill` writes `docs/<id>.md` with `type: skill`. The
-  vault's skill loading then reads it as a `Skill` entity, finds no `name`, and fails. From
-  then on `announce`, `recall` and every `skill` command exit 6 until the file is fixed by
-  hand. Either drop `Kind::Skill` or make `promote --as skill` create a real `Skill`.
-- **`supersede` stores the edge backwards.** `orchy supersede <old> --by <new>` writes
-  `supersedes: [document:<new>]` on the old document (`supersede_document.rs`), while
-  `task replace` stores replacement → original. The relation reads "from supersedes to", so
-  documents are the ones that are wrong.
-- **`recall` returns superseded and archived documents.** The CLI never passes a status
-  filter, and `RecallCommand.status` is not exposed as a flag.
-
-- **`orchy new` ignores stdin.** Its `--body` help says it reads stdin when omitted, but
-  `cmd::doc::new` passes `None` through and creates an empty body. `edit` does read stdin.
-- **Rollup leaves the lease behind.** When a parent reaches a terminal status through rollup,
-  its `task:<id>` lease is not released (`RollupAncestors`); `orchy lock list` still shows
-  it until it expires.
-- **Dependencies are never cleared.** `NextTask` skips any task whose `depends_on` is
-  non-empty, even when every dependency is completed, and nothing removes them. A dependent
-  task stays invisible to `task next` until someone runs `task dep --remove`.
-- **Documents cannot be retitled, retyped, moved or retagged from the CLI.**
-  `UpdateDocument` supports title, kind, namespace and tags, but the CLI only uses it for
-  `archive`/`unarchive`. `orchy set` refuses those fields and points at commands that do
-  not exist (`orchy retitle`, `orchy retype`, `orchy ns move`, `orchy tag` —
-  `document::semantic_command_for`).
-- **The event log is incomplete.** `link` and `unlink` record no `edge.*` event, although
-  the topics exist. Announces, locks, and some document and skill field changes record
-  nothing either.
-- **`events --limit n` returns the oldest n events**, not the most recent.
-- **Short message ids are not resolved.** `msg inbox` prints short ids, but `msg read`,
-  `thread`, `resolve` and `promote` take only full ULIDs.
-- **`orchy guide` needs a vault**, although it only prints static text and its help says it
-  works without joining. It exits 4 outside a vault; a bare `orchy` does not.
-- **camelCase is one search term.** `tokenise` splits on non-alphanumerics only, so
-  `UserRepository` never matches `repository`. There is no prefix or substring fallback
-  either.
-- **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a
-  silent double claim rather than an error.
+- **No partial-word search.** `migr` finds nothing; there is no prefix or substring
+  fallback. Add one only if measured to help.
 
 ## Code style
 
@@ -458,6 +520,29 @@ Import types and use the short name everywhere; qualify only where the module ad
 - Never push. Never stage without being asked. No `Co-Authored-By` or tool attribution.
 - Do not change commit-signing settings, and never bypass signing to get a commit through.
 
+## Releasing
+
+Nothing is released yet. Everything is in place for a first release:
+
+- **Binaries.** `cargo-dist` (config in `dist-workspace.toml`, workflow in
+  `.github/workflows/release.yml`) builds `orchy` for `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`, with checksums and a shell
+  installer, when a `v*` tag is pushed. Windows is deliberately not a target: `orchy init`
+  creates a symlink and nothing has been tested there. After changing `dist-workspace.toml`,
+  run `dist generate` (e.g. `mise exec cargo-dist@0.33.0 -- dist generate`) and commit the
+  regenerated workflow; never edit it by hand.
+- **Homebrew.** The same release generates `orchy.rb` and pushes it to the tap
+  `aboglioli/homebrew-tap` (`brew install aboglioli/tap/orchy`). Before the first release that
+  repository must exist and the orchy repository needs a `HOMEBREW_TAP_TOKEN` secret that can
+  push to it; without them the release's `publish-homebrew-formula` job fails.
+- **Crates.** Internal dependencies carry a version, so `cargo publish --workspace` publishes
+  all five crates in dependency order; `cargo publish --workspace --dry-run` verifies that.
+- **Versions.** Semver from `0.1.0`, one version for the whole workspace
+  (`workspace.package.version`). Record changes in `CHANGELOG.md` under `Unreleased`, and move
+  them under the version when tagging.
+
+Only a person tags, pushes and publishes.
+
 ## Documentation policy
 
 - `docs/` is for durable, human-facing documentation: architecture notes, ADRs, operator
@@ -482,13 +567,20 @@ just fmt          # cargo fmt --all
 just check        # fmt + lint + test
 just t <pattern>  # matching tests, with output
 just orchy <args> # cargo run -p orchy-cli -- <args>
+just cli-doc      # regenerate docs/cli.md after changing a command or its help text
 ```
+
+`docs/cli.md` is generated from the clap definitions; a test fails while it is stale, so CI
+catches a command change that did not regenerate it.
 
 Install your working copy with `cargo install --path crates/orchy-cli`.
 
 No containers or services are needed. Vault tests run in temporary directories. The
 `orchy-cli` integration tests (`tests/cli.rs`, `tests/concurrent_agents.rs`) drive the built
 binary, including many agents racing for the same work.
+`orchy-store-vault/tests/conformance.rs` runs each scenario against both stores; when a port
+gains behaviour, add a scenario there so the in-memory store used by application tests and
+the vault cannot drift apart.
 
 To try the CLI without touching your real vault or settings:
 

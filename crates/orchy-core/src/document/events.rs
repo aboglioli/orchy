@@ -92,6 +92,26 @@ pub struct DocumentRetyped {
 document_event!(DocumentRetyped, "document.retyped");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentRetitled {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub from: String,
+    pub to: String,
+    pub at: DateTime<Utc>,
+}
+document_event!(DocumentRetitled, "document.retitled");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentTagged {
+    pub id: Id,
+    pub namespace: Namespace,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub at: DateTime<Utc>,
+}
+document_event!(DocumentTagged, "document.tagged");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentSuperseded {
     pub id: Id,
     pub namespace: Namespace,

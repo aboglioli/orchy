@@ -4,31 +4,37 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use orchy_core::{
-    Actor, ActorId, ActorStore, Clock, DomainError, Lease, LeaseStore, ResourceKey, Result,
+    Actor, ActorId, ActorStore, Clock, DomainError, EventLog, Lease, LeaseStore, ResourceKey,
+    Result,
 };
 
 use crate::time::FixedClock;
 
 const PRESENCE_TTL_SECS: i64 = 300;
 
-#[derive(Default)]
-pub struct MemoryActorStore(Mutex<BTreeMap<ActorId, Actor>>);
+pub struct MemoryActorStore {
+    actors: Mutex<BTreeMap<ActorId, Actor>>,
+    log: Arc<dyn EventLog>,
+}
 
 impl MemoryActorStore {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(log: Arc<dyn EventLog>) -> Self {
+        Self {
+            actors: Mutex::new(BTreeMap::new()),
+            log,
+        }
     }
 }
 
 #[async_trait]
 impl ActorStore for MemoryActorStore {
     async fn get(&self, id: &ActorId) -> Result<Option<Actor>> {
-        Ok(self.0.lock().expect("actor mutex").get(id).cloned())
+        Ok(self.actors.lock().expect("actor mutex").get(id).cloned())
     }
 
     async fn roster(&self) -> Result<Vec<Actor>> {
         Ok(self
-            .0
+            .actors
             .lock()
             .expect("actor mutex")
             .values()
@@ -37,17 +43,18 @@ impl ActorStore for MemoryActorStore {
     }
 
     async fn save(&self, actor: &mut Actor) -> Result<()> {
-        self.0
+        let events = actor.drain_events();
+        self.actors
             .lock()
             .expect("actor mutex")
             .insert(actor.id().clone(), actor.clone());
-        Ok(())
+        self.log.append(&events).await
     }
 
     async fn present(&self, now: DateTime<Utc>) -> Result<Vec<ActorId>> {
         let cutoff = now - Duration::seconds(PRESENCE_TTL_SECS);
         Ok(self
-            .0
+            .actors
             .lock()
             .expect("actor mutex")
             .values()
@@ -57,7 +64,7 @@ impl ActorStore for MemoryActorStore {
     }
 
     async fn touch(&self, id: &ActorId, now: DateTime<Utc>) -> Result<()> {
-        let mut actors = self.0.lock().expect("actor mutex");
+        let mut actors = self.actors.lock().expect("actor mutex");
         let actor = actors
             .get_mut(id)
             .ok_or_else(|| DomainError::not_found("actor", id))?;

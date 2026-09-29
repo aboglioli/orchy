@@ -13,6 +13,7 @@ use orchy_store_vault::blob::{BlobStore, FsBlobStore};
 use orchy_store_vault::documents::VaultDocumentStore;
 use orchy_store_vault::edges::VaultEdgeStore;
 use orchy_store_vault::eventlog::EventuaryLog;
+use orchy_store_vault::integrity::VaultIntegrity;
 use orchy_store_vault::messages::VaultMessageStore;
 use orchy_store_vault::roster::{FileLeaseStore, VaultActorStore};
 use orchy_store_vault::search::VaultSearch;
@@ -49,7 +50,8 @@ impl Fixture {
             .unwrap(),
         );
 
-        let actors: Arc<dyn ActorStore> = Arc::new(VaultActorStore::new(Arc::clone(&vault)));
+        let actors: Arc<dyn ActorStore> =
+            Arc::new(VaultActorStore::new(Arc::clone(&vault), Arc::clone(&log)));
         let documents = Arc::new(VaultDocumentStore::new(
             Arc::clone(&vault),
             Arc::clone(&log),
@@ -69,7 +71,12 @@ impl Fixture {
                 Arc::clone(&actors),
                 Arc::clone(&log),
             )),
-            edges: Arc::new(VaultEdgeStore::new(Arc::clone(&vault))),
+            edges: Arc::new(VaultEdgeStore::new(
+                Arc::clone(&vault),
+                Arc::clone(&log),
+                Arc::clone(&clock),
+            )),
+            integrity: Arc::new(VaultIntegrity::new(Arc::clone(&vault))),
             actors,
             leases: Arc::new(FileLeaseStore::new(
                 root.path().join(".orchy/locks"),
@@ -214,9 +221,12 @@ async fn the_parent_file_is_rewritten_when_its_last_subtask_finishes() {
             .contains(&format!("parent: task:{}", parent.id)),
         "the hierarchy is stored on the child, and names the kind it points at"
     );
+    let parent_text = fixture.read(&parent_open);
     assert!(
-        !fixture.read(&parent_open).contains("subtasks"),
-        "the parent file is not rewritten when a child is added"
+        children
+            .iter()
+            .all(|c| parent_text.contains(&format!("task:{}", c.id))),
+        "the parent file lists its subtasks, rendered from the children: {parent_text}"
     );
 
     for child in &children {
@@ -263,9 +273,11 @@ async fn a_documents_own_frontmatter_survives_an_edit_by_orchy() {
             namespace: Some("/backend".to_owned()),
             body: Some("# Context\n\nWe use HS256.".to_owned()),
             tags: vec!["auth".to_owned()],
+            ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .document;
 
     let path = format!("docs/backend/{}.md", document.id);
     let original = fixture.read(&path);
@@ -312,7 +324,8 @@ async fn an_edit_is_refused_when_the_document_changed_since_it_was_read() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .document;
 
     let stale = document.content_hash.clone();
     fixture
@@ -371,6 +384,7 @@ async fn a_message_is_one_file_under_its_thread_and_reaches_an_inbox() {
         .execute(orchy_application::read_inbox::ReadInboxCommand {
             actor: ACTOR.to_owned(),
             all: false,
+            thread: None,
         })
         .await
         .unwrap();
@@ -477,7 +491,8 @@ async fn recall_finds_a_document_by_a_word_only_in_its_title() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .hits;
 
     assert_eq!(
         hits.len(),
@@ -510,7 +525,8 @@ async fn a_term_in_both_the_title_and_the_body_is_one_hit_not_two() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .unwrap()
+        .hits;
 
     assert_eq!(
         hits.len(),

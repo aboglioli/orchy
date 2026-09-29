@@ -39,11 +39,11 @@ impl EventuaryLog {
     ) -> Result<Self> {
         let root = events_root.as_ref().join(machine.to_string());
         std::fs::create_dir_all(&root)
-            .map_err(|e| DomainError::validation(format!("creating event log root: {e}")))?;
+            .map_err(|e| DomainError::unavailable(format!("creating event log root: {e}")))?;
 
         let partitions = NonZeroU32::new(partitions.max(1)).expect("clamped to at least one");
         let writer = FsWriter::open(&root, writer_config(partitions)).map_err(|e| {
-            DomainError::validation(format!("opening event log at {}: {e}", root.display()))
+            DomainError::unavailable(format!("opening event log at {}: {e}", root.display()))
         })?;
 
         Ok(Self {
@@ -108,7 +108,7 @@ impl EventLog for EventuaryLog {
 
         for root in roots {
             let reader = FsReader::open(&root, FsReaderConfig::default())
-                .map_err(|e| DomainError::validation(format!("opening event log: {e}")))?;
+                .map_err(|e| DomainError::unavailable(format!("opening event log: {e}")))?;
             for event in drain(&reader).await? {
                 let recorded = from_eventuary(&event);
                 if query.matches(&recorded) {
@@ -125,9 +125,7 @@ impl EventLog for EventuaryLog {
                 .then_with(|| a.key.cmp(&b.key))
                 .then_with(|| a.topic.cmp(&b.topic))
         });
-        if let Some(limit) = query.limit {
-            all.truncate(limit);
-        }
+        query.keep_latest(&mut all);
         Ok(all)
     }
 }
@@ -154,7 +152,7 @@ fn append_failed(e: eventuary::Error) -> DomainError {
         eventuary::Error::Contended(message) => {
             DomainError::conflict(format!("event log is busy: {message}"))
         }
-        other => DomainError::validation(format!("appending to event log: {other}")),
+        other => DomainError::unavailable(format!("appending to event log: {other}")),
     }
 }
 
@@ -189,13 +187,13 @@ async fn drain(reader: &FsReader) -> Result<Vec<Event>> {
     let stream = reader
         .read(subscription)
         .await
-        .map_err(|e| DomainError::validation(format!("reading event log: {e}")))?;
+        .map_err(|e| DomainError::unavailable(format!("reading event log: {e}")))?;
     futures::pin_mut!(stream);
 
     let mut events = Vec::new();
     while let Ok(Some(message)) = timeout(IDLE, stream.next()).await {
         let message =
-            message.map_err(|e| DomainError::validation(format!("reading event log: {e}")))?;
+            message.map_err(|e| DomainError::unavailable(format!("reading event log: {e}")))?;
         let _ = message.ack().await;
         events.push(message.into_event());
     }

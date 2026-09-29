@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{ActorId, MessageStore, ReadWatermarks};
+use orchy_core::{ActorId, Id, MessageStore, ReadWatermarks};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::MessageDto;
@@ -10,6 +10,8 @@ use crate::error::ApplicationResult;
 pub struct ReadInboxCommand {
     pub actor: String,
     pub all: bool,
+    /// Any message of the conversation to keep to.
+    pub thread: Option<String>,
 }
 
 pub struct ReadInbox {
@@ -32,7 +34,21 @@ impl ReadInbox {
         } else {
             self.watermarks.watermark(&actor)?
         };
+        let thread = match &cmd.thread {
+            Some(message) => Some(
+                self.messages
+                    .require(&Id::new(message)?)
+                    .await?
+                    .thread()
+                    .clone(),
+            ),
+            None => None,
+        };
         let messages = self.messages.inbox(&actor, after.as_ref()).await?;
-        Ok(messages.iter().map(MessageDto::from).collect())
+        Ok(messages
+            .iter()
+            .filter(|m| thread.as_ref().is_none_or(|t| m.thread() == t))
+            .map(MessageDto::from)
+            .collect())
     }
 }

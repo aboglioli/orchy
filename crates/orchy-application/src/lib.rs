@@ -1,27 +1,36 @@
 pub mod announce_actor;
+pub mod assess_dependencies;
 pub mod block_task;
 pub mod brief;
 pub mod cancel_task;
 pub mod claim_task;
 pub mod complete_task;
+pub mod consolidate_documents;
 pub mod create_document;
 pub mod create_task;
+pub mod doctor;
 pub mod dto;
 pub mod edit_document;
 pub mod error;
+pub mod explain_entity;
+pub mod export_vault;
 pub mod fail_task;
 pub mod find_documents;
 pub mod get_task;
 pub mod link_entities;
 pub mod list_actors;
+pub mod list_ready_tasks;
 pub mod list_sent;
 pub mod list_skills;
 pub mod list_tasks;
+pub mod list_waiting_tasks;
 pub mod manage_dependencies;
 pub mod manage_lease;
+pub mod merge_tasks;
 pub mod next_task;
 pub mod promote_document;
 pub mod promote_message;
+pub mod rank_claimable;
 pub mod read_document;
 pub mod read_events;
 pub mod read_inbox;
@@ -29,8 +38,11 @@ pub mod read_message;
 pub mod read_skill;
 pub mod read_thread;
 pub mod recall;
+pub mod reject_document;
 pub mod release_task;
 pub mod replace_task;
+pub mod resolve_mentions;
+pub mod resolve_reference;
 pub mod resolve_thread;
 pub mod retire_skill;
 pub mod rollup_ancestors;
@@ -40,6 +52,7 @@ pub mod set_skill_field;
 pub mod split_task;
 pub mod start_task;
 pub mod supersede_document;
+pub mod touch_actor;
 pub mod traverse_graph;
 pub mod unblock_task;
 pub mod update_document;
@@ -49,34 +62,43 @@ pub mod write_skill;
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, LeaseStore, MessageStore,
-    ReadWatermarks, Search, SkillStore, TaskStore,
+    ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, Integrity, LeaseStore,
+    MessageStore, ReadWatermarks, Search, SkillStore, TaskStore,
 };
 
 pub use error::{ApplicationError, ApplicationResult};
 
 use announce_actor::AnnounceActor;
+use assess_dependencies::AssessDependencies;
 use block_task::BlockTask;
-use brief::Brief;
+use brief::{Brief, BriefSources};
 use cancel_task::CancelTask;
 use claim_task::ClaimTask;
 use complete_task::CompleteTask;
+use consolidate_documents::ConsolidateDocuments;
 use create_document::CreateDocument;
 use create_task::CreateTask;
+use doctor::Doctor;
 use edit_document::EditDocument;
+use explain_entity::ExplainEntity;
+use export_vault::ExportVault;
 use fail_task::FailTask;
 use find_documents::FindDocuments;
 use get_task::GetTask;
 use link_entities::LinkEntities;
 use list_actors::ListActors;
+use list_ready_tasks::ListReadyTasks;
 use list_sent::ListSent;
 use list_skills::ListSkills;
 use list_tasks::ListTasks;
+use list_waiting_tasks::ListWaitingTasks;
 use manage_dependencies::ManageDependencies;
 use manage_lease::ManageLease;
+use merge_tasks::MergeTasks;
 use next_task::NextTask;
 use promote_document::PromoteDocument;
 use promote_message::PromoteMessage;
+use rank_claimable::RankClaimable;
 use read_document::ReadDocument;
 use read_events::ReadEvents;
 use read_inbox::ReadInbox;
@@ -84,8 +106,11 @@ use read_message::ReadMessage;
 use read_skill::ReadSkill;
 use read_thread::ReadThread;
 use recall::Recall;
+use reject_document::RejectDocument;
 use release_task::ReleaseTask;
 use replace_task::ReplaceTask;
+use resolve_mentions::ResolveMentions;
+use resolve_reference::ResolveReference;
 use resolve_thread::ResolveThread;
 use retire_skill::RetireSkill;
 use rollup_ancestors::RollupAncestors;
@@ -95,6 +120,7 @@ use set_skill_field::SetSkillField;
 use split_task::SplitTask;
 use start_task::StartTask;
 use supersede_document::SupersedeDocument;
+use touch_actor::TouchActor;
 use traverse_graph::TraverseGraph;
 use unblock_task::UnblockTask;
 use update_document::UpdateDocument;
@@ -111,6 +137,7 @@ pub struct ApplicationDeps {
     pub leases: Arc<dyn LeaseStore>,
     pub watermarks: Arc<dyn ReadWatermarks>,
     pub search: Arc<dyn Search>,
+    pub integrity: Arc<dyn Integrity>,
     pub log: Arc<dyn EventLog>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGenerator>,
@@ -118,7 +145,7 @@ pub struct ApplicationDeps {
 
 pub struct Application {
     pub announce_actor: AnnounceActor,
-    pub brief: Brief,
+    pub touch_actor: TouchActor,
     pub list_actors: ListActors,
     pub manage_lease: ManageLease,
 
@@ -129,11 +156,15 @@ pub struct Application {
     pub update_document: UpdateDocument,
     pub find_documents: FindDocuments,
     pub promote_document: PromoteDocument,
+    pub reject_document: RejectDocument,
     pub supersede_document: SupersedeDocument,
+    pub consolidate_documents: ConsolidateDocuments,
 
     pub create_task: CreateTask,
     pub get_task: GetTask,
     pub list_tasks: ListTasks,
+    pub list_ready_tasks: ListReadyTasks,
+    pub list_waiting_tasks: ListWaitingTasks,
     pub next_task: NextTask,
     pub update_task: UpdateTask,
     pub claim_task: Arc<ClaimTask>,
@@ -146,6 +177,7 @@ pub struct Application {
     pub unblock_task: UnblockTask,
     pub split_task: SplitTask,
     pub replace_task: ReplaceTask,
+    pub merge_tasks: MergeTasks,
     pub manage_dependencies: ManageDependencies,
     pub rollup_ancestors: Arc<RollupAncestors>,
 
@@ -165,6 +197,10 @@ pub struct Application {
 
     pub link_entities: LinkEntities,
     pub traverse_graph: TraverseGraph,
+    pub explain_entity: ExplainEntity,
+    pub export_vault: ExportVault,
+    pub resolve_reference: ResolveReference,
+    pub doctor: Doctor,
     pub recall: Recall,
     pub read_events: ReadEvents,
 }
@@ -181,45 +217,123 @@ impl Application {
             leases,
             watermarks,
             search,
+            integrity,
             log,
             clock,
             ids,
         } = deps;
 
-        let rollup = Arc::new(RollupAncestors::new(Arc::clone(&tasks), Arc::clone(&clock)));
+        let rollup = Arc::new(RollupAncestors::new(
+            Arc::clone(&tasks),
+            Arc::clone(&leases),
+            Arc::clone(&clock),
+        ));
         let claim = Arc::new(ClaimTask::new(
             Arc::clone(&tasks),
             Arc::clone(&leases),
             Arc::clone(&clock),
         ));
+        let mentions = Arc::new(ResolveMentions::new(
+            Arc::clone(&documents),
+            Arc::clone(&tasks),
+            Arc::clone(&skills),
+        ));
+        let dependencies = Arc::new(AssessDependencies::new(
+            Arc::clone(&tasks),
+            Arc::clone(&edges),
+        ));
+        let ranking = Arc::new(RankClaimable::new(
+            Arc::clone(&tasks),
+            Arc::clone(&dependencies),
+        ));
+        let brief = Arc::new(Brief::new(BriefSources {
+            actors: Arc::clone(&actors),
+            skills: Arc::clone(&skills),
+            tasks: Arc::clone(&tasks),
+            messages: Arc::clone(&messages),
+            watermarks: Arc::clone(&watermarks),
+            documents: Arc::clone(&documents),
+            integrity: Arc::clone(&integrity),
+            ranking: Arc::clone(&ranking),
+            dependencies: Arc::clone(&dependencies),
+            log: Arc::clone(&log),
+        }));
 
         Self {
-            announce_actor: AnnounceActor::new(Arc::clone(&actors), Arc::clone(&clock)),
+            announce_actor: AnnounceActor::new(
+                Arc::clone(&actors),
+                Arc::clone(&brief),
+                Arc::clone(&clock),
+            ),
+            touch_actor: TouchActor::new(Arc::clone(&actors), Arc::clone(&clock)),
             list_actors: ListActors::new(Arc::clone(&actors), Arc::clone(&clock)),
-            manage_lease: ManageLease::new(Arc::clone(&leases)),
+            manage_lease: ManageLease::new(
+                Arc::clone(&leases),
+                Arc::clone(&log),
+                Arc::clone(&clock),
+            ),
 
             create_document: CreateDocument::new(
                 Arc::clone(&documents),
+                Arc::clone(&search),
+                Arc::clone(&actors),
+                Arc::clone(&tasks),
+                Arc::clone(&edges),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
-            read_document: ReadDocument::new(Arc::clone(&documents), Arc::clone(&edges)),
+            read_document: ReadDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&edges),
+                Arc::clone(&mentions),
+            ),
             edit_document: EditDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             set_document_field: SetDocumentField::new(Arc::clone(&documents), Arc::clone(&clock)),
             update_document: UpdateDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             find_documents: FindDocuments::new(Arc::clone(&documents)),
-            promote_document: PromoteDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
+            promote_document: PromoteDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&actors),
+                Arc::clone(&skills),
+                Arc::clone(&edges),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
+            reject_document: RejectDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
             supersede_document: SupersedeDocument::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),
                 Arc::clone(&clock),
             ),
+            consolidate_documents: ConsolidateDocuments::new(
+                Arc::clone(&documents),
+                Arc::clone(&edges),
+                Arc::clone(&clock),
+            ),
 
-            create_task: CreateTask::new(Arc::clone(&tasks), Arc::clone(&ids), Arc::clone(&clock)),
-            get_task: GetTask::new(Arc::clone(&tasks), Arc::clone(&edges)),
+            create_task: CreateTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&actors),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
+            get_task: GetTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&edges),
+                Arc::clone(&dependencies),
+            ),
             list_tasks: ListTasks::new(Arc::clone(&tasks)),
-            next_task: NextTask::new(Arc::clone(&tasks), Arc::clone(&claim)),
-            update_task: UpdateTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
+            next_task: NextTask::new(Arc::clone(&ranking), Arc::clone(&claim)),
+            list_ready_tasks: ListReadyTasks::new(Arc::clone(&ranking)),
+            list_waiting_tasks: ListWaitingTasks::new(
+                Arc::clone(&tasks),
+                Arc::clone(&dependencies),
+            ),
+            update_task: UpdateTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&rollup),
+                Arc::clone(&clock),
+            ),
             claim_task: Arc::clone(&claim),
             release_task: ReleaseTask::new(
                 Arc::clone(&tasks),
@@ -247,7 +361,12 @@ impl Application {
             ),
             block_task: BlockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
             unblock_task: UnblockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
-            split_task: SplitTask::new(Arc::clone(&tasks), Arc::clone(&ids), Arc::clone(&clock)),
+            split_task: SplitTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&log),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
             replace_task: ReplaceTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&edges),
@@ -255,24 +374,23 @@ impl Application {
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
+            merge_tasks: MergeTasks::new(
+                Arc::clone(&tasks),
+                Arc::clone(&edges),
+                Arc::clone(&rollup),
+                Arc::clone(&clock),
+            ),
             manage_dependencies: ManageDependencies::new(Arc::clone(&tasks), Arc::clone(&clock)),
             rollup_ancestors: Arc::clone(&rollup),
 
             send_message: SendMessage::new(
                 Arc::clone(&messages),
+                Arc::clone(&actors),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
             ),
             read_inbox: ReadInbox::new(Arc::clone(&messages), Arc::clone(&watermarks)),
 
-            brief: Brief::new(
-                Arc::clone(&actors),
-                Arc::clone(&skills),
-                Arc::clone(&tasks),
-                Arc::clone(&messages),
-                Arc::clone(&watermarks),
-                Arc::clone(&documents),
-            ),
             write_skill: WriteSkill::new(Arc::clone(&skills), Arc::clone(&ids), Arc::clone(&clock)),
             read_skill: ReadSkill::new(Arc::clone(&skills)),
             list_skills: ListSkills::new(Arc::clone(&skills)),
@@ -291,8 +409,37 @@ impl Application {
             ),
 
             link_entities: LinkEntities::new(Arc::clone(&edges)),
-            traverse_graph: TraverseGraph::new(Arc::clone(&edges)),
-            recall: Recall::new(Arc::clone(&search), Arc::clone(&clock)),
+            traverse_graph: TraverseGraph::new(
+                Arc::clone(&edges),
+                Arc::clone(&documents),
+                Arc::clone(&mentions),
+            ),
+            explain_entity: ExplainEntity::new(Arc::clone(&log), Arc::clone(&edges)),
+            export_vault: ExportVault::new(
+                Arc::clone(&documents),
+                Arc::clone(&skills),
+                Arc::clone(&tasks),
+                Arc::clone(&messages),
+            ),
+            doctor: Doctor::new(
+                Arc::clone(&integrity),
+                Arc::clone(&tasks),
+                Arc::clone(&documents),
+                Arc::clone(&edges),
+                Arc::clone(&rollup),
+            ),
+            resolve_reference: ResolveReference::new(
+                Arc::clone(&tasks),
+                Arc::clone(&documents),
+                Arc::clone(&messages),
+            ),
+            recall: Recall::new(
+                Arc::clone(&search),
+                Arc::clone(&documents),
+                Arc::clone(&skills),
+                Arc::clone(&edges),
+                Arc::clone(&clock),
+            ),
             read_events: ReadEvents::new(Arc::clone(&log)),
         }
     }

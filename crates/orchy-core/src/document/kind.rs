@@ -17,7 +17,6 @@ pub enum Kind {
     Reference,
     Plan,
     Log,
-    Skill,
     Overview,
     Summary,
     Report,
@@ -50,11 +49,14 @@ const CANDIDATE: [DocumentStatus; 3] = [
     DocumentStatus::Rejected,
 ];
 
+/// Reserved rather than a kind: skills are their own entity (`crate::skill`).
+const SKILL: &str = "skill";
+
 /// Maintained from events: authoring one by hand is refused.
 const PROJECTED: [&str; 4] = ["superseded_by", "derives", "produced_by", "subtasks"];
 
 impl Kind {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 14] = [
         Self::Note,
         Self::Decision,
         Self::Discovery,
@@ -64,7 +66,6 @@ impl Kind {
         Self::Reference,
         Self::Plan,
         Self::Log,
-        Self::Skill,
         Self::Overview,
         Self::Summary,
         Self::Report,
@@ -83,7 +84,6 @@ impl Kind {
             Self::Reference => "reference",
             Self::Plan => "plan",
             Self::Log => "log",
-            Self::Skill => "skill",
             Self::Overview => "overview",
             Self::Summary => "summary",
             Self::Report => "report",
@@ -96,6 +96,13 @@ impl Kind {
         match self {
             Self::Candidate => &CANDIDATE,
             _ => &CANON,
+        }
+    }
+
+    pub fn initial_status(&self) -> DocumentStatus {
+        match self {
+            Self::Candidate => DocumentStatus::Proposed,
+            _ => DocumentStatus::Active,
         }
     }
 
@@ -127,6 +134,9 @@ impl Kind {
 }
 
 impl DocumentStatus {
+    /// Kept (D14) but left out of recall unless asked for.
+    pub const RETIRED: [Self; 3] = [Self::Superseded, Self::Archived, Self::Rejected];
+
     pub const ALL: [Self; 7] = [
         Self::Draft,
         Self::Active,
@@ -161,6 +171,11 @@ impl FromStr for Kind {
 
     fn from_str(s: &str) -> Result<Self> {
         let name = s.trim().to_lowercase();
+        if name == SKILL {
+            return Err(DomainError::validation(
+                "a skill is not a document: write one with `orchy skill write <name> --summary ...`",
+            ));
+        }
         Self::ALL
             .into_iter()
             .find(|k| k.as_str() == name)
@@ -198,6 +213,13 @@ mod tests {
         for status in DocumentStatus::ALL {
             assert_eq!(status.as_str().parse::<DocumentStatus>().unwrap(), status);
         }
+    }
+
+    #[test]
+    fn skill_is_not_a_document_kind_and_says_where_skills_go() {
+        let err = "skill".parse::<Kind>().unwrap_err();
+        assert!(err.to_string().contains("orchy skill write"), "{err}");
+        assert!(Kind::ALL.iter().all(|k| k.as_str() != "skill"));
     }
 
     #[test]

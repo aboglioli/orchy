@@ -6,6 +6,7 @@ use orchy_store_vault::blob::{BlobStore, FsBlobStore};
 use orchy_store_vault::documents::VaultDocumentStore;
 use orchy_store_vault::edges::VaultEdgeStore;
 use orchy_store_vault::eventlog::EventuaryLog;
+use orchy_store_vault::integrity::VaultIntegrity;
 use orchy_store_vault::messages::VaultMessageStore;
 use orchy_store_vault::roster::{FileLeaseStore, VaultActorStore};
 use orchy_store_vault::search::VaultSearch;
@@ -32,7 +33,8 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
         config.vault_config.events.partitions,
     )?);
 
-    let actors: Arc<dyn ActorStore> = Arc::new(VaultActorStore::new(Arc::clone(&vault)));
+    let actors: Arc<dyn ActorStore> =
+        Arc::new(VaultActorStore::new(Arc::clone(&vault), Arc::clone(&log)));
     let documents = Arc::new(VaultDocumentStore::new(
         Arc::clone(&vault),
         Arc::clone(&log),
@@ -53,7 +55,12 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
             Arc::clone(&actors),
             Arc::clone(&log),
         )),
-        edges: Arc::new(VaultEdgeStore::new(Arc::clone(&vault))),
+        edges: Arc::new(VaultEdgeStore::new(
+            Arc::clone(&vault),
+            Arc::clone(&log),
+            Arc::clone(&clock),
+        )),
+        integrity: Arc::new(VaultIntegrity::new(Arc::clone(&vault))),
         actors,
         leases: Arc::new(FileLeaseStore::new(
             config.runtime_root().join("locks"),

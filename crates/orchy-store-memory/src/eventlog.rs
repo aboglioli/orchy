@@ -53,9 +53,7 @@ impl EventLog for MemoryEventLog {
         let log = self.0.lock().expect("log mutex");
         let mut found: Vec<RecordedEvent> =
             log.iter().filter(|e| query.matches(e)).cloned().collect();
-        if let Some(limit) = query.limit {
-            found.truncate(limit);
-        }
+        query.keep_latest(&mut found);
         Ok(found)
     }
 }

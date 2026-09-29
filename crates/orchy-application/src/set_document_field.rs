@@ -10,6 +10,7 @@ use crate::error::ApplicationResult;
 pub struct SetDocumentFieldCommand {
     pub document_id: String,
     pub fields: Vec<(String, serde_json::Value)>,
+    pub if_match: Option<String>,
 }
 
 pub struct SetDocumentField {
@@ -24,6 +25,7 @@ impl SetDocumentField {
 
     pub async fn execute(&self, cmd: SetDocumentFieldCommand) -> ApplicationResult<DocumentDto> {
         let mut document = self.documents.require(&Id::new(&cmd.document_id)?).await?;
+        document.ensure_unchanged(cmd.if_match.as_deref())?;
         for (field, value) in &cmd.fields {
             document.set_field(field, value.clone(), &*self.clock)?;
         }

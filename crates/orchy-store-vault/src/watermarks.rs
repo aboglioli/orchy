@@ -61,6 +61,6 @@ impl ReadWatermarks for FileWatermarks {
             .and_then(|()| handle.seek(SeekFrom::Start(0)))
             .and_then(|_| handle.write_all(value.to_string().as_bytes()))
             .and_then(|()| file.sync_all())
-            .map_err(|e| DomainError::validation(format!("writing watermark: {e}")))
+            .map_err(|e| DomainError::unavailable(format!("writing watermark: {e}")))
     }
 }

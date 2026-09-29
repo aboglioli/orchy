@@ -1,3 +1,5 @@
+use std::slice;
+
 use orchy_application::Application;
 use orchy_application::block_task::BlockTaskCommand;
 use orchy_application::cancel_task::CancelTaskCommand;
@@ -7,8 +9,11 @@ use orchy_application::create_task::CreateTaskCommand;
 use orchy_application::dto::TaskDto;
 use orchy_application::fail_task::FailTaskCommand;
 use orchy_application::get_task::GetTaskCommand;
+use orchy_application::list_ready_tasks::ListReadyTasksCommand;
 use orchy_application::list_tasks::ListTasksCommand;
+use orchy_application::list_waiting_tasks::{ListWaitingTasksCommand, WaitingTaskDto};
 use orchy_application::manage_dependencies::ManageDependenciesCommand;
+use orchy_application::merge_tasks::MergeTasksCommand;
 use orchy_application::next_task::NextTaskCommand;
 use orchy_application::release_task::ReleaseTaskCommand;
 use orchy_application::replace_task::ReplaceTaskCommand;
@@ -16,15 +21,17 @@ use orchy_application::split_task::SplitTaskCommand;
 use orchy_application::start_task::StartTaskCommand;
 use orchy_application::unblock_task::UnblockTaskCommand;
 use orchy_application::update_task::UpdateTaskCommand;
+use orchy_core::task::dependencies::Outcome;
 
 use crate::cli::TaskCommand;
 use crate::error::CliResult;
 use crate::output::{Output, short};
-use crate::resolve;
+use crate::{resolve, stdin};
 
 pub(crate) async fn run(
     app: &Application,
     actor: &str,
+    here: Option<&str>,
     command: TaskCommand,
     out: &Output,
 ) -> CliResult<()> {
@@ -32,6 +39,7 @@ pub(crate) async fn run(
         TaskCommand::New {
             title,
             description,
+            acceptance,
             priority,
             namespace,
             role,
@@ -50,11 +58,12 @@ pub(crate) async fn run(
             let task = app
                 .create_task
                 .execute(CreateTaskCommand {
+                    actor: Some(actor.to_owned()),
                     title,
                     description,
-                    acceptance_criteria: None,
+                    acceptance_criteria: stdin::or_dash(acceptance)?,
                     priority,
-                    namespace,
+                    namespace: namespace.or_else(|| here.map(str::to_owned)),
                     roles: role,
                     tags: tag,
                     parent,
@@ -65,6 +74,26 @@ pub(crate) async fn run(
         }
 
         TaskCommand::List {
+            namespace,
+            blocked: true,
+            ..
+        } => {
+            let waiting = app
+                .list_waiting_tasks
+                .execute(ListWaitingTasksCommand { namespace })
+                .await?;
+            out.emit(&waiting, |w| render_waiting(w, out))
+        }
+
+        TaskCommand::Ready { namespace, role } => {
+            let ready = app
+                .list_ready_tasks
+                .execute(ListReadyTasksCommand { namespace, role })
+                .await?;
+            out.emit(&ready, |r| render_list(r, out))
+        }
+
+        TaskCommand::List {
             status,
             namespace,
             mine,
@@ -72,6 +101,7 @@ pub(crate) async fn run(
             parent,
             tag,
             limit,
+            ..
         } => {
             let page = app
                 .list_tasks
@@ -90,7 +120,13 @@ pub(crate) async fn run(
                     limit,
                 })
                 .await?;
-            out.emit(&page, |p| render_list(&p.items, out))
+            out.emit(&page, |p| {
+                let mut text = render_list(&p.items, out);
+                if let Some(note) = out.truncated(p.items.len(), p.total) {
+                    text.push_str(&format!("\n\n{note}"));
+                }
+                text
+            })
         }
 
         TaskCommand::Get { target } => {
@@ -98,6 +134,22 @@ pub(crate) async fn run(
             let response = app.get_task.execute(GetTaskCommand { task_id }).await?;
             out.emit(&response, |r| {
                 let mut lines = vec![detail(&r.task, out)];
+                if !r.dependencies.is_empty() {
+                    lines.push(String::new());
+                    lines.push(out.bold(match r.readiness {
+                        Outcome::Satisfied => "depends on (all done)",
+                        Outcome::Pending => "waits on",
+                        Outcome::Doomed => "cannot start: a dependency failed or was cancelled",
+                    }));
+                    lines.extend(r.dependencies.iter().map(|d| {
+                        let state = match d.outcome {
+                            Outcome::Satisfied => "done",
+                            Outcome::Pending => "pending",
+                            Outcome::Doomed => "failed or cancelled",
+                        };
+                        format!("{}  {state}", short(&d.id))
+                    }));
+                }
                 if !r.subtasks.is_empty() {
                     lines.push(String::new());
                     lines.push(out.bold("subtasks"));
@@ -141,13 +193,18 @@ pub(crate) async fn run(
             out.emit(&task, |t| detail(t, out))
         }
 
-        TaskCommand::Release { target } => {
+        TaskCommand::Release {
+            target,
+            force,
+            reason,
+        } => {
             let task_id = resolve::task(app, &target).await?;
             let task = app
                 .release_task
                 .execute(ReleaseTaskCommand {
                     task_id,
                     actor: actor.to_owned(),
+                    force: if force { reason } else { None },
                 })
                 .await?;
             out.emit(&task, |t| detail(t, out))
@@ -262,6 +319,29 @@ pub(crate) async fn run(
             out.emit(&response, |r| render_list(&r.created, out))
         }
 
+        TaskCommand::Merge { keep, others } => {
+            let keep = resolve::task(app, &keep).await?;
+            let mut resolved = Vec::new();
+            for other in &others {
+                resolved.push(resolve::task(app, other).await?);
+            }
+            let response = app
+                .merge_tasks
+                .execute(MergeTasksCommand {
+                    keep,
+                    others: resolved,
+                    actor: actor.to_owned(),
+                })
+                .await?;
+            out.note(format!(
+                "{} merged into {}, {} subtasks moved",
+                response.merged.len(),
+                short(&response.kept.id),
+                response.moved.len()
+            ));
+            out.emit(&response, |r| render_list(slice::from_ref(&r.kept), out))
+        }
+
         TaskCommand::Dep {
             target,
             add,
@@ -293,7 +373,9 @@ pub(crate) async fn run(
             detach,
             title,
             description,
+            acceptance,
             priority,
+            role,
             namespace,
             tag,
             untag,
@@ -311,9 +393,9 @@ pub(crate) async fn run(
                     detach,
                     title,
                     description,
-                    acceptance_criteria: None,
+                    acceptance_criteria: stdin::or_dash(acceptance)?,
                     priority,
-                    roles: None,
+                    roles: (!role.is_empty()).then_some(role),
                     namespace,
                     add_tags: tag,
                     remove_tags: untag,
@@ -329,6 +411,34 @@ fn emit_finished(response: &CompleteTaskResponse, out: &Output) -> CliResult<()>
         out.note(format!("↑ {} → {}", short(&parent.id), parent.status));
     }
     out.emit(response, |r| detail(&r.task, out))
+}
+
+fn render_waiting(waiting: &[WaitingTaskDto], out: &Output) -> String {
+    if waiting.is_empty() {
+        return "nothing waiting".to_owned();
+    }
+    waiting
+        .iter()
+        .map(|w| {
+            let on = if w.waiting_on.is_empty() {
+                w.task.note.clone().unwrap_or_else(|| "blocked".to_owned())
+            } else {
+                w.waiting_on
+                    .iter()
+                    .map(|d| short(&d.id))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            format!(
+                "{}  {:<12} {}\n  waits on {}",
+                out.dim(short(&w.task.id)),
+                w.task.status,
+                w.task.title,
+                on
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn render_list(tasks: &[TaskDto], out: &Output) -> String {
@@ -367,12 +477,25 @@ fn detail(task: &TaskDto, out: &Output) -> String {
         let deps: Vec<&str> = task.depends_on.iter().map(|d| short(d)).collect();
         lines.push(format!("  depends on {}", deps.join(", ")));
     }
+    if !task.assigned_roles.is_empty() {
+        lines.push(format!("  roles      {}", task.assigned_roles.join(", ")));
+    }
     if !task.tags.is_empty() {
         lines.push(format!("  tags       {}", task.tags.join(", ")));
     }
     if !task.description.is_empty() {
         lines.push(String::new());
         lines.push(task.description.clone());
+    }
+    for (heading, text) in [
+        ("acceptance", &task.acceptance_criteria),
+        ("outcome", &task.note),
+    ] {
+        if let Some(text) = text {
+            lines.push(String::new());
+            lines.push(out.bold(heading));
+            lines.push(text.clone());
+        }
     }
     lines.join("\n")
 }

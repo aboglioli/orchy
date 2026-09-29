@@ -16,6 +16,7 @@ rust-version = "1.89"
 version = "0.1.0"
 license = "MIT"
 repository = "https://github.com/aboglioli/orchy"
+homepage = "https://github.com/aboglioli/orchy"
 
 [workspace.dependencies]
 # Event toolkit. The facade is the only entry point: backends come from it by feature, never
@@ -26,7 +27,7 @@ eventuary = { version = "=0.3.0-rc.4", features = ["fs", "memory"] }
 # Domain
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 hex = "0.4"
 thiserror = "2"
@@ -46,15 +47,17 @@ toml = "0.9"
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
+clap_mangen = "0.3"
+ureq = "3.4"
 
 # Testing
 tempfile = "3"
 
 # Internal
-orchy-core = { path = "crates/orchy-core" }
-orchy-application = { path = "crates/orchy-application" }
-orchy-store-memory = { path = "crates/orchy-store-memory" }
-orchy-store-vault = { path = "crates/orchy-store-vault" }
+orchy-core = { path = "crates/orchy-core", version = "0.1.0" }
+orchy-application = { path = "crates/orchy-application", version = "0.1.0" }
+orchy-store-memory = { path = "crates/orchy-store-memory", version = "0.1.0" }
+orchy-store-vault = { path = "crates/orchy-store-vault", version = "0.1.0" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -68,3 +71,7 @@ needless_collect = "warn"
 str_to_string = "warn"
 await_holding_lock = "warn"
 clone_on_ref_ptr = "warn"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"

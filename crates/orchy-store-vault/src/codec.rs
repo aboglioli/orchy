@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use orchy_core::{
     Actor, ActorId, Body, Document, DocumentStatus, DomainError, EntityKind, EntityRef,
-    Frontmatter, Id, Kind, Message, MessageStatus, Namespace, Priority, Recipient, RestoreDocument,
-    RestoreMessage, RestoreSkill, RestoreTask, Result, Role, Skill, SkillName, SkillStatus,
-    Summary, Tag, Task, TaskStatus, Title,
+    Frontmatter, Id, Kind, Message, MessageStatus, Namespace, Priority, Problem, ProblemKind,
+    Recipient, RestoreDocument, RestoreMessage, RestoreSkill, RestoreTask, Result, Role, Skill,
+    SkillName, SkillStatus, Summary, Tag, Task, TaskStatus, Title,
 };
 use serde_json::{Value, json};
 
@@ -40,7 +40,7 @@ const MESSAGE_KEYS: [&str; 11] = [
     "created",
 ];
 
-const DOCUMENT_KEYS: [&str; 7] = [
+const DOCUMENT_KEYS: [&str; 8] = [
     "id",
     "type",
     "title",
@@ -48,6 +48,7 @@ const DOCUMENT_KEYS: [&str; 7] = [
     "status",
     "tags",
     "created",
+    "updated",
 ];
 
 const SKILL_KEYS: [&str; 8] = [
@@ -71,8 +72,33 @@ const ACTOR_KEYS: [&str; 7] = [
     "last_seen",
 ];
 
-fn missing(field: &str, key: &str) -> DomainError {
-    DomainError::validation(format!("`{key}` has no `{field}` in its frontmatter"))
+const MISSING: &str = "no `";
+
+fn missing(field: &str) -> DomainError {
+    DomainError::validation(format!("{MISSING}{field}` in its frontmatter"))
+}
+
+pub fn at(key: &str) -> impl Fn(DomainError) -> DomainError + '_ {
+    move |e| match e {
+        DomainError::Validation(detail) | DomainError::UnknownType(detail) => {
+            DomainError::validation(format!("{key}: {detail}"))
+        }
+        other => other,
+    }
+}
+
+pub fn problem(key: &str, file: &MarkdownFile, e: &DomainError) -> Problem {
+    let id = id_of(file).and_then(|raw| Id::new(raw).ok());
+    let kind = match e {
+        DomainError::UnknownType(_) => ProblemKind::UnknownType,
+        DomainError::Validation(detail) if detail.starts_with(MISSING) => ProblemKind::MissingField,
+        _ => ProblemKind::InvalidField,
+    };
+    let detail = match e {
+        DomainError::UnknownType(name) => format!("`{name}` is not a registered type"),
+        other => other.to_string(),
+    };
+    Problem::new(kind, key, id, detail)
 }
 
 fn timestamp(frontmatter: &Frontmatter, field: &str) -> Option<DateTime<Utc>> {
@@ -83,7 +109,7 @@ fn timestamp(frontmatter: &Frontmatter, field: &str) -> Option<DateTime<Utc>> {
 }
 
 fn stamp(at: DateTime<Utc>) -> Value {
-    json!(at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    json!(at.to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
 fn task_ref(id: &Id) -> String {
@@ -138,27 +164,36 @@ pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
         }
     }
 
-    let body = match task.acceptance_criteria() {
-        Some(criteria) => Body::new(format!(
-            "{}\n\n## Acceptance\n\n{criteria}",
-            task.description()
-        )),
-        None => Body::new(task.description()),
-    };
+    let mut body = task.description().to_owned();
+    for (heading, text) in [
+        (ACCEPTANCE, task.acceptance_criteria()),
+        (OUTCOME, task.note()),
+    ] {
+        if let Some(text) = text {
+            body.push_str(&format!("\n\n{heading}\n\n{text}"));
+        }
+    }
 
-    MarkdownFile { frontmatter, body }
+    MarkdownFile {
+        frontmatter,
+        body: Body::new(body),
+    }
 }
 
-pub fn task_from_markdown(file: &MarkdownFile, key: &str) -> Result<Task> {
+pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
-    let title = Title::new(fm.string("title").ok_or_else(|| missing("title", key))?)?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
+    let title = Title::new(fm.string("title").ok_or_else(|| missing("title"))?)?;
     let status: TaskStatus = fm
         .string("status")
-        .ok_or_else(|| missing("status", key))?
+        .ok_or_else(|| missing("status"))?
         .parse()?;
 
-    let (description, acceptance_criteria) = split_acceptance(file.body.as_str());
+    let TaskBody {
+        description,
+        acceptance_criteria,
+        note,
+    } = split_task_body(file.body.as_str());
 
     Ok(Task::new(RestoreTask {
         id: id.clone(),
@@ -197,24 +232,42 @@ pub fn task_from_markdown(file: &MarkdownFile, key: &str) -> Result<Task> {
             .iter()
             .map(Tag::new)
             .collect::<Result<Vec<_>>>()?,
-        refs: Vec::new(),
-        note: None,
+        note,
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
         updated_at: timestamp(fm, "updated").unwrap_or_else(|| id.created_at()),
     }))
 }
 
-fn split_acceptance(body: &str) -> (String, Option<String>) {
-    const HEADING: &str = "## Acceptance";
-    match body.split_once(HEADING) {
-        Some((description, criteria)) => {
-            let criteria = criteria.trim();
-            (
-                description.trim().to_owned(),
-                (!criteria.is_empty()).then(|| criteria.to_owned()),
-            )
+const ACCEPTANCE: &str = "## Acceptance";
+const OUTCOME: &str = "## Outcome";
+
+struct TaskBody {
+    description: String,
+    acceptance_criteria: Option<String>,
+    note: Option<String>,
+}
+
+/// Only a line that is exactly `## Acceptance` or `## Outcome` starts a section.
+fn split_task_body(body: &str) -> TaskBody {
+    let mut description = Vec::new();
+    let mut acceptance = Vec::new();
+    let mut outcome = Vec::new();
+    let mut current = &mut description;
+    for line in body.lines() {
+        match line.trim_end() {
+            ACCEPTANCE => current = &mut acceptance,
+            OUTCOME => current = &mut outcome,
+            _ => current.push(line),
         }
-        None => (body.trim().to_owned(), None),
+    }
+    let section = |lines: Vec<&str>| {
+        let text = lines.join("\n").trim().to_owned();
+        (!text.is_empty()).then_some(text)
+    };
+    TaskBody {
+        description: description.join("\n").trim().to_owned(),
+        acceptance_criteria: section(acceptance),
+        note: section(outcome),
     }
 }
 
@@ -234,6 +287,7 @@ pub fn document_to_markdown(document: &Document) -> MarkdownFile {
         );
     }
     frontmatter.set("created", stamp(document.created_at()));
+    frontmatter.set("updated", stamp(document.updated_at()));
 
     for (key, value) in document.frontmatter().iter() {
         if !DOCUMENT_KEYS.contains(&key) {
@@ -247,12 +301,12 @@ pub fn document_to_markdown(document: &Document) -> MarkdownFile {
     }
 }
 
-pub fn document_from_markdown(file: &MarkdownFile, key: &str) -> Result<Document> {
+pub fn document_from_markdown(file: &MarkdownFile) -> Result<Document> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
     let kind = fm
         .string("type")
-        .ok_or_else(|| missing("type", key))?
+        .ok_or_else(|| missing("type"))?
         .parse::<Kind>()?;
     let title = Title::new(
         fm.string("title")
@@ -316,9 +370,9 @@ pub fn message_to_markdown(message: &Message) -> MarkdownFile {
     }
 }
 
-pub fn message_from_markdown(file: &MarkdownFile, key: &str) -> Result<Message> {
+pub fn message_from_markdown(file: &MarkdownFile) -> Result<Message> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
     let thread = fm
         .string("thread")
         .map(Id::new)
@@ -329,10 +383,7 @@ pub fn message_from_markdown(file: &MarkdownFile, key: &str) -> Result<Message> 
         id: id.clone(),
         thread,
         in_reply_to: fm.string("in_reply_to").map(Id::new).transpose()?,
-        from: fm
-            .string("from")
-            .ok_or_else(|| missing("from", key))?
-            .parse()?,
+        from: fm.string("from").ok_or_else(|| missing("from"))?.parse()?,
         to: fm
             .strings("to")
             .iter()
@@ -355,7 +406,6 @@ pub fn message_from_markdown(file: &MarkdownFile, key: &str) -> Result<Message> 
             .map(Namespace::new)
             .transpose()?
             .unwrap_or_default(),
-        refs: Vec::new(),
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
     }))
 }
@@ -372,7 +422,14 @@ pub fn actor_to_markdown(actor: &Actor, carried: Frontmatter) -> MarkdownFile {
     }
     frontmatter.set("namespace", json!(actor.namespace().to_string()));
     frontmatter.set("announced", stamp(actor.announced_at()));
-    frontmatter.set("last_seen", stamp(actor.last_seen()));
+    frontmatter.set(
+        "last_seen",
+        json!(
+            actor
+                .last_seen()
+                .to_rfc3339_opts(SecondsFormat::Millis, true)
+        ),
+    );
 
     for (key, value) in carried.iter() {
         if !ACTOR_KEYS.contains(&key) {
@@ -386,9 +443,9 @@ pub fn actor_to_markdown(actor: &Actor, carried: Frontmatter) -> MarkdownFile {
     }
 }
 
-pub fn actor_from_markdown(file: &MarkdownFile, key: &str) -> Result<Actor> {
+pub fn actor_from_markdown(file: &MarkdownFile) -> Result<Actor> {
     let fm = &file.frontmatter;
-    let id: ActorId = fm.string("id").ok_or_else(|| missing("id", key))?.parse()?;
+    let id: ActorId = fm.string("id").ok_or_else(|| missing("id"))?.parse()?;
     let announced = timestamp(fm, "announced").unwrap_or_else(Utc::now);
 
     Ok(Actor::new(
@@ -447,14 +504,11 @@ pub fn skill_to_markdown(skill: &Skill) -> MarkdownFile {
     }
 }
 
-pub fn skill_from_markdown(file: &MarkdownFile, key: &str) -> Result<Skill> {
+pub fn skill_from_markdown(file: &MarkdownFile) -> Result<Skill> {
     let fm = &file.frontmatter;
-    let id = Id::new(fm.string("id").ok_or_else(|| missing("id", key))?)?;
-    let name = SkillName::new(fm.string("name").ok_or_else(|| missing("name", key))?)?;
-    let summary = Summary::new(
-        fm.string("summary")
-            .ok_or_else(|| missing("summary", key))?,
-    )?;
+    let id = Id::new(fm.string("id").ok_or_else(|| missing("id"))?)?;
+    let name = SkillName::new(fm.string("name").ok_or_else(|| missing("name"))?)?;
+    let summary = Summary::new(fm.string("summary").ok_or_else(|| missing("summary"))?)?;
 
     let mut carried = Frontmatter::new();
     for (key, value) in fm.iter() {
@@ -486,4 +540,32 @@ pub fn skill_from_markdown(file: &MarkdownFile, key: &str) -> Result<Skill> {
         created_at: timestamp(fm, "created").unwrap_or_else(|| id.created_at()),
         updated_at: timestamp(fm, "updated").unwrap_or_else(|| id.created_at()),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_task_body_splits_into_description_criteria_and_outcome_in_either_order() {
+        let body = split_task_body(
+            "Do it.\n\n## Outcome\n\nDone in abc123.\n\n## Acceptance\n\nTests pass.",
+        );
+        assert_eq!(body.description, "Do it.");
+        assert_eq!(body.acceptance_criteria.as_deref(), Some("Tests pass."));
+        assert_eq!(body.note.as_deref(), Some("Done in abc123."));
+    }
+
+    #[test]
+    fn a_lookalike_heading_is_part_of_the_description() {
+        let body = split_task_body("Intro\n### Acceptance\nnot a section");
+        assert_eq!(body.description, "Intro\n### Acceptance\nnot a section");
+        assert!(body.acceptance_criteria.is_none());
+    }
+
+    #[test]
+    fn an_empty_section_is_no_section() {
+        let body = split_task_body("Intro\n\n## Outcome\n\n");
+        assert!(body.note.is_none());
+    }
 }

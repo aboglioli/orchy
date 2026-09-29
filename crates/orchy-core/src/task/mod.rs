@@ -1,4 +1,6 @@
+pub mod dependencies;
 mod events;
+pub mod ranking;
 pub mod rollup;
 mod status;
 
@@ -7,14 +9,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub use events::{
-    TaskBlocked, TaskClaimed, TaskCreated, TaskFinished, TaskReleased, TaskReparented,
+    TaskBlocked, TaskClaimed, TaskCreated, TaskDeleted, TaskFinished, TaskReleased, TaskReparented,
     TaskRolledUp, TaskStarted, TaskSuperseded, TaskUnblocked, TaskUpdated,
 };
 pub use status::TaskStatus;
 
 use crate::actor::{ActorId, Role};
 use crate::clock::Clock;
-use crate::entity_ref::EntityRef;
 use crate::error::{DomainError, Result};
 use crate::event::EventCollector;
 use crate::id::{Id, IdGenerator};
@@ -27,10 +28,15 @@ use crate::title::Title;
 #[async_trait]
 pub trait TaskStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Task>>;
-    async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>>;
+    /// Never paged: callers rely on seeing every match.
+    async fn matching(&self, query: &TaskQuery) -> Result<Vec<Task>>;
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>>;
     async fn save(&self, task: &mut Task) -> Result<()>;
     async fn delete(&self, id: &Id) -> Result<()>;
+
+    async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>> {
+        Ok(Page::slice(self.matching(query).await?, page))
+    }
 
     async fn require(&self, id: &Id) -> Result<Task> {
         self.get(id)
@@ -110,7 +116,6 @@ pub struct Task {
     claimed_by: Option<ActorId>,
     claimed_at: Option<DateTime<Utc>>,
     tags: Vec<Tag>,
-    refs: Vec<EntityRef>,
     note: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -133,7 +138,6 @@ pub struct RestoreTask {
     pub claimed_by: Option<ActorId>,
     pub claimed_at: Option<DateTime<Utc>>,
     pub tags: Vec<Tag>,
-    pub refs: Vec<EntityRef>,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -155,7 +159,6 @@ impl Task {
             claimed_by: restore.claimed_by,
             claimed_at: restore.claimed_at,
             tags: restore.tags,
-            refs: restore.refs,
             note: restore.note,
             created_at: restore.created_at,
             updated_at: restore.updated_at,
@@ -185,7 +188,6 @@ impl Task {
             claimed_by: None,
             claimed_at: None,
             tags: Vec::new(),
-            refs: Vec::new(),
             note: None,
             created_at: now,
             updated_at: now,
@@ -259,6 +261,25 @@ impl Task {
             }
             None => return Err(DomainError::conflict("task is not claimed")),
         }
+        self.give_back(by, false, None, clock)
+    }
+
+    /// Recovers a task whose holder stopped working on it. Whether that is so is decided by
+    /// its lease, which the caller has checked has expired.
+    pub fn force_release(&mut self, by: &ActorId, reason: String, clock: &dyn Clock) -> Result<()> {
+        if self.claimed_by.is_none() {
+            return Err(DomainError::conflict("task is not claimed"));
+        }
+        self.give_back(by, true, Some(reason), clock)
+    }
+
+    fn give_back(
+        &mut self,
+        by: &ActorId,
+        forced: bool,
+        reason: Option<String>,
+        clock: &dyn Clock,
+    ) -> Result<()> {
         self.status = self.status.transition_to(TaskStatus::Pending)?;
         let now = clock.now();
         self.claimed_by = None;
@@ -268,6 +289,8 @@ impl Task {
             id: self.id.clone(),
             namespace: self.namespace.clone(),
             by: by.clone(),
+            forced,
+            reason,
             at: now,
         });
         Ok(())
@@ -463,14 +486,7 @@ impl Task {
         self.updated_field("tags", clock);
     }
 
-    pub fn reference(&mut self, entity: EntityRef, clock: &dyn Clock) {
-        if !self.refs.contains(&entity) {
-            self.refs.push(entity);
-            self.updated_field("refs", clock);
-        }
-    }
-
-    pub fn touch(&mut self, clock: &dyn Clock) {
+    fn touch(&mut self, clock: &dyn Clock) {
         self.updated_at = clock.now();
     }
 
@@ -526,9 +542,6 @@ impl Task {
     }
     pub fn tags(&self) -> &[Tag] {
         &self.tags
-    }
-    pub fn refs(&self) -> &[EntityRef] {
-        &self.refs
     }
     pub fn note(&self) -> Option<&str> {
         self.note.as_deref()
@@ -588,6 +601,117 @@ pub(super) mod tests {
         let mut task = task();
         task.claim(actor("claude"), &clock()).unwrap();
         task
+    }
+
+    type Mutation = fn(&mut Task);
+    type Case = (&'static str, fn() -> Task, Mutation);
+
+    fn leaves_an_event(label: &str, start: fn() -> Task, mutate: Mutation) {
+        let mut task = start();
+        task.drain_events();
+        mutate(&mut task);
+        assert!(
+            !task.drain_events().is_empty(),
+            "`{label}` changed the task without recording an event"
+        );
+    }
+
+    #[test]
+    fn every_change_to_a_task_records_an_event() {
+        let cases: Vec<Case> = vec![
+            ("attach_to", task, |t| {
+                t.attach_to(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
+                    .unwrap()
+            }),
+            (
+                "detach",
+                || {
+                    let mut t = task();
+                    t.attach_to(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
+                        .unwrap();
+                    t
+                },
+                |t| t.detach(&clock()),
+            ),
+            ("claim", task, |t| {
+                t.claim(actor("claude"), &clock()).unwrap()
+            }),
+            ("release", claimed, |t| {
+                t.release(&actor("claude"), &clock()).unwrap()
+            }),
+            ("start", claimed, |t| t.start(&clock()).unwrap()),
+            ("complete", claimed, |t| {
+                t.complete(&actor("claude"), None, &clock()).unwrap()
+            }),
+            ("fail", claimed, |t| {
+                t.fail(&actor("claude"), "no".to_owned(), &clock()).unwrap()
+            }),
+            ("cancel", claimed, |t| {
+                t.cancel(&actor("claude"), "no".to_owned(), &clock())
+                    .unwrap()
+            }),
+            ("roll_up", task, |t| {
+                assert!(t.roll_up(TaskStatus::Cancelled, "x".to_owned(), &clock()))
+            }),
+            ("block", task, |t| {
+                t.block("wait".to_owned(), &clock()).unwrap()
+            }),
+            (
+                "unblock",
+                || {
+                    let mut t = task();
+                    t.block("wait".to_owned(), &clock()).unwrap();
+                    t
+                },
+                |t| t.unblock(&clock()).unwrap(),
+            ),
+            ("add_dependency", task, |t| {
+                t.add_dependency(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
+                    .unwrap()
+            }),
+            (
+                "remove_dependency",
+                || {
+                    let mut t = task();
+                    t.add_dependency(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
+                        .unwrap();
+                    t
+                },
+                |t| t.remove_dependency(&Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock()),
+            ),
+            ("retitle", task, |t| {
+                t.retitle(Title::new("renamed").unwrap(), &clock())
+            }),
+            ("describe", task, |t| {
+                t.describe("more".to_owned(), &clock())
+            }),
+            ("set_acceptance_criteria", task, |t| {
+                t.set_acceptance_criteria(Some("done".to_owned()), &clock())
+            }),
+            ("set_priority", task, |t| {
+                t.set_priority(Priority::High, &clock())
+            }),
+            ("assign_roles", task, |t| {
+                t.assign_roles(vec![Role::new("dev").unwrap()], &clock())
+            }),
+            ("move_to", task, |t| {
+                t.move_to(Namespace::new("/web").unwrap(), &clock())
+            }),
+            ("retag", task, |t| {
+                t.retag(vec![Tag::new("x").unwrap()], &[], &clock())
+            }),
+            ("supersede", task, |t| {
+                t.supersede(
+                    vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
+                    None,
+                    &clock(),
+                )
+                .unwrap()
+            }),
+        ];
+        for (label, start, mutate) in cases {
+            leaves_an_event(label, start, mutate);
+        }
     }
 
     #[test]

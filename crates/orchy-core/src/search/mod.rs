@@ -1,21 +1,23 @@
 mod terms;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-pub use terms::tokenise;
+pub use terms::{Tokeniser, tokenise};
 
-use crate::document::{DocumentStatus, Kind};
+use crate::document::{Document, DocumentStatus, Kind};
 use crate::entity_ref::{EntityKind, EntityRef};
 use crate::error::Result;
 use crate::namespace::Namespace;
+use crate::skill::Skill;
 use crate::tag::Tag;
 
 const K1: f64 = 1.2;
 const B: f64 = 0.75;
 const TITLE_WEIGHT: f64 = 3.0;
+const HEADING_WEIGHT: f64 = 2.0;
 const PHRASE_BONUS: f64 = 1.5;
 
 #[async_trait]
@@ -29,6 +31,7 @@ pub struct SearchQuery {
     pub entities: Option<Vec<EntityKind>>,
     pub kind: Option<Vec<Kind>>,
     pub status: Option<Vec<DocumentStatus>>,
+    pub exclude_status: Vec<DocumentStatus>,
     pub retired: bool,
     pub namespace: Option<Namespace>,
     pub tags: Vec<Tag>,
@@ -40,12 +43,56 @@ impl SearchQuery {
     pub fn covers(&self, kind: EntityKind) -> bool {
         self.entities.as_ref().is_none_or(|k| k.contains(&kind))
     }
+
+    pub fn selects_document(&self, document: &Document) -> bool {
+        if let Some(kinds) = &self.kind
+            && !kinds.contains(document.kind())
+        {
+            return false;
+        }
+        if !self.admits(document.status()) || !self.recent(document.updated_at()) {
+            return false;
+        }
+        if let Some(namespace) = &self.namespace
+            && !namespace.contains(document.namespace())
+        {
+            return false;
+        }
+        self.tags.iter().all(|t| document.tags().contains(t))
+    }
+
+    pub fn selects_skill(&self, skill: &Skill) -> bool {
+        if (!self.retired && !skill.is_active()) || !self.recent(skill.updated_at()) {
+            return false;
+        }
+        if let Some(namespace) = &self.namespace
+            && !namespace.contains(skill.namespace())
+        {
+            return false;
+        }
+        self.tags.iter().all(|t| skill.tags().contains(t))
+    }
+
+    fn recent(&self, updated_at: DateTime<Utc>) -> bool {
+        self.since.is_none_or(|since| updated_at >= since)
+    }
+
+    /// A document with no status always passes.
+    pub fn admits(&self, status: Option<DocumentStatus>) -> bool {
+        match (&self.status, status) {
+            (Some(wanted), Some(status)) => wanted.contains(&status),
+            (Some(_), None) => false,
+            (None, Some(status)) => !self.exclude_status.contains(&status),
+            (None, None) => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Passage {
     pub entity: EntityRef,
     pub heading: Option<String>,
+    pub heading_terms: String,
     pub title: String,
     pub body: String,
     pub excerpt: String,
@@ -56,8 +103,10 @@ pub struct Passage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
     pub entity: EntityRef,
+    pub title: String,
     pub heading: Option<String>,
     pub excerpt: String,
+    pub body: String,
     pub namespace: Namespace,
     pub updated_at: DateTime<Utc>,
     pub relevance: f64,
@@ -67,8 +116,10 @@ impl Passage {
     fn into_hit(self, relevance: f64) -> Hit {
         Hit {
             entity: self.entity,
+            title: self.title,
             heading: self.heading,
             excerpt: self.excerpt,
+            body: self.body,
             namespace: self.namespace,
             updated_at: self.updated_at,
             relevance,
@@ -76,54 +127,108 @@ impl Passage {
     }
 
     fn holds_phrase(&self, needle: &str) -> bool {
-        self.title.to_lowercase().contains(needle) || self.body.to_lowercase().contains(needle)
+        [&self.title, &self.heading_terms, &self.body]
+            .iter()
+            .any(|text| text.to_lowercase().contains(needle))
     }
 }
 
+/// A passage reduced to what BM25 needs: its length in terms and, for each query term, the
+/// weighted number of times it occurs.
 struct Indexed {
-    title: Vec<String>,
-    body: Vec<String>,
+    length: f64,
+    frequencies: Vec<f64>,
 }
 
 impl Indexed {
-    fn of(passage: &Passage) -> Self {
+    fn of(passage: &Passage, wanted: &[String], tokeniser: &mut Tokeniser) -> Self {
+        let mut length = 0;
+        let mut frequencies = vec![0.0; wanted.len()];
+        for (text, weight) in [
+            (&passage.title, TITLE_WEIGHT),
+            (&passage.heading_terms, HEADING_WEIGHT),
+            (&passage.body, 1.0),
+        ] {
+            tokeniser.each(text, |term| {
+                length += 1;
+                if let Some(at) = wanted.iter().position(|w| w == term) {
+                    frequencies[at] += weight;
+                }
+            });
+        }
         Self {
-            title: tokenise(&passage.title),
-            body: tokenise(&passage.body),
+            length: length as f64,
+            frequencies,
         }
     }
+}
 
-    fn length(&self) -> f64 {
-        (self.title.len() + self.body.len()) as f64
+const EXCERPT: usize = 240;
+
+pub fn document_passages(document: &Document) -> Vec<Passage> {
+    let passage = |heading: Option<&str>, body: &str| Passage {
+        entity: EntityRef::new(EntityKind::Document, document.id().clone()),
+        heading: heading.map(str::to_owned),
+        heading_terms: heading.unwrap_or_default().to_owned(),
+        title: document.title().to_string(),
+        body: body.to_owned(),
+        excerpt: body.trim().chars().take(EXCERPT).collect(),
+        namespace: document.namespace().clone(),
+        updated_at: document.updated_at(),
+    };
+
+    let body = document.body();
+    let sections = body.sections();
+    let preamble = body.preamble();
+    let mut passages = Vec::with_capacity(sections.len() + 1);
+    if !preamble.is_empty() || sections.is_empty() {
+        passages.push(passage(None, preamble));
     }
+    passages.extend(
+        sections
+            .iter()
+            .map(|section| passage(Some(&section.heading), section.body)),
+    );
+    passages
+}
 
-    fn weighted_frequency(&self, term: &str) -> f64 {
-        let occurrences = |tokens: &[String]| tokens.iter().filter(|t| *t == term).count() as f64;
-        TITLE_WEIGHT * occurrences(&self.title) + occurrences(&self.body)
-    }
-
-    fn holds(&self, term: &str) -> bool {
-        self.title.iter().any(|t| t == term) || self.body.iter().any(|t| t == term)
+pub fn skill_passage(skill: &Skill) -> Passage {
+    Passage {
+        entity: EntityRef::new(EntityKind::Skill, skill.id().clone()),
+        heading: Some(skill.name().to_string()),
+        heading_terms: String::new(),
+        title: format!("{} {}", skill.name(), skill.summary()),
+        body: skill.body().as_str().to_owned(),
+        excerpt: skill.summary().to_string(),
+        namespace: skill.namespace().clone(),
+        updated_at: skill.updated_at(),
     }
 }
 
 pub fn score(passages: Vec<Passage>, text: &str) -> Vec<Hit> {
-    let wanted: BTreeSet<String> = tokenise(text).into_iter().collect();
+    let wanted: Vec<String> = tokenise(text)
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     if wanted.is_empty() {
         return passages.into_iter().map(|p| p.into_hit(0.0)).collect();
     }
 
-    let indexed: Vec<Indexed> = passages.iter().map(Indexed::of).collect();
-    let total = indexed.len() as f64;
-    let average_length = (indexed.iter().map(Indexed::length).sum::<f64>() / total).max(1.0);
-
-    let carrying: BTreeMap<&String, f64> = wanted
+    let mut tokeniser = Tokeniser::default();
+    let indexed: Vec<Indexed> = passages
         .iter()
-        .map(|term| {
-            (
-                term,
-                indexed.iter().filter(|doc| doc.holds(term)).count() as f64,
-            )
+        .map(|passage| Indexed::of(passage, &wanted, &mut tokeniser))
+        .collect();
+    let total = indexed.len() as f64;
+    let average_length = (indexed.iter().map(|doc| doc.length).sum::<f64>() / total).max(1.0);
+
+    let carrying: Vec<f64> = (0..wanted.len())
+        .map(|at| {
+            indexed
+                .iter()
+                .filter(|doc| doc.frequencies[at] > 0.0)
+                .count() as f64
         })
         .collect();
 
@@ -136,16 +241,15 @@ pub fn score(passages: Vec<Passage>, text: &str) -> Vec<Hit> {
             let mut relevance = 0.0;
             let mut matched = 0usize;
 
-            for term in &wanted {
-                let frequency = doc.weighted_frequency(term);
+            for (at, frequency) in doc.frequencies.iter().copied().enumerate() {
                 if frequency == 0.0 {
                     continue;
                 }
                 matched += 1;
-                let documents = carrying[term];
+                let documents = carrying[at];
                 let rarity = (1.0 + (total - documents + 0.5) / (documents + 0.5)).ln();
                 let saturation =
-                    frequency / (frequency + K1 * (1.0 - B + B * doc.length() / average_length));
+                    frequency / (frequency + K1 * (1.0 - B + B * doc.length / average_length));
                 relevance += rarity * (K1 + 1.0) * saturation;
             }
 
@@ -161,6 +265,24 @@ pub fn score(passages: Vec<Passage>, text: &str) -> Vec<Hit> {
             Some(passage.into_hit(relevance * coverage * phrase))
         })
         .collect()
+}
+
+const CHARS_PER_TOKEN: usize = 4;
+
+/// Takes ranked hits until their full text spends the budget, so the last one may overrun
+/// it; the best hit is always kept, however long.
+pub fn within_budget(hits: Vec<Hit>, tokens: usize) -> Vec<Hit> {
+    let budget = tokens.saturating_mul(CHARS_PER_TOKEN);
+    let mut spent = 0;
+    let mut kept = Vec::new();
+    for hit in hits {
+        if !kept.is_empty() && spent >= budget {
+            break;
+        }
+        spent += hit.body.chars().count();
+        kept.push(hit);
+    }
+    kept
 }
 
 pub fn rank(hits: &mut [Hit], anchor: Option<&Namespace>, now: DateTime<Utc>) {
@@ -195,8 +317,10 @@ mod tests {
     fn hit(id: &str, ns: &str, relevance: f64, updated_at: DateTime<Utc>) -> Hit {
         Hit {
             entity: EntityRef::new(EntityKind::Document, Id::new(id).unwrap()),
+            title: String::new(),
             heading: None,
             excerpt: String::new(),
+            body: String::new(),
             namespace: Namespace::new(ns).unwrap(),
             updated_at,
             relevance,
@@ -292,6 +416,7 @@ mod scoring_tests {
         Passage {
             entity: EntityRef::new(EntityKind::Document, at(n)),
             heading: None,
+            heading_terms: String::new(),
             title: title.to_owned(),
             body: body.to_owned(),
             excerpt: body.to_owned(),
@@ -305,6 +430,26 @@ mod scoring_tests {
             .find(|h| h.entity.id() == &at(n))
             .map(|h| h.relevance)
             .unwrap_or(0.0)
+    }
+
+    fn with_heading(n: u8, heading: &str, body: &str) -> Passage {
+        Passage {
+            heading: Some(heading.to_owned()),
+            heading_terms: heading.to_owned(),
+            ..passage(n, "note", body)
+        }
+    }
+
+    #[test]
+    fn a_word_in_a_heading_outranks_the_same_word_in_a_body() {
+        let hits = score(
+            vec![
+                with_heading(1, "Deploy", "run the pipeline"),
+                with_heading(2, "Notes", "how we deploy things"),
+            ],
+            "deploy",
+        );
+        assert!(relevance_of(&hits, 1) > relevance_of(&hits, 2));
     }
 
     #[test]
@@ -449,5 +594,23 @@ mod scoring_tests {
         );
         rank(&mut hits, None, now);
         assert_eq!(hits[0].entity.id(), &at(2));
+    }
+
+    #[test]
+    fn a_budget_keeps_the_best_hits_until_it_is_spent_and_never_returns_nothing() {
+        let sized = |n: u8, chars: usize| Hit {
+            body: "x".repeat(chars),
+            ..passage(n, "note", "").into_hit(1.0)
+        };
+        let hits = vec![sized(1, 1500), sized(2, 400), sized(3, 400), sized(4, 400)];
+        let kept = within_budget(hits.clone(), 500);
+        assert_eq!(
+            kept.len(),
+            3,
+            "2 000 chars: 1 500 + 400 fits, the next overruns once"
+        );
+
+        let kept = within_budget(vec![sized(1, 9000)], 10);
+        assert_eq!(kept.len(), 1, "the best hit is kept however long");
     }
 }

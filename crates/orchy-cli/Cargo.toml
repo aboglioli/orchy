@@ -5,14 +5,20 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["agents", "ai", "coordination", "markdown", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "orchy"
 path = "src/main.rs"
 
 [dependencies]
+chrono.workspace = true
 clap = { workspace = true }
 clap_complete.workspace = true
+clap_mangen.workspace = true
 orchy-application.workspace = true
 orchy-core.workspace = true
 orchy-store-vault.workspace = true
@@ -20,9 +26,13 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
+ureq.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.dist]
+formula = "orchy"
