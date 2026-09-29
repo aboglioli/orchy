@@ -444,8 +444,6 @@ it drift.
 
 - **No partial-word search.** `migr` finds nothing; there is no prefix or substring
   fallback. Add one only if measured to help.
-- **CI is Linux only.** File-lock semantics differ on macOS, where a wrong assumption is a
-  silent double claim rather than an error.
 
 ## Code style
 
