@@ -2810,3 +2810,20 @@ fn recall_graph_adds_what_the_hits_link_to_at_lower_relevance() {
     assert_eq!(hits[1]["id"], linked.as_str());
     assert!(hits[1]["relevance"].as_f64() < hits[0]["relevance"].as_f64());
 }
+
+#[test]
+fn task_next_hands_out_first_the_task_others_depend_on() {
+    let temp = vault();
+    ok(temp.path(), &["task", "new", "older"]);
+    let blocker = json(temp.path(), &["task", "new", "blocker"])["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    ok(
+        temp.path(),
+        &["task", "new", "waits", "--depends-on", &blocker],
+    );
+
+    let next = json(temp.path(), &["task", "next", "--peek"]);
+    assert_eq!(next["title"], "blocker", "{next}");
+}

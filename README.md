@@ -407,8 +407,9 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
                          [--role r]... [--namespace /x] [--parent <task> | --detach] [--tag t]... [--untag t]...
 ```
 
-- **Taking work.** `task next` hands out the most urgent, then oldest, `pending` task whose
-  dependencies are done, and claims it. When several agents ask at once, each gets a
+- **Taking work.** `task next` hands out the `pending` task whose dependencies are done
+  and claims it: the most urgent first, then the one most other work waits on, then the
+  oldest. When several agents ask at once, each gets a
   different task. `--peek` looks without taking. The briefing's "next up" is always the task
   `task next` would hand out. `task ready` shows the whole queue in that order, and
   `task list --blocked` shows the rest of the open work with what each task waits on.
