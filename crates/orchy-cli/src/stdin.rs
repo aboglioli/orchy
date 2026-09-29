@@ -31,3 +31,11 @@ pub(crate) fn optional(provided: Option<String>) -> CliResult<Option<String>> {
         }
     }
 }
+
+/// `-` reads stdin; anything else, including nothing, is taken as given.
+pub(crate) fn or_dash(provided: Option<String>) -> CliResult<Option<String>> {
+    match provided.as_deref() {
+        Some("-") => or_read(None).map(Some),
+        _ => Ok(provided),
+    }
+}

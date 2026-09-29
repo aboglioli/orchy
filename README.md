@@ -360,8 +360,8 @@ pending, claimed, in_progress ──block──▶ blocked ──unblock──�
 ```
 
 ```bash
-orchy task new <title> [--description …] [--priority low|normal|high|urgent] [--namespace /x]
-                       [--role r]... [--tag t]... [--parent <task>] [--depends-on <task>]...
+orchy task new <title> [--description …] [--acceptance …] [--priority low|normal|high|urgent]
+                       [--namespace /x] [--role r]... [--tag t]... [--parent <task>] [--depends-on <task>]...
 orchy task list [--status s]... [--namespace /x] [--mine] [--role r] [--parent <task>] [--tag t]... [--limit n]
 orchy task list --blocked [--namespace /x]
 orchy task get <task>
@@ -378,8 +378,8 @@ orchy task unblock <task>
 orchy task split <task> <title>...
 orchy task replace <task> <title>... [--reason …]
 orchy task dep <task> [--add <task>]... [--remove <task>]...
-orchy task update <task> [--title …] [--description …] [--priority …] [--namespace /x]
-                         [--parent <task> | --detach] [--tag t]... [--untag t]...
+orchy task update <task> [--title …] [--description …] [--acceptance …] [--priority …]
+                         [--role r]... [--namespace /x] [--parent <task> | --detach] [--tag t]... [--untag t]...
 ```
 
 - **Taking work.** `task next` hands out the most urgent, then oldest, `pending` task whose
@@ -387,6 +387,9 @@ orchy task update <task> [--title …] [--description …] [--priority …] [--n
   different task. `--peek` looks without taking. The briefing's "next up" is always the task
   `task next` would hand out. `task ready` shows the whole queue in that order, and
   `task list --blocked` shows the rest of the open work with what each task waits on.
+- **Definition of done.** `--acceptance` states what must be true for the task to count as
+  done (`-` reads it from standard input), so another agent can check the work. It is kept
+  in the task file under `## Acceptance`.
 - **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
   the holder can mark it done, failed or cancelled.
 - **Outcomes.** The `--note` of `task done` and the reason given to `task fail` or

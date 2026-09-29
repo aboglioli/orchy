@@ -248,6 +248,9 @@ pub(crate) enum TaskCommand {
         title: String,
         #[arg(long)]
         description: Option<String>,
+        /// What must be true for the task to count as done; `-` reads stdin
+        #[arg(long)]
+        acceptance: Option<String>,
         #[arg(long)]
         priority: Option<String>,
         #[arg(long)]
@@ -371,8 +374,14 @@ pub(crate) enum TaskCommand {
         title: Option<String>,
         #[arg(long)]
         description: Option<String>,
+        /// What must be true for the task to count as done; `-` reads stdin
+        #[arg(long)]
+        acceptance: Option<String>,
         #[arg(long)]
         priority: Option<String>,
+        /// Replaces the roles that may claim it, repeatable
+        #[arg(long)]
+        role: Vec<String>,
         #[arg(long)]
         namespace: Option<String>,
         #[arg(long)]

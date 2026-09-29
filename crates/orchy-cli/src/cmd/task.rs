@@ -23,7 +23,7 @@ use orchy_core::task::dependencies::Outcome;
 use crate::cli::TaskCommand;
 use crate::error::CliResult;
 use crate::output::{Output, short};
-use crate::resolve;
+use crate::{resolve, stdin};
 
 pub(crate) async fn run(
     app: &Application,
@@ -36,6 +36,7 @@ pub(crate) async fn run(
         TaskCommand::New {
             title,
             description,
+            acceptance,
             priority,
             namespace,
             role,
@@ -57,7 +58,7 @@ pub(crate) async fn run(
                     actor: Some(actor.to_owned()),
                     title,
                     description,
-                    acceptance_criteria: None,
+                    acceptance_criteria: stdin::or_dash(acceptance)?,
                     priority,
                     namespace: namespace.or_else(|| here.map(str::to_owned)),
                     roles: role,
@@ -335,7 +336,9 @@ pub(crate) async fn run(
             detach,
             title,
             description,
+            acceptance,
             priority,
+            role,
             namespace,
             tag,
             untag,
@@ -353,9 +356,9 @@ pub(crate) async fn run(
                     detach,
                     title,
                     description,
-                    acceptance_criteria: None,
+                    acceptance_criteria: stdin::or_dash(acceptance)?,
                     priority,
-                    roles: None,
+                    roles: (!role.is_empty()).then_some(role),
                     namespace,
                     add_tags: tag,
                     remove_tags: untag,
@@ -437,12 +440,25 @@ fn detail(task: &TaskDto, out: &Output) -> String {
         let deps: Vec<&str> = task.depends_on.iter().map(|d| short(d)).collect();
         lines.push(format!("  depends on {}", deps.join(", ")));
     }
+    if !task.assigned_roles.is_empty() {
+        lines.push(format!("  roles      {}", task.assigned_roles.join(", ")));
+    }
     if !task.tags.is_empty() {
         lines.push(format!("  tags       {}", task.tags.join(", ")));
     }
     if !task.description.is_empty() {
         lines.push(String::new());
         lines.push(task.description.clone());
+    }
+    for (heading, text) in [
+        ("acceptance", &task.acceptance_criteria),
+        ("outcome", &task.note),
+    ] {
+        if let Some(text) = text {
+            lines.push(String::new());
+            lines.push(out.bold(heading));
+            lines.push(text.clone());
+        }
     }
     lines.join("\n")
 }

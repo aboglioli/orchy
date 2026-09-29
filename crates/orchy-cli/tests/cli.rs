@@ -2286,3 +2286,31 @@ fn ready_and_blocked_together_are_exactly_the_open_board() {
     open.sort();
     assert_eq!(union, open);
 }
+
+#[test]
+fn a_task_carries_its_definition_of_done_and_the_roles_that_may_take_it() {
+    let temp = vault();
+    let id = task_id(&temp, &["ship", "--acceptance", "tests pass"]);
+    let got = json(temp.path(), &["task", "get", &id]);
+    assert_eq!(got["task"]["acceptance_criteria"], "tests pass");
+
+    ok(
+        temp.path(),
+        &[
+            "task",
+            "update",
+            &id,
+            "--acceptance",
+            "tests and docs pass",
+            "--role",
+            "reviewer",
+        ],
+    );
+    let got = json(temp.path(), &["task", "get", &id]);
+    assert_eq!(got["task"]["acceptance_criteria"], "tests and docs pass");
+    assert_eq!(
+        got["task"]["assigned_roles"],
+        serde_json::json!(["reviewer"])
+    );
+    assert!(ok(temp.path(), &["task", "get", &id]).contains("tests and docs pass"));
+}
