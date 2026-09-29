@@ -272,12 +272,13 @@ orchy types                         # every document type, status and relation
 | `reference` | external references and links |
 | `plan` | strategies, roadmaps, approaches |
 | `log` | activity or change log entries |
-| `skill` | instructions kept as a document. For rules every agent must follow, use `orchy skill` |
 | `overview` | project summaries |
 | `summary` | compact write-ups |
 | `report` | post-task write-ups |
 | `context` | a handoff: what was done, what is left. The latest one reaches the next agent's briefing |
 | `candidate` | a proposal not yet accepted |
+
+For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 
 - **Lifecycle.** Documents move through `draft`, `active`, `superseded` and `archived`. A
   `candidate` is `proposed` until `orchy promote` turns it into a real type, or it is

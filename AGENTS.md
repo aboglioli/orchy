@@ -292,8 +292,11 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `proposed | promoted | rejected`, and the two sets never overlap. Status changes are
   semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
 - **Sections.** A body is split into sections by markdown headings (any level).
-- **The `skill` kind.** It still exists as a document kind. Binding conventions are `Skill`
-  entities, which are what briefings carry.
+- **The `skill` kind.** It still exists as a document kind, and using it breaks the vault
+  (see Known gaps). Binding conventions are `Skill` entities, which are what briefings carry.
+- **Placement.** A hand-written document outside `docs/` is moved to
+  `docs/<namespace>/<id>.md` the next time orchy saves it. Markdown files without an `id` are
+  ignored.
 
 ### Skills
 
@@ -368,7 +371,19 @@ Agents branch on this behaviour, so treat it as API.
 ## Known gaps
 
 Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
-it drift.
+it drift. The first three corrupt data or break the vault; fix them first.
+
+- **A document of kind `skill` breaks the vault.** `orchy new skill …` or
+  `orchy promote <candidate> --as skill` writes `docs/<id>.md` with `type: skill`. The
+  vault's skill loading then reads it as a `Skill` entity, finds no `name`, and fails. From
+  then on `announce`, `recall` and every `skill` command exit 6 until the file is fixed by
+  hand. Either drop `Kind::Skill` or make `promote --as skill` create a real `Skill`.
+- **`supersede` stores the edge backwards.** `orchy supersede <old> --by <new>` writes
+  `supersedes: [document:<new>]` on the old document (`supersede_document.rs`), while
+  `task replace` stores replacement → original. The relation reads "from supersedes to", so
+  documents are the ones that are wrong.
+- **`recall` returns superseded and archived documents.** The CLI never passes a status
+  filter, and `RecallCommand.status` is not exposed as a flag.
 
 - **`orchy new` ignores stdin.** Its `--body` help says it reads stdin when omitted, but
   `cmd::doc::new` passes `None` through and creates an empty body. `edit` does read stdin.
@@ -409,6 +424,11 @@ it drift.
   silent double claim rather than an error.
 - **Spec references.** Two code comments cite decisions from `docs/spec.md` (`D33` in
   `eventlog.rs`, `D42` in `layout.rs`). That file is untracked, so the references dangle.
+- **Dead source files.** These are never declared as modules, so they don't compile into
+  anything:
+  - `orchy-core/src/message/events.rs`;
+  - `orchy-core/src/graph/events.rs`, `neighborhood.rs`, `relation_options.rs` and
+    `rules.rs`.
 
 ## Code style
 
