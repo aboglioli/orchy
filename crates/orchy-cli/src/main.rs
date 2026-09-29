@@ -7,6 +7,8 @@ mod import;
 mod init;
 mod integrate;
 mod output;
+#[cfg(test)]
+mod reference;
 mod resolve;
 mod since;
 mod stdin;

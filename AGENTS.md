@@ -567,7 +567,11 @@ just fmt          # cargo fmt --all
 just check        # fmt + lint + test
 just t <pattern>  # matching tests, with output
 just orchy <args> # cargo run -p orchy-cli -- <args>
+just cli-doc      # regenerate docs/cli.md after changing a command or its help text
 ```
+
+`docs/cli.md` is generated from the clap definitions; a test fails while it is stale, so CI
+catches a command change that did not regenerate it.
 
 Install your working copy with `cargo install --path crates/orchy-cli`.
 

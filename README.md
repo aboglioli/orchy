@@ -45,6 +45,8 @@ Man pages, one per command:
 orchy man --out ~/.local/share/man/man1    # then: man orchy, man orchy-task-next
 ```
 
+Every command and option is also listed in [docs/cli.md](docs/cli.md).
+
 ## Set up a vault
 
 ```bash
