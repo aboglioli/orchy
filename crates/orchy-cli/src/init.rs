@@ -29,7 +29,8 @@ Run `orchy announce` first: it joins the roster and tells you how the tool works
 conventions apply where you are, and what is waiting for you.
 
 The root is fixed — `docs/`, `skills/`, `tasks/`, `messages/`, `agents/`, `events/` — and your
-own documents live under `docs/`, where their namespace shapes the tree however you like.
+own documents live under `docs/`, in the folder their namespace names: `/backend/auth`
+is `docs/backend/auth/`.
 
 `skills/` holds the conventions this team expects you to follow. They are inherited down the
 namespace tree, so `/backend` gets everything `/` declares and may override it by name.
@@ -37,7 +38,9 @@ namespace tree, so `/backend` gets everything `/` declares and may override it b
 Frontmatter is the only source of truth. A file's directory is a projection of its
 frontmatter, never the other way round, so never infer state from a path.
 
-Every document has a stable `id`. Move or rename files freely; links travel with the id.
+Every document has a stable `id`, and links travel with it. To move a document, change its
+`namespace` (`orchy ns move`, or edit the header): orchy moves the file to match, and
+`orchy doctor` reports any file left in the wrong folder.
 ";
 
 const INDEX_MD: &str = "\
