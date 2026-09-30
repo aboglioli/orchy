@@ -54,6 +54,9 @@ The first release, `0.1.0`, will be cut from this section.
 ### Changed
 
 - **Vault format.**
+  - A document's folder always equals its namespace. Subfolders a human created beneath a
+    namespace are not kept: `doctor` reports such files, and the next save or
+    `doctor --fix` moves them to `docs/<namespace>/<id>.md`.
   - `supersedes` is stored on the replacement, pointing at what it replaced; `orchy doctor
     --fix` turns old links around.
   - Files now show what points at them: `superseded_by`, `derives`, `produced_by` and

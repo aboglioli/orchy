@@ -224,8 +224,11 @@ error (exit 5) instead of overwriting the first. It re-reads and tries again.
 
 Every file starts with a YAML header, and **the header is what counts**. A task is done
 because its header says `status: completed`, and orchy files it under `tasks/done/` as a
-result. Moving a file by hand changes nothing, and neither does renaming it: every file
-carries a stable `id` and orchy finds it by that. Links between files use the id, so they
+result. Folders mirror namespaces exactly: a document in `/backend/auth` lives in
+`docs/backend/auth/`. Moving or renaming a file by hand doesn't change anything about it;
+orchy still finds it by its stable `id`, `orchy doctor` reports it, and the next save puts it
+back. To move a document, change its namespace with `orchy ns move` or by editing the
+header, and the file follows. Links between files use the id, so they
 survive any reorganisation. A file also shows what points at it: a replaced document lists
 `superseded_by`, a goal lists its `subtasks`, and a document written for a task shows
 `produced_by`. You can edit headers by hand: when orchy rewrites a file it keeps your

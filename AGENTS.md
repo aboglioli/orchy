@@ -209,11 +209,13 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 ### Vault storage
 
 - **Index by id.** `Vault::open` scans every markdown file and maps frontmatter `id` →
-  file, so files can be moved or renamed freely.
+  file, so a moved or renamed file is still found; it is then reported as misplaced.
 - **Layout.** `docs/<namespace>/<id>.md`, `skills/<namespace>/<name>.md`,
   `tasks/open|done/<id>.md`, `messages/<thread>/<id>.md`, `agents/<alias>@<machine>.md`. The
   roots `docs`, `skills`, `tasks`, `messages`, `agents`, `events` and `.orchy` are fixed. A
-  skill is the one entity filed by name, because its name is unique per namespace.
+  skill is the one entity filed by name, because its name is unique per namespace. The
+  folder always equals the namespace: there is exactly one right place for each file, every
+  save writes it there, and `doctor --fix` moves anything found elsewhere.
 - **Unreadable files never take the vault down.** `Vault::scan` records a `Problem` for a
   file it cannot parse (bad UTF-8, unclosed fence, invalid YAML, merge-conflict markers, a
   non-ULID or duplicate `id`) and skips it; store listings skip a file their codec rejects.
@@ -395,8 +397,9 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `promote --as skill --name <n>` instead creates a `Skill` from the candidate's body, marks
   the candidate `promoted` (`Document::mark_promoted`), and links `skill -derived_from->
   candidate`; the candidate stays in `docs/` as the record of the proposal.
-- **Placement.** A hand-written document outside `docs/` is moved to
-  `docs/<namespace>/<id>.md` the next time orchy saves it. Markdown files without an `id` are
+- **Placement.** A document anywhere but `docs/<namespace>/<id>.md`, including a subfolder
+  its namespace does not name, is reported by `doctor` and moved there the next time orchy
+  saves it. The folder never changes the namespace; editing `namespace` in the header does. Markdown files without an `id` are
   ignored.
 
 ### Skills

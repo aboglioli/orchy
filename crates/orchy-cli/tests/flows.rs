@@ -468,15 +468,40 @@ fn knowledge_evolves_without_losing_its_history() {
         vault.path().join(format!("docs/infra/{old}.md")),
         "moving to a parent namespace moves the file up"
     );
-    let hand_filed = vault.path().join("docs/infra/runbooks");
-    fs::create_dir_all(&hand_filed).unwrap();
-    fs::rename(vault.file(&old), hand_filed.join(format!("{old}.md"))).unwrap();
+    let canonical = vault.path().join(format!("docs/infra/{old}.md"));
+    let dragged = vault.path().join("docs/infra/runbooks");
+    fs::create_dir_all(&dragged).unwrap();
+    fs::rename(&canonical, dragged.join(format!("{old}.md"))).unwrap();
+    let (code, _) = vault.refused("human", &["doctor"]);
+    assert_eq!(
+        code, 6,
+        "a folder that disagrees with the namespace is a problem"
+    );
+    assert_eq!(
+        vault.json("ops", &["read", &old])["document"]["namespace"],
+        "/infra",
+        "the folder never changes the namespace"
+    );
     vault.ok("ops", &["set", &old, "owner=ops"]);
     assert_eq!(
         vault.file(&old),
-        hand_filed.join(format!("{old}.md")),
-        "a file a human filed beneath its namespace stays there"
+        canonical,
+        "the next save puts the file back"
     );
+
+    let file = fs::read_to_string(&canonical).unwrap();
+    fs::write(
+        &canonical,
+        file.replace("namespace: /infra", "namespace: /infra/ci"),
+    )
+    .unwrap();
+    vault.ok("human", &["doctor", "--fix"]);
+    assert_eq!(
+        vault.file(&old),
+        vault.path().join(format!("docs/infra/ci/{old}.md")),
+        "editing the namespace by hand moves the file where it now belongs"
+    );
+    vault.ok("ops", &["ns", "move", &old, "/infra"]);
 
     let new = vault.id(
         "ops",

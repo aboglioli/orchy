@@ -2109,7 +2109,7 @@ fn doctor_finds_every_kind_of_problem_and_fixes_the_mechanical_ones() {
     );
     seed(
         &temp,
-        "docs/hand/named.md",
+        "docs/named.md",
         &format!("---\nid: {ID_4}\ntype: note\ntitle: n\nrelated_to:\n  - document:{ID_8}\n---\n"),
     );
     seed(
@@ -2154,13 +2154,12 @@ fn doctor_finds_every_kind_of_problem_and_fixes_the_mechanical_ones() {
         "{after:?}"
     );
     assert!(temp.path().join(format!("tasks/open/{ID_3}.md")).exists());
-    assert!(temp.path().join(format!("docs/hand/{ID_4}.md")).exists());
+    assert!(temp.path().join(format!("docs/{ID_4}.md")).exists());
     assert_eq!(
         json(temp.path(), &["task", "get", ID_5])["task"]["status"],
         "completed"
     );
-    let new_home =
-        std::fs::read_to_string(temp.path().join(format!("docs/hand/{ID_4}.md"))).unwrap();
+    let new_home = std::fs::read_to_string(temp.path().join(format!("docs/{ID_4}.md"))).unwrap();
     assert!(new_home.contains(&format!("document:{ID_7}")), "{new_home}");
 
     let (_, again) = doctor_kinds(&temp, &["--fix"]);
