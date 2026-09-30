@@ -150,9 +150,10 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 let command = WriteSkillCommand {
                     name,
                     summary,
-                    namespace,
+                    namespace: here(namespace),
                     body,
                     if_match,
+                    actor: Some(actor.clone()),
                 };
                 cmd::skill::write(&app, command, tag, out).await
             }

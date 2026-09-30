@@ -18,7 +18,6 @@ pub(crate) async fn write(
     tag: Vec<String>,
     out: &Output,
 ) -> CliResult<()> {
-    let (name, namespace) = (command.name.clone(), command.namespace.clone());
     command.body = piped(command.body)?;
     let skill = app.write_skill.execute(command).await?;
     if tag.is_empty() {
@@ -28,8 +27,8 @@ pub(crate) async fn write(
     let tagged = app
         .set_skill_field
         .execute(SetSkillFieldCommand {
-            target: name,
-            namespace,
+            target: skill.name.clone(),
+            namespace: Some(skill.namespace.clone()),
             tag,
             ..Default::default()
         })

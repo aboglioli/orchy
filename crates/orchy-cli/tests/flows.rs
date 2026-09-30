@@ -1033,3 +1033,40 @@ fn a_url_import_names_the_document_after_the_page_when_asked() {
     server.join().unwrap();
     assert_eq!(imported["title"], "Worker runbook");
 }
+
+#[test]
+fn a_skill_written_without_a_namespace_lands_where_the_agent_works() {
+    let vault = Vault::new();
+    vault.ok("web-dev", &["announce", "--namespace", "/web"]);
+    let written = vault.json(
+        "web-dev",
+        &[
+            "skill",
+            "write",
+            "css",
+            "--summary",
+            "Use tokens",
+            "--tag",
+            "ui",
+        ],
+    );
+    assert_eq!(written["namespace"], "/web");
+    assert_eq!(written["tags"][0], "ui");
+    assert!(vault.path().join("skills/web/css.md").exists());
+    let root = vault.json(
+        "lead",
+        &[
+            "skill",
+            "write",
+            "commits",
+            "--summary",
+            "Conventional commits",
+        ],
+    );
+    assert_eq!(
+        root["namespace"], "/",
+        "an agent off the roster works at the root"
+    );
+    let guide = vault.ok("web-dev", &["guide"]);
+    assert!(guide.contains("orchy announce"), "{guide}");
+}

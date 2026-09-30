@@ -89,7 +89,8 @@ The first release, `0.1.0`, will be cut from this section.
 - `ns move` to a parent namespace moves the file; before, it stayed in the old folder.
 - `link` refuses an end that does not exist; `unlink` still removes a dangling link.
 - `skill show`, `list` and `set` find the skill in force where the agent works, as the
-  briefing does, instead of the root one.
+  briefing does, instead of the root one, and `skill write` without `--namespace` writes
+  there too, like every other write.
 - Text flags accept values that start with a dash, such as `--acceptance "- works"`.
 - `events --by coder-1` matches that alias on every machine.
 - Output cut short by the reader (`orchy export | head`) no longer prints a broken-pipe error.

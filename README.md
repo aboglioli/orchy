@@ -386,8 +386,10 @@ orchy skill restore <name>
   `commits` at `/` and at `/web`, an agent working in `/web/app` gets the `/web` one.
   `--namespace` looks somewhere else.
 - **Writing and revising.** `write` creates a skill or revises the one with that name in that
-  namespace. A new skill needs `--summary`; `--body -` reads the body from standard input.
-- **What's in force.** `list` shows the skills in force at a namespace (default `/`), after
+  namespace: where you work, unless `--namespace` says otherwise, so a convention for the
+  whole vault is written with `--namespace /`. A new skill needs `--summary`; `--body -`
+  reads the body from standard input.
+- **What's in force.** `list` shows the skills in force where you work (or at `--namespace`), after
   inheritance; `--everywhere` shows all of them.
 - **Your own fields.** `set` adds your own header fields.
 - **Retiring.** `retire` removes a skill from briefings without deleting it; `restore`

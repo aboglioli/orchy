@@ -392,7 +392,12 @@ impl Application {
             ),
             read_inbox: ReadInbox::new(Arc::clone(&messages), Arc::clone(&watermarks)),
 
-            write_skill: WriteSkill::new(Arc::clone(&skills), Arc::clone(&ids), Arc::clone(&clock)),
+            write_skill: WriteSkill::new(
+                Arc::clone(&skills),
+                Arc::clone(&actors),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
             read_skill: ReadSkill::new(Arc::clone(&skills), Arc::clone(&actors)),
             list_skills: ListSkills::new(Arc::clone(&skills), Arc::clone(&actors)),
             retire_skill: RetireSkill::new(Arc::clone(&skills), Arc::clone(&clock)),
