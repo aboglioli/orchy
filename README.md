@@ -310,7 +310,8 @@ orchy types                         # every document type, status and relation
 
 For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 
-- **Lifecycle.** A new document is `active`, and later `superseded` or `archived`. A
+- **Lifecycle.** A new document is `active`, and later `superseded` or `archived`; an
+  archived one can be brought back with `unarchive`, but superseding is final. A
   `candidate` starts `proposed` until `orchy promote` turns it into a real type or
   `orchy reject` turns it down; a rejected candidate stays in the vault, out of search. Promoting a candidate `--as skill` creates a skill from it instead, and the
   candidate stays behind, marked `promoted`, as the record of the proposal.

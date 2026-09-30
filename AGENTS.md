@@ -376,7 +376,10 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `candidate` uses `proposed | promoted | rejected` and starts `proposed`
   (`Kind::initial_status`). The two sets never overlap. `Document::reject` keeps its reason
   in the `rejected_because` field. Status changes are
-  semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
+  semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`,
+  and follow `DocumentStatus::can_transition_to`: `draft|active → superseded|archived`,
+  `archived → active|superseded`, `proposed → promoted|rejected`. Superseded, promoted and
+  rejected are final; setting the status a document already has is a no-op.
 - **Sections.** A body is split into sections by ATX headings (`#` to `######` followed by a
   space); a heading inside a fenced code block is code, and `#tag` is not a heading. Text
   before the first heading is the `preamble`. `Body::section` and `replace_section` refuse a

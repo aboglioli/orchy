@@ -147,6 +147,19 @@ impl DocumentStatus {
         Self::Rejected,
     ];
 
+    /// Superseded, promoted and rejected are final: what replaced a document, or what a
+    /// proposal became, is history that no later command may undo.
+    pub fn can_transition_to(&self, target: Self) -> bool {
+        use DocumentStatus::*;
+        matches!(
+            (self, target),
+            (Draft, Active | Superseded | Archived)
+                | (Active, Superseded | Archived)
+                | (Archived, Active | Superseded)
+                | (Proposed, Promoted | Rejected)
+        )
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Draft => "draft",

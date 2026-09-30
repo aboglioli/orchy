@@ -260,6 +260,10 @@ impl Document {
 
     pub fn set_status(&mut self, status: DocumentStatus, clock: &dyn Clock) -> Result<()> {
         self.kind.validate_status(status)?;
+        if self.status == Some(status) {
+            return Ok(());
+        }
+        self.ensure_can_become(status)?;
         self.status = Some(status);
         self.rehash(clock);
         self.collector.collect(DocumentStatusChanged {
@@ -330,6 +334,7 @@ impl Document {
                 "promoting means becoming something: name the type it graduates into",
             ));
         }
+        self.ensure_can_become(DocumentStatus::Promoted)?;
         self.kind = into;
         self.status = Some(DocumentStatus::Active);
         let from = std::mem::replace(&mut self.namespace, namespace);
@@ -359,6 +364,7 @@ impl Document {
                 "only a candidate can be rejected; archive or supersede canon instead",
             ));
         }
+        self.ensure_can_become(DocumentStatus::Rejected)?;
         if let Some(reason) = reason {
             self.frontmatter
                 .set(REJECTED_BECAUSE, Value::String(reason));
@@ -373,6 +379,7 @@ impl Document {
             ));
         }
         self.kind.validate_status(DocumentStatus::Superseded)?;
+        self.ensure_can_become(DocumentStatus::Superseded)?;
         self.status = Some(DocumentStatus::Superseded);
         self.rehash(clock);
         self.collector.collect(DocumentSuperseded {
@@ -382,6 +389,16 @@ impl Document {
             at: self.updated_at,
         });
         Ok(())
+    }
+
+    /// A document without a status (written by hand) may take any status its kind allows.
+    fn ensure_can_become(&self, target: DocumentStatus) -> Result<()> {
+        match self.status {
+            Some(current) if !current.can_transition_to(target) => {
+                Err(DomainError::invalid_transition(current, target))
+            }
+            _ => Ok(()),
+        }
     }
 
     pub fn retag(&mut self, add: Vec<Tag>, remove: &[Tag], clock: &dyn Clock) {
@@ -515,6 +532,10 @@ mod tests {
             &ids(),
             &clock(),
         )
+    }
+
+    fn replacement() -> Id {
+        Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()
     }
 
     fn candidate() -> Document {
@@ -678,6 +699,50 @@ mod tests {
             document
                 .set_status(DocumentStatus::Promoted, &clock())
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn what_replaced_a_document_cannot_be_undone_by_archiving_it() {
+        let mut document = document();
+        document.supersede(replacement(), &clock()).unwrap();
+        let archived = document.set_status(DocumentStatus::Archived, &clock());
+        assert!(
+            matches!(archived, Err(DomainError::InvalidTransition { .. })),
+            "{archived:?}"
+        );
+        let again = document.supersede(replacement(), &clock());
+        assert!(
+            matches!(again, Err(DomainError::InvalidTransition { .. })),
+            "{again:?}"
+        );
+    }
+
+    #[test]
+    fn an_archived_document_comes_back_active_and_setting_the_same_status_is_a_no_op() {
+        let mut document = document();
+        document
+            .set_status(DocumentStatus::Archived, &clock())
+            .unwrap();
+        document.drain_events();
+        document
+            .set_status(DocumentStatus::Archived, &clock())
+            .unwrap();
+        assert!(document.drain_events().is_empty());
+        document
+            .set_status(DocumentStatus::Active, &clock())
+            .unwrap();
+        assert_eq!(document.status(), Some(DocumentStatus::Active));
+    }
+
+    #[test]
+    fn a_rejected_candidate_cannot_be_promoted() {
+        let mut candidate = candidate();
+        candidate.reject(None, &clock()).unwrap();
+        let promoted = candidate.promote(Kind::Decision, Namespace::root(), &clock());
+        assert!(
+            matches!(promoted, Err(DomainError::InvalidTransition { .. })),
+            "{promoted:?}"
         );
     }
 
