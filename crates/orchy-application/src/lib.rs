@@ -409,7 +409,13 @@ impl Application {
                 Arc::clone(&clock),
             ),
 
-            link_entities: LinkEntities::new(Arc::clone(&edges)),
+            link_entities: LinkEntities::new(
+                Arc::clone(&edges),
+                Arc::clone(&documents),
+                Arc::clone(&tasks),
+                Arc::clone(&skills),
+                Arc::clone(&messages),
+            ),
             traverse_graph: TraverseGraph::new(
                 Arc::clone(&edges),
                 Arc::clone(&documents),

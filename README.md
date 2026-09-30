@@ -509,7 +509,7 @@ view agree. Mentions are read from the text each time; they are not links you ca
 `unlink`, and wikilinks by title are left alone.
 
 Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill`,
-`message` or `actor`. Relations with side effects are set by their own commands instead:
+`message` or `actor`, and both ends must exist; `unlink` works even when one is gone. Relations with side effects are set by their own commands instead:
 
 | relation | set with |
 |---|---|
