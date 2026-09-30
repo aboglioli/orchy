@@ -535,3 +535,52 @@ async fn a_term_in_both_the_title_and_the_body_is_one_hit_not_two() {
     );
     assert_eq!(hits[0].heading.as_deref(), Some("Detail"));
 }
+
+#[tokio::test]
+async fn looking_at_links_never_lets_a_stale_save_through() {
+    use orchy_core::{
+        Body, Document, DocumentStore, DomainError, EdgeStore, EntityRef, Kind, Namespace, Title,
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let blobs: Arc<dyn BlobStore> = Arc::new(FsBlobStore::new(root.path()));
+    let vault = Arc::new(Vault::open(blobs).await.unwrap());
+    let log: Arc<dyn EventLog> = Arc::new(orchy_store_memory::MemoryEventLog::new());
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let documents = VaultDocumentStore::new(Arc::clone(&vault), Arc::clone(&log));
+    let edges = VaultEdgeStore::new(Arc::clone(&vault), log, Arc::clone(&clock));
+
+    let mut document = Document::create(
+        Kind::Note,
+        Title::new("shared").unwrap(),
+        Namespace::root(),
+        Body::new("first"),
+        &UlidGenerator::new(),
+        &*clock,
+    );
+    documents.save(&mut document).await.unwrap();
+    let mut loaded = documents.require(document.id()).await.unwrap();
+
+    let path = root.path().join(format!("docs/{}.md", document.id()));
+    let changed = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("first", "someone else's edit");
+    std::fs::write(&path, changed).unwrap();
+
+    let anchor = EntityRef::document(document.id().clone());
+    edges.out(&anchor, None).await.unwrap();
+    edges.incoming(&anchor, None).await.unwrap();
+    edges.neighbourhood(&anchor, 2).await.unwrap();
+
+    loaded.append("mine", &*clock);
+    let saved = documents.save(&mut loaded).await;
+    assert!(
+        matches!(saved, Err(DomainError::Conflict(_))),
+        "the other edit must not be overwritten: {saved:?}"
+    );
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("someone else's edit")
+    );
+}
