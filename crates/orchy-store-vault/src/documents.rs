@@ -56,12 +56,10 @@ impl DocumentStore for VaultDocumentStore {
 
     async fn save(&self, document: &mut Document) -> Result<()> {
         let events = document.drain_events();
-        let layout = self.vault.layout();
-        let folder = layout.document_folder(document.namespace());
-        let key = match self.vault.locate(document.id()) {
-            Some(located) if located.key.starts_with(&folder) => located.key,
-            _ => layout.document_key(document.namespace(), document.id()),
-        };
+        let key = self
+            .vault
+            .layout()
+            .document_key(document.namespace(), document.id());
 
         let file = codec::document_to_markdown(document);
         self.vault

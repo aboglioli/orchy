@@ -6,6 +6,7 @@ use orchy_core::{
     Kind, Relation, Result, TraversalHop,
 };
 
+use crate::markdown::MarkdownFile;
 use crate::vault::{Amended, Vault, refs_in};
 
 pub struct VaultEdgeStore {
@@ -48,44 +49,42 @@ impl VaultEdgeStore {
         .map(drop)
     }
 
+    /// Reads without refreshing what the vault remembers of the file, so looking at links
+    /// never weakens the compare-and-swap of a save that loaded the entity earlier.
     async fn edges_from(&self, entity: &EntityRef) -> Result<Vec<Edge>> {
-        let Some((_, file)) = self.vault.read_by_id(entity.id()).await? else {
+        let Some((_, file)) = self.vault.peek_by_id(entity.id()).await? else {
             return Ok(Vec::new());
         };
-        let mut edges = Vec::new();
-        for (field, value) in file.frontmatter.iter() {
-            let Ok(relation) = field.parse::<Relation>() else {
-                continue;
-            };
-            for target in refs_in(value) {
-                let assumed = relation.sole_target_kind();
-                let Ok(to) = EntityRef::parse_or_assume(&target, assumed) else {
-                    continue;
-                };
-                let Ok(edge) = Edge::new(entity.clone(), to, relation) else {
-                    continue;
-                };
-                edges.push(edge);
-            }
-        }
-        Ok(edges)
+        Ok(edges_in(entity, &file))
     }
 
     async fn all_edges(&self) -> Result<Vec<Edge>> {
         let mut edges = Vec::new();
-        for kind in [
-            EntityKind::Document,
-            EntityKind::Skill,
-            EntityKind::Task,
-            EntityKind::Message,
-            EntityKind::Actor,
-        ] {
-            for id in self.vault.ids_of(kind) {
-                edges.extend(self.edges_from(&EntityRef::new(kind, id)).await?);
-            }
+        for (id, located, file) in self.vault.scan().await?.entries {
+            edges.extend(edges_in(&EntityRef::new(located.kind, id), &file));
         }
         Ok(edges)
     }
+}
+
+fn edges_in(entity: &EntityRef, file: &MarkdownFile) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    for (field, value) in file.frontmatter.iter() {
+        let Ok(relation) = field.parse::<Relation>() else {
+            continue;
+        };
+        for target in refs_in(value) {
+            let assumed = relation.sole_target_kind();
+            let Ok(to) = EntityRef::parse_or_assume(&target, assumed) else {
+                continue;
+            };
+            let Ok(edge) = Edge::new(entity.clone(), to, relation) else {
+                continue;
+            };
+            edges.push(edge);
+        }
+    }
+    edges
 }
 
 fn reference(edge: &Edge) -> String {

@@ -37,16 +37,11 @@ impl Layout {
     }
 
     pub fn document_key(&self, namespace: &Namespace, id: &Id) -> String {
-        format!("{}{id}.md", self.document_folder(namespace))
-    }
-
-    /// A document filed by hand may sit anywhere beneath this folder.
-    pub fn document_folder(&self, namespace: &Namespace) -> String {
         let folder = namespace.as_str().trim_start_matches('/');
         if folder.is_empty() {
-            format!("{DOCS}/")
+            format!("{DOCS}/{id}.md")
         } else {
-            format!("{DOCS}/{folder}/")
+            format!("{DOCS}/{folder}/{id}.md")
         }
     }
 

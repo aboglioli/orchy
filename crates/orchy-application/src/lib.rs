@@ -228,19 +228,20 @@ impl Application {
             Arc::clone(&leases),
             Arc::clone(&clock),
         ));
+        let dependencies = Arc::new(AssessDependencies::new(
+            Arc::clone(&tasks),
+            Arc::clone(&edges),
+        ));
         let claim = Arc::new(ClaimTask::new(
             Arc::clone(&tasks),
             Arc::clone(&leases),
+            Arc::clone(&dependencies),
             Arc::clone(&clock),
         ));
         let mentions = Arc::new(ResolveMentions::new(
             Arc::clone(&documents),
             Arc::clone(&tasks),
             Arc::clone(&skills),
-        ));
-        let dependencies = Arc::new(AssessDependencies::new(
-            Arc::clone(&tasks),
-            Arc::clone(&edges),
         ));
         let ranking = Arc::new(RankClaimable::new(
             Arc::clone(&tasks),
@@ -391,11 +392,20 @@ impl Application {
             ),
             read_inbox: ReadInbox::new(Arc::clone(&messages), Arc::clone(&watermarks)),
 
-            write_skill: WriteSkill::new(Arc::clone(&skills), Arc::clone(&ids), Arc::clone(&clock)),
-            read_skill: ReadSkill::new(Arc::clone(&skills)),
-            list_skills: ListSkills::new(Arc::clone(&skills)),
+            write_skill: WriteSkill::new(
+                Arc::clone(&skills),
+                Arc::clone(&actors),
+                Arc::clone(&ids),
+                Arc::clone(&clock),
+            ),
+            read_skill: ReadSkill::new(Arc::clone(&skills), Arc::clone(&actors)),
+            list_skills: ListSkills::new(Arc::clone(&skills), Arc::clone(&actors)),
             retire_skill: RetireSkill::new(Arc::clone(&skills), Arc::clone(&clock)),
-            set_skill_field: SetSkillField::new(Arc::clone(&skills), Arc::clone(&clock)),
+            set_skill_field: SetSkillField::new(
+                Arc::clone(&skills),
+                Arc::clone(&actors),
+                Arc::clone(&clock),
+            ),
             read_message: ReadMessage::new(Arc::clone(&messages), Arc::clone(&watermarks)),
             read_thread: ReadThread::new(Arc::clone(&messages)),
             list_sent: ListSent::new(Arc::clone(&messages)),
@@ -408,7 +418,13 @@ impl Application {
                 Arc::clone(&clock),
             ),
 
-            link_entities: LinkEntities::new(Arc::clone(&edges)),
+            link_entities: LinkEntities::new(
+                Arc::clone(&edges),
+                Arc::clone(&documents),
+                Arc::clone(&tasks),
+                Arc::clone(&skills),
+                Arc::clone(&messages),
+            ),
             traverse_graph: TraverseGraph::new(
                 Arc::clone(&edges),
                 Arc::clone(&documents),

@@ -1,4 +1,5 @@
 use super::status::TaskStatus;
+use crate::error::{DomainError, Result};
 
 pub const MAX_DEPTH: usize = 64;
 
@@ -18,10 +19,28 @@ pub fn resolve(children: &[TaskStatus]) -> Option<TaskStatus> {
     Some(TaskStatus::Cancelled)
 }
 
+/// A task with open subtasks finishes when they do; nobody claims it in their place.
+pub fn ensure_claimable(children: &[TaskStatus]) -> Result<()> {
+    if children.iter().any(|s| !s.is_terminal()) {
+        return Err(DomainError::conflict(
+            "it has open subtasks and finishes when they do; claim one of them instead",
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::TaskStatus::*;
     use super::*;
+
+    #[test]
+    fn only_a_task_whose_subtasks_are_all_finished_can_be_claimed() {
+        assert!(ensure_claimable(&[]).is_ok());
+        assert!(ensure_claimable(&[Completed, Cancelled]).is_ok());
+        assert!(ensure_claimable(&[Completed, Pending]).is_err());
+        assert!(ensure_claimable(&[Blocked]).is_err());
+    }
 
     #[test]
     fn a_task_with_no_children_never_rolls_up() {

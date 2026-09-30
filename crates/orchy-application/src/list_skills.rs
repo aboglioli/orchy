@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{Namespace, SkillStore, Tag, skill};
+use orchy_core::{ActorId, ActorStore, Namespace, SkillStore, Tag, skill};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::SkillDto;
@@ -12,15 +12,17 @@ pub struct ListSkillsCommand {
     pub tags: Vec<String>,
     pub everywhere: bool,
     pub retired: bool,
+    pub actor: Option<String>,
 }
 
 pub struct ListSkills {
     skills: Arc<dyn SkillStore>,
+    actors: Arc<dyn ActorStore>,
 }
 
 impl ListSkills {
-    pub fn new(skills: Arc<dyn SkillStore>) -> Self {
-        Self { skills }
+    pub fn new(skills: Arc<dyn SkillStore>, actors: Arc<dyn ActorStore>) -> Self {
+        Self { skills, actors }
     }
 
     pub async fn execute(&self, cmd: ListSkillsCommand) -> ApplicationResult<Vec<SkillDto>> {
@@ -41,12 +43,11 @@ impl ListSkills {
                 .collect());
         }
 
-        let namespace = cmd
-            .namespace
-            .as_deref()
-            .map(Namespace::new)
-            .transpose()?
-            .unwrap_or_default();
+        let namespace = match (&cmd.namespace, &cmd.actor) {
+            (Some(namespace), _) => Namespace::new(namespace)?,
+            (None, Some(actor)) => self.actors.home_of(&actor.parse::<ActorId>()?).await?,
+            (None, None) => Namespace::root(),
+        };
         Ok(skill::in_scope(&all, &namespace)
             .iter()
             .map(SkillDto::from)

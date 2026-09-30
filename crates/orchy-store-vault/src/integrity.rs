@@ -46,21 +46,13 @@ impl VaultIntegrity {
         ))
     }
 
-    /// Where the file should be. A document may sit anywhere under its namespace folder, so
-    /// only its name is fixed there.
+    /// Where the file should be: the place its own frontmatter puts it, and nowhere else.
     fn expected_key(&self, id: &Id, kind: EntityKind, file: &MarkdownFile) -> Option<String> {
         let layout = self.vault.layout();
         match kind {
             EntityKind::Document => {
                 let document = codec::document_from_markdown(file).ok()?;
-                let key = self.vault.locate(id)?.key;
-                let name = format!("{id}.md");
-                let folder = layout.document_folder(document.namespace());
-                if !key.starts_with(&folder) {
-                    return Some(layout.document_key(document.namespace(), id));
-                }
-                let current_folder = key.rsplit_once('/').map_or("", |(f, _)| f);
-                Some(format!("{current_folder}/{name}"))
+                Some(layout.document_key(document.namespace(), id))
             }
             EntityKind::Task => {
                 let task = codec::task_from_markdown(file).ok()?;
@@ -296,7 +288,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_document_filed_by_hand_keeps_its_folder_but_takes_its_id_as_name() {
+    async fn a_document_in_a_folder_its_namespace_does_not_name_is_moved_to_its_own() {
         let (integrity, found) = everything(&[(
             "docs/backend/notes/mine.md",
             &format!("---\nid: {A}\ntype: note\ntitle: t\nnamespace: /backend\n---\n"),
@@ -306,14 +298,27 @@ mod tests {
             found,
             vec![(
                 "docs/backend/notes/mine.md".to_owned(),
-                ProblemKind::MisnamedFile
+                ProblemKind::Misplaced
             )]
         );
         let problem = integrity.problems().await.unwrap().remove(0);
         integrity.repair(&problem).await.unwrap();
         assert_eq!(
             integrity.vault.locate(&Id::new(A).unwrap()).unwrap().key,
-            format!("docs/backend/notes/{A}.md")
+            format!("docs/backend/{A}.md")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_document_in_its_own_folder_under_another_name_is_renamed() {
+        let (_, found) = everything(&[(
+            "docs/backend/mine.md",
+            &format!("---\nid: {A}\ntype: note\ntitle: t\nnamespace: /backend\n---\n"),
+        )])
+        .await;
+        assert_eq!(
+            found,
+            vec![("docs/backend/mine.md".to_owned(), ProblemKind::MisnamedFile)]
         );
     }
 

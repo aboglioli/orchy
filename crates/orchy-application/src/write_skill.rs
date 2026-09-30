@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    Body, Clock, DomainError, IdGenerator, Namespace, Skill, SkillName, SkillStore, Summary,
+    ActorId, ActorStore, Body, Clock, DomainError, IdGenerator, Namespace, Skill, SkillName,
+    SkillStore, Summary,
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,10 +16,12 @@ pub struct WriteSkillCommand {
     pub namespace: Option<String>,
     pub body: Option<String>,
     pub if_match: Option<String>,
+    pub actor: Option<String>,
 }
 
 pub struct WriteSkill {
     skills: Arc<dyn SkillStore>,
+    actors: Arc<dyn ActorStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
 }
@@ -26,20 +29,25 @@ pub struct WriteSkill {
 impl WriteSkill {
     pub fn new(
         skills: Arc<dyn SkillStore>,
+        actors: Arc<dyn ActorStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
     ) -> Self {
-        Self { skills, ids, clock }
+        Self {
+            skills,
+            actors,
+            ids,
+            clock,
+        }
     }
 
     pub async fn execute(&self, cmd: WriteSkillCommand) -> ApplicationResult<SkillDto> {
         let name = SkillName::new(&cmd.name)?;
-        let namespace = cmd
-            .namespace
-            .as_deref()
-            .map(Namespace::new)
-            .transpose()?
-            .unwrap_or_default();
+        let namespace = match (&cmd.namespace, &cmd.actor) {
+            (Some(namespace), _) => Namespace::new(namespace)?,
+            (None, Some(actor)) => self.actors.home_of(&actor.parse::<ActorId>()?).await?,
+            (None, None) => Namespace::root(),
+        };
 
         let existing = self
             .skills

@@ -209,11 +209,13 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 ### Vault storage
 
 - **Index by id.** `Vault::open` scans every markdown file and maps frontmatter `id` →
-  file, so files can be moved or renamed freely.
+  file, so a moved or renamed file is still found; it is then reported as misplaced.
 - **Layout.** `docs/<namespace>/<id>.md`, `skills/<namespace>/<name>.md`,
   `tasks/open|done/<id>.md`, `messages/<thread>/<id>.md`, `agents/<alias>@<machine>.md`. The
   roots `docs`, `skills`, `tasks`, `messages`, `agents`, `events` and `.orchy` are fixed. A
-  skill is the one entity filed by name, because its name is unique per namespace.
+  skill is the one entity filed by name, because its name is unique per namespace. The
+  folder always equals the namespace: there is exactly one right place for each file, every
+  save writes it there, and `doctor --fix` moves anything found elsewhere.
 - **Unreadable files never take the vault down.** `Vault::scan` records a `Problem` for a
   file it cannot parse (bad UTF-8, unclosed fence, invalid YAML, merge-conflict markers, a
   non-ULID or duplicate `id`) and skips it; store listings skip a file their codec rejects.
@@ -247,7 +249,10 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 - **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
   digests to what this process last read (compare-and-swap under a per-file guard in
   `.orchy/write-guards/`). Two agents that load and change one entity get a conflict, not a
-  lost update. Every command that changes a document or a skill also takes
+  lost update. Only a store's own load (`read_by_id`) records what was read; every other
+  read (links, scans, integrity checks) uses `peek_by_id` or the scan, so looking at a file
+  never moves the baseline a later save is checked against. Every command that changes a
+  document or a skill also takes
   `--if-match <content_hash>`, checked by `ensure_unchanged` on the aggregate, so a change
   made between an agent's read and its write is refused (exit 5) rather than overwritten.
 - **Runtime state** lives in `.orchy/` and is never committed: `presence/`, `read/`
@@ -329,7 +334,10 @@ pending | claimed | in_progress ─block─▶ blocked ─unblock─▶ pending
 pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 ```
 
-- **Claiming.** Only `pending` is claimable, and claiming is not a self-transition.
+- **Claiming.** Only `pending` is claimable, and claiming is not a self-transition. A task
+  is also refused while a dependency is unfinished (`Outcome::ensure_claimable`) or while it
+  has open subtasks (`rollup::ensure_claimable`): it then finishes through them. `task next`
+  and the briefing skip such tasks for the same reasons.
 - **Holder only.** Completing, failing, cancelling a claimed task and releasing it are
   restricted to the holder.
 - **Reclaiming.** A claimed task returns to `pending` only through `release`. The holder
@@ -373,7 +381,10 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `candidate` uses `proposed | promoted | rejected` and starts `proposed`
   (`Kind::initial_status`). The two sets never overlap. `Document::reject` keeps its reason
   in the `rejected_because` field. Status changes are
-  semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`.
+  semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`,
+  and follow `DocumentStatus::can_transition_to`: `draft|active → superseded|archived`,
+  `archived → active|superseded`, `proposed → promoted|rejected`. Superseded, promoted and
+  rejected are final; setting the status a document already has is a no-op.
 - **Sections.** A body is split into sections by ATX headings (`#` to `######` followed by a
   space); a heading inside a fenced code block is code, and `#tag` is not a heading. Text
   before the first heading is the `preamble`. `Body::section` and `replace_section` refuse a
@@ -386,8 +397,9 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `promote --as skill --name <n>` instead creates a `Skill` from the candidate's body, marks
   the candidate `promoted` (`Document::mark_promoted`), and links `skill -derived_from->
   candidate`; the candidate stays in `docs/` as the record of the proposal.
-- **Placement.** A hand-written document outside `docs/` is moved to
-  `docs/<namespace>/<id>.md` the next time orchy saves it. Markdown files without an `id` are
+- **Placement.** A document anywhere but `docs/<namespace>/<id>.md`, including a subfolder
+  its namespace does not name, is reported by `doctor` and moved there the next time orchy
+  saves it. The folder never changes the namespace; editing `namespace` in the header does. Markdown files without an `id` are
   ignored.
 
 ### Skills

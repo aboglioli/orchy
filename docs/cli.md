@@ -840,7 +840,7 @@ orchy events [OPTIONS]
 
 - `--topic`
 - `--key`
-- `--by` Only events recorded by this actor id
+- `--by` Only events by this actor: an alias on any machine, or alias@machine
 - `--since` Only events after this: a timestamp, or a window such as 2h or 3d
 - `--limit`
 

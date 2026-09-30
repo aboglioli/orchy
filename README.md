@@ -224,8 +224,11 @@ error (exit 5) instead of overwriting the first. It re-reads and tries again.
 
 Every file starts with a YAML header, and **the header is what counts**. A task is done
 because its header says `status: completed`, and orchy files it under `tasks/done/` as a
-result. Moving a file by hand changes nothing, and neither does renaming it: every file
-carries a stable `id` and orchy finds it by that. Links between files use the id, so they
+result. Folders mirror namespaces exactly: a document in `/backend/auth` lives in
+`docs/backend/auth/`. Moving or renaming a file by hand doesn't change anything about it;
+orchy still finds it by its stable `id`, `orchy doctor` reports it, and the next save puts it
+back. To move a document, change its namespace with `orchy ns move` or by editing the
+header, and the file follows. Links between files use the id, so they
 survive any reorganisation. A file also shows what points at it: a replaced document lists
 `superseded_by`, a goal lists its `subtasks`, and a document written for a task shows
 `produced_by`. You can edit headers by hand: when orchy rewrites a file it keeps your
@@ -310,7 +313,8 @@ orchy types                         # every document type, status and relation
 
 For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 
-- **Lifecycle.** A new document is `active`, and later `superseded` or `archived`. A
+- **Lifecycle.** A new document is `active`, and later `superseded` or `archived`; an
+  archived one can be brought back with `unarchive`, but superseding is final. A
   `candidate` starts `proposed` until `orchy promote` turns it into a real type or
   `orchy reject` turns it down; a rejected candidate stays in the vault, out of search. Promoting a candidate `--as skill` creates a skill from it instead, and the
   candidate stays behind, marked `promoted`, as the record of the proposal.
@@ -378,9 +382,14 @@ orchy skill retire <name>
 orchy skill restore <name>
 ```
 
+- **Which one.** `show`, `list` and `set` look where you work, as the briefing does: with
+  `commits` at `/` and at `/web`, an agent working in `/web/app` gets the `/web` one.
+  `--namespace` looks somewhere else.
 - **Writing and revising.** `write` creates a skill or revises the one with that name in that
-  namespace. A new skill needs `--summary`; `--body -` reads the body from standard input.
-- **What's in force.** `list` shows the skills in force at a namespace (default `/`), after
+  namespace: where you work, unless `--namespace` says otherwise, so a convention for the
+  whole vault is written with `--namespace /`. A new skill needs `--summary`; `--body -`
+  reads the body from standard input.
+- **What's in force.** `list` shows the skills in force where you work (or at `--namespace`), after
   inheritance; `--everywhere` shows all of them.
 - **Your own fields.** `set` adds your own header fields.
 - **Retiring.** `retire` removes a skill from briefings without deleting it; `restore`
@@ -431,7 +440,9 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
 - **Definition of done.** `--acceptance` states what must be true for the task to count as
   done (`-` reads it from standard input), so another agent can check the work. It is kept
   in the task file under `## Acceptance`.
-- **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
+- **Claims.** A task can't be claimed while it waits on an unfinished dependency, or while
+  it has open subtasks: a goal finishes through its subtasks, so claim one of those. A
+  claimed task belongs to its holder until they finish it or release it. Only
   the holder can mark it done, failed or cancelled. If an agent crashes holding a task, any
   agent can take it back with `task release --force --reason …` once the claim's lease has
   expired (15 minutes by default, `--ttl` on claim). For long work, claim with a longer
@@ -506,7 +517,7 @@ view agree. Mentions are read from the text each time; they are not links you ca
 `unlink`, and wikilinks by title are left alone.
 
 Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill`,
-`message` or `actor`. Relations with side effects are set by their own commands instead:
+`message` or `actor`, and both ends must exist; `unlink` works even when one is gone. Relations with side effects are set by their own commands instead:
 
 | relation | set with |
 |---|---|
@@ -540,7 +551,8 @@ orchy events [--topic task.] [--key <id>] [--by <agent>] [--since 2h|<timestamp>
 ```
 
 `--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`, `edge.` (links),
-`actor.` (the roster) and `lock.`. `--limit n` shows the `n` most recent.
+`actor.` (the roster) and `lock.`. `--by coder-1` matches that agent on every machine;
+`--by coder-1@<machine>` one of them. `--limit n` shows the `n` most recent.
 
 ## Keeping the vault healthy
 

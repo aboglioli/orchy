@@ -101,7 +101,7 @@ pub(crate) enum Command {
         #[arg(long)]
         tag: Vec<String>,
         /// Body text, `-` for stdin; piped stdin is read when omitted
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         body: Option<String>,
         /// The task whose work produced it
         #[arg(long)]
@@ -124,7 +124,7 @@ pub(crate) enum Command {
         /// Which of several sections sharing the heading (1-based)
         #[arg(long, requires = "section")]
         nth: Option<usize>,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         replace_in: Option<String>,
         #[arg(long)]
         replace: bool,
@@ -132,7 +132,7 @@ pub(crate) enum Command {
         #[arg(long)]
         if_match: Option<String>,
         /// Content; reads stdin when omitted
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         content: Option<String>,
     },
     /// Set an inert frontmatter field
@@ -205,7 +205,7 @@ pub(crate) enum Command {
         source: String,
         #[arg(long)]
         kind: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         title: Option<String>,
         #[arg(long)]
         namespace: Option<String>,
@@ -290,7 +290,7 @@ pub(crate) enum Command {
         #[arg(long)]
         name: Option<String>,
         /// The skill's one-line summary (default: the candidate's title)
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         summary: Option<String>,
         /// Refuse unless the document still hashes to this
         #[arg(long)]
@@ -299,7 +299,7 @@ pub(crate) enum Command {
     /// Turn a candidate down; it stays, marked rejected, out of recall
     Reject {
         target: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         reason: Option<String>,
         /// Refuse unless the document still hashes to this
         #[arg(long)]
@@ -314,7 +314,7 @@ pub(crate) enum Command {
         topic: Option<String>,
         #[arg(long)]
         key: Option<String>,
-        /// Only events recorded by this actor id
+        /// Only events by this actor: an alias on any machine, or alias@machine
         #[arg(long = "by")]
         by: Option<String>,
         /// Only events after this: a timestamp, or a window such as 2h or 3d
@@ -358,10 +358,10 @@ pub(crate) enum TaskCommand {
     /// Create a task
     New {
         title: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         description: Option<String>,
         /// What must be true for the task to count as done; `-` reads stdin
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         acceptance: Option<String>,
         #[arg(long)]
         priority: Option<String>,
@@ -430,7 +430,7 @@ pub(crate) enum TaskCommand {
         #[arg(long, requires = "reason")]
         force: bool,
         /// Why, recorded with the release
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         reason: Option<String>,
     },
     /// Move a claimed task to in_progress
@@ -438,13 +438,21 @@ pub(crate) enum TaskCommand {
     /// Finish a task; rolls up to the parent
     Done {
         target: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         note: Option<String>,
     },
     /// Record a failure; rolls up to the parent
-    Fail { target: String, reason: String },
+    Fail {
+        target: String,
+        #[arg(allow_hyphen_values = true)]
+        reason: String,
+    },
     /// Abandon a task; rolls up to the parent
-    Cancel { target: String, reason: String },
+    Cancel {
+        target: String,
+        #[arg(allow_hyphen_values = true)]
+        reason: String,
+    },
     /// Park a task until something else happens
     /// `--on` records a real dependency so the blocker stays queryable; `--reason` covers
     /// everything that is not another task.
@@ -452,7 +460,7 @@ pub(crate) enum TaskCommand {
         target: String,
         #[arg(long)]
         on: Vec<String>,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         reason: Option<String>,
     },
     /// Return a blocked task to the pool
@@ -470,7 +478,7 @@ pub(crate) enum TaskCommand {
     Replace {
         target: String,
         titles: Vec<String>,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         reason: Option<String>,
     },
     /// Fold duplicates into one task: the others become `superseded`, and their subtasks,
@@ -497,12 +505,12 @@ pub(crate) enum TaskCommand {
         /// Detach from its current goal
         #[arg(long, conflicts_with = "parent")]
         detach: bool,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         title: Option<String>,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         description: Option<String>,
         /// What must be true for the task to count as done; `-` reads stdin
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         acceptance: Option<String>,
         #[arg(long)]
         priority: Option<String>,
@@ -524,9 +532,9 @@ pub(crate) enum MsgCommand {
     Send {
         /// @alias, @alias@machine, role:<r>, ns:<path> or broadcast
         to: Vec<String>,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         subject: Option<String>,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         body: Option<String>,
         #[arg(long)]
         reply_to: Option<String>,
@@ -552,7 +560,7 @@ pub(crate) enum MsgCommand {
     /// Turn a message into a task
     Promote {
         target: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         title: Option<String>,
         #[arg(long)]
         role: Vec<String>,
@@ -565,12 +573,12 @@ pub(crate) enum SkillCommand {
     Write {
         name: String,
         /// The one line every agent reads before deciding to open it
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         summary: Option<String>,
         #[arg(long)]
         namespace: Option<String>,
         /// The skill itself, or `-` to read it from stdin
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         body: Option<String>,
         /// Cross-cutting label, repeatable
         #[arg(long)]

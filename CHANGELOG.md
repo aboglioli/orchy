@@ -54,6 +54,9 @@ The first release, `0.1.0`, will be cut from this section.
 ### Changed
 
 - **Vault format.**
+  - A document's folder always equals its namespace. Subfolders a human created beneath a
+    namespace are not kept: `doctor` reports such files, and the next save or
+    `doctor --fix` moves them to `docs/<namespace>/<id>.md`.
   - `supersedes` is stored on the replacement, pointing at what it replaced; `orchy doctor
     --fix` turns old links around.
   - Files now show what points at them: `superseded_by`, `derives`, `produced_by` and
@@ -77,6 +80,21 @@ The first release, `0.1.0`, will be cut from this section.
 
 ### Fixed
 
+- Reading links (`graph`, `recall --graph`, dependency checks) could let a save overwrite an
+  edit another agent made in between; the compare-and-swap now holds.
+- A task can no longer be claimed while it waits on an unfinished dependency or has open
+  subtasks, and `task next` no longer hands out a goal whose subtasks are still open.
+- Superseding, promoting and rejecting a document are final: `archive` then `unarchive` can
+  no longer bring a replaced document back.
+- `ns move` to a parent namespace moves the file; before, it stayed in the old folder.
+- `link` refuses an end that does not exist; `unlink` still removes a dangling link.
+- `skill show`, `list` and `set` find the skill in force where the agent works, as the
+  briefing does, instead of the root one, and `skill write` without `--namespace` writes
+  there too, like every other write.
+- Text flags accept values that start with a dash, such as `--acceptance "- works"`.
+- `events --by coder-1` matches that alias on every machine.
+- Output cut short by the reader (`orchy export | head`) no longer prints a broken-pipe error.
+- `doctor` and `recall --graph` are an order of magnitude faster on large vaults.
 - A file orchy cannot read is skipped and reported, instead of failing every command.
 - A storage failure exits 8 instead of being reported as bad input.
 - Links stored on skills appear in the graph.

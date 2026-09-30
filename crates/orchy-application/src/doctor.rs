@@ -72,7 +72,7 @@ impl Doctor {
         let mut problems = self.integrity.problems().await?;
         let tasks = self.tasks.matching(&TaskQuery::default()).await?;
         problems.extend(cycles(&tasks));
-        problems.extend(self.stale_rollups(&tasks).await?);
+        problems.extend(self.stale_rollups(&tasks));
         problems.extend(self.inverted_supersedes().await?);
         Ok(problems)
     }
@@ -88,11 +88,14 @@ impl Doctor {
         }
     }
 
-    async fn stale_rollups(&self, tasks: &[Task]) -> ApplicationResult<Vec<Problem>> {
+    fn stale_rollups(&self, tasks: &[Task]) -> Vec<Problem> {
         let mut problems = Vec::new();
         for parent in tasks.iter().filter(|t| !t.status().is_terminal()) {
-            let children = self.tasks.children_of(parent.id()).await?;
-            let statuses: Vec<_> = children.iter().map(Task::status).collect();
+            let statuses: Vec<_> = tasks
+                .iter()
+                .filter(|t| t.parent() == Some(parent.id()))
+                .map(Task::status)
+                .collect();
             if let Some(derived) = rollup::resolve(&statuses) {
                 problems.push(Problem::new(
                     ProblemKind::StaleRollup,
@@ -105,7 +108,7 @@ impl Doctor {
                 ));
             }
         }
-        Ok(problems)
+        problems
     }
 
     /// Older versions stored `supersedes` on the replaced document, pointing at its
