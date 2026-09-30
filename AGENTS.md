@@ -332,7 +332,10 @@ pending | claimed | in_progress ─block─▶ blocked ─unblock─▶ pending
 pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 ```
 
-- **Claiming.** Only `pending` is claimable, and claiming is not a self-transition.
+- **Claiming.** Only `pending` is claimable, and claiming is not a self-transition. A task
+  is also refused while a dependency is unfinished (`Outcome::ensure_claimable`) or while it
+  has open subtasks (`rollup::ensure_claimable`): it then finishes through them. `task next`
+  and the briefing skip such tasks for the same reasons.
 - **Holder only.** Completing, failing, cancelling a claimed task and releasing it are
   restricted to the holder.
 - **Reclaiming.** A claimed task returns to `pending` only through `release`. The holder

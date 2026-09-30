@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::status::TaskStatus;
+use crate::error::{DomainError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -8,6 +9,21 @@ pub enum Outcome {
     Satisfied,
     Pending,
     Doomed,
+}
+
+impl Outcome {
+    /// Claiming is a promise to start; work that cannot start yet is not claimable.
+    pub fn ensure_claimable(self) -> Result<()> {
+        match self {
+            Self::Satisfied => Ok(()),
+            Self::Pending => Err(DomainError::conflict(
+                "it waits on dependencies that are not done yet; `task get` lists them",
+            )),
+            Self::Doomed => Err(DomainError::conflict(
+                "a dependency failed or was cancelled; re-plan it with `task dep` first",
+            )),
+        }
+    }
 }
 
 /// A superseded dependency nobody replaced waits until someone re-points it.

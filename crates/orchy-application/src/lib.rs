@@ -228,19 +228,20 @@ impl Application {
             Arc::clone(&leases),
             Arc::clone(&clock),
         ));
+        let dependencies = Arc::new(AssessDependencies::new(
+            Arc::clone(&tasks),
+            Arc::clone(&edges),
+        ));
         let claim = Arc::new(ClaimTask::new(
             Arc::clone(&tasks),
             Arc::clone(&leases),
+            Arc::clone(&dependencies),
             Arc::clone(&clock),
         ));
         let mentions = Arc::new(ResolveMentions::new(
             Arc::clone(&documents),
             Arc::clone(&tasks),
             Arc::clone(&skills),
-        ));
-        let dependencies = Arc::new(AssessDependencies::new(
-            Arc::clone(&tasks),
-            Arc::clone(&edges),
         ));
         let ranking = Arc::new(RankClaimable::new(
             Arc::clone(&tasks),

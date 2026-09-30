@@ -432,7 +432,9 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
 - **Definition of done.** `--acceptance` states what must be true for the task to count as
   done (`-` reads it from standard input), so another agent can check the work. It is kept
   in the task file under `## Acceptance`.
-- **Claims.** A claimed task belongs to its holder until they finish it or release it. Only
+- **Claims.** A task can't be claimed while it waits on an unfinished dependency, or while
+  it has open subtasks: a goal finishes through its subtasks, so claim one of those. A
+  claimed task belongs to its holder until they finish it or release it. Only
   the holder can mark it done, failed or cancelled. If an agent crashes holding a task, any
   agent can take it back with `task release --force --reason …` once the claim's lease has
   expired (15 minutes by default, `--ttl` on claim). For long work, claim with a longer
