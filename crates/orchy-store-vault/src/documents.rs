@@ -58,8 +58,13 @@ impl DocumentStore for VaultDocumentStore {
         let events = document.drain_events();
         let layout = self.vault.layout();
         let folder = layout.document_folder(document.namespace());
+        // a file filed by hand beneath its namespace stays where it is, until the namespace
+        // changes: the old place may be beneath the new folder and would then never move
+        let is_moving = events
+            .iter()
+            .any(|e| matches!(e.topic().as_str(), "document.moved" | "document.promoted"));
         let key = match self.vault.locate(document.id()) {
-            Some(located) if located.key.starts_with(&folder) => located.key,
+            Some(located) if located.key.starts_with(&folder) && !is_moving => located.key,
             _ => layout.document_key(document.namespace(), document.id()),
         };
 
