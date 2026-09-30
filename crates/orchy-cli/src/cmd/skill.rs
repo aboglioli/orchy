@@ -39,6 +39,7 @@ pub(crate) async fn write(
 
 pub(crate) async fn set(
     app: &Application,
+    actor: &str,
     target: String,
     namespace: Option<String>,
     edits: SkillEdits,
@@ -64,6 +65,7 @@ pub(crate) async fn set(
             tag: edits.tag,
             untag: edits.untag,
             if_match: edits.if_match,
+            actor: Some(actor.to_owned()),
         })
         .await?;
     out.emit(&skill, |s| format!("{}  updated", s.name))
@@ -71,6 +73,7 @@ pub(crate) async fn set(
 
 pub(crate) async fn list(
     app: &Application,
+    actor: &str,
     namespace: Option<String>,
     tag: Vec<String>,
     everywhere: bool,
@@ -84,6 +87,7 @@ pub(crate) async fn list(
             tags: tag,
             everywhere,
             retired,
+            actor: Some(actor.to_owned()),
         })
         .await?;
     out.emit(&skills, |list| {
@@ -141,13 +145,18 @@ pub(crate) async fn find(
 
 pub(crate) async fn show(
     app: &Application,
+    actor: &str,
     target: String,
     namespace: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
     let skill = app
         .read_skill
-        .execute(ReadSkillCommand { target, namespace })
+        .execute(ReadSkillCommand {
+            target,
+            namespace,
+            actor: Some(actor.to_owned()),
+        })
         .await?;
     out.emit(&skill, |s| {
         format!(
@@ -159,11 +168,12 @@ pub(crate) async fn show(
 
 pub(crate) async fn retire(
     app: &Application,
+    actor: &str,
     target: String,
     restore: bool,
     out: &Output,
 ) -> CliResult<()> {
-    let id = resolve(app, &target).await?;
+    let id = resolve(app, actor, &target).await?;
     let skill = app
         .retire_skill
         .execute(RetireSkillCommand {
@@ -174,12 +184,13 @@ pub(crate) async fn retire(
     out.emit(&skill, |s| format!("{} is {}", s.name, s.status))
 }
 
-async fn resolve(app: &Application, target: &str) -> CliResult<String> {
+async fn resolve(app: &Application, actor: &str, target: &str) -> CliResult<String> {
     Ok(app
         .read_skill
         .execute(ReadSkillCommand {
             target: target.to_owned(),
             namespace: None,
+            actor: Some(actor.to_owned()),
         })
         .await?
         .id)

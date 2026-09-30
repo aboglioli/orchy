@@ -379,6 +379,9 @@ orchy skill retire <name>
 orchy skill restore <name>
 ```
 
+- **Which one.** `show`, `list` and `set` look where you work, as the briefing does: with
+  `commits` at `/` and at `/web`, an agent working in `/web/app` gets the `/web` one.
+  `--namespace` looks somewhere else.
 - **Writing and revising.** `write` creates a skill or revises the one with that name in that
   namespace. A new skill needs `--summary`; `--body -` reads the body from standard input.
 - **What's in force.** `list` shows the skills in force at a namespace (default `/`), after

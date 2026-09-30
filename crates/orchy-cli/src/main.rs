@@ -158,13 +158,16 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 target,
                 namespace,
                 edits,
-            } => cmd::skill::set(&app, target, namespace, edits, out).await,
+            } => cmd::skill::set(&app, &actor, target, here(namespace), edits, out).await,
             SkillCommand::List {
                 namespace,
                 tag,
                 everywhere,
                 retired,
-            } => cmd::skill::list(&app, namespace, tag, everywhere, retired, out).await,
+            } => {
+                let namespace = here(namespace);
+                cmd::skill::list(&app, &actor, namespace, tag, everywhere, retired, out).await
+            }
             SkillCommand::Find {
                 query,
                 namespace,
@@ -173,10 +176,14 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                 limit,
             } => cmd::skill::find(&app, query, namespace, tag, retired, limit, out).await,
             SkillCommand::Show { target, namespace } => {
-                cmd::skill::show(&app, target, namespace, out).await
+                cmd::skill::show(&app, &actor, target, here(namespace), out).await
             }
-            SkillCommand::Retire { target } => cmd::skill::retire(&app, target, false, out).await,
-            SkillCommand::Restore { target } => cmd::skill::retire(&app, target, true, out).await,
+            SkillCommand::Retire { target } => {
+                cmd::skill::retire(&app, &actor, target, false, out).await
+            }
+            SkillCommand::Restore { target } => {
+                cmd::skill::retire(&app, &actor, target, true, out).await
+            }
         },
 
         Command::Agents { live } => {

@@ -20,6 +20,7 @@ pub(crate) async fn document(app: &Application, input: &str) -> CliResult<String
             .execute(ReadSkillCommand {
                 target: id.to_string(),
                 namespace: None,
+                actor: None,
             })
             .await
             .is_ok();

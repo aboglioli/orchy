@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, SkillStore, Tag};
+use orchy_core::{ActorStore, Clock, SkillStore, Tag};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::SkillDto;
@@ -16,6 +16,7 @@ pub struct SetSkillFieldCommand {
     pub tag: Vec<String>,
     pub untag: Vec<String>,
     pub if_match: Option<String>,
+    pub actor: Option<String>,
 }
 
 pub struct SetSkillField {
@@ -25,9 +26,13 @@ pub struct SetSkillField {
 }
 
 impl SetSkillField {
-    pub fn new(skills: Arc<dyn SkillStore>, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(
+        skills: Arc<dyn SkillStore>,
+        actors: Arc<dyn ActorStore>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
         Self {
-            read: ReadSkill::new(Arc::clone(&skills)),
+            read: ReadSkill::new(Arc::clone(&skills), actors),
             skills,
             clock,
         }
@@ -39,6 +44,7 @@ impl SetSkillField {
             .execute(ReadSkillCommand {
                 target: cmd.target,
                 namespace: cmd.namespace,
+                actor: cmd.actor,
             })
             .await?;
         let mut skill = self.skills.require(&found.id.parse()?).await?;
