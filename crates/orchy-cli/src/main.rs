@@ -42,6 +42,8 @@ async fn main() -> ExitCode {
 
     match run(cli, &out).await {
         Ok(()) => ExitCode::SUCCESS,
+        // the reader stopped early, as `orchy export | head` does; that is not a failure
+        Err(CliError::Io(e)) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("orchy: {e}");
             ExitCode::from(e.exit_code() as u8)
