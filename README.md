@@ -546,7 +546,8 @@ orchy events [--topic task.] [--key <id>] [--by <agent>] [--since 2h|<timestamp>
 ```
 
 `--topic` matches by prefix: `task.`, `document.`, `skill.`, `message.`, `edge.` (links),
-`actor.` (the roster) and `lock.`. `--limit n` shows the `n` most recent.
+`actor.` (the roster) and `lock.`. `--by coder-1` matches that agent on every machine;
+`--by coder-1@<machine>` one of them. `--limit n` shows the `n` most recent.
 
 ## Keeping the vault healthy
 

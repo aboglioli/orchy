@@ -103,7 +103,7 @@ impl EventQuery {
             return false;
         }
         if let Some(actor) = &self.actor
-            && event.actor.as_deref() != Some(actor.as_str())
+            && !event.actor.as_deref().is_some_and(|by| is_by(by, actor))
         {
             return false;
         }
@@ -120,6 +120,14 @@ impl EventQuery {
 pub trait EventLog: Send + Sync {
     async fn append(&self, events: &[Box<dyn DomainEvent>]) -> Result<()>;
     async fn replay(&self, query: &EventQuery) -> Result<Vec<RecordedEvent>>;
+}
+
+/// `alias` names that alias on every machine; `alias@machine` names one actor.
+fn is_by(recorded: &str, wanted: &str) -> bool {
+    if wanted.contains('@') {
+        return recorded == wanted;
+    }
+    recorded.split('@').next() == Some(wanted)
 }
 
 #[cfg(test)]
@@ -242,6 +250,19 @@ mod query_tests {
         assert!(query.matches(&event("task.created", A, "claude", 10)));
         assert!(query.matches(&event("task.finished", A, "claude", 10)));
         assert!(!query.matches(&event("document.created", A, "claude", 10)));
+    }
+
+    #[test]
+    fn a_bare_alias_matches_that_alias_on_every_machine() {
+        let ev = event("task.claimed", A, "coder-1@01ARZ3NDEKTSV4RRFFQ69G5FAV", 10);
+        let by = |actor: &str| EventQuery {
+            actor: Some(actor.to_owned()),
+            ..Default::default()
+        };
+        assert!(by("coder-1").matches(&ev));
+        assert!(by("coder-1@01ARZ3NDEKTSV4RRFFQ69G5FAV").matches(&ev));
+        assert!(!by("coder-1@01BX5ZZKBKACTAV9WEVGEMMVRZ").matches(&ev));
+        assert!(!by("coder").matches(&ev));
     }
 
     #[test]

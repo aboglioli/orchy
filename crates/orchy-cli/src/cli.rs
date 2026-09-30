@@ -314,7 +314,7 @@ pub(crate) enum Command {
         topic: Option<String>,
         #[arg(long)]
         key: Option<String>,
-        /// Only events recorded by this actor id
+        /// Only events by this actor: an alias on any machine, or alias@machine
         #[arg(long = "by")]
         by: Option<String>,
         /// Only events after this: a timestamp, or a window such as 2h or 3d
