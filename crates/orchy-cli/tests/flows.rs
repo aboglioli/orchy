@@ -1080,3 +1080,260 @@ fn a_skill_written_without_a_namespace_lands_where_the_agent_works() {
     let guide = vault.ok("web-dev", &["guide"]);
     assert!(guide.contains("orchy announce"), "{guide}");
 }
+
+fn assert_healthy(vault: &Vault) {
+    let report = vault.json("human", &["doctor"]);
+    assert_eq!(
+        report["problems"].as_array().map(Vec::len),
+        Some(0),
+        "every refusal must leave the vault healthy: {report}"
+    );
+}
+
+#[test]
+fn links_are_only_ever_made_to_things_that_exist_and_fit() {
+    let vault = Vault::new();
+    let doc = vault.id("dev", &["new", "note", "Notes", "--body", "x"]);
+    let task = vault.id("dev", &["task", "new", "Work"]);
+    let ghost = "01ZZZZZZZZZZZZZZZZZZZZZZZZ";
+
+    for args in [
+        vec!["task", "new", "w", "--parent", ghost],
+        vec!["task", "new", "w", "--parent", &doc],
+        vec!["task", "new", "w", "--depends-on", ghost],
+        vec!["task", "dep", &task, "--add", ghost],
+        vec!["task", "block", &task, "--on", &doc],
+    ] {
+        let (code, why) = vault.refused("dev", &args);
+        assert_eq!(code, 4, "`{}`: {why}", args.join(" "));
+    }
+
+    let (code, why) = vault.refused("dev", &["set", &doc, &format!("supersedes=document:{doc}")]);
+    assert_eq!(code, 5, "{why}");
+    assert!(why.contains("orchy supersede"), "{why}");
+    let (code, why) = vault.refused("dev", &["set", &doc, "subtasks=x"]);
+    assert_eq!(code, 5, "{why}");
+    vault.ok(
+        "dev",
+        &["skill", "write", "style", "--summary", "s", "--body", "b"],
+    );
+    let (code, _) = vault.refused("dev", &["skill", "set", "style", "derives=x"]);
+    assert_eq!(code, 5);
+    let (code, _) = vault.refused("dev", &["skill", "set", "style", "--remove", "related_to"]);
+    assert_eq!(code, 5);
+
+    let machine = vault.json("dev", &["status"])["machine"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    vault.json("dev", &["announce"]);
+    vault.ok(
+        "dev",
+        &[
+            "link",
+            &format!("document:{doc}"),
+            &format!("actor:dev@{machine}"),
+            "--rel",
+            "owned_by",
+        ],
+    );
+    let (code, _) = vault.refused(
+        "dev",
+        &[
+            "link",
+            &format!("document:{doc}"),
+            &format!("actor:ghost@{machine}"),
+            "--rel",
+            "owned_by",
+        ],
+    );
+    assert_eq!(
+        code, 4,
+        "an actor that never announced is not there to own anything"
+    );
+    assert_healthy(&vault);
+}
+
+#[test]
+fn no_change_may_make_work_wait_on_itself() {
+    let vault = Vault::new();
+    let a = vault.id("lead", &["task", "new", "A"]);
+    let b = vault.id("lead", &["task", "new", "B", "--depends-on", &a]);
+    let (code, why) = vault.refused("lead", &["task", "dep", &a, "--add", &b]);
+    assert_eq!(code, 6, "{why}");
+    assert!(why.contains("wait on itself"), "{why}");
+    let (code, _) = vault.refused("lead", &["task", "block", &a, "--on", &b]);
+    assert_eq!(code, 6);
+
+    let goal = vault.id("lead", &["task", "new", "Goal"]);
+    let step = vault.id("lead", &["task", "new", "Step", "--parent", &goal]);
+    let (code, _) = vault.refused("lead", &["task", "dep", &step, "--add", &goal]);
+    assert_eq!(code, 6, "a subtask waiting on its own goal can never start");
+    let (code, _) = vault.refused("lead", &["task", "update", &goal, "--parent", &step]);
+    assert_eq!(code, 6);
+
+    let below = vault.id("lead", &["task", "new", "Below", "--parent", &step]);
+    let (code, _) = vault.refused("lead", &["task", "merge", &below, &goal]);
+    assert_eq!(code, 6, "merging a goal into its own grandchild would loop");
+    assert_healthy(&vault);
+}
+
+#[test]
+fn finished_work_never_has_open_work_beneath_it() {
+    let vault = Vault::new();
+    let goal = vault.id("lead", &["task", "new", "Goal"]);
+    let step = vault.id("lead", &["task", "new", "Step", "--parent", &goal]);
+    let (code, _) = vault.refused("lead", &["task", "cancel", &goal, "dropped"]);
+    assert_eq!(code, 5);
+    let (code, _) = vault.refused("lead", &["task", "replace", &goal, "Other"]);
+    assert_eq!(code, 5);
+
+    let done = vault.id("lead", &["task", "new", "Done"]);
+    vault.ok("lead", &["task", "claim", &done, "--start"]);
+    vault.ok("lead", &["task", "done", &done]);
+    let (code, _) = vault.refused("lead", &["task", "split", &done, "More"]);
+    assert_eq!(code, 5);
+    let (code, _) = vault.refused("lead", &["task", "new", "Late", "--parent", &done]);
+    assert_eq!(code, 5);
+    let (code, _) = vault.refused("lead", &["task", "update", &step, "--parent", &done]);
+    assert_eq!(code, 5);
+    let (code, _) = vault.refused("lead", &["task", "merge", &done, &step]);
+    assert_eq!(code, 5, "nothing is merged into finished work");
+    assert_healthy(&vault);
+}
+
+#[test]
+fn replaced_knowledge_always_names_something_current() {
+    let vault = Vault::new();
+    let old = vault.id("ops", &["new", "note", "Old", "--body", "x"]);
+    let new = vault.id("ops", &["new", "note", "New", "--body", "y"]);
+    let other = vault.id("ops", &["new", "note", "Other", "--body", "z"]);
+    vault.ok("ops", &["supersede", &old, "--by", &new]);
+
+    let (code, why) = vault.refused("ops", &["supersede", &other, "--by", &old]);
+    assert_eq!(code, 5, "{why}");
+    let (code, _) = vault.refused("ops", &["consolidate", &other, "--into", &old]);
+    assert_eq!(code, 5);
+    let (code, _) = vault.refused("ops", &["retype", &old, "candidate"]);
+    assert_eq!(code, 5, "crossing into proposals would wipe `superseded`");
+    let proposal = vault.id("ops", &["new", "candidate", "Maybe", "--body", "m"]);
+    let (code, _) = vault.refused("ops", &["supersede", &other, "--by", &proposal]);
+    assert_eq!(code, 5);
+    assert_eq!(
+        vault.json("ops", &["read", &old])["document"]["status"],
+        "superseded",
+        "nothing brought it back"
+    );
+    assert_healthy(&vault);
+}
+
+#[test]
+fn nothing_orchy_writes_is_unreadable_afterwards() {
+    let vault = Vault::new();
+    let doc = vault.id("dev", &["new", "note", "Notes", "--body", "x"]);
+    for field in ["=v", " =v", "#c=v", "? q=1", "a:b=1"] {
+        let (code, why) = vault.refused("dev", &["set", &doc, field]);
+        assert_eq!(code, 6, "`{field}`: {why}");
+    }
+    let (code, _) = vault.refused(
+        "dev",
+        &[
+            "new",
+            "note",
+            "Merge",
+            "--body",
+            "<<<<<<< HEAD\na\n=======\nb\n>>>>>>> x",
+        ],
+    );
+    assert_eq!(code, 6);
+    let (code, _) = vault.refused(
+        "dev",
+        &["task", "new", "T", "--description", "a\n## Outcome\nb"],
+    );
+    assert_eq!(code, 6);
+    vault.ok(
+        "dev",
+        &[
+            "new",
+            "note",
+            "About conflicts",
+            "--body",
+            "```\n<<<<<<< HEAD\n=======\n>>>>>>> x\n```",
+        ],
+    );
+    assert_healthy(&vault);
+}
+
+#[test]
+fn a_thread_keeps_its_links_when_it_is_resolved() {
+    let vault = Vault::new();
+    let doc = vault.id("dev", &["new", "note", "Spec", "--body", "x"]);
+    let message = vault.id(
+        "dev",
+        &["msg", "send", "broadcast", "--body", "see the spec"],
+    );
+    vault.ok(
+        "dev",
+        &[
+            "link",
+            &format!("message:{message}"),
+            &format!("document:{doc}"),
+            "--rel",
+            "related_to",
+        ],
+    );
+    vault.ok(
+        "dev",
+        &[
+            "link",
+            &format!("document:{doc}"),
+            &format!("message:{message}"),
+            "--rel",
+            "derived_from",
+        ],
+    );
+    vault.ok("dev", &["msg", "resolve", &message]);
+    let file = fs::read_to_string(vault.file(&message)).unwrap();
+    assert!(file.contains("related_to"), "{file}");
+    assert!(file.contains("derives"), "{file}");
+    assert_healthy(&vault);
+}
+
+#[test]
+fn merging_respects_holders_and_never_strands_the_kept_task() {
+    let vault = Vault::new();
+    let held = vault.id("a2", &["task", "new", "Held"]);
+    vault.ok("a2", &["task", "claim", &held]);
+    let keep = vault.id("a1", &["task", "new", "Keep"]);
+    let (code, _) = vault.refused("a1", &["task", "merge", &keep, &held]);
+    assert_eq!(
+        code, 5,
+        "another agent's claimed work is not retired under it"
+    );
+    let (code, _) = vault.refused("a1", &["task", "replace", &held, "Instead"]);
+    assert_eq!(code, 5);
+
+    let dup = vault.id("a1", &["task", "new", "Dup"]);
+    let waits = vault.id("a1", &["task", "new", "Waits", "--depends-on", &dup]);
+    vault.ok("a1", &["task", "merge", &waits, &dup]);
+    assert_eq!(
+        vault.json("a1", &["task", "get", &waits])["readiness"],
+        "satisfied",
+        "waiting on a duplicate merged into you is waiting on nothing"
+    );
+    vault.ok("a1", &["task", "claim", &waits]);
+    assert_healthy(&vault);
+}
+
+#[test]
+fn errors_are_json_when_json_was_asked_for() {
+    let vault = Vault::new();
+    let out = vault.run(
+        "dev",
+        &["task", "get", "01ZZZZZZZZZZZZZZZZZZZZZZZZ", "--json"],
+    );
+    assert_eq!(out.status.code(), Some(4));
+    let error: Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(error["error"]["kind"], "not_found");
+    assert_eq!(error["error"]["exit"], 4);
+}
