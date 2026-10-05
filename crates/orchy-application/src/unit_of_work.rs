@@ -4,13 +4,8 @@ use orchy_core::{DomainError, UnitOfWork};
 
 use crate::error::{ApplicationError, ApplicationResult};
 
-/// Runs past this many times only under a storm of writers to the same entities.
 const ATTEMPTS: u32 = 16;
 
-/// Runs a use case as one unit: if any step fails, none of its writes land. When something it
-/// only read changed before it landed, it runs again from scratch, so what it decides always
-/// rests on what is there when it lands; another writer having landed first is what made the
-/// first run stale, so running again makes progress.
 pub(crate) async fn atomically<T, F>(
     unit: &dyn UnitOfWork,
     work: impl Fn() -> F,

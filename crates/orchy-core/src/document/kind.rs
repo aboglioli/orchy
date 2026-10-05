@@ -124,7 +124,6 @@ impl Kind {
         )))
     }
 
-    /// The inverses orchy writes onto a link's target, so a file shows who points at it.
     pub const PROJECTED_FIELDS: [&'static str; 4] = PROJECTED;
 
     pub fn is_projected_field(field: &str) -> bool {

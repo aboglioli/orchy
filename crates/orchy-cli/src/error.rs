@@ -37,7 +37,6 @@ impl CliError {
         ))
     }
 
-    /// A stable name for the kind of failure, for agents reading `--json`.
     pub(crate) fn kind(&self) -> String {
         match self {
             Self::Application(e) => e.code().to_string(),

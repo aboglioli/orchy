@@ -46,9 +46,6 @@ impl SplitTask {
         atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
     }
 
-    /// Splitting the same goal the same way twice at once leaves one subtask per title: both
-    /// read the siblings, both add to the parent's `subtasks`, and the one that lands second
-    /// finds the parent changed, runs again and sees the sibling already there.
     async fn apply(&self, cmd: SplitTaskCommand) -> ApplicationResult<SplitTaskResponse> {
         let parent_id = Id::new(&cmd.task_id)?;
         let parent = self.tasks.require(&parent_id).await?;

@@ -8,8 +8,6 @@ use crate::{
     MemorySkillStore, MemoryTaskStore,
 };
 
-/// Puts every store back as it was when a run fails. It does not isolate concurrent runs from
-/// each other: it backs tests, which run one use case at a time.
 pub struct MemoryUnitOfWork {
     pub(crate) documents: Arc<MemoryDocumentStore>,
     pub(crate) tasks: Arc<MemoryTaskStore>,

@@ -64,12 +64,8 @@ pub trait BlobStore: Send + Sync {
         Ok(self.get(key).await?.is_some())
     }
 
-    /// Applies every change or none: each precondition is checked with every key held, so no
-    /// other writer fits between the checks and the writes, and a refused precondition is a
-    /// conflict that leaves everything as it was.
     async fn commit(&self, changes: &[Change]) -> Result<()>;
 
-    /// Finishes a commit that a crashed process left halfway.
     async fn recover(&self) -> Result<()> {
         Ok(())
     }
@@ -78,21 +74,16 @@ pub trait BlobStore: Send + Sync {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Expect {
     Anything,
-    /// `None` means the key must be absent.
     Exactly(Option<u64>),
 }
 
-/// Rewrites what a key holds; `None` in or out means the key is absent.
 pub type Patch = Arc<dyn Fn(Option<&[u8]>) -> Result<Option<Vec<u8>>> + Send + Sync>;
 
 #[derive(Clone)]
 pub enum Content {
     Put(Vec<u8>),
     Delete,
-    /// Applied to whatever the key holds when the commit lands, with the key held: the edit
-    /// commutes with other writers instead of conflicting with them.
     Patch(Patch),
-    /// Writes nothing: the key was only read, and the commit holds only while it is unchanged.
     Keep,
 }
 
@@ -127,7 +118,6 @@ pub struct Change {
 
 fn changed_meanwhile(change: &Change) -> DomainError {
     let key = &change.key;
-    // a keep or a patch carries a precondition only because the key was read to decide
     if matches!(change.content, Content::Keep | Content::Patch(_)) {
         return DomainError::contended(format!(
             "`{key}`, which this command read, changed before it finished; nothing was written"
@@ -206,9 +196,6 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     })
 }
 
-/// The bytes, durable, beside `path` under a name no other writer shares: derived from the
-/// target alone, two processes writing one key would share a scratch file and the loser would
-/// rename half-written bytes into place.
 fn write_temp(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
     use std::io::Write;
 
@@ -242,16 +229,13 @@ fn remove_if_present(path: &Path) -> Result<()> {
     }
 }
 
-/// A stable digest, unlike [`digest`]: a journal may be recovered by another build.
 fn fingerprint_of(path: &Path) -> Result<Option<String>> {
     Ok(read_one(path)?.map(|bytes| hex::encode(Sha256::digest(bytes))))
 }
 
-/// One change of a commit, as the journal records it before any of them is applied.
 #[derive(Debug, Serialize, Deserialize)]
 struct Step {
     key: String,
-    /// Where the new bytes wait; `None` deletes the key.
     temp: Option<String>,
     before: Option<String>,
     after: Option<String>,
@@ -299,8 +283,6 @@ impl FsBlobStore {
                 return Vec::new();
             }
             let found = std::sync::Mutex::new(Vec::new());
-            // hidden entries are skipped (`.orchy`, an editor's swap files); ignore files are not
-            // read, so what orchy sees never depends on git
             ignore::WalkBuilder::new(&base)
                 .standard_filters(false)
                 .hidden(true)
@@ -345,9 +327,6 @@ impl FsBlobStore {
         self.root.join(".orchy/journal")
     }
 
-    /// Holds every key of the commit, in key order so two commits never wait on each other,
-    /// checks every precondition, then journals the whole change before applying any of it:
-    /// a crash after that point is finished by the next [`BlobStore::recover`].
     fn commit_blocking(&self, changes: &[Change]) -> Result<()> {
         let mut ordered: Vec<&Change> = changes.iter().collect();
         ordered.sort_by(|a, b| a.key.cmp(&b.key));
@@ -454,8 +433,6 @@ impl FsBlobStore {
         }
     }
 
-    /// A step is finished only while its key still holds what it held when the commit was
-    /// journaled; a key someone wrote since keeps that newer write.
     fn recover_blocking(&self) -> Result<()> {
         let entries = match std::fs::read_dir(self.journal_dir()) {
             Ok(entries) => entries,
@@ -487,7 +464,6 @@ impl FsBlobStore {
                     DEFAULT_WAIT,
                 )?);
             }
-            // its owner may have finished while we waited for the keys
             if !journal.exists() {
                 continue;
             }

@@ -3,9 +3,6 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::error::{DomainError, Result};
 use crate::id::Id;
 
-/// Who waits on whom: a task on each of its dependencies, a parent on each of its subtasks,
-/// and a superseded task on whatever replaced it. A loop in it is work that can never start
-/// or never finish, so no change may close one.
 #[derive(Debug, Clone, Default)]
 pub struct Waits(BTreeMap<Id, BTreeSet<Id>>);
 
@@ -28,8 +25,6 @@ impl Waits {
         self.0.get(waiter).into_iter().flatten()
     }
 
-    /// Refuses the change when, with `adding` in place, some task would end up waiting on
-    /// itself; the error walks the loop.
     pub fn ensure_no_loop(&self, adding: &[(Id, Id)]) -> Result<()> {
         let mut after = self.clone();
         for (waiter, on) in adding {
@@ -48,8 +43,6 @@ impl Waits {
         Ok(())
     }
 
-    /// Every task `from` waits on, directly or through others: what a change touching `from`
-    /// depends on staying as it is.
     pub fn reachable(&self, from: &Id) -> BTreeSet<Id> {
         let mut seen = BTreeSet::from([from.clone()]);
         let mut queue = VecDeque::from([from.clone()]);
@@ -63,7 +56,6 @@ impl Waits {
         seen
     }
 
-    /// Each loop already in the graph, once, starting from its smallest id.
     pub fn loops(&self) -> Vec<Vec<Id>> {
         let mut found: Vec<Vec<Id>> = Vec::new();
         let mut seen_sets: BTreeSet<Vec<Id>> = BTreeSet::new();

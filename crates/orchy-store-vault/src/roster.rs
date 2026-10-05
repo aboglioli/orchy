@@ -270,8 +270,6 @@ impl LeaseStore for FileLeaseStore {
         }
     }
 
-    /// Read under a shared lock: a renewal rewrites the record in place, and a reader that
-    /// caught it half-written would take a live lease for none at all.
     async fn check(&self, key: &ResourceKey) -> Result<Option<Lease>> {
         if !self.lock_path(key).exists() {
             return Ok(None);

@@ -61,8 +61,6 @@ pub enum DomainError {
     #[error("{0}")]
     Conflict(String),
 
-    /// Something the command only read changed before its writes landed. Nothing was written,
-    /// and running the command again decides afresh.
     #[error("{0}")]
     Contended(String),
 

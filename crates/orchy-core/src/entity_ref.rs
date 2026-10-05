@@ -59,8 +59,6 @@ impl FromStr for EntityKind {
     }
 }
 
-/// What a link points at: a document, task, message or skill by its id, or an actor by the
-/// `alias@machine` it is known by. Actors only ever receive links; they hold none.
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct EntityRef {
@@ -75,7 +73,6 @@ enum Key {
 }
 
 impl EntityRef {
-    /// For the content kinds; an actor is named by [`EntityRef::actor`].
     pub fn new(kind: EntityKind, id: Id) -> Self {
         Self {
             kind,
@@ -106,7 +103,6 @@ impl EntityRef {
         self.kind
     }
 
-    /// The id of a document, task, message or skill; an actor has none.
     pub fn id(&self) -> Option<&Id> {
         match &self.key {
             Key::Id(id) => Some(id),

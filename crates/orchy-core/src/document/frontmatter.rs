@@ -5,8 +5,6 @@ use crate::error::{DomainError, Result};
 
 const MAX_FIELD_NAME: usize = 64;
 
-/// A field someone adds by hand: plain enough to be a YAML key as written, so every editor and
-/// every reader agrees on what it is called.
 pub fn validate_field_name(name: &str) -> Result<()> {
     let mut chars = name.chars();
     let starts_well = chars.next().is_some_and(|c| c.is_ascii_alphabetic());

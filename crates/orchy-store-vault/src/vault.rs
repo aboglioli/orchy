@@ -53,8 +53,6 @@ pub struct Vault {
     parsed: RwLock<HashMap<String, Parsed>>,
 }
 
-/// What the vault believed about each entity at one moment, so a unit of work that fails can
-/// put it back.
 pub struct Remembered(HashMap<Id, Located>);
 
 struct Parsed {
@@ -91,7 +89,6 @@ impl Vault {
         &self.staged
     }
 
-    /// See [`Vault::read_by_id`]; for an entity found by a scan rather than loaded by id.
     pub(crate) fn guard(&self, key: &str, seen: u64) {
         self.staged.guard(key, seen);
     }
@@ -290,8 +287,6 @@ impl Vault {
         parse(&bytes, key).map(Some)
     }
 
-    /// A store's own load. Inside a unit of work the entity must still be as read when the
-    /// unit lands: whatever was decided from it is decided again otherwise.
     pub async fn read_by_id(&self, id: &Id) -> Result<Option<(String, MarkdownFile)>> {
         let Some((located, bytes)) = self.bytes_of(id).await? else {
             return Ok(None);
@@ -343,7 +338,6 @@ impl Vault {
         self.write_if(key, file, id, kind, Precondition::Any).await
     }
 
-    /// A move is two writes and a delete; they land together.
     pub async fn write_if(
         &self,
         key: &str,
@@ -403,7 +397,6 @@ impl Vault {
             },
         }
 
-        // a pending patch may sit on top of what was written
         let landed = self.blobs.get(key).await?;
         let seen = digest(landed.as_deref().unwrap_or(rendered.as_bytes()));
         self.index.write().expect("index lock").insert(
@@ -438,8 +431,6 @@ impl Vault {
         Ok(())
     }
 
-    /// A move lands only on a free path: whatever already sits there is another entity's file,
-    /// and overwriting it would delete that entity.
     async fn claim_free(&self, key: &str, rendered: &str, id: &Id) -> Result<()> {
         if self
             .blobs
@@ -453,9 +444,6 @@ impl Vault {
         )))
     }
 
-    /// Edits a list of entity refs in one frontmatter field. The edit is staged as a patch, so
-    /// it is reapplied to whatever the file holds when the change lands: two agents linking to
-    /// one hub at once both land, and neither overwrites the other.
     pub async fn amend_refs(
         &self,
         id: &Id,
@@ -550,8 +538,6 @@ fn decode(bytes: &[u8]) -> StdResult<MarkdownFile, String> {
     MarkdownFile::parse(text).map_err(|e| e.to_string())
 }
 
-/// orchy never writes a file it could not read back as the same entity: one it could not
-/// read would vanish from every listing until a human repaired it.
 fn ensure_reads_back(rendered: &str, key: &str, id: &Id) -> Result<()> {
     let refused =
         |why: String| DomainError::validation(format!("refusing to write `{key}`: {why}"));
@@ -562,8 +548,6 @@ fn ensure_reads_back(rendered: &str, key: &str, id: &Id) -> Result<()> {
     Ok(())
 }
 
-/// A git conflict left in a file: a `<<<<<<< ` line, then `=======`, then `>>>>>>> `, outside
-/// a fenced code block, where text about conflicts is only text.
 fn has_conflict_markers(text: &str) -> bool {
     let mut fence: Option<&str> = None;
     let mut stage = 0;
@@ -589,7 +573,6 @@ fn has_conflict_markers(text: &str) -> bool {
     false
 }
 
-/// Whether the edit changed the field.
 fn edit_refs(file: &mut MarkdownFile, field: &str, edit: &dyn Fn(&mut Vec<String>)) -> bool {
     let mut targets = refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null));
     let before = targets.clone();

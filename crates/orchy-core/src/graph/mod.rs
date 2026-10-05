@@ -17,7 +17,6 @@ pub trait EdgeStore: Send + Sync {
     async fn remove(&self, edge: &Edge) -> Result<()>;
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>>;
     async fn incoming(&self, to: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>>;
-    /// Every stored link of one relation, wherever it is stored.
     async fn of_relation(&self, relation: &Relation) -> Result<Vec<Edge>>;
     async fn neighbourhood(&self, of: &EntityRef, depth: u8) -> Result<Vec<TraversalHop>>;
 }
@@ -46,7 +45,6 @@ impl Edge {
         &self.from
     }
 
-    /// The id of the entity the link is stored on, which is never an actor.
     pub fn source(&self) -> &Id {
         self.from
             .id()

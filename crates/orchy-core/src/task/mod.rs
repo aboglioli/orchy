@@ -202,8 +202,6 @@ impl Task {
         task
     }
 
-    /// A finished task has no open subtasks: its status was derived from them, or set by
-    /// hand once there were none left.
     pub fn attach_to(&mut self, parent: &Task, clock: &dyn Clock) -> Result<()> {
         if parent.id == self.id {
             return Err(DomainError::validation("a task cannot be its own parent"));
@@ -336,7 +334,6 @@ impl Task {
         self.finish(TaskStatus::Cancelled, Some(reason), clock)
     }
 
-    /// Work can still be added to it: a goal to merge into, a parent to split.
     pub fn ensure_open(&self) -> Result<()> {
         if self.status.is_terminal() {
             return Err(DomainError::conflict(format!(

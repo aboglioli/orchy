@@ -79,8 +79,6 @@ impl LinkEntities {
         Ok(EdgeDto::from(&edge))
     }
 
-    /// A promoted candidate's `derived_from` link from the skill it became is the record of
-    /// what it became; without it the candidate says `promoted` and points at nothing.
     async fn ensure_removable(&self, edge: &Edge) -> ApplicationResult<()> {
         if edge.relation() != &Relation::DerivedFrom
             || edge.from().kind() != EntityKind::Skill

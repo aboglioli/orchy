@@ -46,7 +46,6 @@ impl CancelTask {
 
     pub async fn execute(&self, cmd: CancelTaskCommand) -> ApplicationResult<CompleteTaskResponse> {
         let finished = atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await?;
-        // given back only once the finish has landed: a claim must stay protected until then
         if let (Ok(id), Ok(actor)) = (Id::new(&cmd.task_id), cmd.actor.parse::<ActorId>()) {
             let _ = self.leases.release(&ResourceKey::task(&id), &actor).await;
         }

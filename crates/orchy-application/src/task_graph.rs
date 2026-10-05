@@ -8,9 +8,6 @@ use orchy_core::{
 
 use crate::error::ApplicationResult;
 
-/// Reads who waits on whom across the whole board and refuses a change that would close a
-/// loop. Every task the decision rests on is loaded again by id, so a concurrent change to any
-/// of them makes this change run again instead of landing on a stale reading.
 pub struct TaskGraph {
     tasks: Arc<dyn TaskStore>,
     edges: Arc<dyn EdgeStore>,
@@ -21,8 +18,6 @@ impl TaskGraph {
         Self { tasks, edges }
     }
 
-    /// `adding` and `removing` are the waits the change makes and takes away, each as
-    /// `(waiter, waited on)`: a task on a dependency, or a parent on a subtask.
     pub async fn ensure_no_loop(
         &self,
         adding: &[(Id, Id)],
@@ -75,8 +70,6 @@ impl TaskGraph {
     }
 }
 
-/// A task waits on each dependency, a parent on each subtask, and a superseded task on what
-/// replaced it.
 pub(crate) fn waits_of(board: &[Task], supersedes: &[Edge]) -> Waits {
     let mut waits = Waits::new();
     for task in board {

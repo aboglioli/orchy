@@ -86,7 +86,6 @@ impl MergeTasks {
         let mut adding: Vec<(Id, Id)> = Vec::new();
         let mut removing: Vec<(Id, Id)> = Vec::new();
 
-        // waiting on a duplicate is waiting on itself once they are one task
         for other in &others {
             if keep.depends_on().contains(other.id()) {
                 keep.remove_dependency(other.id(), &*self.clock);
@@ -94,7 +93,6 @@ impl MergeTasks {
             }
         }
 
-        // beneath a duplicate, the kept task takes its place under the first ancestor that stays
         let mut above = keep.parent().cloned();
         while let Some(parent) = above.clone().filter(|p| other_ids.contains(p)) {
             above = others

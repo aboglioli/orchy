@@ -52,8 +52,6 @@ impl Doctor {
         }
     }
 
-    /// Each repair is its own unit of work: one that cannot be made, because a file moved
-    /// meanwhile or a path is taken, stays in the report without undoing the others.
     pub async fn execute(&self, cmd: DoctorCommand) -> ApplicationResult<DoctorDto> {
         let found = self.examine().await?;
         if !cmd.fix {
@@ -100,8 +98,6 @@ impl Doctor {
         }
     }
 
-    /// A status that names a successor must have one: a superseded document or task is
-    /// pointed at by what replaced it, and a promoted candidate by the skill it became.
     async fn missing_successors(
         &self,
         tasks: &[Task],
@@ -292,7 +288,6 @@ fn cycles(tasks: &[Task]) -> Vec<Problem> {
     problems
 }
 
-/// Loops through dependencies and replacements, which a parent loop alone does not explain.
 fn wait_loops(tasks: &[Task], supersedes: &[Edge], parent_loops: &[Problem]) -> Vec<Problem> {
     let in_parent_loop: HashSet<&Id> = parent_loops.iter().filter_map(|p| p.id.as_ref()).collect();
     let parent_of: HashMap<&Id, &Id> = tasks
@@ -324,7 +319,6 @@ fn wait_loops(tasks: &[Task], supersedes: &[Edge], parent_loops: &[Problem]) -> 
     problems
 }
 
-/// A finished task has no open subtasks: whatever finished it should have waited for them.
 fn open_under_finished(tasks: &[Task]) -> Vec<Problem> {
     let status_of: HashMap<&Id, TaskStatus> = tasks.iter().map(|t| (t.id(), t.status())).collect();
     tasks

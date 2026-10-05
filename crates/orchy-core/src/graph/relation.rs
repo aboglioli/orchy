@@ -107,8 +107,6 @@ impl Relation {
         }
     }
 
-    /// Links are stored on their source, and an actor's roster file holds none: actors are
-    /// only ever pointed at.
     pub fn accepts(&self, from: EntityKind, to: EntityKind) -> bool {
         use EntityKind::*;
         if from == Actor {
@@ -161,10 +159,6 @@ impl Relation {
         }
     }
 
-    /// Who changes a frontmatter field that holds links, worded to follow the field's name: a
-    /// field named after a relation is that relation's stored side, and one named after an
-    /// inverse is orchy's rendering of links stored on the other end. Writing either by hand
-    /// would skip every check a link gets.
     pub fn owner_of_field(field: &str) -> Option<String> {
         if let Some(relation) = Self::ALL.into_iter().find(|r| r.as_str() == field) {
             let command = relation.managed_by().unwrap_or("orchy link / orchy unlink");

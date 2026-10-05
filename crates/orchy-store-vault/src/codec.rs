@@ -131,8 +131,6 @@ fn list(values: impl IntoIterator<Item = String>) -> Value {
     Value::Array(values.into_iter().map(Value::String).collect())
 }
 
-/// Refuses a task whose texts would not come back as they went in: the body is cut into
-/// description, acceptance and outcome at their headings, so none of them may hold one.
 pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> Result<MarkdownFile> {
     let mut frontmatter = Frontmatter::new();
     frontmatter.set("id", json!(task.id().to_string()));
@@ -369,8 +367,6 @@ pub fn document_from_markdown(file: &MarkdownFile) -> Result<Document> {
     }))
 }
 
-/// `carried` is the file as it was: links stored on a message, and anything else a human
-/// added, are not the message's to drop.
 pub fn message_to_markdown(message: &Message, carried: Frontmatter) -> MarkdownFile {
     let mut frontmatter = Frontmatter::new();
     frontmatter.set("id", json!(message.id().to_string()));

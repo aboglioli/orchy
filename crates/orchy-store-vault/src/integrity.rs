@@ -77,7 +77,6 @@ impl VaultIntegrity {
         }
     }
 
-    /// What each file should show of the links stored elsewhere that point at it.
     fn projections(&self, scan: &Scan) -> BTreeMap<(Id, &'static str), BTreeSet<String>> {
         let mut expected: BTreeMap<(Id, &'static str), BTreeSet<String>> = BTreeMap::new();
         for (id, located, file) in &scan.entries {
@@ -157,8 +156,6 @@ impl VaultIntegrity {
         Ok(true)
     }
 
-    /// Every link stored on a file must parse, be one its relation allows, and point at
-    /// something that exists and is of the kind it says.
     fn links(
         &self,
         source: (&str, &Id, EntityKind),

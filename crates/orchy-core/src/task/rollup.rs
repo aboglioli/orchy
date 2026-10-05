@@ -29,8 +29,6 @@ pub fn ensure_claimable(children: &[TaskStatus]) -> Result<()> {
     Ok(())
 }
 
-/// A task with open subtasks is finished by them: finishing it by hand would leave work open
-/// beneath a goal that says it is over.
 pub fn ensure_can_finish(children: &[TaskStatus]) -> Result<()> {
     let open = children.iter().filter(|s| !s.is_terminal()).count();
     if open > 0 {

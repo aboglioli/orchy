@@ -35,7 +35,6 @@ impl VaultTaskStore {
             .map(drop)
     }
 
-    /// The child names its parent and the parent lists the child; both land together.
     async fn save_now(&self, task: &mut Task) -> Result<()> {
         let events = task.drain_events();
         let (carried, previous_parent) = match self.vault.peek_by_id(task.id()).await? {
@@ -102,8 +101,6 @@ impl TaskStore for VaultTaskStore {
             .collect())
     }
 
-    /// What a parent's status is derived from, so the children found are guarded: a sibling
-    /// finishing at the same moment makes one of the two derivations run again.
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>> {
         let mut children = Vec::new();
         for (_, located, file) in self.vault.scan().await?.entries {

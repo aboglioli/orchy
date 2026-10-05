@@ -289,8 +289,6 @@ impl Document {
         });
     }
 
-    /// A change of kind within canon, or within proposals: the statuses of the two never
-    /// overlap, so crossing between them would erase a final status like `superseded`.
     pub fn retype(&mut self, kind: Kind, clock: &dyn Clock) -> Result<()> {
         if kind == self.kind {
             return Ok(());
@@ -378,9 +376,6 @@ impl Document {
         self.set_status(DocumentStatus::Rejected, clock)
     }
 
-    /// What replaces a document must be canon that is still in force: replacing it with
-    /// something already replaced, archived or turned down would leave nothing current, and
-    /// could close a loop of documents each replaced by the next.
     pub fn supersede(&mut self, by: &Document, clock: &dyn Clock) -> Result<()> {
         if by.id == self.id {
             return Err(DomainError::validation(

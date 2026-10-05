@@ -179,8 +179,6 @@ fn key_order(yaml: &str) -> Vec<String> {
         .collect()
 }
 
-/// A key as YAML reads it back: plain when it is plain, double-quoted otherwise, so a key a
-/// human wrote with a colon or a leading `#` is never taken for something else.
 fn yaml_key(key: &str) -> String {
     let plain = key
         .chars()

@@ -15,7 +15,6 @@ tokio::task_local! {
     static STAGING: Mutex<Staging>;
 }
 
-/// What a unit of work wrote so far. Nothing in it has reached the inner store.
 #[derive(Debug, Clone, Default)]
 struct Staging {
     changes: BTreeMap<String, Staged>,
@@ -24,7 +23,6 @@ struct Staging {
 
 #[derive(Debug, Clone)]
 struct Staged {
-    /// What the key held before this unit of work first touched it.
     expected: Expect,
     content: Content,
 }
@@ -54,8 +52,6 @@ fn is_active() -> bool {
     STAGING.try_with(|_| ()).is_ok()
 }
 
-/// Runs `work` so that every write it makes through the vault lands together, or none does.
-/// Nested runs keep a savepoint: a failed inner run undoes only its own writes.
 pub(crate) async fn atomically(
     vault: &Vault,
     log: Option<&dyn EventLog>,
@@ -103,8 +99,6 @@ pub(crate) async fn atomically(
     log.append(&events).await
 }
 
-/// Inside a unit of work, writes are kept here and reads see them; outside one, every call
-/// goes straight to the inner store.
 pub struct StagedBlobStore {
     inner: Arc<dyn BlobStore>,
 }
@@ -126,7 +120,6 @@ impl StagedBlobStore {
         staged(|staging| staging.changes.insert(key.to_owned(), staged_as));
     }
 
-    /// What the key holds as this unit of work sees it.
     async fn view(&self, key: &str) -> Result<Option<Vec<u8>>> {
         match self.entry(key) {
             Some(Staged {
@@ -142,7 +135,6 @@ impl StagedBlobStore {
         }
     }
 
-    /// The unit of work holds only while the key still digests to `seen`, what it was read as.
     pub(crate) fn guard(&self, key: &str, seen: u64) {
         staged(|staging| {
             staging.changes.entry(key.to_owned()).or_insert(Staged {
@@ -152,8 +144,6 @@ impl StagedBlobStore {
         });
     }
 
-    /// Edits the key where it stands when the unit of work lands, so the edit never conflicts
-    /// with another writer's.
     pub async fn amend(&self, key: &str, patch: Patch) -> Result<()> {
         if !is_active() {
             return self
@@ -272,8 +262,6 @@ impl BlobStore for StagedBlobStore {
             ..
         }) = self.entry(key)
         {
-            // a pending patch commutes with this write: the writer may have read before it or
-            // after it, and the patch is applied again on top of what it wrote
             let base = self.inner.get(key).await?;
             let viewed = patch(base.as_deref())?;
             let base = base.as_deref().map(digest);
@@ -338,8 +326,6 @@ impl BlobStore for StagedBlobStore {
             .collect())
     }
 
-    /// A staged key has no fingerprint, so the vault rereads it instead of trusting a cache
-    /// entry made from what is on disk.
     async fn list_fingerprinted(&self, prefix: &str) -> Result<Vec<(String, Option<u64>)>> {
         let listed = self.inner.list_fingerprinted(prefix).await?;
         Ok(self.overlay(prefix, listed))
@@ -354,8 +340,6 @@ impl BlobStore for StagedBlobStore {
     }
 }
 
-/// An event whose topic, key and payload were taken when it was recorded, so it can wait for
-/// the writes it describes to land.
 #[derive(Debug, Clone)]
 struct FrozenEvent {
     topic: Topic,
@@ -393,8 +377,6 @@ impl DomainEvent for FrozenEvent {
     }
 }
 
-/// Inside a unit of work, events wait for its writes to land; a unit of work that fails
-/// records nothing.
 pub struct StagedEventLog {
     inner: Arc<dyn EventLog>,
 }
@@ -430,7 +412,6 @@ pub struct VaultUnitOfWork {
 }
 
 impl VaultUnitOfWork {
-    /// `log` is the log events finally go to, not the staged one in front of it.
     pub fn new(vault: Arc<Vault>, log: Arc<dyn EventLog>) -> Self {
         Self { vault, log }
     }
