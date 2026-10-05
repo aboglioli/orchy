@@ -53,29 +53,34 @@ crates/
 │       ├── namespace.rs       Namespace (/, /backend, /backend/auth)
 │       ├── entity_ref.rs      EntityKind, EntityRef (`kind:id`) — how contexts refer to each other
 │       ├── clock.rs           Clock port
+│       ├── unit_of_work.rs    UnitOfWork port: a use case's writes land together or not at all
 │       ├── event.rs           DomainEvent, EventCollector, EventLog port, RecordedEvent, EventQuery
 │       ├── error.rs           DomainError, ErrorCode, exit codes
 │       ├── integrity.rs       Integrity port, Problem, ProblemKind
 │       ├── pagination.rs      Page, PageRequest
+│       ├── content_hash.rs    the hash `--if-match` compares
 │       ├── body.rs            Body, Section (split on markdown headings)
 │       ├── title.rs · tag.rs · priority.rs
-│       ├── search/            Search port, SearchQuery, Passage, Hit, BM25 `score`, `rank`, `tokenise`
-│       ├── document/          Document, Frontmatter, Kind, DocumentStatus, DocumentStore
+│       ├── search/            Search port, SearchQuery, Passage, Hit, BM25 `score`, `rank`; terms.rs `tokenise`
+│       ├── document/          Document, Frontmatter, `validate_field_name`, Kind, DocumentStatus, DocumentStore
 │       ├── skill/             Skill, SkillName, Summary, SkillStatus, SkillStore, `in_scope`
-│       ├── task/              Task, TaskStatus, TaskStore, rollup
+│       ├── task/              Task, TaskStatus, TaskStore; rollup, dependencies, ranking, waits
 │       ├── message/           Message, Recipient, MessageStore, ReadWatermarks
 │       ├── graph/             Edge, Relation, EdgeStore, traversal
 │       └── actor/             Actor, ActorId, ActorAlias, MachineId, Role, ActorStore, Lease, LeaseStore
 │
 ├── orchy-application/   use cases, one file each: Command in, DTO out. No rules.
 │                        `brief.rs` assembles the briefing `announce` returns;
-│                        `assess_dependencies.rs` and `rank_claimable.rs` are shared
-│                        steps several use cases call, like `rollup_ancestors.rs`.
+│                        `assess_dependencies.rs`, `rank_claimable.rs` and `task_graph.rs`
+│                        are shared steps several use cases call, like `rollup_ancestors.rs`;
+│                        `unit_of_work.rs` runs each writing use case as one unit.
 │
 ├── orchy-store-memory/  every port in RAM — tests
 ├── orchy-store-vault/   every port over the filesystem
 │   └── src/
-│       ├── blob.rs            BlobStore seam, FsBlobStore: atomic writes, compare-and-swap
+│       ├── blob.rs            BlobStore seam, FsBlobStore: atomic writes, compare-and-swap,
+│       │                      multi-file commits with a recovery journal
+│       ├── transaction.rs     StagedBlobStore, StagedEventLog, VaultUnitOfWork
 │       ├── vault.rs           id → file index, built by scanning frontmatter
 │       ├── layout.rs          where each entity kind is placed
 │       ├── markdown.rs · codec.rs   frontmatter + body parsing and rendering
@@ -95,10 +100,13 @@ crates/
         ├── container.rs       the only place that names a concrete store
         ├── init.rs            `orchy init` scaffold
         ├── integrate.rs       `orchy integrate`: agent hooks and instruction blocks, embedded
+        ├── import.rs          `orchy import`: a file, stdin or a URL into a CreateDocumentCommand
         ├── resolve.rs         id prefix / suffix / title fragment → full id
         ├── output.rs          text vs --json rendering
+        ├── since.rs           `--since 2h` or a timestamp
+        ├── reference.rs       generates docs/cli.md; its test fails while the file is stale
         ├── stdin.rs · error.rs
-        └── cmd/               doc.rs, skill.rs, task.rs, msg.rs, lock.rs, brief.rs (announce, guide)
+        └── cmd/               doc.rs, skill.rs, task.rs, msg.rs, lock.rs, doctor.rs, brief.rs (announce, guide)
 ```
 
 ### Layer rules
@@ -108,7 +116,7 @@ crates/
 | `orchy-core` | stdlib, `chrono`, `serde`, `serde_json`, `thiserror`, `ulid`, `sha2`, `hex`, `async-trait`, `rust-stemmers`, `eventuary` (value types `Topic` and `Payload` only) | any store, any I/O, `tokio`, `orchy-application` |
 | `orchy-application` | `orchy-core`, `serde`, `serde_json`, `chrono`, `thiserror` | any `orchy-store-*`, the CLI |
 | `orchy-store-*` | `orchy-core`, their own infrastructure deps | `orchy-application` (outside tests), the CLI, each other (outside tests) |
-| `orchy-cli` | everything, but concrete stores **only in `container.rs`** | domain aggregates in command handlers |
+| `orchy-cli` | everything, but concrete stores and port implementations **only in `container.rs`** (`config.rs` and `import.rs` use the vault crate's format helpers: the default partition count, ULID generation, markdown parsing) | domain aggregates in command handlers |
 
 The sanctioned exception: tests may use real in-memory ports. `orchy-application` tests
 import `orchy-store-memory`, and `orchy-store-vault` tests import `orchy-application` and
@@ -139,11 +147,41 @@ import `orchy-store-memory`, and `orchy-store-vault` tests import `orchy-applica
 (`Id`, `Namespace`, `ActorAlias`, `Role`, `Tag`, `Title`, `ResourceKey`, …) are validated
 in `new` and implement `FromStr` / `TryFrom<String>`. Never construct one by casting.
 
+### Unit of work
+
+The vault holds no broken state between commands, and none a failed command leaves behind:
+every use case that writes runs as one unit of work (`UnitOfWork` port,
+`unit_of_work::atomically`), so all of its writes land together or none do.
+
+- **Staging.** Inside a unit, `StagedBlobStore` keeps writes in memory and serves reads from
+  them (read your own writes); `StagedEventLog` holds events. Nested units keep a savepoint:
+  a failed inner unit undoes only its own writes. Stores also wrap their own multi-file saves
+  (a child and its parent's `subtasks`, a link and its inverse), so they are atomic even
+  outside a use case.
+- **Commit.** `BlobStore::commit` takes every key's write guard in key order, checks every
+  precondition, then writes all the files through a journal in `.orchy/journal/`. A crash after
+  the journal lands is finished by the next `Vault::open` (`BlobStore::recover`), which rolls a
+  step forward only while the key still holds what it held before the commit. Events are
+  appended only after the files land.
+- **Three kinds of change.** A `Put` must land on what the unit read (a save's
+  compare-and-swap); a `Patch` (link lists: `Vault::amend_refs`) is reapplied to whatever the
+  file holds when the commit lands, so two agents linking to one hub both land; a `Keep` writes
+  nothing.
+- **Read guards.** Every entity a unit loads by id (`Vault::read_by_id`), and every child
+  `TaskStore::children_of` finds, is guarded with a `Keep`: if another agent changed it before
+  the unit lands, the commit fails with `Contended` and `atomically` reruns the use case from
+  scratch (up to 16 times). That is what keeps derived decisions true under concurrency: two
+  siblings finishing at once roll their parent up exactly once, two agents nesting tasks under
+  each other at once leave exactly one nesting, and two identical splits leave one subtask per
+  title. A change to something the unit *wrote* stays a `Conflict` (exit 5), as before.
+- **Leases are not staged.** A claim's lease is taken immediately, before the unit, and given
+  back if the unit fails; finishing a task gives it back only after the unit lands.
+
 ### Events
 
 Every aggregate mutation collects a semantic event into the aggregate's `EventCollector`.
 `save(&mut entity)` writes the file, drains the collector and appends the events through the
-`EventLog` port:
+`EventLog` port; inside a unit of work the append waits for the commit:
 
 ```
 aggregate mutation → collector.collect() → store.save(&mut e) → drain() → EventLog::append()
@@ -159,8 +197,7 @@ partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
   that changes nothing (retagging with the same tags) records nothing.
 - **Not every change has an aggregate.** The edge stores append `edge.added` and
   `edge.removed` themselves, so automatic links are covered too; `ManageLease` appends
-  `lock.acquired`, `lock.renewed` and `lock.released`; `SplitTask` appends `task.deleted`
-  for a duplicate subtask it withdraws.
+  `lock.acquired`, `lock.renewed` and `lock.released`.
 - **Keys are ULIDs.** An actor's id (`alias@machine`) and a lock's resource are not, so
   `actor.*` and `lock.*` events are keyed by the machine id, with the actor in the payload
   and in the event's own `actor`. Filter them by `--topic` or `--by`.
@@ -173,26 +210,28 @@ exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry depe
 
 ```
 orchy-core        DomainError { Validation, InvalidTransition, NotFound, Conflict,
-                                Forbidden, UnknownType, UnknownRelation, Ambiguous,
-                                Unavailable }
+                                Contended, Forbidden, UnknownType, UnknownRelation,
+                                Ambiguous, Unavailable }
                   ErrorCode   → exit code; orchy_core::Result<T> = Result<T, DomainError>
 orchy-application ApplicationError { Domain(#[from] DomainError) }
                   ApplicationResult<T>
-orchy-cli         CliError { Application, Config, Io, NotAVault }
+orchy-cli         CliError { Application, Config, Io, NotAVault, WrongEntity, ProblemsRemain }
 ```
 
 Exit codes are part of the CLI contract, because agents branch on them:
 
 | code | cause |
 |---|---|
-| 4 | `NotFound`, `NotAVault` |
-| 5 | `Conflict`, `InvalidTransition`, `Forbidden` |
-| 6 | `Validation`, `UnknownType`, `UnknownRelation`, `Config` |
+| 4 | `NotFound`, `NotAVault`, `WrongEntity` |
+| 5 | `Conflict`, `Contended`, `InvalidTransition`, `Forbidden` |
+| 6 | `Validation`, `UnknownType`, `UnknownRelation`, `Config`, `ProblemsRemain` |
 | 7 | `Ambiguous` |
 | 8 | `Unavailable`, `Io` |
 
 Constructors: `DomainError::validation(..)`, `invalid_transition(from, to)`,
-`not_found(resource, id)`, `conflict(..)`, `forbidden(..)`, `unavailable(..)`.
+`not_found(resource, id)`, `conflict(..)`, `contended(..)`, `forbidden(..)`, `unavailable(..)`.
+`Contended` means only something the command read changed before it landed; use cases rerun
+on it, so it reaches an agent only after 16 runs in a row lost the race.
 
 Stores map every I/O failure (filesystem, event log, locks, background tasks) to
 `Unavailable`: the input was fine, the machine could not serve it. Content they cannot parse
@@ -201,7 +240,8 @@ Stores map every I/O failure (filesystem, event log, locks, background tasks) to
 ### Use cases
 
 One file per use case in `orchy-application/src/`, each with a `*Command` struct and an
-`execute` method. Dependencies come in through the constructor as `Arc<dyn Port>`, never as
+`execute` method; a use case that writes runs its body through `atomically`, which may run it
+more than once, so the body must not do anything outside the stores before it succeeds. Dependencies come in through the constructor as `Arc<dyn Port>`, never as
 `execute` arguments. Commands carry `String` fields; value objects are parsed inside
 `execute`. Responses are DTOs from `dto.rs` (`TaskDto`, `DocumentDto`, …), never aggregates.
 `Application::new(ApplicationDeps)` wires every use case.
@@ -209,7 +249,15 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 ### Vault storage
 
 - **Index by id.** `Vault::open` scans every markdown file and maps frontmatter `id` →
-  file, so a moved or renamed file is still found; it is then reported as misplaced.
+  file, so a moved or renamed file is still found; it is then reported as misplaced. The scan
+  skips hidden entries and reads no ignore files: what orchy sees never depends on git (D2).
+- **Never written unreadable.** `Vault::write_if` refuses to write a file it could not read back
+  as the same entity (`ensure_reads_back`): a body holding a whole merge-conflict block outside
+  a code fence, a key YAML cannot carry. Keys that are not plain are quoted when rendered;
+  `set` and `skill set` accept only field names `validate_field_name` allows. The task codec
+  refuses a description, acceptance or outcome holding a line `## Acceptance` or `## Outcome`.
+- **Moves never overwrite.** A save that moves a file lands only on a free path
+  (`claim_free`); another entity's file there is a conflict, never an overwrite.
 - **Layout.** `docs/<namespace>/<id>.md`, `skills/<namespace>/<name>.md`,
   `tasks/open|done/<id>.md`, `messages/<thread>/<id>.md`, `agents/<alias>@<machine>.md`. The
   roots `docs`, `skills`, `tasks`, `messages`, `agents`, `events` and `.orchy` are fixed. A
@@ -217,15 +265,21 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   folder always equals the namespace: there is exactly one right place for each file, every
   save writes it there, and `doctor --fix` moves anything found elsewhere.
 - **Unreadable files never take the vault down.** `Vault::scan` records a `Problem` for a
-  file it cannot parse (bad UTF-8, unclosed fence, invalid YAML, merge-conflict markers, a
+  file it cannot parse (bad UTF-8, unclosed fence, invalid YAML, a merge-conflict block, a
   non-ULID or duplicate `id`) and skips it; store listings skip a file their codec rejects.
   `Integrity` reports them with their paths, and the briefing counts them. A direct read of
   such an entity fails with the file's path in the message (`codec::at`).
-- **`orchy doctor`.** The `Doctor` use case adds the domain checks to `Integrity::problems`:
-  parent cycles, stale rollups, and `supersedes` stored on the replaced document by older
-  versions. `--fix` repairs the kinds `ProblemKind::is_mechanical` names, each through the
-  part that owns it: `Integrity::repair` moves or renames files, `RollupAncestors` re-derives
-  a parent, the edge store turns a link around. It deliberately never deletes lease or
+- **`orchy doctor`.** `VaultIntegrity::problems` reports files: unreadable, misplaced,
+  misnamed; links that do not parse, that their relation does not allow, or that point at
+  something missing or of another kind (actors are checked against `agents/`); projected
+  fields that disagree with the links stored elsewhere (`stale_projection`). The `Doctor` use
+  case adds the domain checks: parent cycles, loops through dependencies and replacements
+  (`wait_loop`), open tasks beneath finished ones, stale rollups, superseded documents and
+  tasks nothing replaced and promoted candidates no skill derives from
+  (`missing_successor`), and `supersedes` stored on the replaced document by older versions.
+  `--fix` repairs the kinds `ProblemKind::is_mechanical` names, each in its own unit of work
+  through the part that owns it: `Integrity::repair` moves or renames files and rewrites
+  projected fields, `RollupAncestors` re-derives a parent, the edge store turns a link around. It deliberately never deletes lease or
   write-guard files: they are `flock` targets, and removing one while another process waits
   on it lets two processes both believe they hold it. An expired lease is harmless anyway,
   because readers check its expiry.
@@ -248,7 +302,7 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
 - **Atomic writes.** Temp file, fsync, rename.
 - **Preconditions.** A save with `Precondition::Unchanged` succeeds only if the file still
   digests to what this process last read (compare-and-swap under a per-file guard in
-  `.orchy/write-guards/`). Two agents that load and change one entity get a conflict, not a
+  `.orchy/write-guards/`, checked again when the unit of work commits). Two agents that load and change one entity get a conflict, not a
   lost update. Only a store's own load (`read_by_id`) records what was read; every other
   read (links, scans, integrity checks) uses `peek_by_id` or the scan, so looking at a file
   never moves the baseline a later save is checked against. Every command that changes a
@@ -256,7 +310,8 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   `--if-match <content_hash>`, checked by `ensure_unchanged` on the aggregate, so a change
   made between an agent's read and its write is refused (exit 5) rather than overwritten.
 - **Runtime state** lives in `.orchy/` and is never committed: `presence/`, `read/`
-  (watermarks), `locks/` (leases), `write-guards/`.
+  (watermarks), `locks/` (leases, read and written under the lease file's lock),
+  `write-guards/`, `journal/` (commits in flight).
 - **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's
   writes. `orchy skill set` writes such fields; `skill::managed_field` lists the ones it
   refuses.
@@ -272,8 +327,11 @@ One file per use case in `orchy-application/src/`, each with a `*Command` struct
   subtasks". A link stays stored once, on its source (D43); the edge store also amends the
   target's inverse field when a `supersedes`, `derived_from` or `produces` link is added or
   removed, and the task store keeps a parent's `subtasks` in step when a child's `parent`
-  changes. Both go through `Vault::amend_refs`, which retries on a write conflict. `orchy set`
-  refuses these fields.
+  changes. Both go through `Vault::amend_refs`, a patch that commutes with other writers.
+  `orchy set` and `orchy skill set` refuse these fields, every other inverse name, and every
+  field named after a relation (`Relation::owner_of_field`).
+- **Nothing is deleted.** The store ports have no delete (D14): knowledge is superseded or
+  archived, tasks end in a terminal status, messages stay.
 
 ### Sharing a vault
 
@@ -338,8 +396,16 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   is also refused while a dependency is unfinished (`Outcome::ensure_claimable`) or while it
   has open subtasks (`rollup::ensure_claimable`): it then finishes through them. `task next`
   and the briefing skip such tasks for the same reasons.
-- **Holder only.** Completing, failing, cancelling a claimed task and releasing it are
-  restricted to the holder.
+- **Holder only.** Completing, failing, cancelling a claimed task, retiring it (`replace`,
+  `merge`) and releasing it are restricted to the holder.
+- **Finished work has no open subtasks.** `Task::attach_to` refuses an open task beneath a
+  terminal one, `ensure_open` refuses splitting or merging into finished work, and
+  `rollup::ensure_can_finish` refuses `done`, `fail`, `cancel` and `replace` while subtasks are
+  open: the goal finishes through them.
+- **No task waits on itself.** `task::waits::Waits` is who waits on whom: a task on its
+  dependencies, a parent on its subtasks, a superseded task on its replacements.
+  `TaskGraph::ensure_no_loop` refuses any change that would close a loop in it (dependencies,
+  blocking, re-parenting, merging) and guards every task the decision rests on.
 - **Reclaiming.** A claimed task returns to `pending` only through `release`. The holder
   releases freely; anyone else needs `--force` with a reason, and `ReleaseTask` refuses it
   while the `task:<id>` lease is live, so a task is taken back only from an agent that stopped
@@ -358,14 +424,18 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
 - **Split vs replace.** `split` keeps the original as an umbrella that waits for its new
   children. `replace` supersedes the original; the new tasks inherit its parent and get
   `supersedes` edges to it.
+- **Merge.** The kept task must be open. Its dependencies on the duplicates are dropped (it
+  now is them); it takes their dependencies, tags and subtasks; beneath a duplicate, it moves
+  up to the first ancestor that stays.
 - **Dependencies.** `task::dependencies::outcome` gives each dependency an `Outcome`:
   `Satisfied` when completed, or superseded with every replacement satisfied; `Doomed` when
   failed or cancelled; `Pending` otherwise, including a missing or unreplaced dependency.
   `combine` folds them: any doomed dooms the task, all satisfied makes it ready.
   `AssessDependencies` loads the statuses and follows `supersedes` edges to replacements.
   `depends_on` is never cleared; it stays as history.
-- **Ranking.** `task::ranking::claimable` is the only ordering of claimable work: pending,
-  ready, then priority (`urgent > high > normal > low`), age and id. `RankClaimable` applies
+- **Ranking.** `task::ranking::claimable` is the only ordering of claimable work: pending and
+  ready tasks only, by priority (`urgent > high > normal > low`), then how much open work waits
+  on the task, then age and id. `RankClaimable` applies
   it to every matching task (`TaskStore::matching` never pages). `NextTask` walks down it on
   contention; the briefing's "next up" is its first entry for the actor's namespace;
   `task ready` (`ListReadyTasks`) lists all of it. `task list --blocked` (`ListWaitingTasks`)
@@ -384,7 +454,12 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   semantic transitions (`archive`, `unarchive`, `supersede`, `promote`), never `orchy set`,
   and follow `DocumentStatus::can_transition_to`: `draft|active → superseded|archived`,
   `archived → active|superseded`, `proposed → promoted|rejected`. Superseded, promoted and
-  rejected are final; setting the status a document already has is a no-op.
+  rejected are final; setting the status a document already has is a no-op. `retype` stays on
+  one side: canon to canon, candidate to candidate, so it never wipes a final status; a
+  candidate becomes canon only through `promote`.
+- **Successors.** `Document::supersede` takes the replacement and refuses one that is a
+  candidate or retired: a document is replaced only by canon still in force, so `supersedes`
+  can never loop.
 - **Sections.** A body is split into sections by ATX headings (`#` to `######` followed by a
   space); a heading inside a fenced code block is code, and `#tag` is not a heading. Text
   before the first heading is the `preamble`. `Body::section` and `replace_section` refuse a
@@ -448,6 +523,14 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   without deciding them does not compile.
 - **Managed relations.** `parent`, `depends_on`, `supersedes` and `spawned_by` have side
   effects and are refused by `orchy link`; `managed_by()` names the command that sets each.
+- **Every link is valid when written.** `Edge::new` refuses what a relation does not connect
+  and self-links; `link`, `task new`, `task dep`, `task block` and `task update` load every
+  end and refuse one that is missing or of another kind; `unlink` checks nothing (D58), except
+  that a promoted candidate's `derived_from` from its skill stays. `import` refuses a file whose
+  frontmatter holds links.
+- **Actors.** An `EntityRef` names content by id and an actor by `alias@machine`
+  (`actor:coder-1@<machine>`). Actors only receive links (`owned_by`, `reviewed_by`,
+  `related_to`); a link to one requires it on the roster.
 
 ### Messages
 
@@ -484,13 +567,14 @@ Agents branch on this behaviour, so treat it as API.
 - **Input.** Content comes from a flag or stdin, never a prompt (`stdin.rs`). Required
   content (`edit`, `msg send`) reads stdin when the flag is absent; optional content
   (`new --body`) reads it only when something is piped, and `-` asks for it explicitly.
-- **Output.** Every command supports `--json`. Colour is used only on a TTY, never with
+- **Output.** Every command supports `--json`; with it, an error is printed to stderr as
+  `{"error": {"kind", "exit", "message"}}`. Colour is used only on a TTY, never with
   `--no-color` or `NO_COLOR`.
 - **Errors.** Exit codes follow the table under Errors. clap's own usage errors exit 2.
 
 ## Known gaps
 
-Verified against the code on 2026-09-28. Fix them or remove them from this list; do not let
+Verified against the code on 2026-10-04. Fix them or remove them from this list; do not let
 it drift.
 
 - **No partial-word search.** `migr` finds nothing; there is no prefix or substring

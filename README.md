@@ -81,6 +81,7 @@ without a name act as `human`.
 ```bash
 orchy integrate claude-code --namespace /backend --role developer
 orchy integrate codex        # or opencode, gemini
+orchy integrate gemini --dir ~/src/web   # another repository than the current one
 ```
 
 For Claude Code this adds a session-start hook to `.claude/settings.json`, so every session
@@ -88,6 +89,10 @@ begins with the briefing already in context. For Codex and OpenCode it adds a sh
 `AGENTS.md`, and for Gemini to `GEMINI.md`, telling the agent to run `orchy announce` first.
 Running it again updates what it wrote instead of adding a second copy; `--print` shows the
 change without writing it.
+
+```bash
+orchy announce [--roles r]... [--namespace /backend] [--name "Backend coder"]
+```
 
 `orchy announce` puts the agent on the roster and answers with a briefing:
 
@@ -201,7 +206,14 @@ folder, so histories from different machines never collide. `orchy agents --live
 only cover agents on the same machine.
 
 If two agents change the same task or document at the same moment, the second one gets an
-error (exit 5) instead of overwriting the first. It re-reads and tries again.
+error (exit 5) instead of overwriting the first. It re-reads and tries again. When only
+something a command *looked at* changed meanwhile (a sibling subtask finishing, a task it
+checked for loops), orchy runs the command again by itself, so its decision always rests on
+what is there when it lands.
+
+Every command lands whole or not at all: one that is refused, loses a race or is interrupted
+leaves no file half-changed and no link pointing at nothing. A command cut short by a crash
+is finished the next time orchy opens the vault.
 
 ## The vault
 
@@ -338,10 +350,16 @@ For rules every agent must follow, use [`orchy skill`](#skills), not a document.
 - **Where it came from.** `new --task <task>` links the document to the task whose work
   produced it, so `orchy graph task:<id>` shows what a piece of work left behind.
 - **Your own fields.** `set` adds any header field you like (`reviewer=alan`,
-  `ticket=ORG-42`). Fields orchy manages have their own commands, and `set` names the right
-  one when refused: `retitle`, `retype`, `tag`, `ns move`, and `archive`, `unarchive`,
-  `supersede` or `promote` for the status. Moving a document to another namespace moves its
+  `ticket=ORG-42`): a name starts with a letter, then letters, digits, `_` or `-`. Fields
+  orchy manages have their own commands, and `set` names the right one when refused:
+  `retitle`, `retype`, `tag`, `ns move`, and `archive`, `unarchive`, `supersede` or `promote`
+  for the status. Links are never set as fields: `set related_to=…` is refused in favour of
+  `orchy link`, so every link gets checked. Moving a document to another namespace moves its
   file too.
+- **What replaces what.** A document is superseded, or consolidated, only by canon still in
+  force: not by a candidate, nor by something already superseded, archived or rejected.
+  `retype` changes a document between canon types, or between proposals, never across: a
+  candidate becomes canon with `promote`.
 
 ### Searching
 
@@ -377,7 +395,7 @@ orchy skill write <name> --summary "…" [--body "…" | --body -] [--namespace 
 orchy skill show <name> [--namespace /x]
 orchy skill list [--namespace /x] [--tag t]... [--everywhere] [--retired]
 orchy skill find <query> [--namespace /x] [--tag t]... [--retired] [--limit n]
-orchy skill set <name> [field=value]... [--remove field]... [--tag t]... [--untag t]...
+orchy skill set <name> [field=value]... [--remove field]... [--tag t]... [--untag t]... [--namespace /x]
 orchy skill retire <name>
 orchy skill restore <name>
 ```
@@ -417,7 +435,7 @@ orchy task ready [--role r] [--namespace /x]
 orchy task next [--role r] [--namespace /x] [--peek]
 orchy task claim <task> [--ttl secs] [--start]
 orchy task start <task>
-orchy task release <task> [--force --reason …]
+orchy task release <task> [--reason …] [--force]   # --force needs --reason
 orchy task done <task> [--note …]
 orchy task fail <task> <reason>
 orchy task cancel <task> <reason>
@@ -449,6 +467,12 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
   `--ttl` or keep the claim alive with `orchy lock renew task:<id> --ttl 3600`.
 - **Outcomes.** The `--note` of `task done` and the reason given to `task fail` or
   `task cancel` are kept in the task file, under `## Outcome`, for the next agent to read.
+- **Goals finish through their subtasks.** `task done`, `task fail`, `task cancel` and
+  `task replace` refuse a task that still has open subtasks; finish or cancel those, and the
+  goal follows. Nothing is split from, filed beneath or merged into a finished task.
+- **No loops.** A change that would make work wait on itself is refused (exit 6): a task
+  depending on something that already waits on it, a subtask depending on its own goal, a
+  task moved beneath its own subtask.
 - **`split`** breaks a task into subtasks and keeps the original as the goal. The goal
   finishes by itself when its subtasks do:
   - `failed` if any subtask failed;
@@ -457,7 +481,8 @@ orchy task update <task> [--title …] [--description …] [--acceptance …] [-
 - **`replace`** retires a task in favour of new, independent ones.
 - **`merge`** folds duplicates into the task you keep: the others become `superseded`, and
   their subtasks, tags and dependencies move over. Work that depended on a duplicate now
-  waits on the kept task.
+  waits on the kept task, and the kept task stops waiting on the duplicates. The kept task
+  must still be open, and a task another agent holds is merged or replaced only by them.
 - **Dependencies** (`--depends-on`, `task dep --add`, `task block --on`) hold a task back
   until every one of them is completed. A dependency that was replaced (`task replace`)
   counts as done once all its replacements are. If a dependency fails or is cancelled, the
@@ -516,8 +541,11 @@ writes them, shows up as `mentions` in `read` and `graph`, so orchy and Obsidian
 view agree. Mentions are read from the text each time; they are not links you can
 `unlink`, and wikilinks by title are left alone.
 
-Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill`,
-`message` or `actor`, and both ends must exist; `unlink` works even when one is gone. Relations with side effects are set by their own commands instead:
+Links take `kind:id` with the full id, where `kind` is `task`, `document`, `skill` or
+`message`; an agent is `actor:<name>@<machine>`, and must have announced. Agents receive
+links (`owned_by`, `reviewed_by`, `related_to`) but hold none. Both ends must exist; `unlink`
+works even when one is gone, except that the link from a skill to the candidate it was
+promoted from stays. Relations with side effects are set by their own commands instead:
 
 | relation | set with |
 |---|---|
@@ -569,10 +597,17 @@ orchy doctor --fix    # repair what needs no decision, then report what is left
 | problem | `--fix` |
 |---|---|
 | a file that cannot be read: broken YAML, merge conflict markers, an unknown type, a missing or invalid field, an id used twice | no: the report says where and why |
-| a file in the wrong folder, or not named after its id | moves or renames it |
+| a file in the wrong folder, or not named after its id | moves or renames it, unless another file is already there |
 | a goal whose subtasks are all finished but which is still open | finishes it |
+| a `superseded_by`, `derives`, `produced_by` or `subtasks` field that disagrees with the links it mirrors | rewrites it from the links |
 | a `supersedes` link recorded the wrong way round by an older version | turns it around |
-| a link to something that does not exist, or a task that is its own ancestor | no |
+| a link to something that does not exist or is of another kind, or that its relation does not allow | no |
+| a task that is its own ancestor, or work that waits on itself through dependencies | no |
+| an open task beneath a finished one | no |
+| something superseded that nothing replaces, or a promoted candidate no skill came from | no |
+
+orchy's own commands never leave any of these behind; they come from hand edits, git merges
+and older versions.
 
 ## Bringing notes in, taking them out
 
@@ -583,16 +618,23 @@ pbpaste | orchy import - --kind note --title "Standup"
 orchy export [--namespace /web] > web.jsonl
 ```
 
+```bash
+orchy import <file | url | -> --kind <type> [--title …] [--namespace /x] [--tag t]...
+```
+
 `import` creates one document. A frontmatter block in the input supplies its title and tags,
 and its other fields are kept on the document; fields orchy manages itself (`id`, `status`,
-`created`, …) are ignored. Without a title, orchy uses the first `# ` heading, then the file
+`created`, …) are ignored. A file whose frontmatter holds links (`supersedes`, `related_to`,
+…) is refused, since nothing says what they point at exists here: remove them, import, then
+`orchy link`. A URL that cannot be fetched exits 8. Without a title, orchy uses the first `# ` heading, then the file
 name. `export` prints every document, skill, task and message, one JSON object per line
 with an `entity` field saying which.
 
 ## Scripting
 
-Every command accepts `--json`. Colour is used only on a terminal, and never when
-`NO_COLOR` is set. Exit codes:
+Every command accepts `--json`; with it, an error is printed to standard error as
+`{"error": {"kind": "not_found", "exit": 4, "message": "…"}}`. Colour is used only on a
+terminal, and never with `--no-color` or when `NO_COLOR` is set. Exit codes:
 
 | code | meaning |
 |---|---|
