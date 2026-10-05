@@ -80,7 +80,7 @@ impl ConsolidateDocuments {
         let mut superseded = Vec::new();
         for source_id in &source_ids {
             let mut source = self.documents.require(source_id).await?;
-            source.supersede(into_id.clone(), &*self.clock)?;
+            source.supersede(&into, &*self.clock)?;
             self.documents.save(&mut source).await?;
             into.retag(source.tags().to_vec(), &[], &*self.clock);
             superseded.push(DocumentDto::from(&source));

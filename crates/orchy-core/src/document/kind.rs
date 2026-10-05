@@ -137,6 +137,10 @@ impl DocumentStatus {
     /// Kept (D14) but left out of recall unless asked for.
     pub const RETIRED: [Self; 3] = [Self::Superseded, Self::Archived, Self::Rejected];
 
+    pub fn is_retired(self) -> bool {
+        Self::RETIRED.contains(&self)
+    }
+
     pub const ALL: [Self; 7] = [
         Self::Draft,
         Self::Active,

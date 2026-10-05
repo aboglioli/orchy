@@ -289,11 +289,18 @@ impl Document {
         });
     }
 
+    /// A change of kind within canon, or within proposals: the statuses of the two never
+    /// overlap, so crossing between them would erase a final status like `superseded`.
     pub fn retype(&mut self, kind: Kind, clock: &dyn Clock) -> Result<()> {
-        if let Some(status) = self.status
-            && !kind.allows(status)
-        {
-            self.status = None;
+        if kind == self.kind {
+            return Ok(());
+        }
+        if kind.is_candidate() != self.kind.is_candidate() {
+            return Err(DomainError::conflict(if self.is_candidate() {
+                "a candidate becomes canon through `orchy promote`, or is turned down with `orchy reject`"
+            } else {
+                "canon does not become a proposal again; write a new candidate instead"
+            }));
         }
         let from = std::mem::replace(&mut self.kind, kind);
         self.rehash(clock);
@@ -371,12 +378,24 @@ impl Document {
         self.set_status(DocumentStatus::Rejected, clock)
     }
 
-    pub fn supersede(&mut self, by: Id, clock: &dyn Clock) -> Result<()> {
-        if by == self.id {
+    /// What replaces a document must be canon that is still in force: replacing it with
+    /// something already replaced, archived or turned down would leave nothing current, and
+    /// could close a loop of documents each replaced by the next.
+    pub fn supersede(&mut self, by: &Document, clock: &dyn Clock) -> Result<()> {
+        if by.id == self.id {
             return Err(DomainError::validation(
                 "a document cannot supersede itself",
             ));
         }
+        if by.is_candidate() || by.status.is_some_and(DocumentStatus::is_retired) {
+            return Err(DomainError::conflict(format!(
+                "`{}` is {}; only canon still in force can replace a document",
+                by.id,
+                by.status
+                    .map_or_else(|| by.kind.to_string(), |s| s.to_string())
+            )));
+        }
+        let by = by.id.clone();
         self.kind.validate_status(DocumentStatus::Superseded)?;
         self.ensure_can_become(DocumentStatus::Superseded)?;
         self.status = Some(DocumentStatus::Superseded);
@@ -534,8 +553,15 @@ mod tests {
         )
     }
 
-    fn replacement() -> Id {
-        Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()
+    fn replacement() -> Document {
+        Document::create(
+            Kind::Decision,
+            Title::new("Rotate signing keys, again").unwrap(),
+            Namespace::new("/backend").unwrap(),
+            Body::new("Move to EdDSA."),
+            &SeqIds(std::sync::atomic::AtomicU64::new(99)),
+            &clock(),
+        )
     }
 
     fn candidate() -> Document {
@@ -587,8 +613,7 @@ mod tests {
                 d.mark_promoted(&clock()).unwrap()
             }),
             ("supersede", document, |d| {
-                d.supersede(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
-                    .unwrap()
+                d.supersede(&replacement(), &clock()).unwrap()
             }),
             ("retag", document, |d| {
                 d.retag(vec![Tag::new("x").unwrap()], &[], &clock())
@@ -705,13 +730,13 @@ mod tests {
     #[test]
     fn what_replaced_a_document_cannot_be_undone_by_archiving_it() {
         let mut document = document();
-        document.supersede(replacement(), &clock()).unwrap();
+        document.supersede(&replacement(), &clock()).unwrap();
         let archived = document.set_status(DocumentStatus::Archived, &clock());
         assert!(
             matches!(archived, Err(DomainError::InvalidTransition { .. })),
             "{archived:?}"
         );
-        let again = document.supersede(replacement(), &clock());
+        let again = document.supersede(&replacement(), &clock());
         assert!(
             matches!(again, Err(DomainError::InvalidTransition { .. })),
             "{again:?}"
@@ -750,8 +775,7 @@ mod tests {
     fn superseding_sets_the_status_and_emits_the_link_in_one_step() {
         let mut document = document();
         document.drain_events();
-        let by = Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap();
-        document.supersede(by, &clock()).unwrap();
+        document.supersede(&replacement(), &clock()).unwrap();
 
         assert_eq!(document.status().unwrap().as_str(), "superseded");
         let events = document.drain_events();
@@ -761,8 +785,37 @@ mod tests {
     #[test]
     fn a_document_cannot_supersede_itself() {
         let mut document = document();
-        let own = document.id().clone();
-        assert!(document.supersede(own, &clock()).is_err());
+        let same = document.clone();
+        assert!(document.supersede(&same, &clock()).is_err());
+    }
+
+    #[test]
+    fn only_canon_still_in_force_can_replace_a_document() {
+        let mut retired = replacement();
+        retired
+            .set_status(DocumentStatus::Archived, &clock())
+            .unwrap();
+        assert!(matches!(
+            document().supersede(&retired, &clock()),
+            Err(DomainError::Conflict(_))
+        ));
+        assert!(
+            document().supersede(&candidate(), &clock()).is_err(),
+            "a proposal does not replace canon until it is promoted"
+        );
+    }
+
+    #[test]
+    fn retyping_never_crosses_between_canon_and_proposals() {
+        let mut superseded = document();
+        superseded.supersede(&replacement(), &clock()).unwrap();
+        assert!(
+            superseded.retype(Kind::Candidate, &clock()).is_err(),
+            "crossing would wipe the final status and let it come back"
+        );
+        assert!(candidate().retype(Kind::Note, &clock()).is_err());
+        superseded.retype(Kind::Note, &clock()).unwrap();
+        assert_eq!(superseded.status(), Some(DocumentStatus::Superseded));
     }
 
     #[test]
@@ -811,20 +864,6 @@ mod tests {
             candidate
                 .promote(Kind::Candidate, Namespace::root(), &clock())
                 .is_err()
-        );
-    }
-
-    #[test]
-    fn retyping_drops_a_status_the_new_type_does_not_recognise() {
-        let mut document = document();
-        document
-            .set_status(DocumentStatus::Active, &clock())
-            .unwrap();
-        document.retype(Kind::Candidate, &clock()).unwrap();
-        assert_eq!(
-            document.status(),
-            None,
-            "a status that does not exist in the target type must not survive"
         );
     }
 

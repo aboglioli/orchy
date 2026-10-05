@@ -43,11 +43,11 @@ impl SupersedeDocument {
     async fn apply(&self, cmd: SupersedeDocumentCommand) -> ApplicationResult<DocumentDto> {
         let old_id = Id::new(&cmd.old_id)?;
         let new_id = Id::new(&cmd.new_id)?;
-        self.documents.require(&new_id).await?;
+        let replacement = self.documents.require(&new_id).await?;
 
         let mut old = self.documents.require(&old_id).await?;
         old.ensure_unchanged(cmd.if_match.as_deref())?;
-        old.supersede(new_id.clone(), &*self.clock)?;
+        old.supersede(&replacement, &*self.clock)?;
         self.documents.save(&mut old).await?;
 
         self.edges
