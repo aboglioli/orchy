@@ -9,6 +9,7 @@ pub use relation::{Arity, Relation};
 
 use crate::entity_ref::EntityRef;
 use crate::error::{DomainError, Result};
+use crate::id::Id;
 
 #[async_trait]
 pub trait EdgeStore: Send + Sync {
@@ -43,6 +44,13 @@ impl Edge {
         &self.from
     }
 
+    /// The id of the entity the link is stored on, which is never an actor.
+    pub fn source(&self) -> &Id {
+        self.from
+            .id()
+            .expect("Edge::new refuses an actor as the source of a link")
+    }
+
     pub fn to(&self) -> &EntityRef {
         &self.to
     }
@@ -71,7 +79,6 @@ pub enum Direction {
 mod tests {
     use super::*;
     use crate::entity_ref::EntityKind;
-    use crate::id::Id;
 
     const A: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const B: &str = "01BX5ZZKBKACTAV9WEVGEMMVRZ";

@@ -22,6 +22,7 @@ use crate::clock::Clock;
 use crate::content_hash;
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
+use crate::graph::Relation;
 use crate::id::{Id, IdGenerator};
 use crate::namespace::Namespace;
 use crate::pagination::{Page, PageRequest};
@@ -236,10 +237,8 @@ impl Document {
 
     pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
         validate_field_name(field)?;
-        if Kind::is_projected_field(field) {
-            return Err(DomainError::forbidden(format!(
-                "`{field}` is maintained by orchy and cannot be set by hand"
-            )));
+        if let Some(owner) = Relation::owner_of_field(field) {
+            return Err(DomainError::forbidden(format!("`{field}` {owner}")));
         }
         if let Some(command) = semantic_command_for(field) {
             return Err(DomainError::forbidden(format!(
@@ -488,6 +487,7 @@ fn semantic_command_for(field: &str) -> Option<&'static str> {
         "id" => Some("(ids are immutable)"),
         "tags" => Some("orchy tag"),
         "title" => Some("orchy retitle"),
+        "created" | "updated" => Some("(timestamps are orchy's)"),
         _ => None,
     }
 }

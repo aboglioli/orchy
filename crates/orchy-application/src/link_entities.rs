@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    DocumentStore, DomainError, Edge, EdgeStore, EntityKind, EntityRef, MessageStore, Relation,
-    SkillStore, TaskStore, UnitOfWork,
+    ActorStore, DocumentStatus, DocumentStore, DomainError, Edge, EdgeStore, EntityKind, EntityRef,
+    MessageStore, Relation, SkillStore, TaskStore, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +26,7 @@ pub struct LinkEntities {
     tasks: Arc<dyn TaskStore>,
     skills: Arc<dyn SkillStore>,
     messages: Arc<dyn MessageStore>,
+    actors: Arc<dyn ActorStore>,
     unit_of_work: Arc<dyn UnitOfWork>,
 }
 
@@ -36,6 +37,7 @@ impl LinkEntities {
         tasks: Arc<dyn TaskStore>,
         skills: Arc<dyn SkillStore>,
         messages: Arc<dyn MessageStore>,
+        actors: Arc<dyn ActorStore>,
         unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
@@ -44,6 +46,7 @@ impl LinkEntities {
             tasks,
             skills,
             messages,
+            actors,
             unit_of_work,
         }
     }
@@ -65,6 +68,7 @@ impl LinkEntities {
         }
         let edge = Edge::new(from, to, relation)?;
         if cmd.remove {
+            self.ensure_removable(&edge).await?;
             self.edges.remove(&edge).await?;
             return Ok(EdgeDto::from(&edge));
         }
@@ -75,18 +79,46 @@ impl LinkEntities {
         Ok(EdgeDto::from(&edge))
     }
 
+    /// A promoted candidate's `derived_from` link from the skill it became is the record of
+    /// what it became; without it the candidate says `promoted` and points at nothing.
+    async fn ensure_removable(&self, edge: &Edge) -> ApplicationResult<()> {
+        if edge.relation() != &Relation::DerivedFrom
+            || edge.from().kind() != EntityKind::Skill
+            || edge.to().kind() != EntityKind::Document
+        {
+            return Ok(());
+        }
+        let Some(candidate) = edge.to().id() else {
+            return Ok(());
+        };
+        let promoted = self
+            .documents
+            .get(candidate)
+            .await?
+            .is_some_and(|d| d.is_candidate() && d.status() == Some(DocumentStatus::Promoted));
+        if promoted {
+            return Err(DomainError::forbidden(format!(
+                "{} was promoted into {}; the link is the record of that promotion",
+                edge.to(),
+                edge.from()
+            ))
+            .into());
+        }
+        Ok(())
+    }
+
     async fn ensure_exists(&self, entity: &EntityRef) -> ApplicationResult<()> {
-        let id = entity.id();
-        let exists = match entity.kind() {
-            EntityKind::Document => self.documents.get(id).await?.is_some(),
-            EntityKind::Task => self.tasks.get(id).await?.is_some(),
-            EntityKind::Skill => self.skills.get(id).await?.is_some(),
-            EntityKind::Message => self.messages.get(id).await?.is_some(),
-            EntityKind::Actor => true,
+        let exists = match (entity.kind(), entity.id(), entity.as_actor()) {
+            (EntityKind::Document, Some(id), _) => self.documents.get(id).await?.is_some(),
+            (EntityKind::Task, Some(id), _) => self.tasks.get(id).await?.is_some(),
+            (EntityKind::Skill, Some(id), _) => self.skills.get(id).await?.is_some(),
+            (EntityKind::Message, Some(id), _) => self.messages.get(id).await?.is_some(),
+            (EntityKind::Actor, _, Some(actor)) => self.actors.get(actor).await?.is_some(),
+            _ => false,
         };
         if exists {
             return Ok(());
         }
-        Err(DomainError::not_found(entity.kind().as_str(), id.to_string()).into())
+        Err(DomainError::not_found(entity.kind().as_str(), entity).into())
     }
 }

@@ -154,7 +154,7 @@ impl CreateDocument {
 
         let own = hits
             .iter()
-            .filter(|h| h.entity.id() == document.id())
+            .filter(|h| h.entity.id() == Some(document.id()))
             .map(|h| h.relevance)
             .fold(0.0, f64::max);
         if own <= 0.0 {
@@ -162,7 +162,7 @@ impl CreateDocument {
         }
 
         let mut best: Vec<&Hit> = Vec::new();
-        for hit in hits.iter().filter(|h| h.entity.id() != document.id()) {
+        for hit in hits.iter().filter(|h| h.entity.id() != Some(document.id())) {
             if hit.relevance < own * SIMILAR_SHARE {
                 continue;
             }

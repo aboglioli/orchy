@@ -207,7 +207,7 @@ impl From<&Hit> for HitDto {
         Self {
             entity: hit.entity.to_string(),
             kind: hit.entity.kind().to_string(),
-            id: hit.entity.id().to_string(),
+            id: hit.entity.id().map(ToString::to_string).unwrap_or_default(),
             title: hit.title.clone(),
             heading: hit.heading.clone(),
             excerpt: hit.excerpt.clone(),

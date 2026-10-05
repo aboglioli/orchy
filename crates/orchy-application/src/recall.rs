@@ -179,16 +179,19 @@ impl Recall {
         entity: &EntityRef,
         query: &SearchQuery,
     ) -> ApplicationResult<Option<Passage>> {
+        let Some(id) = entity.id() else {
+            return Ok(None);
+        };
         match entity.kind() {
             EntityKind::Document if query.covers(EntityKind::Document) => Ok(self
                 .documents
-                .get(entity.id())
+                .get(id)
                 .await?
                 .filter(|d| query.selects_document(d))
                 .and_then(|d| document_passages(&d).into_iter().next())),
             EntityKind::Skill if query.covers(EntityKind::Skill) => Ok(self
                 .skills
-                .get(entity.id())
+                .get(id)
                 .await?
                 .filter(|s| query.selects_skill(s))
                 .map(|s| skill_passage(&s))),

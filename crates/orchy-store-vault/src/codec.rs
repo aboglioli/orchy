@@ -117,8 +117,14 @@ fn task_ref(id: &Id) -> String {
 }
 
 fn task_id(reference: impl AsRef<str>) -> Result<Id> {
-    EntityRef::parse_or_assume(reference.as_ref(), Some(EntityKind::Task))
-        .map(|entity| entity.id().clone())
+    let entity = EntityRef::parse_or_assume(reference.as_ref(), Some(EntityKind::Task))?;
+    match (entity.kind(), entity.id()) {
+        (EntityKind::Task, Some(id)) => Ok(id.clone()),
+        _ => Err(DomainError::validation(format!(
+            "`{}` is not a task",
+            reference.as_ref()
+        ))),
+    }
 }
 
 fn list(values: impl IntoIterator<Item = String>) -> Value {

@@ -1,9 +1,13 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{EntityKind, EntityRef, Id, Integrity, Problem, ProblemKind, Relation, Result};
+use orchy_core::{
+    Edge, EntityKind, EntityRef, Id, Integrity, Problem, ProblemKind, Relation, Result,
+};
 
 use crate::codec;
+use crate::layout::AGENTS;
 use crate::markdown::MarkdownFile;
 use crate::vault::Vault;
 use crate::vault::refs_in;
@@ -70,26 +74,53 @@ impl VaultIntegrity {
         }
     }
 
-    fn dangling(&self, key: &str, id: &Id, file: &MarkdownFile) -> Vec<Problem> {
+    /// Every link stored on a file must parse, be one its relation allows, and point at
+    /// something that exists and is of the kind it says.
+    fn links(
+        &self,
+        source: (&str, &Id, EntityKind),
+        file: &MarkdownFile,
+        roster: &HashSet<String>,
+    ) -> Vec<Problem> {
+        let (key, id, kind) = source;
         let mut problems = Vec::new();
+        let invalid =
+            |detail: String| Problem::new(ProblemKind::InvalidLink, key, Some(id.clone()), detail);
         for (field, value) in file.frontmatter.iter() {
             let Ok(relation) = field.parse::<Relation>() else {
                 continue;
             };
             for target in refs_in(value) {
-                let Ok(to) = EntityRef::parse_or_assume(&target, relation.sole_target_kind())
-                else {
-                    continue;
+                let to = match EntityRef::parse_or_assume(&target, relation.sole_target_kind()) {
+                    Ok(to) => to,
+                    Err(e) => {
+                        problems.push(invalid(format!("`{relation}` holds `{target}`: {e}")));
+                        continue;
+                    }
                 };
-                if to.kind() == EntityKind::Actor || self.vault.locate(to.id()).is_some() {
+                if let Err(e) = Edge::new(EntityRef::new(kind, id.clone()), to.clone(), relation) {
+                    problems.push(invalid(e.to_string()));
                     continue;
                 }
-                problems.push(Problem::new(
-                    ProblemKind::DanglingEdge,
-                    key,
-                    Some(id.clone()),
-                    format!("`{relation}` points at {to}, which does not exist"),
-                ));
+                let found = match (to.id(), to.as_actor()) {
+                    (Some(target), _) => self.vault.locate(target).map(|l| l.kind),
+                    (_, Some(actor)) => roster
+                        .contains(&self.vault.layout().actor_key(actor))
+                        .then_some(EntityKind::Actor),
+                    _ => None,
+                };
+                match found {
+                    None => problems.push(Problem::new(
+                        ProblemKind::DanglingEdge,
+                        key,
+                        Some(id.clone()),
+                        format!("`{relation}` points at {to}, which does not exist"),
+                    )),
+                    Some(actual) if actual != to.kind() => problems.push(invalid(format!(
+                        "`{relation}` points at {to}, which is a {actual}"
+                    ))),
+                    Some(_) => {}
+                }
             }
         }
         problems
@@ -113,9 +144,10 @@ impl Integrity for VaultIntegrity {
     async fn problems(&self) -> Result<Vec<Problem>> {
         let mut problems = self.unreadable().await?;
         let scan = self.vault.scan().await?;
+        let roster: HashSet<String> = self.vault.blobs().list(AGENTS).await?.into_iter().collect();
         for (id, located, file) in &scan.entries {
             problems.extend(self.placement(id, &located.key, located.kind, file));
-            problems.extend(self.dangling(&located.key, id, file));
+            problems.extend(self.links((&located.key, id, located.kind), file, &roster));
         }
         problems.sort_by(|a, b| a.location.cmp(&b.location).then(a.kind.cmp(&b.kind)));
         Ok(problems)

@@ -156,7 +156,10 @@ impl Doctor {
             .await?;
         let mut inverted = Vec::new();
         for edge in edges {
-            let target = self.documents.get(edge.to().id()).await?;
+            let Some(target) = edge.to().id() else {
+                continue;
+            };
+            let target = self.documents.get(target).await?;
             if target.is_some_and(|t| t.status() != Some(DocumentStatus::Superseded)) {
                 inverted.push(edge);
             }

@@ -485,6 +485,7 @@ impl Application {
                 Arc::clone(&tasks),
                 Arc::clone(&skills),
                 Arc::clone(&messages),
+                Arc::clone(&actors),
                 Arc::clone(&unit_of_work),
             ),
             traverse_graph: TraverseGraph::new(

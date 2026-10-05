@@ -54,12 +54,12 @@ impl AssessDependencies {
                 .incoming(&EntityRef::task(id.clone()), Some(&Relation::Supersedes))
                 .await?;
             for edge in replaced_by {
-                let from = edge.from();
-                if from.kind() != EntityKind::Task || path.contains(from.id()) {
+                let from = edge.source();
+                if edge.from().kind() != EntityKind::Task || path.contains(from) {
                     continue;
                 }
-                path.push(from.id().clone());
-                replacements.push(Box::pin(self.follow(from.id(), path)).await?);
+                path.push(from.clone());
+                replacements.push(Box::pin(self.follow(from, path)).await?);
                 path.pop();
             }
         }

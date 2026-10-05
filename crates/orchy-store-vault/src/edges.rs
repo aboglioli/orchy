@@ -27,7 +27,10 @@ impl VaultEdgeStore {
         field: &str,
         edit: impl Fn(&mut Vec<String>) + Send + Sync + 'static,
     ) -> Result<Amended> {
-        self.vault.amend_refs(entity.id(), field, edit).await
+        let Some(id) = entity.id() else {
+            return Ok(Amended::Missing);
+        };
+        self.vault.amend_refs(id, field, edit).await
     }
 
     /// The target's file shows who points at it for the relations whose inverse orchy
@@ -60,7 +63,7 @@ impl VaultEdgeStore {
         match amended {
             Amended::Missing => Err(DomainError::not_found(
                 kind_name(edge.from().kind()),
-                edge.from().id(),
+                edge.source(),
             )),
             Amended::Unchanged => Ok(()),
             Amended::Changed => {
@@ -91,7 +94,10 @@ impl VaultEdgeStore {
     /// Reads without refreshing what the vault remembers of the file, so looking at links
     /// never weakens the compare-and-swap of a save that loaded the entity earlier.
     async fn edges_from(&self, entity: &EntityRef) -> Result<Vec<Edge>> {
-        let Some((_, file)) = self.vault.peek_by_id(entity.id()).await? else {
+        let Some(id) = entity.id() else {
+            return Ok(Vec::new());
+        };
+        let Some((_, file)) = self.vault.peek_by_id(id).await? else {
             return Ok(Vec::new());
         };
         Ok(edges_in(entity, &file))
