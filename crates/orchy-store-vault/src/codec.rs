@@ -363,7 +363,9 @@ pub fn document_from_markdown(file: &MarkdownFile) -> Result<Document> {
     }))
 }
 
-pub fn message_to_markdown(message: &Message) -> MarkdownFile {
+/// `carried` is the file as it was: links stored on a message, and anything else a human
+/// added, are not the message's to drop.
+pub fn message_to_markdown(message: &Message, carried: Frontmatter) -> MarkdownFile {
     let mut frontmatter = Frontmatter::new();
     frontmatter.set("id", json!(message.id().to_string()));
     frontmatter.set("type", json!("message"));
@@ -380,6 +382,11 @@ pub fn message_to_markdown(message: &Message) -> MarkdownFile {
     frontmatter.set("status", json!(message.status().as_str()));
     frontmatter.set("namespace", json!(message.namespace().to_string()));
     frontmatter.set("created", stamp(message.created_at()));
+    for (key, value) in carried.iter() {
+        if !MESSAGE_KEYS.contains(&key) {
+            frontmatter.set(key, value.clone());
+        }
+    }
 
     MarkdownFile {
         frontmatter,
