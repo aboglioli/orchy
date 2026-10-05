@@ -1,4 +1,4 @@
-use orchy_core::{ActorId, EntityKind, Id, Namespace, SkillName, TaskStatus};
+use orchy_core::{ActorId, Id, Namespace, SkillName, TaskStatus};
 
 #[derive(Debug, Clone, Default)]
 pub struct Layout;
@@ -42,16 +42,6 @@ impl Layout {
             format!("{DOCS}/{id}.md")
         } else {
             format!("{DOCS}/{folder}/{id}.md")
-        }
-    }
-
-    pub fn key_for(&self, kind: EntityKind, id: &Id, namespace: &Namespace) -> String {
-        match kind {
-            EntityKind::Task => self.task_key(id, TaskStatus::Pending),
-            EntityKind::Message => self.message_key(id, id),
-            EntityKind::Document => self.document_key(namespace, id),
-            EntityKind::Skill => format!("{SKILLS}/{id}.md"),
-            EntityKind::Actor => format!("{AGENTS}/{id}.md"),
         }
     }
 
