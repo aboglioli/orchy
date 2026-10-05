@@ -37,6 +37,18 @@ impl CliError {
         ))
     }
 
+    /// A stable name for the kind of failure, for agents reading `--json`.
+    pub(crate) fn kind(&self) -> String {
+        match self {
+            Self::Application(e) => e.code().to_string(),
+            Self::Config(_) => "config".to_owned(),
+            Self::NotAVault(_) => "not_a_vault".to_owned(),
+            Self::WrongEntity(_) => "wrong_entity".to_owned(),
+            Self::ProblemsRemain(_) => "problems_remain".to_owned(),
+            Self::Io(_) => "io".to_owned(),
+        }
+    }
+
     pub(crate) fn exit_code(&self) -> i32 {
         match self {
             Self::Application(e) => e.exit_code(),

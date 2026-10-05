@@ -1,5 +1,5 @@
-use std::fs;
 use std::path::Path;
+use std::{fs, io};
 
 use orchy_application::create_document::CreateDocumentCommand;
 use orchy_core::{Kind, Relation};
@@ -37,7 +37,7 @@ pub(crate) fn read(source: &str) -> CliResult<String> {
         return ureq::get(source)
             .call()
             .and_then(|mut response| response.body_mut().read_to_string())
-            .map_err(|e| CliError::config(format!("fetching {source}: {e}")));
+            .map_err(|e| CliError::io(io::Error::other(format!("fetching {source}: {e}"))));
     }
     Ok(fs::read_to_string(source)?)
 }
