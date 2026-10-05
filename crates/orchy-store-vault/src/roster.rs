@@ -270,7 +270,13 @@ impl LeaseStore for FileLeaseStore {
         }
     }
 
+    /// Read under a shared lock: a renewal rewrites the record in place, and a reader that
+    /// caught it half-written would take a live lease for none at all.
     async fn check(&self, key: &ResourceKey) -> Result<Option<Lease>> {
+        if !self.lock_path(key).exists() {
+            return Ok(None);
+        }
+        let _guard = FileLock::shared(&self.lock_path(key), key.as_str(), DEFAULT_WAIT)?;
         let Some(record) = self.read_record(key) else {
             return Ok(None);
         };
@@ -298,7 +304,10 @@ impl LeaseStore for FileLeaseStore {
         let mut held: Vec<Lease> = entries
             .flatten()
             .filter(|e| e.path().extension().is_some_and(|x| x == "lock"))
-            .filter_map(|e| std::fs::read(e.path()).ok())
+            .filter_map(|e| {
+                let _guard = FileLock::shared(&e.path(), "lease", DEFAULT_WAIT).ok()?;
+                std::fs::read(e.path()).ok()
+            })
             .filter_map(|bytes| serde_json::from_slice::<LeaseRecord>(&bytes).ok())
             .filter(|record| record.expires_at > now)
             .filter_map(|record| {
