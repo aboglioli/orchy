@@ -14,6 +14,14 @@ pub struct MemoryEdgeStore {
 }
 
 impl MemoryEdgeStore {
+    pub(crate) fn state(&self) -> Vec<Edge> {
+        self.edges.lock().expect("edges lock").clone()
+    }
+
+    pub(crate) fn restore_state(&self, state: Vec<Edge>) {
+        *self.edges.lock().expect("edges lock") = state;
+    }
+
     pub fn new(log: Arc<dyn EventLog>, clock: Arc<dyn Clock>) -> Self {
         Self {
             edges: Mutex::new(Vec::new()),
@@ -59,6 +67,17 @@ impl EdgeStore for MemoryEdgeStore {
         self.log
             .append(&[Box::new(EdgeRemoved::of(edge, self.clock.now()))])
             .await
+    }
+
+    async fn of_relation(&self, relation: &Relation) -> Result<Vec<Edge>> {
+        Ok(self
+            .edges
+            .lock()
+            .expect("edges lock")
+            .iter()
+            .filter(|e| e.relation() == relation)
+            .cloned()
+            .collect())
     }
 
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {

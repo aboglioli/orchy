@@ -12,6 +12,14 @@ pub struct MemoryDocumentStore {
 }
 
 impl MemoryDocumentStore {
+    pub(crate) fn state(&self) -> BTreeMap<Id, Document> {
+        self.documents.lock().expect("documents lock").clone()
+    }
+
+    pub(crate) fn restore_state(&self, state: BTreeMap<Id, Document>) {
+        *self.documents.lock().expect("documents lock") = state;
+    }
+
     pub fn new(log: Arc<MemoryEventLog>) -> Self {
         Self {
             documents: Mutex::new(BTreeMap::new()),
@@ -57,10 +65,5 @@ impl DocumentStore for MemoryDocumentStore {
             .expect("document mutex")
             .insert(document.id().clone(), document.clone());
         self.log.append(&events).await
-    }
-
-    async fn delete(&self, id: &Id) -> Result<()> {
-        self.documents.lock().expect("document mutex").remove(id);
-        Ok(())
     }
 }

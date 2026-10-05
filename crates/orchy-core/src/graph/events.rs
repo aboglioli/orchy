@@ -52,7 +52,10 @@ impl DomainEvent for EdgeAdded {
         topic("edge.added")
     }
     fn key(&self) -> Id {
-        self.from.id().clone()
+        self.from
+            .id()
+            .cloned()
+            .expect("a link's source is never an actor")
     }
     fn namespace(&self) -> Namespace {
         Namespace::root()
@@ -67,7 +70,10 @@ impl DomainEvent for EdgeRemoved {
         topic("edge.removed")
     }
     fn key(&self) -> Id {
-        self.from.id().clone()
+        self.from
+            .id()
+            .cloned()
+            .expect("a link's source is never an actor")
     }
     fn namespace(&self) -> Namespace {
         Namespace::root()

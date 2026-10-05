@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use orchy_core::{
     ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, MessageStore, Relation, Role,
-    Task, TaskStore, Title,
+    Task, TaskStore, Title, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::{MessageDto, TaskDto};
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromoteMessageCommand {
@@ -29,6 +30,7 @@ pub struct PromoteMessage {
     edges: Arc<dyn EdgeStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl PromoteMessage {
@@ -38,6 +40,7 @@ impl PromoteMessage {
         edges: Arc<dyn EdgeStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             messages,
@@ -45,6 +48,7 @@ impl PromoteMessage {
             edges,
             ids,
             clock,
+            unit_of_work,
         }
     }
 
@@ -52,6 +56,10 @@ impl PromoteMessage {
         &self,
         cmd: PromoteMessageCommand,
     ) -> ApplicationResult<PromoteMessageResponse> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: PromoteMessageCommand) -> ApplicationResult<PromoteMessageResponse> {
         let actor: ActorId = cmd.actor.parse()?;
         let message_id = Id::new(&cmd.message_id)?;
         let message = self.messages.require(&message_id).await?;

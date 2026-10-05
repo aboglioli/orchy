@@ -53,6 +53,28 @@ The first release, `0.1.0`, will be cut from this section.
 
 ### Changed
 
+- **Every command lands whole or not at all.** A command's writes are staged and committed
+  together, through a journal a later run finishes after a crash; a command that is refused or
+  loses a race changes nothing and records no event. When only something a command read
+  changed meanwhile, it runs again by itself.
+- **Links are valid when written.** `task new --parent/--depends-on`, `task dep`,
+  `task block --on` and `link` refuse a target that is missing or of another kind. `set`,
+  `skill set` and `import` refuse link fields and the fields orchy projects from them, and
+  `set` accepts only plain field names.
+- **Work never waits on itself.** Dependencies, blocking, re-parenting and merging refuse a
+  change that would close a loop, including through a goal's subtasks or a replacement.
+- **Goals finish through their subtasks.** `task done`, `fail`, `cancel` and `replace` refuse
+  a task with open subtasks; nothing is split from, filed beneath or merged into finished
+  work; `replace` and `merge` retire another agent's claim only as its holder.
+- **Documents.** Only canon still in force can supersede or absorb a document, and `retype`
+  never crosses between canon and candidates.
+- **Agents as link targets.** An agent is linked as `actor:<name>@<machine>` and must be on
+  the roster; agents hold no links.
+- **`doctor`** also reports links of the wrong kind or relation, loops through dependencies,
+  open work beneath finished work, superseded or promoted entities with nothing that replaced
+  them, and projected fields out of step with their links; `--fix` rewrites those fields, and
+  repairs one problem at a time.
+- **`--json` errors** are printed as JSON on standard error.
 - **Vault format.**
   - A document's folder always equals its namespace. Subfolders a human created beneath a
     namespace are not kept: `doctor` reports such files, and the next save or
@@ -79,6 +101,25 @@ The first release, `0.1.0`, will be cut from this section.
   term counts.
 
 ### Fixed
+
+- A vault inside a git repository no longer hides files a `.gitignore` or global git exclude
+  matched: orchy reads no ignore files.
+- `set`, `skill set` and `import` could write a header orchy could not read back, and a body
+  holding a line like `<<<<<<< HEAD` made its file unreadable; orchy now writes nothing it
+  cannot read back, and only a whole conflict block outside a code fence counts as one.
+- Resolving a thread dropped the links stored on its first message.
+- `supersede`, `consolidate`, `task merge`, `task replace`, `promote --as skill` and
+  `msg promote` could stop halfway and leave a status without its link, or a link without its
+  inverse.
+- A superseded document could be brought back through `retype` and `unarchive`, and
+  `supersede` could make documents replace each other in a loop.
+- `task merge` could make a parent loop, merge into finished work, or leave the kept task
+  waiting on itself.
+- Two agents re-parenting or adding dependencies at once could make a loop.
+- `doctor --fix` could move a misnamed skill onto another skill's file.
+- A forced release could read a lease while it was being renewed and take a live claim.
+- A task description holding a line `## Outcome` or `## Acceptance` came back split.
+- A URL that `import` cannot fetch exits 8, not 6.
 
 - Reading links (`graph`, `recall --graph`, dependency checks) could let a save overwrite an
   edit another agent made in between; the compare-and-swap now holds.

@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use orchy_core::{EntityKind, EntityRef, EventLog, Id, Result, Task, TaskQuery, TaskStore};
 
 use crate::codec;
+use crate::transaction::atomically;
 use crate::vault::{Precondition, Vault};
 
 pub struct VaultTaskStore {
@@ -24,7 +25,7 @@ impl VaultTaskStore {
         };
         let reference = EntityRef::task(child.id().clone()).to_string();
         self.vault
-            .amend_refs(parent, EntityKind::Task, "subtasks", |refs| {
+            .amend_refs(parent, "subtasks", move |refs| {
                 refs.retain(|r| r != &reference);
                 if present {
                     refs.push(reference.clone());
@@ -32,6 +33,37 @@ impl VaultTaskStore {
             })
             .await
             .map(drop)
+    }
+
+    async fn save_now(&self, task: &mut Task) -> Result<()> {
+        let events = task.drain_events();
+        let (carried, previous_parent) = match self.vault.peek_by_id(task.id()).await? {
+            Some((_, file)) => (
+                codec::carried_frontmatter(&file),
+                codec::task_from_markdown(&file)
+                    .ok()
+                    .and_then(|t| t.parent().cloned()),
+            ),
+            None => (Default::default(), None),
+        };
+
+        let key = self.vault.layout().task_key(task.id(), task.status());
+        let file = codec::task_to_markdown(task, carried)?;
+        self.vault
+            .write_if(
+                &key,
+                &file,
+                task.id(),
+                EntityKind::Task,
+                Precondition::Unchanged,
+            )
+            .await?;
+        if previous_parent.as_ref() != task.parent() {
+            self.list_under(previous_parent.as_ref(), task, false)
+                .await?;
+            self.list_under(task.parent(), task, true).await?;
+        }
+        self.log.append(&events).await
     }
 
     async fn all(&self) -> Result<Vec<Task>> {
@@ -70,46 +102,29 @@ impl TaskStore for VaultTaskStore {
     }
 
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>> {
-        Ok(self
-            .all()
-            .await?
-            .into_iter()
-            .filter(|t| t.parent() == Some(parent))
-            .collect())
+        let mut children = Vec::new();
+        for (_, located, file) in self.vault.scan().await?.entries {
+            if located.kind != EntityKind::Task {
+                continue;
+            }
+            let Ok(task) = codec::task_from_markdown(&file) else {
+                continue;
+            };
+            if task.parent() == Some(parent) {
+                self.vault.guard(&located.key, located.seen);
+                children.push(task);
+            }
+        }
+        children.sort_by(|a, b| a.id().cmp(b.id()));
+        Ok(children)
     }
 
     async fn save(&self, task: &mut Task) -> Result<()> {
-        let events = task.drain_events();
-        let (carried, previous_parent) = match self.vault.peek_by_id(task.id()).await? {
-            Some((_, file)) => (
-                codec::carried_frontmatter(&file),
-                codec::task_from_markdown(&file)
-                    .ok()
-                    .and_then(|t| t.parent().cloned()),
-            ),
-            None => (Default::default(), None),
-        };
-
-        let key = self.vault.layout().task_key(task.id(), task.status());
-        let file = codec::task_to_markdown(task, carried);
-        self.vault
-            .write_if(
-                &key,
-                &file,
-                task.id(),
-                EntityKind::Task,
-                Precondition::Unchanged,
-            )
-            .await?;
-        if previous_parent.as_ref() != task.parent() {
-            self.list_under(previous_parent.as_ref(), task, false)
-                .await?;
-            self.list_under(task.parent(), task, true).await?;
-        }
-        self.log.append(&events).await
-    }
-
-    async fn delete(&self, id: &Id) -> Result<()> {
-        self.vault.remove(id).await
+        atomically(
+            &self.vault,
+            Some(self.log.as_ref()),
+            Box::pin(self.save_now(task)),
+        )
+        .await
     }
 }

@@ -7,7 +7,7 @@ use orchy_core::{
     Actor, ActorId, ActorStore, Clock, DomainError, EventLog, Lease, LeaseStore, ResourceKey,
     Result,
 };
-
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::codec;
@@ -92,7 +92,7 @@ impl ActorStore for VaultActorStore {
             let Some(bytes) = self.vault.blobs().get(&key).await? else {
                 continue;
             };
-            let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
                 continue;
             };
             let (Some(actor), Some(seen)) = (
@@ -271,6 +271,10 @@ impl LeaseStore for FileLeaseStore {
     }
 
     async fn check(&self, key: &ResourceKey) -> Result<Option<Lease>> {
+        if !self.lock_path(key).exists() {
+            return Ok(None);
+        }
+        let _guard = FileLock::shared(&self.lock_path(key), key.as_str(), DEFAULT_WAIT)?;
         let Some(record) = self.read_record(key) else {
             return Ok(None);
         };
@@ -298,7 +302,10 @@ impl LeaseStore for FileLeaseStore {
         let mut held: Vec<Lease> = entries
             .flatten()
             .filter(|e| e.path().extension().is_some_and(|x| x == "lock"))
-            .filter_map(|e| std::fs::read(e.path()).ok())
+            .filter_map(|e| {
+                let _guard = FileLock::shared(&e.path(), "lease", DEFAULT_WAIT).ok()?;
+                std::fs::read(e.path()).ok()
+            })
             .filter_map(|bytes| serde_json::from_slice::<LeaseRecord>(&bytes).ok())
             .filter(|record| record.expires_at > now)
             .filter_map(|record| {

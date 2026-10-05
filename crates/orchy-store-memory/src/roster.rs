@@ -18,6 +18,14 @@ pub struct MemoryActorStore {
 }
 
 impl MemoryActorStore {
+    pub(crate) fn state(&self) -> BTreeMap<ActorId, Actor> {
+        self.actors.lock().expect("actors lock").clone()
+    }
+
+    pub(crate) fn restore_state(&self, state: BTreeMap<ActorId, Actor>) {
+        *self.actors.lock().expect("actors lock") = state;
+    }
+
     pub fn new(log: Arc<dyn EventLog>) -> Self {
         Self {
             actors: Mutex::new(BTreeMap::new()),

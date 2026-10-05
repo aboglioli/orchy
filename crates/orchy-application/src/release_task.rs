@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use orchy_core::{ActorId, Clock, DomainError, Id, LeaseStore, ResourceKey, TaskStore};
+use orchy_core::{ActorId, Clock, DomainError, Id, LeaseStore, ResourceKey, TaskStore, UnitOfWork};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReleaseTaskCommand {
@@ -18,6 +19,7 @@ pub struct ReleaseTask {
     tasks: Arc<dyn TaskStore>,
     leases: Arc<dyn LeaseStore>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl ReleaseTask {
@@ -25,15 +27,21 @@ impl ReleaseTask {
         tasks: Arc<dyn TaskStore>,
         leases: Arc<dyn LeaseStore>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
             leases,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: ReleaseTaskCommand) -> ApplicationResult<TaskDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: ReleaseTaskCommand) -> ApplicationResult<TaskDto> {
         let id = Id::new(&cmd.task_id)?;
         let actor: ActorId = cmd.actor.parse()?;
 

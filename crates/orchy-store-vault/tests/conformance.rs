@@ -135,7 +135,7 @@ async fn a_task_reads_back_as_it_was_saved() {
         task.set_priority(Priority::High, &clock);
         task.assign_roles(vec![Role::new("dev").unwrap()], &clock);
         task.retag(vec![Tag::new("release").unwrap()], &[], &clock);
-        task.attach_to(parent.id().clone(), &clock).unwrap();
+        task.attach_to(&parent, &clock).unwrap();
         task.add_dependency(dependency.id().clone(), &clock)
             .unwrap();
         let holder = "claude@01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().unwrap();
@@ -224,6 +224,23 @@ async fn a_link_from_any_kind_is_seen_from_both_ends() {
             let around = ports.edges.neighbourhood(&from, 1).await.unwrap();
             assert!(around.iter().any(|hop| hop.edge == edge), "{name}");
         }
+
+        let name = ports.name;
+        let related = ports.edges.of_relation(&Relation::RelatedTo).await.unwrap();
+        assert_eq!(
+            related.len(),
+            2,
+            "{name}: every stored link of the relation"
+        );
+        assert!(
+            ports
+                .edges
+                .of_relation(&Relation::Supersedes)
+                .await
+                .unwrap()
+                .is_empty(),
+            "{name}: and none of another"
+        );
     }
 }
 

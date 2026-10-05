@@ -290,7 +290,7 @@ pub fn rank(hits: &mut [Hit], anchor: Option<&Namespace>, now: DateTime<Utc>) {
         weight(b, anchor, now)
             .total_cmp(&weight(a, anchor, now))
             .then_with(|| b.updated_at.cmp(&a.updated_at))
-            .then_with(|| a.entity.id().cmp(b.entity.id()))
+            .then_with(|| a.entity.id().cmp(&b.entity.id()))
     });
 }
 
@@ -340,7 +340,7 @@ mod tests {
         let now = now();
         let mut hits = vec![hit(A, "/", 1.0, now), hit(B, "/", 5.0, now)];
         rank(&mut hits, None, now);
-        assert_eq!(hits[0].entity.id().to_string(), B);
+        assert_eq!(hits[0].entity.id().unwrap().to_string(), B);
     }
 
     #[test]
@@ -348,7 +348,11 @@ mod tests {
         let now = now();
         let mut hits = vec![hit(A, "/", 3.0, at(365, now)), hit(B, "/", 3.0, at(1, now))];
         rank(&mut hits, None, now);
-        assert_eq!(hits[0].entity.id().to_string(), B, "recency breaks the tie");
+        assert_eq!(
+            hits[0].entity.id().unwrap().to_string(),
+            B,
+            "recency breaks the tie"
+        );
     }
 
     #[test]
@@ -357,7 +361,7 @@ mod tests {
         let anchor = Namespace::new("/backend").unwrap();
         let mut hits = vec![hit(A, "/frontend", 3.0, now), hit(B, "/backend", 3.0, now)];
         rank(&mut hits, Some(&anchor), now);
-        assert_eq!(hits[0].entity.id().to_string(), B);
+        assert_eq!(hits[0].entity.id().unwrap().to_string(), B);
     }
 
     #[test]
@@ -370,7 +374,10 @@ mod tests {
             hit(C, "/backend", 3.0, now),
         ];
         rank(&mut hits, Some(&anchor), now);
-        let order: Vec<String> = hits.iter().map(|h| h.entity.id().to_string()).collect();
+        let order: Vec<String> = hits
+            .iter()
+            .map(|h| h.entity.id().unwrap().to_string())
+            .collect();
         assert_eq!(order, vec![C.to_owned(), B.to_owned(), A.to_owned()]);
     }
 
@@ -384,11 +391,11 @@ mod tests {
         assert_eq!(
             first
                 .iter()
-                .map(|h| h.entity.id().to_string())
+                .map(|h| h.entity.id().unwrap().to_string())
                 .collect::<Vec<_>>(),
             second
                 .iter()
-                .map(|h| h.entity.id().to_string())
+                .map(|h| h.entity.id().unwrap().to_string())
                 .collect::<Vec<_>>(),
             "a tie must break on id, not on input order"
         );
@@ -427,7 +434,7 @@ mod scoring_tests {
 
     fn relevance_of(hits: &[Hit], n: u8) -> f64 {
         hits.iter()
-            .find(|h| h.entity.id() == &at(n))
+            .find(|h| h.entity.id() == Some(&at(n)))
             .map(|h| h.relevance)
             .unwrap_or(0.0)
     }
@@ -504,8 +511,8 @@ mod scoring_tests {
                 .unwrap()
                 .entity
                 .id()
-                .clone(),
-            at(10),
+                .cloned(),
+            Some(at(10)),
             "the one term that distinguishes a passage is worth more than the one they share"
         );
     }
@@ -593,7 +600,7 @@ mod scoring_tests {
             "migration",
         );
         rank(&mut hits, None, now);
-        assert_eq!(hits[0].entity.id(), &at(2));
+        assert_eq!(hits[0].entity.id(), Some(&at(2)));
     }
 
     #[test]

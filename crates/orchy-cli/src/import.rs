@@ -1,8 +1,8 @@
-use std::fs;
 use std::path::Path;
+use std::{fs, io};
 
 use orchy_application::create_document::CreateDocumentCommand;
-use orchy_core::Kind;
+use orchy_core::{Kind, Relation};
 use orchy_store_vault::markdown::MarkdownFile;
 use serde_json::Value;
 
@@ -37,7 +37,7 @@ pub(crate) fn read(source: &str) -> CliResult<String> {
         return ureq::get(source)
             .call()
             .and_then(|mut response| response.body_mut().read_to_string())
-            .map_err(|e| CliError::config(format!("fetching {source}: {e}")));
+            .map_err(|e| CliError::io(io::Error::other(format!("fetching {source}: {e}"))));
     }
     Ok(fs::read_to_string(source)?)
 }
@@ -56,6 +56,20 @@ pub(crate) fn command(import: Import, text: &str) -> CliResult<CreateDocumentCom
     let mut tags = import.tags;
     if let Some(Value::Array(listed)) = file.frontmatter.get("tags") {
         tags.extend(listed.iter().filter_map(Value::as_str).map(str::to_owned));
+    }
+
+    let links: Vec<&str> = file
+        .frontmatter
+        .keys()
+        .filter(|key| key.parse::<Relation>().is_ok())
+        .collect();
+    if !links.is_empty() {
+        return Err(CliError::config(format!(
+            "{} links to other entities through `{}`; links are not imported, because nothing \
+             says what they point at exists here. Remove those fields, import, then `orchy link`",
+            import.source,
+            links.join("`, `")
+        )));
     }
 
     let fields = file
@@ -120,6 +134,13 @@ mod tests {
             vec![("owner".to_owned(), Value::from("alan"))]
         );
         assert_eq!(command.body.as_deref(), Some("Steps."));
+    }
+
+    #[test]
+    fn links_in_an_imported_file_are_refused_rather_than_stored_unchecked() {
+        let text = "---\ntitle: Deploys\nsupersedes: [document:01ARZ3NDEKTSV4RRFFQ69G5FAV]\n---\n\nSteps.\n";
+        let err = command(import("deploys.md"), text).unwrap_err();
+        assert!(err.to_string().contains("`supersedes`"), "{err}");
     }
 
     #[test]

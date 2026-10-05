@@ -1,3 +1,4 @@
+use std::fmt;
 use std::result::Result as StdResult;
 
 use orchy_core::{DomainError, ErrorCode};
@@ -12,7 +13,7 @@ pub enum ApplicationError {
 }
 
 impl ApplicationError {
-    pub fn not_found(resource: &'static str, id: impl std::fmt::Display) -> Self {
+    pub fn not_found(resource: &'static str, id: impl fmt::Display) -> Self {
         Self::Domain(DomainError::not_found(resource, id))
     }
 

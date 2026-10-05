@@ -3,13 +3,14 @@ use std::sync::Arc;
 use orchy_core::{
     ActorId, ActorStore, Body, Clock, Document, DocumentStatus, DocumentStore, Edge, EdgeStore,
     EntityKind, EntityRef, Hit, Id, IdGenerator, Kind, Namespace, Relation, Search, SearchQuery,
-    Tag, TaskStore, Title,
+    Tag, TaskStore, Title, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::dto::{DocumentDto, HitDto};
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateDocumentCommand {
@@ -35,6 +36,17 @@ pub struct CreateDocumentResponse {
     pub similar: Vec<HitDto>,
 }
 
+pub struct CreateDocumentSources {
+    pub documents: Arc<dyn DocumentStore>,
+    pub search: Arc<dyn Search>,
+    pub actors: Arc<dyn ActorStore>,
+    pub tasks: Arc<dyn TaskStore>,
+    pub edges: Arc<dyn EdgeStore>,
+    pub ids: Arc<dyn IdGenerator>,
+    pub clock: Arc<dyn Clock>,
+    pub unit_of_work: Arc<dyn UnitOfWork>,
+}
+
 pub struct CreateDocument {
     documents: Arc<dyn DocumentStore>,
     search: Arc<dyn Search>,
@@ -43,18 +55,21 @@ pub struct CreateDocument {
     edges: Arc<dyn EdgeStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl CreateDocument {
-    pub fn new(
-        documents: Arc<dyn DocumentStore>,
-        search: Arc<dyn Search>,
-        actors: Arc<dyn ActorStore>,
-        tasks: Arc<dyn TaskStore>,
-        edges: Arc<dyn EdgeStore>,
-        ids: Arc<dyn IdGenerator>,
-        clock: Arc<dyn Clock>,
-    ) -> Self {
+    pub fn new(sources: CreateDocumentSources) -> Self {
+        let CreateDocumentSources {
+            documents,
+            search,
+            actors,
+            tasks,
+            edges,
+            ids,
+            clock,
+            unit_of_work,
+        } = sources;
         Self {
             documents,
             search,
@@ -63,6 +78,7 @@ impl CreateDocument {
             edges,
             ids,
             clock,
+            unit_of_work,
         }
     }
 
@@ -70,6 +86,10 @@ impl CreateDocument {
         &self,
         cmd: CreateDocumentCommand,
     ) -> ApplicationResult<CreateDocumentResponse> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: CreateDocumentCommand) -> ApplicationResult<CreateDocumentResponse> {
         let kind = cmd.kind.parse::<Kind>()?;
         let producer = match &cmd.produced_by {
             Some(task) => Some(self.tasks.require(&Id::new(task)?).await?.id().clone()),
@@ -134,7 +154,7 @@ impl CreateDocument {
 
         let own = hits
             .iter()
-            .filter(|h| h.entity.id() == document.id())
+            .filter(|h| h.entity.id() == Some(document.id()))
             .map(|h| h.relevance)
             .fold(0.0, f64::max);
         if own <= 0.0 {
@@ -142,7 +162,7 @@ impl CreateDocument {
         }
 
         let mut best: Vec<&Hit> = Vec::new();
-        for hit in hits.iter().filter(|h| h.entity.id() != document.id()) {
+        for hit in hits.iter().filter(|h| h.entity.id() != Some(document.id())) {
             if hit.relevance < own * SIMILAR_SHARE {
                 continue;
             }

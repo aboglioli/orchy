@@ -16,6 +16,7 @@ use orchy_application::set_document_field::SetDocumentFieldCommand;
 use orchy_application::supersede_document::SupersedeDocumentCommand;
 use orchy_application::traverse_graph::{TraversalHopDto, TraverseGraphCommand};
 use orchy_application::update_document::UpdateDocumentCommand;
+use serde_json::Value;
 
 use crate::cli::GraphFormat;
 use crate::error::{CliError, CliResult};
@@ -105,8 +106,8 @@ pub(crate) async fn set(
         let (field, value) = assignment
             .split_once('=')
             .ok_or_else(|| CliError::config(format!("`{assignment}` is not field=value")))?;
-        let parsed = serde_json::from_str(value)
-            .unwrap_or_else(|_| serde_json::Value::String(value.to_owned()));
+        let parsed =
+            serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.to_owned()));
         fields.push((field.to_owned(), parsed));
     }
 

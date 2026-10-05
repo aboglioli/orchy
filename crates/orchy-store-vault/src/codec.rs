@@ -117,15 +117,21 @@ fn task_ref(id: &Id) -> String {
 }
 
 fn task_id(reference: impl AsRef<str>) -> Result<Id> {
-    EntityRef::parse_or_assume(reference.as_ref(), Some(EntityKind::Task))
-        .map(|entity| entity.id().clone())
+    let entity = EntityRef::parse_or_assume(reference.as_ref(), Some(EntityKind::Task))?;
+    match (entity.kind(), entity.id()) {
+        (EntityKind::Task, Some(id)) => Ok(id.clone()),
+        _ => Err(DomainError::validation(format!(
+            "`{}` is not a task",
+            reference.as_ref()
+        ))),
+    }
 }
 
 fn list(values: impl IntoIterator<Item = String>) -> Value {
     Value::Array(values.into_iter().map(Value::String).collect())
 }
 
-pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
+pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> Result<MarkdownFile> {
     let mut frontmatter = Frontmatter::new();
     frontmatter.set("id", json!(task.id().to_string()));
     frontmatter.set("type", json!("task"));
@@ -173,11 +179,26 @@ pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
             body.push_str(&format!("\n\n{heading}\n\n{text}"));
         }
     }
+    let read_back = split_task_body(&body);
+    let trimmed = |text: Option<&str>| {
+        text.map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_owned)
+    };
+    if read_back.description != task.description().trim()
+        || read_back.acceptance_criteria != trimmed(task.acceptance_criteria())
+        || read_back.note != trimmed(task.note())
+    {
+        return Err(DomainError::validation(format!(
+            "a task's description, acceptance criteria and outcome cannot hold a line reading \
+             `{ACCEPTANCE}` or `{OUTCOME}`: those headings divide its file"
+        )));
+    }
 
-    MarkdownFile {
+    Ok(MarkdownFile {
         frontmatter,
         body: Body::new(body),
-    }
+    })
 }
 
 pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {
@@ -346,7 +367,7 @@ pub fn document_from_markdown(file: &MarkdownFile) -> Result<Document> {
     }))
 }
 
-pub fn message_to_markdown(message: &Message) -> MarkdownFile {
+pub fn message_to_markdown(message: &Message, carried: Frontmatter) -> MarkdownFile {
     let mut frontmatter = Frontmatter::new();
     frontmatter.set("id", json!(message.id().to_string()));
     frontmatter.set("type", json!("message"));
@@ -363,6 +384,11 @@ pub fn message_to_markdown(message: &Message) -> MarkdownFile {
     frontmatter.set("status", json!(message.status().as_str()));
     frontmatter.set("namespace", json!(message.namespace().to_string()));
     frontmatter.set("created", stamp(message.created_at()));
+    for (key, value) in carried.iter() {
+        if !MESSAGE_KEYS.contains(&key) {
+            frontmatter.set(key, value.clone());
+        }
+    }
 
     MarkdownFile {
         frontmatter,

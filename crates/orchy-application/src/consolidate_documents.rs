@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, DocumentStore, DomainError, Edge, EdgeStore, EntityRef, Id, Relation};
+use orchy_core::{
+    Clock, DocumentStore, DomainError, Edge, EdgeStore, EntityRef, Id, Relation, UnitOfWork,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::DocumentDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConsolidateDocumentsCommand {
@@ -24,6 +27,7 @@ pub struct ConsolidateDocuments {
     documents: Arc<dyn DocumentStore>,
     edges: Arc<dyn EdgeStore>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl ConsolidateDocuments {
@@ -31,15 +35,24 @@ impl ConsolidateDocuments {
         documents: Arc<dyn DocumentStore>,
         edges: Arc<dyn EdgeStore>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             documents,
             edges,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(
+        &self,
+        cmd: ConsolidateDocumentsCommand,
+    ) -> ApplicationResult<ConsolidateDocumentsResponse> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(
         &self,
         cmd: ConsolidateDocumentsCommand,
     ) -> ApplicationResult<ConsolidateDocumentsResponse> {
@@ -67,7 +80,7 @@ impl ConsolidateDocuments {
         let mut superseded = Vec::new();
         for source_id in &source_ids {
             let mut source = self.documents.require(source_id).await?;
-            source.supersede(into_id.clone(), &*self.clock)?;
+            source.supersede(&into, &*self.clock)?;
             self.documents.save(&mut source).await?;
             into.retag(source.tags().to_vec(), &[], &*self.clock);
             superseded.push(DocumentDto::from(&source));

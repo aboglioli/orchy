@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::{IsTerminal, Write};
 
 use serde::Serialize;
@@ -46,7 +47,7 @@ impl Output {
         Ok(())
     }
 
-    pub(crate) fn note(&self, message: impl std::fmt::Display) {
+    pub(crate) fn note(&self, message: impl fmt::Display) {
         if self.format == Format::Text {
             eprintln!("{}", self.dim(&message.to_string()));
         }

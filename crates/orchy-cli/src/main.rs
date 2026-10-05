@@ -34,16 +34,25 @@ use cli::{Cli, Command, LockCommand, NsCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
 use output::{Output, short};
+use serde_json::Value;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let out = Output::new(cli.json, cli.no_color);
+    let json = cli.json;
 
     match run(cli, &out).await {
         Ok(()) => ExitCode::SUCCESS,
         // the reader stopped early, as `orchy export | head` does; that is not a failure
         Err(CliError::Io(e)) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(e) if json => {
+            let error = serde_json::json!({
+                "error": { "kind": e.kind(), "exit": e.exit_code(), "message": e.to_string() }
+            });
+            eprintln!("{error}");
+            ExitCode::from(e.exit_code() as u8)
+        }
         Err(e) => {
             eprintln!("orchy: {e}");
             ExitCode::from(e.exit_code() as u8)
@@ -560,7 +569,7 @@ fn relation_names() -> Vec<String> {
         .collect()
 }
 
-fn join(value: &serde_json::Value) -> String {
+fn join(value: &Value) -> String {
     value
         .as_array()
         .map(|items| {

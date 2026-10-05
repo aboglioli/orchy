@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, DocumentStatus, DocumentStore, Id, Kind, Namespace, Tag, Title};
+use orchy_core::{
+    Clock, DocumentStatus, DocumentStore, Id, Kind, Namespace, Tag, Title, UnitOfWork,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::DocumentDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateDocumentCommand {
@@ -21,14 +24,27 @@ pub struct UpdateDocumentCommand {
 pub struct UpdateDocument {
     documents: Arc<dyn DocumentStore>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl UpdateDocument {
-    pub fn new(documents: Arc<dyn DocumentStore>, clock: Arc<dyn Clock>) -> Self {
-        Self { documents, clock }
+    pub fn new(
+        documents: Arc<dyn DocumentStore>,
+        clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
+    ) -> Self {
+        Self {
+            documents,
+            clock,
+            unit_of_work,
+        }
     }
 
     pub async fn execute(&self, cmd: UpdateDocumentCommand) -> ApplicationResult<DocumentDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: UpdateDocumentCommand) -> ApplicationResult<DocumentDto> {
         let mut document = self.documents.require(&Id::new(&cmd.document_id)?).await?;
         document.ensure_unchanged(cmd.if_match.as_deref())?;
 

@@ -109,6 +109,9 @@ impl Relation {
 
     pub fn accepts(&self, from: EntityKind, to: EntityKind) -> bool {
         use EntityKind::*;
+        if from == Actor {
+            return false;
+        }
         match self {
             Self::DependsOn | Self::Parent => from == Task && to == Task,
             Self::SpawnedBy => from == Task && to == Message,
@@ -154,6 +157,21 @@ impl Relation {
             Self::SpawnedBy => Some("orchy msg promote"),
             _ => None,
         }
+    }
+
+    pub fn owner_of_field(field: &str) -> Option<String> {
+        if let Some(relation) = Self::ALL.into_iter().find(|r| r.as_str() == field) {
+            let command = relation.managed_by().unwrap_or("orchy link / orchy unlink");
+            return Some(format!(
+                "holds `{relation}` links; change them with `{command}`"
+            ));
+        }
+        let stored = Self::ALL
+            .into_iter()
+            .find(|r| !r.is_symmetric() && r.inverse() == field)?;
+        Some(format!(
+            "is maintained by orchy from the `{stored}` links on the other end; change those instead"
+        ))
     }
 
     pub fn validate(&self, from: EntityKind, to: EntityKind) -> Result<()> {
@@ -310,9 +328,18 @@ mod tests {
 
     #[test]
     fn related_to_joins_anything_because_that_is_what_it_is_for() {
-        for from in [Document, Task, Message, Actor] {
-            for to in [Document, Task, Message, Actor] {
+        for from in [Document, Task, Message, Skill] {
+            for to in [Document, Task, Message, Skill, Actor] {
                 assert!(Relation::RelatedTo.accepts(from, to), "{from} -> {to}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_actor_is_pointed_at_but_holds_no_links() {
+        for relation in Relation::ALL {
+            for to in [Document, Task, Message, Skill, Actor] {
+                assert!(!relation.accepts(Actor, to), "{relation}: actor -> {to}");
             }
         }
     }
@@ -333,6 +360,26 @@ mod tests {
             ],
             "only relations with consequences beyond the edge are managed"
         );
+    }
+
+    #[test]
+    fn every_link_field_names_who_changes_it_and_no_other_field_does() {
+        for relation in Relation::ALL {
+            let owner = Relation::owner_of_field(relation.as_str()).unwrap();
+            assert!(owner.contains("orchy"), "{relation}: {owner}");
+            if !relation.is_symmetric() {
+                assert!(
+                    Relation::owner_of_field(relation.inverse()).is_some(),
+                    "{relation}"
+                );
+            }
+        }
+        assert!(
+            Relation::owner_of_field("supersedes")
+                .unwrap()
+                .contains("orchy supersede")
+        );
+        assert_eq!(Relation::owner_of_field("reviewer"), None);
     }
 
     #[test]

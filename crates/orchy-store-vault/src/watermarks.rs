@@ -3,6 +3,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 use orchy_core::{ActorId, DomainError, Id, ReadWatermarks, Result};
+use serde_json::Value;
 
 use crate::lock::{DEFAULT_WAIT, FileLock};
 
@@ -30,7 +31,7 @@ fn read_mark(file: &File) -> Option<Id> {
     let mut text = String::new();
     handle.seek(SeekFrom::Start(0)).ok()?;
     handle.read_to_string(&mut text).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
     value
         .get("watermark")
         .and_then(|v| v.as_str())

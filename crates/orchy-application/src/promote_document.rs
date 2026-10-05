@@ -3,11 +3,13 @@ use std::sync::Arc;
 use orchy_core::{
     ActorId, ActorStore, Clock, Document, DocumentStore, DomainError, Edge, EdgeStore, EntityKind,
     EntityRef, Id, IdGenerator, Kind, Namespace, Relation, Skill, SkillName, SkillStore, Summary,
+    UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::{DocumentDto, SkillDto};
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 const INTO_SKILL: &str = "skill";
 
@@ -35,6 +37,7 @@ pub struct PromoteDocument {
     edges: Arc<dyn EdgeStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl PromoteDocument {
@@ -45,6 +48,7 @@ impl PromoteDocument {
         edges: Arc<dyn EdgeStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             documents,
@@ -53,10 +57,18 @@ impl PromoteDocument {
             edges,
             ids,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(
+        &self,
+        cmd: PromoteDocumentCommand,
+    ) -> ApplicationResult<PromoteDocumentResponse> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(
         &self,
         cmd: PromoteDocumentCommand,
     ) -> ApplicationResult<PromoteDocumentResponse> {

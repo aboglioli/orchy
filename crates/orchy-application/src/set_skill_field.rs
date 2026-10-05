@@ -1,17 +1,19 @@
 use std::sync::Arc;
 
-use orchy_core::{ActorStore, Clock, SkillStore, Tag};
+use orchy_core::{ActorStore, Clock, SkillStore, Tag, UnitOfWork};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::dto::SkillDto;
 use crate::error::ApplicationResult;
 use crate::read_skill::{ReadSkill, ReadSkillCommand};
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SetSkillFieldCommand {
     pub target: String,
     pub namespace: Option<String>,
-    pub fields: Vec<(String, serde_json::Value)>,
+    pub fields: Vec<(String, Value)>,
     pub remove: Vec<String>,
     pub tag: Vec<String>,
     pub untag: Vec<String>,
@@ -23,6 +25,7 @@ pub struct SetSkillField {
     skills: Arc<dyn SkillStore>,
     read: ReadSkill,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl SetSkillField {
@@ -30,15 +33,21 @@ impl SetSkillField {
         skills: Arc<dyn SkillStore>,
         actors: Arc<dyn ActorStore>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             read: ReadSkill::new(Arc::clone(&skills), actors),
             skills,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: SetSkillFieldCommand) -> ApplicationResult<SkillDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: SetSkillFieldCommand) -> ApplicationResult<SkillDto> {
         let found = self
             .read
             .execute(ReadSkillCommand {

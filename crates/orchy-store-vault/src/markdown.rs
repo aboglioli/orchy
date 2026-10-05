@@ -179,9 +179,24 @@ fn key_order(yaml: &str) -> Vec<String> {
         .collect()
 }
 
+fn yaml_key(key: &str) -> String {
+    let plain = key
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if plain {
+        return key.to_owned();
+    }
+    Value::String(key.to_owned()).to_string()
+}
+
 fn render_frontmatter(frontmatter: &Frontmatter) -> Result<String> {
     let mut out = String::new();
     for (key, value) in frontmatter.iter() {
+        let key = yaml_key(key);
         let rendered = serde_saphyr::to_string(&value).map_err(|e| {
             DomainError::validation(format!("`{key}` cannot be written as YAML: {e}"))
         })?;

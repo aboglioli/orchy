@@ -131,10 +131,10 @@ impl TraverseGraph {
             let Ok(entity) = node.parse::<EntityRef>() else {
                 continue;
             };
-            if entity.kind() != EntityKind::Document {
+            let (EntityKind::Document, Some(id)) = (entity.kind(), entity.id()) else {
                 continue;
-            }
-            let Some(document) = self.documents.get(entity.id()).await? else {
+            };
+            let Some(document) = self.documents.get(id).await? else {
                 continue;
             };
             for target in self.mentions.execute(&document).await? {

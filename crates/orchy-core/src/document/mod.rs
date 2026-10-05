@@ -14,7 +14,7 @@ pub use events::{
     DocumentRetyped, DocumentSectionReplaced, DocumentStatusChanged, DocumentSuperseded,
     DocumentTagged, DocumentWritten,
 };
-pub use frontmatter::Frontmatter;
+pub use frontmatter::{Frontmatter, validate_field_name};
 pub use kind::{DocumentStatus, Kind};
 
 use crate::body::Body;
@@ -22,6 +22,7 @@ use crate::clock::Clock;
 use crate::content_hash;
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
+use crate::graph::Relation;
 use crate::id::{Id, IdGenerator};
 use crate::namespace::Namespace;
 use crate::pagination::{Page, PageRequest};
@@ -36,7 +37,6 @@ pub trait DocumentStore: Send + Sync {
     /// Never paged: callers rely on seeing every match.
     async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>>;
     async fn save(&self, document: &mut Document) -> Result<()>;
-    async fn delete(&self, id: &Id) -> Result<()>;
 
     async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {
         Ok(Page::slice(self.matching(query).await?, page))
@@ -236,10 +236,9 @@ impl Document {
     }
 
     pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
-        if Kind::is_projected_field(field) {
-            return Err(DomainError::forbidden(format!(
-                "`{field}` is maintained by orchy and cannot be set by hand"
-            )));
+        validate_field_name(field)?;
+        if let Some(owner) = Relation::owner_of_field(field) {
+            return Err(DomainError::forbidden(format!("`{field}` {owner}")));
         }
         if let Some(command) = semantic_command_for(field) {
             return Err(DomainError::forbidden(format!(
@@ -291,10 +290,15 @@ impl Document {
     }
 
     pub fn retype(&mut self, kind: Kind, clock: &dyn Clock) -> Result<()> {
-        if let Some(status) = self.status
-            && !kind.allows(status)
-        {
-            self.status = None;
+        if kind == self.kind {
+            return Ok(());
+        }
+        if kind.is_candidate() != self.kind.is_candidate() {
+            return Err(DomainError::conflict(if self.is_candidate() {
+                "a candidate becomes canon through `orchy promote`, or is turned down with `orchy reject`"
+            } else {
+                "canon does not become a proposal again; write a new candidate instead"
+            }));
         }
         let from = std::mem::replace(&mut self.kind, kind);
         self.rehash(clock);
@@ -372,12 +376,21 @@ impl Document {
         self.set_status(DocumentStatus::Rejected, clock)
     }
 
-    pub fn supersede(&mut self, by: Id, clock: &dyn Clock) -> Result<()> {
-        if by == self.id {
+    pub fn supersede(&mut self, by: &Document, clock: &dyn Clock) -> Result<()> {
+        if by.id == self.id {
             return Err(DomainError::validation(
                 "a document cannot supersede itself",
             ));
         }
+        if by.is_candidate() || by.status.is_some_and(DocumentStatus::is_retired) {
+            return Err(DomainError::conflict(format!(
+                "`{}` is {}; only canon still in force can replace a document",
+                by.id,
+                by.status
+                    .map_or_else(|| by.kind.to_string(), |s| s.to_string())
+            )));
+        }
+        let by = by.id.clone();
         self.kind.validate_status(DocumentStatus::Superseded)?;
         self.ensure_can_become(DocumentStatus::Superseded)?;
         self.status = Some(DocumentStatus::Superseded);
@@ -488,6 +501,7 @@ fn semantic_command_for(field: &str) -> Option<&'static str> {
         "id" => Some("(ids are immutable)"),
         "tags" => Some("orchy tag"),
         "title" => Some("orchy retitle"),
+        "created" | "updated" => Some("(timestamps are orchy's)"),
         _ => None,
     }
 }
@@ -534,8 +548,15 @@ mod tests {
         )
     }
 
-    fn replacement() -> Id {
-        Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()
+    fn replacement() -> Document {
+        Document::create(
+            Kind::Decision,
+            Title::new("Rotate signing keys, again").unwrap(),
+            Namespace::new("/backend").unwrap(),
+            Body::new("Move to EdDSA."),
+            &SeqIds(std::sync::atomic::AtomicU64::new(99)),
+            &clock(),
+        )
     }
 
     fn candidate() -> Document {
@@ -587,8 +608,7 @@ mod tests {
                 d.mark_promoted(&clock()).unwrap()
             }),
             ("supersede", document, |d| {
-                d.supersede(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
-                    .unwrap()
+                d.supersede(&replacement(), &clock()).unwrap()
             }),
             ("retag", document, |d| {
                 d.retag(vec![Tag::new("x").unwrap()], &[], &clock())
@@ -705,13 +725,13 @@ mod tests {
     #[test]
     fn what_replaced_a_document_cannot_be_undone_by_archiving_it() {
         let mut document = document();
-        document.supersede(replacement(), &clock()).unwrap();
+        document.supersede(&replacement(), &clock()).unwrap();
         let archived = document.set_status(DocumentStatus::Archived, &clock());
         assert!(
             matches!(archived, Err(DomainError::InvalidTransition { .. })),
             "{archived:?}"
         );
-        let again = document.supersede(replacement(), &clock());
+        let again = document.supersede(&replacement(), &clock());
         assert!(
             matches!(again, Err(DomainError::InvalidTransition { .. })),
             "{again:?}"
@@ -750,8 +770,7 @@ mod tests {
     fn superseding_sets_the_status_and_emits_the_link_in_one_step() {
         let mut document = document();
         document.drain_events();
-        let by = Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap();
-        document.supersede(by, &clock()).unwrap();
+        document.supersede(&replacement(), &clock()).unwrap();
 
         assert_eq!(document.status().unwrap().as_str(), "superseded");
         let events = document.drain_events();
@@ -761,8 +780,37 @@ mod tests {
     #[test]
     fn a_document_cannot_supersede_itself() {
         let mut document = document();
-        let own = document.id().clone();
-        assert!(document.supersede(own, &clock()).is_err());
+        let same = document.clone();
+        assert!(document.supersede(&same, &clock()).is_err());
+    }
+
+    #[test]
+    fn only_canon_still_in_force_can_replace_a_document() {
+        let mut retired = replacement();
+        retired
+            .set_status(DocumentStatus::Archived, &clock())
+            .unwrap();
+        assert!(matches!(
+            document().supersede(&retired, &clock()),
+            Err(DomainError::Conflict(_))
+        ));
+        assert!(
+            document().supersede(&candidate(), &clock()).is_err(),
+            "a proposal does not replace canon until it is promoted"
+        );
+    }
+
+    #[test]
+    fn retyping_never_crosses_between_canon_and_proposals() {
+        let mut superseded = document();
+        superseded.supersede(&replacement(), &clock()).unwrap();
+        assert!(
+            superseded.retype(Kind::Candidate, &clock()).is_err(),
+            "crossing would wipe the final status and let it come back"
+        );
+        assert!(candidate().retype(Kind::Note, &clock()).is_err());
+        superseded.retype(Kind::Note, &clock()).unwrap();
+        assert_eq!(superseded.status(), Some(DocumentStatus::Superseded));
     }
 
     #[test]
@@ -811,20 +859,6 @@ mod tests {
             candidate
                 .promote(Kind::Candidate, Namespace::root(), &clock())
                 .is_err()
-        );
-    }
-
-    #[test]
-    fn retyping_drops_a_status_the_new_type_does_not_recognise() {
-        let mut document = document();
-        document
-            .set_status(DocumentStatus::Active, &clock())
-            .unwrap();
-        document.retype(Kind::Candidate, &clock()).unwrap();
-        assert_eq!(
-            document.status(),
-            None,
-            "a status that does not exist in the target type must not survive"
         );
     }
 

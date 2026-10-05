@@ -3,11 +3,20 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use chrono::Utc;
 use orchy_core::{DomainEvent, EventLog, EventQuery, RecordedEvent, Result};
+use serde_json::Value;
 
 #[derive(Default)]
 pub struct MemoryEventLog(Mutex<Vec<RecordedEvent>>);
 
 impl MemoryEventLog {
+    pub(crate) fn state(&self) -> usize {
+        self.0.lock().expect("event log lock").len()
+    }
+
+    pub(crate) fn restore_state(&self, len: usize) {
+        self.0.lock().expect("event log lock").truncate(len);
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -42,7 +51,7 @@ impl EventLog for MemoryEventLog {
                 namespace: event.namespace().to_string(),
                 actor: None,
                 machine: None,
-                payload: serde_json::from_slice(payload.data()).unwrap_or(serde_json::Value::Null),
+                payload: serde_json::from_slice(payload.data()).unwrap_or(Value::Null),
                 recorded_at: Utc::now(),
             });
         }

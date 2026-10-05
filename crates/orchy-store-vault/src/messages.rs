@@ -81,7 +81,11 @@ impl MessageStore for VaultMessageStore {
             .vault
             .layout()
             .message_key(message.thread(), message.id());
-        let file = codec::message_to_markdown(message);
+        let carried = match self.vault.peek_by_id(message.id()).await? {
+            Some((_, file)) => codec::carried_frontmatter(&file),
+            None => Default::default(),
+        };
+        let file = codec::message_to_markdown(message, carried);
         self.vault
             .write_if(
                 &key,

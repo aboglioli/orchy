@@ -1483,3 +1483,47 @@ fn a_second_agent_never_finds_the_log_locked_against_it() {
         TEAM.len() * 4
     );
 }
+
+#[test]
+fn two_agents_nesting_tasks_under_each_other_at_once_never_make_a_loop() {
+    let vault = Vault::new();
+    for _ in 0..8 {
+        let a = vault.new_task("a");
+        let b = vault.new_task("b");
+        let (vault, a, b) = (&vault, &a, &b);
+        thread::scope(|scope| {
+            let first =
+                scope.spawn(move || vault.run("claude", &["task", "update", a, "--parent", b]));
+            let second =
+                scope.spawn(move || vault.run("codex", &["task", "update", b, "--parent", a]));
+            let landed = [first.join().unwrap(), second.join().unwrap()]
+                .iter()
+                .filter(|r| r.is_ok())
+                .count();
+            assert_eq!(landed, 1, "exactly one of the two nestings can stand");
+        });
+    }
+    let report = vault.json("alan", &["doctor"]);
+    assert_eq!(report["problems"], serde_json::json!([]), "{report}");
+}
+
+#[test]
+fn two_agents_making_tasks_wait_on_each_other_at_once_never_make_a_loop() {
+    let vault = Vault::new();
+    for _ in 0..8 {
+        let a = vault.new_task("a");
+        let b = vault.new_task("b");
+        let (vault, a, b) = (&vault, &a, &b);
+        thread::scope(|scope| {
+            let first = scope.spawn(move || vault.run("claude", &["task", "dep", a, "--add", b]));
+            let second = scope.spawn(move || vault.run("codex", &["task", "dep", b, "--add", a]));
+            let landed = [first.join().unwrap(), second.join().unwrap()]
+                .iter()
+                .filter(|r| r.is_ok())
+                .count();
+            assert_eq!(landed, 1, "exactly one of the two dependencies can stand");
+        });
+    }
+    let report = vault.json("alan", &["doctor"]);
+    assert_eq!(report["problems"], serde_json::json!([]), "{report}");
+}

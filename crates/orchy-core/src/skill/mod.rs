@@ -17,9 +17,10 @@ pub use name::{SkillName, Summary};
 use crate::body::Body;
 use crate::clock::Clock;
 use crate::content_hash;
-use crate::document::Frontmatter;
+use crate::document::{Frontmatter, validate_field_name};
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
+use crate::graph::Relation;
 use crate::id::{Id, IdGenerator};
 use crate::namespace::Namespace;
 use crate::tag::{self, Tag};
@@ -29,7 +30,6 @@ pub trait SkillStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Skill>>;
     async fn all(&self) -> Result<Vec<Skill>>;
     async fn save(&self, skill: &mut Skill) -> Result<()>;
-    async fn delete(&self, id: &Id) -> Result<()>;
 
     async fn require(&self, id: &Id) -> Result<Skill> {
         self.get(id)
@@ -241,6 +241,10 @@ impl Skill {
     }
 
     pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
+        validate_field_name(field)?;
+        if let Some(owner) = Relation::owner_of_field(field) {
+            return Err(DomainError::forbidden(format!("`{field}` {owner}")));
+        }
         if let Some(command) = managed_field(field) {
             return Err(DomainError::forbidden(format!(
                 "`{field}` is maintained by orchy; use {command}"
@@ -253,6 +257,10 @@ impl Skill {
     }
 
     pub fn remove_field(&mut self, field: &str, clock: &dyn Clock) -> Result<()> {
+        validate_field_name(field)?;
+        if let Some(owner) = Relation::owner_of_field(field) {
+            return Err(DomainError::forbidden(format!("`{field}` {owner}")));
+        }
         if let Some(command) = managed_field(field) {
             return Err(DomainError::forbidden(format!(
                 "`{field}` is maintained by orchy; use {command}"

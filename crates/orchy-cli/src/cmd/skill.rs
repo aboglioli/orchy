@@ -6,6 +6,7 @@ use orchy_application::recall::RecallCommand;
 use orchy_application::retire_skill::RetireSkillCommand;
 use orchy_application::set_skill_field::SetSkillFieldCommand;
 use orchy_application::write_skill::WriteSkillCommand;
+use serde_json::Value;
 
 use crate::cli::SkillEdits;
 use crate::error::{CliError, CliResult};
@@ -49,8 +50,8 @@ pub(crate) async fn set(
         let (field, value) = assignment
             .split_once('=')
             .ok_or_else(|| CliError::config(format!("`{assignment}` is not field=value")))?;
-        let parsed = serde_json::from_str(value)
-            .unwrap_or_else(|_| serde_json::Value::String(value.to_owned()));
+        let parsed =
+            serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.to_owned()));
         fields.push((field.to_owned(), parsed));
     }
 

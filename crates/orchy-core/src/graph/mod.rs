@@ -9,6 +9,7 @@ pub use relation::{Arity, Relation};
 
 use crate::entity_ref::EntityRef;
 use crate::error::{DomainError, Result};
+use crate::id::Id;
 
 #[async_trait]
 pub trait EdgeStore: Send + Sync {
@@ -16,6 +17,7 @@ pub trait EdgeStore: Send + Sync {
     async fn remove(&self, edge: &Edge) -> Result<()>;
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>>;
     async fn incoming(&self, to: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>>;
+    async fn of_relation(&self, relation: &Relation) -> Result<Vec<Edge>>;
     async fn neighbourhood(&self, of: &EntityRef, depth: u8) -> Result<Vec<TraversalHop>>;
 }
 
@@ -41,6 +43,12 @@ impl Edge {
 
     pub fn from(&self) -> &EntityRef {
         &self.from
+    }
+
+    pub fn source(&self) -> &Id {
+        self.from
+            .id()
+            .expect("Edge::new refuses an actor as the source of a link")
     }
 
     pub fn to(&self) -> &EntityRef {
@@ -71,7 +79,6 @@ pub enum Direction {
 mod tests {
     use super::*;
     use crate::entity_ref::EntityKind;
-    use crate::id::Id;
 
     const A: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const B: &str = "01BX5ZZKBKACTAV9WEVGEMMVRZ";

@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use orchy_core::{
     ActorId, ActorStore, Clock, Id, IdGenerator, Namespace, Priority, Role, Tag, Task, TaskStore,
-    Title,
+    Title, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateTaskCommand {
@@ -28,6 +29,7 @@ pub struct CreateTask {
     actors: Arc<dyn ActorStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl CreateTask {
@@ -36,16 +38,22 @@ impl CreateTask {
         actors: Arc<dyn ActorStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
             actors,
             ids,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: CreateTaskCommand) -> ApplicationResult<TaskDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: CreateTaskCommand) -> ApplicationResult<TaskDto> {
         let title = Title::new(&cmd.title)?;
         let namespace = match (&cmd.namespace, &cmd.actor) {
             (Some(ns), _) => Namespace::new(ns)?,
@@ -81,10 +89,12 @@ impl CreateTask {
             task.retag(tags, &[], &*self.clock);
         }
         if let Some(parent) = &cmd.parent {
-            task.attach_to(Id::new(parent)?, &*self.clock)?;
+            let parent = self.tasks.require(&Id::new(parent)?).await?;
+            task.attach_to(&parent, &*self.clock)?;
         }
         for dependency in &cmd.depends_on {
-            task.add_dependency(Id::new(dependency)?, &*self.clock)?;
+            let dependency = self.tasks.require(&Id::new(dependency)?).await?;
+            task.add_dependency(dependency.id().clone(), &*self.clock)?;
         }
 
         self.tasks.save(&mut task).await?;

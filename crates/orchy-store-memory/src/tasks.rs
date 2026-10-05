@@ -12,6 +12,14 @@ pub struct MemoryTaskStore {
 }
 
 impl MemoryTaskStore {
+    pub(crate) fn state(&self) -> BTreeMap<Id, Task> {
+        self.tasks.lock().expect("tasks lock").clone()
+    }
+
+    pub(crate) fn restore_state(&self, state: BTreeMap<Id, Task>) {
+        *self.tasks.lock().expect("tasks lock") = state;
+    }
+
     pub fn new(log: Arc<MemoryEventLog>) -> Self {
         Self {
             tasks: Mutex::new(BTreeMap::new()),
@@ -62,10 +70,5 @@ impl TaskStore for MemoryTaskStore {
             .expect("task mutex")
             .insert(task.id().clone(), task.clone());
         self.log.append(&events).await
-    }
-
-    async fn delete(&self, id: &Id) -> Result<()> {
-        self.tasks.lock().expect("task mutex").remove(id);
-        Ok(())
     }
 }

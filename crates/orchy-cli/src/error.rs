@@ -1,4 +1,5 @@
 use std::fmt;
+use std::io;
 
 use orchy_application::ApplicationError;
 use orchy_core::DomainError;
@@ -9,7 +10,7 @@ pub(crate) type CliResult<T> = Result<T, CliError>;
 pub(crate) enum CliError {
     Application(ApplicationError),
     Config(String),
-    Io(std::io::Error),
+    Io(io::Error),
     NotAVault(String),
     WrongEntity(String),
     ProblemsRemain(usize),
@@ -20,7 +21,7 @@ impl CliError {
         Self::Config(message.into())
     }
 
-    pub(crate) fn io(e: std::io::Error) -> Self {
+    pub(crate) fn io(e: io::Error) -> Self {
         Self::Io(e)
     }
 
@@ -34,6 +35,17 @@ impl CliError {
         Self::NotAVault(format!(
             "{path} is not an orchy vault. Run `orchy init {path}` to create one."
         ))
+    }
+
+    pub(crate) fn kind(&self) -> String {
+        match self {
+            Self::Application(e) => e.code().to_string(),
+            Self::Config(_) => "config".to_owned(),
+            Self::NotAVault(_) => "not_a_vault".to_owned(),
+            Self::WrongEntity(_) => "wrong_entity".to_owned(),
+            Self::ProblemsRemain(_) => "problems_remain".to_owned(),
+            Self::Io(_) => "io".to_owned(),
+        }
     }
 
     pub(crate) fn exit_code(&self) -> i32 {
@@ -74,8 +86,8 @@ impl From<DomainError> for CliError {
     }
 }
 
-impl From<std::io::Error> for CliError {
-    fn from(e: std::io::Error) -> Self {
+impl From<io::Error> for CliError {
+    fn from(e: io::Error) -> Self {
         Self::Io(e)
     }
 }

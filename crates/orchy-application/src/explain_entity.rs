@@ -34,7 +34,8 @@ impl ExplainEntity {
         let history = self
             .log
             .replay(&EventQuery {
-                key: Some(entity.id().clone()),
+                key: entity.id().cloned(),
+                actor: entity.as_actor().map(ToString::to_string),
                 ..Default::default()
             })
             .await?;

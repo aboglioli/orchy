@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, Id, Namespace, Priority, Role, Tag, TaskStore, Title};
+use orchy_core::{Clock, Id, Namespace, Priority, Role, Tag, TaskStore, Title, UnitOfWork};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
 use crate::rollup_ancestors::RollupAncestors;
+use crate::task_graph::TaskGraph;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateTaskCommand {
@@ -24,24 +26,34 @@ pub struct UpdateTaskCommand {
 
 pub struct UpdateTask {
     tasks: Arc<dyn TaskStore>,
+    graph: Arc<TaskGraph>,
     rollup: Arc<RollupAncestors>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl UpdateTask {
     pub fn new(
         tasks: Arc<dyn TaskStore>,
+        graph: Arc<TaskGraph>,
         rollup: Arc<RollupAncestors>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
+            graph,
             rollup,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: UpdateTaskCommand) -> ApplicationResult<TaskDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: UpdateTaskCommand) -> ApplicationResult<TaskDto> {
         let id = Id::new(&cmd.task_id)?;
         let mut task = self.tasks.require(&id).await?;
         let previous_parent = task.parent().cloned();
@@ -50,15 +62,15 @@ impl UpdateTask {
             task.detach(&*self.clock);
         }
         if let Some(parent) = &cmd.parent {
-            let parent_id = Id::new(parent)?;
-            self.tasks.require(&parent_id).await?;
-            if self.would_cycle(&id, &parent_id).await? {
-                return Err(orchy_core::DomainError::validation(format!(
-                    "`{parent}` is already beneath this task; re-parenting there would make a cycle"
-                ))
-                .into());
-            }
-            task.attach_to(parent_id, &*self.clock)?;
+            let parent = self.tasks.require(&Id::new(parent)?).await?;
+            let leaving: Vec<(Id, Id)> = previous_parent
+                .iter()
+                .map(|p| (p.clone(), id.clone()))
+                .collect();
+            self.graph
+                .ensure_no_loop(&[(parent.id().clone(), id.clone())], &leaving)
+                .await?;
+            task.attach_to(&parent, &*self.clock)?;
         }
         if let Some(title) = &cmd.title {
             task.retitle(Title::new(title)?, &*self.clock);
@@ -105,21 +117,5 @@ impl UpdateTask {
             }
         }
         Ok(TaskDto::from(&task))
-    }
-
-    async fn would_cycle(&self, task: &Id, candidate_parent: &Id) -> ApplicationResult<bool> {
-        let mut cursor = Some(candidate_parent.clone());
-        let mut seen = 0;
-        while let Some(id) = cursor {
-            if &id == task {
-                return Ok(true);
-            }
-            seen += 1;
-            if seen > orchy_core::task::rollup::MAX_DEPTH {
-                return Ok(true);
-            }
-            cursor = self.tasks.get(&id).await?.and_then(|t| t.parent().cloned());
-        }
-        Ok(false)
     }
 }

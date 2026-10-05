@@ -1,12 +1,19 @@
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use orchy_core::{EntityKind, EntityRef, Id, Integrity, Problem, ProblemKind, Relation, Result};
+use orchy_core::{
+    Edge, EntityKind, EntityRef, Id, Integrity, Kind, Problem, ProblemKind, Relation, Result,
+};
+use serde_json::Value;
+
+use crate::edges::edges_in;
 
 use crate::codec;
+use crate::layout::AGENTS;
 use crate::markdown::MarkdownFile;
-use crate::vault::Vault;
 use crate::vault::refs_in;
+use crate::vault::{Scan, Vault};
 
 pub struct VaultIntegrity {
     vault: Arc<Vault>,
@@ -70,26 +77,130 @@ impl VaultIntegrity {
         }
     }
 
-    fn dangling(&self, key: &str, id: &Id, file: &MarkdownFile) -> Vec<Problem> {
+    fn projections(&self, scan: &Scan) -> BTreeMap<(Id, &'static str), BTreeSet<String>> {
+        let mut expected: BTreeMap<(Id, &'static str), BTreeSet<String>> = BTreeMap::new();
+        for (id, located, file) in &scan.entries {
+            if located.kind == EntityKind::Actor {
+                continue;
+            }
+            let source = EntityRef::new(located.kind, id.clone());
+            for edge in edges_in(&source, file) {
+                let inverse = edge.relation().inverse();
+                if !Kind::is_projected_field(inverse) {
+                    continue;
+                }
+                let Some(target) = edge.to().id() else {
+                    continue;
+                };
+                expected
+                    .entry((target.clone(), inverse))
+                    .or_default()
+                    .insert(edge.from().to_string());
+            }
+        }
+        expected
+    }
+
+    fn stale_projections(
+        &self,
+        scan: &Scan,
+        expected: &BTreeMap<(Id, &'static str), BTreeSet<String>>,
+    ) -> Vec<Problem> {
         let mut problems = Vec::new();
+        for (id, located, file) in &scan.entries {
+            for field in Kind::PROJECTED_FIELDS {
+                let shown: BTreeSet<String> =
+                    refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null))
+                        .into_iter()
+                        .collect();
+                let wanted = expected
+                    .get(&(id.clone(), field))
+                    .cloned()
+                    .unwrap_or_default();
+                if shown == wanted {
+                    continue;
+                }
+                let list = |refs: &BTreeSet<String>| {
+                    if refs.is_empty() {
+                        return "nothing".to_owned();
+                    }
+                    refs.iter().cloned().collect::<Vec<_>>().join(", ")
+                };
+                problems.push(Problem::new(
+                    ProblemKind::StaleProjection,
+                    &located.key,
+                    Some(id.clone()),
+                    format!(
+                        "`{field}` shows {} but the links stored elsewhere say {}",
+                        list(&shown),
+                        list(&wanted)
+                    ),
+                ));
+            }
+        }
+        problems
+    }
+
+    async fn reproject(&self, id: &Id) -> Result<bool> {
+        let scan = self.vault.scan().await?;
+        let expected = self.projections(&scan);
+        for field in Kind::PROJECTED_FIELDS {
+            let wanted: Vec<String> = expected
+                .get(&(id.clone(), field))
+                .map(|refs| refs.iter().cloned().collect())
+                .unwrap_or_default();
+            self.vault
+                .amend_refs(id, field, move |refs| *refs = wanted.clone())
+                .await?;
+        }
+        Ok(true)
+    }
+
+    fn links(
+        &self,
+        source: (&str, &Id, EntityKind),
+        file: &MarkdownFile,
+        roster: &HashSet<String>,
+    ) -> Vec<Problem> {
+        let (key, id, kind) = source;
+        let mut problems = Vec::new();
+        let invalid =
+            |detail: String| Problem::new(ProblemKind::InvalidLink, key, Some(id.clone()), detail);
         for (field, value) in file.frontmatter.iter() {
             let Ok(relation) = field.parse::<Relation>() else {
                 continue;
             };
             for target in refs_in(value) {
-                let Ok(to) = EntityRef::parse_or_assume(&target, relation.sole_target_kind())
-                else {
-                    continue;
+                let to = match EntityRef::parse_or_assume(&target, relation.sole_target_kind()) {
+                    Ok(to) => to,
+                    Err(e) => {
+                        problems.push(invalid(format!("`{relation}` holds `{target}`: {e}")));
+                        continue;
+                    }
                 };
-                if to.kind() == EntityKind::Actor || self.vault.locate(to.id()).is_some() {
+                if let Err(e) = Edge::new(EntityRef::new(kind, id.clone()), to.clone(), relation) {
+                    problems.push(invalid(e.to_string()));
                     continue;
                 }
-                problems.push(Problem::new(
-                    ProblemKind::DanglingEdge,
-                    key,
-                    Some(id.clone()),
-                    format!("`{relation}` points at {to}, which does not exist"),
-                ));
+                let found = match (to.id(), to.as_actor()) {
+                    (Some(target), _) => self.vault.locate(target).map(|l| l.kind),
+                    (_, Some(actor)) => roster
+                        .contains(&self.vault.layout().actor_key(actor))
+                        .then_some(EntityKind::Actor),
+                    _ => None,
+                };
+                match found {
+                    None => problems.push(Problem::new(
+                        ProblemKind::DanglingEdge,
+                        key,
+                        Some(id.clone()),
+                        format!("`{relation}` points at {to}, which does not exist"),
+                    )),
+                    Some(actual) if actual != to.kind() => problems.push(invalid(format!(
+                        "`{relation}` points at {to}, which is a {actual}"
+                    ))),
+                    Some(_) => {}
+                }
             }
         }
         problems
@@ -113,15 +224,21 @@ impl Integrity for VaultIntegrity {
     async fn problems(&self) -> Result<Vec<Problem>> {
         let mut problems = self.unreadable().await?;
         let scan = self.vault.scan().await?;
+        let roster: HashSet<String> = self.vault.blobs().list(AGENTS).await?.into_iter().collect();
         for (id, located, file) in &scan.entries {
             problems.extend(self.placement(id, &located.key, located.kind, file));
-            problems.extend(self.dangling(&located.key, id, file));
+            problems.extend(self.links((&located.key, id, located.kind), file, &roster));
         }
+        let expected = self.projections(&scan);
+        problems.extend(self.stale_projections(&scan, &expected));
         problems.sort_by(|a, b| a.location.cmp(&b.location).then(a.kind.cmp(&b.kind)));
         Ok(problems)
     }
 
     async fn repair(&self, problem: &Problem) -> Result<bool> {
+        if let (ProblemKind::StaleProjection, Some(id)) = (problem.kind, &problem.id) {
+            return self.reproject(id).await;
+        }
         if !matches!(
             problem.kind,
             ProblemKind::Misplaced | ProblemKind::MisnamedFile
