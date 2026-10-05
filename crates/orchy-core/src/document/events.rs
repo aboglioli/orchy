@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use eventuary::{Payload, Topic};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::kind::{DocumentStatus, Kind};
 use crate::error::Result;
@@ -67,7 +68,7 @@ pub struct DocumentFieldSet {
     pub id: Id,
     pub namespace: Namespace,
     pub field: String,
-    pub value: serde_json::Value,
+    pub value: Value,
     pub at: DateTime<Utc>,
 }
 document_event!(DocumentFieldSet, "document.field_set");

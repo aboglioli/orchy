@@ -1,4 +1,5 @@
 use std::fmt;
+use std::io;
 
 use orchy_application::ApplicationError;
 use orchy_core::DomainError;
@@ -9,7 +10,7 @@ pub(crate) type CliResult<T> = Result<T, CliError>;
 pub(crate) enum CliError {
     Application(ApplicationError),
     Config(String),
-    Io(std::io::Error),
+    Io(io::Error),
     NotAVault(String),
     WrongEntity(String),
     ProblemsRemain(usize),
@@ -20,7 +21,7 @@ impl CliError {
         Self::Config(message.into())
     }
 
-    pub(crate) fn io(e: std::io::Error) -> Self {
+    pub(crate) fn io(e: io::Error) -> Self {
         Self::Io(e)
     }
 
@@ -74,8 +75,8 @@ impl From<DomainError> for CliError {
     }
 }
 
-impl From<std::io::Error> for CliError {
-    fn from(e: std::io::Error) -> Self {
+impl From<io::Error> for CliError {
+    fn from(e: io::Error) -> Self {
         Self::Io(e)
     }
 }

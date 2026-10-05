@@ -1,7 +1,9 @@
 use std::fmt::Debug;
 
+use chrono::{DateTime, Utc};
 use eventuary::{Payload, Topic};
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::error::{DomainError, Result};
 use crate::id::Id;
@@ -69,8 +71,8 @@ pub struct RecordedEvent {
     pub namespace: String,
     pub actor: Option<String>,
     pub machine: Option<String>,
-    pub payload: serde_json::Value,
-    pub recorded_at: chrono::DateTime<chrono::Utc>,
+    pub payload: Value,
+    pub recorded_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -78,7 +80,7 @@ pub struct EventQuery {
     pub topic_prefix: Option<String>,
     pub key: Option<Id>,
     pub actor: Option<String>,
-    pub since: Option<chrono::DateTime<chrono::Utc>>,
+    pub since: Option<DateTime<Utc>>,
     pub limit: Option<usize>,
 }
 
@@ -141,8 +143,8 @@ mod tests {
             namespace: "/".to_owned(),
             actor: None,
             machine: None,
-            payload: serde_json::Value::Null,
-            recorded_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+            payload: Value::Null,
+            recorded_at: DateTime::from_timestamp(0, 0).unwrap(),
         }
     }
 
@@ -216,7 +218,6 @@ mod tests {
 #[cfg(test)]
 mod query_tests {
     use super::*;
-    use chrono::{DateTime, Utc};
 
     fn at(secs: i64) -> DateTime<Utc> {
         DateTime::from_timestamp(secs, 0).unwrap()

@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Skill, Task};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskDto {
@@ -57,7 +58,7 @@ pub struct DocumentDto {
     pub namespace: String,
     pub status: Option<String>,
     pub tags: Vec<String>,
-    pub frontmatter: serde_json::Value,
+    pub frontmatter: Value,
     pub body: String,
     pub content_hash: String,
     pub created_at: DateTime<Utc>,
@@ -66,7 +67,7 @@ pub struct DocumentDto {
 
 impl From<&Document> for DocumentDto {
     fn from(document: &Document) -> Self {
-        let frontmatter = serde_json::Value::Object(
+        let frontmatter = Value::Object(
             document
                 .frontmatter()
                 .iter()
@@ -224,7 +225,7 @@ pub struct EventDto {
     pub key: String,
     pub namespace: String,
     pub actor: Option<String>,
-    pub payload: serde_json::Value,
+    pub payload: Value,
     pub recorded_at: DateTime<Utc>,
 }
 
@@ -268,7 +269,7 @@ pub struct SkillDto {
     pub namespace: String,
     pub status: String,
     pub tags: Vec<String>,
-    pub frontmatter: BTreeMap<String, serde_json::Value>,
+    pub frontmatter: BTreeMap<String, Value>,
     pub body: String,
     pub content_hash: String,
     pub created_at: DateTime<Utc>,

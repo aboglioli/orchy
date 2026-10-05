@@ -34,6 +34,7 @@ use cli::{Cli, Command, LockCommand, NsCommand, SkillCommand};
 use config::Config;
 use error::{CliError, CliResult};
 use output::{Output, short};
+use serde_json::Value;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -560,7 +561,7 @@ fn relation_names() -> Vec<String> {
         .collect()
 }
 
-fn join(value: &serde_json::Value) -> String {
+fn join(value: &Value) -> String {
     value
         .as_array()
         .map(|items| {

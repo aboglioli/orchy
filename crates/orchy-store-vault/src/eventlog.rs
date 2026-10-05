@@ -12,6 +12,7 @@ use eventuary::{Event, Metadata, Namespace as EvNamespace, OrganizationId, StopA
 use orchy_core::{
     ActorId, DomainError, DomainEvent, EventLog, EventQuery, MachineId, RecordedEvent, Result,
 };
+use serde_json::Value;
 
 pub const DEFAULT_PARTITIONS: u32 = 10;
 
@@ -207,7 +208,7 @@ fn from_eventuary(event: &Event) -> RecordedEvent {
         namespace: event.namespace().as_str().to_owned(),
         actor: event.metadata().get("actor").map(str::to_owned),
         machine: event.metadata().get("machine").map(str::to_owned),
-        payload: serde_json::from_slice(event.payload().data()).unwrap_or(serde_json::Value::Null),
+        payload: serde_json::from_slice(event.payload().data()).unwrap_or(Value::Null),
         recorded_at: recorded_at(event),
     }
 }

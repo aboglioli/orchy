@@ -7,7 +7,7 @@ use orchy_core::{
     Actor, ActorId, ActorStore, Clock, DomainError, EventLog, Lease, LeaseStore, ResourceKey,
     Result,
 };
-
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::codec;
@@ -92,7 +92,7 @@ impl ActorStore for VaultActorStore {
             let Some(bytes) = self.vault.blobs().get(&key).await? else {
                 continue;
             };
-            let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
                 continue;
             };
             let (Some(actor), Some(seen)) = (

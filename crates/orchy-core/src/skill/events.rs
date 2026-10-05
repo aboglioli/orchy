@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use eventuary::{Payload, Topic};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::error::Result;
 use crate::event::{DomainEvent, payload_of, topic};
@@ -101,7 +102,7 @@ pub struct SkillFieldSet {
     pub id: Id,
     pub namespace: Namespace,
     pub field: String,
-    pub value: Option<serde_json::Value>,
+    pub value: Option<Value>,
     pub at: DateTime<Utc>,
 }
 skill_event!(SkillFieldSet, "skill.field_set");
