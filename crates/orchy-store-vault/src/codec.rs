@@ -125,7 +125,9 @@ fn list(values: impl IntoIterator<Item = String>) -> Value {
     Value::Array(values.into_iter().map(Value::String).collect())
 }
 
-pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
+/// Refuses a task whose texts would not come back as they went in: the body is cut into
+/// description, acceptance and outcome at their headings, so none of them may hold one.
+pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> Result<MarkdownFile> {
     let mut frontmatter = Frontmatter::new();
     frontmatter.set("id", json!(task.id().to_string()));
     frontmatter.set("type", json!("task"));
@@ -173,11 +175,26 @@ pub fn task_to_markdown(task: &Task, carried: Frontmatter) -> MarkdownFile {
             body.push_str(&format!("\n\n{heading}\n\n{text}"));
         }
     }
+    let read_back = split_task_body(&body);
+    let trimmed = |text: Option<&str>| {
+        text.map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_owned)
+    };
+    if read_back.description != task.description().trim()
+        || read_back.acceptance_criteria != trimmed(task.acceptance_criteria())
+        || read_back.note != trimmed(task.note())
+    {
+        return Err(DomainError::validation(format!(
+            "a task's description, acceptance criteria and outcome cannot hold a line reading \
+             `{ACCEPTANCE}` or `{OUTCOME}`: those headings divide its file"
+        )));
+    }
 
-    MarkdownFile {
+    Ok(MarkdownFile {
         frontmatter,
         body: Body::new(body),
-    }
+    })
 }
 
 pub fn task_from_markdown(file: &MarkdownFile) -> Result<Task> {

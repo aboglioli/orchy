@@ -377,6 +377,7 @@ impl Vault {
             Some(Ok(original)) => file.render_over(original)?,
             _ => file.render()?,
         };
+        ensure_reads_back(&rendered, key, id)?;
 
         match (precondition, &previous) {
             (Precondition::Unchanged, Some(located)) => {
@@ -549,9 +550,43 @@ fn decode(bytes: &[u8]) -> StdResult<MarkdownFile, String> {
     MarkdownFile::parse(text).map_err(|e| e.to_string())
 }
 
+/// orchy never writes a file it could not read back as the same entity: one it could not
+/// read would vanish from every listing until a human repaired it.
+fn ensure_reads_back(rendered: &str, key: &str, id: &Id) -> Result<()> {
+    let refused =
+        |why: String| DomainError::validation(format!("refusing to write `{key}`: {why}"));
+    let file = decode(rendered.as_bytes()).map_err(refused)?;
+    if codec::id_of(&file) != Some(id.to_string().as_str()) {
+        return Err(refused(format!("it would not read back as `{id}`")));
+    }
+    Ok(())
+}
+
+/// A git conflict left in a file: a `<<<<<<< ` line, then `=======`, then `>>>>>>> `, outside
+/// a fenced code block, where text about conflicts is only text.
 fn has_conflict_markers(text: &str) -> bool {
-    text.lines()
-        .any(|line| line.starts_with("<<<<<<< ") || line.starts_with(">>>>>>> "))
+    let mut fence: Option<&str> = None;
+    let mut stage = 0;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if let Some(open) = fence {
+            if trimmed.starts_with(open) {
+                fence = None;
+            }
+            continue;
+        }
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fence = Some(&trimmed[..3]);
+            continue;
+        }
+        stage = match stage {
+            0 if line.starts_with("<<<<<<< ") => 1,
+            1 if line == "=======" => 2,
+            2 if line.starts_with(">>>>>>> ") => return true,
+            current => current,
+        };
+    }
+    false
 }
 
 /// Whether the edit changed the field.
@@ -621,6 +656,35 @@ mod tests {
             .await
             .unwrap();
         (vault, blobs)
+    }
+
+    #[tokio::test]
+    async fn a_file_that_would_not_read_back_is_never_written() {
+        let (vault, blobs) = vault().await;
+        let id = Id::new(A).unwrap();
+        let mut conflicted = file(A, "note");
+        conflicted.body = orchy_core::Body::new("<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> b");
+        let refused = vault
+            .write("docs/a.md", &conflicted, &id, EntityKind::Document)
+            .await;
+        assert!(
+            matches!(refused, Err(DomainError::Validation(_))),
+            "{refused:?}"
+        );
+        assert_eq!(blobs.get("docs/a.md").await.unwrap(), None);
+    }
+
+    #[test]
+    fn conflict_markers_count_only_as_a_whole_block_outside_code() {
+        assert!(has_conflict_markers(
+            "<<<<<<< HEAD\na\n=======\nb\n>>>>>>> x\n"
+        ));
+        assert!(!has_conflict_markers(
+            "<<<<<<< HEAD is how git marks one side\n"
+        ));
+        assert!(!has_conflict_markers(
+            "```\n<<<<<<< HEAD\na\n=======\nb\n>>>>>>> x\n```\n"
+        ));
     }
 
     #[tokio::test]

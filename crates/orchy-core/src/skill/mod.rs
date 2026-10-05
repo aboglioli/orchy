@@ -17,7 +17,7 @@ pub use name::{SkillName, Summary};
 use crate::body::Body;
 use crate::clock::Clock;
 use crate::content_hash;
-use crate::document::Frontmatter;
+use crate::document::{Frontmatter, validate_field_name};
 use crate::error::{DomainError, Result};
 use crate::event::{DomainEvent, EventCollector};
 use crate::id::{Id, IdGenerator};
@@ -240,6 +240,7 @@ impl Skill {
     }
 
     pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
+        validate_field_name(field)?;
         if let Some(command) = managed_field(field) {
             return Err(DomainError::forbidden(format!(
                 "`{field}` is maintained by orchy; use {command}"
@@ -252,6 +253,7 @@ impl Skill {
     }
 
     pub fn remove_field(&mut self, field: &str, clock: &dyn Clock) -> Result<()> {
+        validate_field_name(field)?;
         if let Some(command) = managed_field(field) {
             return Err(DomainError::forbidden(format!(
                 "`{field}` is maintained by orchy; use {command}"

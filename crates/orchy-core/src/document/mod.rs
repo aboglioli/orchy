@@ -14,7 +14,7 @@ pub use events::{
     DocumentRetyped, DocumentSectionReplaced, DocumentStatusChanged, DocumentSuperseded,
     DocumentTagged, DocumentWritten,
 };
-pub use frontmatter::Frontmatter;
+pub use frontmatter::{Frontmatter, validate_field_name};
 pub use kind::{DocumentStatus, Kind};
 
 use crate::body::Body;
@@ -235,6 +235,7 @@ impl Document {
     }
 
     pub fn set_field(&mut self, field: &str, value: Value, clock: &dyn Clock) -> Result<()> {
+        validate_field_name(field)?;
         if Kind::is_projected_field(field) {
             return Err(DomainError::forbidden(format!(
                 "`{field}` is maintained by orchy and cannot be set by hand"
