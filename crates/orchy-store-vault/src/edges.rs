@@ -112,7 +112,7 @@ impl VaultEdgeStore {
     }
 }
 
-fn edges_in(entity: &EntityRef, file: &MarkdownFile) -> Vec<Edge> {
+pub(crate) fn edges_in(entity: &EntityRef, file: &MarkdownFile) -> Vec<Edge> {
     let mut edges = Vec::new();
     for (field, value) in file.frontmatter.iter() {
         let Ok(relation) = field.parse::<Relation>() else {

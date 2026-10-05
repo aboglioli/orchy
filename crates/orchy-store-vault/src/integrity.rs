@@ -1,16 +1,19 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use orchy_core::{
-    Edge, EntityKind, EntityRef, Id, Integrity, Problem, ProblemKind, Relation, Result,
+    Edge, EntityKind, EntityRef, Id, Integrity, Kind, Problem, ProblemKind, Relation, Result,
 };
+use serde_json::Value;
+
+use crate::edges::edges_in;
 
 use crate::codec;
 use crate::layout::AGENTS;
 use crate::markdown::MarkdownFile;
-use crate::vault::Vault;
 use crate::vault::refs_in;
+use crate::vault::{Scan, Vault};
 
 pub struct VaultIntegrity {
     vault: Arc<Vault>,
@@ -72,6 +75,86 @@ impl VaultIntegrity {
             }
             EntityKind::Actor => None,
         }
+    }
+
+    /// What each file should show of the links stored elsewhere that point at it.
+    fn projections(&self, scan: &Scan) -> BTreeMap<(Id, &'static str), BTreeSet<String>> {
+        let mut expected: BTreeMap<(Id, &'static str), BTreeSet<String>> = BTreeMap::new();
+        for (id, located, file) in &scan.entries {
+            if located.kind == EntityKind::Actor {
+                continue;
+            }
+            let source = EntityRef::new(located.kind, id.clone());
+            for edge in edges_in(&source, file) {
+                let inverse = edge.relation().inverse();
+                if !Kind::is_projected_field(inverse) {
+                    continue;
+                }
+                let Some(target) = edge.to().id() else {
+                    continue;
+                };
+                expected
+                    .entry((target.clone(), inverse))
+                    .or_default()
+                    .insert(edge.from().to_string());
+            }
+        }
+        expected
+    }
+
+    fn stale_projections(
+        &self,
+        scan: &Scan,
+        expected: &BTreeMap<(Id, &'static str), BTreeSet<String>>,
+    ) -> Vec<Problem> {
+        let mut problems = Vec::new();
+        for (id, located, file) in &scan.entries {
+            for field in Kind::PROJECTED_FIELDS {
+                let shown: BTreeSet<String> =
+                    refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null))
+                        .into_iter()
+                        .collect();
+                let wanted = expected
+                    .get(&(id.clone(), field))
+                    .cloned()
+                    .unwrap_or_default();
+                if shown == wanted {
+                    continue;
+                }
+                let list = |refs: &BTreeSet<String>| {
+                    if refs.is_empty() {
+                        return "nothing".to_owned();
+                    }
+                    refs.iter().cloned().collect::<Vec<_>>().join(", ")
+                };
+                problems.push(Problem::new(
+                    ProblemKind::StaleProjection,
+                    &located.key,
+                    Some(id.clone()),
+                    format!(
+                        "`{field}` shows {} but the links stored elsewhere say {}",
+                        list(&shown),
+                        list(&wanted)
+                    ),
+                ));
+            }
+        }
+        problems
+    }
+
+    async fn reproject(&self, id: &Id) -> Result<bool> {
+        let scan = self.vault.scan().await?;
+        let expected = self.projections(&scan);
+        for field in Kind::PROJECTED_FIELDS {
+            let wanted: Vec<String> = expected
+                .get(&(id.clone(), field))
+                .map(|refs| refs.iter().cloned().collect())
+                .unwrap_or_default();
+            self.vault
+                .amend_refs(id, field, move |refs| *refs = wanted.clone())
+                .await?;
+        }
+        Ok(true)
     }
 
     /// Every link stored on a file must parse, be one its relation allows, and point at
@@ -149,11 +232,16 @@ impl Integrity for VaultIntegrity {
             problems.extend(self.placement(id, &located.key, located.kind, file));
             problems.extend(self.links((&located.key, id, located.kind), file, &roster));
         }
+        let expected = self.projections(&scan);
+        problems.extend(self.stale_projections(&scan, &expected));
         problems.sort_by(|a, b| a.location.cmp(&b.location).then(a.kind.cmp(&b.kind)));
         Ok(problems)
     }
 
     async fn repair(&self, problem: &Problem) -> Result<bool> {
+        if let (ProblemKind::StaleProjection, Some(id)) = (problem.kind, &problem.id) {
+            return self.reproject(id).await;
+        }
         if !matches!(
             problem.kind,
             ProblemKind::Misplaced | ProblemKind::MisnamedFile

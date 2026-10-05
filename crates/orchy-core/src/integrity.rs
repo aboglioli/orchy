@@ -29,7 +29,11 @@ pub enum ProblemKind {
     DanglingEdge,
     InvalidLink,
     ParentCycle,
+    WaitLoop,
+    OpenUnderFinished,
     StaleRollup,
+    StaleProjection,
+    MissingSuccessor,
     InvertedSupersedes,
 }
 
@@ -55,7 +59,11 @@ impl ProblemKind {
             Self::DanglingEdge => "dangling_edge",
             Self::InvalidLink => "invalid_link",
             Self::ParentCycle => "parent_cycle",
+            Self::WaitLoop => "wait_loop",
+            Self::OpenUnderFinished => "open_under_finished",
             Self::StaleRollup => "stale_rollup",
+            Self::StaleProjection => "stale_projection",
+            Self::MissingSuccessor => "missing_successor",
             Self::InvertedSupersedes => "inverted_supersedes",
         }
     }
@@ -63,7 +71,11 @@ impl ProblemKind {
     pub fn is_mechanical(&self) -> bool {
         matches!(
             self,
-            Self::Misplaced | Self::MisnamedFile | Self::StaleRollup | Self::InvertedSupersedes
+            Self::Misplaced
+                | Self::MisnamedFile
+                | Self::StaleRollup
+                | Self::StaleProjection
+                | Self::InvertedSupersedes
         )
     }
 }

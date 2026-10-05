@@ -1,15 +1,16 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use orchy_core::task::rollup;
 use orchy_core::{
-    DocumentQuery, DocumentStatus, DocumentStore, Edge, EdgeStore, EntityRef, Id, Integrity,
-    Problem, ProblemKind, Relation, Task, TaskQuery, TaskStore, UnitOfWork,
+    DocumentQuery, DocumentStatus, DocumentStore, Edge, EdgeStore, EntityKind, EntityRef, Id,
+    Integrity, Problem, ProblemKind, Relation, Task, TaskQuery, TaskStatus, TaskStore, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::error::ApplicationResult;
 use crate::rollup_ancestors::RollupAncestors;
+use crate::task_graph::waits_of;
 use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -51,11 +52,9 @@ impl Doctor {
         }
     }
 
+    /// Each repair is its own unit of work: one that cannot be made, because a file moved
+    /// meanwhile or a path is taken, stays in the report without undoing the others.
     pub async fn execute(&self, cmd: DoctorCommand) -> ApplicationResult<DoctorDto> {
-        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
-    }
-
-    async fn apply(&self, cmd: DoctorCommand) -> ApplicationResult<DoctorDto> {
         let found = self.examine().await?;
         if !cmd.fix {
             return Ok(DoctorDto {
@@ -66,7 +65,7 @@ impl Doctor {
 
         let mut fixed = 0;
         for problem in found.iter().filter(|p| p.fixable) {
-            if self.repair(problem).await? {
+            if let Ok(true) = atomically(&*self.unit_of_work, || self.repair(problem)).await {
                 fixed += 1;
             }
         }
@@ -79,8 +78,13 @@ impl Doctor {
     async fn examine(&self) -> ApplicationResult<Vec<Problem>> {
         let mut problems = self.integrity.problems().await?;
         let tasks = self.tasks.matching(&TaskQuery::default()).await?;
-        problems.extend(cycles(&tasks));
+        let supersedes = self.edges.of_relation(&Relation::Supersedes).await?;
+        let parent_loops = cycles(&tasks);
+        problems.extend(wait_loops(&tasks, &supersedes, &parent_loops));
+        problems.extend(parent_loops);
+        problems.extend(open_under_finished(&tasks));
         problems.extend(self.stale_rollups(&tasks));
+        problems.extend(self.missing_successors(&tasks, &supersedes).await?);
         problems.extend(self.inverted_supersedes().await?);
         Ok(problems)
     }
@@ -94,6 +98,71 @@ impl Doctor {
             (ProblemKind::InvertedSupersedes, Some(old)) => self.turn_around(old).await,
             _ => Ok(self.integrity.repair(problem).await?),
         }
+    }
+
+    /// A status that names a successor must have one: a superseded document or task is
+    /// pointed at by what replaced it, and a promoted candidate by the skill it became.
+    async fn missing_successors(
+        &self,
+        tasks: &[Task],
+        supersedes: &[Edge],
+    ) -> ApplicationResult<Vec<Problem>> {
+        let replaced: HashSet<EntityRef> = supersedes.iter().map(|e| e.to().clone()).collect();
+        let derived: HashSet<EntityRef> = self
+            .edges
+            .of_relation(&Relation::DerivedFrom)
+            .await?
+            .into_iter()
+            .filter(|e| e.from().kind() == EntityKind::Skill)
+            .map(|e| e.to().clone())
+            .collect();
+
+        let mut problems = Vec::new();
+        let mut report = |entity: EntityRef, id: &Id, detail: &str| {
+            problems.push(Problem::new(
+                ProblemKind::MissingSuccessor,
+                entity.to_string(),
+                Some(id.clone()),
+                detail,
+            ));
+        };
+        for task in tasks
+            .iter()
+            .filter(|t| t.status() == TaskStatus::Superseded)
+        {
+            let entity = EntityRef::task(task.id().clone());
+            if !replaced.contains(&entity) {
+                report(
+                    entity,
+                    task.id(),
+                    "is superseded, but no task records replacing it",
+                );
+            }
+        }
+        let retired = self
+            .documents
+            .matching(&DocumentQuery {
+                status: Some(vec![DocumentStatus::Superseded, DocumentStatus::Promoted]),
+                ..Default::default()
+            })
+            .await?;
+        for document in retired {
+            let entity = EntityRef::document(document.id().clone());
+            match document.status() {
+                Some(DocumentStatus::Superseded) if !replaced.contains(&entity) => report(
+                    entity,
+                    document.id(),
+                    "is superseded, but no document records replacing it",
+                ),
+                Some(DocumentStatus::Promoted) if !derived.contains(&entity) => report(
+                    entity,
+                    document.id(),
+                    "is promoted, but no skill records being derived from it",
+                ),
+                _ => {}
+            }
+        }
+        Ok(problems)
     }
 
     fn stale_rollups(&self, tasks: &[Task]) -> Vec<Problem> {
@@ -221,4 +290,57 @@ fn cycles(tasks: &[Task]) -> Vec<Problem> {
         }
     }
     problems
+}
+
+/// Loops through dependencies and replacements, which a parent loop alone does not explain.
+fn wait_loops(tasks: &[Task], supersedes: &[Edge], parent_loops: &[Problem]) -> Vec<Problem> {
+    let in_parent_loop: HashSet<&Id> = parent_loops.iter().filter_map(|p| p.id.as_ref()).collect();
+    let parent_of: HashMap<&Id, &Id> = tasks
+        .iter()
+        .filter_map(|t| t.parent().map(|p| (t.id(), p)))
+        .collect();
+    let mut problems = Vec::new();
+    for cycle in waits_of(tasks, supersedes).loops() {
+        let only_parents = cycle
+            .iter()
+            .zip(cycle.iter().cycle().skip(1))
+            .all(|(waiter, on)| parent_of.get(on) == Some(&waiter));
+        if only_parents && cycle.iter().any(|id| in_parent_loop.contains(id)) {
+            continue;
+        }
+        let first = cycle[0].clone();
+        let walk: Vec<String> = cycle.iter().map(ToString::to_string).collect();
+        problems.push(Problem::new(
+            ProblemKind::WaitLoop,
+            EntityRef::task(first.clone()).to_string(),
+            Some(first),
+            format!(
+                "waits on itself ({} waits on {}), so none of it can ever finish",
+                walk.join(" waits on "),
+                walk[0]
+            ),
+        ));
+    }
+    problems
+}
+
+/// A finished task has no open subtasks: whatever finished it should have waited for them.
+fn open_under_finished(tasks: &[Task]) -> Vec<Problem> {
+    let status_of: HashMap<&Id, TaskStatus> = tasks.iter().map(|t| (t.id(), t.status())).collect();
+    tasks
+        .iter()
+        .filter(|t| !t.status().is_terminal())
+        .filter_map(|child| {
+            let parent = child.parent()?;
+            let status = status_of.get(parent)?;
+            status.is_terminal().then(|| {
+                Problem::new(
+                    ProblemKind::OpenUnderFinished,
+                    EntityRef::task(child.id().clone()).to_string(),
+                    Some(child.id().clone()),
+                    format!("is {} beneath {parent}, which is {status}", child.status()),
+                )
+            })
+        })
+        .collect()
 }

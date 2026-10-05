@@ -2180,14 +2180,14 @@ fn doctor_reports_a_parent_cycle_once() {
         &temp,
         &format!("tasks/open/{ID_1}.md"),
         &format!(
-            "---\nid: {ID_1}\ntype: task\ntitle: a\nstatus: pending\nparent: task:{ID_2}\n---\n"
+            "---\nid: {ID_1}\ntype: task\ntitle: a\nstatus: pending\nparent: task:{ID_2}\nsubtasks: [task:{ID_2}]\n---\n"
         ),
     );
     seed(
         &temp,
         &format!("tasks/open/{ID_2}.md"),
         &format!(
-            "---\nid: {ID_2}\ntype: task\ntitle: b\nstatus: pending\nparent: task:{ID_1}\n---\n"
+            "---\nid: {ID_2}\ntype: task\ntitle: b\nstatus: pending\nparent: task:{ID_1}\nsubtasks: [task:{ID_1}]\n---\n"
         ),
     );
     let (code, kinds) = doctor_kinds(&temp, &[]);
