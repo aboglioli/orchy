@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
+use crate::task_graph::TaskGraph;
 use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -16,6 +17,7 @@ pub struct BlockTaskCommand {
 
 pub struct BlockTask {
     tasks: Arc<dyn TaskStore>,
+    graph: Arc<TaskGraph>,
     clock: Arc<dyn Clock>,
     unit_of_work: Arc<dyn UnitOfWork>,
 }
@@ -23,11 +25,13 @@ pub struct BlockTask {
 impl BlockTask {
     pub fn new(
         tasks: Arc<dyn TaskStore>,
+        graph: Arc<TaskGraph>,
         clock: Arc<dyn Clock>,
         unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
+            graph,
             clock,
             unit_of_work,
         }
@@ -48,12 +52,14 @@ impl BlockTask {
         let mut task = self.tasks.require(&Id::new(&cmd.task_id)?).await?;
 
         let mut blockers = Vec::new();
+        let mut adding = Vec::new();
         for blocker in &cmd.on {
-            let id = Id::new(blocker)?;
-            self.tasks.require(&id).await?;
+            let id = self.tasks.require(&Id::new(blocker)?).await?.id().clone();
             task.add_dependency(id.clone(), &*self.clock)?;
+            adding.push((task.id().clone(), id.clone()));
             blockers.push(id.to_string());
         }
+        self.graph.ensure_no_loop(&adding, &[]).await?;
 
         let reason = cmd
             .reason

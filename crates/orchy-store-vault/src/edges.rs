@@ -179,6 +179,15 @@ impl EdgeStore for VaultEdgeStore {
             .collect())
     }
 
+    async fn of_relation(&self, relation: &Relation) -> Result<Vec<Edge>> {
+        Ok(self
+            .all_edges()
+            .await?
+            .into_iter()
+            .filter(|e| e.relation() == relation)
+            .collect())
+    }
+
     async fn incoming(&self, to: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
         Ok(self
             .all_edges()

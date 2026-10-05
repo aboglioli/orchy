@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use orchy_core::{ActorId, Clock, Id, LeaseStore, ResourceKey, TaskStore, UnitOfWork};
-
+use orchy_core::task::rollup;
+use orchy_core::{
+    ActorId, Clock, Id, LeaseStore, ResourceKey, Task, TaskStatus, TaskStore, UnitOfWork,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::complete_task::CompleteTaskResponse;
@@ -56,7 +58,14 @@ impl FailTask {
         let actor: ActorId = cmd.actor.parse()?;
 
         let mut task = self.tasks.require(&id).await?;
-
+        let children: Vec<TaskStatus> = self
+            .tasks
+            .children_of(&id)
+            .await?
+            .iter()
+            .map(Task::status)
+            .collect();
+        rollup::ensure_can_finish(&children)?;
         task.fail(&actor, cmd.reason, &*self.clock)?;
         self.tasks.save(&mut task).await?;
 

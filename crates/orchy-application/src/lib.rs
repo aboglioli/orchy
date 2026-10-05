@@ -52,6 +52,7 @@ pub mod set_skill_field;
 pub mod split_task;
 pub mod start_task;
 pub mod supersede_document;
+pub mod task_graph;
 pub mod touch_actor;
 pub mod traverse_graph;
 pub mod unblock_task;
@@ -121,6 +122,7 @@ use set_skill_field::SetSkillField;
 use split_task::SplitTask;
 use start_task::StartTask;
 use supersede_document::SupersedeDocument;
+use task_graph::TaskGraph;
 use touch_actor::TouchActor;
 use traverse_graph::TraverseGraph;
 use unblock_task::UnblockTask;
@@ -235,6 +237,7 @@ impl Application {
             Arc::clone(&tasks),
             Arc::clone(&edges),
         ));
+        let graph = Arc::new(TaskGraph::new(Arc::clone(&tasks), Arc::clone(&edges)));
         let claim = Arc::new(ClaimTask::new(
             Arc::clone(&tasks),
             Arc::clone(&leases),
@@ -358,6 +361,7 @@ impl Application {
             ),
             update_task: UpdateTask::new(
                 Arc::clone(&tasks),
+                Arc::clone(&graph),
                 Arc::clone(&rollup),
                 Arc::clone(&clock),
                 Arc::clone(&unit_of_work),
@@ -397,6 +401,7 @@ impl Application {
             ),
             block_task: BlockTask::new(
                 Arc::clone(&tasks),
+                Arc::clone(&graph),
                 Arc::clone(&clock),
                 Arc::clone(&unit_of_work),
             ),
@@ -421,6 +426,7 @@ impl Application {
             ),
             merge_tasks: MergeTasks::new(
                 Arc::clone(&tasks),
+                Arc::clone(&graph),
                 Arc::clone(&edges),
                 Arc::clone(&rollup),
                 Arc::clone(&clock),
@@ -428,6 +434,7 @@ impl Application {
             ),
             manage_dependencies: ManageDependencies::new(
                 Arc::clone(&tasks),
+                Arc::clone(&graph),
                 Arc::clone(&clock),
                 Arc::clone(&unit_of_work),
             ),

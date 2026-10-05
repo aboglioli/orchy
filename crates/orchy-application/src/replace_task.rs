@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use orchy_core::task::rollup;
 use orchy_core::{
-    ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, Relation, Task, TaskStore, Title,
-    UnitOfWork,
+    ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, Relation, Task, TaskStatus,
+    TaskStore, Title, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
@@ -62,8 +63,20 @@ impl ReplaceTask {
 
     async fn apply(&self, cmd: ReplaceTaskCommand) -> ApplicationResult<ReplaceTaskResponse> {
         let original_id = Id::new(&cmd.task_id)?;
-        cmd.actor.parse::<ActorId>()?;
+        let actor: ActorId = cmd.actor.parse()?;
         let mut original = self.tasks.require(&original_id).await?;
+        let children: Vec<TaskStatus> = self
+            .tasks
+            .children_of(&original_id)
+            .await?
+            .iter()
+            .map(Task::status)
+            .collect();
+        rollup::ensure_can_finish(&children)?;
+        let parent = match original.parent() {
+            Some(parent) => Some(self.tasks.require(parent).await?),
+            None => None,
+        };
 
         let mut replacements = Vec::new();
         for raw in &cmd.titles {
@@ -74,16 +87,15 @@ impl ReplaceTask {
                 &*self.clock,
             );
             // the work still belongs under whatever goal the original sat beneath
-            if let Some(parent) = original.parent() {
-                replacement.attach_to(parent.clone(), &*self.clock)?;
+            if let Some(parent) = &parent {
+                replacement.attach_to(parent, &*self.clock)?;
             }
             replacement.set_priority(original.priority(), &*self.clock);
             replacements.push(replacement);
         }
 
-        // retiring the original is the write two agents contend for, so it comes first: losing
-        // it afterwards leaves replacements standing in for a task that is still open
         original.supersede(
+            &actor,
             replacements.iter().map(|r| r.id().clone()).collect(),
             cmd.reason,
             &*self.clock,

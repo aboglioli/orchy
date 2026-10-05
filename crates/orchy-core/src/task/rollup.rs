@@ -29,6 +29,19 @@ pub fn ensure_claimable(children: &[TaskStatus]) -> Result<()> {
     Ok(())
 }
 
+/// A task with open subtasks is finished by them: finishing it by hand would leave work open
+/// beneath a goal that says it is over.
+pub fn ensure_can_finish(children: &[TaskStatus]) -> Result<()> {
+    let open = children.iter().filter(|s| !s.is_terminal()).count();
+    if open > 0 {
+        return Err(DomainError::conflict(format!(
+            "it has {open} open subtask{}; it finishes when they do, so finish or cancel them first",
+            if open == 1 { "" } else { "s" }
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::TaskStatus::*;
@@ -40,6 +53,14 @@ mod tests {
         assert!(ensure_claimable(&[Completed, Cancelled]).is_ok());
         assert!(ensure_claimable(&[Completed, Pending]).is_err());
         assert!(ensure_claimable(&[Blocked]).is_err());
+    }
+
+    #[test]
+    fn a_task_is_finished_by_hand_only_once_its_subtasks_are() {
+        assert!(ensure_can_finish(&[]).is_ok());
+        assert!(ensure_can_finish(&[Completed, Failed]).is_ok());
+        let err = ensure_can_finish(&[Completed, Claimed, Pending]).unwrap_err();
+        assert!(err.to_string().contains("2 open subtasks"), "{err}");
     }
 
     #[test]

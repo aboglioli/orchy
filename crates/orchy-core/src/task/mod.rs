@@ -3,6 +3,7 @@ mod events;
 pub mod ranking;
 pub mod rollup;
 mod status;
+pub mod waits;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -201,10 +202,19 @@ impl Task {
         task
     }
 
-    pub fn attach_to(&mut self, parent: Id, clock: &dyn Clock) -> Result<()> {
-        if parent == self.id {
+    /// A finished task has no open subtasks: its status was derived from them, or set by
+    /// hand once there were none left.
+    pub fn attach_to(&mut self, parent: &Task, clock: &dyn Clock) -> Result<()> {
+        if parent.id == self.id {
             return Err(DomainError::validation("a task cannot be its own parent"));
         }
+        if parent.status.is_terminal() && !self.status.is_terminal() {
+            return Err(DomainError::conflict(format!(
+                "`{}` is {}; an open task cannot go beneath a finished one",
+                parent.id, parent.status
+            )));
+        }
+        let parent = parent.id.clone();
         self.parent = Some(parent.clone());
         self.touch(clock);
         self.collector.collect(TaskReparented {
@@ -326,6 +336,17 @@ impl Task {
         self.finish(TaskStatus::Cancelled, Some(reason), clock)
     }
 
+    /// Work can still be added to it: a goal to merge into, a parent to split.
+    pub fn ensure_open(&self) -> Result<()> {
+        if self.status.is_terminal() {
+            return Err(DomainError::conflict(format!(
+                "`{}` is {}; finished work takes on nothing more",
+                self.id, self.status
+            )));
+        }
+        Ok(())
+    }
+
     /// Finishing work is a claim about what *you* did, so only the holder may report it. An
     /// unclaimed task needs no check: the transition table already refuses to finish one.
     fn held_by(&self, by: &ActorId) -> Result<()> {
@@ -341,10 +362,12 @@ impl Task {
     /// wanted, or completing, which says it was done here.
     pub fn supersede(
         &mut self,
+        actor: &ActorId,
         by: Vec<Id>,
         reason: Option<String>,
         clock: &dyn Clock,
     ) -> Result<()> {
+        self.held_by(actor)?;
         if by.is_empty() {
             return Err(DomainError::validation(
                 "a superseded task must name what replaces it",
@@ -596,6 +619,15 @@ pub(super) mod tests {
         )
     }
 
+    pub(super) fn another() -> Task {
+        Task::create(
+            Title::new("the goal").unwrap(),
+            Namespace::root(),
+            &SeqIds(std::sync::atomic::AtomicU64::new(99)),
+            &clock(),
+        )
+    }
+
     pub(super) fn claimed() -> Task {
         let mut task = task();
         task.claim(actor("claude"), &clock()).unwrap();
@@ -619,15 +651,13 @@ pub(super) mod tests {
     fn every_change_to_a_task_records_an_event() {
         let cases: Vec<Case> = vec![
             ("attach_to", task, |t| {
-                t.attach_to(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
-                    .unwrap()
+                t.attach_to(&another(), &clock()).unwrap()
             }),
             (
                 "detach",
                 || {
                     let mut t = task();
-                    t.attach_to(Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(), &clock())
-                        .unwrap();
+                    t.attach_to(&another(), &clock()).unwrap();
                     t
                 },
                 |t| t.detach(&clock()),
@@ -701,6 +731,7 @@ pub(super) mod tests {
             }),
             ("supersede", task, |t| {
                 t.supersede(
+                    &actor("claude"),
                     vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
                     None,
                     &clock(),
@@ -880,16 +911,54 @@ pub(super) mod tests {
     fn a_task_cannot_be_its_own_parent_or_dependency() {
         let mut task = task();
         let own = task.id().clone();
-        assert!(task.attach_to(own.clone(), &clock()).is_err());
+        let same = task.clone();
+        assert!(task.attach_to(&same, &clock()).is_err());
         assert!(task.add_dependency(own, &clock()).is_err());
+    }
+
+    #[test]
+    fn open_work_never_goes_beneath_finished_work() {
+        let mut finished = another();
+        finished
+            .cancel(&actor("claude"), "dropped".to_owned(), &clock())
+            .unwrap();
+        let mut open = task();
+        assert!(matches!(
+            open.attach_to(&finished, &clock()),
+            Err(DomainError::Conflict(_))
+        ));
+        assert!(finished.ensure_open().is_err());
+
+        let mut done = task();
+        done.cancel(&actor("claude"), "dropped".to_owned(), &clock())
+            .unwrap();
+        assert!(
+            done.attach_to(&finished, &clock()).is_ok(),
+            "finished work may be filed under finished work"
+        );
+    }
+
+    #[test]
+    fn only_the_holder_retires_a_claimed_task() {
+        let mut held = claimed();
+        let refused = held.supersede(
+            &actor("codex"),
+            vec![another().id().clone()],
+            None,
+            &clock(),
+        );
+        assert!(
+            matches!(refused, Err(DomainError::Forbidden(_))),
+            "{refused:?}"
+        );
     }
 
     #[test]
     fn attaching_records_the_parent_on_the_child_only() {
         let mut child = task();
-        let parent = Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap();
-        child.attach_to(parent.clone(), &clock()).unwrap();
-        assert_eq!(child.parent(), Some(&parent));
+        let parent = another();
+        child.attach_to(&parent, &clock()).unwrap();
+        assert_eq!(child.parent(), Some(parent.id()));
         child.detach(&clock());
         assert_eq!(child.parent(), None);
     }
@@ -979,8 +1048,13 @@ mod supersede_tests {
             Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(),
             Id::new("01CX5ZZKBKACTAV9WEVGEMMVRZ").unwrap(),
         ];
-        task.supersede(replacements, Some("split out".to_owned()), &clock())
-            .unwrap();
+        task.supersede(
+            &actor("claude"),
+            replacements,
+            Some("split out".to_owned()),
+            &clock(),
+        )
+        .unwrap();
 
         assert_eq!(task.status(), TaskStatus::Superseded);
         assert!(task.status().is_terminal());
@@ -994,7 +1068,10 @@ mod supersede_tests {
     #[test]
     fn superseding_needs_at_least_one_replacement() {
         let mut task = task();
-        assert!(task.supersede(vec![], None, &clock()).is_err());
+        assert!(
+            task.supersede(&actor("claude"), vec![], None, &clock())
+                .is_err()
+        );
         assert_eq!(
             task.status(),
             TaskStatus::Pending,
@@ -1006,7 +1083,10 @@ mod supersede_tests {
     fn a_task_cannot_supersede_itself() {
         let mut task = task();
         let own = task.id().clone();
-        assert!(task.supersede(vec![own], None, &clock()).is_err());
+        assert!(
+            task.supersede(&actor("claude"), vec![own], None, &clock())
+                .is_err()
+        );
     }
 
     #[test]
@@ -1015,6 +1095,7 @@ mod supersede_tests {
         task.complete(&actor("claude"), None, &clock()).unwrap();
         assert!(
             task.supersede(
+                &actor("claude"),
                 vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
                 None,
                 &clock()
@@ -1029,6 +1110,7 @@ mod supersede_tests {
         let mut task = task();
         assert!(
             task.supersede(
+                &actor("claude"),
                 vec![Id::new("01BX5ZZKBKACTAV9WEVGEMMVRZ").unwrap()],
                 None,
                 &clock()

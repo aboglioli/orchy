@@ -89,10 +89,12 @@ impl CreateTask {
             task.retag(tags, &[], &*self.clock);
         }
         if let Some(parent) = &cmd.parent {
-            task.attach_to(Id::new(parent)?, &*self.clock)?;
+            let parent = self.tasks.require(&Id::new(parent)?).await?;
+            task.attach_to(&parent, &*self.clock)?;
         }
         for dependency in &cmd.depends_on {
-            task.add_dependency(Id::new(dependency)?, &*self.clock)?;
+            let dependency = self.tasks.require(&Id::new(dependency)?).await?;
+            task.add_dependency(dependency.id().clone(), &*self.clock)?;
         }
 
         self.tasks.save(&mut task).await?;

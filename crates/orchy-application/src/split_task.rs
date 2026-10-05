@@ -52,6 +52,7 @@ impl SplitTask {
     async fn apply(&self, cmd: SplitTaskCommand) -> ApplicationResult<SplitTaskResponse> {
         let parent_id = Id::new(&cmd.task_id)?;
         let parent = self.tasks.require(&parent_id).await?;
+        parent.ensure_open()?;
 
         let mut existing: Vec<String> = self
             .tasks
@@ -74,8 +75,7 @@ impl SplitTask {
             existing.push(folded);
             let mut child =
                 Task::create(title, parent.namespace().clone(), &*self.ids, &*self.clock);
-            child.attach_to(parent_id.clone(), &*self.clock)?;
-
+            child.attach_to(&parent, &*self.clock)?;
             self.tasks.save(&mut child).await?;
             created.push(TaskDto::from(&child));
         }

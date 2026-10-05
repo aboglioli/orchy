@@ -69,6 +69,17 @@ impl EdgeStore for MemoryEdgeStore {
             .await
     }
 
+    async fn of_relation(&self, relation: &Relation) -> Result<Vec<Edge>> {
+        Ok(self
+            .edges
+            .lock()
+            .expect("edges lock")
+            .iter()
+            .filter(|e| e.relation() == relation)
+            .cloned()
+            .collect())
+    }
+
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
         Ok(self
             .all()

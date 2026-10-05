@@ -759,7 +759,7 @@ fn a_plan_changes_while_the_work_is_under_way() {
     );
 
     let extra = vault.id("dev", &["task", "new", "Backfill batches"]);
-    vault.ok(
+    let tune = vault.id(
         "dev",
         &["task", "new", "Tune batch size", "--parent", &extra],
     );
@@ -770,9 +770,19 @@ fn a_plan_changes_while_the_work_is_under_way() {
     assert_eq!(code, 5, "the merged subtask now belongs to it: {why}");
     vault.ok("dev", &["task", "update", &batches, "--detach"]);
     vault.ok("dev", &["task", "update", &batches, "--parent", &goal]);
-    vault.ok(
+    let (code, why) = vault.refused(
         "lead",
         &["task", "cancel", &batches, "- not needed after all"],
+    );
+    assert_eq!(
+        code, 5,
+        "a goal with open work beneath it is not over: {why}"
+    );
+    vault.ok("lead", &["task", "cancel", &tune, "- not needed after all"]);
+    assert_eq!(
+        vault.json("lead", &["task", "get", &batches])["task"]["status"],
+        "cancelled",
+        "its last open subtask cancelled, the goal follows"
     );
     assert_eq!(
         vault.json("lead", &["task", "get", cutover])["readiness"],
