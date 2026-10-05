@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use orchy_application::{Application, ApplicationDeps};
-use orchy_core::{ActorStore, Clock, EventLog, IdGenerator, ReadWatermarks, Search};
+use orchy_core::{ActorStore, Clock, EventLog, IdGenerator, ReadWatermarks, Search, UnitOfWork};
 use orchy_store_vault::blob::{BlobStore, FsBlobStore};
 use orchy_store_vault::documents::VaultDocumentStore;
 use orchy_store_vault::edges::VaultEdgeStore;
@@ -13,6 +13,7 @@ use orchy_store_vault::search::VaultSearch;
 use orchy_store_vault::skills::VaultSkillStore;
 use orchy_store_vault::tasks::VaultTaskStore;
 use orchy_store_vault::time::{SystemClock, UlidGenerator};
+use orchy_store_vault::transaction::{StagedEventLog, VaultUnitOfWork};
 use orchy_store_vault::vault::Vault;
 use orchy_store_vault::watermarks::FileWatermarks;
 
@@ -25,13 +26,16 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let ids: Arc<dyn IdGenerator> = Arc::new(UlidGenerator::new());
-    let log: Arc<dyn EventLog> = Arc::new(EventuaryLog::open(
+    let recorded: Arc<dyn EventLog> = Arc::new(EventuaryLog::open(
         config.events_root(),
         &config.organization,
         config.actor.clone(),
         config.machine.clone(),
         config.vault_config.events.partitions,
     )?);
+    let log: Arc<dyn EventLog> = Arc::new(StagedEventLog::new(Arc::clone(&recorded)));
+    let unit_of_work: Arc<dyn UnitOfWork> =
+        Arc::new(VaultUnitOfWork::new(Arc::clone(&vault), recorded));
 
     let actors: Arc<dyn ActorStore> =
         Arc::new(VaultActorStore::new(Arc::clone(&vault), Arc::clone(&log)));
@@ -71,5 +75,6 @@ pub(crate) async fn build(config: &Config) -> CliResult<Application> {
         log,
         clock,
         ids,
+        unit_of_work,
     }))
 }

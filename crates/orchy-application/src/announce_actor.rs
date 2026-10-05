@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use orchy_core::{Actor, ActorId, ActorStore, Clock, Namespace, Role};
+use orchy_core::{Actor, ActorId, ActorStore, Clock, Namespace, Role, UnitOfWork};
 use serde::{Deserialize, Serialize};
 
 use crate::brief::{Brief, BriefCommand};
 use crate::dto::BriefingDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AnnounceActorCommand {
@@ -19,18 +20,29 @@ pub struct AnnounceActor {
     actors: Arc<dyn ActorStore>,
     brief: Arc<Brief>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl AnnounceActor {
-    pub fn new(actors: Arc<dyn ActorStore>, brief: Arc<Brief>, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(
+        actors: Arc<dyn ActorStore>,
+        brief: Arc<Brief>,
+        clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
+    ) -> Self {
         Self {
             actors,
             brief,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: AnnounceActorCommand) -> ApplicationResult<BriefingDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: AnnounceActorCommand) -> ApplicationResult<BriefingDto> {
         let id: ActorId = cmd.actor.parse()?;
         let roles = cmd
             .roles

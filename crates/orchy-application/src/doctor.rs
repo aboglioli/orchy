@@ -4,12 +4,13 @@ use std::sync::Arc;
 use orchy_core::task::rollup;
 use orchy_core::{
     DocumentQuery, DocumentStatus, DocumentStore, Edge, EdgeStore, EntityRef, Id, Integrity,
-    Problem, ProblemKind, Relation, Task, TaskQuery, TaskStore,
+    Problem, ProblemKind, Relation, Task, TaskQuery, TaskStore, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::error::ApplicationResult;
 use crate::rollup_ancestors::RollupAncestors;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DoctorCommand {
@@ -28,6 +29,7 @@ pub struct Doctor {
     documents: Arc<dyn DocumentStore>,
     edges: Arc<dyn EdgeStore>,
     rollup: Arc<RollupAncestors>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl Doctor {
@@ -37,6 +39,7 @@ impl Doctor {
         documents: Arc<dyn DocumentStore>,
         edges: Arc<dyn EdgeStore>,
         rollup: Arc<RollupAncestors>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             integrity,
@@ -44,10 +47,15 @@ impl Doctor {
             documents,
             edges,
             rollup,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: DoctorCommand) -> ApplicationResult<DoctorDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: DoctorCommand) -> ApplicationResult<DoctorDto> {
         let found = self.examine().await?;
         if !cmd.fix {
             return Ok(DoctorDto {

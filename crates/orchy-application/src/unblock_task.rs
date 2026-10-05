@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, Id, TaskStore};
+use orchy_core::{Clock, Id, TaskStore, UnitOfWork};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UnblockTaskCommand {
@@ -14,14 +15,27 @@ pub struct UnblockTaskCommand {
 pub struct UnblockTask {
     tasks: Arc<dyn TaskStore>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl UnblockTask {
-    pub fn new(tasks: Arc<dyn TaskStore>, clock: Arc<dyn Clock>) -> Self {
-        Self { tasks, clock }
+    pub fn new(
+        tasks: Arc<dyn TaskStore>,
+        clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
+    ) -> Self {
+        Self {
+            tasks,
+            clock,
+            unit_of_work,
+        }
     }
 
     pub async fn execute(&self, cmd: UnblockTaskCommand) -> ApplicationResult<TaskDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: UnblockTaskCommand) -> ApplicationResult<TaskDto> {
         let mut task = self.tasks.require(&Id::new(&cmd.task_id)?).await?;
         task.unblock(&*self.clock)?;
         self.tasks.save(&mut task).await?;

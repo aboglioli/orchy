@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub use events::{
-    TaskBlocked, TaskClaimed, TaskCreated, TaskDeleted, TaskFinished, TaskReleased, TaskReparented,
+    TaskBlocked, TaskClaimed, TaskCreated, TaskFinished, TaskReleased, TaskReparented,
     TaskRolledUp, TaskStarted, TaskSuperseded, TaskUnblocked, TaskUpdated,
 };
 pub use status::TaskStatus;
@@ -32,7 +32,6 @@ pub trait TaskStore: Send + Sync {
     async fn matching(&self, query: &TaskQuery) -> Result<Vec<Task>>;
     async fn children_of(&self, parent: &Id) -> Result<Vec<Task>>;
     async fn save(&self, task: &mut Task) -> Result<()>;
-    async fn delete(&self, id: &Id) -> Result<()>;
 
     async fn find(&self, query: &TaskQuery, page: PageRequest) -> Result<Page<Task>> {
         Ok(Page::slice(self.matching(query).await?, page))

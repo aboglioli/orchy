@@ -12,6 +12,14 @@ pub struct MemorySkillStore {
 }
 
 impl MemorySkillStore {
+    pub(crate) fn state(&self) -> BTreeMap<Id, Skill> {
+        self.skills.lock().expect("skills lock").clone()
+    }
+
+    pub(crate) fn restore_state(&self, state: BTreeMap<Id, Skill>) {
+        *self.skills.lock().expect("skills lock") = state;
+    }
+
     pub fn new(log: Arc<MemoryEventLog>) -> Self {
         Self {
             skills: Mutex::new(BTreeMap::new()),
@@ -45,10 +53,5 @@ impl SkillStore for MemorySkillStore {
             .expect("skill mutex")
             .insert(skill.id().clone(), skill.clone());
         self.log.append(&events).await
-    }
-
-    async fn delete(&self, id: &Id) -> Result<()> {
-        self.skills.lock().expect("skill mutex").remove(id);
-        Ok(())
     }
 }

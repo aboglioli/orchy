@@ -55,6 +55,7 @@ pub mod supersede_document;
 pub mod touch_actor;
 pub mod traverse_graph;
 pub mod unblock_task;
+mod unit_of_work;
 pub mod update_document;
 pub mod update_task;
 pub mod write_skill;
@@ -63,7 +64,7 @@ use std::sync::Arc;
 
 use orchy_core::{
     ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, Integrity, LeaseStore,
-    MessageStore, ReadWatermarks, Search, SkillStore, TaskStore,
+    MessageStore, ReadWatermarks, Search, SkillStore, TaskStore, UnitOfWork,
 };
 
 pub use error::{ApplicationError, ApplicationResult};
@@ -76,7 +77,7 @@ use cancel_task::CancelTask;
 use claim_task::ClaimTask;
 use complete_task::CompleteTask;
 use consolidate_documents::ConsolidateDocuments;
-use create_document::CreateDocument;
+use create_document::{CreateDocument, CreateDocumentSources};
 use create_task::CreateTask;
 use doctor::Doctor;
 use edit_document::EditDocument;
@@ -141,6 +142,7 @@ pub struct ApplicationDeps {
     pub log: Arc<dyn EventLog>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGenerator>,
+    pub unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 pub struct Application {
@@ -221,6 +223,7 @@ impl Application {
             log,
             clock,
             ids,
+            unit_of_work,
         } = deps;
 
         let rollup = Arc::new(RollupAncestors::new(
@@ -237,6 +240,7 @@ impl Application {
             Arc::clone(&leases),
             Arc::clone(&dependencies),
             Arc::clone(&clock),
+            Arc::clone(&unit_of_work),
         ));
         let mentions = Arc::new(ResolveMentions::new(
             Arc::clone(&documents),
@@ -265,6 +269,7 @@ impl Application {
                 Arc::clone(&actors),
                 Arc::clone(&brief),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             touch_actor: TouchActor::new(Arc::clone(&actors), Arc::clone(&clock)),
             list_actors: ListActors::new(Arc::clone(&actors), Arc::clone(&clock)),
@@ -274,23 +279,36 @@ impl Application {
                 Arc::clone(&clock),
             ),
 
-            create_document: CreateDocument::new(
-                Arc::clone(&documents),
-                Arc::clone(&search),
-                Arc::clone(&actors),
-                Arc::clone(&tasks),
-                Arc::clone(&edges),
-                Arc::clone(&ids),
-                Arc::clone(&clock),
-            ),
+            create_document: CreateDocument::new(CreateDocumentSources {
+                documents: Arc::clone(&documents),
+                search: Arc::clone(&search),
+                actors: Arc::clone(&actors),
+                tasks: Arc::clone(&tasks),
+                edges: Arc::clone(&edges),
+                ids: Arc::clone(&ids),
+                clock: Arc::clone(&clock),
+                unit_of_work: Arc::clone(&unit_of_work),
+            }),
             read_document: ReadDocument::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),
                 Arc::clone(&mentions),
             ),
-            edit_document: EditDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
-            set_document_field: SetDocumentField::new(Arc::clone(&documents), Arc::clone(&clock)),
-            update_document: UpdateDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
+            edit_document: EditDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
+            set_document_field: SetDocumentField::new(
+                Arc::clone(&documents),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
+            update_document: UpdateDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
             find_documents: FindDocuments::new(Arc::clone(&documents)),
             promote_document: PromoteDocument::new(
                 Arc::clone(&documents),
@@ -299,17 +317,24 @@ impl Application {
                 Arc::clone(&edges),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
-            reject_document: RejectDocument::new(Arc::clone(&documents), Arc::clone(&clock)),
+            reject_document: RejectDocument::new(
+                Arc::clone(&documents),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
             supersede_document: SupersedeDocument::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             consolidate_documents: ConsolidateDocuments::new(
                 Arc::clone(&documents),
                 Arc::clone(&edges),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
 
             create_task: CreateTask::new(
@@ -317,6 +342,7 @@ impl Application {
                 Arc::clone(&actors),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             get_task: GetTask::new(
                 Arc::clone(&tasks),
@@ -334,39 +360,56 @@ impl Application {
                 Arc::clone(&tasks),
                 Arc::clone(&rollup),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             claim_task: Arc::clone(&claim),
             release_task: ReleaseTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&leases),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
-            start_task: StartTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
+            start_task: StartTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
             complete_task: CompleteTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&leases),
                 Arc::clone(&rollup),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             fail_task: FailTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&leases),
                 Arc::clone(&rollup),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             cancel_task: CancelTask::new(
                 Arc::clone(&tasks),
                 Arc::clone(&leases),
                 Arc::clone(&rollup),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
-            block_task: BlockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
-            unblock_task: UnblockTask::new(Arc::clone(&tasks), Arc::clone(&clock)),
+            block_task: BlockTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
+            unblock_task: UnblockTask::new(
+                Arc::clone(&tasks),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
             split_task: SplitTask::new(
                 Arc::clone(&tasks),
-                Arc::clone(&log),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             replace_task: ReplaceTask::new(
                 Arc::clone(&tasks),
@@ -374,14 +417,20 @@ impl Application {
                 Arc::clone(&rollup),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             merge_tasks: MergeTasks::new(
                 Arc::clone(&tasks),
                 Arc::clone(&edges),
                 Arc::clone(&rollup),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
-            manage_dependencies: ManageDependencies::new(Arc::clone(&tasks), Arc::clone(&clock)),
+            manage_dependencies: ManageDependencies::new(
+                Arc::clone(&tasks),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
             rollup_ancestors: Arc::clone(&rollup),
 
             send_message: SendMessage::new(
@@ -389,6 +438,7 @@ impl Application {
                 Arc::clone(&actors),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             read_inbox: ReadInbox::new(Arc::clone(&messages), Arc::clone(&watermarks)),
 
@@ -397,25 +447,36 @@ impl Application {
                 Arc::clone(&actors),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             read_skill: ReadSkill::new(Arc::clone(&skills), Arc::clone(&actors)),
             list_skills: ListSkills::new(Arc::clone(&skills), Arc::clone(&actors)),
-            retire_skill: RetireSkill::new(Arc::clone(&skills), Arc::clone(&clock)),
+            retire_skill: RetireSkill::new(
+                Arc::clone(&skills),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
             set_skill_field: SetSkillField::new(
                 Arc::clone(&skills),
                 Arc::clone(&actors),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
             read_message: ReadMessage::new(Arc::clone(&messages), Arc::clone(&watermarks)),
             read_thread: ReadThread::new(Arc::clone(&messages)),
             list_sent: ListSent::new(Arc::clone(&messages)),
-            resolve_thread: ResolveThread::new(Arc::clone(&messages), Arc::clone(&clock)),
+            resolve_thread: ResolveThread::new(
+                Arc::clone(&messages),
+                Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
+            ),
             promote_message: PromoteMessage::new(
                 Arc::clone(&messages),
                 Arc::clone(&tasks),
                 Arc::clone(&edges),
                 Arc::clone(&ids),
                 Arc::clone(&clock),
+                Arc::clone(&unit_of_work),
             ),
 
             link_entities: LinkEntities::new(
@@ -424,6 +485,7 @@ impl Application {
                 Arc::clone(&tasks),
                 Arc::clone(&skills),
                 Arc::clone(&messages),
+                Arc::clone(&unit_of_work),
             ),
             traverse_graph: TraverseGraph::new(
                 Arc::clone(&edges),
@@ -443,6 +505,7 @@ impl Application {
                 Arc::clone(&documents),
                 Arc::clone(&edges),
                 Arc::clone(&rollup),
+                Arc::clone(&unit_of_work),
             ),
             resolve_reference: ResolveReference::new(
                 Arc::clone(&tasks),

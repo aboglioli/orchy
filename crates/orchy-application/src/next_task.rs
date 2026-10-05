@@ -67,6 +67,8 @@ impl NextTask {
 fn is_contention(error: &ApplicationError) -> bool {
     matches!(
         error,
-        ApplicationError::Domain(orchy_core::DomainError::Conflict(_))
+        ApplicationError::Domain(
+            orchy_core::DomainError::Conflict(_) | orchy_core::DomainError::Contended(_)
+        )
     )
 }

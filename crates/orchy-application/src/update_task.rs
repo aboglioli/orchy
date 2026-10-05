@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use orchy_core::{Clock, Id, Namespace, Priority, Role, Tag, TaskStore, Title};
+use orchy_core::{Clock, Id, Namespace, Priority, Role, Tag, TaskStore, Title, UnitOfWork};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
 use crate::rollup_ancestors::RollupAncestors;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateTaskCommand {
@@ -26,6 +27,7 @@ pub struct UpdateTask {
     tasks: Arc<dyn TaskStore>,
     rollup: Arc<RollupAncestors>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl UpdateTask {
@@ -33,15 +35,21 @@ impl UpdateTask {
         tasks: Arc<dyn TaskStore>,
         rollup: Arc<RollupAncestors>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
             rollup,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: UpdateTaskCommand) -> ApplicationResult<TaskDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: UpdateTaskCommand) -> ApplicationResult<TaskDto> {
         let id = Id::new(&cmd.task_id)?;
         let mut task = self.tasks.require(&id).await?;
         let previous_parent = task.parent().cloned();

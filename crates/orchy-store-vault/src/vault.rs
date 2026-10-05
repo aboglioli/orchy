@@ -8,13 +8,13 @@ use tokio::time::sleep;
 
 use serde_json::Value;
 
-use crate::blob::{BlobStore, digest};
+use crate::blob::{BlobStore, Patch, digest};
 use crate::codec;
 use crate::layout::Layout;
 use crate::markdown::MarkdownFile;
+use crate::transaction::{StagedBlobStore, atomically};
 
 const LOOKUP_ATTEMPTS: u32 = 4;
-const AMEND_ATTEMPTS: u32 = 16;
 const RESCAN_PASSES: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +43,7 @@ pub struct Scan {
 }
 
 pub struct Vault {
+    staged: Arc<StagedBlobStore>,
     blobs: Arc<dyn BlobStore>,
     layout: Layout,
     index: RwLock<HashMap<Id, Located>>,
@@ -52,6 +53,10 @@ pub struct Vault {
     parsed: RwLock<HashMap<String, Parsed>>,
 }
 
+/// What the vault believed about each entity at one moment, so a unit of work that fails can
+/// put it back.
+pub struct Remembered(HashMap<Id, Located>);
+
 struct Parsed {
     print: Option<u64>,
     digest: u64,
@@ -60,8 +65,11 @@ struct Parsed {
 
 impl Vault {
     pub async fn open(blobs: Arc<dyn BlobStore>) -> Result<Self> {
+        blobs.recover().await?;
+        let staged = Arc::new(StagedBlobStore::new(blobs));
         let vault = Self {
-            blobs,
+            blobs: Arc::clone(&staged) as Arc<dyn BlobStore>,
+            staged,
             layout: Layout,
             index: RwLock::new(HashMap::new()),
             problems: RwLock::new(Vec::new()),
@@ -77,6 +85,23 @@ impl Vault {
 
     pub fn blobs(&self) -> &Arc<dyn BlobStore> {
         &self.blobs
+    }
+
+    pub(crate) fn staged(&self) -> &StagedBlobStore {
+        &self.staged
+    }
+
+    /// See [`Vault::read_by_id`]; for an entity found by a scan rather than loaded by id.
+    pub(crate) fn guard(&self, key: &str, seen: u64) {
+        self.staged.guard(key, seen);
+    }
+
+    pub(crate) fn remember(&self) -> Remembered {
+        Remembered(self.index.read().expect("index lock").clone())
+    }
+
+    pub(crate) fn restore(&self, remembered: Remembered) {
+        *self.index.write().expect("index lock") = remembered.0;
     }
 
     pub async fn reindex(&self) -> Result<()> {
@@ -265,10 +290,13 @@ impl Vault {
         parse(&bytes, key).map(Some)
     }
 
+    /// A store's own load. Inside a unit of work the entity must still be as read when the
+    /// unit lands: whatever was decided from it is decided again otherwise.
     pub async fn read_by_id(&self, id: &Id) -> Result<Option<(String, MarkdownFile)>> {
         let Some((located, bytes)) = self.bytes_of(id).await? else {
             return Ok(None);
         };
+        self.staged.guard(&located.key, digest(&bytes));
         self.index.write().expect("index lock").insert(
             id.clone(),
             Located {
@@ -315,7 +343,24 @@ impl Vault {
         self.write_if(key, file, id, kind, Precondition::Any).await
     }
 
+    /// A move is two writes and a delete; they land together.
     pub async fn write_if(
+        &self,
+        key: &str,
+        file: &MarkdownFile,
+        id: &Id,
+        kind: EntityKind,
+        precondition: Precondition,
+    ) -> Result<()> {
+        atomically(
+            self,
+            None,
+            Box::pin(self.write_now(key, file, id, kind, precondition)),
+        )
+        .await
+    }
+
+    async fn write_now(
         &self,
         key: &str,
         file: &MarkdownFile,
@@ -348,22 +393,24 @@ impl Vault {
                     )));
                 }
             }
-            _ => {
-                if let Some(located) = &previous
-                    && located.key != key
-                {
+            _ => match &previous {
+                Some(located) if located.key != key => {
+                    self.claim_free(key, &rendered, id).await?;
                     self.blobs.delete(&located.key).await?;
                 }
-                self.blobs.put(key, rendered.as_bytes()).await?;
-            }
+                _ => self.blobs.put(key, rendered.as_bytes()).await?,
+            },
         }
 
+        // a pending patch may sit on top of what was written
+        let landed = self.blobs.get(key).await?;
+        let seen = digest(landed.as_deref().unwrap_or(rendered.as_bytes()));
         self.index.write().expect("index lock").insert(
             id.clone(),
             Located {
                 key: key.to_owned(),
                 kind,
-                seen: digest(rendered.as_bytes()),
+                seen,
             },
         );
         Ok(())
@@ -384,51 +431,58 @@ impl Vault {
             });
         }
         if located.key != key {
-            self.blobs.put(key, rendered.as_bytes()).await?;
+            self.claim_free(key, rendered, id).await?;
             self.blobs.delete(&located.key).await?;
         }
         Ok(())
     }
 
-    /// Edits a list of entity refs in one frontmatter field, retrying when another writer got
-    /// there first.
+    /// A move lands only on a free path: whatever already sits there is another entity's file,
+    /// and overwriting it would delete that entity.
+    async fn claim_free(&self, key: &str, rendered: &str, id: &Id) -> Result<()> {
+        if self
+            .blobs
+            .compare_and_put(key, None, rendered.as_bytes())
+            .await?
+        {
+            return Ok(());
+        }
+        Err(DomainError::conflict(format!(
+            "`{id}` belongs at `{key}`, but another file is already there; move or rename that one first"
+        )))
+    }
+
+    /// Edits a list of entity refs in one frontmatter field. The edit is staged as a patch, so
+    /// it is reapplied to whatever the file holds when the change lands: two agents linking to
+    /// one hub at once both land, and neither overwrites the other.
     pub async fn amend_refs(
         &self,
         id: &Id,
-        kind: EntityKind,
         field: &str,
-        edit: impl Fn(&mut Vec<String>),
+        edit: impl Fn(&mut Vec<String>) + Send + Sync + 'static,
     ) -> Result<Amended> {
-        for attempt in 0..AMEND_ATTEMPTS {
-            let Some((key, mut file)) = self.read_by_id(id).await? else {
-                return Ok(Amended::Missing);
-            };
-            let mut targets = refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null));
-            let before = targets.clone();
-            edit(&mut targets);
-            if targets == before {
-                return Ok(Amended::Unchanged);
-            }
-            if targets.is_empty() {
-                file.frontmatter.remove(field);
-            } else {
-                targets.sort();
-                file.frontmatter.set(
-                    field,
-                    Value::Array(targets.into_iter().map(Value::String).collect()),
-                );
-            }
-            match self
-                .write_if(&key, &file, id, kind, Precondition::Unchanged)
-                .await
-            {
-                Err(DomainError::Conflict(_)) if attempt + 1 < AMEND_ATTEMPTS => {
-                    sleep(backoff(attempt)).await;
-                }
-                other => return other.map(|()| Amended::Changed),
-            }
+        let Some((key, mut file)) = self.peek_by_id(id).await? else {
+            return Ok(Amended::Missing);
+        };
+        if !edit_refs(&mut file, field, &edit) {
+            return Ok(Amended::Unchanged);
         }
-        unreachable!("the loop returns on its last attempt")
+        let field = field.to_owned();
+        let at = key.clone();
+        let patch: Patch = Arc::new(move |current| {
+            let Some(bytes) = current else {
+                return Ok(None);
+            };
+            let text = str::from_utf8(bytes)
+                .map_err(|_| DomainError::validation(format!("{at}: not valid UTF-8")))?;
+            let mut file = parse(bytes, &at)?;
+            if !edit_refs(&mut file, &field, &edit) {
+                return Ok(Some(bytes.to_vec()));
+            }
+            Ok(Some(file.render_over(text)?.into_bytes()))
+        });
+        self.staged.amend(&key, patch).await?;
+        Ok(Amended::Changed)
     }
 
     pub async fn relocate(&self, id: &Id, to: &str) -> Result<()> {
@@ -500,9 +554,24 @@ fn has_conflict_markers(text: &str) -> bool {
         .any(|line| line.starts_with("<<<<<<< ") || line.starts_with(">>>>>>> "))
 }
 
-fn backoff(attempt: u32) -> Duration {
-    let jitter = u64::from(std::process::id() % 5);
-    Duration::from_millis(u64::from(attempt) * 2 + jitter + 1)
+/// Whether the edit changed the field.
+fn edit_refs(file: &mut MarkdownFile, field: &str, edit: &dyn Fn(&mut Vec<String>)) -> bool {
+    let mut targets = refs_in(file.frontmatter.get(field).unwrap_or(&Value::Null));
+    let before = targets.clone();
+    edit(&mut targets);
+    if targets == before {
+        return false;
+    }
+    if targets.is_empty() {
+        file.frontmatter.remove(field);
+        return true;
+    }
+    targets.sort();
+    file.frontmatter.set(
+        field,
+        Value::Array(targets.into_iter().map(Value::String).collect()),
+    );
+    true
 }
 
 pub(crate) fn refs_in(value: &Value) -> Vec<String> {
@@ -552,6 +621,41 @@ mod tests {
             .await
             .unwrap();
         (vault, blobs)
+    }
+
+    #[tokio::test]
+    async fn a_move_never_lands_on_another_entitys_file() {
+        let (vault, blobs) = vault().await;
+        vault
+            .write(
+                "skills/a.md",
+                &file(A, "skill"),
+                &Id::new(A).unwrap(),
+                EntityKind::Skill,
+            )
+            .await
+            .unwrap();
+        vault
+            .write(
+                "notes/b.md",
+                &file(B, "skill"),
+                &Id::new(B).unwrap(),
+                EntityKind::Skill,
+            )
+            .await
+            .unwrap();
+
+        let refused = vault.relocate(&Id::new(B).unwrap(), "skills/a.md").await;
+        assert!(
+            matches!(refused, Err(DomainError::Conflict(_))),
+            "{refused:?}"
+        );
+        let kept = String::from_utf8(blobs.get("skills/a.md").await.unwrap().unwrap()).unwrap();
+        assert!(
+            kept.contains(A),
+            "the file already there is untouched: {kept}"
+        );
+        assert!(blobs.get("notes/b.md").await.unwrap().is_some());
     }
 
     #[tokio::test]

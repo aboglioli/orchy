@@ -60,10 +60,6 @@ impl SkillStore for VaultSkillStore {
             .await?;
         self.log.append(&events).await
     }
-
-    async fn delete(&self, id: &Id) -> Result<()> {
-        self.vault.remove(id).await
-    }
 }
 
 #[cfg(test)]

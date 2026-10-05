@@ -27,6 +27,7 @@ fn app() -> Application {
         log: Arc::clone(&backend.log) as _,
         clock: Arc::clone(&backend.clock) as _,
         ids: Arc::clone(&backend.ids) as _,
+        unit_of_work: Arc::clone(&backend.unit_of_work) as _,
     })
 }
 

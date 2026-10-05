@@ -36,7 +36,6 @@ pub trait DocumentStore: Send + Sync {
     /// Never paged: callers rely on seeing every match.
     async fn matching(&self, query: &DocumentQuery) -> Result<Vec<Document>>;
     async fn save(&self, document: &mut Document) -> Result<()>;
-    async fn delete(&self, id: &Id) -> Result<()>;
 
     async fn find(&self, query: &DocumentQuery, page: PageRequest) -> Result<Page<Document>> {
         Ok(Page::slice(self.matching(query).await?, page))

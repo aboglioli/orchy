@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use orchy_core::{
     ActorId, Clock, Edge, EdgeStore, EntityRef, Id, IdGenerator, Relation, Task, TaskStore, Title,
+    UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
 use crate::rollup_ancestors::RollupAncestors;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReplaceTaskCommand {
@@ -32,6 +34,7 @@ pub struct ReplaceTask {
     rollup: Arc<RollupAncestors>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl ReplaceTask {
@@ -41,6 +44,7 @@ impl ReplaceTask {
         rollup: Arc<RollupAncestors>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
@@ -48,10 +52,15 @@ impl ReplaceTask {
             rollup,
             ids,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: ReplaceTaskCommand) -> ApplicationResult<ReplaceTaskResponse> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: ReplaceTaskCommand) -> ApplicationResult<ReplaceTaskResponse> {
         let original_id = Id::new(&cmd.task_id)?;
         cmd.actor.parse::<ActorId>()?;
         let mut original = self.tasks.require(&original_id).await?;

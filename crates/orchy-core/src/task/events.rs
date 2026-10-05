@@ -42,15 +42,6 @@ pub struct TaskCreated {
 task_event!(TaskCreated, "task.created");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskDeleted {
-    pub id: Id,
-    pub namespace: Namespace,
-    pub reason: String,
-    pub at: DateTime<Utc>,
-}
-task_event!(TaskDeleted, "task.deleted");
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskClaimed {
     pub id: Id,
     pub namespace: Namespace,

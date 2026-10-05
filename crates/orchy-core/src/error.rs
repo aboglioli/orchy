@@ -61,6 +61,11 @@ pub enum DomainError {
     #[error("{0}")]
     Conflict(String),
 
+    /// Something the command only read changed before its writes landed. Nothing was written,
+    /// and running the command again decides afresh.
+    #[error("{0}")]
+    Contended(String),
+
     #[error("{0}")]
     Forbidden(String),
 
@@ -100,6 +105,10 @@ impl DomainError {
         Self::Conflict(msg.into())
     }
 
+    pub fn contended(msg: impl Into<String>) -> Self {
+        Self::Contended(msg.into())
+    }
+
     pub fn forbidden(msg: impl Into<String>) -> Self {
         Self::Forbidden(msg.into())
     }
@@ -113,7 +122,7 @@ impl DomainError {
             Self::Validation(_) => ErrorCode::Validation,
             Self::InvalidTransition { .. } => ErrorCode::InvalidTransition,
             Self::NotFound { .. } => ErrorCode::NotFound,
-            Self::Conflict(_) => ErrorCode::Conflict,
+            Self::Conflict(_) | Self::Contended(_) => ErrorCode::Conflict,
             Self::Forbidden(_) => ErrorCode::Forbidden,
             Self::UnknownType(_) => ErrorCode::UnknownType,
             Self::UnknownRelation(_) => ErrorCode::UnknownRelation,

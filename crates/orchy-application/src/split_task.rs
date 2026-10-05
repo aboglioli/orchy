@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use orchy_core::task::TaskDeleted;
-use orchy_core::{Clock, EventLog, Id, IdGenerator, Task, TaskStore, Title};
+use orchy_core::{Clock, Id, IdGenerator, Task, TaskStore, Title, UnitOfWork};
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
-
-const SETTLE_PASSES: u32 = 4;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SplitTaskCommand {
@@ -24,31 +22,38 @@ pub struct SplitTaskResponse {
 
 pub struct SplitTask {
     tasks: Arc<dyn TaskStore>,
-    log: Arc<dyn EventLog>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl SplitTask {
     pub fn new(
         tasks: Arc<dyn TaskStore>,
-        log: Arc<dyn EventLog>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
-            log,
             ids,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: SplitTaskCommand) -> ApplicationResult<SplitTaskResponse> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    /// Splitting the same goal the same way twice at once leaves one subtask per title: both
+    /// read the siblings, both add to the parent's `subtasks`, and the one that lands second
+    /// finds the parent changed, runs again and sees the sibling already there.
+    async fn apply(&self, cmd: SplitTaskCommand) -> ApplicationResult<SplitTaskResponse> {
         let parent_id = Id::new(&cmd.task_id)?;
         let parent = self.tasks.require(&parent_id).await?;
 
-        let existing: Vec<String> = self
+        let mut existing: Vec<String> = self
             .tasks
             .children_of(&parent_id)
             .await?
@@ -61,77 +66,24 @@ impl SplitTask {
 
         for raw in &cmd.titles {
             let title = Title::new(raw)?;
-            if existing.contains(&title.as_str().to_lowercase()) {
+            let folded = title.as_str().to_lowercase();
+            if existing.contains(&folded) {
                 skipped.push(title.to_string());
                 continue;
             }
+            existing.push(folded);
             let mut child =
                 Task::create(title, parent.namespace().clone(), &*self.ids, &*self.clock);
             child.attach_to(parent_id.clone(), &*self.clock)?;
-            self.tasks.save(&mut child).await?;
-            created.push(child);
-        }
 
-        let (kept, dropped) = self.reconcile(&parent_id, created).await?;
-        skipped.extend(dropped);
+            self.tasks.save(&mut child).await?;
+            created.push(TaskDto::from(&child));
+        }
 
         Ok(SplitTaskResponse {
             parent: TaskDto::from(&parent),
-            created: kept,
+            created,
             skipped,
         })
-    }
-
-    /// The title check above reads the siblings before writing any, so two agents splitting a
-    /// goal the same way both find it empty. With no transaction to put the writes in, the
-    /// duplicate is settled afterwards: ids are time-ordered, so every process agrees which
-    /// same-titled sibling came first, and each withdraws only what it wrote itself. Read until
-    /// two readings agree, or a process that looked too early sees no duplicate to settle.
-    async fn reconcile(
-        &self,
-        parent_id: &Id,
-        created: Vec<Task>,
-    ) -> ApplicationResult<(Vec<TaskDto>, Vec<String>)> {
-        if created.is_empty() {
-            return Ok((Vec::new(), Vec::new()));
-        }
-
-        let mut siblings = self.tasks.children_of(parent_id).await?;
-        for _ in 1..SETTLE_PASSES {
-            let again = self.tasks.children_of(parent_id).await?;
-            let settled = again.len() == siblings.len()
-                && again.iter().zip(&siblings).all(|(a, b)| a.id() == b.id());
-            siblings = again;
-            if settled {
-                break;
-            }
-        }
-
-        let mut kept = Vec::new();
-        let mut withdrawn = Vec::new();
-        for child in created {
-            let first = siblings
-                .iter()
-                .filter(|s| {
-                    s.title()
-                        .as_str()
-                        .eq_ignore_ascii_case(child.title().as_str())
-                })
-                .all(|s| s.id() >= child.id());
-            if first {
-                kept.push(TaskDto::from(&child));
-                continue;
-            }
-            self.tasks.delete(child.id()).await?;
-            let deleted = TaskDeleted {
-                id: child.id().clone(),
-                namespace: child.namespace().clone(),
-                reason: "a sibling with the same title was split out first".to_owned(),
-                at: self.clock.now(),
-            };
-            self.log.append(&[Box::new(deleted)]).await?;
-            withdrawn.push(child.title().to_string());
-        }
-        Ok((kept, withdrawn))
     }
 }

@@ -13,5 +13,6 @@ pub mod search;
 pub mod skills;
 pub mod tasks;
 pub mod time;
+pub mod transaction;
 pub mod vault;
 pub mod watermarks;

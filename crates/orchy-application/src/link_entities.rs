@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use orchy_core::{
     DocumentStore, DomainError, Edge, EdgeStore, EntityKind, EntityRef, MessageStore, Relation,
-    SkillStore, TaskStore,
+    SkillStore, TaskStore, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::EdgeDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LinkEntitiesCommand {
@@ -25,6 +26,7 @@ pub struct LinkEntities {
     tasks: Arc<dyn TaskStore>,
     skills: Arc<dyn SkillStore>,
     messages: Arc<dyn MessageStore>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl LinkEntities {
@@ -34,6 +36,7 @@ impl LinkEntities {
         tasks: Arc<dyn TaskStore>,
         skills: Arc<dyn SkillStore>,
         messages: Arc<dyn MessageStore>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             edges,
@@ -41,10 +44,15 @@ impl LinkEntities {
             tasks,
             skills,
             messages,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: LinkEntitiesCommand) -> ApplicationResult<EdgeDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: LinkEntitiesCommand) -> ApplicationResult<EdgeDto> {
         let from: EntityRef = cmd.from.parse()?;
         let to: EntityRef = cmd.to.parse()?;
         let relation: Relation = cmd.relation.parse()?;

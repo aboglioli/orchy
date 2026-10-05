@@ -13,6 +13,14 @@ pub struct MemoryMessageStore {
 }
 
 impl MemoryMessageStore {
+    pub(crate) fn state(&self) -> BTreeMap<Id, Message> {
+        self.messages.lock().expect("messages lock").clone()
+    }
+
+    pub(crate) fn restore_state(&self, state: BTreeMap<Id, Message>) {
+        *self.messages.lock().expect("messages lock") = state;
+    }
+
     pub fn new(log: Arc<MemoryEventLog>) -> Self {
         Self {
             messages: Mutex::new(BTreeMap::new()),

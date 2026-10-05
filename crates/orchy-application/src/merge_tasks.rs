@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use orchy_core::{
-    ActorId, Clock, DomainError, Edge, EdgeStore, EntityRef, Id, Relation, TaskStore,
+    ActorId, Clock, DomainError, Edge, EdgeStore, EntityRef, Id, Relation, TaskStore, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
 use crate::rollup_ancestors::RollupAncestors;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MergeTasksCommand {
@@ -30,6 +31,7 @@ pub struct MergeTasks {
     edges: Arc<dyn EdgeStore>,
     rollup: Arc<RollupAncestors>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl MergeTasks {
@@ -38,16 +40,22 @@ impl MergeTasks {
         edges: Arc<dyn EdgeStore>,
         rollup: Arc<RollupAncestors>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
             edges,
             rollup,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: MergeTasksCommand) -> ApplicationResult<MergeTasksResponse> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: MergeTasksCommand) -> ApplicationResult<MergeTasksResponse> {
         cmd.actor.parse::<ActorId>()?;
         let keep_id = Id::new(&cmd.keep)?;
         let mut other_ids = Vec::new();

@@ -18,6 +18,7 @@ pub mod skill;
 pub mod tag;
 pub mod task;
 pub mod title;
+pub mod unit_of_work;
 
 pub use actor::{
     Actor, ActorAlias, ActorId, ActorStore, Lease, LeaseChange, LeaseChanged, LeaseStore,
@@ -50,3 +51,4 @@ pub use skill::{RestoreSkill, Skill, SkillName, SkillStatus, SkillStore, Summary
 pub use tag::Tag;
 pub use task::{RestoreTask, Task, TaskQuery, TaskStatus, TaskStore, rollup};
 pub use title::Title;
+pub use unit_of_work::{UnitOfWork, Work};

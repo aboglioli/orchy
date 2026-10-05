@@ -9,6 +9,14 @@ use serde_json::Value;
 pub struct MemoryEventLog(Mutex<Vec<RecordedEvent>>);
 
 impl MemoryEventLog {
+    pub(crate) fn state(&self) -> usize {
+        self.0.lock().expect("event log lock").len()
+    }
+
+    pub(crate) fn restore_state(&self, len: usize) {
+        self.0.lock().expect("event log lock").truncate(len);
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

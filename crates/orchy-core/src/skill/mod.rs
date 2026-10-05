@@ -29,7 +29,6 @@ pub trait SkillStore: Send + Sync {
     async fn get(&self, id: &Id) -> Result<Option<Skill>>;
     async fn all(&self) -> Result<Vec<Skill>>;
     async fn save(&self, skill: &mut Skill) -> Result<()>;
-    async fn delete(&self, id: &Id) -> Result<()>;
 
     async fn require(&self, id: &Id) -> Result<Skill> {
         self.get(id)

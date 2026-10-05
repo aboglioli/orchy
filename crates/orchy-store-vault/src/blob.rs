@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
+use std::fmt;
+use std::io;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use orchy_core::{DomainError, Result};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::lock::{DEFAULT_WAIT, FileLock};
 
@@ -59,11 +63,84 @@ pub trait BlobStore: Send + Sync {
     async fn exists(&self, key: &str) -> Result<bool> {
         Ok(self.get(key).await?.is_some())
     }
+
+    /// Applies every change or none: each precondition is checked with every key held, so no
+    /// other writer fits between the checks and the writes, and a refused precondition is a
+    /// conflict that leaves everything as it was.
+    async fn commit(&self, changes: &[Change]) -> Result<()>;
+
+    /// Finishes a commit that a crashed process left halfway.
+    async fn recover(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expect {
+    Anything,
+    /// `None` means the key must be absent.
+    Exactly(Option<u64>),
+}
+
+/// Rewrites what a key holds; `None` in or out means the key is absent.
+pub type Patch = Arc<dyn Fn(Option<&[u8]>) -> Result<Option<Vec<u8>>> + Send + Sync>;
+
+#[derive(Clone)]
+pub enum Content {
+    Put(Vec<u8>),
+    Delete,
+    /// Applied to whatever the key holds when the commit lands, with the key held: the edit
+    /// commutes with other writers instead of conflicting with them.
+    Patch(Patch),
+    /// Writes nothing: the key was only read, and the commit holds only while it is unchanged.
+    Keep,
+}
+
+impl Content {
+    pub fn apply(&self, current: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
+        match self {
+            Self::Put(bytes) => Ok(Some(bytes.clone())),
+            Self::Delete => Ok(None),
+            Self::Patch(patch) => patch(current),
+            Self::Keep => Ok(current.map(<[u8]>::to_vec)),
+        }
+    }
+}
+
+impl fmt::Debug for Content {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Put(bytes) => write!(f, "Put({} bytes)", bytes.len()),
+            Self::Delete => f.write_str("Delete"),
+            Self::Patch(_) => f.write_str("Patch"),
+            Self::Keep => f.write_str("Keep"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Change {
+    pub key: String,
+    pub expected: Expect,
+    pub content: Content,
+}
+
+fn changed_meanwhile(change: &Change) -> DomainError {
+    let key = &change.key;
+    // a keep or a patch carries a precondition only because the key was read to decide
+    if matches!(change.content, Content::Keep | Content::Patch(_)) {
+        return DomainError::contended(format!(
+            "`{key}`, which this command read, changed before it finished; nothing was written"
+        ));
+    }
+    DomainError::conflict(format!(
+        "`{key}` changed while this command ran; nothing was written, so run it again"
+    ))
 }
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-fn io(context: &str, e: std::io::Error) -> DomainError {
+fn io(context: &str, e: io::Error) -> DomainError {
     DomainError::unavailable(format!("{context}: {e}"))
 }
 
@@ -122,28 +199,67 @@ fn read_one(path: &Path) -> Result<Option<Vec<u8>>> {
 }
 
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    let temp = write_temp(path, bytes)?;
+    std::fs::rename(&temp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        io(&format!("renaming into {}", path.display()), e)
+    })
+}
+
+/// The bytes, durable, beside `path` under a name no other writer shares: derived from the
+/// target alone, two processes writing one key would share a scratch file and the loser would
+/// rename half-written bytes into place.
+fn write_temp(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
     use std::io::Write;
 
-    // unique per writer: derived from the target alone, two processes writing one key would
-    // share a scratch file and the loser would rename half-written bytes into place
     let temp = path.with_extension(format!(
         "{}.{}.{}.tmp",
         path.extension().and_then(|e| e.to_str()).unwrap_or(""),
         std::process::id(),
         TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ));
-
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| io(&format!("creating {}", parent.display()), e))?;
+    }
     let write = || -> std::io::Result<()> {
         let mut file = std::fs::File::create(&temp)?;
         file.write_all(bytes)?;
         file.sync_all()
     };
-    write().map_err(|e| io(&format!("writing {}", temp.display()), e))?;
-
-    std::fs::rename(&temp, path).map_err(|e| {
+    write().map_err(|e| {
         let _ = std::fs::remove_file(&temp);
-        io(&format!("renaming into {}", path.display()), e)
-    })
+        io(&format!("writing {}", temp.display()), e)
+    })?;
+    Ok(temp)
+}
+
+fn remove_if_present(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(io(&format!("deleting {}", path.display()), e)),
+    }
+}
+
+/// A stable digest, unlike [`digest`]: a journal may be recovered by another build.
+fn fingerprint_of(path: &Path) -> Result<Option<String>> {
+    Ok(read_one(path)?.map(|bytes| hex::encode(Sha256::digest(bytes))))
+}
+
+/// One change of a commit, as the journal records it before any of them is applied.
+#[derive(Debug, Serialize, Deserialize)]
+struct Step {
+    key: String,
+    /// Where the new bytes wait; `None` deletes the key.
+    temp: Option<String>,
+    before: Option<String>,
+    after: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Journal {
+    steps: Vec<Step>,
 }
 
 /// Writes are atomic: temp file, fsync, rename, so a crash never leaves a half-parsed
@@ -221,6 +337,188 @@ impl FsBlobStore {
         })
         .await
         .map_err(|e| DomainError::unavailable(format!("list task failed: {e}")))
+    }
+
+    fn journal_dir(&self) -> PathBuf {
+        self.root.join(".orchy/journal")
+    }
+
+    /// Holds every key of the commit, in key order so two commits never wait on each other,
+    /// checks every precondition, then journals the whole change before applying any of it:
+    /// a crash after that point is finished by the next [`BlobStore::recover`].
+    fn commit_blocking(&self, changes: &[Change]) -> Result<()> {
+        let mut ordered: Vec<&Change> = changes.iter().collect();
+        ordered.sort_by(|a, b| a.key.cmp(&b.key));
+        ordered.dedup_by(|a, b| a.key == b.key);
+
+        let mut held = Vec::with_capacity(ordered.len());
+        for change in &ordered {
+            held.push(FileLock::exclusive(
+                &self.guard_path(&change.key)?,
+                "write guard",
+                DEFAULT_WAIT,
+            )?);
+        }
+        let mut finals = Vec::with_capacity(ordered.len());
+        for change in &ordered {
+            let current = read_one(&self.path_of(&change.key)?)?;
+            if let Expect::Exactly(expected) = change.expected
+                && current.as_deref().map(digest) != expected
+            {
+                return Err(changed_meanwhile(change));
+            }
+            let after = change.content.apply(current.as_deref())?;
+            if after != current {
+                finals.push((change.key.as_str(), after));
+            }
+        }
+
+        if let [(key, only)] = finals.as_slice() {
+            let path = self.path_of(key)?;
+            return match only {
+                Some(bytes) => write_atomically(&path, bytes),
+                None => remove_if_present(&path),
+            };
+        }
+        if finals.is_empty() {
+            return Ok(());
+        }
+
+        let mut steps = Vec::with_capacity(finals.len());
+        let staged = (|| -> Result<()> {
+            for (key, content) in &finals {
+                let path = self.path_of(key)?;
+                let before = fingerprint_of(&path)?;
+                let (temp, after) = match content {
+                    Some(bytes) => {
+                        let temp = write_temp(&path, bytes)?;
+                        (
+                            Some(self.key_of(&temp)?),
+                            Some(hex::encode(Sha256::digest(bytes))),
+                        )
+                    }
+                    None => (None, None),
+                };
+                steps.push(Step {
+                    key: (*key).to_owned(),
+                    temp,
+                    before,
+                    after,
+                });
+            }
+            Ok(())
+        })();
+        if let Err(e) = staged {
+            self.discard_temps(&steps);
+            return Err(e);
+        }
+
+        let journal = self.journal_dir().join(format!(
+            "{}.{}.json",
+            std::process::id(),
+            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let record = Journal { steps };
+        let encoded = serde_json::to_vec(&record)
+            .map_err(|e| DomainError::unavailable(format!("encoding the commit journal: {e}")))?;
+        if let Err(e) = write_atomically(&journal, &encoded) {
+            self.discard_temps(&record.steps);
+            return Err(e);
+        }
+
+        self.apply(&record.steps)?;
+        remove_if_present(&journal)?;
+        drop(held);
+        Ok(())
+    }
+
+    fn apply(&self, steps: &[Step]) -> Result<()> {
+        for step in steps {
+            let path = self.path_of(&step.key)?;
+            match &step.temp {
+                Some(temp) => std::fs::rename(self.path_of(temp)?, &path)
+                    .map_err(|e| io(&format!("renaming into {}", path.display()), e))?,
+                None => remove_if_present(&path)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn discard_temps(&self, steps: &[Step]) {
+        for temp in steps.iter().filter_map(|s| s.temp.as_deref()) {
+            if let Ok(path) = self.path_of(temp) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    /// A step is finished only while its key still holds what it held when the commit was
+    /// journaled; a key someone wrote since keeps that newer write.
+    fn recover_blocking(&self) -> Result<()> {
+        let entries = match std::fs::read_dir(self.journal_dir()) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(io("reading the commit journal", e)),
+        };
+        let mut journals: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "json"))
+            .collect();
+        journals.sort();
+
+        for journal in journals {
+            let Some(bytes) = read_one(&journal)? else {
+                continue;
+            };
+            let Ok(record) = serde_json::from_slice::<Journal>(&bytes) else {
+                remove_if_present(&journal)?;
+                continue;
+            };
+            let mut keys: Vec<&str> = record.steps.iter().map(|s| s.key.as_str()).collect();
+            keys.sort_unstable();
+            let mut held = Vec::with_capacity(keys.len());
+            for key in keys {
+                held.push(FileLock::exclusive(
+                    &self.guard_path(key)?,
+                    "write guard",
+                    DEFAULT_WAIT,
+                )?);
+            }
+            // its owner may have finished while we waited for the keys
+            if !journal.exists() {
+                continue;
+            }
+            for step in &record.steps {
+                let path = self.path_of(&step.key)?;
+                let current = fingerprint_of(&path)?;
+                let temp = step.temp.as_deref().map(|t| self.path_of(t)).transpose()?;
+                if current != step.after && current == step.before {
+                    match &temp {
+                        Some(temp) if temp.exists() => std::fs::rename(temp, &path)
+                            .map_err(|e| io(&format!("renaming into {}", path.display()), e))?,
+                        Some(_) => {}
+                        None => remove_if_present(&path)?,
+                    }
+                }
+                if let Some(temp) = &temp {
+                    remove_if_present(temp)?;
+                }
+            }
+            remove_if_present(&journal)?;
+            drop(held);
+        }
+        Ok(())
+    }
+
+    fn key_of(&self, path: &Path) -> Result<String> {
+        path.strip_prefix(&self.root)
+            .ok()
+            .and_then(|relative| relative.to_str())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                DomainError::unavailable(format!("{} is outside the vault", path.display()))
+            })
     }
 
     fn path_of(&self, key: &str) -> Result<PathBuf> {
@@ -312,6 +610,24 @@ impl BlobStore for FsBlobStore {
     async fn list_fingerprinted(&self, prefix: &str) -> Result<Vec<(String, Option<u64>)>> {
         self.walk(prefix, true).await
     }
+
+    async fn commit(&self, changes: &[Change]) -> Result<()> {
+        if changes.is_empty() {
+            return Ok(());
+        }
+        let store = Self::new(self.root.clone());
+        let changes = changes.to_vec();
+        tokio::task::spawn_blocking(move || store.commit_blocking(&changes))
+            .await
+            .map_err(|e| DomainError::unavailable(format!("commit task failed: {e}")))?
+    }
+
+    async fn recover(&self) -> Result<()> {
+        let store = Self::new(self.root.clone());
+        tokio::task::spawn_blocking(move || store.recover_blocking())
+            .await
+            .map_err(|e| DomainError::unavailable(format!("recovery task failed: {e}")))?
+    }
 }
 
 #[derive(Default)]
@@ -365,6 +681,30 @@ impl BlobStore for MemoryBlobStore {
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect())
+    }
+
+    async fn commit(&self, changes: &[Change]) -> Result<()> {
+        let mut blobs = self.0.lock().expect("blob mutex");
+        let mut finals = Vec::with_capacity(changes.len());
+        for change in changes {
+            let current = blobs.get(&change.key);
+            if let Expect::Exactly(expected) = change.expected
+                && current.map(|b| digest(b)) != expected
+            {
+                return Err(changed_meanwhile(change));
+            }
+            finals.push((
+                &change.key,
+                change.content.apply(current.map(Vec::as_slice))?,
+            ));
+        }
+        for (key, content) in finals {
+            match content {
+                Some(bytes) => blobs.insert(key.clone(), bytes),
+                None => blobs.remove(key),
+            };
+        }
+        Ok(())
     }
 }
 
@@ -544,5 +884,195 @@ mod concurrent_write_tests {
             strays.is_empty(),
             "every scratch file is renamed away: {strays:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod commit_tests {
+    use super::*;
+
+    fn put(key: &str, bytes: &str, expected: Expect) -> Change {
+        Change {
+            key: key.to_owned(),
+            expected,
+            content: Content::Put(bytes.as_bytes().to_vec()),
+        }
+    }
+
+    async fn all_or_nothing(store: &dyn BlobStore) {
+        store.put("a.md", b"a0").await.unwrap();
+        store.put("b.md", b"b0").await.unwrap();
+
+        let refused = store
+            .commit(&[
+                put("a.md", "a1", Expect::Exactly(Some(digest(b"a0")))),
+                put("b.md", "b1", Expect::Exactly(Some(digest(b"stale")))),
+                put("c.md", "c1", Expect::Exactly(None)),
+            ])
+            .await;
+        assert!(
+            matches!(refused, Err(DomainError::Conflict(_))),
+            "{refused:?}"
+        );
+        assert_eq!(store.get("a.md").await.unwrap(), Some(b"a0".to_vec()));
+        assert_eq!(
+            store.get("c.md").await.unwrap(),
+            None,
+            "nothing of it landed"
+        );
+
+        store
+            .commit(&[
+                put("a.md", "a1", Expect::Exactly(Some(digest(b"a0")))),
+                put("c.md", "c1", Expect::Exactly(None)),
+                Change {
+                    key: "b.md".to_owned(),
+                    expected: Expect::Anything,
+                    content: Content::Delete,
+                },
+            ])
+            .await
+            .unwrap();
+        assert_eq!(store.get("a.md").await.unwrap(), Some(b"a1".to_vec()));
+        assert_eq!(store.get("b.md").await.unwrap(), None);
+        assert_eq!(store.get("c.md").await.unwrap(), Some(b"c1".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn a_commit_lands_whole_or_not_at_all_on_both_backends() {
+        let temp = tempfile::tempdir().unwrap();
+        all_or_nothing(&MemoryBlobStore::new()).await;
+        all_or_nothing(&FsBlobStore::new(temp.path())).await;
+    }
+
+    #[tokio::test]
+    async fn a_patch_applies_to_what_the_key_holds_when_the_commit_lands() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = FsBlobStore::new(temp.path());
+        store.put("hub.md", b"one").await.unwrap();
+        let append: Patch = Arc::new(|current| {
+            let mut bytes = current.unwrap_or_default().to_vec();
+            bytes.extend_from_slice(b"+two");
+            Ok(Some(bytes))
+        });
+        store.put("hub.md", b"one+other").await.unwrap();
+        store
+            .commit(&[Change {
+                key: "hub.md".to_owned(),
+                expected: Expect::Anything,
+                content: Content::Patch(append),
+            }])
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get("hub.md").await.unwrap(),
+            Some(b"one+other+two".to_vec()),
+            "the other writer's change is kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_read_that_changed_fails_as_contention_not_as_a_conflict() {
+        let store = MemoryBlobStore::new();
+        store.put("read.md", b"seen").await.unwrap();
+        store.put("read.md", b"changed").await.unwrap();
+        let refused = store
+            .commit(&[Change {
+                key: "read.md".to_owned(),
+                expected: Expect::Exactly(Some(digest(b"seen"))),
+                content: Content::Keep,
+            }])
+            .await;
+        assert!(
+            matches!(refused, Err(DomainError::Contended(_))),
+            "{refused:?}"
+        );
+    }
+
+    fn journal(store: &FsBlobStore, steps: Vec<Step>) {
+        let record = serde_json::to_vec(&Journal { steps }).unwrap();
+        write_atomically(&store.journal_dir().join("1.1.json"), &record).unwrap();
+    }
+
+    fn stable(bytes: &[u8]) -> Option<String> {
+        Some(hex::encode(Sha256::digest(bytes)))
+    }
+
+    #[tokio::test]
+    async fn a_commit_a_crash_left_halfway_is_finished_on_the_next_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = FsBlobStore::new(temp.path());
+        store.put("docs/a.md", b"old a").await.unwrap();
+        store.put("docs/b.md", b"new b").await.unwrap();
+        store.put("docs/gone.md", b"doomed").await.unwrap();
+        let temp_a = write_temp(&temp.path().join("docs/a.md"), b"new a").unwrap();
+
+        journal(
+            &store,
+            vec![
+                Step {
+                    key: "docs/a.md".to_owned(),
+                    temp: Some(store.key_of(&temp_a).unwrap()),
+                    before: stable(b"old a"),
+                    after: stable(b"new a"),
+                },
+                Step {
+                    key: "docs/b.md".to_owned(),
+                    temp: Some("docs/b.md.applied.tmp".to_owned()),
+                    before: stable(b"old b"),
+                    after: stable(b"new b"),
+                },
+                Step {
+                    key: "docs/gone.md".to_owned(),
+                    temp: None,
+                    before: stable(b"doomed"),
+                    after: None,
+                },
+            ],
+        );
+
+        store.recover().await.unwrap();
+        assert_eq!(
+            store.get("docs/a.md").await.unwrap(),
+            Some(b"new a".to_vec())
+        );
+        assert_eq!(
+            store.get("docs/b.md").await.unwrap(),
+            Some(b"new b".to_vec())
+        );
+        assert_eq!(store.get("docs/gone.md").await.unwrap(), None);
+        assert!(!temp_a.exists(), "the staged bytes were renamed into place");
+        assert!(
+            std::fs::read_dir(store.journal_dir())
+                .unwrap()
+                .next()
+                .is_none(),
+            "a finished journal is removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn recovery_keeps_a_write_made_after_the_crash() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = FsBlobStore::new(temp.path());
+        store.put("docs/a.md", b"written since").await.unwrap();
+        let temp_a = write_temp(&temp.path().join("docs/a.md"), b"from the crash").unwrap();
+        journal(
+            &store,
+            vec![Step {
+                key: "docs/a.md".to_owned(),
+                temp: Some(store.key_of(&temp_a).unwrap()),
+                before: stable(b"before the crash"),
+                after: stable(b"from the crash"),
+            }],
+        );
+
+        store.recover().await.unwrap();
+        assert_eq!(
+            store.get("docs/a.md").await.unwrap(),
+            Some(b"written since".to_vec()),
+            "a newer write is never rolled over by an old commit"
+        );
+        assert!(!temp_a.exists());
     }
 }

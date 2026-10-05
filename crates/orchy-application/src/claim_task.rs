@@ -2,13 +2,16 @@ use std::sync::Arc;
 
 use chrono::Duration;
 use orchy_core::task::rollup;
-use orchy_core::{ActorId, Clock, Id, LeaseStore, ResourceKey, Task, TaskStatus, TaskStore};
+use orchy_core::{
+    ActorId, Clock, Id, LeaseStore, ResourceKey, Task, TaskStatus, TaskStore, UnitOfWork,
+};
 
 use crate::assess_dependencies::AssessDependencies;
 use serde::{Deserialize, Serialize};
 
 use crate::dto::TaskDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 const DEFAULT_LEASE_SECS: i64 = 900;
 
@@ -25,6 +28,7 @@ pub struct ClaimTask {
     leases: Arc<dyn LeaseStore>,
     dependencies: Arc<AssessDependencies>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl ClaimTask {
@@ -33,12 +37,14 @@ impl ClaimTask {
         leases: Arc<dyn LeaseStore>,
         dependencies: Arc<AssessDependencies>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             tasks,
             leases,
             dependencies,
             clock,
+            unit_of_work,
         }
     }
 
@@ -51,7 +57,7 @@ impl ClaimTask {
             .acquire(&ResourceKey::task(&id), &actor, ttl)
             .await?;
 
-        match self.take(&id, &actor, cmd.start).await {
+        match atomically(&*self.unit_of_work, || self.take(&id, &actor, cmd.start)).await {
             Ok(task) => Ok(task),
             Err(e) => {
                 let _ = self.leases.release(&ResourceKey::task(&id), &actor).await;

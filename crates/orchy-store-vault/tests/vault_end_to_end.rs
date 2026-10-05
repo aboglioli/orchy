@@ -20,6 +20,7 @@ use orchy_store_vault::search::VaultSearch;
 use orchy_store_vault::skills::VaultSkillStore;
 use orchy_store_vault::tasks::VaultTaskStore;
 use orchy_store_vault::time::{SystemClock, UlidGenerator};
+use orchy_store_vault::transaction::{StagedEventLog, VaultUnitOfWork};
 use orchy_store_vault::vault::Vault;
 use orchy_store_vault::watermarks::FileWatermarks;
 
@@ -39,7 +40,7 @@ impl Fixture {
 
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let ids: Arc<dyn IdGenerator> = Arc::new(UlidGenerator::new());
-        let log: Arc<dyn EventLog> = Arc::new(
+        let recorded: Arc<dyn EventLog> = Arc::new(
             EventuaryLog::open(
                 root.path().join("events"),
                 "orchy",
@@ -49,6 +50,8 @@ impl Fixture {
             )
             .unwrap(),
         );
+        let log: Arc<dyn EventLog> = Arc::new(StagedEventLog::new(Arc::clone(&recorded)));
+        let unit_of_work = Arc::new(VaultUnitOfWork::new(Arc::clone(&vault), recorded));
 
         let actors: Arc<dyn ActorStore> =
             Arc::new(VaultActorStore::new(Arc::clone(&vault), Arc::clone(&log)));
@@ -87,6 +90,7 @@ impl Fixture {
             log,
             clock,
             ids,
+            unit_of_work,
         };
 
         Self {

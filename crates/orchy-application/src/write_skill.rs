@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use orchy_core::{
     ActorId, ActorStore, Body, Clock, DomainError, IdGenerator, Namespace, Skill, SkillName,
-    SkillStore, Summary,
+    SkillStore, Summary, UnitOfWork,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dto::SkillDto;
 use crate::error::ApplicationResult;
+use crate::unit_of_work::atomically;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WriteSkillCommand {
@@ -24,6 +25,7 @@ pub struct WriteSkill {
     actors: Arc<dyn ActorStore>,
     ids: Arc<dyn IdGenerator>,
     clock: Arc<dyn Clock>,
+    unit_of_work: Arc<dyn UnitOfWork>,
 }
 
 impl WriteSkill {
@@ -32,16 +34,22 @@ impl WriteSkill {
         actors: Arc<dyn ActorStore>,
         ids: Arc<dyn IdGenerator>,
         clock: Arc<dyn Clock>,
+        unit_of_work: Arc<dyn UnitOfWork>,
     ) -> Self {
         Self {
             skills,
             actors,
             ids,
             clock,
+            unit_of_work,
         }
     }
 
     pub async fn execute(&self, cmd: WriteSkillCommand) -> ApplicationResult<SkillDto> {
+        atomically(&*self.unit_of_work, || self.apply(cmd.clone())).await
+    }
+
+    async fn apply(&self, cmd: WriteSkillCommand) -> ApplicationResult<SkillDto> {
         let name = SkillName::new(&cmd.name)?;
         let namespace = match (&cmd.namespace, &cmd.actor) {
             (Some(namespace), _) => Namespace::new(namespace)?,

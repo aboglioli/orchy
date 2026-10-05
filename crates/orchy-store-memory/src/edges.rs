@@ -14,6 +14,14 @@ pub struct MemoryEdgeStore {
 }
 
 impl MemoryEdgeStore {
+    pub(crate) fn state(&self) -> Vec<Edge> {
+        self.edges.lock().expect("edges lock").clone()
+    }
+
+    pub(crate) fn restore_state(&self, state: Vec<Edge>) {
+        *self.edges.lock().expect("edges lock") = state;
+    }
+
     pub fn new(log: Arc<dyn EventLog>, clock: Arc<dyn Clock>) -> Self {
         Self {
             edges: Mutex::new(Vec::new()),

@@ -7,6 +7,7 @@ use orchy_core::{
 };
 
 use crate::markdown::MarkdownFile;
+use crate::transaction::atomically;
 use crate::vault::{Amended, Vault, refs_in};
 
 pub struct VaultEdgeStore {
@@ -24,11 +25,9 @@ impl VaultEdgeStore {
         &self,
         entity: &EntityRef,
         field: &str,
-        edit: impl Fn(&mut Vec<String>),
+        edit: impl Fn(&mut Vec<String>) + Send + Sync + 'static,
     ) -> Result<Amended> {
-        self.vault
-            .amend_refs(entity.id(), entity.kind(), field, edit)
-            .await
+        self.vault.amend_refs(entity.id(), field, edit).await
     }
 
     /// The target's file shows who points at it for the relations whose inverse orchy
@@ -39,7 +38,7 @@ impl VaultEdgeStore {
             return Ok(());
         }
         let source = edge.from().to_string();
-        self.amend(edge.to(), inverse, |refs| {
+        self.amend(edge.to(), inverse, move |refs| {
             refs.retain(|r| r != &source);
             if present {
                 refs.push(source.clone());
@@ -47,6 +46,46 @@ impl VaultEdgeStore {
         })
         .await
         .map(drop)
+    }
+
+    async fn add_now(&self, edge: &Edge) -> Result<()> {
+        let target = reference(edge);
+        let amended = self
+            .amend(edge.from(), edge.relation().as_str(), move |targets| {
+                if !targets.iter().any(|t| same_entity(t, &target)) {
+                    targets.push(target.clone());
+                }
+            })
+            .await?;
+        match amended {
+            Amended::Missing => Err(DomainError::not_found(
+                kind_name(edge.from().kind()),
+                edge.from().id(),
+            )),
+            Amended::Unchanged => Ok(()),
+            Amended::Changed => {
+                self.render_inverse(edge, true).await?;
+                self.log
+                    .append(&[Box::new(EdgeAdded::of(edge, self.clock.now()))])
+                    .await
+            }
+        }
+    }
+
+    async fn remove_now(&self, edge: &Edge) -> Result<()> {
+        let target = reference(edge);
+        let amended = self
+            .amend(edge.from(), edge.relation().as_str(), move |targets| {
+                targets.retain(|t| !same_entity(t, &target));
+            })
+            .await?;
+        if amended != Amended::Changed {
+            return Ok(());
+        }
+        self.render_inverse(edge, false).await?;
+        self.log
+            .append(&[Box::new(EdgeRemoved::of(edge, self.clock.now()))])
+            .await
     }
 
     /// Reads without refreshing what the vault remembers of the file, so looking at links
@@ -109,45 +148,22 @@ fn kind_name(kind: EntityKind) -> &'static str {
 #[async_trait]
 impl EdgeStore for VaultEdgeStore {
     async fn add(&self, edge: &Edge) -> Result<()> {
-        let target = reference(edge);
-        let amended = self
-            .amend(edge.from(), edge.relation().as_str(), |targets| {
-                if !targets.iter().any(|t| same_entity(t, &target)) {
-                    targets.push(target.clone());
-                }
-            })
-            .await?;
-        match amended {
-            Amended::Missing => Err(DomainError::not_found(
-                kind_name(edge.from().kind()),
-                edge.from().id(),
-            )),
-            Amended::Unchanged => Ok(()),
-            Amended::Changed => {
-                self.render_inverse(edge, true).await?;
-                self.log
-                    .append(&[Box::new(EdgeAdded::of(edge, self.clock.now()))])
-                    .await
-            }
-        }
+        atomically(
+            &self.vault,
+            Some(self.log.as_ref()),
+            Box::pin(self.add_now(edge)),
+        )
+        .await
     }
 
     async fn remove(&self, edge: &Edge) -> Result<()> {
-        let target = reference(edge);
-        let amended = self
-            .amend(edge.from(), edge.relation().as_str(), |targets| {
-                targets.retain(|t| !same_entity(t, &target));
-            })
-            .await?;
-        if amended != Amended::Changed {
-            return Ok(());
-        }
-        self.render_inverse(edge, false).await?;
-        self.log
-            .append(&[Box::new(EdgeRemoved::of(edge, self.clock.now()))])
-            .await
+        atomically(
+            &self.vault,
+            Some(self.log.as_ref()),
+            Box::pin(self.remove_now(edge)),
+        )
+        .await
     }
-
     async fn out(&self, from: &EntityRef, relation: Option<&Relation>) -> Result<Vec<Edge>> {
         Ok(self
             .edges_from(from)

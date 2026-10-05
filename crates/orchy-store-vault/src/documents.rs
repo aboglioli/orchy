@@ -73,8 +73,4 @@ impl DocumentStore for VaultDocumentStore {
             .await?;
         self.log.append(&events).await
     }
-
-    async fn delete(&self, id: &Id) -> Result<()> {
-        self.vault.remove(id).await
-    }
 }
