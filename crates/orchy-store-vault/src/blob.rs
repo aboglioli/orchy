@@ -299,9 +299,11 @@ impl FsBlobStore {
                 return Vec::new();
             }
             let found = std::sync::Mutex::new(Vec::new());
+            // hidden entries are skipped (`.orchy`, an editor's swap files); ignore files are not
+            // read, so what orchy sees never depends on git
             ignore::WalkBuilder::new(&base)
+                .standard_filters(false)
                 .hidden(true)
-                .git_ignore(true)
                 .build_parallel()
                 .run(|| {
                     Box::new(|entry| {
@@ -1074,5 +1076,20 @@ mod commit_tests {
             "a newer write is never rolled over by an old commit"
         );
         assert!(!temp_a.exists());
+    }
+
+    #[tokio::test]
+    async fn listing_never_depends_on_git_ignore_files() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join(".git")).unwrap();
+        std::fs::write(temp.path().join(".gitignore"), "docs/\n").unwrap();
+        std::fs::write(temp.path().join(".ignore"), "tasks/\n").unwrap();
+        let store = FsBlobStore::new(temp.path());
+        store.put("docs/a.md", b"a").await.unwrap();
+        store.put("tasks/open/b.md", b"b").await.unwrap();
+
+        let listed = store.list("").await.unwrap();
+        assert!(listed.contains(&"docs/a.md".to_owned()), "{listed:?}");
+        assert!(listed.contains(&"tasks/open/b.md".to_owned()), "{listed:?}");
     }
 }
