@@ -136,7 +136,7 @@ async fn a_created_task_is_a_markdown_file_with_readable_frontmatter() {
         .await
         .unwrap();
 
-    let path = format!("tasks/open/{}.md", task.id);
+    let path = "tasks/open/rotate-signing-keys.md".to_owned();
     assert!(fixture.exists(&path), "task must land in tasks/open");
 
     let text = fixture.read(&path);
@@ -186,10 +186,10 @@ async fn completing_a_task_moves_the_file_and_rewrites_its_status() {
         .unwrap();
 
     assert!(
-        !fixture.exists(&format!("tasks/open/{}.md", task.id)),
+        !fixture.exists("tasks/open/ship-it.md"),
         "the open copy must not linger"
     );
-    let text = fixture.read(&format!("tasks/done/{}.md", task.id));
+    let text = fixture.read("tasks/done/ship-it.md");
     assert!(text.contains("status: completed"));
     assert!(text.contains(&format!("claimed_by: {ACTOR}")));
 }
@@ -217,11 +217,11 @@ async fn the_parent_file_is_rewritten_when_its_last_subtask_finishes() {
         .unwrap()
         .created;
 
-    let parent_open = format!("tasks/open/{}.md", parent.id);
+    let parent_open = "tasks/open/epic.md".to_owned();
     assert!(fixture.exists(&parent_open));
     assert!(
         fixture
-            .read(&format!("tasks/open/{}.md", children[0].id))
+            .read("tasks/open/a.md")
             .contains(&format!("parent: task:{}", parent.id)),
         "the hierarchy is stored on the child, and names the kind it points at"
     );
@@ -259,7 +259,7 @@ async fn the_parent_file_is_rewritten_when_its_last_subtask_finishes() {
     assert!(!fixture.exists(&parent_open), "the parent moved to done");
     assert!(
         fixture
-            .read(&format!("tasks/done/{}.md", parent.id))
+            .read("tasks/done/epic.md")
             .contains("status: completed"),
         "rollup reached the file on disk"
     );
@@ -283,7 +283,7 @@ async fn a_documents_own_frontmatter_survives_an_edit_by_orchy() {
         .unwrap()
         .document;
 
-    let path = format!("docs/backend/{}.md", document.id);
+    let path = "docs/backend/key-rotation.md".to_owned();
     let original = fixture.read(&path);
     assert!(original.contains("type: decision"));
     assert!(original.contains("- auth"));
@@ -375,8 +375,15 @@ async fn a_message_is_one_file_under_its_thread_and_reaches_an_inbox() {
         .await
         .unwrap();
 
-    let path = format!("messages/{}/{}.md", message.thread, message.id);
-    assert!(fixture.exists(&path), "a message lives under its thread");
+    let thread: Vec<_> = std::fs::read_dir(fixture.root.path().join("messages/build-is-red"))
+        .expect("a thread is a folder named after its subject")
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(thread.len(), 1, "{thread:?}");
+    assert!(thread[0].ends_with(".md"), "{thread:?}");
+    let path = format!("messages/build-is-red/{}", thread[0]);
+    assert_eq!(message.thread, message.id);
     let text = fixture.read(&path);
     assert!(text.contains("type: message"));
     assert!(text.contains("status: open"));
@@ -565,7 +572,7 @@ async fn looking_at_links_never_lets_a_stale_save_through() {
     documents.save(&mut document).await.unwrap();
     let mut loaded = documents.require(document.id()).await.unwrap();
 
-    let path = root.path().join(format!("docs/{}.md", document.id()));
+    let path = root.path().join("docs/shared.md");
     let changed = std::fs::read_to_string(&path)
         .unwrap()
         .replace("first", "someone else's edit");

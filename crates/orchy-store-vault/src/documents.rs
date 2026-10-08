@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use orchy_core::{Document, DocumentQuery, DocumentStore, EntityKind, EventLog, Id, Result};
 
 use crate::codec;
+use crate::placement;
 use crate::vault::{Precondition, Vault};
 
 pub struct VaultDocumentStore {
@@ -56,10 +57,7 @@ impl DocumentStore for VaultDocumentStore {
 
     async fn save(&self, document: &mut Document) -> Result<()> {
         let events = document.drain_events();
-        let key = self
-            .vault
-            .layout()
-            .document_key(document.namespace(), document.id());
+        let key = placement::of_document(&self.vault, document).await?;
 
         let file = codec::document_to_markdown(document);
         self.vault

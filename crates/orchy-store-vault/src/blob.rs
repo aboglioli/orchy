@@ -118,7 +118,9 @@ pub struct Change {
 
 fn changed_meanwhile(change: &Change) -> DomainError {
     let key = &change.key;
-    if matches!(change.content, Content::Keep | Content::Patch(_)) {
+    if matches!(change.content, Content::Keep | Content::Patch(_))
+        || change.expected == Expect::Exactly(None)
+    {
         return DomainError::contended(format!(
             "`{key}`, which this command read, changed before it finished; nothing was written"
         ));
@@ -358,7 +360,7 @@ impl FsBlobStore {
             let path = self.path_of(key)?;
             return match only {
                 Some(bytes) => write_atomically(&path, bytes),
-                None => remove_if_present(&path),
+                None => self.remove_and_prune(&path),
             };
         }
         if finals.is_empty() {
@@ -419,8 +421,23 @@ impl FsBlobStore {
             match &step.temp {
                 Some(temp) => std::fs::rename(self.path_of(temp)?, &path)
                     .map_err(|e| io(&format!("renaming into {}", path.display()), e))?,
-                None => remove_if_present(&path)?,
+                None => self.remove_and_prune(&path)?,
             }
+        }
+        Ok(())
+    }
+
+    fn remove_and_prune(&self, path: &Path) -> Result<()> {
+        remove_if_present(path)?;
+        let mut folder = path.parent();
+        while let Some(dir) = folder {
+            if dir.parent() == Some(self.root.as_path()) || !dir.starts_with(&self.root) {
+                break;
+            }
+            if std::fs::remove_dir(dir).is_err() {
+                break;
+            }
+            folder = dir.parent();
         }
         Ok(())
     }
@@ -476,7 +493,7 @@ impl FsBlobStore {
                         Some(temp) if temp.exists() => std::fs::rename(temp, &path)
                             .map_err(|e| io(&format!("renaming into {}", path.display()), e))?,
                         Some(_) => {}
-                        None => remove_if_present(&path)?,
+                        None => self.remove_and_prune(&path)?,
                     }
                 }
                 if let Some(temp) = &temp {
@@ -569,11 +586,10 @@ impl BlobStore for FsBlobStore {
 
     async fn delete(&self, key: &str) -> Result<()> {
         let path = self.path_of(key)?;
-        match tokio::fs::remove_file(&path).await {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(io(&format!("deleting {}", path.display()), e)),
-        }
+        let store = Self::new(self.root.clone());
+        tokio::task::spawn_blocking(move || store.remove_and_prune(&path))
+            .await
+            .map_err(|e| DomainError::unavailable(format!("delete task failed: {e}")))?
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<String>> {

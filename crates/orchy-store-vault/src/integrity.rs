@@ -12,6 +12,7 @@ use crate::edges::edges_in;
 use crate::codec;
 use crate::layout::AGENTS;
 use crate::markdown::MarkdownFile;
+use crate::placement;
 use crate::vault::refs_in;
 use crate::vault::{Scan, Vault};
 
@@ -24,16 +25,18 @@ impl VaultIntegrity {
         Self { vault }
     }
 
-    fn placement(
+    async fn placement(
         &self,
         id: &Id,
         key: &str,
         kind: EntityKind,
         file: &MarkdownFile,
-    ) -> Option<Problem> {
-        let expected = self.expected_key(id, kind, file)?;
+    ) -> Result<Option<Problem>> {
+        let Some(expected) = self.expected_key(kind, file).await? else {
+            return Ok(None);
+        };
         if expected == key {
-            return None;
+            return Ok(None);
         }
         let folder = |k: &str| {
             k.rsplit_once('/')
@@ -45,36 +48,36 @@ impl VaultIntegrity {
         } else {
             ProblemKind::Misplaced
         };
-        Some(Problem::new(
+        Ok(Some(Problem::new(
             problem,
             key,
             Some(id.clone()),
             format!("belongs at `{expected}`"),
-        ))
+        )))
     }
 
-    /// Where the file should be: the place its own frontmatter puts it, and nowhere else.
-    fn expected_key(&self, id: &Id, kind: EntityKind, file: &MarkdownFile) -> Option<String> {
-        let layout = self.vault.layout();
-        match kind {
-            EntityKind::Document => {
-                let document = codec::document_from_markdown(file).ok()?;
-                Some(layout.document_key(document.namespace(), id))
-            }
-            EntityKind::Task => {
-                let task = codec::task_from_markdown(file).ok()?;
-                Some(layout.task_key(id, task.status()))
-            }
-            EntityKind::Message => {
-                let message = codec::message_from_markdown(file).ok()?;
-                Some(layout.message_key(message.thread(), id))
-            }
-            EntityKind::Skill => {
-                let skill = codec::skill_from_markdown(file).ok()?;
-                Some(layout.skill_key(skill.namespace(), skill.name()))
-            }
-            EntityKind::Actor => None,
-        }
+    async fn expected_key(&self, kind: EntityKind, file: &MarkdownFile) -> Result<Option<String>> {
+        let vault = &self.vault;
+        let key = match kind {
+            EntityKind::Document => match codec::document_from_markdown(file) {
+                Ok(document) => placement::of_document(vault, &document).await?,
+                Err(_) => return Ok(None),
+            },
+            EntityKind::Task => match codec::task_from_markdown(file) {
+                Ok(task) => placement::of_task(vault, &task).await?,
+                Err(_) => return Ok(None),
+            },
+            EntityKind::Message => match codec::message_from_markdown(file) {
+                Ok(message) => placement::of_message(vault, &message).await?,
+                Err(_) => return Ok(None),
+            },
+            EntityKind::Skill => match codec::skill_from_markdown(file) {
+                Ok(skill) => placement::of_skill(vault, &skill).await?,
+                Err(_) => return Ok(None),
+            },
+            EntityKind::Actor => return Ok(None),
+        };
+        Ok(Some(key))
     }
 
     fn projections(&self, scan: &Scan) -> BTreeMap<(Id, &'static str), BTreeSet<String>> {
@@ -226,7 +229,7 @@ impl Integrity for VaultIntegrity {
         let scan = self.vault.scan().await?;
         let roster: HashSet<String> = self.vault.blobs().list(AGENTS).await?.into_iter().collect();
         for (id, located, file) in &scan.entries {
-            problems.extend(self.placement(id, &located.key, located.kind, file));
+            problems.extend(self.placement(id, &located.key, located.kind, file).await?);
             problems.extend(self.links((&located.key, id, located.kind), file, &roster));
         }
         let expected = self.projections(&scan);
@@ -254,7 +257,7 @@ impl Integrity for VaultIntegrity {
         let Some(kind) = self.vault.locate(id).map(|l| l.kind) else {
             return Ok(false);
         };
-        let Some(expected) = self.expected_key(id, kind, &file) else {
+        let Some(expected) = self.expected_key(kind, &file).await? else {
             return Ok(false);
         };
         if expected == key {
@@ -400,7 +403,7 @@ mod tests {
                 .locate(&Id::new(A).unwrap())
                 .unwrap()
                 .key
-                .ends_with(&format!("tasks/open/{A}.md"))
+                .ends_with("tasks/open/t.md")
         );
     }
 
@@ -422,7 +425,7 @@ mod tests {
         integrity.repair(&problem).await.unwrap();
         assert_eq!(
             integrity.vault.locate(&Id::new(A).unwrap()).unwrap().key,
-            format!("docs/backend/{A}.md")
+            "docs/backend/t.md"
         );
     }
 
@@ -442,23 +445,60 @@ mod tests {
     #[tokio::test]
     async fn a_link_to_nothing_is_reported_but_left_alone() {
         let (integrity, found) = everything(&[(
-            &format!("docs/{A}.md"),
+            "docs/t.md",
             &format!("---\nid: {A}\ntype: note\ntitle: t\nrelated_to:\n  - document:{B}\n---\n"),
         )])
         .await;
         assert_eq!(
             found,
-            vec![(format!("docs/{A}.md"), ProblemKind::DanglingEdge)]
+            vec![("docs/t.md".to_owned(), ProblemKind::DanglingEdge)]
         );
         let problem = integrity.problems().await.unwrap().remove(0);
         assert!(!integrity.repair(&problem).await.unwrap());
     }
 
     #[tokio::test]
-    async fn a_healthy_vault_has_nothing_to_report() {
-        let note = format!("docs/{A}.md");
+    async fn a_file_named_by_its_id_is_renamed_after_its_title() {
+        let (integrity, found) = everything(&[(
+            &format!("docs/{A}.md"),
+            &format!("---\nid: {A}\ntype: note\ntitle: Rotate keys\n---\n"),
+        )])
+        .await;
+        assert_eq!(
+            found,
+            vec![(format!("docs/{A}.md"), ProblemKind::MisnamedFile)]
+        );
+        let problem = integrity.problems().await.unwrap().remove(0);
+        assert!(integrity.repair(&problem).await.unwrap());
+        assert_eq!(
+            integrity.vault.locate(&Id::new(A).unwrap()).unwrap().key,
+            "docs/rotate-keys.md"
+        );
+    }
+
+    #[tokio::test]
+    async fn two_titles_alike_take_numbered_names_and_keep_them() {
         let (_, found) = everything(&[
-            (&note, &format!("---\nid: {A}\ntype: note\ntitle: a\n---\n")),
+            (
+                "docs/plan.md",
+                &format!("---\nid: {A}\ntype: note\ntitle: Plan\n---\n"),
+            ),
+            (
+                "docs/plan-2.md",
+                &format!("---\nid: {B}\ntype: note\ntitle: Plan\n---\n"),
+            ),
+        ])
+        .await;
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[tokio::test]
+    async fn a_healthy_vault_has_nothing_to_report() {
+        let (_, found) = everything(&[
+            (
+                "docs/a.md",
+                &format!("---\nid: {A}\ntype: note\ntitle: a\n---\n"),
+            ),
             (
                 "skills/commits.md",
                 &format!("---\nid: {B}\ntype: skill\nname: commits\nsummary: s\n---\n"),

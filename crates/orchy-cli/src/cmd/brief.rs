@@ -11,8 +11,8 @@ const WHAT_ORCHY_IS: &str = "\
 ORCHY IN ONE MINUTE
   A shared memory for agents, kept as markdown files you can read, edit and commit.
   Frontmatter is the only source of truth; a file's directory is a projection of it,
-  so never infer state from a path. Every entity has a stable id, and orchy keeps each
-  file in the folder its header names: change the header, not the folder.
+  so never infer state from a path. Every entity has a stable id, and orchy names each
+  file after its title in the folder its header names: change the header, not the file.
 
 START HERE
   orchy announce                      join the roster and get your briefing: the conventions

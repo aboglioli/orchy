@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::blob::{BlobStore, Patch, digest};
 use crate::codec;
-use crate::layout::Layout;
+use crate::layout::{Layout, Slot};
 use crate::markdown::MarkdownFile;
 use crate::transaction::{StagedBlobStore, atomically};
 
@@ -280,6 +280,22 @@ impl Vault {
             .collect()
     }
 
+    pub async fn place(&self, slot: &Slot, id: &Id) -> Result<String> {
+        if let Some(located) = self.locate(id)
+            && slot.fits(&located.key)
+        {
+            return Ok(located.key);
+        }
+        let mut n = 1;
+        loop {
+            let key = slot.key(n);
+            if !slot.is_numbered() || !self.blobs.exists(&key).await? {
+                return Ok(key);
+            }
+            n += 1;
+        }
+    }
+
     pub async fn read(&self, key: &str) -> Result<Option<MarkdownFile>> {
         let Some(bytes) = self.blobs.get(key).await? else {
             return Ok(None);
@@ -383,8 +399,8 @@ impl Vault {
                     .compare_and_put(key, None, rendered.as_bytes())
                     .await?
                 {
-                    return Err(DomainError::conflict(format!(
-                        "`{id}` already exists at `{key}`; reload it and reapply the change"
+                    return Err(DomainError::contended(format!(
+                        "`{key}` was taken by another write before `{id}` could land there"
                     )));
                 }
             }
@@ -895,8 +911,12 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(refused, Err(DomainError::Conflict(_))),
-            "creating claims the key rather than overwriting it: {refused:?}"
+            matches!(refused, Err(DomainError::Contended(_))),
+            "creating claims the key rather than overwriting it, and runs again to pick another: {refused:?}"
+        );
+        assert_eq!(
+            blobs.get("notes/a.md").await.unwrap(),
+            Some(b"already here".to_vec())
         );
     }
 

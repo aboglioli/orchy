@@ -38,9 +38,11 @@ namespace tree, so `/backend` gets everything `/` declares and may override it b
 Frontmatter is the only source of truth. A file's directory is a projection of its
 frontmatter, never the other way round, so never infer state from a path.
 
-Every document has a stable `id`, and links travel with it. To move a document, change its
-`namespace` (`orchy ns move`, or edit the header): orchy moves the file to match, and
-`orchy doctor` reports any file left in the wrong folder.
+Every document has a stable `id`, and links travel with it. Files are named after their
+title (`docs/backend/rotate-keys.md`, `-2` for a second one alike) and renamed when the title
+changes. To move a document, change its `namespace` (`orchy ns move`, or edit the header):
+orchy moves the file to match, and `orchy doctor` reports any file left in the wrong folder
+or under the wrong name.
 ";
 
 const INDEX_MD: &str = "\

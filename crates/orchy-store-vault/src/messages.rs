@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use orchy_core::{ActorId, ActorStore, EntityKind, EventLog, Id, Message, MessageStore, Result};
 
 use crate::codec;
+use crate::placement;
 use crate::vault::{Precondition, Vault};
 
 pub struct VaultMessageStore {
@@ -77,10 +78,7 @@ impl MessageStore for VaultMessageStore {
 
     async fn save(&self, message: &mut Message) -> Result<()> {
         let events = message.drain_events();
-        let key = self
-            .vault
-            .layout()
-            .message_key(message.thread(), message.id());
+        let key = placement::of_message(&self.vault, message).await?;
         let carried = match self.vault.peek_by_id(message.id()).await? {
             Some((_, file)) => codec::carried_frontmatter(&file),
             None => Default::default(),

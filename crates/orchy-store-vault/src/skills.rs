@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use orchy_core::{EntityKind, EventLog, Id, Result, Skill, SkillStore};
 
 use crate::codec;
+use crate::placement;
 use crate::vault::{Precondition, Vault};
 
 pub struct VaultSkillStore {
@@ -44,10 +45,7 @@ impl SkillStore for VaultSkillStore {
 
     async fn save(&self, skill: &mut Skill) -> Result<()> {
         let events = skill.drain_events();
-        let key = self
-            .vault
-            .layout()
-            .skill_key(skill.namespace(), skill.name());
+        let key = placement::of_skill(&self.vault, skill).await?;
         let file = codec::skill_to_markdown(skill);
         self.vault
             .write_if(

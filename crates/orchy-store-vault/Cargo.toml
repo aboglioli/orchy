@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
+deunicode.workspace = true
 eventuary.workspace = true
 futures.workspace = true
 ignore.workspace = true

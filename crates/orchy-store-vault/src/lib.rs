@@ -8,6 +8,7 @@ pub mod layout;
 pub mod lock;
 pub mod markdown;
 pub mod messages;
+mod placement;
 pub mod roster;
 pub mod search;
 pub mod skills;
