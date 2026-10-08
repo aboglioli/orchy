@@ -11,6 +11,15 @@ The first release, `0.1.0`, will be cut from this section.
 
 ### Added
 
+- **Sessions.** `orchy announce` returns a session token; commands that carry it
+  (`ORCHY_SESSION` or `--session`) act as that agent in the namespace it announced, and events
+  record which session made each change. Claude Code's session-start hook passes the token to
+  every later command by itself. `orchy leave` ends a session; an unknown or ended token is
+  refused (exit 4).
+- **Readable filenames.** Documents, tasks and messages are named after their title or
+  subject (`docs/backend/rotate-jwt-keys.md`, `-2` for a second one alike) and renamed when it
+  changes. **Vault format:** run `orchy doctor --fix` once to rename files named by id.
+
 - **Setup.** `orchy integrate claude-code|codex|opencode|gemini` makes an agent run
   `orchy announce` at the start of every session. Other additions: man pages
   (`orchy man`), a generated command reference in `docs/cli.md`, `ORCHY_NAMESPACE`, and
@@ -78,7 +87,7 @@ The first release, `0.1.0`, will be cut from this section.
 - **Vault format.**
   - A document's folder always equals its namespace. Subfolders a human created beneath a
     namespace are not kept: `doctor` reports such files, and the next save or
-    `doctor --fix` moves them to `docs/<namespace>/<id>.md`.
+    `doctor --fix` moves them to `docs/<namespace>/`.
   - `supersedes` is stored on the replacement, pointing at what it replaced; `orchy doctor
     --fix` turns old links around.
   - Files now show what points at them: `superseded_by`, `derives`, `produced_by` and

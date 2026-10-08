@@ -76,6 +76,16 @@ ORCHY_ACTOR=reviewer codex
 A name is 2–32 characters of lowercase letters, digits and `-`. Commands you run yourself
 without a name act as `human`.
 
+**A session carries the identity.** `orchy announce` answers with a session token
+(`ses_…`). Every later command that carries it, as `ORCHY_SESSION` or `--session`, acts as
+that agent, in the namespace it announced, without repeating the name; events record which
+session made each change, so two sessions under one name are told apart. In Claude Code the
+session-start hook puts the token into the session's environment for you; other agents are
+told to export it. Announcing again with the token resumes the session, `orchy leave` ends
+it, and a session unused for 7 days ends by itself. A token orchy does not know, or one that
+ended, is refused (exit 4) rather than quietly acting as someone else. Sessions are kept per
+machine and identify an agent; they are not a secret.
+
 **Tell it to use orchy.** In the repository the agent works in:
 
 ```bash
@@ -92,6 +102,7 @@ change without writing it.
 
 ```bash
 orchy announce [--roles r]... [--namespace /backend] [--name "Backend coder"]
+orchy leave                     # end this session
 ```
 
 `orchy announce` puts the agent on the roster and answers with a briefing:
@@ -224,11 +235,11 @@ is finished the next time orchy opens the vault.
 ├── CLAUDE.md -> AGENTS.md
 ├── index.md
 │
-├── docs/                 notes, decisions, specs… filed by area: docs/backend/auth/<id>.md
+├── docs/                 notes, decisions, specs… filed by area: docs/backend/auth/rotate-keys.md
 ├── skills/               conventions, filed by area and name: skills/backend/migrations.md
 ├── tasks/open/           tasks still in play
 ├── tasks/done/           finished, failed, cancelled or replaced tasks
-├── messages/<thread>/    one folder per conversation, one file per message
+├── messages/<subject>/   one folder per conversation, one file per message: 2026-10-05-1403-coder-1.md
 ├── agents/               the roster, one file per agent
 ├── events/<machine>/     the history of every change, one folder per machine
 └── .orchy/               this machine's live state: who is active, locks. Never committed.
@@ -236,7 +247,13 @@ is finished the next time orchy opens the vault.
 
 Every file starts with a YAML header, and **the header is what counts**. A task is done
 because its header says `status: completed`, and orchy files it under `tasks/done/` as a
-result. Folders mirror namespaces exactly: a document in `/backend/auth` lives in
+result. A file is named after its title, in lowercase words (`Rotate JWT keys` is
+`rotate-jwt-keys.md`); a second one with the same title in the same folder is `-2`, and so
+on. Renaming with `orchy retitle`, or editing `title:` by hand and running
+`orchy doctor --fix`, renames the file. Every file still carries its `id`, which is what
+links and commands use, so a rename never breaks anything. Two machines that create the
+same title at once produce the same path, which git reports as a conflict when their vaults
+merge. Folders mirror namespaces exactly: a document in `/backend/auth` lives in
 `docs/backend/auth/`. Moving or renaming a file by hand doesn't change anything about it;
 orchy still finds it by its stable `id`, `orchy doctor` reports it, and the next save puts it
 back. To move a document, change its namespace with `orchy ns move` or by editing the
@@ -597,7 +614,7 @@ orchy doctor --fix    # repair what needs no decision, then report what is left
 | problem | `--fix` |
 |---|---|
 | a file that cannot be read: broken YAML, merge conflict markers, an unknown type, a missing or invalid field, an id used twice | no: the report says where and why |
-| a file in the wrong folder, or not named after its id | moves or renames it, unless another file is already there |
+| a file in the wrong folder, or not named after its title | moves or renames it, unless another file is already there |
 | a goal whose subtasks are all finished but which is still open | finishes it |
 | a `superseded_by`, `derives`, `produced_by` or `subtasks` field that disagrees with the links it mirrors | rewrites it from the links |
 | a `supersedes` link recorded the wrong way round by an older version | turns it around |
