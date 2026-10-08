@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use orchy_core::{ActorId, MachineId};
+use orchy_core::{ActorId, MachineId, SessionToken};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CliError, CliResult};
@@ -46,12 +46,14 @@ pub(crate) struct Config {
     pub organization: String,
     pub vault_config: VaultConfig,
     pub namespace: Option<String>,
+    pub session: Option<SessionToken>,
 }
 
 impl Config {
     pub(crate) fn resolve(
         vault_flag: Option<PathBuf>,
         actor_flag: Option<String>,
+        session_flag: Option<String>,
     ) -> CliResult<Self> {
         let settings = read_settings()?;
         let machine = machine_id(&settings)?;
@@ -83,6 +85,10 @@ impl Config {
             namespace: std::env::var("ORCHY_NAMESPACE")
                 .ok()
                 .filter(|ns| !ns.trim().is_empty()),
+            session: session_flag
+                .filter(|token| !token.trim().is_empty())
+                .map(|token| token.parse::<SessionToken>())
+                .transpose()?,
         })
     }
 

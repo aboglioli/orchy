@@ -12,6 +12,7 @@ orchy [OPTIONS] [COMMAND]
 
 - `--vault` Vault directory (default: $ORCHY_VAULT, then settings, then $XDG_DATA_HOME/orchy)
 - `--actor` Who is acting: an alias, or alias@machine for a specific instance
+- `--session` The session `orchy announce` gave you; it says who you are on every command
 - `--json` Emit JSON instead of text
 - `--no-color` Never colour the output
 
@@ -44,6 +45,14 @@ orchy announce [OPTIONS]
 - `--roles`
 - `--namespace`
 - `--name`
+
+## `orchy leave`
+
+End this session: its token stops identifying you
+
+```text
+orchy leave [OPTIONS]
+```
 
 ## `orchy guide`
 

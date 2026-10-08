@@ -31,6 +31,8 @@ impl Vault {
             .env("ORCHY_VAULT", self.path())
             .env("XDG_CONFIG_HOME", self.path().join(".config"))
             .env("ORCHY_ACTOR", actor)
+            .env_remove("ORCHY_SESSION")
+            .env_remove("CLAUDE_ENV_FILE")
             .env("NO_COLOR", "1");
         command
     }

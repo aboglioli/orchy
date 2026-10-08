@@ -51,6 +51,7 @@ impl EventLog for MemoryEventLog {
                 namespace: event.namespace().to_string(),
                 actor: None,
                 machine: None,
+                session: None,
                 payload: serde_json::from_slice(payload.data()).unwrap_or(Value::Null),
                 recorded_at: Utc::now(),
             });

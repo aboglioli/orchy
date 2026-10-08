@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
-use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Skill, Task};
+use orchy_core::{Actor, Document, Edge, Hit, Lease, Message, RecordedEvent, Session, Skill, Task};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -133,6 +133,31 @@ pub struct ActorDto {
     pub namespace: String,
     pub announced_at: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<SessionDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionDto {
+    pub token: String,
+    pub actor: String,
+    pub roles: Vec<String>,
+    pub namespace: String,
+    pub started_at: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
+}
+
+impl From<&Session> for SessionDto {
+    fn from(session: &Session) -> Self {
+        Self {
+            token: session.token().to_string(),
+            actor: session.actor().to_string(),
+            roles: session.roles().iter().map(ToString::to_string).collect(),
+            namespace: session.namespace().to_string(),
+            started_at: session.started_at(),
+            last_seen: session.last_seen(),
+        }
+    }
 }
 
 impl From<&Actor> for ActorDto {
@@ -146,6 +171,7 @@ impl From<&Actor> for ActorDto {
             namespace: actor.namespace().to_string(),
             announced_at: actor.announced_at(),
             last_seen: actor.last_seen(),
+            sessions: Vec::new(),
         }
     }
 }
@@ -225,6 +251,8 @@ pub struct EventDto {
     pub key: String,
     pub namespace: String,
     pub actor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
     pub payload: Value,
     pub recorded_at: DateTime<Utc>,
 }
@@ -236,6 +264,7 @@ impl From<&RecordedEvent> for EventDto {
             key: event.key.clone(),
             namespace: event.namespace.clone(),
             actor: event.actor.clone(),
+            session: event.session.clone(),
             payload: event.payload.clone(),
             recorded_at: event.recorded_at,
         }
@@ -309,6 +338,7 @@ pub struct BriefingDto {
     pub unreadable: usize,
     pub doomed: Vec<TaskDto>,
     pub since_last: Option<SinceLastDto>,
+    pub session: Option<SessionDto>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

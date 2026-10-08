@@ -17,6 +17,7 @@ use orchy_store_vault::integrity::VaultIntegrity;
 use orchy_store_vault::messages::VaultMessageStore;
 use orchy_store_vault::roster::{FileLeaseStore, VaultActorStore};
 use orchy_store_vault::search::VaultSearch;
+use orchy_store_vault::sessions::FileSessionStore;
 use orchy_store_vault::skills::VaultSkillStore;
 use orchy_store_vault::tasks::VaultTaskStore;
 use orchy_store_vault::time::{SystemClock, UlidGenerator};
@@ -81,6 +82,10 @@ impl Fixture {
             )),
             integrity: Arc::new(VaultIntegrity::new(Arc::clone(&vault))),
             actors,
+            sessions: Arc::new(FileSessionStore::new(
+                root.path().join(".orchy/sessions"),
+                Arc::clone(&log),
+            )),
             leases: Arc::new(FileLeaseStore::new(
                 root.path().join(".orchy/locks"),
                 Arc::clone(&clock),

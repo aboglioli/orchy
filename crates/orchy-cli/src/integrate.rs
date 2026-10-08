@@ -90,7 +90,7 @@ fn claude_settings(path: &Path, announce: &str) -> CliResult<Change> {
 
 fn instructions(path: &Path, announce: &str) -> CliResult<Change> {
     let block = format!(
-        "{START}\n## orchy\n\nThis project coordinates its agents through orchy. Before starting any work, run\n`{announce}` and follow the briefing it prints: the skills in force, the task waiting for\nyou, and the handoff from the last session. Before stopping, record what is left with\n`orchy new context handoff --body ...`.\n{END}\n"
+        "{START}\n## orchy\n\nThis project coordinates its agents through orchy. Before starting any work, run\n`{announce}` and follow the briefing it prints: the skills in force, the task waiting for\nyou, and the handoff from the last session. It also gives you a session token\n(`ses_...`): run every later orchy command with `ORCHY_SESSION=<token>` set, or with\n`--session <token>`, so orchy knows it is you. Before stopping, record what is left with\n`orchy new context handoff --body ...`.\n{END}\n"
     );
     let existing = std::fs::read_to_string(path).unwrap_or_default();
     let contents = match (existing.find(START), existing.find(END)) {
@@ -154,5 +154,6 @@ mod tests {
         assert!(second.contents.starts_with("# Project\n\nOur rules.\n"));
         assert_eq!(second.contents.matches(START).count(), 1);
         assert!(second.contents.contains("orchy announce --roles dev"));
+        assert!(second.contents.contains("ORCHY_SESSION"));
     }
 }

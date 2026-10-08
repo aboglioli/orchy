@@ -11,6 +11,7 @@ pub mod messages;
 mod placement;
 pub mod roster;
 pub mod search;
+pub mod sessions;
 pub mod skills;
 pub mod tasks;
 pub mod time;

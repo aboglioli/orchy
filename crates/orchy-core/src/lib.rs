@@ -22,7 +22,7 @@ pub mod unit_of_work;
 
 pub use actor::{
     Actor, ActorAlias, ActorId, ActorStore, Lease, LeaseChange, LeaseChanged, LeaseStore,
-    MachineId, ResourceKey, Role,
+    MachineId, ResourceKey, RestoreSession, Role, Session, SessionStore, SessionToken,
 };
 pub use body::{Body, Section};
 pub use clock::Clock;

@@ -39,6 +39,8 @@ impl Vault {
             .env("ORCHY_VAULT", self.path())
             .env("XDG_CONFIG_HOME", machine)
             .env("ORCHY_ACTOR", actor)
+            .env_remove("ORCHY_SESSION")
+            .env_remove("CLAUDE_ENV_FILE")
             .env("NO_COLOR", "1")
             .env_remove("ORCHY_NAMESPACE")
             .stdin(if stdin.is_some() {
@@ -1464,4 +1466,132 @@ fn a_vault_with_files_named_by_id_is_renamed_by_doctor() {
     }
     assert!(!legacy_thread.exists(), "an emptied folder is removed");
     assert_healthy(&vault);
+}
+
+fn run_in_session(vault: &Vault, env: &[(&str, &str)], args: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_orchy"));
+    command
+        .args(args)
+        .env("ORCHY_VAULT", vault.path())
+        .env("XDG_CONFIG_HOME", vault.machine_a.path())
+        .env("NO_COLOR", "1")
+        .env_remove("ORCHY_ACTOR")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
+        .env_remove("ORCHY_NAMESPACE");
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command.output().unwrap()
+}
+
+fn json_of(out: &Output) -> Value {
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn an_agent_announces_once_and_its_session_says_who_it_is_from_then_on() {
+    let vault = Vault::new();
+    let env_file = vault.machine_a.path().join("claude.env");
+    let env_path = env_file.to_str().unwrap().to_owned();
+    let briefing = json_of(&run_in_session(
+        &vault,
+        &[("CLAUDE_ENV_FILE", &env_path), ("ORCHY_ACTOR", "coder-1")],
+        &[
+            "--json",
+            "announce",
+            "--roles",
+            "developer",
+            "--namespace",
+            "/backend",
+        ],
+    ));
+    let token = briefing["session"]["token"].as_str().unwrap().to_owned();
+    assert!(token.starts_with("ses_"), "{token}");
+    assert_eq!(
+        fs::read_to_string(&env_file).unwrap().trim(),
+        format!("export ORCHY_SESSION={token}"),
+        "a Claude Code session gets the token into every later command"
+    );
+
+    let note = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_SESSION", &token)],
+        &["--json", "new", "note", "From the session", "--body", "x"],
+    ));
+    assert_eq!(
+        note["namespace"], "/backend",
+        "writes land where the session works"
+    );
+    let events = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_SESSION", &token)],
+        &["--json", "events", "--key", note["id"].as_str().unwrap()],
+    ));
+    let created = &events.as_array().unwrap()[0];
+    assert!(created["actor"].as_str().unwrap().starts_with("coder-1@"));
+    assert_eq!(created["session"], token.as_str());
+
+    let resumed = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_SESSION", &token)],
+        &["--json", "announce"],
+    ));
+    assert_eq!(
+        resumed["session"]["token"],
+        token.as_str(),
+        "announcing again resumes it"
+    );
+    assert_eq!(resumed["actor"]["alias"], "coder-1");
+
+    let other = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_ACTOR", "coder-1")],
+        &["--json", "announce"],
+    ));
+    assert_ne!(
+        other["session"]["token"],
+        token.as_str(),
+        "a second session under one name"
+    );
+    let agents = json_of(&run_in_session(&vault, &[], &["--json", "agents"]));
+    let coder = agents
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "coder-1")
+        .unwrap();
+    assert_eq!(coder["sessions"].as_array().unwrap().len(), 2);
+
+    assert!(
+        run_in_session(&vault, &[("ORCHY_SESSION", &token)], &["leave"])
+            .status
+            .success()
+    );
+    let refused = run_in_session(&vault, &[("ORCHY_SESSION", &token)], &["task", "list"]);
+    assert_eq!(
+        refused.status.code(),
+        Some(4),
+        "an ended session identifies nobody"
+    );
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("orchy announce"));
+
+    let unknown = run_in_session(
+        &vault,
+        &[],
+        &[
+            "--session",
+            "ses_01arz3ndektsv4rrffq69g5fav",
+            "task",
+            "list",
+        ],
+    );
+    assert_eq!(unknown.status.code(), Some(4));
+    let malformed = run_in_session(&vault, &[], &["--session", "coder-1", "task", "list"]);
+    assert_eq!(malformed.status.code(), Some(6));
 }

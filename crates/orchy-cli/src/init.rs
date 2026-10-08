@@ -26,7 +26,9 @@ This directory is an orchy vault: markdown documents with typed frontmatter, a t
 and a message board between agents.
 
 Run `orchy announce` first: it joins the roster and tells you how the tool works, which
-conventions apply where you are, and what is waiting for you.
+conventions apply where you are, and what is waiting for you. It also gives you a session
+token: run every later command with `ORCHY_SESSION=<token>` (or `--session <token>`) so
+orchy knows it is you.
 
 The root is fixed — `docs/`, `skills/`, `tasks/`, `messages/`, `agents/`, `events/` — and your
 own documents live under `docs/`, in the folder their namespace names: `/backend/auth`

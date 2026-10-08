@@ -12,6 +12,7 @@ pub(crate) enum CliError {
     Config(String),
     Io(io::Error),
     NotAVault(String),
+    UnknownSession(String),
     WrongEntity(String),
     ProblemsRemain(usize),
 }
@@ -42,6 +43,7 @@ impl CliError {
             Self::Application(e) => e.code().to_string(),
             Self::Config(_) => "config".to_owned(),
             Self::NotAVault(_) => "not_a_vault".to_owned(),
+            Self::UnknownSession(_) => "unknown_session".to_owned(),
             Self::WrongEntity(_) => "wrong_entity".to_owned(),
             Self::ProblemsRemain(_) => "problems_remain".to_owned(),
             Self::Io(_) => "io".to_owned(),
@@ -52,7 +54,7 @@ impl CliError {
         match self {
             Self::Application(e) => e.exit_code(),
             Self::Config(_) => 6,
-            Self::NotAVault(_) | Self::WrongEntity(_) => 4,
+            Self::NotAVault(_) | Self::WrongEntity(_) | Self::UnknownSession(_) => 4,
             Self::ProblemsRemain(_) => 6,
             Self::Io(_) => 8,
         }
@@ -63,7 +65,10 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Application(e) => write!(f, "{e}"),
-            Self::Config(m) | Self::NotAVault(m) | Self::WrongEntity(m) => f.write_str(m),
+            Self::Config(m)
+            | Self::NotAVault(m)
+            | Self::WrongEntity(m)
+            | Self::UnknownSession(m) => f.write_str(m),
             Self::ProblemsRemain(n) => write!(
                 f,
                 "{n} problem{} left; `orchy doctor --fix` repairs what needs no decision",

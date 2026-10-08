@@ -21,6 +21,7 @@ use chrono::Utc;
 use clap::{CommandFactory, Parser};
 use orchy_application::create_document::CreateDocumentCommand;
 use orchy_application::edit_document::{EditDocumentCommand, EditMode};
+use orchy_application::leave_session::LeaveSessionCommand;
 use orchy_application::list_actors::ListActorsCommand;
 use orchy_application::manage_lease::LeaseAction;
 use orchy_application::promote_document::PromoteDocumentCommand;
@@ -81,7 +82,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
     {
         return integrate_agent(agent, dir, namespace, &role, print, out);
     }
-    let config = Config::resolve(cli.vault.clone(), cli.actor.clone())?;
+    let mut config = Config::resolve(cli.vault.clone(), cli.actor.clone(), cli.session.clone())?;
 
     let command = match command {
         Command::Init { path } => {
@@ -92,9 +93,20 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             });
         }
         Command::Status => {
+            let session = match config.session.clone() {
+                Some(token) if config.is_initialised() => {
+                    match container::identify(&mut config, false) {
+                        Ok(()) => Some(token.to_string()),
+                        Err(_) => Some(format!("{token} (unknown or ended)")),
+                    }
+                }
+                Some(token) => Some(token.to_string()),
+                None => None,
+            };
             let status = serde_json::json!({
                 "vault": config.vault.display().to_string(),
                 "actor": config.actor.to_string(),
+                "session": session,
                 "machine": config.machine.to_string(),
                 "initialised": config.is_initialised(),
                 "settings": config::settings_path().display().to_string(),
@@ -102,7 +114,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             return out.emit(&status, |s| {
                 let initialised = s["initialised"].as_bool().unwrap_or(false);
                 format!(
-                    "vault    {}{}\nactor    {}\nmachine  {}\nsettings {}",
+                    "vault    {}{}\nactor    {}\nsession  {}\nmachine  {}\nsettings {}",
                     s["vault"].as_str().unwrap_or_default(),
                     if initialised {
                         String::new()
@@ -110,6 +122,9 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
                         out.dim("  (not initialised — run `orchy init`)")
                     },
                     s["actor"].as_str().unwrap_or_default(),
+                    s["session"]
+                        .as_str()
+                        .unwrap_or("none — run `orchy announce`"),
                     s["machine"].as_str().unwrap_or_default(),
                     s["settings"].as_str().unwrap_or_default(),
                 )
@@ -126,6 +141,7 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         return Err(CliError::not_a_vault(config.vault.display()));
     }
 
+    container::identify(&mut config, matches!(command, Command::Announce { .. }))?;
     let app = container::build(&config).await?;
     let actor = config.actor.to_string();
     let here = |flag: Option<String>| flag.or_else(|| config.namespace.clone());
@@ -145,7 +161,24 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
             roles,
             namespace,
             name,
-        } => cmd::brief::announce(&app, &actor, roles, here(namespace), name, out).await,
+        } => {
+            let session = config.session.as_ref().map(ToString::to_string);
+            cmd::brief::announce(&app, &actor, roles, here(namespace), name, session, out).await
+        }
+
+        Command::Leave => {
+            let session = config.session.as_ref().ok_or_else(|| {
+                CliError::config("no session to leave: pass --session or set ORCHY_SESSION")
+            })?;
+            let ended = app
+                .leave_session
+                .execute(LeaveSessionCommand {
+                    actor: actor.clone(),
+                    session: session.to_string(),
+                })
+                .await?;
+            out.emit(&ended, |s| format!("session {} ended", s.token))
+        }
 
         Command::Skill(command) => match command {
             SkillCommand::Write {
@@ -535,7 +568,8 @@ async fn run(cli: Cli, out: &Output) -> CliResult<()> {
         }
     };
     if result.is_ok() && refreshes_presence {
-        app.touch_actor.execute(&actor).await?;
+        let session = config.session.as_ref().map(ToString::to_string);
+        app.touch_actor.execute(&actor, session.as_deref()).await?;
     }
     result
 }

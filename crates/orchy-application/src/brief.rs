@@ -73,6 +73,7 @@ impl Brief {
                 Some(since) => Some(self.since_last(&id, &namespace, since).await?),
                 None => None,
             },
+            session: None,
         })
     }
 

@@ -17,6 +17,7 @@ pub mod export_vault;
 pub mod fail_task;
 pub mod find_documents;
 pub mod get_task;
+pub mod leave_session;
 pub mod link_entities;
 pub mod list_actors;
 pub mod list_ready_tasks;
@@ -65,12 +66,12 @@ use std::sync::Arc;
 
 use orchy_core::{
     ActorStore, Clock, DocumentStore, EdgeStore, EventLog, IdGenerator, Integrity, LeaseStore,
-    MessageStore, ReadWatermarks, Search, SkillStore, TaskStore, UnitOfWork,
+    MessageStore, ReadWatermarks, Search, SessionStore, SkillStore, TaskStore, UnitOfWork,
 };
 
 pub use error::{ApplicationError, ApplicationResult};
 
-use announce_actor::AnnounceActor;
+use announce_actor::{AnnounceActor, AnnounceActorSources};
 use assess_dependencies::AssessDependencies;
 use block_task::BlockTask;
 use brief::{Brief, BriefSources};
@@ -87,6 +88,7 @@ use export_vault::ExportVault;
 use fail_task::FailTask;
 use find_documents::FindDocuments;
 use get_task::GetTask;
+use leave_session::LeaveSession;
 use link_entities::LinkEntities;
 use list_actors::ListActors;
 use list_ready_tasks::ListReadyTasks;
@@ -137,6 +139,7 @@ pub struct ApplicationDeps {
     pub messages: Arc<dyn MessageStore>,
     pub edges: Arc<dyn EdgeStore>,
     pub actors: Arc<dyn ActorStore>,
+    pub sessions: Arc<dyn SessionStore>,
     pub leases: Arc<dyn LeaseStore>,
     pub watermarks: Arc<dyn ReadWatermarks>,
     pub search: Arc<dyn Search>,
@@ -150,6 +153,7 @@ pub struct ApplicationDeps {
 pub struct Application {
     pub announce_actor: AnnounceActor,
     pub touch_actor: TouchActor,
+    pub leave_session: LeaveSession,
     pub list_actors: ListActors,
     pub manage_lease: ManageLease,
 
@@ -218,6 +222,7 @@ impl Application {
             messages,
             edges,
             actors,
+            sessions,
             leases,
             watermarks,
             search,
@@ -268,14 +273,29 @@ impl Application {
         }));
 
         Self {
-            announce_actor: AnnounceActor::new(
+            announce_actor: AnnounceActor::new(AnnounceActorSources {
+                actors: Arc::clone(&actors),
+                sessions: Arc::clone(&sessions),
+                brief: Arc::clone(&brief),
+                ids: Arc::clone(&ids),
+                clock: Arc::clone(&clock),
+                unit_of_work: Arc::clone(&unit_of_work),
+            }),
+            touch_actor: TouchActor::new(
                 Arc::clone(&actors),
-                Arc::clone(&brief),
+                Arc::clone(&sessions),
+                Arc::clone(&clock),
+            ),
+            leave_session: LeaveSession::new(
+                Arc::clone(&sessions),
                 Arc::clone(&clock),
                 Arc::clone(&unit_of_work),
             ),
-            touch_actor: TouchActor::new(Arc::clone(&actors), Arc::clone(&clock)),
-            list_actors: ListActors::new(Arc::clone(&actors), Arc::clone(&clock)),
+            list_actors: ListActors::new(
+                Arc::clone(&actors),
+                Arc::clone(&sessions),
+                Arc::clone(&clock),
+            ),
             manage_lease: ManageLease::new(
                 Arc::clone(&leases),
                 Arc::clone(&log),
