@@ -5,6 +5,7 @@ mod integrity;
 mod messages;
 mod roster;
 mod search;
+mod sessions;
 mod skills;
 mod tasks;
 mod time;
@@ -17,6 +18,7 @@ pub use integrity::MemoryIntegrity;
 pub use messages::{MemoryMessageStore, MemoryWatermarks};
 pub use roster::{MemoryActorStore, MemoryLeaseStore};
 pub use search::MemorySearch;
+pub use sessions::MemorySessionStore;
 pub use skills::MemorySkillStore;
 pub use tasks::MemoryTaskStore;
 pub use time::{FixedClock, SeqIdGenerator};
@@ -31,6 +33,7 @@ pub struct MemoryBackend {
     pub messages: Arc<MemoryMessageStore>,
     pub edges: Arc<MemoryEdgeStore>,
     pub actors: Arc<MemoryActorStore>,
+    pub sessions: Arc<MemorySessionStore>,
     pub leases: Arc<MemoryLeaseStore>,
     pub watermarks: Arc<MemoryWatermarks>,
     pub skills: Arc<MemorySkillStore>,
@@ -75,6 +78,7 @@ impl MemoryBackend {
             skills,
             edges,
             actors,
+            sessions: Arc::new(MemorySessionStore::new(Arc::clone(&log) as _)),
             unit_of_work,
             leases: Arc::new(MemoryLeaseStore::new(Arc::clone(&clock))),
             watermarks: Arc::new(MemoryWatermarks::new()),

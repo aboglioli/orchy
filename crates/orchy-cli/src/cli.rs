@@ -44,6 +44,10 @@ pub(crate) struct Cli {
     #[arg(long, global = true, env = "ORCHY_ACTOR")]
     pub actor: Option<String>,
 
+    /// The session `orchy announce` gave you; it says who you are on every command
+    #[arg(long, global = true, env = "ORCHY_SESSION")]
+    pub session: Option<String>,
+
     /// Emit JSON instead of text
     #[arg(long, global = true)]
     pub json: bool,
@@ -73,6 +77,8 @@ pub(crate) enum Command {
         #[arg(long)]
         name: Option<String>,
     },
+    /// End this session: its token stops identifying you
+    Leave,
     /// What orchy is and how to drive it, without joining the roster
     Guide,
     /// Conventions this vault expects every agent to follow

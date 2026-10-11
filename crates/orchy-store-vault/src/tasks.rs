@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use orchy_core::{EntityKind, EntityRef, EventLog, Id, Result, Task, TaskQuery, TaskStore};
 
 use crate::codec;
+use crate::placement;
 use crate::transaction::atomically;
 use crate::vault::{Precondition, Vault};
 
@@ -47,7 +48,7 @@ impl VaultTaskStore {
             None => (Default::default(), None),
         };
 
-        let key = self.vault.layout().task_key(task.id(), task.status());
+        let key = placement::of_task(&self.vault, task).await?;
         let file = codec::task_to_markdown(task, carried)?;
         self.vault
             .write_if(

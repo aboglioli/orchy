@@ -11,6 +11,7 @@ use eventuary::io::Writer;
 use eventuary::{Event, Metadata, Namespace as EvNamespace, OrganizationId, StopAt};
 use orchy_core::{
     ActorId, DomainError, DomainEvent, EventLog, EventQuery, MachineId, RecordedEvent, Result,
+    SessionToken,
 };
 use serde_json::Value;
 
@@ -28,6 +29,7 @@ pub struct EventuaryLog {
     organization: OrganizationId,
     actor: ActorId,
     machine: MachineId,
+    session: Option<SessionToken>,
 }
 
 impl EventuaryLog {
@@ -55,7 +57,13 @@ impl EventuaryLog {
                 .map_err(|e| DomainError::validation(format!("invalid organization: {e}")))?,
             actor,
             machine,
+            session: None,
         })
+    }
+
+    pub fn with_session(mut self, session: Option<SessionToken>) -> Self {
+        self.session = session;
+        self
     }
 
     pub fn root(&self) -> &Path {
@@ -64,6 +72,16 @@ impl EventuaryLog {
 
     pub fn partitions(&self) -> u32 {
         self.partitions.get()
+    }
+
+    fn metadata(&self) -> Result<Metadata> {
+        let mut metadata = Metadata::new()
+            .with("actor", self.actor.to_string())
+            .and_then(|m| m.with("machine", self.machine.to_string()));
+        if let Some(session) = &self.session {
+            metadata = metadata.and_then(|m| m.with("session", session.to_string()));
+        }
+        metadata.map_err(|e| DomainError::validation(format!("event metadata: {e}")))
     }
 
     fn to_eventuary(&self, event: &dyn DomainEvent) -> Result<Event> {
@@ -78,12 +96,7 @@ impl EventuaryLog {
             event.payload()?,
         )
         .map_err(|e| DomainError::validation(format!("building event: {e}")))?
-        .metadata(
-            Metadata::new()
-                .with("actor", self.actor.to_string())
-                .and_then(|m| m.with("machine", self.machine.to_string()))
-                .map_err(|e| DomainError::validation(format!("event metadata: {e}")))?,
-        )
+        .metadata(self.metadata()?)
         .build()
         .map_err(|e| DomainError::validation(format!("building event: {e}")))
     }
@@ -208,6 +221,7 @@ fn from_eventuary(event: &Event) -> RecordedEvent {
         namespace: event.namespace().as_str().to_owned(),
         actor: event.metadata().get("actor").map(str::to_owned),
         machine: event.metadata().get("machine").map(str::to_owned),
+        session: event.metadata().get("session").map(str::to_owned),
         payload: serde_json::from_slice(event.payload().data()).unwrap_or(Value::Null),
         recorded_at: recorded_at(event),
     }

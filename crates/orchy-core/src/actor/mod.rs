@@ -1,6 +1,7 @@
 mod events;
 mod identity;
 mod lease;
+mod session;
 
 use std::fmt;
 use std::str::FromStr;
@@ -12,6 +13,10 @@ use serde::{Deserialize, Serialize};
 pub use events::{ActorAnnounced, ActorUpdated, LeaseChange, LeaseChanged};
 pub use identity::{ActorAlias, ActorId, MachineId};
 pub use lease::{Lease, ResourceKey};
+pub use session::{
+    RestoreSession, SESSION_IDLE_DAYS, Session, SessionEnded, SessionResumed, SessionStarted,
+    SessionStore, SessionToken,
+};
 
 use crate::clock::Clock;
 use crate::error::{DomainError, Result};

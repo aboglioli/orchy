@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use chrono::SecondsFormat;
 use orchy_application::Application;
 use orchy_application::announce_actor::AnnounceActorCommand;
@@ -11,12 +13,15 @@ const WHAT_ORCHY_IS: &str = "\
 ORCHY IN ONE MINUTE
   A shared memory for agents, kept as markdown files you can read, edit and commit.
   Frontmatter is the only source of truth; a file's directory is a projection of it,
-  so never infer state from a path. Every entity has a stable id, and orchy keeps each
-  file in the folder its header names: change the header, not the folder.
+  so never infer state from a path. Every entity has a stable id, and orchy names each
+  file after its title in the folder its header names: change the header, not the file.
 
 START HERE
   orchy announce                      join the roster and get your briefing: the conventions
                                       in force, what you hold, what is next, the last handoff
+  export ORCHY_SESSION=<token>        the session announce gives you; it says who you are on
+                                      every later command (or pass --session <token>)
+  orchy leave                         end the session when you are done
 
   docs/      what the team knows      tasks/     work with owners and state
   skills/    how this team works      messages/  the board agents post to
@@ -39,6 +44,7 @@ pub(crate) async fn announce(
     roles: Vec<String>,
     namespace: Option<String>,
     name: Option<String>,
+    session: Option<String>,
     out: &Output,
 ) -> CliResult<()> {
     let briefing = app
@@ -48,9 +54,25 @@ pub(crate) async fn announce(
             roles,
             namespace,
             display_name: name,
+            session,
         })
         .await?;
+    if let Some(session) = &briefing.session {
+        carry_into_agent_session(&session.token)?;
+    }
     out.emit(&briefing, render)
+}
+
+fn carry_into_agent_session(token: &str) -> CliResult<()> {
+    let Some(path) = std::env::var_os("CLAUDE_ENV_FILE") else {
+        return Ok(());
+    };
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "export ORCHY_SESSION={token}")?;
+    Ok(())
 }
 
 pub(crate) fn guide(out: &Output) -> CliResult<()> {
@@ -58,15 +80,18 @@ pub(crate) fn guide(out: &Output) -> CliResult<()> {
 }
 
 fn render(briefing: &BriefingDto) -> String {
-    let mut lines = vec![
-        format!(
-            "You are {} in {}",
-            briefing.actor.id, briefing.actor.namespace
-        ),
-        String::new(),
-        WHAT_ORCHY_IS.to_owned(),
-        String::new(),
-    ];
+    let mut lines = vec![format!(
+        "You are {} in {}",
+        briefing.actor.id, briefing.actor.namespace
+    )];
+    if let Some(session) = &briefing.session {
+        lines.push(format!(
+            "Your session is {0}. Every orchy command must carry it: export ORCHY_SESSION={0}, \
+             or pass --session {0}.",
+            session.token
+        ));
+    }
+    lines.extend([String::new(), WHAT_ORCHY_IS.to_owned(), String::new()]);
 
     if let Some(block) = attention(briefing) {
         lines.push(block);

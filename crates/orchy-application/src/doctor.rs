@@ -13,6 +13,8 @@ use crate::rollup_ancestors::RollupAncestors;
 use crate::task_graph::waits_of;
 use crate::unit_of_work::atomically;
 
+const FIX_PASSES: usize = 4;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DoctorCommand {
     pub fix: bool,
@@ -62,13 +64,22 @@ impl Doctor {
         }
 
         let mut fixed = 0;
-        for problem in found.iter().filter(|p| p.fixable) {
-            if let Ok(true) = atomically(&*self.unit_of_work, || self.repair(problem)).await {
-                fixed += 1;
+        let mut remaining = found;
+        for _ in 0..FIX_PASSES {
+            let mut progressed = false;
+            for problem in remaining.iter().filter(|p| p.fixable) {
+                if let Ok(true) = atomically(&*self.unit_of_work, || self.repair(problem)).await {
+                    fixed += 1;
+                    progressed = true;
+                }
+            }
+            remaining = self.examine().await?;
+            if !progressed || !remaining.iter().any(|p| p.fixable) {
+                break;
             }
         }
         Ok(DoctorDto {
-            problems: self.examine().await?,
+            problems: remaining,
             fixed,
         })
     }

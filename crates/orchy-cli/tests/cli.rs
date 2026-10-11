@@ -8,6 +8,8 @@ fn orchy(vault: &Path, args: &[&str]) -> Output {
         .env("ORCHY_VAULT", vault)
         .env("XDG_CONFIG_HOME", vault.join(".config"))
         .env("ORCHY_ACTOR", "claude")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .output()
         .expect("orchy binary runs")
@@ -70,13 +72,14 @@ fn a_task_moves_between_open_and_done_as_its_status_changes() {
     let task = json(temp.path(), &["task", "new", "ship it"]);
     let id = task["id"].as_str().unwrap();
 
-    assert!(temp.path().join(format!("tasks/open/{id}.md")).exists());
+    assert_eq!(home_of(&temp, id), "tasks/open/ship-it.md");
 
     ok(temp.path(), &["task", "claim", id]);
     ok(temp.path(), &["task", "done", id]);
 
-    assert!(!temp.path().join(format!("tasks/open/{id}.md")).exists());
-    let text = std::fs::read_to_string(temp.path().join(format!("tasks/done/{id}.md"))).unwrap();
+    assert!(!temp.path().join("tasks/open/ship-it.md").exists());
+    assert_eq!(home_of(&temp, id), "tasks/done/ship-it.md");
+    let text = std::fs::read_to_string(temp.path().join("tasks/done/ship-it.md")).unwrap();
     assert!(text.contains("status: completed"));
 }
 
@@ -105,10 +108,9 @@ fn completing_the_last_subtask_rolls_the_parent_up_on_disk() {
 
     let parent_after = json(temp.path(), &["task", "get", &parent_id]);
     assert_eq!(parent_after["task"]["status"], "completed");
-    assert!(
-        temp.path()
-            .join(format!("tasks/done/{parent_id}.md"))
-            .exists(),
+    assert_eq!(
+        home_of(&temp, &parent_id),
+        "tasks/done/epic.md",
         "the parent file follows its derived status"
     );
 }
@@ -169,7 +171,11 @@ fn a_document_is_written_as_readable_markdown_and_keeps_author_fields() {
         ],
     );
     let id = document["id"].as_str().unwrap();
-    let path = temp.path().join(format!("docs/backend/{id}.md"));
+    let path = temp.path().join(home_of(&temp, id));
+    assert!(
+        path.starts_with(temp.path().join("docs/backend")),
+        "{path:?}"
+    );
 
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.starts_with("---\n"));
@@ -231,6 +237,8 @@ fn a_broadcast_reaches_an_announced_agent_and_promotes_into_a_task() {
         .env("ORCHY_VAULT", temp.path())
         .env("XDG_CONFIG_HOME", temp.path().join(".config"))
         .env("ORCHY_ACTOR", "codex")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -260,6 +268,8 @@ fn reading_a_message_advances_the_watermark_so_the_inbox_empties() {
         .env("ORCHY_VAULT", temp.path())
         .env("XDG_CONFIG_HOME", temp.path().join(".config"))
         .env("ORCHY_ACTOR", "codex")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -302,6 +312,8 @@ fn a_lock_is_refused_to_a_second_holder_and_released_by_the_first() {
         .env("ORCHY_VAULT", temp.path())
         .env("XDG_CONFIG_HOME", temp.path().join(".config"))
         .env("ORCHY_ACTOR", "codex")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -475,6 +487,8 @@ fn as_actor(vault: &Path, actor: &str, args: &[&str]) -> Output {
         .env("ORCHY_VAULT", vault)
         .env("XDG_CONFIG_HOME", vault.join(".config"))
         .env("ORCHY_ACTOR", actor)
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .output()
         .expect("orchy binary runs")
@@ -1039,6 +1053,8 @@ fn a_lock_is_renewed_by_its_holder_and_by_nobody_else() {
         .env("ORCHY_VAULT", temp.path())
         .env("XDG_CONFIG_HOME", temp.path().join(".config"))
         .env("ORCHY_ACTOR", "codex")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -1055,6 +1071,8 @@ fn resources_that_sanitise_alike_are_still_two_locks() {
         .env("ORCHY_VAULT", temp.path())
         .env("XDG_CONFIG_HOME", temp.path().join(".config"))
         .env("ORCHY_ACTOR", "codex")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -1233,8 +1251,7 @@ fn a_candidate_promoted_into_a_skill_becomes_a_real_skill_and_stays_as_the_recor
     let skill_file = std::fs::read_to_string(temp.path().join("skills/jose.md")).unwrap();
     assert!(skill_file.contains("jose supports RS256"), "{skill_file}");
 
-    let record =
-        std::fs::read_to_string(temp.path().join(format!("docs/{candidate_id}.md"))).unwrap();
+    let record = std::fs::read_to_string(temp.path().join(home_of(&temp, candidate_id))).unwrap();
     assert!(record.contains("status: promoted"), "{record}");
 
     let graph = ok(temp.path(), &["graph", &format!("skill:{skill_id}")]);
@@ -1313,7 +1330,10 @@ fn document_commands_refuse_a_skill_and_leave_its_file_untouched() {
         before,
         "the skill file is byte-identical"
     );
-    assert!(!temp.path().join(format!("docs/{id}.md")).exists());
+    assert!(
+        walk(temp.path(), "docs").is_empty(),
+        "nothing was written as a document"
+    );
 }
 
 #[test]
@@ -1325,12 +1345,12 @@ fn supersede_records_the_edge_on_the_replacement_pointing_at_what_it_replaced() 
 
     ok(temp.path(), &["supersede", old_id, "--by", new_id]);
 
-    let new_file = std::fs::read_to_string(temp.path().join(format!("docs/{new_id}.md"))).unwrap();
+    let new_file = std::fs::read_to_string(temp.path().join("docs/new-way.md")).unwrap();
     assert!(
         new_file.contains(&format!("document:{old_id}")),
         "{new_file}"
     );
-    let old_file = std::fs::read_to_string(temp.path().join(format!("docs/{old_id}.md"))).unwrap();
+    let old_file = std::fs::read_to_string(temp.path().join("docs/old-way.md")).unwrap();
     assert!(!old_file.contains("\nsupersedes:"), "{old_file}");
     assert!(old_file.contains("status: superseded"), "{old_file}");
 
@@ -1442,8 +1462,7 @@ fn a_task_keeps_its_completion_note_and_failure_reason_on_disk() {
         let expected = finish.last().unwrap();
         let reread = json(temp.path(), &["task", "get", &id]);
         assert_eq!(reread["task"]["note"], *expected, "{title}: {reread}");
-        let file =
-            std::fs::read_to_string(temp.path().join(format!("tasks/done/{id}.md"))).unwrap();
+        let file = std::fs::read_to_string(temp.path().join(home_of(&temp, &id))).unwrap();
         assert!(
             file.contains("## Outcome") && file.contains(expected),
             "{file}"
@@ -1466,7 +1485,7 @@ fn an_edited_document_remembers_when_it_was_last_changed() {
     let created = read["document"]["created_at"].as_str().unwrap().to_owned();
     let updated = read["document"]["updated_at"].as_str().unwrap().to_owned();
     assert!(updated > created, "created {created}, updated {updated}");
-    let file = std::fs::read_to_string(temp.path().join(format!("docs/{id}.md"))).unwrap();
+    let file = std::fs::read_to_string(temp.path().join("docs/timestamps.md")).unwrap();
     assert!(file.contains("\nupdated: "), "{file}");
 }
 
@@ -1653,10 +1672,9 @@ fn writes_land_where_the_agent_works_unless_told_otherwise() {
     ok(temp.path(), &["announce", "--namespace", "/backend"]);
 
     let note = json(temp.path(), &["new", "note", "here", "--body", "x"]);
-    assert!(
-        temp.path()
-            .join(format!("docs/backend/{}.md", note["id"].as_str().unwrap()))
-            .exists()
+    assert_eq!(
+        home_of(&temp, note["id"].as_str().unwrap()),
+        "docs/backend/here.md"
     );
     assert_eq!(
         json(temp.path(), &["task", "new", "t"])["namespace"],
@@ -1674,6 +1692,8 @@ fn writes_land_where_the_agent_works_unless_told_otherwise() {
         .env("ORCHY_VAULT", temp.path())
         .env("XDG_CONFIG_HOME", temp.path().join(".config"))
         .env("ORCHY_ACTOR", "claude")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("ORCHY_NAMESPACE", "/web")
         .output()
         .unwrap();
@@ -1696,6 +1716,8 @@ fn piped(vault: &Path, args: &[&str], input: &str) -> Output {
         .env("ORCHY_VAULT", vault)
         .env("XDG_CONFIG_HOME", vault.join(".config"))
         .env("ORCHY_ACTOR", "claude")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
         .env("NO_COLOR", "1")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -1768,8 +1790,8 @@ fn a_document_can_be_retitled_retyped_retagged_and_moved_and_each_is_recorded() 
     let files: Vec<_> = walk(temp.path(), "docs");
     assert_eq!(
         files,
-        vec![format!("docs/web/{id}.md")],
-        "exactly one file, under docs/web/"
+        vec!["docs/web/settled-idea.md".to_owned()],
+        "exactly one file, under docs/web/, named after the new title"
     );
 
     let topics: Vec<String> = json(temp.path(), &["events", "--key", id])
@@ -2109,8 +2131,10 @@ fn doctor_finds_every_kind_of_problem_and_fixes_the_mechanical_ones() {
     );
     seed(
         &temp,
-        "docs/named.md",
-        &format!("---\nid: {ID_4}\ntype: note\ntitle: n\nrelated_to:\n  - document:{ID_8}\n---\n"),
+        "docs/named-wrong.md",
+        &format!(
+            "---\nid: {ID_4}\ntype: note\ntitle: notes\nrelated_to:\n  - document:{ID_8}\n---\n"
+        ),
     );
     seed(
         &temp,
@@ -2153,13 +2177,13 @@ fn doctor_finds_every_kind_of_problem_and_fixes_the_mechanical_ones() {
         after.iter().all(|(_, fixable)| fixable == "false"),
         "{after:?}"
     );
-    assert!(temp.path().join(format!("tasks/open/{ID_3}.md")).exists());
-    assert!(temp.path().join(format!("docs/{ID_4}.md")).exists());
+    assert_eq!(home_of(&temp, ID_3), "tasks/open/t.md");
+    assert_eq!(home_of(&temp, ID_4), "docs/notes.md");
     assert_eq!(
         json(temp.path(), &["task", "get", ID_5])["task"]["status"],
         "completed"
     );
-    let new_home = std::fs::read_to_string(temp.path().join(format!("docs/{ID_4}.md"))).unwrap();
+    let new_home = std::fs::read_to_string(temp.path().join("docs/notes.md")).unwrap();
     assert!(new_home.contains(&format!("document:{ID_7}")), "{new_home}");
 
     let (_, again) = doctor_kinds(&temp, &["--fix"]);
@@ -2178,14 +2202,14 @@ fn doctor_reports_a_parent_cycle_once() {
     let temp = vault();
     seed(
         &temp,
-        &format!("tasks/open/{ID_1}.md"),
+        "tasks/open/a.md",
         &format!(
             "---\nid: {ID_1}\ntype: task\ntitle: a\nstatus: pending\nparent: task:{ID_2}\nsubtasks: [task:{ID_2}]\n---\n"
         ),
     );
     seed(
         &temp,
-        &format!("tasks/open/{ID_2}.md"),
+        "tasks/open/b.md",
         &format!(
             "---\nid: {ID_2}\ntype: task\ntitle: b\nstatus: pending\nparent: task:{ID_1}\nsubtasks: [task:{ID_1}]\n---\n"
         ),
@@ -2543,12 +2567,20 @@ fn a_returning_agent_is_told_what_others_did_while_it_was_away() {
 }
 
 fn file_of(temp: &tempfile::TempDir, id: &str) -> String {
-    let found = walk(temp.path(), "docs")
+    std::fs::read_to_string(temp.path().join(home_of(temp, id))).unwrap()
+}
+
+fn home_of(temp: &tempfile::TempDir, id: &str) -> String {
+    let wanted = format!("\nid: {id}\n");
+    ["docs", "tasks", "messages", "skills"]
         .into_iter()
-        .chain(walk(temp.path(), "tasks"))
-        .find(|key| key.ends_with(&format!("{id}.md")))
-        .unwrap();
-    std::fs::read_to_string(temp.path().join(found)).unwrap()
+        .filter(|root| temp.path().join(root).is_dir())
+        .flat_map(|root| walk(temp.path(), root))
+        .filter(|key| key.ends_with(".md"))
+        .find(|key| {
+            std::fs::read_to_string(temp.path().join(key)).is_ok_and(|text| text.contains(&wanted))
+        })
+        .unwrap_or_else(|| panic!("no file holds {id}"))
 }
 
 #[test]
@@ -3246,7 +3278,7 @@ fn a_hand_written_comment_survives_an_orchy_rewrite() {
         .as_str()
         .unwrap()
         .to_owned();
-    let path = temp.path().join("docs").join(format!("{id}.md"));
+    let path = temp.path().join("docs/keys.md");
     let original = std::fs::read_to_string(&path).unwrap();
     let edited = original.replacen(
         "title: keys\n",

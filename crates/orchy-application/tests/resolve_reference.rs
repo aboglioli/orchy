@@ -15,6 +15,7 @@ fn app() -> Application {
         messages: Arc::clone(&backend.messages) as _,
         edges: Arc::clone(&backend.edges) as _,
         actors: Arc::clone(&backend.actors) as _,
+        sessions: Arc::clone(&backend.sessions) as _,
         leases: Arc::clone(&backend.leases) as _,
         watermarks: Arc::clone(&backend.watermarks) as _,
         search: Arc::clone(&backend.search) as _,

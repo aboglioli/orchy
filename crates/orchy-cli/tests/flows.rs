@@ -39,6 +39,8 @@ impl Vault {
             .env("ORCHY_VAULT", self.path())
             .env("XDG_CONFIG_HOME", machine)
             .env("ORCHY_ACTOR", actor)
+            .env_remove("ORCHY_SESSION")
+            .env_remove("CLAUDE_ENV_FILE")
             .env("NO_COLOR", "1")
             .env_remove("ORCHY_NAMESPACE")
             .stdin(if stdin.is_some() {
@@ -127,9 +129,11 @@ impl Vault {
     }
 
     fn file(&self, id: &str) -> PathBuf {
+        let wanted = format!("\nid: {id}\n");
         walk(self.path())
             .into_iter()
-            .find(|p| p.file_name().and_then(|n| n.to_str()) == Some(&format!("{id}.md")))
+            .filter(|p| p.extension().is_some_and(|e| e == "md"))
+            .find(|p| fs::read_to_string(p).is_ok_and(|text| text.contains(&wanted)))
             .unwrap_or_else(|| panic!("no file for {id}"))
     }
 }
@@ -465,13 +469,13 @@ fn knowledge_evolves_without_losing_its_history() {
     vault.ok("ops", &["ns", "move", &old, "/infra"]);
     assert_eq!(
         vault.file(&old),
-        vault.path().join(format!("docs/infra/{old}.md")),
+        vault.path().join("docs/infra/deploy-on-fridays.md"),
         "moving to a parent namespace moves the file up"
     );
-    let canonical = vault.path().join(format!("docs/infra/{old}.md"));
+    let canonical = vault.path().join("docs/infra/deploy-on-fridays.md");
     let dragged = vault.path().join("docs/infra/runbooks");
     fs::create_dir_all(&dragged).unwrap();
-    fs::rename(&canonical, dragged.join(format!("{old}.md"))).unwrap();
+    fs::rename(&canonical, dragged.join("deploy-on-fridays.md")).unwrap();
     let (code, _) = vault.refused("human", &["doctor"]);
     assert_eq!(
         code, 6,
@@ -498,7 +502,7 @@ fn knowledge_evolves_without_losing_its_history() {
     vault.ok("human", &["doctor", "--fix"]);
     assert_eq!(
         vault.file(&old),
-        vault.path().join(format!("docs/infra/ci/{old}.md")),
+        vault.path().join("docs/infra/ci/deploy-on-fridays.md"),
         "editing the namespace by hand moves the file where it now belongs"
     );
     vault.ok("ops", &["ns", "move", &old, "/infra"]);
@@ -1336,4 +1340,258 @@ fn errors_are_json_when_json_was_asked_for() {
     let error: Value = serde_json::from_slice(&out.stderr).unwrap();
     assert_eq!(error["error"]["kind"], "not_found");
     assert_eq!(error["error"]["exit"], 4);
+}
+
+fn relative(vault: &Vault, path: &Path) -> String {
+    path.strip_prefix(vault.path())
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[test]
+fn files_are_named_after_what_they_hold_and_follow_their_title() {
+    let vault = Vault::new();
+    let first = vault.id("dev", &["new", "note", "Deploy checklist", "--body", "a"]);
+    let second = vault.id("dev", &["new", "note", "Deploy checklist", "--body", "b"]);
+    assert_eq!(
+        relative(&vault, &vault.file(&first)),
+        "docs/deploy-checklist.md"
+    );
+    assert_eq!(
+        relative(&vault, &vault.file(&second)),
+        "docs/deploy-checklist-2.md"
+    );
+
+    vault.ok("dev", &["retitle", &first, "Release checklist"]);
+    assert_eq!(
+        relative(&vault, &vault.file(&first)),
+        "docs/release-checklist.md"
+    );
+    assert_eq!(
+        relative(&vault, &vault.file(&second)),
+        "docs/deploy-checklist-2.md",
+        "a name already taken by a suffix is kept, not reshuffled"
+    );
+
+    let task = vault.id("dev", &["task", "new", "Rotate signing keys"]);
+    assert_eq!(
+        relative(&vault, &vault.file(&task)),
+        "tasks/open/rotate-signing-keys.md"
+    );
+    vault.ok("dev", &["task", "claim", &task]);
+    vault.ok("dev", &["task", "done", &task]);
+    assert_eq!(
+        relative(&vault, &vault.file(&task)),
+        "tasks/done/rotate-signing-keys.md"
+    );
+
+    let message = vault.id(
+        "dev",
+        &[
+            "msg",
+            "send",
+            "broadcast",
+            "--subject",
+            "Deploy freeze",
+            "--body",
+            "hold",
+        ],
+    );
+    let reply = vault.id(
+        "ops",
+        &["msg", "send", "--reply-to", &message, "--body", "ok"],
+    );
+    let root = relative(&vault, &vault.file(&message));
+    let answer = relative(&vault, &vault.file(&reply));
+    assert!(
+        root.starts_with("messages/deploy-freeze/") && root.ends_with("-dev.md"),
+        "{root}"
+    );
+    assert!(
+        answer.starts_with("messages/deploy-freeze/") && answer.ends_with("-ops.md"),
+        "{answer}"
+    );
+    assert_healthy(&vault);
+}
+
+#[test]
+fn a_title_edited_by_hand_renames_the_file_on_the_next_fix() {
+    let vault = Vault::new();
+    let id = vault.id("dev", &["new", "note", "Draft", "--body", "x"]);
+    let path = vault.file(&id);
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, text.replace("title: Draft", "title: Final plan")).unwrap();
+
+    let (code, why) = vault.refused("human", &["doctor"]);
+    assert_eq!(code, 6, "{why}");
+    vault.ok("human", &["doctor", "--fix"]);
+    assert_eq!(relative(&vault, &vault.file(&id)), "docs/final-plan.md");
+}
+
+#[test]
+fn a_vault_with_files_named_by_id_is_renamed_by_doctor() {
+    let vault = Vault::new();
+    let doc = vault.id("dev", &["new", "note", "Old naming", "--body", "x"]);
+    let message = vault.id(
+        "dev",
+        &[
+            "msg",
+            "send",
+            "broadcast",
+            "--subject",
+            "Hello",
+            "--body",
+            "hi",
+        ],
+    );
+    let reply = vault.id(
+        "ops",
+        &["msg", "send", "--reply-to", &message, "--body", "back"],
+    );
+
+    let legacy_doc = vault.path().join(format!("docs/{doc}.md"));
+    fs::rename(vault.file(&doc), &legacy_doc).unwrap();
+    let legacy_thread = vault.path().join(format!("messages/{message}"));
+    fs::create_dir_all(&legacy_thread).unwrap();
+    for id in [&message, &reply] {
+        fs::rename(vault.file(id), legacy_thread.join(format!("{id}.md"))).unwrap();
+    }
+    fs::remove_dir(vault.path().join("messages/hello")).unwrap();
+
+    vault.ok("human", &["doctor", "--fix"]);
+    assert_eq!(relative(&vault, &vault.file(&doc)), "docs/old-naming.md");
+    for id in [&message, &reply] {
+        assert!(relative(&vault, &vault.file(id)).starts_with("messages/hello/"));
+    }
+    assert!(!legacy_thread.exists(), "an emptied folder is removed");
+    assert_healthy(&vault);
+}
+
+fn run_in_session(vault: &Vault, env: &[(&str, &str)], args: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_orchy"));
+    command
+        .args(args)
+        .env("ORCHY_VAULT", vault.path())
+        .env("XDG_CONFIG_HOME", vault.machine_a.path())
+        .env("NO_COLOR", "1")
+        .env_remove("ORCHY_ACTOR")
+        .env_remove("ORCHY_SESSION")
+        .env_remove("CLAUDE_ENV_FILE")
+        .env_remove("ORCHY_NAMESPACE");
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command.output().unwrap()
+}
+
+fn json_of(out: &Output) -> Value {
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn an_agent_announces_once_and_its_session_says_who_it_is_from_then_on() {
+    let vault = Vault::new();
+    let env_file = vault.machine_a.path().join("claude.env");
+    let env_path = env_file.to_str().unwrap().to_owned();
+    let briefing = json_of(&run_in_session(
+        &vault,
+        &[("CLAUDE_ENV_FILE", &env_path), ("ORCHY_ACTOR", "coder-1")],
+        &[
+            "--json",
+            "announce",
+            "--roles",
+            "developer",
+            "--namespace",
+            "/backend",
+        ],
+    ));
+    let token = briefing["session"]["token"].as_str().unwrap().to_owned();
+    assert!(token.starts_with("ses_"), "{token}");
+    assert_eq!(
+        fs::read_to_string(&env_file).unwrap().trim(),
+        format!("export ORCHY_SESSION={token}"),
+        "a Claude Code session gets the token into every later command"
+    );
+
+    let note = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_SESSION", &token)],
+        &["--json", "new", "note", "From the session", "--body", "x"],
+    ));
+    assert_eq!(
+        note["namespace"], "/backend",
+        "writes land where the session works"
+    );
+    let events = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_SESSION", &token)],
+        &["--json", "events", "--key", note["id"].as_str().unwrap()],
+    ));
+    let created = &events.as_array().unwrap()[0];
+    assert!(created["actor"].as_str().unwrap().starts_with("coder-1@"));
+    assert_eq!(created["session"], token.as_str());
+
+    let resumed = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_SESSION", &token)],
+        &["--json", "announce"],
+    ));
+    assert_eq!(
+        resumed["session"]["token"],
+        token.as_str(),
+        "announcing again resumes it"
+    );
+    assert_eq!(resumed["actor"]["alias"], "coder-1");
+
+    let other = json_of(&run_in_session(
+        &vault,
+        &[("ORCHY_ACTOR", "coder-1")],
+        &["--json", "announce"],
+    ));
+    assert_ne!(
+        other["session"]["token"],
+        token.as_str(),
+        "a second session under one name"
+    );
+    let agents = json_of(&run_in_session(&vault, &[], &["--json", "agents"]));
+    let coder = agents
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "coder-1")
+        .unwrap();
+    assert_eq!(coder["sessions"].as_array().unwrap().len(), 2);
+
+    assert!(
+        run_in_session(&vault, &[("ORCHY_SESSION", &token)], &["leave"])
+            .status
+            .success()
+    );
+    let refused = run_in_session(&vault, &[("ORCHY_SESSION", &token)], &["task", "list"]);
+    assert_eq!(
+        refused.status.code(),
+        Some(4),
+        "an ended session identifies nobody"
+    );
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("orchy announce"));
+
+    let unknown = run_in_session(
+        &vault,
+        &[],
+        &[
+            "--session",
+            "ses_01arz3ndektsv4rrffq69g5fav",
+            "task",
+            "list",
+        ],
+    );
+    assert_eq!(unknown.status.code(), Some(4));
+    let malformed = run_in_session(&vault, &[], &["--session", "coder-1", "task", "list"]);
+    assert_eq!(malformed.status.code(), Some(6));
 }

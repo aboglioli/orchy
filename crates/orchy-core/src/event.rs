@@ -71,6 +71,7 @@ pub struct RecordedEvent {
     pub namespace: String,
     pub actor: Option<String>,
     pub machine: Option<String>,
+    pub session: Option<String>,
     pub payload: Value,
     pub recorded_at: DateTime<Utc>,
 }
@@ -143,6 +144,7 @@ mod tests {
             namespace: "/".to_owned(),
             actor: None,
             machine: None,
+            session: None,
             payload: Value::Null,
             recorded_at: DateTime::from_timestamp(0, 0).unwrap(),
         }
@@ -230,6 +232,7 @@ mod query_tests {
             namespace: "/".to_owned(),
             actor: Some(actor.to_owned()),
             machine: None,
+            session: None,
             payload: serde_json::json!({}),
             recorded_at: at(secs),
         }

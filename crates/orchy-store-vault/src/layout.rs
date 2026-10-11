@@ -1,4 +1,6 @@
-use orchy_core::{ActorId, Id, Namespace, SkillName, TaskStatus};
+use chrono::{DateTime, Utc};
+use deunicode::deunicode;
+use orchy_core::{ActorId, Namespace, SkillName, TaskStatus};
 
 #[derive(Debug, Clone, Default)]
 pub struct Layout;
@@ -13,36 +15,147 @@ pub const RUNTIME: &str = ".orchy";
 
 pub const ROOTS: [&str; 7] = [DOCS, TASKS, MESSAGES, SKILLS, AGENTS, EVENTS, RUNTIME];
 
-impl Layout {
-    pub fn task_key(&self, id: &Id, status: TaskStatus) -> String {
-        let bucket = if status.is_terminal() { "done" } else { "open" };
-        format!("{TASKS}/{bucket}/{id}.md")
-    }
+const MAX_SLUG: usize = 60;
+const TOPIC_WORDS: usize = 8;
 
-    pub fn message_key(&self, thread: &Id, id: &Id) -> String {
-        format!("{MESSAGES}/{thread}/{id}.md")
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Slot {
+    folder: String,
+    stem: String,
+    numbered: bool,
+}
 
-    pub fn skill_key(&self, namespace: &Namespace, name: &SkillName) -> String {
-        let folder = namespace.as_str().trim_start_matches('/');
-        if folder.is_empty() {
-            format!("{SKILLS}/{name}.md")
-        } else {
-            format!("{SKILLS}/{folder}/{name}.md")
+impl Slot {
+    pub fn exact(folder: impl Into<String>, stem: impl Into<String>) -> Self {
+        Self {
+            folder: folder.into(),
+            stem: stem.into(),
+            numbered: false,
         }
+    }
+
+    pub fn numbered(folder: impl Into<String>, stem: impl Into<String>) -> Self {
+        Self {
+            folder: folder.into(),
+            stem: stem.into(),
+            numbered: true,
+        }
+    }
+
+    pub fn is_numbered(&self) -> bool {
+        self.numbered
+    }
+
+    pub fn path(&self, n: usize) -> String {
+        if n <= 1 {
+            return format!("{}/{}", self.folder, self.stem);
+        }
+        format!("{}/{}-{n}", self.folder, self.stem)
+    }
+
+    pub fn key(&self, n: usize) -> String {
+        format!("{}.md", self.path(n))
+    }
+
+    pub fn fits(&self, key: &str) -> bool {
+        key.strip_suffix(".md")
+            .is_some_and(|path| self.fits_path(path))
+    }
+
+    pub fn fits_path(&self, path: &str) -> bool {
+        let Some((folder, name)) = path.rsplit_once('/') else {
+            return false;
+        };
+        if folder != self.folder {
+            return false;
+        }
+        if name == self.stem {
+            return true;
+        }
+        self.numbered
+            && name
+                .strip_prefix(self.stem.as_str())
+                .and_then(|rest| rest.strip_prefix('-'))
+                .filter(|n| !n.starts_with('0'))
+                .and_then(|n| n.parse::<usize>().ok())
+                .is_some_and(|n| n >= 2)
+    }
+}
+
+pub fn slug(text: &str, fallback: &str) -> String {
+    let ascii = deunicode(text).to_lowercase();
+    let words: Vec<&str> = ascii
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let mut slug = String::new();
+    for word in words {
+        let extra = if slug.is_empty() { 0 } else { 1 };
+        if slug.len() + extra + word.len() > MAX_SLUG {
+            if slug.is_empty() {
+                slug.push_str(&word[..MAX_SLUG]);
+            }
+            break;
+        }
+        if extra == 1 {
+            slug.push('-');
+        }
+        slug.push_str(word);
+    }
+    if slug.is_empty() {
+        return fallback.to_owned();
+    }
+    slug
+}
+
+pub fn topic_of(subject: Option<&str>, body: &str) -> String {
+    match subject {
+        Some(subject) => subject.to_owned(),
+        None => body
+            .split_whitespace()
+            .take(TOPIC_WORDS)
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+fn under(root: &str, namespace: &Namespace) -> String {
+    let folder = namespace.as_str().trim_start_matches('/');
+    if folder.is_empty() {
+        return root.to_owned();
+    }
+    format!("{root}/{folder}")
+}
+
+impl Layout {
+    pub fn task_slot(&self, status: TaskStatus, title: &str) -> Slot {
+        let bucket = if status.is_terminal() { "done" } else { "open" };
+        Slot::numbered(format!("{TASKS}/{bucket}"), slug(title, "task"))
+    }
+
+    pub fn document_slot(&self, namespace: &Namespace, title: &str) -> Slot {
+        Slot::numbered(under(DOCS, namespace), slug(title, "document"))
+    }
+
+    pub fn skill_slot(&self, namespace: &Namespace, name: &SkillName) -> Slot {
+        Slot::exact(under(SKILLS, namespace), name.as_str())
+    }
+
+    pub fn thread_slot(&self, topic: &str) -> Slot {
+        Slot::numbered(MESSAGES, slug(topic, "thread"))
+    }
+
+    pub fn message_slot(&self, thread_folder: &str, sent: DateTime<Utc>, from: &ActorId) -> Slot {
+        let stem = format!(
+            "{}-{}",
+            sent.format("%Y-%m-%d-%H%M"),
+            slug(from.alias().as_str(), "agent")
+        );
+        Slot::numbered(thread_folder, stem)
     }
 
     pub fn actor_key(&self, actor: &ActorId) -> String {
         format!("{AGENTS}/{actor}.md")
-    }
-
-    pub fn document_key(&self, namespace: &Namespace, id: &Id) -> String {
-        let folder = namespace.as_str().trim_start_matches('/');
-        if folder.is_empty() {
-            format!("{DOCS}/{id}.md")
-        } else {
-            format!("{DOCS}/{folder}/{id}.md")
-        }
     }
 
     pub fn is_root(&self, key: &str) -> bool {
@@ -72,24 +185,40 @@ impl Layout {
 mod tests {
     use super::*;
 
-    fn id(s: &str) -> Id {
-        Id::new(s).unwrap()
+    const MACHINE: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+    #[test]
+    fn a_slug_is_the_title_in_lowercase_ascii_words() {
+        assert_eq!(slug("Rotate JWT keys", "x"), "rotate-jwt-keys");
+        assert_eq!(
+            slug("  Fix: login → redirect!! ", "x"),
+            "fix-login-redirect"
+        );
+        assert_eq!(slug("Migración de índices", "x"), "migracion-de-indices");
+        assert_eq!(slug("Straße", "x"), "strasse");
     }
 
-    const A: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    const B: &str = "01BX5ZZKBKACTAV9WEVGEMMVRZ";
+    #[test]
+    fn a_slug_with_nothing_readable_falls_back_to_the_kind() {
+        assert_eq!(slug("!!!", "note"), "note");
+        assert_eq!(slug("", "task"), "task");
+    }
+
+    #[test]
+    fn a_long_title_is_cut_at_a_word_boundary() {
+        let title = "a ".repeat(10) + &"word ".repeat(30);
+        let cut = slug(&title, "x");
+        assert!(cut.len() <= MAX_SLUG, "{cut}");
+        assert!(!cut.ends_with('-'), "{cut}");
+        assert!(cut.ends_with("word"), "{cut}");
+        assert_eq!(slug(&"x".repeat(100), "y").len(), MAX_SLUG);
+    }
 
     #[test]
     fn a_tasks_folder_follows_its_status() {
-        let layout = Layout;
         assert_eq!(
-            layout.task_key(&id(A), TaskStatus::Pending),
-            format!("tasks/open/{A}.md")
-        );
-        assert_eq!(
-            layout.task_key(&id(A), TaskStatus::InProgress),
-            format!("tasks/open/{A}.md"),
-            "only a terminal status moves a task to done"
+            Layout.task_slot(TaskStatus::InProgress, "Ship it").key(1),
+            "tasks/open/ship-it.md"
         );
         for terminal in [
             TaskStatus::Completed,
@@ -97,41 +226,72 @@ mod tests {
             TaskStatus::Cancelled,
         ] {
             assert_eq!(
-                layout.task_key(&id(A), terminal),
-                format!("tasks/done/{A}.md")
+                Layout.task_slot(terminal, "Ship it").key(1),
+                "tasks/done/ship-it.md"
             );
         }
     }
 
     #[test]
-    fn the_filename_is_the_id_and_nothing_else() {
-        let layout = Layout;
-        let key = layout.message_key(&id(A), &id(B));
-        assert!(key.ends_with(&format!("{B}.md")), "{key}");
-        assert!(
-            !key.contains("claude"),
-            "no sender, no slug: the id is the only thing in the name"
-        );
-    }
-
-    #[test]
-    fn a_message_lives_under_its_thread() {
-        assert_eq!(
-            Layout.message_key(&id(A), &id(B)),
-            format!("messages/{A}/{B}.md")
-        );
-    }
-
-    #[test]
     fn documents_live_under_docs_with_their_namespace_beneath() {
-        let layout = Layout;
+        let backend = Namespace::new("/backend/auth").unwrap();
         assert_eq!(
-            layout.document_key(&Namespace::new("/backend/auth").unwrap(), &id(A)),
-            format!("docs/backend/auth/{A}.md")
+            Layout.document_slot(&backend, "Rotate keys").key(1),
+            "docs/backend/auth/rotate-keys.md"
         );
         assert_eq!(
-            layout.document_key(&Namespace::root(), &id(A)),
-            format!("docs/{A}.md")
+            Layout
+                .document_slot(&Namespace::root(), "Rotate keys")
+                .key(2),
+            "docs/rotate-keys-2.md"
+        );
+    }
+
+    #[test]
+    fn a_numbered_slot_takes_its_stem_or_a_suffix_from_two_on() {
+        let slot = Layout.document_slot(&Namespace::root(), "Rotate keys");
+        assert!(slot.fits("docs/rotate-keys.md"));
+        assert!(slot.fits("docs/rotate-keys-2.md"));
+        assert!(slot.fits("docs/rotate-keys-17.md"));
+        assert!(!slot.fits("docs/rotate-keys-1.md"));
+        assert!(!slot.fits("docs/rotate-keys-02.md"));
+        assert!(!slot.fits("docs/rotate-keys-x.md"));
+        assert!(!slot.fits("docs/backend/rotate-keys.md"));
+        assert!(!slot.fits("docs/rotate.md"));
+    }
+
+    #[test]
+    fn a_skill_is_filed_by_its_name_exactly() {
+        let slot = Layout.skill_slot(
+            &Namespace::new("/web").unwrap(),
+            &SkillName::new("commits").unwrap(),
+        );
+        assert_eq!(slot.key(1), "skills/web/commits.md");
+        assert!(!slot.fits("skills/web/commits-2.md"));
+    }
+
+    #[test]
+    fn a_message_is_named_by_when_and_by_whom_inside_its_thread() {
+        let thread = Layout.thread_slot(&topic_of(Some("Deploy freeze"), "ignored"));
+        assert_eq!(thread.path(1), "messages/deploy-freeze");
+        let sent = DateTime::from_timestamp(1_791_208_980, 0).unwrap();
+        let from = ActorId::new("coder-1", MACHINE).unwrap();
+        assert_eq!(
+            Layout
+                .message_slot("messages/deploy-freeze", sent, &from)
+                .key(1),
+            "messages/deploy-freeze/2026-10-05-1403-coder-1.md"
+        );
+    }
+
+    #[test]
+    fn a_thread_without_a_subject_is_named_after_its_first_words() {
+        assert_eq!(
+            topic_of(
+                None,
+                "please freeze merges to main for the next hour or two"
+            ),
+            "please freeze merges to main for the next"
         );
     }
 

@@ -26,7 +26,9 @@ This directory is an orchy vault: markdown documents with typed frontmatter, a t
 and a message board between agents.
 
 Run `orchy announce` first: it joins the roster and tells you how the tool works, which
-conventions apply where you are, and what is waiting for you.
+conventions apply where you are, and what is waiting for you. It also gives you a session
+token: run every later command with `ORCHY_SESSION=<token>` (or `--session <token>`) so
+orchy knows it is you.
 
 The root is fixed — `docs/`, `skills/`, `tasks/`, `messages/`, `agents/`, `events/` — and your
 own documents live under `docs/`, in the folder their namespace names: `/backend/auth`
@@ -38,9 +40,11 @@ namespace tree, so `/backend` gets everything `/` declares and may override it b
 Frontmatter is the only source of truth. A file's directory is a projection of its
 frontmatter, never the other way round, so never infer state from a path.
 
-Every document has a stable `id`, and links travel with it. To move a document, change its
-`namespace` (`orchy ns move`, or edit the header): orchy moves the file to match, and
-`orchy doctor` reports any file left in the wrong folder.
+Every document has a stable `id`, and links travel with it. Files are named after their
+title (`docs/backend/rotate-keys.md`, `-2` for a second one alike) and renamed when the title
+changes. To move a document, change its `namespace` (`orchy ns move`, or edit the header):
+orchy moves the file to match, and `orchy doctor` reports any file left in the wrong folder
+or under the wrong name.
 ";
 
 const INDEX_MD: &str = "\

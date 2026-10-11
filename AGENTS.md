@@ -17,7 +17,7 @@ Three pillars, and nothing else:
 |---|---|---|---|
 | **Knowledge** | `Document`, `Skill` | `docs/<namespace>/`, `skills/<namespace>/` | identified by `id`, never by path; relations are typed and registered; a skill's name is unique per namespace and inherited downwards |
 | **Work** | `Task` | `tasks/{open,done}/` | status moves only along the state machine; a parent's status is a function of its children's |
-| **Conversation** | `Message` | `messages/<thread>/` | a message informs and never tracks work; addressed by alias, role, namespace or broadcast |
+| **Conversation** | `Message` | `messages/<subject>/` | a message informs and never tracks work; addressed by alias, role, namespace or broadcast |
 
 Supporting them: `graph` (relations across pillars), `search` (lexical ranking across
 documents and skills), `actor` (identity, roster, presence, leases) and the event log. The pillars are peers: none imports another. Where they refer
@@ -34,7 +34,10 @@ whose location is configuration). Never hard-code a vault path.
 - **Frontmatter is the only source of truth.** No state is derived from a path or a filename.
   Placement is a projection of frontmatter: a task lands in `tasks/done/` *because* its
   status is terminal. A file in the wrong directory is a placement error to move, never a
-  reason to rewrite frontmatter. Filenames are `<id>.md` and nothing else.
+  reason to rewrite frontmatter. A file is named after its title (`<slug>.md`, `<slug>-2.md`
+  for a second one alike in the folder; a skill after its name), so people editing the vault
+  can find things, but nothing is ever read back from a name: the `id` in the header is the
+  identity.
 - **Plain files are the storage**, not a cache in front of one. A human editing a file in
   any editor is a supported write path, and nothing has to resynchronise afterwards.
 - **Agents cannot answer prompts.** Content comes from a flag or stdin; orchy never blocks
@@ -67,7 +70,8 @@ crates/
 │       ├── task/              Task, TaskStatus, TaskStore; rollup, dependencies, ranking, waits
 │       ├── message/           Message, Recipient, MessageStore, ReadWatermarks
 │       ├── graph/             Edge, Relation, EdgeStore, traversal
-│       └── actor/             Actor, ActorId, ActorAlias, MachineId, Role, ActorStore, Lease, LeaseStore
+│       └── actor/             Actor, ActorId, ActorAlias, MachineId, Role, ActorStore, Lease, LeaseStore,
+│                              Session, SessionToken, SessionStore
 │
 ├── orchy-application/   use cases, one file each: Command in, DTO out. No rules.
 │                        `brief.rs` assembles the briefing `announce` returns;
@@ -82,13 +86,15 @@ crates/
 │       │                      multi-file commits with a recovery journal
 │       ├── transaction.rs     StagedBlobStore, StagedEventLog, VaultUnitOfWork
 │       ├── vault.rs           id → file index, built by scanning frontmatter
-│       ├── layout.rs          where each entity kind is placed
+│       ├── layout.rs          slugs and the slot each entity kind is filed in
+│       ├── placement.rs       the path an entity belongs at: its slot, keeping a name it fits
 │       ├── markdown.rs · codec.rs   frontmatter + body parsing and rendering
 │       ├── documents.rs · skills.rs · tasks.rs · messages.rs · edges.rs · roster.rs
 │       ├── search.rs          gathers document sections and skills into passages for `score`
 │       ├── eventlog.rs        EventLog over eventuary's fs backend
 │       ├── integrity.rs       VaultIntegrity: unreadable, misplaced and misnamed files, dangling links
 │       ├── watermarks.rs      per-actor inbox read watermarks
+│       ├── sessions.rs        FileSessionStore: `.orchy/sessions/<token>.json`
 │       ├── lock.rs            file locks
 │       └── time.rs            SystemClock, UlidGenerator
 │
@@ -200,7 +206,10 @@ partitions`). Topics are dotted (`task.claimed`, `document.section_replaced`,
   `lock.acquired`, `lock.renewed` and `lock.released`.
 - **Keys are ULIDs.** An actor's id (`alias@machine`) and a lock's resource are not, so
   `actor.*` and `lock.*` events are keyed by the machine id, with the actor in the payload
-  and in the event's own `actor`. Filter them by `--topic` or `--by`.
+  and in the event's own `actor`. Filter them by `--topic` or `--by`. `session.*` events are
+  keyed by the ULID inside the session token.
+- **Who did it.** Every event carries the acting `actor` and `machine`, and the `session`
+  when the command ran in one (`EventuaryLog::with_session`).
 
 The workspace takes `eventuary` from crates.io with the `fs` and `memory` features, pinned
 exactly (`=0.3.0-rc.4`) while it is a release candidate. Keep it a registry dependency:
@@ -215,14 +224,15 @@ orchy-core        DomainError { Validation, InvalidTransition, NotFound, Conflic
                   ErrorCode   → exit code; orchy_core::Result<T> = Result<T, DomainError>
 orchy-application ApplicationError { Domain(#[from] DomainError) }
                   ApplicationResult<T>
-orchy-cli         CliError { Application, Config, Io, NotAVault, WrongEntity, ProblemsRemain }
+orchy-cli         CliError { Application, Config, Io, NotAVault, WrongEntity, UnknownSession,
+                             ProblemsRemain }
 ```
 
 Exit codes are part of the CLI contract, because agents branch on them:
 
 | code | cause |
 |---|---|
-| 4 | `NotFound`, `NotAVault`, `WrongEntity` |
+| 4 | `NotFound`, `NotAVault`, `WrongEntity`, `UnknownSession` |
 | 5 | `Conflict`, `Contended`, `InvalidTransition`, `Forbidden` |
 | 6 | `Validation`, `UnknownType`, `UnknownRelation`, `Config`, `ProblemsRemain` |
 | 7 | `Ambiguous` |
@@ -258,12 +268,27 @@ more than once, so the body must not do anything outside the stores before it su
   refuses a description, acceptance or outcome holding a line `## Acceptance` or `## Outcome`.
 - **Moves never overwrite.** A save that moves a file lands only on a free path
   (`claim_free`); another entity's file there is a conflict, never an overwrite.
-- **Layout.** `docs/<namespace>/<id>.md`, `skills/<namespace>/<name>.md`,
-  `tasks/open|done/<id>.md`, `messages/<thread>/<id>.md`, `agents/<alias>@<machine>.md`. The
-  roots `docs`, `skills`, `tasks`, `messages`, `agents`, `events` and `.orchy` are fixed. A
-  skill is the one entity filed by name, because its name is unique per namespace. The
-  folder always equals the namespace: there is exactly one right place for each file, every
-  save writes it there, and `doctor --fix` moves anything found elsewhere.
+- **Layout.** `docs/<namespace>/<slug>.md`, `skills/<namespace>/<name>.md`,
+  `tasks/open|done/<slug>.md`, `messages/<thread-slug>/<yyyy-mm-dd-hhmm>-<sender>.md`,
+  `agents/<alias>@<machine>.md`. The roots `docs`, `skills`, `tasks`, `messages`, `agents`,
+  `events` and `.orchy` are fixed. A document's or skill's folder always equals its
+  namespace: there is exactly one right place for each file, every save writes it there, and
+  `doctor --fix` moves anything found elsewhere.
+  - **Slugs** (`layout::slug`) are the title folded to lowercase ASCII words (`deunicode`),
+    joined by `-` and cut at a word boundary at 60 characters; with nothing left, the kind.
+    A thread's folder takes its subject, or its first words; replies go wherever the
+    thread's first message is.
+  - **Slots.** A `Slot` is a folder and a stem; a numbered slot also takes `-2`, `-3`, … for
+    names already taken. `Vault::place` keeps the path an entity has while it fits its slot,
+    so suffixes never reshuffle, and otherwise takes the first free one. A skill's slot is
+    exact: its name is unique per namespace. A path someone else takes between choosing it
+    and writing it makes the command run again (`Contended`) and pick the next one.
+  - **Names follow the header.** A retitle, or a status change that moves a task between
+    `open/` and `done/`, renames the file on save; `doctor` reports a file whose name or
+    folder its header no longer gives, and `--fix` moves it. A folder emptied by a move or a
+    delete is removed (`FsBlobStore::remove_and_prune`), short of the fixed roots.
+  - **Merges.** Two machines that create the same title produce the same path, which git
+    reports as an add/add conflict; the conflicted file is then unreadable until resolved.
 - **Unreadable files never take the vault down.** `Vault::scan` records a `Problem` for a
   file it cannot parse (bad UTF-8, unclosed fence, invalid YAML, a merge-conflict block, a
   non-ULID or duplicate `id`) and skips it; store listings skip a file their codec rejects.
@@ -309,7 +334,7 @@ more than once, so the body must not do anything outside the stores before it su
   document or a skill also takes
   `--if-match <content_hash>`, checked by `ensure_unchanged` on the aggregate, so a change
   made between an agent's read and its write is refused (exit 5) rather than overwritten.
-- **Runtime state** lives in `.orchy/` and is never committed: `presence/`, `read/`
+- **Runtime state** lives in `.orchy/` and is never committed: `presence/`, `sessions/`, `read/`
   (watermarks), `locks/` (leases, read and written under the lease file's lock),
   `write-guards/`, `journal/` (commits in flight).
 - **A document's or skill's own frontmatter** (fields orchy does not model) survives orchy's
@@ -368,7 +393,17 @@ change it deliberately.
   once and stored in `$XDG_CONFIG_HOME/orchy/settings.toml`; it separates this machine's
   event log and actors from every other's. The alias is 2–32 characters: lowercase, digits
   and `-`.
-- **Roster and presence.** `orchy announce` writes `agents/<id>.md` (roles, namespace),
+- **Sessions.** `AnnounceActor` starts a `Session` (token `ses_<ulid>`, actor, roles,
+  namespace) or resumes the one it is given when it is live and the actor's own, and the
+  briefing returns it. A command carrying a token (`--session`, `ORCHY_SESSION`) acts as the
+  session's actor and writes to its namespace by default; `container::identify` resolves it
+  before the event log opens, so events record the session. A token that is unknown, ended
+  or idle for `SESSION_IDLE_DAYS` (7) is refused with `UnknownSession`, except by `announce`,
+  which then starts a new one. Sessions are per machine (`.orchy/sessions/`), touched on
+  every command, ended by `orchy leave`, and identify an agent without authenticating it:
+  any local process can read them. When `CLAUDE_ENV_FILE` is set, as it is for Claude Code
+  session-start hooks, `announce` appends `export ORCHY_SESSION=<token>` to it.
+- **Roster and presence.** `orchy announce` writes `agents/<alias>@<machine>.md` (roles, namespace),
   which is committed. Every other successful command refreshes only the actor's presence file
   (`TouchActor` → `ActorStore::touch`, `.orchy/presence/`), so being busy never churns git.
   Presence is same-machine only: `agents --live` means some command ran in the last 300 s.
@@ -472,9 +507,9 @@ pending | blocked | claimed | in_progress ─▶ cancelled | superseded
   `promote --as skill --name <n>` instead creates a `Skill` from the candidate's body, marks
   the candidate `promoted` (`Document::mark_promoted`), and links `skill -derived_from->
   candidate`; the candidate stays in `docs/` as the record of the proposal.
-- **Placement.** A document anywhere but `docs/<namespace>/<id>.md`, including a subfolder
-  its namespace does not name, is reported by `doctor` and moved there the next time orchy
-  saves it. The folder never changes the namespace; editing `namespace` in the header does. Markdown files without an `id` are
+- **Placement.** A document anywhere but `docs/<namespace>/<slug>.md` (or a `-N` of it),
+  including a subfolder its namespace does not name, is reported by `doctor` and moved there
+  the next time orchy saves it. The folder never changes the namespace; editing `namespace` in the header does. Markdown files without an `id` are
   ignored.
 
 ### Skills
@@ -546,11 +581,13 @@ Agents branch on this behaviour, so treat it as API.
 
 - **Resolution.** `Config::resolve` (`config.rs`):
   - vault: `--vault` → `ORCHY_VAULT` → `settings.vault` → `$XDG_DATA_HOME/orchy`;
-  - actor: `--actor` → `ORCHY_ACTOR` → `settings.actor` → `human`.
+  - actor: `--session` → `ORCHY_SESSION` → `--actor` → `ORCHY_ACTOR` → `settings.actor` →
+    `human`.
 
   A bare alias gets `@<machine>` appended.
 - **Namespace for writes.** Creating commands (`new`, `task new`, `msg send`, `promote`)
-  take `--namespace`, else `ORCHY_NAMESPACE` (`Config.namespace`), else the use case asks
+  take `--namespace`, else `ORCHY_NAMESPACE` (`Config.namespace`), else the session's
+  namespace, else the use case asks
   `ActorStore::home_of` for the actor's roster namespace, else `/`. `announce` without
   `--namespace` keeps the actor's namespace. Reads without a namespace see everything (D16).
 - **Files.** `$XDG_CONFIG_HOME/orchy/settings.toml` is per machine (`machine`, `vault`,
